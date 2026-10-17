@@ -39,7 +39,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
 import {
   library,
   refreshLibraryProject,
@@ -73,6 +73,7 @@ function useLibraryProjectEntries() {
       ? projectEntries(catalog.data, libraryActiveCopies(copies.data), index.data)
       : null;
   return {
+    authority,
     entries,
     error: catalog.error ?? copies.error ?? index.error,
     refresh: () => {
@@ -138,7 +139,8 @@ function RestingProjectRow(props: {
 export function LibraryTidyRouteScreen({
   route,
 }: StaticScreenProps<{ readonly projectId: string }>) {
-  const { entries, error, refresh } = useLibraryProjectEntries();
+  const { authority, entries, error, refresh } = useLibraryProjectEntries();
+  if (authority.loaded && !authority.environmentId) return <LibraryAuthorityScreen />;
   const entry = entries?.find((candidate) => candidate.project.id === route.params.projectId);
   if (entry) return <LibraryTidyContent key={entry.project.id} entry={entry} />;
   return (
@@ -146,7 +148,13 @@ export function LibraryTidyRouteScreen({
       <LibraryNotice
         error={error}
         detail={
-          error ? null : entries ? "This project is no longer in your Library." : "Loading project…"
+          error
+            ? null
+            : entries
+              ? "This project is no longer in your Library."
+              : authority.loaded && !authority.connected
+                ? `Library offline. Reconnect ${authority.label} to tidy this project.`
+                : "Loading project…"
         }
         onRetry={error ? refresh : undefined}
       />
@@ -339,7 +347,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
           : "This project has been quiet for two weeks. Remove the copies that hold nothing unsaved, and archive the project if you are done with it for now."}
       </Text>
       {suggestions.suggestArchive || result?.archive ? (
-        <SettingsSection footer="It leaves the project pickers and the current list. Its conversations stay readable, and you can restore it any time from Archived.">
+        <SettingsSection footer="It leaves the project pickers and the current list. Its conversations stay readable, and you can reopen it any time from Archived.">
           <SettingsSwitchRow
             label="Archive the project"
             value={result ? result.archive !== null : archiveChosen}

@@ -24,7 +24,7 @@ import {
   type LibraryTimelineKind,
 } from "@t3tools/contracts/fork";
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
@@ -32,6 +32,7 @@ import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { useScaledTextRole } from "../../features/settings/appearance/useScaledTextRole";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { useEnvironmentQuery } from "../../state/query";
@@ -44,6 +45,14 @@ import { useLibraryActivity, useOpenLibraryTimelineLink } from "./useLibraryActi
 const TIMELINE_PAGE = 30;
 /** The project screen's glance at what happened most recently. */
 const PREVIEW_ENTRIES = 5;
+/** The time column's width in multiples of its font size, enough for "~12:00 PM" on one line. */
+const TIME_COLUMN_EMS = 5.5;
+/** From this system text scale the time joins the detail line, as list rows stack their detail. */
+const STACK_TIME_FONT_SCALE = 1.5;
+
+/** Shared by the route and the feeds, so an offline Library reads the same wherever it shows. */
+const timelineOfflineDetail = (label: string) =>
+  `Library offline. Reconnect ${label} to see the timeline.`;
 
 const FILTER_ICONS: Record<LibraryTimelineFilter, AppSymbolName> = {
   conversations: "text.bubble",
@@ -161,7 +170,7 @@ export function LibraryTimelinePreview({ projectId }: { readonly projectId: stri
                   ? "Nothing has happened in this project yet."
                   : authority.connected
                     ? "Loading timeline..."
-                    : "Connect your Library to see the timeline."
+                    : timelineOfflineDetail(authority.label)
             }
           />
         </View>
@@ -186,7 +195,7 @@ export function LibraryTimelineRouteScreen({
             state === "loading"
               ? "Loading timeline..."
               : state === "offline"
-                ? `Library offline. Reconnect ${authority.label} to see the timeline.`
+                ? timelineOfflineDetail(authority.label)
                 : state === "unsupported"
                   ? "Your Library does not keep a timeline yet. Update it to see what happened on this project."
                   : "Connect your Library to see the timeline."
@@ -229,7 +238,6 @@ export function LibraryTimelineRouteScreen({
         key={kinds?.join(",") ?? "all"}
         projectId={projectId}
         authorityId={authorityId}
-        connected={authority.connected}
         kinds={kinds}
       />
     </LibraryPage>
@@ -249,15 +257,13 @@ type FeedRow =
 function TimelineFeed({
   projectId,
   authorityId,
-  connected,
   kinds,
 }: {
   readonly projectId: string;
   readonly authorityId: EnvironmentId;
-  readonly connected: boolean;
   readonly kinds: readonly LibraryTimelineKind[] | undefined;
 }) {
-  const { hostLabel, hostConnected, hostsKey } = useLibraryActivity();
+  const { authority, hostLabel, hostConnected, hostsKey } = useLibraryActivity();
   const insets = useSafeAreaInsets();
   const ink = useProjectInk(projectId, authorityId);
   const open = useOpenLibraryTimelineLink(projectId);
@@ -326,9 +332,9 @@ function TimelineFeed({
           detail={
             newest.error
               ? null
-              : connected
+              : authority.connected
                 ? "Loading timeline..."
-                : "Connect your Library to see the timeline."
+                : timelineOfflineDetail(authority.label)
           }
         />
       </View>
@@ -427,6 +433,13 @@ function TimelineRow({
   readonly clock: boolean;
   readonly className?: string;
 }) {
+  const { fontScale } = useWindowDimensions();
+  const timeFont = useScaledTextRole("label");
+  // One width for every row keeps the icons in a column; it grows with both text size settings.
+  const timeWidth =
+    clock && fontScale < STACK_TIME_FONT_SCALE
+      ? Math.ceil(timeFont.fontSize * fontScale * TIME_COLUMN_EMS)
+      : null;
   const link = libraryTimelineEntryLink(entry, hostConnected);
   const display = KIND_DISPLAY[entry.kind];
   const tone = libraryTimelineEntryFailed(entry)
@@ -443,8 +456,12 @@ function TimelineRow({
   const spokenTime = entry.approximate ? `about ${time}` : time;
   const body = (
     <>
-      {clock ? (
-        <Text className="w-16 pt-1.5 text-right text-xs tabular-nums text-foreground-muted">
+      {timeWidth !== null ? (
+        <Text
+          numberOfLines={1}
+          style={{ width: timeWidth }}
+          className="shrink-0 pt-1.5 text-right text-xs tabular-nums text-foreground-muted"
+        >
           {shownTime}
         </Text>
       ) : null}
@@ -471,7 +488,7 @@ function TimelineRow({
       <View className="min-w-0 flex-1 gap-0.5 pt-1">
         <Text className="text-sm font-t3-medium text-foreground">{summary}</Text>
         <Text numberOfLines={1} className="text-xs text-foreground-muted">
-          {[where, folder, clock ? null : shownTime].filter(Boolean).join(" · ")}
+          {[where, folder, timeWidth === null ? shownTime : null].filter(Boolean).join(" · ")}
         </Text>
       </View>
     </>

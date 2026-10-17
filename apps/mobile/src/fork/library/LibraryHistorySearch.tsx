@@ -29,6 +29,10 @@ import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library } from "./libraryState";
 import { useLibraryActivity } from "./useLibraryActivity";
 
+/** Shared by the route and its results, so an offline Library reads the same wherever it shows. */
+const searchOfflineDetail = (label: string) =>
+  `Library offline. Reconnect ${label} to search saved history.`;
+
 /** Whether the Library can search saved history, for entry points outside this file. */
 export function useLibrarySearchSupported() {
   return useLibraryActivity().featureState(LIBRARY_SEARCH_FEATURE) === "supported";
@@ -57,9 +61,26 @@ export function LibraryHistorySearchEntry({ projectId }: { readonly projectId?: 
 export function LibrarySearchRouteScreen({
   route,
 }: StaticScreenProps<{ readonly projectId?: string; readonly query?: string } | undefined>) {
-  const projectId = route.params?.projectId;
+  // Navigating to an open search reuses its route with new params, so new words or a new scope
+  // start the field and results over.
+  return (
+    <LibrarySearchContent
+      key={`${route.params?.projectId ?? ""}:${route.params?.query ?? ""}`}
+      projectId={route.params?.projectId}
+      query={route.params?.query}
+    />
+  );
+}
+
+function LibrarySearchContent({
+  projectId,
+  query,
+}: {
+  readonly projectId: string | undefined;
+  readonly query: string | undefined;
+}) {
   const { authority, featureState, hostLabel } = useLibraryActivity();
-  const [text, setText] = useState(route.params?.query ?? "");
+  const [text, setText] = useState(query ?? "");
   const sent = useDebouncedValue(text, LIBRARY_SEARCH_DEBOUNCE_MS);
   const authorityId = authority.environmentId;
   const state = featureState(LIBRARY_SEARCH_FEATURE);
@@ -80,7 +101,7 @@ export function LibrarySearchRouteScreen({
             state === "loading"
               ? "Loading..."
               : state === "offline"
-                ? `Library offline. Reconnect ${authority.label} to search saved history.`
+                ? searchOfflineDetail(authority.label)
                 : state === "unsupported"
                   ? "Your Library cannot search saved history yet. Update it to search what was said."
                   : "Connect your Library to search saved history."
@@ -118,7 +139,7 @@ export function LibrarySearchRouteScreen({
             key={librarySearchKey(request)}
             request={request}
             authorityId={authorityId}
-            connected={authority.connected}
+            offlineLabel={authority.connected ? null : authority.label}
             hostLabel={hostLabel}
             projectTitle={projectId ? undefined : (id) => titles.get(id) ?? "Library project"}
           />
@@ -141,13 +162,14 @@ function Status({ text }: { readonly text: string }) {
 function SearchResults({
   request,
   authorityId,
-  connected,
+  offlineLabel,
   hostLabel,
   projectTitle,
 }: {
   readonly request: LibrarySearchRequest;
   readonly authorityId: EnvironmentId;
-  readonly connected: boolean;
+  /** The Library's name while it is offline, null while connected. */
+  readonly offlineLabel: string | null;
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly projectTitle: ((id: string) => string) | undefined;
 }) {
@@ -185,7 +207,7 @@ function SearchResults({
     ) : (
       <Status
         text={
-          connected ? "Searching saved history..." : "Connect your Library to search saved history."
+          offlineLabel === null ? "Searching saved history..." : searchOfflineDetail(offlineLabel)
         }
       />
     );
