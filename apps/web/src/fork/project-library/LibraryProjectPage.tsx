@@ -1,3 +1,4 @@
+import { ProjectSites } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -257,6 +258,7 @@ function ProjectView({
             onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
             onRemove={setReleasing}
           />
+          <ProjectSites environmentId={authorityId} projectId={project.id} />
           <ProjectResources
             resources={project.resources}
             canEdit={update.canEdit}

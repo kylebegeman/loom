@@ -66,7 +66,10 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
-  SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+  SitesService.layer.pipe(
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+  ),
   LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
   LibraryTimeline.layer,
   LibraryLaunchCandidates.layer.pipe(

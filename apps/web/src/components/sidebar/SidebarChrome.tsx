@@ -137,7 +137,9 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  active = false,
 }: {
+  active?: boolean;
   icon: ReactNode;
   label: string;
   onClick: () => void;
@@ -147,7 +149,13 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
+              isActive={active}
+              onClick={onClick}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
@@ -161,9 +169,12 @@ function SidebarUtilityItem({
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
+  const pathname = useLocation({ select: (location) => location.pathname }); // fork: sites-navigation
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
-    select: (location) => isSidebarUtilityPage(location.pathname),
+    select: (location) =>
+      isSidebarUtilityPage(location.pathname) &&
+      !/^\/(?:sites|projects|library)(?:\/|$)/.test(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
   const closeMobileSidebar = useCallback(() => {
@@ -229,17 +240,19 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleUsageClick}
           />
           <SidebarUtilityItem
+            icon={<FolderKanbanIcon />}
+            label="Projects"
+            active={/^\/(?:projects|library)(?:\/|$)/.test(pathname)}
+            onClick={handleProjectsClick}
+          />
+          <SidebarUtilityItem
             icon={<GlobeIcon />}
             label="Sites"
+            active={pathname === "/sites"}
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/sites" });
             }}
-          />
-          <SidebarUtilityItem
-            icon={<FolderKanbanIcon />}
-            label="Projects"
-            onClick={handleProjectsClick}
           />
         </>
       )}

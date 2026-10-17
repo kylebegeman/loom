@@ -447,9 +447,22 @@ activity** from Projects. Sites uses your chosen Library server independently of
 the computer running your work. Reconnect the Library and refresh to get current
 results; stale checks do not count as healthy.
 
-**Manage sites** opens the personal API admin in your browser through Loom
-Identity. Register future websites there, link their services, and give each its
-own analytics origins. The personal API catalog at
-`https://api.begam.in/v1/public/catalog` lists capabilities available to other
-projects. Public reads work across origins; private data and administration
-keep their own access requirements.
+Register and edit sites directly in Loom. Each site belongs to at least one
+Library project; project pages link back to their sites. Register shared services,
+link them to sites, and add HTTPS endpoint checks. Turn an entry off to pause it
+without deleting its history, and turn it on to resume. **Run checks now** refreshes
+endpoint health on demand. Management needs a manager connection configured on
+your Library server and permission to change its settings.
+
+Agents use `loom_sites`, `loom_site_analytics`, `loom_site_save`,
+`loom_site_service_save`, `loom_site_check_save`, and `loom_site_checks_run`.
+The same operations are available from a configured terminal through
+`t3 sites list`, `analytics`, `save`, `save-service`, `save-check`, and `run-checks`.
+Pass a JSON object matching the corresponding MCP tool. Saves replace the entry's
+settings, so include its project, origin, and service selections.
+Use the agent terminal's MCP connection or set `LOOM_MCP_ENDPOINT` and
+`LOOM_MCP_AUTHORIZATION` privately. Management tools require full access.
+
+The personal API catalog at `https://api.begam.in/v1/public/catalog` lists
+capabilities available to other projects. Public reads work across origins;
+private data and administration keep their own access requirements.

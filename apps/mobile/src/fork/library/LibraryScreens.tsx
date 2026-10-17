@@ -1,3 +1,4 @@
+import { ProjectSites } from "../sites/ProjectSites";
 import { useAtomValue } from "@effect/atom-react";
 import {
   useIsFocused,
@@ -547,6 +548,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           </Text>
         </View>
       </SettingsSection>
+      <ProjectSites environmentId={target} projectId={p.id} />
       <SettingsSection title="Repositories and links">
         {p.resources.map((resource) => (
           <View key={resource.id} className="gap-1 px-4 py-3">
