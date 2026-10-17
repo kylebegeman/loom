@@ -1,7 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryCopyStatus, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import type {
+  LibraryCopyStatus,
+  LibraryProject,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -12,11 +16,16 @@ import { useEnvironmentPresentation } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { uuidv4 } from "../../lib/uuid";
+import { LibraryCopyHealth } from "./LibraryCopyHealth";
+import { LibraryCopyProfileSetup } from "./LibraryProfileReadiness";
 import { library } from "./libraryState";
 import { loadLibraryRecovery } from "./rpc/libraryAssets";
 
 export function LibraryCopySection(props: {
+  project: LibraryProject;
   copy: LibraryWorkingCopy;
+  /** When the Library last heard from the copy's computer. */
+  lastSeenAt: string | undefined;
   authorityEnvironmentId: EnvironmentId;
   authorityReady: boolean;
   computerLabel: string;
@@ -159,6 +168,19 @@ export function LibraryCopySection(props: {
           <Text className="text-sm text-foreground-muted">
             Reconnect this computer to inspect its files.
           </Text>
+        ) : null}
+        {!removed ? (
+          <LibraryCopyHealth
+            project={props.project}
+            copy={copy}
+            connected={connected}
+            computerLabel={props.computerLabel}
+            authorityEnvironmentId={props.authorityEnvironmentId}
+            lastSeenAt={props.lastSeenAt}
+          />
+        ) : null}
+        {connected && !removed && copy.state === "ready" ? (
+          <LibraryCopyProfileSetup project={props.project} copy={copy} />
         ) : null}
         {borrowed ? (
           <Text className="text-sm text-foreground-muted">

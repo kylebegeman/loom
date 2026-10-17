@@ -484,7 +484,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
     hostLabel = (id: string) =>
       environments.find((env) => env.environmentId === id)?.label ??
       authority.computers.find((entry) => entry.environmentId === id)?.label ??
-      "Saved computer";
+      "Saved computer",
+    lastSeenAt = (id: string) =>
+      authority.computers.find((entry) => entry.environmentId === id)?.lastSeenAt;
   const showThread = (thread: LibraryThreadSummary) =>
     navigation.navigate("LibraryHistory", { projectId: p.id, archiveId: thread.id });
   const reuseFolder = (copy: LibraryWorkingCopy) =>
@@ -575,7 +577,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         {activeCopies.map((copy) => (
           <LibraryCopySection
             key={copy.id}
+            project={p}
             copy={copy}
+            lastSeenAt={lastSeenAt(copy.environmentId)}
             authorityEnvironmentId={target}
             authorityReady={authority.ready && copiesReady}
             computerLabel={hostLabel(copy.environmentId)}
@@ -662,7 +666,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
               {removedCopies.map((copy) => (
                 <LibraryCopySection
                   key={copy.id}
+                  project={p}
                   copy={copy}
+                  lastSeenAt={lastSeenAt(copy.environmentId)}
                   authorityEnvironmentId={target}
                   authorityReady={authority.ready && copiesReady}
                   computerLabel={`${hostLabel(copy.environmentId)} · removed ${ago(copy.updatedAt)}`}
