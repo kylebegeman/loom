@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off - Groups by the viewer's local calendar day for display, outside an Effect runtime.
 export type TimelineDay<T> = {
   readonly key: string;
   readonly label: string;

@@ -1,5 +1,10 @@
+// @effect-diagnostics globalDate:off - Groups by the viewer's local calendar day for display, outside an Effect runtime.
 import { describe, expect, it } from "vite-plus/test";
-import { groupTimelineByDay, timelineDayDetail, timelineDayLabel } from "./timelineDays";
+import {
+  groupTimelineByDay,
+  timelineDayDetail,
+  timelineDayLabel,
+} from "./library-timeline-days.ts";
 
 const local = (month: number, day: number, hour: number, year = 2026) =>
   new Date(year, month - 1, day, hour);

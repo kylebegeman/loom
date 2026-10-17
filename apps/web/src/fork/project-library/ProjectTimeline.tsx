@@ -19,6 +19,7 @@ import {
   toggleLibraryTimelineFilter,
   type LibraryTimelineFilter,
   type LibraryTimelineLink,
+  groupTimelineByDay,
 } from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
 import {
@@ -52,7 +53,6 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 import { ComputerLabel } from "./ProjectIdentity";
 import { projectLibrary } from "./state";
-import { groupTimelineByDay } from "./timelineDays";
 
 /** Entries per request. Small enough to arrive quickly, enough to fill the page. */
 const TIMELINE_PAGE = 30;
