@@ -16,6 +16,22 @@ node benchmarks/loom/run.ts --output .t3/benchmarks/after.json \
   --baseline .t3/benchmarks/baseline.json --check
 ```
 
+For a comparison that controls drift between the original and optimized implementations,
+replay the original target source and alternate the run order within each round:
+
+```sh
+node benchmarks/loom/run.ts --output .t3/benchmarks/paired.json \
+  --compare-ref d22797d754 --check
+```
+
+This runs three original/current pairs in fresh processes, alternating which version runs
+first. It saves `paired.reference.json` and `paired.json`, including the source revision,
+SHA-256 digests, actual-load attestations and run order. Both versions use the current harness
+and identical fixtures. A benchmark-only Vite loader reads the six target modules directly
+from Git; it never changes checkout files. Shared runtime dependencies must be unchanged,
+or the comparison is rejected. Use this mode to validate improvements when separate runs
+may have experienced different host load or garbage collection.
+
 `node_modules/.bin/vp` is resolved locally by the runner. No global installation is needed.
 The default is three sequential sweeps in fresh Vitest processes, each with at least five
 warmup calls and 100 ms warmup, then at least 21 individually timed operations and 250 ms
