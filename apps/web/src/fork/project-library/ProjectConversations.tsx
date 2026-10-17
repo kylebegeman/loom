@@ -54,7 +54,7 @@ import { cn } from "~/lib/utils";
 import { useServerConfigs, useThreadShellsForProjectRefs } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch, LibrarySection } from "./LibraryControls";
-import { ComputerLabel, ProjectGlow } from "./ProjectIdentity";
+import { ComputerLabel } from "./ProjectIdentity";
 
 /** Rows per step of "Show more". The whole list is already loaded, so paging only keeps it calm. */
 const CONVERSATION_PAGE = 20;
@@ -411,9 +411,11 @@ function FeaturedConversation({
     <ConversationLink
       thread={thread}
       connected={connected}
-      className="group/card relative isolate flex items-center gap-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 outline-none transition-shadow duration-200 hover:shadow-md/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5"
+      className={cn(
+        LIBRARY_ROW,
+        "group/card -mx-3 flex items-center gap-4 px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+      )}
     >
-      <ProjectGlow strength="strong" />
       <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-(--project-color) text-background shadow-sm">
         <MessageSquareIcon aria-hidden className="size-5" />
       </span>
