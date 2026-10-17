@@ -48,8 +48,8 @@ PUBLISHER_PLIST="$HOME/Library/LaunchAgents/com.kylebegeman.loom-updates.plist"
 # lines it must keep (docs/fork/seams.tsv). run_checks fails when a merge drops
 # a seam, and when a marker appears that the manifest does not list.
 SEAMS_MANIFEST=docs/fork/seams.tsv
-# The branding tests live next to upstream code; every other fork test lives
-# in a fork/ directory and is found by fork_tests.
+# Branding tests live next to upstream code; fork_tests also discovers Loom
+# feature tests and the benchmark harness checks.
 BRAND_TESTS=(
   packages/shared/src/brand.test.ts
   apps/web/src/branding.test.ts
@@ -152,7 +152,7 @@ $unlisted"
 
 fork_tests() {
   printf '%s\n' "${BRAND_TESTS[@]}"
-  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx'
+  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts'
 }
 
 # Lint only fork-owned source. Skip unmatched globs so future fork directories
@@ -160,7 +160,7 @@ fork_tests() {
 fork_lint_paths() {
   local path
   for path in apps/*/src/fork packages/*/src/fork apps/web/src/routes/settings.loom*.tsx \
-    scripts/fork deploy/omarchy; do
+    scripts/fork deploy/omarchy benchmarks/loom apps/server/scripts/benchmark-library.ts; do
     if [ -e "$path" ]; then printf '%s\n' "$path"; fi
   done
 }
@@ -201,6 +201,8 @@ run_checks() {
     say "Typechecking $d"
     (cd "$d" && pnpm run -s typecheck)
   done
+  say "Typechecking Loom benchmarks"
+  pnpm exec tsc-rs --noEmit -p benchmarks/loom/tsconfig.json
   restore_lockfile
 }
 

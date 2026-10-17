@@ -82,6 +82,7 @@ export function readBaseline(value: unknown, hardware: BenchmarkHardware): Basel
 export function summarizeSweeps(
   sweeps: readonly (readonly BenchmarkMeasurement[])[],
   baseline: BaselineReport | null,
+  allowSubset = false,
 ) {
   const firstSweep = sweeps[0];
   if (!firstSweep?.length) throw new Error("At least one nonempty sweep is required");
@@ -90,6 +91,8 @@ export function summarizeSweeps(
   for (const sweep of sweeps)
     if (sweep.length !== ids.length || sweep.some((item, i) => item.id !== ids[i]))
       throw new Error("Each sweep must contain the same workloads in the same order");
+  if (baseline && !allowSubset && baseline.measurements.length !== ids.length)
+    throw new Error("Full comparison must include all baseline workloads");
   return firstSweep.map((first, i) => {
     const rounds = sweeps.map((sweep) => {
       const round = sweep[i]!;

@@ -54,6 +54,16 @@ describe("benchmark comparisons", () => {
     expect(() => summarizeSweeps([[current], []], null)).toThrow("same workloads");
   });
 
+  test("rejects dropped workloads unless a filtered comparison was requested", () => {
+    const previous = baseline([
+      measurement("pcb.netlist.1000", 100),
+      measurement("cold-load", 100),
+    ]);
+    const subset = [[measurement("pcb.netlist.1000", 50)]];
+    expect(() => summarizeSweeps(subset, previous)).toThrow("all baseline workloads");
+    expect(summarizeSweeps(subset, previous, true)[0]?.passed).toBe(true);
+  });
+
   test("requires target gains while bounding guardrail regressions", () => {
     const previous = baseline([
       measurement("pcb.netlist.1000", 100),

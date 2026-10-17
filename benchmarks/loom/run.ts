@@ -99,7 +99,7 @@ try {
   await NodeFSP.rm(scratch, { recursive: true, force: true });
 }
 
-const measurements = summarizeSweeps(sweeps, baseline);
+const measurements = summarizeSweeps(sweeps, baseline, values.filter !== "");
 const report = {
   schemaVersion: 1 as const,
   metadata,

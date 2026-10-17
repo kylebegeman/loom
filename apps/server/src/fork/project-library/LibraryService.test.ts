@@ -226,6 +226,79 @@ describe("independent Library catalog and durable history", () => {
       }),
     ),
   );
+  it.effect("preserves history order and removes obsolete items across archive rewrites", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        const initial = yield* archiveFor(project);
+        const makeArchive = (count: number, sequence: number, token: string) => ({
+          ...initial,
+          summary: { ...initial.summary, workingCopyId: null, sequence },
+          projection: {
+            ...initial.projection,
+            visibleTurnItems: [],
+            turnItems: [],
+            messages: Array.from({ length: count }, (_, index) => ({
+              ...initial.projection.messages[0]!,
+              id: MessageId.make(`message-${index}`),
+              text: `${token} ${index}`,
+            })),
+          },
+        });
+        const original = makeArchive(600, 1, "uniqueobsolete");
+        yield* service.registerThread({ requestId: "rewrite-original", thread: original });
+        expect(
+          (yield* service.history({
+            id: original.summary.id,
+            offset: 240,
+            limit: 100,
+          })).projection.messages.map((message) => message.text),
+        ).toEqual(original.projection.messages.slice(260, 360).map((message) => message.text));
+
+        const appended = makeArchive(620, 2, "uniqueobsolete");
+        yield* service.registerThread({ requestId: "rewrite-append", thread: appended });
+        const appendedPage = yield* service.history({ id: appended.summary.id, limit: 100 });
+        expect(appendedPage.projection.messages.map((message) => message.text)).toEqual(
+          appended.projection.messages.slice(520).map((message) => message.text),
+        );
+        expect(appendedPage.window?.totalItems).toBe(620);
+
+        const rewritten = makeArchive(270, 3, "uniquereplacement");
+        yield* service.registerThread({ requestId: "rewrite-replacement", thread: rewritten });
+        const newest = yield* service.history({ id: rewritten.summary.id, limit: 100 });
+        expect(newest.projection.messages.map((message) => message.text)).toEqual(
+          rewritten.projection.messages.slice(170).map((message) => message.text),
+        );
+        expect(newest.window?.totalItems).toBe(270);
+        const oldest = yield* service.history({
+          id: rewritten.summary.id,
+          offset: 200,
+          limit: 100,
+        });
+        expect(oldest.projection.messages.map((message) => message.text)).toEqual(
+          rewritten.projection.messages.slice(0, 70).map((message) => message.text),
+        );
+        expect((yield* service.history({ id: rewritten.summary.id })).projection.messages).toEqual(
+          rewritten.projection.messages,
+        );
+        expect(
+          (yield* service.search({ query: "uniqueobsolete", limit: 20, semantic: false })).hits,
+        ).toEqual([]);
+        expect(
+          (yield* service.search({ query: "uniquereplacement", limit: 20, semantic: false })).hits,
+        ).toHaveLength(20);
+
+        const empty = makeArchive(0, 4, "empty");
+        yield* service.registerThread({ requestId: "rewrite-empty", thread: empty });
+        const page = yield* service.history({ id: empty.summary.id, limit: 100 });
+        expect(page.projection.messages).toEqual([]);
+        expect(page.window?.totalItems).toBe(0);
+        expect(
+          (yield* service.search({ query: "uniquereplacement", limit: 20, semantic: false })).hits,
+        ).toEqual([]);
+      }),
+    ),
+  );
   it.effect("pages compact conversation metadata across projects and rejects unbounded reads", () =>
     run((service) =>
       Effect.gen(function* () {

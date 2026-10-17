@@ -28,7 +28,9 @@ Use `--filter pcb.` or another ID prefix for a focused sweep. `--sweeps`, `--sam
 Run on the same machine/runtime under similar load, without concurrent tests, builds or
 performance runs. An incompatible CPU, Node version, OS or architecture is rejected.
 A new machine needs its own baseline. Timing assertions are opt-in; ordinary test runs skip
-the performance workload and still run the harness correctness tests.
+the performance workload and still run the harness correctness tests. The existing Loom
+maintenance checks discover these tests and include benchmark lint and typechecking; they
+do not enable timing gates.
 
 `--check` requires at least 20% lower median latency on each selected target present in the
 run, and allows no more than 15% median regression on other cases. A filtered run checks
