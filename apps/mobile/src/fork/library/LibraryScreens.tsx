@@ -180,7 +180,7 @@ export function LibraryRouteScreen() {
       <Text className="text-sm text-foreground-muted">
         Keep the context, repositories and conversations for each thing you’re building together.
       </Text>
-      <MaterialButton label="Sites and activity" onPress={() => navigation.navigate("Sites")} />
+      <Button label="Sites and activity" onPress={() => navigation.navigate("Sites")} />
       {!authority.environmentId ? (
         <View className="gap-3">
           <Text className="text-sm text-foreground">

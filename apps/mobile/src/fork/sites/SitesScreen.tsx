@@ -7,8 +7,8 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { SITES_FEATURE } from "@t3tools/contracts/fork";
-import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentServerConfig } from "../../state/entities";
@@ -45,12 +45,12 @@ export function SitesRouteScreen() {
         Your websites, their services, and the activity they receive.
       </Text>
       <View className="flex-row flex-wrap gap-2">
-        <MaterialButton
+        <Button
           label="Manage sites"
           tone="primary"
           onPress={() => open("https://api.begam.in/admin#/sites")}
         />
-        <MaterialButton
+        <Button
           label="Refresh"
           disabled={!authority.connected || !supported || query.isPending}
           onPress={() => {
@@ -61,7 +61,7 @@ export function SitesRouteScreen() {
       </View>
       {linkError ? <Text accessibilityRole="alert">{linkError}</Text> : null}
       {!authority.environmentId ? (
-        <MaterialButton
+        <Button
           label="Choose Library server"
           onPress={() => navigation.navigate("LibrarySettings")}
         />
@@ -91,7 +91,7 @@ export function SitesRouteScreen() {
           ) : null}
           <View className="flex-row flex-wrap gap-2">
             {snapshot.sites.map((site) => (
-              <MaterialButton
+              <Button
                 key={site.id}
                 label={`${site.name}${!site.active ? " (paused)" : ""}`}
                 tone={selected?.id === site.id ? "primary" : "secondary"}
@@ -102,7 +102,7 @@ export function SitesRouteScreen() {
           {selected ? (
             <View className="gap-5">
               <Text className="text-xl font-t3-semibold">{selected.name}</Text>
-              <MaterialButton label="Visit site" tone="text" onPress={() => open(selected.url)} />
+              <Button label="Visit site" tone="text" onPress={() => open(selected.url)} />
               <Text className="font-t3-semibold">Services and checks</Text>
               {selected.serviceIds.length === 0 ? (
                 <Text>
@@ -172,7 +172,7 @@ export function SitesRouteScreen() {
           ) : null}
         </>
       ) : null}
-      <MaterialButton
+      <Button
         label="Explore the personal API"
         tone="text"
         onPress={() => open("https://api.begam.in/v1/public/catalog")}
