@@ -10,7 +10,11 @@ import {
 import type { LibraryReplicationStatus, LibraryThreadSummary } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
-import { libraryArchiveRows, libraryHistoryFreshness } from "./libraryArchive";
+import {
+  libraryArchiveRowItemId,
+  libraryArchiveRows,
+  libraryHistoryFreshness,
+} from "./libraryArchive";
 const threadId = ThreadId.make("saved-thread"),
   timestamp = DateTime.makeUnsafe("2026-10-15T00:00:00Z");
 const base = (id: string, ordinal: number) => ({
@@ -106,6 +110,33 @@ describe("captured library history", () => {
     const activity = rows.find((row) => row.type === "activity");
     expect(activity?.activity.projectedItem.item).toMatchObject({ output: "2 tests passed" });
     expect(activity?.activity.fetchesDetail).toBe(false);
+    // History search names turn items, not the chat messages they carry.
+    expect(rows.map(libraryArchiveRowItemId)).toEqual(["user", "command", "answer"]);
+  });
+  it("names legacy message-only rows by their message, as history search does", () => {
+    const rows = libraryArchiveRows({
+      turnItems: [],
+      visibleTurnItems: [],
+      attempts: [],
+      nodes: [],
+      messages: [
+        {
+          id: MessageId.make("legacy"),
+          threadId,
+          runId: RunId.make("run"),
+          nodeId: null,
+          role: "user",
+          createdBy: "user",
+          creationSource: "mobile",
+          text: "Saved before turn items",
+          attachments: [],
+          streaming: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+    expect(rows.map(libraryArchiveRowItemId)).toEqual(["legacy"]);
   });
   it("uses per-thread receipts and keeps offline and pending uploads distinct", () => {
     expect(libraryHistoryFreshness(summary, false, status).state).toBe("offline");

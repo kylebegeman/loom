@@ -40,6 +40,24 @@ export function libraryArchiveRows(
   });
 }
 
+/**
+ * The saved history item a row shows, as history search names it: the turn item's id, or the
+ * message's own id in archives saved before turn items.
+ */
+export function libraryArchiveRowItemId(row: LibraryArchiveRow): string {
+  switch (row.type) {
+    case "message":
+      return row.message.projectedItem?.item.id ?? row.message.id;
+    case "activity":
+      return row.activity.projectedItem.item.id;
+    case "mcp-app":
+      return row.itemId;
+    case "html-render":
+      // The feed names a saved page `html-render:<visibility>:<thread>:<item>` and keeps no item.
+      return row.id.split(":").slice(3).join(":");
+  }
+}
+
 export function libraryHistoryFreshness(
   summary: LibraryThreadSummary,
   sourceConnected: boolean,

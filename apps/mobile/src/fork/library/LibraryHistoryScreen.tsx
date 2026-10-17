@@ -1,8 +1,11 @@
-import { LegendList } from "@legendapp/list/react-native";
+import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { shouldRefreshLibraryArchive } from "@t3tools/client-runtime/fork";
+import {
+  libraryHistoryOffsetForItem,
+  shouldRefreshLibraryArchive,
+} from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -11,41 +14,80 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { LibraryArchiveFeedRow } from "./LibraryArchiveFeed";
-import { libraryArchiveRows } from "./libraryArchive";
+import { libraryArchiveRowItemId, libraryArchiveRows } from "./libraryArchive";
 import { LibraryReplicationNotice } from "./LibraryReplicationNotice";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, useLibraryAuthority } from "./libraryState";
 
-export function LibraryHistoryRouteScreen({
-  route,
-}: StaticScreenProps<{ readonly projectId: string; readonly archiveId: string }>) {
+type LibraryHistoryParams = {
+  readonly projectId: string;
+  readonly archiveId: string;
+  /** A history search hit to open at: its item id and its position, oldest first. */
+  readonly item?: string;
+  readonly position?: string;
+};
+
+export function LibraryHistoryRouteScreen({ route }: StaticScreenProps<LibraryHistoryParams>) {
+  // Opening another hit, or another conversation, starts reading and seeking over.
+  return (
+    <LibraryHistoryContent
+      key={`${route.params.archiveId}:${route.params.item ?? ""}`}
+      params={route.params}
+    />
+  );
+}
+
+function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryParams }) {
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
     { environments } = useEnvironments();
+  const targetItem = params.item;
+  const targetPosition =
+    targetItem && params.position !== undefined ? Number(params.position) : undefined;
   const [historyOffset, setHistoryOffset] = useState(0);
   const [previousOffsets, setPreviousOffsets] = useState<readonly number[]>([]);
+  // Reads toward a search hit's page until it shows, or until reading further cannot find it.
+  const [seeking, setSeeking] = useState(targetPosition !== undefined);
   const query = useEnvironmentQuery(
     authority.environmentId
       ? library.history({
           environmentId: authority.environmentId,
-          input: { id: route.params.archiveId, offset: historyOffset, limit: 100 },
+          input: { id: params.archiveId, offset: historyOffset, limit: 100 },
         })
       : null,
   );
   const archive = query.data;
+  const historyWindow = archive?.window;
+  if (seeking && targetPosition !== undefined && historyWindow?.offset === historyOffset) {
+    const offset = libraryHistoryOffsetForItem(targetPosition, historyWindow);
+    if (offset === null) setSeeking(false);
+    else if (offset !== historyOffset) setHistoryOffset(offset);
+  }
   const threads = useEnvironmentQuery(
     authority.environmentId
       ? library.threads({
           environmentId: authority.environmentId,
-          input: { projectId: archive?.summary.projectId ?? route.params.projectId },
+          input: { projectId: archive?.summary.projectId ?? params.projectId },
         })
       : null,
   );
-  const listed = threads.data?.find((thread) => thread.id === route.params.archiveId);
+  const listed = threads.data?.find((thread) => thread.id === params.archiveId);
   const refreshSequence = shouldRefreshLibraryArchive(archive?.summary ?? null, listed)
-    ? `${authority.environmentId}:${route.params.archiveId}:${archive?.summary.sequence}:${listed?.sequence}`
+    ? `${authority.environmentId}:${params.archiveId}:${archive?.summary.sequence}:${listed?.sequence}`
     : null;
   const rows = useMemo(() => (archive ? libraryArchiveRows(archive.projection) : []), [archive]);
+  const matchedIndex = targetItem
+    ? rows.findIndex((row) => libraryArchiveRowItemId(row) === targetItem)
+    : -1;
+  const matchedRowId = matchedIndex >= 0 ? rows[matchedIndex]?.id : undefined;
+  const list = useRef<LegendListRef>(null);
+  const scrolledTo = useRef<string | null>(null);
+  // Brings the matched item into view once, without moving the page again as history refreshes.
+  useEffect(() => {
+    if (!matchedRowId || scrolledTo.current === matchedRowId) return;
+    scrolledTo.current = matchedRowId;
+    void list.current?.scrollToIndex({ index: matchedIndex, viewPosition: 0.5, animated: false });
+  }, [matchedRowId, matchedIndex]);
   const host = archive
     ? environments.find((env) => env.environmentId === archive.summary.environmentId)
     : undefined;
@@ -84,13 +126,23 @@ export function LibraryHistoryRouteScreen({
   return (
     <LibraryPage title={archive.summary.title} back scroll={false}>
       <LegendList
+        ref={list}
         className="flex-1"
         data={rows}
         keyExtractor={(row) => row.id}
         recycleItems={false}
-        renderItem={({ item }) => (
-          <LibraryArchiveFeedRow row={item} archive={archive} authorityEnvironmentId={target} />
-        )}
+        renderItem={({ item }) =>
+          item.id === matchedRowId ? (
+            <View
+              accessibilityHint="The message your search found"
+              className="-mx-2 rounded-xl bg-subtle px-2 py-1"
+            >
+              <LibraryArchiveFeedRow row={item} archive={archive} authorityEnvironmentId={target} />
+            </View>
+          ) : (
+            <LibraryArchiveFeedRow row={item} archive={archive} authorityEnvironmentId={target} />
+          )
+        }
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: 16, paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         ListFooterComponent={
@@ -101,6 +153,7 @@ export function LibraryHistoryRouteScreen({
                   label="Earlier history"
                   tone="secondary"
                   onPress={() => {
+                    setSeeking(false);
                     setPreviousOffsets((offsets) => [...offsets, historyOffset]);
                     setHistoryOffset(archive.window?.nextOffset ?? historyOffset + 100);
                   }}
@@ -111,6 +164,7 @@ export function LibraryHistoryRouteScreen({
                   label="Newer history"
                   tone="secondary"
                   onPress={() => {
+                    setSeeking(false);
                     setHistoryOffset(previousOffsets.at(-1) ?? 0);
                     setPreviousOffsets((offsets) => offsets.slice(0, -1));
                   }}
@@ -156,8 +210,8 @@ export function LibraryHistoryRouteScreen({
                 disabled={!authority.ready}
                 onPress={() =>
                   navigation.navigate("LibraryStart", {
-                    projectId: route.params.projectId,
-                    sourceArchiveId: route.params.archiveId,
+                    projectId: params.projectId,
+                    sourceArchiveId: params.archiveId,
                   })
                 }
               />
