@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Switch, View } from "react-native";
+import { ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { Sheet } from "../../components/ui/Sheet";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { library } from "../library/libraryState";
@@ -126,150 +127,154 @@ export function SiteEditor({
     }
   };
   return (
-    <View className="gap-4 rounded-xl bg-surface p-4">
-      <Text className="text-lg font-t3-semibold">
-        {row ? "Edit" : "Register"} {target.kind}
-      </Text>
-      <Text>Pause entries to preserve their identity and history.</Text>
-      <TextInput
-        accessibilityLabel="Name"
-        placeholder="Name"
-        maxLength={120}
-        editable={!busy}
-        value={name}
-        onChangeText={setName}
-      />
-      <TextInput
-        accessibilityLabel="Stable ID"
-        placeholder="stable-id"
-        maxLength={64}
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!row && !busy}
-        value={id}
-        onChangeText={setId}
-      />
-      <TextInput
-        accessibilityLabel={target.kind === "check" ? "Check URL" : "HTTPS origin"}
-        placeholder="https://example.com"
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!busy}
-        value={url}
-        onChangeText={setUrl}
-      />
-      {target.kind === "site" ? (
-        <>
-          <Text>Analytics origins, one per line, including the site's origin</Text>
+    <Sheet title={`${row ? "Edit" : "Register"} ${target.kind}`} onClose={onClose}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled">
+        <View className="gap-4 p-4">
+          <Text className="text-lg font-t3-semibold">
+            {row ? "Edit" : "Register"} {target.kind}
+          </Text>
+          <Text>Pause entries to preserve their identity and history.</Text>
           <TextInput
-            accessibilityLabel="Analytics origins"
-            multiline
+            accessibilityLabel="Name"
+            placeholder="Name"
+            maxLength={120}
+            editable={!busy}
+            value={name}
+            onChangeText={setName}
+          />
+          <TextInput
+            accessibilityLabel="Stable ID"
+            placeholder="stable-id"
+            maxLength={64}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!row && !busy}
+            value={id}
+            onChangeText={setId}
+          />
+          <TextInput
+            accessibilityLabel={target.kind === "check" ? "Check URL" : "HTTPS origin"}
+            placeholder="https://example.com"
             autoCapitalize="none"
             autoCorrect={false}
             editable={!busy}
-            value={origins}
-            onChangeText={setOrigins}
+            value={url}
+            onChangeText={setUrl}
           />
-          <Text className="font-t3-semibold">Projects (at least one)</Text>
-          {catalog.isPending ? <Text>Loading projects…</Text> : null}
-          {catalog.error ? <Text accessibilityRole="alert">{catalog.error}</Text> : null}
-          {catalog.data?.map((project) => (
-            <Button
-              key={project.id}
-              label={`${projectIds.includes(project.id) ? "Selected: " : ""}${project.title}${project.archived ? " (archived)" : ""}`}
-              disabled={busy}
-              tone={projectIds.includes(project.id) ? "primary" : "secondary"}
-              onPress={() => setProjects(toggle(projectIds, project.id))}
-            />
-          ))}
-          {!catalog.isPending && !catalog.data?.length ? (
-            <Text>Create a project in Projects before registering a site.</Text>
-          ) : null}
-          {projectIds
-            .filter((id) => !catalog.data?.some((p) => p.id === id))
-            .map((id) => (
-              <Button
-                key={id}
-                label={`Remove unavailable project: ${id}`}
-                disabled={busy}
-                onPress={() => setProjects(toggle(projectIds, id))}
+          {target.kind === "site" ? (
+            <>
+              <Text>Analytics origins, one per line, including the site's origin</Text>
+              <TextInput
+                accessibilityLabel="Analytics origins"
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!busy}
+                value={origins}
+                onChangeText={setOrigins}
               />
-            ))}
-          <Text className="font-t3-semibold">Services this site uses</Text>
-          {snapshot.services.map((service) => (
-            <Button
-              key={service.id}
-              label={`${serviceIds.includes(service.id) ? "Selected: " : ""}${service.name}`}
+              <Text className="font-t3-semibold">Projects (at least one)</Text>
+              {catalog.isPending ? <Text>Loading projects…</Text> : null}
+              {catalog.error ? <Text accessibilityRole="alert">{catalog.error}</Text> : null}
+              {catalog.data?.map((project) => (
+                <Button
+                  key={project.id}
+                  label={`${projectIds.includes(project.id) ? "Selected: " : ""}${project.title}${project.archived ? " (archived)" : ""}`}
+                  disabled={busy}
+                  tone={projectIds.includes(project.id) ? "primary" : "secondary"}
+                  onPress={() => setProjects(toggle(projectIds, project.id))}
+                />
+              ))}
+              {!catalog.isPending && !catalog.data?.length ? (
+                <Text>Create a project in Projects before registering a site.</Text>
+              ) : null}
+              {projectIds
+                .filter((id) => !catalog.data?.some((p) => p.id === id))
+                .map((id) => (
+                  <Button
+                    key={id}
+                    label={`Remove unavailable project: ${id}`}
+                    disabled={busy}
+                    onPress={() => setProjects(toggle(projectIds, id))}
+                  />
+                ))}
+              <Text className="font-t3-semibold">Services this site uses</Text>
+              {snapshot.services.map((service) => (
+                <Button
+                  key={service.id}
+                  label={`${serviceIds.includes(service.id) ? "Selected: " : ""}${service.name}`}
+                  disabled={busy}
+                  tone={serviceIds.includes(service.id) ? "primary" : "secondary"}
+                  onPress={() => setServices(toggle(serviceIds, service.id))}
+                />
+              ))}
+            </>
+          ) : target.kind === "service" ? (
+            <View className="flex-row flex-wrap gap-2">
+              {(["website", "api", "redirect"] as const).map((value) => (
+                <Button
+                  key={value}
+                  label={value}
+                  disabled={busy}
+                  tone={kind === value ? "primary" : "secondary"}
+                  onPress={() => setKind(value)}
+                />
+              ))}
+            </View>
+          ) : (
+            <>
+              <Text className="font-t3-semibold">Service</Text>
+              {snapshot.services.map((service) => (
+                <Button
+                  key={service.id}
+                  label={service.name}
+                  disabled={busy}
+                  tone={serviceId === service.id ? "primary" : "secondary"}
+                  onPress={() => setServiceId(service.id)}
+                />
+              ))}
+              <TextInput
+                accessibilityLabel="Expected HTTP status"
+                placeholder="200"
+                keyboardType="number-pad"
+                editable={!busy}
+                value={status}
+                onChangeText={setStatus}
+              />
+              <TextInput
+                accessibilityLabel="Expected response text (optional)"
+                placeholder="Expected response text (optional)"
+                maxLength={120}
+                editable={!busy}
+                value={content}
+                onChangeText={setContent}
+              />
+              <Text>The URL must use the service's origin. Redirects are not followed.</Text>
+            </>
+          )}
+          <View className="flex-row items-center justify-between">
+            <Text>Active</Text>
+            <Switch
+              accessibilityLabel="Active"
+              value={active}
               disabled={busy}
-              tone={serviceIds.includes(service.id) ? "primary" : "secondary"}
-              onPress={() => setServices(toggle(serviceIds, service.id))}
+              onValueChange={setActive}
             />
-          ))}
-        </>
-      ) : target.kind === "service" ? (
-        <View className="flex-row flex-wrap gap-2">
-          {(["website", "api", "redirect"] as const).map((value) => (
+          </View>
+          {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+          <View className="flex-row flex-wrap gap-2">
+            <Button label="Cancel" disabled={busy} onPress={onClose} />
             <Button
-              key={value}
-              label={value}
-              disabled={busy}
-              tone={kind === value ? "primary" : "secondary"}
-              onPress={() => setKind(value)}
+              label={busy ? "Saving…" : "Save changes"}
+              tone="primary"
+              disabled={
+                busy || !connected || !allowed || (target.kind === "site" && !projectIds.length)
+              }
+              onPress={() => void submit()}
             />
-          ))}
+          </View>
         </View>
-      ) : (
-        <>
-          <Text className="font-t3-semibold">Service</Text>
-          {snapshot.services.map((service) => (
-            <Button
-              key={service.id}
-              label={service.name}
-              disabled={busy}
-              tone={serviceId === service.id ? "primary" : "secondary"}
-              onPress={() => setServiceId(service.id)}
-            />
-          ))}
-          <TextInput
-            accessibilityLabel="Expected HTTP status"
-            placeholder="200"
-            keyboardType="number-pad"
-            editable={!busy}
-            value={status}
-            onChangeText={setStatus}
-          />
-          <TextInput
-            accessibilityLabel="Expected response text (optional)"
-            placeholder="Expected response text (optional)"
-            maxLength={120}
-            editable={!busy}
-            value={content}
-            onChangeText={setContent}
-          />
-          <Text>The URL must use the service's origin. Redirects are not followed.</Text>
-        </>
-      )}
-      <View className="flex-row items-center justify-between">
-        <Text>Active</Text>
-        <Switch
-          accessibilityLabel="Active"
-          value={active}
-          disabled={busy}
-          onValueChange={setActive}
-        />
-      </View>
-      {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-      <View className="flex-row flex-wrap gap-2">
-        <Button label="Cancel" disabled={busy} onPress={onClose} />
-        <Button
-          label={busy ? "Saving…" : "Save changes"}
-          tone="primary"
-          disabled={
-            busy || !connected || !allowed || (target.kind === "site" && !projectIds.length)
-          }
-          onPress={() => void submit()}
-        />
-      </View>
-    </View>
+      </ScrollView>
+    </Sheet>
   );
 }
