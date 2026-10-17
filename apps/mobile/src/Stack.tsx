@@ -14,6 +14,7 @@ import { LibrarySearchRouteScreen } from "./fork/library/LibraryHistorySearch";
 import { LibraryTimelineRouteScreen } from "./fork/library/LibraryTimeline";
 import { LibraryIdentityRouteScreen } from "./fork/library/LibraryIdentityScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
+import { LibraryTidyRouteScreen } from "./fork/library/LibraryTidy";
 import { APP_LINKING_CONFIG } from "./lib/appLinking"; // fork: project-navigation
 // fork: project-home - A durable project overview is a normal workspace route.
 import { ProjectHomeRouteScreen } from "./fork/project-home/ProjectHomeRouteScreen";
@@ -742,6 +743,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibraryStart: createNativeStackScreen({
       screen: LibraryStartRouteScreen,
       linking: "library/projects/:projectId/new-conversation",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryTidy: createNativeStackScreen({
+      screen: LibraryTidyRouteScreen,
+      linking: "library/projects/:projectId/tidy",
       options: SOLID_HEADER_OPTIONS,
     }),
     LibraryHistory: createNativeStackScreen({

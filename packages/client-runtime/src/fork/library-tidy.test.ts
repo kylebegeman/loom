@@ -6,8 +6,10 @@ import type {
   LibraryRepositoryHealth,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import type { ProjectEntry } from "./library-project-list.ts";
 import {
+  libraryCopyRemovalPermission,
   libraryTidyReasonLabel,
   libraryTidySuggestions,
   runLibraryTidy,
@@ -81,6 +83,7 @@ const entry = (copies: readonly LibraryWorkingCopy[], patch: Partial<ProjectEntr
     ...patch,
   }) satisfies ProjectEntry;
 const online = () => true;
+const removable = () => true;
 
 describe("libraryTidySuggestions", () => {
   const clean = copy({ id: "clean" });
@@ -163,6 +166,7 @@ describe("libraryTidySuggestions", () => {
       entry: entry([target]),
       health: read ? [read] : [],
       connected: () => connected,
+      canRemove: removable,
       now,
     });
     if (reasons.length) {
@@ -181,16 +185,45 @@ describe("libraryTidySuggestions", () => {
       entry: entry([clean, dirty, released, second]),
       health: [health(second), health(dirty, [repository({ uncommittedFiles: 1 })]), health(clean)],
       connected: online,
+      canRemove: removable,
       now,
     });
     expect(result.safe.map((entry) => entry.id)).toEqual(["clean", "second"]);
     expect(result.attention.map((entry) => entry.copy.id)).toEqual(["dirty"]);
   });
 
+  it("never offers a copy this client may not remove on its computer", () => {
+    const result = libraryTidySuggestions({
+      entry: entry([clean, away]),
+      health: [health(clean), health(away)],
+      connected: online,
+      canRemove: (target) => target.environmentId !== nora,
+      now,
+    });
+    expect(result.safe).toEqual([clean]);
+    expect(result.attention).toEqual([{ copy: away, reasons: [{ kind: "no-permission" }] }]);
+  });
+
+  it("reports an offline computer before a missing permission", () => {
+    const result = libraryTidySuggestions({
+      entry: entry([away]),
+      health: [],
+      connected: () => false,
+      canRemove: () => false,
+      now,
+    });
+    expect(result.attention).toEqual([{ copy: away, reasons: [{ kind: "offline" }] }]);
+  });
+
   it("suggests archiving only a current project that is resting", () => {
     const suggest = (patch: Partial<ProjectEntry>) =>
-      libraryTidySuggestions({ entry: entry([], patch), health: [], connected: online, now })
-        .suggestArchive;
+      libraryTidySuggestions({
+        entry: entry([], patch),
+        health: [],
+        connected: online,
+        canRemove: removable,
+        now,
+      }).suggestArchive;
     expect(suggest({})).toBe(true);
     expect(suggest({ activeAt: checkedAt })).toBe(false);
     expect(suggest({ project: { ...entry([]).project, archived: true } })).toBe(false);
@@ -200,6 +233,24 @@ describe("libraryTidySuggestions", () => {
     expect(libraryTidyReasonLabel({ kind: "uncommitted", files: 1 })).toBe("1 uncommitted file");
     expect(libraryTidyReasonLabel({ kind: "unpushed", commits: 3 })).toBe("3 unpushed commits");
     expect(libraryTidyReasonLabel({ kind: "offline" })).toBe("Computer offline");
+  });
+});
+
+describe("libraryCopyRemovalPermission", () => {
+  it("reads each copy's own computer for the command its ownership needs", () => {
+    const grantedOn = (granted: EnvironmentId) => ({
+      permissionAtom: (id: EnvironmentId) => Atom.make(id === granted),
+    });
+    const canRemove = AtomRegistry.make().get(
+      libraryCopyRemovalPermission(
+        { releaseCopy: grantedOn(dorothy), unregisterCopy: grantedOn(nora) },
+        [dorothy, nora],
+      ),
+    );
+    expect(canRemove(copy({ environmentId: dorothy }))).toBe(true);
+    expect(canRemove(copy({ environmentId: dorothy, ownership: "borrowed" }))).toBe(false);
+    expect(canRemove(copy({ environmentId: nora, ownership: "borrowed" }))).toBe(true);
+    expect(canRemove(copy({ environmentId: nora }))).toBe(false);
   });
 });
 
@@ -217,6 +268,7 @@ describe("runLibraryTidy", () => {
     const calls: string[] = [];
     return {
       calls,
+      canRemove: removable,
       readStatus: async (target: LibraryWorkingCopy) => {
         calls.push(`status:${target.id}`);
         const result = statuses[target.id];
@@ -327,6 +379,30 @@ describe("runLibraryTidy", () => {
       { copy: fine, outcome: "released" },
     ]);
     expect(result.archive).toEqual({ ok: true });
+  });
+
+  it("keeps a copy whose removal permission is missing on its computer", async () => {
+    const managed = copy({ id: "managed" });
+    const borrowed = copy({ id: "borrowed", ownership: "borrowed" });
+    const run = harness({ managed: status(managed), borrowed: status(borrowed) });
+    const result = await runLibraryTidy({
+      ...run,
+      copies: [managed, borrowed],
+      archive: false,
+      connected: online,
+      // Only unregistering is granted, so the managed copy cannot be released.
+      canRemove: (target) => target.ownership === "borrowed",
+    });
+    expect(run.calls).toEqual([
+      "status:managed",
+      "status:borrowed",
+      "remove:borrowed:token:borrowed",
+      "register:borrowed:released",
+    ]);
+    expect(result.copies).toEqual([
+      { copy: managed, outcome: "kept", reasons: [{ kind: "no-permission" }] },
+      { copy: borrowed, outcome: "released" },
+    ]);
   });
 
   it("records an already released copy without releasing it again", async () => {
