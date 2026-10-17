@@ -68,7 +68,8 @@ revision, dirty paths and timestamps. New runs also capture host load and free m
 around each measured case, so unrelated contention can be distinguished from code regressions.
 CPU time and heap/RSS deltas are advisory observations.
 Heap/RSS deltas are affected by GC, fixtures and process reuse; they are not allocation counts
-or peak-memory measurements and are not acceptance gates.
+or peak-memory measurements and are not acceptance gates. On macOS, raw free memory also
+excludes reclaimable memory; use `memory_pressure -Q` when checking memory pressure.
 
 ## Baseline and repetition
 
@@ -87,6 +88,36 @@ These are component/service CPU baselines, not client frame-time, GPU or end-to-
 measurements. Backend improvements apply to callers through the same service, including web,
 desktop, mobile and agent tools where that feature is available. Web geometry/drawing changes
 apply to the shared web/desktop implementation. No client layout or wire contract changes.
+
+## Recorded comparison
+
+Measured on the same Apple M5 Pro / Node 24.21.0 host with three fresh-process sweeps
+before changes and three final sweeps after host contention subsided. Values are milliseconds
+per operation, using the median of sweep medians. These synthetic component measurements do
+not establish end-to-end application latency. System load and garbage collection affect exact
+percentages; unchanged parse throughput is a guardrail, not a direct optimization claim.
+
+| Workload                              | Baseline median | Final median | Reduction |
+| ------------------------------------- | --------------: | -----------: | --------: |
+| PCB merge, 1,000 components           |         133.905 |       22.447 |     83.2% |
+| PCB drawing, dense 1,024² image       |          43.768 |        4.008 |     90.8% |
+| 3D snapping, 4,096 spokes             |          75.840 |        3.275 |     95.7% |
+| Print-check grid, 49,152 triangles    |          23.806 |        1.729 |     92.7% |
+| Code map broad search, 100k nodes     |         118.181 |        5.814 |     95.1% |
+| Code map cold summary, 100k nodes     |          71.353 |       18.931 |     73.5% |
+| Code map repeated summary, 100k nodes |          69.929 |       <0.001 |    >99.9% |
+| Library history, two 8,000-item saves |         266.063 |      143.327 |     46.1% |
+
+All seven target cases exceeded the 20% reduction goal. All 21 workload fingerprints match
+the baseline, and no ordinary/cold workload exceeded the 15% regression allowance. Raw
+latency samples and per-sweep medians are retained in local JSON reports. Compact baseline
+and final records, including p95 and source revisions, are checked in under
+[results](./results/). The final record is [after.json](./results/after.json).
+
+Focused PCB, geometry, Code map, Library, harness and maintenance regression suites passed.
+Web, server and benchmark typechecks and targeted strict lint passed. One optional real-model
+embedding test was skipped because its model fixture was not configured. Browser/GPU/frame-time
+verification was outside this component-benchmark pass.
 
 ## Further opportunities
 
