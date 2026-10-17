@@ -93,7 +93,7 @@ export function LibrarySearchRouteScreen({
   const typed = librarySearchRequest(text, scope);
   const request = typed ? librarySearchRequest(sent, scope) : null;
   return (
-    <LibraryPage title={title} back keyboardResults>
+    <LibraryPage title={title} back>
       <View className="gap-4">
         <TextInput
           accessibilityLabel={

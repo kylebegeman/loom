@@ -12,6 +12,7 @@ import {
 import { LibraryHistoryRouteScreen } from "./fork/library/LibraryHistoryScreen";
 import { LibrarySearchRouteScreen } from "./fork/library/LibraryHistorySearch";
 import { LibraryTimelineRouteScreen } from "./fork/library/LibraryTimeline";
+import { LibraryBriefReviewRouteScreen } from "./fork/library/LibraryBriefProposals";
 import { LibraryIdentityRouteScreen } from "./fork/library/LibraryIdentityScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
 import { LibraryTidyRouteScreen } from "./fork/library/LibraryTidy";
@@ -763,6 +764,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibrarySearch: createNativeStackScreen({
       screen: LibrarySearchRouteScreen,
       linking: "library/search",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryBriefReview: createNativeStackScreen({
+      screen: LibraryBriefReviewRouteScreen,
+      linking: "library/projects/:projectId/brief-suggestions",
       options: SOLID_HEADER_OPTIONS,
     }),
     ...(__DEV__

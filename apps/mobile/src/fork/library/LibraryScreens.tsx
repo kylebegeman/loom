@@ -52,6 +52,7 @@ import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libr
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryRestingProjects } from "./LibraryTidy";
 import { LibraryProjectTile } from "./libraryProjectColors";
+import { LibraryBriefProposalsRow } from "./LibraryBriefProposalsRow";
 import { LibraryHistorySearchEntry } from "./LibraryHistorySearch";
 import { LibraryTimelinePreview } from "./LibraryTimeline";
 
@@ -64,8 +65,6 @@ export function LibraryPage(props: {
   children: ReactNode;
   back?: boolean;
   scroll?: boolean;
-  /** For a page whose results scroll beneath an open keyboard, such as a search. */
-  keyboardResults?: boolean;
   actions?: Parameters<typeof AppBar>[0]["actions"];
 }) {
   const navigation = useNavigation();
@@ -96,10 +95,8 @@ export function LibraryPage(props: {
         <ScreenScrollView
           className="flex-1"
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={props.keyboardResults ? "on-drag" : "none"}
-          automaticallyAdjustKeyboardInsets={
-            props.keyboardResults === true && Platform.OS === "ios"
-          }
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{
             padding: 16,
@@ -569,6 +566,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
               "Every conversation in this project starts with the brief. Say what you're building and what matters."}
           </Text>
         </View>
+        <LibraryBriefProposalsRow project={p} authorityId={target} hostLabel={hostLabel} />
       </SettingsSection>
       <ProjectSites environmentId={target} projectId={p.id} />
       <SettingsSection title="Repositories and links">

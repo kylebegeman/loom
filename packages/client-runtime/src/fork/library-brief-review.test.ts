@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { LibraryBriefProposal, LibraryProject } from "@t3tools/contracts/fork";
 import {
   libraryBriefAcceptance,
+  libraryBriefProposalAfterDecision,
+  libraryBriefProposalSelection,
+  libraryBriefProposalSourceLabel,
   libraryBriefReview,
   libraryBriefSuggestionAvailability,
 } from "./library-brief-review.ts";
@@ -124,5 +128,73 @@ describe("libraryBriefSuggestionAvailability", () => {
     expect(libraryBriefSuggestionAvailability({ ...ready, canSend: false })).toMatchObject({
       kind: "disabled",
     });
+  });
+});
+
+describe("libraryBriefProposalSourceLabel", () => {
+  it("names the computer a conversation ran on, an agent's label, or a person", () => {
+    const hostLabel = (id: EnvironmentId) => (id === "studio" ? "Studio" : "Saved computer");
+    const from = (source: LibraryBriefProposal["source"]) =>
+      libraryBriefProposalSourceLabel({ ...proposal, source }, hostLabel);
+    expect(
+      from({
+        kind: "conversation",
+        environmentId: EnvironmentId.make("studio"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    ).toBe("From a conversation on Studio");
+    expect(from({ kind: "agent", id: "agent-1", label: "Release agent" })).toBe(
+      "From Release agent",
+    );
+    expect(from({ kind: "user" })).toBe("From a person");
+  });
+});
+
+describe("libraryBriefProposalSelection", () => {
+  const [a, b, c] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("shows the newest suggestion until one is picked", () => {
+    expect(libraryBriefProposalSelection([a, b], null)).toEqual({
+      index: 0,
+      proposal: a,
+      missing: false,
+    });
+  });
+
+  it("stays on the picked suggestion when a newer one arrives in front", () => {
+    expect(libraryBriefProposalSelection([c, a, b], { id: "b", index: 1 })).toEqual({
+      index: 2,
+      proposal: b,
+      missing: false,
+    });
+  });
+
+  it("says the picked suggestion is gone instead of showing another in its place", () => {
+    expect(libraryBriefProposalSelection([a, c], { id: "b", index: 1 })).toEqual({
+      index: 1,
+      proposal: undefined,
+      missing: true,
+    });
+    expect(libraryBriefProposalSelection([a], { id: "b", index: 1 })).toMatchObject({
+      index: 0,
+      missing: true,
+    });
+    expect(libraryBriefProposalSelection([], { id: "b", index: 1 })).toMatchObject({
+      index: 0,
+      missing: true,
+    });
+  });
+});
+
+describe("libraryBriefProposalAfterDecision", () => {
+  const [a, b, c] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("moves on to the suggestion that takes the decided one's place", () => {
+    expect(libraryBriefProposalAfterDecision([a, b, c], "b", 1)).toEqual({ id: "c", index: 1 });
+    expect(libraryBriefProposalAfterDecision([a, b, c], "c", 2)).toEqual({ id: "b", index: 1 });
+  });
+
+  it("goes nowhere once the last suggestion is decided", () => {
+    expect(libraryBriefProposalAfterDecision([a], "a", 0)).toBeNull();
   });
 });

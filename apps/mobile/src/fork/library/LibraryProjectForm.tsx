@@ -20,6 +20,7 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryProfileSection } from "./LibraryProfileSection";
+import { LibraryBriefSuggestionsSetting } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
@@ -276,6 +277,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
             value={brief}
             onChangeText={setBrief}
             multiline
+            textAlignVertical="top"
             maxLength={65536}
             editable={!pending && !awaitingResult}
             className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"
@@ -394,6 +396,17 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           copies={libraryActiveCopies(copies.data ?? [])}
           computers={authority.computers}
           hostLabel={hostLabel}
+          disabled={pending || awaitingResult}
+        />
+      ) : null}
+      {editsProfile ? (
+        <LibraryBriefSuggestionsSetting
+          authorityId={authority.environmentId}
+          mode={profile.briefSuggestions}
+          onChange={(briefSuggestions) => {
+            setError(null);
+            setProfile((current) => ({ ...current, briefSuggestions }));
+          }}
           disabled={pending || awaitingResult}
         />
       ) : null}

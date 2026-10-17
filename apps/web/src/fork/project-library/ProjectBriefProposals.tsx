@@ -5,8 +5,12 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryBriefProposal, LibraryProject } from "@t3tools/contracts/fork";
 import {
   libraryBriefAcceptance,
+  libraryBriefProposalAfterDecision,
+  libraryBriefProposalSelection,
+  libraryBriefProposalSourceLabel,
   libraryBriefReview,
   libraryBriefSuggestionsLabel,
+  type LibraryBriefProposalPick,
 } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
@@ -60,17 +64,31 @@ export function ProjectBriefProposals({
       input: { projectId: project.id, status: "pending", limit: PENDING_LIMIT },
     }),
   );
-  const proposals = query.data?.proposals ?? [];
   const [open, setOpen] = useState(false);
-  const [index, setIndex] = useState(0);
+  const [pick, setPick] = useState<LibraryBriefProposalPick | null>(null);
+  // Decided here, so they leave the count and Previous/Next at once instead of when the refreshed
+  // list lands.
+  const [decided, setDecided] = useState<ReadonlySet<string>>(() => new Set());
+  const proposals = (query.data?.proposals ?? []).filter((entry) => !decided.has(entry.id));
   if (!proposals.length) return null;
-  const shown = Math.min(index, proposals.length - 1);
-  const proposal = proposals[shown]!;
+  const { index: shown, proposal, missing } = libraryBriefProposalSelection(proposals, pick);
+  const show = (index: number) => {
+    const next = proposals[index];
+    if (next) setPick({ id: next.id, index });
+  };
   return (
     <>
       <Badge
         variant="info"
-        render={<button type="button" onClick={() => setOpen(true)} />}
+        render={
+          <button
+            type="button"
+            onClick={() => {
+              show(0);
+              setOpen(true);
+            }}
+          />
+        }
         aria-haspopup="dialog"
       >
         {libraryBriefSuggestionsLabel(proposals.length)}
@@ -84,22 +102,38 @@ export function ProjectBriefProposals({
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <BriefProposalReview
-              key={proposal.id}
-              proposal={proposal}
-              project={project}
-              authorityId={authorityId}
-              connected={connected}
-              hostLabel={hostLabel}
-              onDecided={() => {
-                query.refresh();
-                onDecided();
-                if (proposals.length === 1) setOpen(false);
-              }}
-            />
+            {proposal ? (
+              <BriefProposalReview
+                key={proposal.id}
+                proposal={proposal}
+                project={project}
+                authorityId={authorityId}
+                connected={connected}
+                hostLabel={hostLabel}
+                onDecided={() => {
+                  const next = libraryBriefProposalAfterDecision(proposals, proposal.id, shown);
+                  query.refresh();
+                  onDecided();
+                  if (next) {
+                    setDecided((ids) => new Set(ids).add(proposal.id));
+                    setPick(next);
+                  } else {
+                    // The last one closes with the dialog, so it stays on screen until it is gone.
+                    setOpen(false);
+                  }
+                }}
+              />
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p role="status">That suggestion was replaced or decided somewhere else.</p>
+                <Button size="sm" variant="outline" onClick={() => show(shown)}>
+                  Review the next suggestion
+                </Button>
+              </div>
+            )}
           </DialogPanel>
           <DialogFooter variant="bare">
-            {proposals.length > 1 ? (
+            {proposals.length > 1 && !missing ? (
               <>
                 <span className="me-auto text-xs tabular-nums text-muted-foreground">
                   {shown + 1} of {proposals.length}
@@ -108,7 +142,7 @@ export function ProjectBriefProposals({
                   size="sm"
                   variant="ghost"
                   disabled={shown === 0}
-                  onClick={() => setIndex(shown - 1)}
+                  onClick={() => show(shown - 1)}
                 >
                   Previous
                 </Button>
@@ -116,7 +150,7 @@ export function ProjectBriefProposals({
                   size="sm"
                   variant="ghost"
                   disabled={shown === proposals.length - 1}
-                  onClick={() => setIndex(shown + 1)}
+                  onClick={() => show(shown + 1)}
                 >
                   Next
                 </Button>
@@ -229,7 +263,8 @@ function BriefProposalReview({
       <div className="space-y-1">
         <p className="whitespace-pre-wrap">{proposal.summary}</p>
         <p className="text-xs text-muted-foreground">
-          {sourceLabel(proposal, hostLabel)} · {formatRelativeTimeLabel(proposal.createdAt)}
+          {libraryBriefProposalSourceLabel(proposal, hostLabel)} ·{" "}
+          {formatRelativeTimeLabel(proposal.createdAt)}
         </p>
       </div>
       {review.stale ? (
@@ -339,15 +374,4 @@ function BriefProposalReview({
       )}
     </div>
   );
-}
-
-function sourceLabel(proposal: LibraryBriefProposal, hostLabel: (id: EnvironmentId) => string) {
-  switch (proposal.source.kind) {
-    case "conversation":
-      return `From a conversation on ${hostLabel(proposal.source.environmentId)}`;
-    case "agent":
-      return `From ${proposal.source.label}`;
-    case "user":
-      return "From a person";
-  }
 }

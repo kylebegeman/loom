@@ -17,6 +17,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { LibraryArchiveFeedRow } from "./LibraryArchiveFeed";
 import { libraryArchiveRowItemId, libraryArchiveRows } from "./libraryArchive";
 import { LibraryReplicationNotice } from "./LibraryReplicationNotice";
+import { LibraryBriefSuggestionOffer, LibrarySuggestBriefUpdates } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, useLibraryAuthority } from "./libraryState";
 
@@ -149,6 +150,11 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
       </LibraryPage>
     );
   const target = authority.environmentId;
+  const hostLabel =
+    host?.label ??
+    authority.computers.find((entry) => entry.environmentId === archive.summary.environmentId)
+      ?.label ??
+    "the original computer";
   return (
     <LibraryPage title={archive.summary.title} back scroll={false}>
       <LegendList
@@ -207,13 +213,8 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
         ListHeaderComponent={
           <View className="gap-4 pb-4">
             <Text className="text-sm text-foreground-muted">
-              Saved history from{" "}
-              {host?.label ??
-                authority.computers.find(
-                  (entry) => entry.environmentId === archive.summary.environmentId,
-                )?.label ??
-                "the original computer"}
-              . Last uploaded {new Date(archive.summary.syncedAt).toLocaleString()}.
+              Saved history from {hostLabel}. Last uploaded{" "}
+              {new Date(archive.summary.syncedAt).toLocaleString()}.
             </Text>
             <LibraryReplicationNotice
               summary={archive.summary}
@@ -247,6 +248,17 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
                 }
               />
             </View>
+            <LibrarySuggestBriefUpdates
+              summary={archive.summary}
+              authorityId={target}
+              hostLabel={hostLabel}
+              hostConnected={connected}
+            />
+            <LibraryBriefSuggestionOffer
+              environmentId={archive.summary.environmentId}
+              threadId={archive.summary.threadId}
+              connected={connected}
+            />
             {query.error ? <LibraryNotice error={query.error} onRetry={query.refresh} /> : null}
           </View>
         }
