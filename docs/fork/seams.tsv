@@ -180,7 +180,7 @@ apps/server/src/storageCleanupScheduling.test.ts	project-checkout-management	1
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-checkout-management	2
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-checkout-management	2
 apps/web/src/components/settings/StorageSettings.tsx	project-checkout-management	5
-apps/web/src/components/Sidebar.tsx	project-navigation	13
+apps/web/src/components/Sidebar.tsx	project-navigation	2
 apps/mobile/src/features/home/HomeScreen.tsx	project-navigation	24
 apps/mobile/src/features/home/ThreadListFilters.tsx	project-navigation	1
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	project-navigation	16
@@ -309,3 +309,7 @@ scripts/setup-worktree.ts	dev-db	1
 scripts/setup-worktree.ts	setup-reuse	4
 scripts/smoke-cli-archive.ts	smoke-port-race	3
 apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1
+
+apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	1
+apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	1
+apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
