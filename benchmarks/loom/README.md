@@ -38,7 +38,8 @@ may have experienced different host load or garbage collection.
 `node_modules/.bin/vp` is resolved locally by the runner. No global installation is needed.
 The default is three sequential sweeps in fresh Vitest processes. Warmup runs at least five
 calls, aims for 100 ms, and stops after 10,001 calls for very fast cases. Sampling then runs
-at least 21 individually timed operations and 250 ms per case. Very fast workloads stop after 20,000 samples. Fixtures, assertions,
+at least 21 individually timed operations and 250 ms per case. Very fast workloads stop after
+20,000 samples. Fixtures, assertions,
 output hashing and database setup are outside the timed region. Async operations are awaited.
 The timer includes await overhead and garbage collection, consistently before and after.
 
@@ -93,9 +94,12 @@ excludes reclaimable memory; use `memory_pressure -Q` when checking memory press
 ## Baseline and repetition
 
 [results/baseline.json](./results/baseline.json) preserves the initial compact baseline and
-its source revision. Local `.t3/benchmarks/*.json` reports retain raw samples. The compact
-baseline is machine-specific; its measurements can be compared directly only on matching
-hardware/runtime. The final compact comparison is saved alongside it.
+its source revision as historical evidence. The accepted controlled comparison uses the fresh
+[original-source reference](./results/after.reference.json) and
+[optimized-source results](./results/after.json) from the same five-pair run. These compact
+records retain provenance, run order and sweep medians; local `.t3/benchmarks/*.json` reports
+also retain raw samples and per-case host observations. Baselines are machine-specific and
+can be compared directly only on matching hardware/runtime.
 
 For each sweep: identify the dominant measured cost, change one algorithm per target, run
 its behavioral regressions, then repeat the same cases. Revert or revise a change if its
@@ -110,28 +114,39 @@ apply to the shared web/desktop implementation. No client layout or wire contrac
 
 ## Recorded comparison
 
-Measured on the same Apple M5 Pro / Node 24.21.0 host with three fresh-process sweeps
-before changes and three final sweeps after host contention subsided. Values are milliseconds
-per operation, using the median of sweep medians. These synthetic component measurements do
-not establish end-to-end application latency. System load and garbage collection affect exact
-percentages; unchanged parse throughput is a guardrail, not a direct optimization claim.
+Measured on 2026-10-17 on an Apple M5 Pro / Node 24.21.0 host using five original/current
+pairs in fresh processes, with alternating run order. The original six target modules were
+loaded from `d22797d754`; the optimized source and harness were measured at `d9e6dbea03`.
+The checkout was clean. Host load ranged from 12.4 to 20.7 at sweep boundaries after falling
+from about 96 earlier in the session. Paired gates and controls help expose drift, while
+host activity and garbage collection still affect exact percentages.
 
-| Workload                              | Baseline median | Final median | Reduction |
-| ------------------------------------- | --------------: | -----------: | --------: |
-| PCB merge, 1,000 components           |         133.905 |       22.447 |     83.2% |
-| PCB drawing, dense 1,024² image       |          43.768 |        4.008 |     90.8% |
-| 3D snapping, 4,096 spokes             |          75.840 |        3.275 |     95.7% |
-| Print-check grid, 49,152 triangles    |          23.806 |        1.729 |     92.7% |
-| Code map broad search, 100k nodes     |         118.181 |        5.814 |     95.1% |
-| Code map cold summary, 100k nodes     |          71.353 |       18.931 |     73.5% |
-| Code map repeated summary, 100k nodes |          69.929 |       <0.001 |    >99.9% |
-| Library history, two 8,000-item saves |         266.063 |      143.327 |     46.1% |
+Values below are milliseconds per operation. Aggregate latency is the median of five sweep
+medians; paired reduction is the median of the five matched original/current reductions.
+These synthetic component measurements do not establish end-to-end application latency.
 
-All seven target cases exceeded the 20% reduction goal. All 21 workload fingerprints match
-the baseline, and no ordinary/cold workload exceeded the 15% regression allowance. Raw
-latency samples and per-sweep medians are retained in local JSON reports. Compact baseline
-and final records, including p95 and source revisions, are checked in under
-[results](./results/). The final record is [after.json](./results/after.json).
+| Workload                              | Original median | Optimized median | Aggregate reduction | Median paired reduction |
+| ------------------------------------- | --------------: | ---------------: | ------------------: | ----------------------: |
+| PCB merge, 1,000 components           |         116.400 |           24.799 |               78.7% |                   79.3% |
+| PCB drawing, dense 1,024² image       |          36.224 |            4.502 |               87.6% |                   87.6% |
+| 3D snapping, 4,096 spokes             |          63.295 |            3.730 |               94.1% |                   94.5% |
+| Print-check grid, 49,152 triangles    |          21.835 |            2.138 |               90.2% |                   90.3% |
+| Code map broad search, 100k nodes     |         109.013 |            7.921 |               92.7% |                   92.7% |
+| Code map cold summary, 100k nodes     |          61.766 |           24.724 |               60.0% |                   59.0% |
+| Code map repeated summary, 100k nodes |          60.237 |           <0.001 |              >99.9% |                  >99.9% |
+| Library history, two 8,000-item saves |         227.263 |          163.251 |               28.2% |                   28.3% |
+
+All seven target cases exceeded the 20% reduction goal under both aggregate and paired gates.
+All 21 workload fingerprints match the original source, and all 14 controls stayed within
+the 15% regression allowance under both gates. The ordinary snapping mesh was 7.6% slower
+in aggregate, exact search 1.8% slower and unchanged graph parsing 8.4% slower; their paired
+median regressions were 7.0%, 3.8% and 1.4%, respectively. Parsing is a control and has no
+optimization claim. The cold summary is an additional improved control.
+
+The controlled Library result is 28.2% lower aggregate latency and 28.3% lower paired latency.
+This replaces the earlier 46.1% estimate from separate runs, whose unchanged parsing timings
+showed substantial host drift. The accepted compact records retain source hashes, run order,
+p95, all sweep medians and paired reductions in [results](./results/).
 
 Focused PCB, geometry, Code map, Library, harness and maintenance regression suites passed.
 Web, server and benchmark typechecks and targeted strict lint passed. One optional real-model
