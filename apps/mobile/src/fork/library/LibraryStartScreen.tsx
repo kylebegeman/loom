@@ -13,7 +13,10 @@ import {
   libraryLaunchWarning,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
-import { libraryLaunchCandidateSummary } from "@t3tools/shared/fork/library-launch";
+import {
+  libraryLaunchCandidateSummary,
+  type LibraryLaunchCandidate,
+} from "@t3tools/shared/fork/library-launch";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -46,6 +49,7 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
 import { threadEnvironment } from "../../state/threads";
 import { vcsEnvironment } from "../../state/vcs";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -184,7 +188,10 @@ function LibraryStartContent(props: {
     [modeChoice, setMode] = useState<"reuse" | "folder" | "clone" | null>(
       saved?.review.mode ?? (props.reuseRootPath ? "folder" : null),
     ),
-    [rootPath, setRootPath] = useState(saved?.review.rootPath ?? props.reuseRootPath ?? ""),
+    // Null until typed, so a clone suggests the chosen computer's folder, as on web.
+    [typedPath, setRootPath] = useState<string | null>(
+      saved?.review.rootPath ?? props.reuseRootPath ?? null,
+    ),
     [copyId, setCopyId] = useState<string | null>(null),
     [title, setTitle] = useState(
       saved?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
@@ -247,23 +254,38 @@ function LibraryStartContent(props: {
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
+  // Latched on the first settled answer. A persisted catalog is not trusted before it, and a
+  // background refresh keeps ranking against the last answer, so the choice and the working
+  // files below stay put while the Library refreshes.
+  const [copiesSettled, setCopiesSettled] = useState(copiesReady);
+  if (copiesReady && !copiesSettled) setCopiesSettled(true);
+  const knownCopies = copiesSettled && copies.error === null ? copies.data : null;
+  const copiesKnown = knownCopies !== null;
   const ranking = useLibraryLaunchRanking({
     project: launchProject,
-    copies: copiesReady ? (copies.data ?? []) : [],
+    copies: knownCopies ?? [],
     resourceId: scope === "all" ? null : scope,
   });
-  // Nothing is preselected while copies load, so the choice never jumps away from a copy.
+  // Nothing is preselected until copies are known, so the choice never jumps away from a copy.
+  // Once a launch is recorded its computer is the target, whatever the ranking says now.
   // Memoized so React Compiler can treat the choice as immutable and keep optimizing this screen.
-  const choosing = copiesReady && progress.intent === null;
+  const intentHost = progress.intent?.executionEnvironmentId ?? null;
   const choice = useMemo(
     () =>
-      choosing
-        ? libraryLaunchChoice({ ranking, hostId: selectedExecution, copyId })
-        : { hostId: selectedExecution, candidate: null },
-    [choosing, ranking, selectedExecution, copyId],
+      intentHost !== null
+        ? { hostId: intentHost, candidate: null }
+        : copiesKnown
+          ? libraryLaunchChoice({ ranking, hostId: selectedExecution, copyId })
+          : { hostId: selectedExecution, candidate: null },
+    [intentHost, copiesKnown, ranking, selectedExecution, copyId],
   );
   const execution = choice.hostId,
     chosen = choice.candidate;
+  // Acting on anything that depends on the computer makes the suggestion an explicit choice, so a
+  // later ranking update cannot move that input to another computer.
+  const pin = () => {
+    if (selectedExecution === null && execution !== null) setExecution(execution);
+  };
   const rankOf = (environmentId: EnvironmentId, id?: string) => {
     const index = ranking.candidates.findIndex(
       (candidate) =>
@@ -284,6 +306,9 @@ function LibraryStartContent(props: {
   ].sort(
     (left, right) => rankOf(left.environmentId, left.id) - rankOf(right.environmentId, right.id),
   );
+  // Until copies are known every computer ranks as having none, so leave out the copy's reason.
+  const computerReasons = (candidate: LibraryLaunchCandidate) =>
+    sentence(copiesKnown ? candidate.reasons : candidate.reasons.filter((_, index) => index !== 1));
   // Skip "online": the computer row already says it.
   const copyReasons = (copy: LibraryWorkingCopy) => {
     const reasons = candidateFor(copy.environmentId, copy.id)?.reasons.slice(1) ?? [];
@@ -323,7 +348,7 @@ function LibraryStartContent(props: {
       library.registerThread.permissionAtom(authority.environmentId),
     );
   // A computer without a copy gets one inline: clone when allowed, otherwise review a folder.
-  const needsCopy = copiesReady && execution !== null && eligible.length === 0;
+  const needsCopy = copiesKnown && execution !== null && eligible.length === 0;
   const mode =
     modeChoice ??
     (needsCopy
@@ -331,6 +356,11 @@ function LibraryStartContent(props: {
         ? "clone"
         : "folder"
       : "reuse");
+  const rootPath =
+    typedPath ??
+    (mode === "clone" && config?.newProjectsRoot
+      ? getNewProjectPathPreview(config.newProjectsRoot, launchProject.title)
+      : "");
   const warning =
     progress.intent === null && mode === "reuse"
       ? libraryLaunchWarning(
@@ -390,6 +420,10 @@ function LibraryStartContent(props: {
       return;
     if (!reviewed.current) {
       if (!chosenModel) return;
+      // Pin what was reviewed, so the screen keeps showing it if the ranking moves mid-launch.
+      setExecution(execution);
+      setMode(mode);
+      setCopyId(selectedCopy?.id ?? null);
       reviewed.current = {
         authorityEnvironmentId: authority.environmentId,
         model: chosenModel,
@@ -564,6 +598,8 @@ function LibraryStartContent(props: {
   async function pullThenStart(paths: readonly string[]) {
     if (busy.current || !execution || !selectedCopy) return;
     const copy = selectedCopy;
+    pin();
+    setCopyId(copy.id);
     busy.current = true;
     setPending("Pulling latest changes…");
     setError(null);
@@ -711,7 +747,7 @@ function LibraryStartContent(props: {
                       : !operable.has(env.environmentId)
                         ? "Conversation access required"
                         : candidate
-                          ? sentence(candidate.reasons)
+                          ? computerReasons(candidate)
                           : "Connected"
                 }
                 onPress={() => {
@@ -719,6 +755,7 @@ function LibraryStartContent(props: {
                   setCopyId(null);
                   setModelKey(null);
                   setMode(null);
+                  setRootPath(null);
                 }}
               />
             );
@@ -771,7 +808,10 @@ function LibraryStartContent(props: {
               }
               selected={mode === "reuse"}
               disabled={locked || !copiesReady}
-              onPress={() => setMode("reuse")}
+              onPress={() => {
+                pin();
+                setMode("reuse");
+              }}
             />
             {mode === "reuse"
               ? eligible.map((copy, index) => (
@@ -782,7 +822,10 @@ function LibraryStartContent(props: {
                     selected={selectedCopy?.id === copy.id}
                     separated={index > 0}
                     disabled={locked || !copiesReady}
-                    onPress={() => setCopyId(copy.id)}
+                    onPress={() => {
+                      pin();
+                      setCopyId(copy.id);
+                    }}
                   />
                 ))
               : null}
@@ -796,7 +839,10 @@ function LibraryStartContent(props: {
               selected={mode === "folder"}
               disabled={locked || !copiesReady || !canPrepare}
               separated
-              onPress={() => setMode("folder")}
+              onPress={() => {
+                pin();
+                setMode("folder");
+              }}
             />
             <ListChoiceRow
               label={repositories.length > 0 ? "Clone project" : "Create discussion workspace"}
@@ -808,7 +854,10 @@ function LibraryStartContent(props: {
               selected={mode === "clone"}
               disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
               separated
-              onPress={() => setMode("clone")}
+              onPress={() => {
+                pin();
+                setMode("clone");
+              }}
             />
           </SettingsSection>
           {needsCopy && progress.intent === null ? (
@@ -837,7 +886,10 @@ function LibraryStartContent(props: {
               accessibilityLabel="Parent folder on selected computer"
               placeholder="Absolute parent folder on this computer"
               value={rootPath}
-              onChangeText={setRootPath}
+              onChangeText={(text) => {
+                pin();
+                setRootPath(text);
+              }}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!locked}
@@ -851,7 +903,10 @@ function LibraryStartContent(props: {
                 : "No available agent model"
             }
             disabled={locked}
-            onPress={() => setShowModels((value) => !value)}
+            onPress={() => {
+              pin();
+              setShowModels((value) => !value);
+            }}
           />
           {showModels ? (
             <SettingsSection title="Agent model">
@@ -862,6 +917,7 @@ function LibraryStartContent(props: {
                   selected={chosenModel?.key === model.key}
                   disabled={locked}
                   onPress={() => {
+                    pin();
                     setModelKey(model.key);
                     setShowModels(false);
                   }}

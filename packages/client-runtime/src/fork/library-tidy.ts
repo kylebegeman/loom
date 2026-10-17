@@ -10,6 +10,7 @@ import { isRestingEntry, type ProjectEntry } from "./library-project-list.ts";
 /** Why Tidy leaves a copy alone. Anything Tidy cannot vouch for counts as needing attention. */
 export type LibraryTidyReason =
   | { readonly kind: "offline" }
+  | { readonly kind: "no-permission" }
   | { readonly kind: "uncommitted"; readonly files: number }
   | { readonly kind: "unpushed"; readonly commits: number }
   | { readonly kind: "unavailable" }
@@ -34,6 +35,8 @@ export function libraryTidyReasonLabel(reason: LibraryTidyReason): string {
   switch (reason.kind) {
     case "offline":
       return "Computer offline";
+    case "no-permission":
+      return "No permission on this computer";
     case "uncommitted":
       return plural(reason.files, "uncommitted file");
     case "unpushed":
@@ -76,21 +79,32 @@ export function libraryCopyTidyReasons(
   return reasons;
 }
 
+/**
+ * Whether this client may release or unregister the copy on its own computer. Removal runs there,
+ * not on the Library, so a grant on the Library says nothing about it. Absent means allowed.
+ */
+type LibraryTidyCanRemove = ((copy: LibraryWorkingCopy) => boolean) | undefined;
+
 /** What Tidy offers for a project: archiving it if it is resting, and which copies to release. */
 export function libraryTidySuggestions(input: {
   readonly entry: ProjectEntry;
   readonly health: readonly LibraryCopyHealth[];
   readonly connected: (environmentId: EnvironmentId) => boolean;
+  readonly canRemove?: LibraryTidyCanRemove;
   readonly now: number;
 }): LibraryTidySuggestions {
   const safe: LibraryWorkingCopy[] = [];
   const attention: LibraryTidyAttention[] = [];
   for (const copy of libraryActiveCopies(input.entry.copies)) {
-    const reasons = libraryCopyTidyReasons(
-      copy,
-      input.health.find((health) => health.copyId === copy.id),
-      input.connected(copy.environmentId),
-    );
+    const connected = input.connected(copy.environmentId);
+    const reasons: readonly LibraryTidyReason[] =
+      connected && input.canRemove?.(copy) === false
+        ? [{ kind: "no-permission" }]
+        : libraryCopyTidyReasons(
+            copy,
+            input.health.find((health) => health.copyId === copy.id),
+            connected,
+          );
     if (reasons.length) attention.push({ copy, reasons });
     else safe.push(copy);
   }
@@ -126,8 +140,8 @@ const failureMessage = (cause: unknown, fallback: string) =>
 
 /**
  * Releases the chosen copies one at a time, then archives the project if asked. Each copy's status
- * is read again right before it is released, and a copy that is no longer clean and pushed, or
- * that the server would block, is kept. `remove` releases a managed copy or unregisters a borrowed
+ * is read again right before it is released, and a copy that is no longer clean and pushed, that
+ * this client may no longer remove, or that the server would block, is kept. `remove` releases a managed copy or unregisters a borrowed
  * one using the fresh review token, and `register` records the result in the Library. A failure
  * on one copy is reported and the rest continue.
  */
@@ -135,6 +149,7 @@ export async function runLibraryTidy(input: {
   readonly copies: readonly LibraryWorkingCopy[];
   readonly archive: boolean;
   readonly connected: (environmentId: EnvironmentId) => boolean;
+  readonly canRemove?: LibraryTidyCanRemove;
   readonly readStatus: (copy: LibraryWorkingCopy) => Promise<LibraryCopyStatus>;
   readonly remove: (status: LibraryCopyStatus, reviewToken: string) => Promise<LibraryWorkingCopy>;
   readonly register: (copy: LibraryWorkingCopy) => Promise<void>;
@@ -159,6 +174,11 @@ export async function runLibraryTidy(input: {
         const reasons = libraryCopyTidyReasons(removed, status.health, true);
         if (reasons.length) {
           settle({ copy, outcome: "kept", reasons });
+          continue;
+        }
+        // Checked on the fresh copy, whose ownership picks the command that needs the grant.
+        if (input.canRemove?.(removed) === false) {
+          settle({ copy, outcome: "kept", reasons: [{ kind: "no-permission" }] });
           continue;
         }
         if (status.blockers.length || !status.reviewToken) {

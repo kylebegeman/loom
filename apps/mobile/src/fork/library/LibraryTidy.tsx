@@ -22,8 +22,8 @@ import {
   type LibraryCopyHealth,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { AsyncResult } from "effect/reactivity";
-import { useEffect, useRef, useState } from "react";
+import { AsyncResult, Atom } from "effect/reactivity";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -153,6 +153,28 @@ export function LibraryTidyRouteScreen({
   );
 }
 
+/**
+ * Which computers let this client release a managed copy, and which let it unregister a borrowed
+ * one. Removal runs on the copy's computer, so the Library's grants do not cover it.
+ */
+function useRemovalPermissions(copies: readonly LibraryWorkingCopy[]) {
+  const key = JSON.stringify([...new Set(copies.map((copy) => copy.environmentId))].sort());
+  const atom = useMemo(() => {
+    const environmentIds = JSON.parse(key) as EnvironmentId[];
+    return Atom.make((get) => ({
+      release: new Set(environmentIds.filter((id) => get(library.releaseCopy.permissionAtom(id)))),
+      unregister: new Set(
+        environmentIds.filter((id) => get(library.unregisterCopy.permissionAtom(id))),
+      ),
+    }));
+  }, [key]);
+  const permitted = useAtomValue(atom);
+  return (copy: LibraryWorkingCopy) =>
+    (copy.ownership === "borrowed" ? permitted.unregister : permitted.release).has(
+      copy.environmentId,
+    );
+}
+
 const commandValue = <A,>(result: AtomCommandResult<A, unknown>): A => {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
   return result.value;
@@ -204,6 +226,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
   };
 
   const copies = libraryActiveCopies(entry.copies);
+  const canRemove = useRemovalPermissions(copies);
   // Read once on open, only from copies whose computer offers health checks.
   const [checkable] = useState(() =>
     copies.filter(
@@ -233,7 +256,13 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
     };
   }, [checkable, readHealth]);
 
-  const suggestions = libraryTidySuggestions({ entry, health: health ?? [], connected, now });
+  const suggestions = libraryTidySuggestions({
+    entry,
+    health: health ?? [],
+    connected,
+    canRemove,
+    now,
+  });
   const willArchive = suggestions.suggestArchive && archiveChosen;
   const nothingToDo = !suggestions.safe.length && !willArchive;
   const blocked =
@@ -250,6 +279,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
       copies: suggestions.safe,
       archive: willArchive,
       connected,
+      canRemove,
       readStatus: async (copy) =>
         commandValue(
           await readStatus({
@@ -434,12 +464,9 @@ function CopyGroup(props: {
 }) {
   if (!props.rows.length)
     return (
-      <View className="gap-2">
-        <Text textRole="footnote" className="px-2 font-t3-medium text-foreground-muted">
-          {props.title}
-        </Text>
-        <Text className="px-2 text-sm text-foreground-muted">{props.footer}</Text>
-      </View>
+      <SettingsSection title={props.title}>
+        <Text className="p-4 text-sm text-foreground-muted">{props.footer}</Text>
+      </SettingsSection>
     );
   return (
     <SettingsSection title={props.title} footer={props.footer}>

@@ -187,6 +187,29 @@ describe("libraryTidySuggestions", () => {
     expect(result.attention.map((entry) => entry.copy.id)).toEqual(["dirty"]);
   });
 
+  it("never offers a copy this client may not remove on its computer", () => {
+    const result = libraryTidySuggestions({
+      entry: entry([clean, away]),
+      health: [health(clean), health(away)],
+      connected: online,
+      canRemove: (target) => target.environmentId !== nora,
+      now,
+    });
+    expect(result.safe).toEqual([clean]);
+    expect(result.attention).toEqual([{ copy: away, reasons: [{ kind: "no-permission" }] }]);
+  });
+
+  it("reports an offline computer before a missing permission", () => {
+    const result = libraryTidySuggestions({
+      entry: entry([away]),
+      health: [],
+      connected: () => false,
+      canRemove: () => false,
+      now,
+    });
+    expect(result.attention).toEqual([{ copy: away, reasons: [{ kind: "offline" }] }]);
+  });
+
   it("suggests archiving only a current project that is resting", () => {
     const suggest = (patch: Partial<ProjectEntry>) =>
       libraryTidySuggestions({ entry: entry([], patch), health: [], connected: online, now })
@@ -327,6 +350,30 @@ describe("runLibraryTidy", () => {
       { copy: fine, outcome: "released" },
     ]);
     expect(result.archive).toEqual({ ok: true });
+  });
+
+  it("keeps a copy whose removal permission is missing on its computer", async () => {
+    const managed = copy({ id: "managed" });
+    const borrowed = copy({ id: "borrowed", ownership: "borrowed" });
+    const run = harness({ managed: status(managed), borrowed: status(borrowed) });
+    const result = await runLibraryTidy({
+      ...run,
+      copies: [managed, borrowed],
+      archive: false,
+      connected: online,
+      // Only unregistering is granted, so the managed copy cannot be released.
+      canRemove: (target) => target.ownership === "borrowed",
+    });
+    expect(run.calls).toEqual([
+      "status:managed",
+      "status:borrowed",
+      "remove:borrowed:token:borrowed",
+      "register:borrowed:released",
+    ]);
+    expect(result.copies).toEqual([
+      { copy: managed, outcome: "kept", reasons: [{ kind: "no-permission" }] },
+      { copy: borrowed, outcome: "released" },
+    ]);
   });
 
   it("records an already released copy without releasing it again", async () => {
