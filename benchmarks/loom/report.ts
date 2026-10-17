@@ -28,6 +28,8 @@ export interface BaselineReport {
   readonly measurements: readonly BaselineMeasurement[];
 }
 
+const requiredReductionPct = (target: boolean) => (target ? 20 : -15);
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -130,7 +132,45 @@ export function summarizeSweeps(
       sweepMediansMs: rounds.map((round) => round.medianMs),
       reductionPct,
       target,
-      passed: reductionPct === null ? null : reductionPct >= (target ? 20 : -15),
+      passed: reductionPct === null ? null : reductionPct >= requiredReductionPct(target),
+    };
+  });
+}
+
+export function summarizePairedSweeps(
+  currentSweeps: readonly (readonly BenchmarkMeasurement[])[],
+  referenceSweeps: readonly (readonly BenchmarkMeasurement[])[],
+  baseline: BaselineReport,
+) {
+  if (currentSweeps.length === 0 || currentSweeps.length !== referenceSweeps.length)
+    throw new Error("Paired comparisons require the same nonempty round count");
+  for (const [round, current] of currentSweeps.entries()) {
+    const reference = referenceSweeps[round]!;
+    if (
+      current.length !== reference.length ||
+      current.some((item, i) => item.id !== reference[i]!.id)
+    )
+      throw new Error("Each paired round must contain the same workloads in the same order");
+  }
+  const referenceSummary = summarizeSweeps(referenceSweeps, baseline);
+  for (const item of referenceSummary)
+    if (
+      item.medianMs !== baseline.measurements.find((previous) => previous.id === item.id)!.medianMs
+    )
+      throw new Error(`${item.id}: baseline median differs from the reference sweeps`);
+  return summarizeSweeps(currentSweeps, baseline).map((item, i) => {
+    const pairedReductionsPct = currentSweeps.map(
+      (sweep, round) => (1 - sweep[i]!.medianMs / referenceSweeps[round]![i]!.medianMs) * 100,
+    );
+    const pairedReductionPct = percentile(
+      pairedReductionsPct.toSorted((a, b) => a - b),
+      0.5,
+    );
+    return {
+      ...item,
+      pairedReductionsPct,
+      pairedReductionPct,
+      passed: item.passed === true && pairedReductionPct >= requiredReductionPct(item.target),
     };
   });
 }

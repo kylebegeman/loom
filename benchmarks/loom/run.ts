@@ -9,7 +9,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 import type { BenchmarkMeasurement } from "./harness.ts";
-import { readBaseline, summarizeSweeps } from "./report.ts";
+import { readBaseline, summarizePairedSweeps, summarizeSweeps } from "./report.ts";
 import { currentSourceDigests, resolveSourceReference } from "./sourceReference.ts";
 
 const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
@@ -185,7 +185,10 @@ const referenceReport = reference
     }
   : null;
 const baseline = referenceReport ? readBaseline(referenceReport, metadata) : savedBaseline;
-const measurements = summarizeSweeps(sweeps, baseline, values.filter !== "");
+const measurements =
+  referenceReport && baseline
+    ? summarizePairedSweeps(sweeps, referenceSweeps, baseline)
+    : summarizeSweeps(sweeps, baseline, values.filter !== "");
 const report = { schemaVersion: 1, metadata, options, comparison, measurements, sweeps };
 const output = NodePath.resolve(values.output);
 await NodeFSP.mkdir(NodePath.dirname(output), { recursive: true });
@@ -204,8 +207,12 @@ for (const item of measurements) {
     item.reductionPct === null
       ? ""
       : `; ${Math.abs(item.reductionPct).toFixed(1)}% ${item.reductionPct < 0 ? "higher" : "lower"}${item.passed ? "" : " (below goal)"}`;
+  const pairedText =
+    "pairedReductionPct" in item && typeof item.pairedReductionPct === "number"
+      ? `; paired median ${Math.abs(item.pairedReductionPct).toFixed(1)}% ${item.pairedReductionPct < 0 ? "higher" : "lower"}`
+      : "";
   process.stdout.write(
-    `${item.id}: ${item.medianMs.toFixed(3)} ms median, ${item.p95Ms.toFixed(3)} ms p95${comparisonText}\n`,
+    `${item.id}: ${item.medianMs.toFixed(3)} ms median, ${item.p95Ms.toFixed(3)} ms p95${comparisonText}${pairedText}\n`,
   );
 }
 process.stdout.write(`Saved ${output}\n`);

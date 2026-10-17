@@ -29,7 +29,9 @@ first. It saves `paired.reference.json` and `paired.json`, including the source 
 SHA-256 digests, actual-load attestations and run order. Both versions use the current harness
 and identical fixtures. A benchmark-only Vite loader reads the six target modules directly
 from Git; it never changes checkout files. Shared runtime dependencies must be unchanged,
-or the comparison is rejected. Use this mode to validate improvements when separate runs
+or the comparison is rejected. Paired mode also requires the median reduction across
+matched original/current rounds to meet the same limits, in addition to the aggregate gate.
+Use this mode to validate improvements when separate runs
 may have experienced different host load or garbage collection.
 
 `node_modules/.bin/vp` is resolved locally by the runner. No global installation is needed.
