@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 import { BrushCleaningIcon } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
+  libraryCopyRemovalPermission,
   libraryTidyReasonLabel,
   libraryTidySuggestions,
   runLibraryTidy,
@@ -50,6 +52,15 @@ export function TidyChip({
       </Button>
     </span>
   );
+}
+
+function useRemovalPermissions(copies: readonly LibraryWorkingCopy[]) {
+  const key = JSON.stringify([...new Set(copies.map((copy) => copy.environmentId))].sort());
+  const atom = useMemo(
+    () => libraryCopyRemovalPermission(projectLibrary, JSON.parse(key) as EnvironmentId[]),
+    [key],
+  );
+  return useAtomValue(atom);
 }
 
 const commandValue = <A,>(result: AtomCommandResult<A, unknown>): A => {
@@ -104,6 +115,7 @@ export function TidyProjectDialog({
   };
 
   const copies = libraryActiveCopies(entry.copies);
+  const canRemove = useRemovalPermissions(copies);
   // Read once when the dialog opens, from the copies whose computer can answer.
   const [checkable] = useState(() =>
     copies.filter(
@@ -137,6 +149,7 @@ export function TidyProjectDialog({
     entry,
     health: health ?? [],
     connected,
+    canRemove,
     now,
   });
   const willArchive = suggestions.suggestArchive && archiveChosen;
@@ -155,6 +168,7 @@ export function TidyProjectDialog({
       copies: suggestions.safe,
       archive: willArchive,
       connected,
+      canRemove,
       readStatus: async (copy) =>
         commandValue(
           await readStatus({

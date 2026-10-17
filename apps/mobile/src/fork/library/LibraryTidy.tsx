@@ -3,6 +3,7 @@ import { useNavigation, usePreventRemove, type StaticScreenProps } from "@react-
 import {
   isRestingEntry,
   libraryActiveCopies,
+  libraryCopyRemovalPermission,
   libraryTidyReasonLabel,
   libraryTidySuggestions,
   projectEntries,
@@ -22,7 +23,7 @@ import {
   type LibraryCopyHealth,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
@@ -159,20 +160,11 @@ export function LibraryTidyRouteScreen({
  */
 function useRemovalPermissions(copies: readonly LibraryWorkingCopy[]) {
   const key = JSON.stringify([...new Set(copies.map((copy) => copy.environmentId))].sort());
-  const atom = useMemo(() => {
-    const environmentIds = JSON.parse(key) as EnvironmentId[];
-    return Atom.make((get) => ({
-      release: new Set(environmentIds.filter((id) => get(library.releaseCopy.permissionAtom(id)))),
-      unregister: new Set(
-        environmentIds.filter((id) => get(library.unregisterCopy.permissionAtom(id))),
-      ),
-    }));
-  }, [key]);
-  const permitted = useAtomValue(atom);
-  return (copy: LibraryWorkingCopy) =>
-    (copy.ownership === "borrowed" ? permitted.unregister : permitted.release).has(
-      copy.environmentId,
-    );
+  const atom = useMemo(
+    () => libraryCopyRemovalPermission(library, JSON.parse(key) as EnvironmentId[]),
+    [key],
+  );
+  return useAtomValue(atom);
 }
 
 const commandValue = <A,>(result: AtomCommandResult<A, unknown>): A => {

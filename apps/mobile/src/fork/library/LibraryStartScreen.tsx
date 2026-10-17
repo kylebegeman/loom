@@ -751,11 +751,14 @@ function LibraryStartContent(props: {
                           : "Connected"
                 }
                 onPress={() => {
+                  // Choices made for this computer, including a folder handed in, outlive a tap on it.
+                  if (env.environmentId !== execution) {
+                    setCopyId(null);
+                    setModelKey(null);
+                    setMode(null);
+                    setRootPath(null);
+                  }
                   setExecution(env.environmentId);
-                  setCopyId(null);
-                  setModelKey(null);
-                  setMode(null);
-                  setRootPath(null);
                 }}
               />
             );

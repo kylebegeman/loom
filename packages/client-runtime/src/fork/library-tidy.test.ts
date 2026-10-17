@@ -6,8 +6,10 @@ import type {
   LibraryRepositoryHealth,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import type { ProjectEntry } from "./library-project-list.ts";
 import {
+  libraryCopyRemovalPermission,
   libraryTidyReasonLabel,
   libraryTidySuggestions,
   runLibraryTidy,
@@ -81,6 +83,7 @@ const entry = (copies: readonly LibraryWorkingCopy[], patch: Partial<ProjectEntr
     ...patch,
   }) satisfies ProjectEntry;
 const online = () => true;
+const removable = () => true;
 
 describe("libraryTidySuggestions", () => {
   const clean = copy({ id: "clean" });
@@ -163,6 +166,7 @@ describe("libraryTidySuggestions", () => {
       entry: entry([target]),
       health: read ? [read] : [],
       connected: () => connected,
+      canRemove: removable,
       now,
     });
     if (reasons.length) {
@@ -181,6 +185,7 @@ describe("libraryTidySuggestions", () => {
       entry: entry([clean, dirty, released, second]),
       health: [health(second), health(dirty, [repository({ uncommittedFiles: 1 })]), health(clean)],
       connected: online,
+      canRemove: removable,
       now,
     });
     expect(result.safe.map((entry) => entry.id)).toEqual(["clean", "second"]);
@@ -212,8 +217,13 @@ describe("libraryTidySuggestions", () => {
 
   it("suggests archiving only a current project that is resting", () => {
     const suggest = (patch: Partial<ProjectEntry>) =>
-      libraryTidySuggestions({ entry: entry([], patch), health: [], connected: online, now })
-        .suggestArchive;
+      libraryTidySuggestions({
+        entry: entry([], patch),
+        health: [],
+        connected: online,
+        canRemove: removable,
+        now,
+      }).suggestArchive;
     expect(suggest({})).toBe(true);
     expect(suggest({ activeAt: checkedAt })).toBe(false);
     expect(suggest({ project: { ...entry([]).project, archived: true } })).toBe(false);
@@ -223,6 +233,24 @@ describe("libraryTidySuggestions", () => {
     expect(libraryTidyReasonLabel({ kind: "uncommitted", files: 1 })).toBe("1 uncommitted file");
     expect(libraryTidyReasonLabel({ kind: "unpushed", commits: 3 })).toBe("3 unpushed commits");
     expect(libraryTidyReasonLabel({ kind: "offline" })).toBe("Computer offline");
+  });
+});
+
+describe("libraryCopyRemovalPermission", () => {
+  it("reads each copy's own computer for the command its ownership needs", () => {
+    const grantedOn = (granted: EnvironmentId) => ({
+      permissionAtom: (id: EnvironmentId) => Atom.make(id === granted),
+    });
+    const canRemove = AtomRegistry.make().get(
+      libraryCopyRemovalPermission(
+        { releaseCopy: grantedOn(dorothy), unregisterCopy: grantedOn(nora) },
+        [dorothy, nora],
+      ),
+    );
+    expect(canRemove(copy({ environmentId: dorothy }))).toBe(true);
+    expect(canRemove(copy({ environmentId: dorothy, ownership: "borrowed" }))).toBe(false);
+    expect(canRemove(copy({ environmentId: nora, ownership: "borrowed" }))).toBe(true);
+    expect(canRemove(copy({ environmentId: nora }))).toBe(false);
   });
 });
 
@@ -240,6 +268,7 @@ describe("runLibraryTidy", () => {
     const calls: string[] = [];
     return {
       calls,
+      canRemove: removable,
       readStatus: async (target: LibraryWorkingCopy) => {
         calls.push(`status:${target.id}`);
         const result = statuses[target.id];

@@ -4,6 +4,7 @@ import type {
   LibraryCopyStatus,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import { Atom } from "effect/reactivity";
 import { libraryActiveCopies } from "./library-project.ts";
 import { isRestingEntry, type ProjectEntry } from "./library-project-list.ts";
 
@@ -79,18 +80,34 @@ export function libraryCopyTidyReasons(
   return reasons;
 }
 
+type LibraryTidyCanRemove = (copy: LibraryWorkingCopy) => boolean;
+type PermissionCommand = {
+  readonly permissionAtom: (environmentId: EnvironmentId) => Atom.Atom<boolean>;
+};
+
 /**
- * Whether this client may release or unregister the copy on its own computer. Removal runs there,
- * not on the Library, so a grant on the Library says nothing about it. Absent means allowed.
+ * Whether this client may release or unregister each copy. Removal runs on the copy's own computer,
+ * not on the Library, so the grant is read there for the command the copy's ownership needs.
  */
-type LibraryTidyCanRemove = ((copy: LibraryWorkingCopy) => boolean) | undefined;
+export function libraryCopyRemovalPermission(
+  commands: { readonly releaseCopy: PermissionCommand; readonly unregisterCopy: PermissionCommand },
+  environmentIds: readonly EnvironmentId[],
+) {
+  return Atom.make((get): LibraryTidyCanRemove => {
+    const granted = (command: PermissionCommand) =>
+      new Set(environmentIds.filter((id) => get(command.permissionAtom(id))));
+    const release = granted(commands.releaseCopy);
+    const unregister = granted(commands.unregisterCopy);
+    return (copy) => (copy.ownership === "borrowed" ? unregister : release).has(copy.environmentId);
+  });
+}
 
 /** What Tidy offers for a project: archiving it if it is resting, and which copies to release. */
 export function libraryTidySuggestions(input: {
   readonly entry: ProjectEntry;
   readonly health: readonly LibraryCopyHealth[];
   readonly connected: (environmentId: EnvironmentId) => boolean;
-  readonly canRemove?: LibraryTidyCanRemove;
+  readonly canRemove: LibraryTidyCanRemove;
   readonly now: number;
 }): LibraryTidySuggestions {
   const safe: LibraryWorkingCopy[] = [];
@@ -98,7 +115,7 @@ export function libraryTidySuggestions(input: {
   for (const copy of libraryActiveCopies(input.entry.copies)) {
     const connected = input.connected(copy.environmentId);
     const reasons: readonly LibraryTidyReason[] =
-      connected && input.canRemove?.(copy) === false
+      connected && !input.canRemove(copy)
         ? [{ kind: "no-permission" }]
         : libraryCopyTidyReasons(
             copy,
@@ -149,7 +166,7 @@ export async function runLibraryTidy(input: {
   readonly copies: readonly LibraryWorkingCopy[];
   readonly archive: boolean;
   readonly connected: (environmentId: EnvironmentId) => boolean;
-  readonly canRemove?: LibraryTidyCanRemove;
+  readonly canRemove: LibraryTidyCanRemove;
   readonly readStatus: (copy: LibraryWorkingCopy) => Promise<LibraryCopyStatus>;
   readonly remove: (status: LibraryCopyStatus, reviewToken: string) => Promise<LibraryWorkingCopy>;
   readonly register: (copy: LibraryWorkingCopy) => Promise<void>;
@@ -177,7 +194,7 @@ export async function runLibraryTidy(input: {
           continue;
         }
         // Checked on the fresh copy, whose ownership picks the command that needs the grant.
-        if (input.canRemove?.(removed) === false) {
+        if (!input.canRemove(removed)) {
           settle({ copy, outcome: "kept", reasons: [{ kind: "no-permission" }] });
           continue;
         }
