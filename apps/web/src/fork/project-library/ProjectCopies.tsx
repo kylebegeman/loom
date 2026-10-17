@@ -35,7 +35,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { CopyProfileSetup } from "./ProfileReadiness";
-import { ComputerLabel, PathLabel } from "./ProjectIdentity";
+import { ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
 import { projectLibrary, useLibraryPermission } from "./state";
 
 export type CopyRequest = {
@@ -62,6 +62,12 @@ function copyStatus(copy: LibraryWorkingCopy, online: boolean): CopyStatus {
   }
 }
 
+const STATUS_PILL: Record<CopyStatus["tone"], string> = {
+  ready: "bg-success/12 text-success-foreground",
+  quiet: "bg-muted text-muted-foreground dark:bg-accent",
+  warning: "bg-warning/14 text-warning-foreground",
+};
+
 const STATUS_DOT: Record<CopyStatus["tone"], string> = {
   ready: "bg-success",
   quiet: "bg-muted-foreground/45",
@@ -70,11 +76,14 @@ const STATUS_DOT: Record<CopyStatus["tone"], string> = {
 
 function CopyStatusLabel({ status }: { readonly status: CopyStatus }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-full px-2 text-2xs font-medium",
+        STATUS_PILL[status.tone],
+      )}
+    >
       <span aria-hidden className={cn("size-1.5 rounded-full", STATUS_DOT[status.tone])} />
-      <span className={status.tone === "warning" ? "text-warning-foreground" : ""}>
-        {status.label}
-      </span>
+      {status.label}
     </span>
   );
 }
@@ -320,8 +329,8 @@ function NoCopies({
   return (
     <div className="flex flex-col items-start gap-3">
       <div className="flex items-start gap-2.5">
-        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
-          <MonitorIcon aria-hidden className="size-3.5" />
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+          <MonitorIcon aria-hidden className="size-4" />
         </span>
         <p className="text-xs leading-relaxed text-muted-foreground">
           Not on a computer right now. Get a copy when you want to work and remove it when you're
@@ -381,6 +390,7 @@ export function ProjectCopies({
   return (
     <LibrarySection
       title="On your computers"
+      icon={MonitorIcon}
       count={active.length}
       action={
         canAct && active.length ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null
@@ -396,21 +406,23 @@ export function ProjectCopies({
               <li
                 key={copy.id}
                 aria-label={`Copy on ${label}`}
-                className="space-y-3 rounded-xl border border-border bg-card p-4"
+                className="relative isolate space-y-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5"
               >
-                <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-                  <div className="min-w-0 flex-1 basis-60 space-y-1">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <ComputerLabel
-                        environmentId={copy.environmentId}
-                        label={label}
-                        className="min-w-0 shrink text-sm font-medium text-foreground"
-                      />
-                      <CopyStatusLabel status={copyStatus(copy, online)} />
+                <ProjectGlow />
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+                  <div className="flex min-w-0 flex-1 basis-60 items-start gap-3">
+                    <ComputerTile environmentId={copy.environmentId} />
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="truncate text-base font-semibold tracking-tight">
+                          {label}
+                        </span>
+                        <CopyStatusLabel status={copyStatus(copy, online)} />
+                      </div>
+                      <PathLabel path={copy.rootPath} className="-ms-1.5" />
                     </div>
-                    <PathLabel path={copy.rootPath} className="-ms-1.5" />
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     {copy.state === "ready" ? (
                       <Button
                         shape="pill"
@@ -494,6 +506,7 @@ export function CopiesSummary({
   return (
     <LibraryPanel
       title="On your computers"
+      icon={MonitorIcon}
       count={active.length}
       action={
         active.length ? (
@@ -507,12 +520,11 @@ export function CopiesSummary({
       {active.length ? (
         <ul className="divide-y divide-border border-t border-border">
           {active.map((copy) => (
-            <li key={copy.id} className="flex min-w-0 items-center gap-2 px-3.5 py-2.5">
-              <ComputerLabel
-                environmentId={copy.environmentId}
-                label={hostLabel(copy.environmentId)}
-                className="min-w-0 shrink text-sm text-foreground"
-              />
+            <li key={copy.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
+              <ComputerTile environmentId={copy.environmentId} className="size-8 rounded-lg" />
+              <span className="min-w-0 truncate text-sm font-medium">
+                {hostLabel(copy.environmentId)}
+              </span>
               <span className="ms-auto">
                 <CopyStatusLabel status={copyStatus(copy, hostConnected(copy.environmentId))} />
               </span>

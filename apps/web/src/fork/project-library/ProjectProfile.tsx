@@ -26,7 +26,17 @@ import {
   libraryToolText,
   type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
-import { ChevronDownIcon, KeyRoundIcon, XIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  KeyRoundIcon,
+  MessageSquareIcon,
+  MonitorIcon,
+  SlidersHorizontalIcon,
+  TerminalIcon,
+  WrenchIcon,
+  XIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -39,25 +49,83 @@ import { useProjects } from "~/state/entities";
 import { cn } from "~/lib/utils";
 import { LibraryDialog, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 import { ComputerReadiness } from "./ProfileReadiness";
-import { ComputerLabel } from "./ProjectIdentity";
+import { ComputerLabel, ProjectGlow } from "./ProjectIdentity";
+
+const SETUP_ICON_TILE =
+  "inline-flex shrink-0 items-center justify-center bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16";
 
 function SetupCard({
   title,
+  icon: Icon,
   className,
   children,
 }: {
   readonly title: string;
+  readonly icon: LucideIcon;
   readonly className?: string;
   readonly children: ReactNode;
 }) {
   return (
     <section
       aria-label={title}
-      className={cn("space-y-2 rounded-xl border border-border bg-card p-4", className)}
+      className={cn(
+        "space-y-3 rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5",
+        className,
+      )}
     >
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+        <span aria-hidden className={cn(SETUP_ICON_TILE, "size-6 rounded-md")}>
+          <Icon className="size-3" />
+        </span>
+        {title}
+      </h3>
       {children}
     </section>
+  );
+}
+
+const SETUP_PARTS = [
+  { icon: TerminalIcon, title: "Scripts", body: "Commands to install, run and test" },
+  { icon: WrenchIcon, title: "Tools", body: "What each computer needs installed" },
+  { icon: KeyRoundIcon, title: "Secrets", body: "Names only, set on each computer" },
+] as const;
+
+/** What setup holds, shown before there is any, so the first edit has a reason. */
+function EmptySetup({ onSetUp }: { readonly onSetUp: (() => void) | null }) {
+  return (
+    <div className="relative isolate overflow-hidden rounded-2xl border border-dashed border-border bg-card p-5 sm:p-7">
+      <ProjectGlow />
+      <div className="max-w-xl space-y-1.5">
+        <p className="text-lg font-semibold tracking-tight">
+          Make every computer ready the same way
+        </p>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Scripts, required tools and secret names that every computer working on this project
+          should have.
+        </p>
+      </div>
+      <ul className="mt-5 grid gap-3 sm:grid-cols-3">
+        {SETUP_PARTS.map((part) => (
+          <li key={part.title} className="flex items-start gap-3">
+            <span aria-hidden className={cn(SETUP_ICON_TILE, "size-9 rounded-xl")}>
+              <part.icon className="size-4" />
+            </span>
+            <span className="min-w-0 space-y-0.5">
+              <span className="block text-sm font-medium">{part.title}</span>
+              <span className="block text-xs leading-snug text-muted-foreground">{part.body}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {onSetUp ? (
+        <div className="mt-6">
+          <Button shape="pill" onClick={onSetUp}>
+            <SlidersHorizontalIcon />
+            Set up this project
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -107,46 +175,41 @@ export function ProjectProfile({
   ].filter((row) => row !== null);
   const empty =
     !scripts.length && !tools.length && !secrets.length && !preferred.length && !details.length;
+  const startEditing = () => {
+    onEdit();
+    setEditing(true);
+  };
   const computersWithCopies = [
     ...new Set(libraryActiveCopies(copies).map((copy) => copy.environmentId)),
   ];
   return (
     <LibrarySection
       title="Setup"
+      icon={SlidersHorizontalIcon}
       action={
-        canEdit ? (
-          <Button
-            shape="pill"
-            size="xs"
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              onEdit();
-              setEditing(true);
-            }}
-          >
-            {empty ? "Set up" : "Edit"}
+        canEdit && !empty ? (
+          <Button shape="pill" size="xs" variant="outline" disabled={busy} onClick={startEditing}>
+            Edit
           </Button>
         ) : null
       }
     >
       {empty ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Scripts, required tools and secret names that every computer working on this project
-          should have.
-        </p>
+        <EmptySetup onSetUp={canEdit && !busy ? startEditing : null} />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {scripts.length ? (
-            <SetupCard title="Scripts" className="md:col-span-2">
+            <SetupCard title="Scripts" icon={TerminalIcon} className="md:col-span-2">
               <ul className="divide-y divide-border">
                 {scripts.map((script) => (
                   <li
                     key={script.id}
                     className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5"
                   >
-                    <span className="w-40 shrink-0 truncate text-sm">{script.name}</span>
-                    <code className="min-w-0 flex-1 font-mono text-xs wrap-anywhere text-muted-foreground">
+                    <span className="w-40 shrink-0 truncate text-sm font-medium">
+                      {script.name}
+                    </span>
+                    <code className="min-w-0 flex-1 rounded-md bg-muted px-2 py-1 font-mono text-xs wrap-anywhere text-muted-foreground dark:bg-accent">
                       {script.command}
                     </code>
                   </li>
@@ -155,7 +218,7 @@ export function ProjectProfile({
             </SetupCard>
           ) : null}
           {tools.length ? (
-            <SetupCard title="Needs">
+            <SetupCard title="Needs" icon={WrenchIcon}>
               <div className="flex flex-wrap gap-1.5">
                 {tools.map((tool) => (
                   <Badge key={tool.id} variant="outline">
@@ -166,7 +229,7 @@ export function ProjectProfile({
             </SetupCard>
           ) : null}
           {secrets.length ? (
-            <SetupCard title="Secrets each computer sets">
+            <SetupCard title="Secrets each computer sets" icon={KeyRoundIcon}>
               <div className="flex flex-wrap gap-1.5">
                 {secrets.map((name) => (
                   <Badge key={name} variant="outline">
@@ -178,12 +241,12 @@ export function ProjectProfile({
             </SetupCard>
           ) : null}
           {preferred.length ? (
-            <SetupCard title="Runs on">
+            <SetupCard title="Runs on" icon={MonitorIcon}>
               <p className="text-sm">{preferred.map(hostLabel).join(", ")}</p>
             </SetupCard>
           ) : null}
           {details.length ? (
-            <SetupCard title="Conversations">
+            <SetupCard title="Conversations" icon={MessageSquareIcon}>
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
                 {details.map(([label, value]) => (
                   <div key={label} className="contents">
@@ -199,7 +262,7 @@ export function ProjectProfile({
       {(tools.length || secrets.length) && computersWithCopies.length ? (
         <div className="space-y-2 pt-3">
           <h3 className="text-sm font-semibold tracking-tight">On each computer</h3>
-          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5">
             {computersWithCopies.map((environmentId) => (
               <li
                 key={environmentId}

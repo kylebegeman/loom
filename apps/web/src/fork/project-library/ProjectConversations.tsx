@@ -28,6 +28,7 @@ import {
   FolderGit2Icon,
   ListFilterIcon,
   MessageSquareIcon,
+  MessagesSquareIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -53,8 +54,7 @@ import { cn } from "~/lib/utils";
 import { useServerConfigs, useThreadShellsForProjectRefs } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch, LibrarySection } from "./LibraryControls";
-import { ProjectWash } from "./ProjectCollection";
-import { ComputerLabel } from "./ProjectIdentity";
+import { ComputerLabel, ProjectGlow } from "./ProjectIdentity";
 
 /** Rows per step of "Show more". The whole list is already loaded, so paging only keeps it calm. */
 const CONVERSATION_PAGE = 20;
@@ -143,7 +143,7 @@ export function ProjectConversations({
   const otherMatches = CONVERSATION_LANES.filter((entry) => entry !== lane && laneCount(entry) > 0);
   const tools = threads.length > TOOLS_AFTER;
   return (
-    <LibrarySection title="Conversations" count={threads.length}>
+    <LibrarySection title="Conversations" icon={MessagesSquareIcon} count={threads.length}>
       {lanes.length > 1 ? (
         <ToggleGroup
           shape="pill"
@@ -159,7 +159,7 @@ export function ProjectConversations({
           {lanes.map((entry) => (
             <ToggleGroupItem key={entry} value={entry}>
               {CONVERSATION_LANE_LABELS[entry]}
-              <span className="tabular-nums opacity-60">{laneCount(entry)}</span>
+              <span className="font-normal tabular-nums opacity-60">({laneCount(entry)})</span>
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -350,6 +350,7 @@ export function RecentConversations({
   return (
     <LibrarySection
       title="Recent conversations"
+      icon={MessagesSquareIcon}
       action={
         threads.length > recent.length + 1 ? (
           <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
@@ -410,25 +411,28 @@ function FeaturedConversation({
     <ConversationLink
       thread={thread}
       connected={connected}
-      className="group/card relative isolate -mx-3 flex items-center gap-4 rounded-xl p-3 outline-none transition-colors duration-200 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="group/card relative isolate flex items-center gap-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 outline-none transition-[box-shadow,translate] duration-200 hover:-translate-y-px hover:shadow-md/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:hover:translate-y-0 sm:p-5"
     >
-      <ProjectWash />
-      <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-        <MessageSquareIcon aria-hidden className="size-4.5" />
+      <ProjectGlow strength="strong" />
+      <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-(--project-color) text-background shadow-sm">
+        <MessageSquareIcon aria-hidden className="size-5" />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-xs text-muted-foreground">
-          Pick up where you left off · {formatRelativeTimeLabel(thread.updatedAt)}
+        <p className="text-2xs font-semibold tracking-wider text-(--project-color) uppercase">
+          Pick up where you left off
+          <span className="ms-1.5 font-medium tracking-normal text-muted-foreground normal-case">
+            {formatRelativeTimeLabel(thread.updatedAt)}
+          </span>
         </p>
-        <p className="truncate text-base font-semibold tracking-tight">
-          {conversationTitle(thread)}
-        </p>
+        <p className="truncate text-lg font-semibold tracking-tight">{conversationTitle(thread)}</p>
         <ConversationMeta project={project} thread={thread} status={status} hostLabel={hostLabel} />
       </div>
-      <ArrowRightIcon
-        aria-hidden
-        className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
-      />
+      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors duration-200 group-hover/card:bg-(--project-color) group-hover/card:text-background dark:bg-accent">
+        <ArrowRightIcon
+          aria-hidden
+          className="size-4 transition-transform duration-200 group-hover/card:translate-x-0.5"
+        />
+      </span>
     </ConversationLink>
   );
 }
@@ -454,11 +458,15 @@ function ConversationRow({
       connected={connected}
       className={cn(
         LIBRARY_ROW,
-        "-mx-3 flex items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "-mx-3 flex items-center gap-3 px-3 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
       )}
     >
-      <ConversationStatusIcon status={status} />
-      <span className="min-w-0 flex-1 truncate text-sm">{conversationTitle(thread)}</span>
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted dark:bg-accent">
+        <ConversationStatusIcon status={status} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {conversationTitle(thread)}
+      </span>
       <ConversationStatusLabel status={status} className="sm:hidden" />
       <ConversationMeta
         project={project}

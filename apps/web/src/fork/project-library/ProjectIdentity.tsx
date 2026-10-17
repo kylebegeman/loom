@@ -33,6 +33,7 @@ const TILE_SIZES = {
   md: "size-8 rounded-lg text-xs",
   lg: "size-11 rounded-xl text-base",
   xl: "size-14 rounded-2xl text-lg",
+  "2xl": "size-16 rounded-2xl text-xl",
 } as const;
 
 const TILE_ICON_SIZES = {
@@ -40,6 +41,7 @@ const TILE_ICON_SIZES = {
   md: "size-4.5",
   lg: "size-6",
   xl: "size-7",
+  "2xl": "size-8",
 } as const;
 
 type TileProps = {
@@ -109,6 +111,50 @@ function MonogramTile({ project, size = "md", neutral = false }: TileProps) {
       )}
     >
       {libraryProjectInitials(project.title)}
+    </span>
+  );
+}
+
+/**
+ * A soft pool of the project color behind a surface, strongest in one corner and gone by the
+ * middle. The surface keeps its neutral border; the color stays inside it.
+ */
+export function ProjectGlow({ strength = "soft" }: { readonly strength?: "soft" | "strong" }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
+      style={{ backgroundImage: GLOWS[strength] }}
+    />
+  );
+}
+
+const tint = (percent: number) =>
+  `color-mix(in oklab, var(--project-color) ${percent}%, transparent)`;
+
+const GLOWS = {
+  strong: `radial-gradient(at 0% 0%, ${tint(18)}, ${tint(5)} 35%, transparent 70%)`,
+  soft: `radial-gradient(at 0% 0%, ${tint(8)}, transparent 55%)`,
+};
+
+/** A computer's machine shape on the project's tint, for places that lead with the computer. */
+export function ComputerTile({
+  environmentId,
+  className,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly className?: string;
+}) {
+  const machines = useEnvironmentMachines();
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
+        className,
+      )}
+    >
+      <EnvironmentMachineIcon kind={machines.get(environmentId) ?? "server"} className="size-5" />
     </span>
   );
 }

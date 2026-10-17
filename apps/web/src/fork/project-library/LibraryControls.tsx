@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Dialog,
@@ -131,28 +132,63 @@ export function LibraryErrorNotice({
  */
 export function LibrarySection({
   title,
+  icon,
   count,
   action,
   children,
 }: {
   readonly title: string;
+  readonly icon?: LucideIcon;
   readonly count?: number | undefined;
   readonly action?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-h-7 items-center justify-between gap-3">
-        <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
-          {title}
-          {count ? (
-            <span className="text-xs font-normal tabular-nums text-muted-foreground">{count}</span>
-          ) : null}
-        </h2>
+    <section aria-label={title} className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <LibraryHeading title={title} icon={icon} count={count} size="section" />
         {action}
       </div>
       {children}
     </section>
+  );
+}
+
+/** A heading led by the project-tinted icon its stretch is about, with its count in parentheses. */
+function LibraryHeading({
+  title,
+  icon: Icon,
+  count,
+  size,
+}: {
+  readonly title: string;
+  readonly icon: LucideIcon | undefined;
+  readonly count: number | undefined;
+  readonly size: "section" | "panel";
+}) {
+  return (
+    <h2
+      className={cn(
+        "flex min-w-0 items-center gap-2.5 font-semibold tracking-tight",
+        size === "section" ? "text-base" : "text-sm",
+      )}
+    >
+      {Icon ? (
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
+            size === "section" ? "size-7 rounded-lg" : "size-6 rounded-md",
+          )}
+        >
+          <Icon className={size === "section" ? "size-3.5" : "size-3"} />
+        </span>
+      ) : null}
+      <span className="truncate">{title}</span>
+      {count ? (
+        <span className="text-xs font-normal tabular-nums text-muted-foreground">({count})</span>
+      ) : null}
+    </h2>
   );
 }
 
@@ -162,24 +198,24 @@ export function LibrarySection({
  */
 export function LibraryPanel({
   title,
+  icon,
   count,
   action,
   children,
 }: {
   readonly title: string;
+  readonly icon?: LucideIcon;
   readonly count?: number | undefined;
   readonly action?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5 ps-3.5 pe-2">
-        <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
-          {title}
-          {count ? (
-            <span className="text-xs font-normal tabular-nums text-muted-foreground">{count}</span>
-          ) : null}
-        </h2>
+    <section
+      aria-label={title}
+      className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5"
+    >
+      <div className="flex min-h-12 items-center justify-between gap-3 py-2 ps-3 pe-2">
+        <LibraryHeading title={title} icon={icon} count={count} size="panel" />
         {action}
       </div>
       {children}

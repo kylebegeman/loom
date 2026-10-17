@@ -20,7 +20,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import { randomUUID } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { LibraryField, LibraryPanel, LibrarySection } from "./LibraryControls";
 
 const MAX_RESOURCES = 64;
@@ -28,8 +28,8 @@ const MAX_RESOURCES = 64;
 function ResourceIcon({ resource }: { readonly resource: LibraryResource }) {
   const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
   return (
-    <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
-      <Icon aria-hidden className="size-3.5" />
+    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+      <Icon aria-hidden className="size-4" />
     </span>
   );
 }
@@ -82,6 +82,7 @@ export function ProjectResources({
   return (
     <LibrarySection
       title="Repositories and links"
+      icon={FolderGit2Icon}
       count={resources.length}
       action={
         canAdd && resources.length ? (
@@ -115,7 +116,7 @@ export function ProjectResources({
         </div>
       ) : null}
       {resources.length ? (
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+        <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5">
           {resources.map((resource) =>
             editingId === resource.id ? (
               <li key={resource.id} className="max-w-2xl px-4 py-3.5">
@@ -176,19 +177,35 @@ function ResourceRow({
   const href = resourceLink(resource);
   const repository = isRepositoryResource(resource);
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 ps-4 pe-2.5">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 ps-4 pe-2.5 transition-colors duration-150 hover:bg-accent/30">
       <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
         <ResourceIcon resource={resource} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{resource.title}</p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate font-mono text-2xs text-muted-foreground">
             {libraryResourceLocation(resource)}
           </p>
         </div>
       </div>
       {repository ? (
-        <p className="w-40 shrink-0 truncate text-xs text-muted-foreground">
-          {computers.length ? `On ${computers.join(", ")}` : "Not on a computer"}
+        <p
+          className={cn(
+            "inline-flex h-6 max-w-48 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs",
+            computers.length
+              ? "bg-success/12 text-success-foreground"
+              : "bg-muted text-muted-foreground dark:bg-accent",
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              computers.length ? "bg-success" : "bg-muted-foreground/45",
+            )}
+          />
+          <span className="truncate">
+            {computers.length ? `On ${computers.join(", ")}` : "Not on a computer"}
+          </span>
         </p>
       ) : null}
       <div className="ms-auto flex shrink-0 items-center gap-1">
@@ -247,6 +264,7 @@ export function ResourcesSummary({
   return (
     <LibraryPanel
       title="Repositories and links"
+      icon={FolderGit2Icon}
       count={resources.length}
       action={
         <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
@@ -258,7 +276,7 @@ export function ResourcesSummary({
       {resources.length ? (
         <ul className="divide-y divide-border border-t border-border">
           {resources.map((resource) => (
-            <li key={resource.id} className="flex min-w-0 items-center gap-2.5 px-3.5 py-2">
+            <li key={resource.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2">
               <ResourceIcon resource={resource} />
               <p className="min-w-0 truncate text-sm">{resource.title}</p>
             </li>

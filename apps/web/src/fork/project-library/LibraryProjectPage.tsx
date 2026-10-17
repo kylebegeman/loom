@@ -13,7 +13,9 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   ArchiveIcon,
+  CalendarIcon,
   CheckIcon,
+  ClockIcon,
   EllipsisIcon,
   MoonIcon,
   PencilLineIcon,
@@ -24,7 +26,6 @@ import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -60,15 +61,11 @@ import {
   ProjectHistory,
   type CopyRequest,
 } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
+import { ProjectColorPicker, ProjectGlow, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
-import {
-  PROJECT_VIEW_LABELS,
-  PROJECT_VIEWS,
-  projectViewSearch,
-  type ProjectViewName,
-} from "./projectViews";
+import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projectViews";
+import { ProjectTabs } from "./ProjectTabs";
 import { LibraryHistorySearch } from "./LibraryHistorySearch";
 import { ProjectBriefProposals } from "./ProjectBriefProposals";
 import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
@@ -76,6 +73,12 @@ import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
 const LONG_BRIEF_LINES = 4;
+/** A fine dot grid fading out from the hero's far corner, for texture behind the title. */
+const HERO_DOTS = {
+  backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
+  backgroundSize: "18px 18px",
+  maskImage: "radial-gradient(ellipse at 100% 0%, black, transparent 60%)",
+};
 
 type LibraryProjectView = ReturnType<typeof useLibraryProject>;
 type ConversationRequest = {
@@ -244,170 +247,153 @@ function ProjectView({
         onNewConversation={() => setConversation({})}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
-      <div className="-mx-1 overflow-x-auto px-1 pb-1">
-        <ToggleGroup
-          shape="pill"
-          aria-label="Project views"
-          variant="segmented"
-          className="w-fit"
-          value={[shown]}
-          onValueChange={(value) => {
-            const next = views.find((entry) => entry === value[0]);
-            if (next) show(next);
-          }}
-        >
-          {views.map((entry) => (
-            <ToggleGroupItem key={entry} value={entry}>
-              {PROJECT_VIEW_LABELS[entry]}
-              {viewCount(entry) ? (
-                <span className="tabular-nums opacity-60">{viewCount(entry)}</span>
-              ) : null}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-      {shown === "overview" ? (
-        <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="flex min-w-0 flex-col gap-10">
-            {settingUp ? (
-              <ProjectSetup
-                project={project}
-                hasCopy={activeCopies.length > 0}
-                canEdit={update.canEdit}
-                canWork={canWork}
-                canStart={canStart}
-                onWriteBrief={() => setEditingBrief(true)}
-                onAddResource={() => {
-                  setAddingResource(true);
-                  show("repositories");
-                }}
-                onGetCopy={setCopyRequest}
-                onStart={() => setConversation({})}
-              />
-            ) : (
-              <RecentConversations
-                project={project}
-                threads={threads}
-                loading={library.threads.isPending}
-                error={library.threads.error}
-                onRetry={library.threads.refresh}
+      <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
+        {shown === "overview" ? (
+          <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="flex min-w-0 flex-col gap-10">
+              {settingUp ? (
+                <ProjectSetup
+                  project={project}
+                  hasCopy={activeCopies.length > 0}
+                  canEdit={update.canEdit}
+                  canWork={canWork}
+                  canStart={canStart}
+                  onWriteBrief={() => setEditingBrief(true)}
+                  onAddResource={() => {
+                    setAddingResource(true);
+                    show("repositories");
+                  }}
+                  onGetCopy={setCopyRequest}
+                  onStart={() => setConversation({})}
+                />
+              ) : (
+                <RecentConversations
+                  project={project}
+                  threads={threads}
+                  loading={library.threads.isPending}
+                  error={library.threads.error}
+                  onRetry={library.threads.refresh}
+                  hostLabel={hostLabel}
+                  hostConnected={hostConnected}
+                  onShowAll={() => show("conversations")}
+                />
+              )}
+              <TimelinePreview
+                projectId={project.id}
+                authorityId={authorityId}
+                connected={library.connected}
+                capabilities={capabilities}
                 hostLabel={hostLabel}
                 hostConnected={hostConnected}
-                onShowAll={() => show("conversations")}
+                onShowAll={() => show("timeline")}
               />
-            )}
-            <TimelinePreview
-              projectId={project.id}
+            </div>
+            <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
+              <CopiesSummary
+                copies={copies}
+                loading={copiesLoading}
+                canAct={canWork}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+                onGetCopy={setCopyRequest}
+                onShowAll={() => show("computers")}
+              />
+              <ResourcesSummary
+                resources={project.resources}
+                onShowAll={() => show("repositories")}
+              />
+            </aside>
+          </div>
+        ) : shown === "conversations" ? (
+          <div className="flex min-w-0 flex-col gap-8">
+            <LibraryHistorySearch
               authorityId={authorityId}
               connected={library.connected}
               capabilities={capabilities}
+              projectId={project.id}
+              hostLabel={hostLabel}
+            />
+            <ProjectConversations
+              project={project}
+              threads={threads}
+              loading={library.threads.isPending}
+              error={library.threads.error}
+              onRetry={library.threads.refresh}
               hostLabel={hostLabel}
               hostConnected={hostConnected}
-              onShowAll={() => show("timeline")}
             />
           </div>
-          <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
-            <CopiesSummary
-              copies={copies}
-              loading={copiesLoading}
-              canAct={canWork}
-              hostLabel={hostLabel}
-              hostConnected={hostConnected}
-              onGetCopy={setCopyRequest}
-              onShowAll={() => show("computers")}
-            />
-            <ResourcesSummary
-              resources={project.resources}
-              onShowAll={() => show("repositories")}
-            />
-          </aside>
-        </div>
-      ) : shown === "conversations" ? (
-        <div className="flex min-w-0 flex-col gap-8">
-          <LibraryHistorySearch
+        ) : shown === "timeline" ? (
+          <ProjectTimeline
+            projectId={project.id}
             authorityId={authorityId}
             connected={library.connected}
             capabilities={capabilities}
-            projectId={project.id}
-            hostLabel={hostLabel}
-          />
-          <ProjectConversations
-            project={project}
-            threads={threads}
-            loading={library.threads.isPending}
-            error={library.threads.error}
-            onRetry={library.threads.refresh}
             hostLabel={hostLabel}
             hostConnected={hostConnected}
+            fallback={
+              <ProjectHistory
+                project={project}
+                copies={copies}
+                authorityId={authorityId}
+                connected={library.connected}
+                canAct={canWork}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+                onReuse={setCopyRequest}
+              />
+            }
           />
-        </div>
-      ) : shown === "timeline" ? (
-        <ProjectTimeline
-          projectId={project.id}
-          authorityId={authorityId}
-          connected={library.connected}
-          capabilities={capabilities}
-          hostLabel={hostLabel}
-          hostConnected={hostConnected}
-          fallback={
-            <ProjectHistory
-              project={project}
-              copies={copies}
-              authorityId={authorityId}
-              connected={library.connected}
-              canAct={canWork}
-              hostLabel={hostLabel}
-              hostConnected={hostConnected}
-              onReuse={setCopyRequest}
-            />
-          }
-        />
-      ) : shown === "computers" ? (
-        <ProjectCopies
-          project={project}
-          copies={copies}
-          loading={copiesLoading}
-          error={library.copies.error}
-          onRetry={library.copies.refresh}
-          canAct={canWork}
-          canStart={canStart}
-          hostLabel={hostLabel}
-          hostConnected={hostConnected}
-          lastSeenAt={(id) =>
-            library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
-          }
-          publishedHealth={supportsLoomFeature(capabilities, LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE)}
-          onGetCopy={setCopyRequest}
-          onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
-          onRemove={setReleasing}
-        />
-      ) : shown === "repositories" ? (
-        <ProjectResources
-          resources={project.resources}
-          copies={copies}
-          hostLabel={hostLabel}
-          canEdit={update.canEdit}
-          busy={update.busy}
-          adding={addingResource}
-          canStart={canStart}
-          onAddingChange={setAddingResource}
-          onChange={(resources) => update.save({ resources })}
-          onStart={(resource) => setConversation({ resourceId: resource.id })}
-        />
-      ) : (
-        <ProjectProfile
-          project={project}
-          copies={activeCopies}
-          computers={library.computers}
-          canEdit={update.canEdit}
-          keepsBriefSuggestions={keepsBriefSuggestions}
-          busy={update.busy}
-          error={update.error}
-          hostLabel={hostLabel}
-          onEdit={update.clearError}
-          onSave={(profile) => update.save({ profile })}
-        />
-      )}
+        ) : shown === "computers" ? (
+          <ProjectCopies
+            project={project}
+            copies={copies}
+            loading={copiesLoading}
+            error={library.copies.error}
+            onRetry={library.copies.refresh}
+            canAct={canWork}
+            canStart={canStart}
+            hostLabel={hostLabel}
+            hostConnected={hostConnected}
+            lastSeenAt={(id) =>
+              library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+            }
+            publishedHealth={supportsLoomFeature(
+              capabilities,
+              LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
+            )}
+            onGetCopy={setCopyRequest}
+            onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+            onRemove={setReleasing}
+          />
+        ) : shown === "repositories" ? (
+          <ProjectResources
+            resources={project.resources}
+            copies={copies}
+            hostLabel={hostLabel}
+            canEdit={update.canEdit}
+            busy={update.busy}
+            adding={addingResource}
+            canStart={canStart}
+            onAddingChange={setAddingResource}
+            onChange={(resources) => update.save({ resources })}
+            onStart={(resource) => setConversation({ resourceId: resource.id })}
+          />
+        ) : (
+          <ProjectProfile
+            project={project}
+            copies={activeCopies}
+            computers={library.computers}
+            canEdit={update.canEdit}
+            keepsBriefSuggestions={keepsBriefSuggestions}
+            busy={update.busy}
+            error={update.error}
+            hostLabel={hostLabel}
+            onEdit={update.clearError}
+            onSave={(profile) => update.save({ profile })}
+          />
+        )}
+      </ProjectTabs>
       {copyRequest ? (
         <CopyDialog
           project={project}
@@ -503,10 +489,18 @@ function ProjectHero({
     onSaved();
   };
   return (
-    <header className="flex flex-col gap-6">
+    <header className="flex flex-col gap-4">
       <div>
         <LibraryBackLink to="/projects">Projects</LibraryBackLink>
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+      </div>
+      <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-xs/5 sm:p-7">
+        <ProjectGlow strength="strong" />
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10 text-foreground/10"
+          style={HERO_DOTS}
+        />
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           <Popover>
             <PopoverTrigger
               disabled={!update.canEdit || update.busy}
@@ -514,11 +508,11 @@ function ProjectHero({
               render={
                 <button
                   type="button"
-                  className="shrink-0 rounded-2xl outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:hover:scale-103 disabled:cursor-default"
+                  className="shrink-0 rounded-2xl bg-card shadow-sm ring-1 ring-border outline-none transition-transform duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring enabled:hover:scale-103 disabled:cursor-default"
                 />
               }
             >
-              <ProjectTile project={project} local={localIcon} size="xl" />
+              <ProjectTile project={project} local={localIcon} size="2xl" />
             </PopoverTrigger>
             <PopoverPopup align="start" className="w-auto">
               <p className="mb-3 text-sm font-medium">Project color</p>
@@ -532,7 +526,7 @@ function ProjectHero({
               />
             </PopoverPopup>
           </Popover>
-          <div className="min-w-0 flex-1 basis-60 space-y-1.5">
+          <div className="min-w-0 flex-1 basis-60 space-y-2 pt-0.5">
             {renaming ? (
               <TitleEditor
                 title={project.title}
@@ -543,33 +537,31 @@ function ProjectHero({
                 }}
               />
             ) : (
-              <h1 className="wrap-anywhere text-3xl leading-tight font-semibold tracking-tight">
+              <h1 className="wrap-anywhere text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">
                 {project.title}
               </h1>
             )}
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs tabular-nums text-muted-foreground">
               <StatusPill archived={project.archived} resting={resting} />
-              <span>Last active {formatRelativeTimeLabel(activeAt)}</span>
-              <span aria-hidden className="max-sm:hidden">
-                ·
+              <span className="inline-flex items-center gap-1.5">
+                <ClockIcon aria-hidden className="size-3.5 opacity-70" />
+                Last active {formatRelativeTimeLabel(activeAt)}
               </span>
-              <span className="max-sm:basis-full">Started {formatDay(project.createdAt)}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarIcon aria-hidden className="size-3.5 opacity-70" />
+                Started {formatDay(project.createdAt)}
+              </span>
             </p>
           </div>
-          <div className="flex items-center gap-1.5 pt-1">
-            <Button shape="pill" size="sm" disabled={!canStart} onClick={onNewConversation}>
+          <div className="flex items-center gap-1.5 pt-1.5">
+            <Button shape="pill" disabled={!canStart} onClick={onNewConversation}>
               <PlusIcon />
               New conversation
             </Button>
             <Menu>
               <MenuTrigger
                 render={
-                  <Button
-                    shape="pill"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Project actions"
-                  />
+                  <Button shape="pill" size="icon" variant="outline" aria-label="Project actions" />
                 }
               >
                 <EllipsisIcon />
@@ -592,26 +584,26 @@ function ProjectHero({
             </Menu>
           </div>
         </div>
-      </div>
-      <div className="space-y-2 sm:ps-18">
-        <ProjectBrief
-          brief={project.brief}
-          canEdit={update.canEdit}
-          busy={update.busy}
-          editing={editingBrief}
-          showEmpty={showEmptyBrief}
-          onEditingChange={onEditingBriefChange}
-          onSave={(brief) => update.save({ brief })}
-        />
-        {proposesBrief ? (
-          <ProjectBriefProposals
-            project={project}
-            authorityId={authorityId}
-            connected={connected}
-            hostLabel={hostLabel}
-            onDecided={onSaved}
+        <div className="mt-5 space-y-2 sm:ps-21">
+          <ProjectBrief
+            brief={project.brief}
+            canEdit={update.canEdit}
+            busy={update.busy}
+            editing={editingBrief}
+            showEmpty={showEmptyBrief}
+            onEditingChange={onEditingBriefChange}
+            onSave={(brief) => update.save({ brief })}
           />
-        ) : null}
+          {proposesBrief ? (
+            <ProjectBriefProposals
+              project={project}
+              authorityId={authorityId}
+              connected={connected}
+              hostLabel={hostLabel}
+              onDecided={onSaved}
+            />
+          ) : null}
+        </div>
       </div>
       {project.archived ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3 dark:bg-accent/50">

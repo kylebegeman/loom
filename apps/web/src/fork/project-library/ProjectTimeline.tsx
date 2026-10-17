@@ -21,8 +21,24 @@ import {
   type LibraryTimelineLink,
 } from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
-import { ArrowRightIcon } from "lucide-react";
+import {
+  AlarmClockCheckIcon,
+  ArchiveIcon,
+  ArrowRightIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CpuIcon,
+  GitCommitHorizontalIcon,
+  HardDriveDownloadIcon,
+  HistoryIcon,
+  MessageSquarePlusIcon,
+  MonitorXIcon,
+  PencilLineIcon,
+  SparklesIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
 import { cn } from "~/lib/utils";
@@ -131,6 +147,7 @@ export function TimelinePreview({
   return (
     <LibrarySection
       title="Lately"
+      icon={HistoryIcon}
       action={
         entries.length ? (
           <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
@@ -142,17 +159,12 @@ export function TimelinePreview({
     >
       <LibraryErrorNotice error={latest.error} onRetry={latest.refresh} />
       {entries.length ? (
-        <ol>
-          {entries.map((entry) => (
-            <li key={entry.sequence}>
-              <TimelineRow
-                entry={entry}
-                link={libraryTimelineEntryLink(entry, hostConnected)}
-                hostLabel={hostLabel}
-              />
-            </li>
-          ))}
-        </ol>
+        <TimelineList
+          entries={entries}
+          hostLabel={hostLabel}
+          hostConnected={hostConnected}
+          clock={false}
+        />
       ) : latest.error ? null : latest.data ? (
         <p className="text-xs text-muted-foreground">Nothing has happened in this project yet.</p>
       ) : (
@@ -257,19 +269,18 @@ function TimelineFeed({
       <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
       {groupTimelineByDay(feed.entries, now).map((day) => (
         <section key={day.key} aria-label={day.label} className="flex flex-col gap-1">
-          <h3 className="text-xs font-medium text-muted-foreground">{day.label}</h3>
-          <ol>
-            {day.entries.map((entry) => (
-              <li key={entry.sequence}>
-                <TimelineRow
-                  entry={entry}
-                  link={libraryTimelineEntryLink(entry, hostConnected)}
-                  hostLabel={hostLabel}
-                  clock
-                />
-              </li>
-            ))}
-          </ol>
+          <h3 className="flex items-baseline gap-2 py-1.5 text-sm font-semibold tracking-tight">
+            {day.label}
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
+              ({day.entries.length})
+            </span>
+          </h3>
+          <TimelineList
+            entries={day.entries}
+            hostLabel={hostLabel}
+            hostConnected={hostConnected}
+            clock
+          />
         </section>
       ))}
       {cursor === null ? (
@@ -295,6 +306,78 @@ function TimelineFeed({
   );
 }
 
+type Tone = "project" | "success" | "warning" | "quiet";
+
+const TONE_CLASSES: Record<Tone, string> = {
+  project: "bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
+  success: "bg-success/12 text-success-foreground",
+  warning: "bg-warning/14 text-warning-foreground",
+  quiet: "bg-muted text-muted-foreground dark:bg-accent",
+};
+
+/** Starts, merges and new work carry the project's color; endings and removals stay quiet. */
+const KIND_DISPLAY: Record<
+  LibraryTimelineKind,
+  { readonly icon: LucideIcon; readonly tone: Tone }
+> = {
+  "conversation-started": { icon: MessageSquarePlusIcon, tone: "project" },
+  "conversation-settled": { icon: CircleCheckIcon, tone: "quiet" },
+  "conversation-failed": { icon: CircleAlertIcon, tone: "warning" },
+  "conversation-archived": { icon: ArchiveIcon, tone: "quiet" },
+  "pull-request-linked": { icon: PullRequestGlyph.pullRequest, tone: "project" },
+  "pull-request-merged": { icon: PullRequestGlyph.merged, tone: "success" },
+  "pull-request-closed": { icon: PullRequestGlyph.closed, tone: "quiet" },
+  "pull-request-checks-failed": { icon: CircleAlertIcon, tone: "warning" },
+  "brief-revised": { icon: PencilLineIcon, tone: "project" },
+  "brief-proposed": { icon: SparklesIcon, tone: "project" },
+  "copy-added": { icon: HardDriveDownloadIcon, tone: "quiet" },
+  "copy-released": { icon: MonitorXIcon, tone: "quiet" },
+  "copy-failed": { icon: MonitorXIcon, tone: "warning" },
+  commits: { icon: GitCommitHorizontalIcon, tone: "project" },
+  "scheduled-run": { icon: AlarmClockCheckIcon, tone: "quiet" },
+  "mini-job": { icon: CpuIcon, tone: "quiet" },
+};
+
+/**
+ * Entries joined by a thin rail through their icons, so a day reads as one run of events. The
+ * rail sits under the icon column, which moves right when the time of day leads each row.
+ */
+function TimelineList({
+  entries,
+  hostLabel,
+  hostConnected,
+  clock,
+}: {
+  readonly entries: readonly LibraryTimelineEntry[];
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly hostConnected: (id: EnvironmentId) => boolean;
+  readonly clock: boolean;
+}) {
+  return (
+    <ol>
+      {entries.map((entry, index) => (
+        <li key={entry.sequence} className="relative">
+          {index < entries.length - 1 ? (
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute top-10 -bottom-2 w-px -translate-x-1/2 bg-border",
+                clock ? "start-[5.375rem]" : "start-3.5",
+              )}
+            />
+          ) : null}
+          <TimelineRow
+            entry={entry}
+            link={libraryTimelineEntryLink(entry, hostConnected)}
+            hostLabel={hostLabel}
+            clock={clock}
+          />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 const formatClock = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
@@ -315,22 +398,25 @@ function TimelineRow({
 }) {
   const where = entry.environmentId ? hostLabel(entry.environmentId) : "Library";
   const folder = "copy" in entry ? libraryPathParts(entry.copy.rootPath).name : null;
+  const display = KIND_DISPLAY[entry.kind];
   const body = (
     <>
       {clock ? (
-        <span className="w-16 shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
+        <span className="w-15 shrink-0 pt-1.5 text-right text-xs tabular-nums text-muted-foreground">
           {formatClock(entry.at)}
         </span>
       ) : null}
       <span
         aria-hidden
         className={cn(
-          "mt-2 size-1.5 shrink-0 rounded-full",
-          libraryTimelineEntryFailed(entry) ? "bg-warning" : "bg-muted-foreground/45",
+          "inline-flex size-7 shrink-0 items-center justify-center rounded-full ring-4 ring-background",
+          TONE_CLASSES[libraryTimelineEntryFailed(entry) ? "warning" : display.tone],
         )}
-      />
-      <span className="min-w-0 flex-1 space-y-0.5">
-        <span className="block break-words text-sm leading-snug">
+      >
+        <display.icon className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 space-y-0.5 pt-1">
+        <span className="block break-words text-sm leading-snug font-medium">
           {libraryTimelineEntrySummary(entry)}
         </span>
         <span className="block truncate text-xs text-muted-foreground">
