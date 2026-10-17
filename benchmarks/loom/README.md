@@ -25,8 +25,9 @@ node benchmarks/loom/run.ts --output .t3/benchmarks/paired.json \
 ```
 
 This runs three original/current pairs in fresh processes, alternating which version runs
-first. It saves `paired.reference.json` and `paired.json`, including the source revision,
-SHA-256 digests, actual-load attestations and run order. Both versions use the current harness
+first. It saves `paired.reference.json` and `paired.json`, including source revisions,
+SHA-256 digests and run order. Every reference sweep must attest loading all six recorded
+source hashes before its measurements are accepted. Both versions use the current harness
 and identical fixtures. A benchmark-only Vite loader reads the six target modules directly
 from Git; it never changes checkout files. Shared runtime dependencies must be unchanged,
 or the comparison is rejected. Paired mode also requires the median reduction across
@@ -35,9 +36,9 @@ Use this mode to validate improvements when separate runs
 may have experienced different host load or garbage collection.
 
 `node_modules/.bin/vp` is resolved locally by the runner. No global installation is needed.
-The default is three sequential sweeps in fresh Vitest processes, each with at least five
-warmup calls and 100 ms warmup, then at least 21 individually timed operations and 250 ms
-sampling per case. Very fast workloads stop after 20,000 samples. Fixtures, assertions,
+The default is three sequential sweeps in fresh Vitest processes. Warmup runs at least five
+calls, aims for 100 ms, and stops after 10,001 calls for very fast cases. Sampling then runs
+at least 21 individually timed operations and 250 ms per case. Very fast workloads stop after 20,000 samples. Fixtures, assertions,
 output hashing and database setup are outside the timed region. Async operations are awaited.
 The timer includes await overhead and garbage collection, consistently before and after.
 
