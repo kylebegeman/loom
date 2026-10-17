@@ -162,7 +162,8 @@ export function LibraryCopySection(props: {
         </Text>
         <Text className="text-xs text-foreground-muted">
           {copy.registered === false ? "Unregistered" : copy.state} · {copy.repositories.length}{" "}
-          repositories · {borrowed ? "Existing files, kept in place" : "Loom-owned working copy"}
+          {copy.repositories.length === 1 ? "repository" : "repositories"} ·{" "}
+          {borrowed ? "Existing files, kept in place" : "Loom-owned working copy"}
         </Text>
         {!connected && !removed ? (
           <Text className="text-sm text-foreground-muted">

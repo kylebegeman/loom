@@ -852,9 +852,11 @@ function LibraryStartContent(props: {
             <ListChoiceRow
               label={repositories.length > 0 ? "Clone project" : "Create discussion workspace"}
               description={
-                repositories.length > 0
-                  ? `Prepare all ${repositories.length} repositories together under one parent folder.`
-                  : "Create a managed folder for the conversation and its saved checkpoints."
+                repositories.length === 1
+                  ? "Prepare the repository in a new folder."
+                  : repositories.length > 0
+                    ? `Prepare all ${repositories.length} repositories together under one parent folder.`
+                    : "Create a managed folder for the conversation and its saved checkpoints."
               }
               selected={mode === "clone"}
               disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
