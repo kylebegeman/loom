@@ -18,8 +18,10 @@ export function loomIdentityUrl(baseUrl: string, path: string) {
 export async function readLoomIdentity(baseUrl: string, signal?: AbortSignal, refresh = false) {
   const url = loomIdentityUrl(baseUrl, LOOM_IDENTITY_METADATA_PATH);
   if (!url) return null;
+  // The metadata is public and served with a wildcard origin, which browsers refuse
+  // for credentialed requests from another origin.
   const response = await fetch(url, {
-    credentials: "include",
+    credentials: "omit",
     ...(refresh ? { cache: "no-store" as const } : {}),
     ...(signal ? { signal } : {}),
   });
