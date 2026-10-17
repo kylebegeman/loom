@@ -10,6 +10,7 @@ import {
   LibraryEditRouteScreen,
 } from "./fork/library/LibraryProjectForm";
 import { LibraryHistoryRouteScreen } from "./fork/library/LibraryHistoryScreen";
+import { LibraryBriefReviewRouteScreen } from "./fork/library/LibraryBriefProposals";
 import { LibraryIdentityRouteScreen } from "./fork/library/LibraryIdentityScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
 import { APP_LINKING_CONFIG } from "./lib/appLinking"; // fork: project-navigation
@@ -745,6 +746,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibraryHistory: createNativeStackScreen({
       screen: LibraryHistoryRouteScreen,
       linking: "library/projects/:projectId/history/:archiveId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryBriefReview: createNativeStackScreen({
+      screen: LibraryBriefReviewRouteScreen,
+      linking: "library/projects/:projectId/brief-suggestions",
       options: SOLID_HEADER_OPTIONS,
     }),
     ...(__DEV__

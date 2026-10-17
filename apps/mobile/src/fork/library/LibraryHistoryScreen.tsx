@@ -13,6 +13,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { LibraryArchiveFeedRow } from "./LibraryArchiveFeed";
 import { libraryArchiveRows } from "./libraryArchive";
 import { LibraryReplicationNotice } from "./LibraryReplicationNotice";
+import { LibraryBriefSuggestionOffer, LibrarySuggestBriefUpdates } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, useLibraryAuthority } from "./libraryState";
 
@@ -162,6 +163,17 @@ export function LibraryHistoryRouteScreen({
                 }
               />
             </View>
+            <LibrarySuggestBriefUpdates
+              summary={archive.summary}
+              authorityId={target}
+              hostLabel={host?.label ?? "the original computer"}
+              hostConnected={connected}
+            />
+            <LibraryBriefSuggestionOffer
+              environmentId={archive.summary.environmentId}
+              threadId={archive.summary.threadId}
+              connected={connected}
+            />
             {query.error ? <LibraryNotice error={query.error} onRetry={query.refresh} /> : null}
           </View>
         }

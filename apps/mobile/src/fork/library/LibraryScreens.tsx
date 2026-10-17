@@ -51,6 +51,7 @@ import {
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryProjectTile } from "./libraryProjectColors";
+import { LibraryBriefProposalsRow } from "./LibraryBriefProposals";
 
 const RECENT_CONVERSATIONS = 5;
 const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
@@ -547,6 +548,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
               "Every conversation in this project starts with the brief. Say what you're building and what matters."}
           </Text>
         </View>
+        <LibraryBriefProposalsRow project={p} authorityId={target} hostLabel={hostLabel} />
       </SettingsSection>
       <ProjectSites environmentId={target} projectId={p.id} />
       <SettingsSection title="Repositories and links">
