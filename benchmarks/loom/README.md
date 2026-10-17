@@ -64,7 +64,9 @@ region order; graph checks cover ranked outputs or complete parsed adjacency.
 The aggregate latency is the median of the individual sweep medians, giving each fresh
 process equal weight. p95 is the nearest-rank percentile of all individual operation samples.
 Reports retain raw samples, each sweep's median, workload sizes, fingerprints, hardware,
-revision, dirty paths and timestamps. CPU time and heap/RSS deltas are advisory observations.
+revision, dirty paths and timestamps. New runs also capture host load and free memory
+around each measured case, so unrelated contention can be distinguished from code regressions.
+CPU time and heap/RSS deltas are advisory observations.
 Heap/RSS deltas are affected by GC, fixtures and process reuse; they are not allocation counts
 or peak-memory measurements and are not acceptance gates.
 

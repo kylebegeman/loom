@@ -54,6 +54,8 @@ const metadata = {
   cpu: NodeOS.cpus()[0]?.model ?? "unknown",
   logicalCpus: NodeOS.cpus().length,
   memoryBytes: NodeOS.totalmem(),
+  loadAtStart: NodeOS.loadavg(),
+  freeMemoryAtStartBytes: NodeOS.freemem(),
 };
 const baseline = values.baseline
   ? readBaseline(
@@ -114,7 +116,7 @@ for (const item of measurements) {
   const comparison =
     item.reductionPct === null
       ? ""
-      : `; ${item.reductionPct.toFixed(1)}% lower${item.passed ? "" : " (below goal)"}`;
+      : `; ${Math.abs(item.reductionPct).toFixed(1)}% ${item.reductionPct < 0 ? "higher" : "lower"}${item.passed ? "" : " (below goal)"}`;
   process.stdout.write(
     `${item.id}: ${item.medianMs.toFixed(3)} ms median, ${item.p95Ms.toFixed(3)} ms p95${comparison}\n`,
   );

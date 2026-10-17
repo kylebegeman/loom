@@ -2,6 +2,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as NodePerfHooks from "node:perf_hooks";
+import * as NodeOS from "node:os";
 
 export interface BenchmarkCase {
   readonly id: string;
@@ -48,6 +49,12 @@ export interface BenchmarkMeasurement {
   readonly cpuMs: number;
   readonly observedHeapDeltaBytes: number;
   readonly observedRssDeltaBytes: number;
+  readonly host?: {
+    readonly load1mBefore: number;
+    readonly load1mAfter: number;
+    readonly freeMemoryBeforeBytes: number;
+    readonly freeMemoryAfterBytes: number;
+  };
 }
 
 export async function measure(
@@ -60,6 +67,8 @@ export async function measure(
     await benchmark.run();
     if (n >= 10_000) break;
   }
+  const load1mBefore = NodeOS.loadavg()[0]!;
+  const freeMemoryBeforeBytes = NodeOS.freemem();
   const before = process.memoryUsage();
   const cpuStart = process.cpuUsage();
   const samplesMs: number[] = [];
@@ -89,5 +98,11 @@ export async function measure(
     cpuMs: (cpu.user + cpu.system) / 1000,
     observedHeapDeltaBytes: after.heapUsed - before.heapUsed,
     observedRssDeltaBytes: after.rss - before.rss,
+    host: {
+      load1mBefore,
+      load1mAfter: NodeOS.loadavg()[0]!,
+      freeMemoryBeforeBytes,
+      freeMemoryAfterBytes: NodeOS.freemem(),
+    },
   };
 }
