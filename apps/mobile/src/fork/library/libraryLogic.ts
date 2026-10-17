@@ -2,7 +2,9 @@ import {
   isRepositoryResource,
   libraryCopiesForScope,
   libraryCopyReadiness,
+  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
+import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import type {
   LibraryProject,
   LibraryResource,
@@ -25,6 +27,34 @@ export function libraryListState(query: {
   if (readiness !== "ready") return readiness;
   if (query.data === null) return "loading";
   return query.data.length === 0 ? "empty" : "ready";
+}
+
+export type LibraryFeatureState =
+  | "loading"
+  | "unselected"
+  | "offline"
+  | "unsupported"
+  | "supported";
+
+/**
+ * Where a Library feature stands. Capabilities are unknown until the Library's server config
+ * arrives, and a cached config can predate an update, so only a connected Library whose config
+ * lacks the feature is reported as needing one.
+ */
+export function libraryFeatureState(
+  authority: {
+    readonly loaded: boolean;
+    readonly environmentId: string | null;
+    readonly connected: boolean;
+  },
+  capabilities: ExecutionEnvironmentCapabilities | null | undefined,
+  feature: string,
+): LibraryFeatureState {
+  if (authority.environmentId && supportsLoomFeature(capabilities, feature)) return "supported";
+  if (!authority.loaded) return "loading";
+  if (!authority.environmentId) return "unselected";
+  if (!authority.connected) return "offline";
+  return capabilities ? "unsupported" : "loading";
 }
 
 export function libraryBinding(

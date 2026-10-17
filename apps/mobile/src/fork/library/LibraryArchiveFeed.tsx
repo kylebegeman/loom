@@ -102,8 +102,14 @@ const CapturedMarkdown = memo(function CapturedMarkdown({ text }: { text: string
 
 const LOG_PREVIEW_CHARACTERS = 16_000;
 
-function SavedActivity({ row }: { row: Extract<LibraryArchiveRow, { type: "activity" }> }) {
-  const [expanded, setExpanded] = useState(false);
+function SavedActivity({
+  row,
+  initiallyExpanded = false,
+}: {
+  row: Extract<LibraryArchiveRow, { type: "activity" }>;
+  initiallyExpanded?: boolean | undefined;
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [visibleCharacters, setVisibleCharacters] = useState(LOG_PREVIEW_CHARACTERS);
   const activity = row.activity,
     item = activity.projectedItem.item;
@@ -198,9 +204,12 @@ export const LibraryArchiveFeedRow = memo(function LibraryArchiveFeedRow(props: 
   row: LibraryArchiveRow;
   archive: LibraryThreadArchive;
   authorityEnvironmentId: EnvironmentId;
+  /** Opens the row, as for a proposed plan a history search matched. */
+  initiallyExpanded?: boolean;
 }) {
   const { row, archive, authorityEnvironmentId } = props;
-  if (row.type === "activity") return <SavedActivity row={row} />;
+  if (row.type === "activity")
+    return <SavedActivity row={row} initiallyExpanded={props.initiallyExpanded} />;
   if (row.type === "html-render" || row.type === "mcp-app") {
     const title =
       row.type === "html-render" ? row.render.title : `${row.app.server}: ${row.app.tool}`;

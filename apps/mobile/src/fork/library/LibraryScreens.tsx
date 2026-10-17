@@ -51,6 +51,8 @@ import {
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryProjectTile } from "./libraryProjectColors";
+import { LibraryHistorySearchEntry } from "./LibraryHistorySearch";
+import { LibraryTimelinePreview } from "./LibraryTimeline";
 
 const RECENT_CONVERSATIONS = 5;
 const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
@@ -61,6 +63,8 @@ export function LibraryPage(props: {
   children: ReactNode;
   back?: boolean;
   scroll?: boolean;
+  /** For a page whose results scroll beneath an open keyboard, such as a search. */
+  keyboardResults?: boolean;
   actions?: Parameters<typeof AppBar>[0]["actions"];
 }) {
   const navigation = useNavigation();
@@ -91,6 +95,10 @@ export function LibraryPage(props: {
         <ScreenScrollView
           className="flex-1"
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={props.keyboardResults ? "on-drag" : "none"}
+          automaticallyAdjustKeyboardInsets={
+            props.keyboardResults === true && Platform.OS === "ios"
+          }
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{
             padding: 16,
@@ -182,6 +190,7 @@ export function LibraryRouteScreen() {
         Keep the context, repositories and conversations for each thing you’re building together.
       </Text>
       <Button label="Sites and activity" onPress={() => navigation.navigate("Sites")} />
+      <LibraryHistorySearchEntry />
       {!authority.environmentId ? (
         <View className="gap-3">
           <Text className="text-sm text-foreground">
@@ -619,6 +628,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
       </View>
+      <LibraryHistorySearchEntry projectId={p.id} />
       <SettingsSection
         title={
           showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS
@@ -659,6 +669,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           </View>
         ) : null}
       </SettingsSection>
+      <LibraryTimelinePreview projectId={p.id} />
       {removedCopies.length ? (
         <View className="gap-3">
           <Button
