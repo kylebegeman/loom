@@ -441,6 +441,13 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
   );
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
+  // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
+  // health look recent. Only copies read live from the connected authority may be aged by it, and
+  // they stay trusted while a refresh is in flight so the age does not jump back and forth.
+  const [liveCopies, setLiveCopies] = useState<typeof copies.data>(null);
+  const nextLiveCopies = !authority.ready ? null : copiesReady ? copies.data : liveCopies;
+  if (nextLiveCopies !== liveCopies) setLiveCopies(nextLiveCopies);
+  const copiesLive = liveCopies !== null && copies.data === liveCopies;
   const threadsState = libraryListState(threads);
   const threadListNotice =
     threadsState === "loading"
@@ -485,10 +492,8 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       environments.find((env) => env.environmentId === id)?.label ??
       authority.computers.find((entry) => entry.environmentId === id)?.label ??
       "Saved computer",
-    // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
-    // health look recent. Only a live, settled read of both may age health past its own check.
     lastSeenAt = (id: string) =>
-      authority.ready && copiesReady
+      copiesLive
         ? authority.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
         : undefined;
   const showThread = (thread: LibraryThreadSummary) =>

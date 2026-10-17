@@ -186,6 +186,17 @@ function ProjectView({
       (entry) =>
         entry.environmentId === id && entry.entry.enabled && entry.connection.phase === "connected",
     );
+  // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
+  // health look recent. Only copies read live from the connected Library may be aged by it, and
+  // they stay trusted while a refresh is in flight so the age does not jump back and forth.
+  const [liveCopies, setLiveCopies] = useState<typeof library.copies.data>(null);
+  const nextLiveCopies = !library.connected
+    ? null
+    : libraryCopyReadiness(library.copies) === "ready"
+      ? library.copies.data
+      : liveCopies;
+  if (nextLiveCopies !== liveCopies) setLiveCopies(nextLiveCopies);
+  const copiesLive = liveCopies !== null && library.copies.data === liveCopies;
   const copies = library.copies.data ?? [];
   const activeCopies = libraryActiveCopies(copies);
   const capabilities = library.environment?.serverConfig?.environment.capabilities;
@@ -360,7 +371,9 @@ function ProjectView({
             hostLabel={hostLabel}
             hostConnected={hostConnected}
             lastSeenAt={(id) =>
-              library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+              copiesLive
+                ? library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+                : undefined
             }
             publishedHealth={supportsLoomFeature(
               capabilities,

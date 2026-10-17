@@ -92,14 +92,22 @@ function ReadinessChecklist({
     }),
   );
   const data = readiness.data;
+  const failure = readiness.error ? (
+    <ReadFailure
+      message="Could not check required tools."
+      pending={readiness.isPending}
+      onRetry={readiness.refresh}
+    />
+  ) : null;
   if (data === null)
-    return readiness.error ? (
-      <p className="text-xs text-muted-foreground">Could not check required tools.</p>
-    ) : readiness.isPending ? (
-      <p role="status" className="text-xs text-muted-foreground">
-        Checking required tools...
-      </p>
-    ) : null;
+    return (
+      failure ??
+      (readiness.isPending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Checking required tools...
+        </p>
+      ) : null)
+    );
   return (
     <div className="space-y-0.5 text-xs">
       {data.checks.length > 0 ? (
@@ -131,6 +139,27 @@ function ReadinessChecklist({
           {data.secrets.map((secret) => secret.name).join(", ")}
         </p>
       ) : null}
+      {failure}
+    </div>
+  );
+}
+
+/** A read that failed, kept apart from "nothing to show" so a failure never passes for a match. */
+function ReadFailure({
+  message,
+  pending,
+  onRetry,
+}: {
+  readonly message: string;
+  readonly pending: boolean;
+  readonly onRetry: () => void;
+}) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <p>{message}</p>
+      <Button shape="pill" size="xs" variant="outline" disabled={pending} onClick={onRetry}>
+        {pending ? "Checking..." : "Try again"}
+      </Button>
     </div>
   );
 }
@@ -176,7 +205,14 @@ function SettingsDifferences({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const data = settings.data;
-  if (data === null || data.reviewToken === null || data.projects.length === 0) return null;
+  const failure = settings.error ? (
+    <ReadFailure
+      message="Could not compare this copy's settings with the project setup."
+      pending={settings.isPending}
+      onRetry={settings.refresh}
+    />
+  ) : null;
+  if (data === null || data.reviewToken === null || data.projects.length === 0) return failure;
   const reviewToken = data.reviewToken;
   const named = data.projects.length > 1;
   const applySetup = async () => {
@@ -218,6 +254,7 @@ function SettingsDifferences({
         </Button>
       ) : null}
       <LibraryErrorNotice error={error} />
+      {failure}
     </div>
   );
 }
