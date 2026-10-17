@@ -27,11 +27,7 @@ const MAX_RESOURCES = 64;
 
 function ResourceIcon({ resource }: { readonly resource: LibraryResource }) {
   const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
-  return (
-    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-      <Icon aria-hidden className="size-4" />
-    </span>
-  );
+  return <Icon aria-hidden className="size-4 shrink-0 text-(--project-color)" />;
 }
 
 /** The computers whose ready copy holds this repository, so a row says where the code already is. */

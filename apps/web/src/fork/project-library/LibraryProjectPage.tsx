@@ -508,7 +508,7 @@ function ProjectHero({
               render={
                 <button
                   type="button"
-                  className="shrink-0 rounded-2xl bg-card shadow-sm ring-1 ring-border outline-none transition-transform duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring enabled:hover:scale-103 disabled:cursor-default"
+                  className="shrink-0 rounded-2xl bg-card shadow-sm ring-1 ring-border outline-none transition-shadow duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring enabled:hover:shadow-md disabled:cursor-default"
                 />
               }
             >

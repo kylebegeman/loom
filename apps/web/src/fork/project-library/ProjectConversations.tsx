@@ -411,7 +411,7 @@ function FeaturedConversation({
     <ConversationLink
       thread={thread}
       connected={connected}
-      className="group/card relative isolate flex items-center gap-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 outline-none transition-[box-shadow,translate] duration-200 hover:-translate-y-px hover:shadow-md/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:hover:translate-y-0 sm:p-5"
+      className="group/card relative isolate flex items-center gap-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 outline-none transition-shadow duration-200 hover:shadow-md/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5"
     >
       <ProjectGlow strength="strong" />
       <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-(--project-color) text-background shadow-sm">
@@ -428,10 +428,7 @@ function FeaturedConversation({
         <ConversationMeta project={project} thread={thread} status={status} hostLabel={hostLabel} />
       </div>
       <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors duration-200 group-hover/card:bg-(--project-color) group-hover/card:text-background dark:bg-accent">
-        <ArrowRightIcon
-          aria-hidden
-          className="size-4 transition-transform duration-200 group-hover/card:translate-x-0.5"
-        />
+        <ArrowRightIcon aria-hidden className="size-4" />
       </span>
     </ConversationLink>
   );

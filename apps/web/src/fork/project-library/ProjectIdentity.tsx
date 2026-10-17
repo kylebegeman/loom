@@ -145,17 +145,34 @@ export function ComputerTile({
   readonly environmentId: EnvironmentId;
   readonly className?: string;
 }) {
-  const machines = useEnvironmentMachines();
   return (
     <span
       aria-hidden
       className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
+        "inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 dark:bg-(--project-color)/16",
         className,
       )}
     >
-      <EnvironmentMachineIcon kind={machines.get(environmentId) ?? "server"} className="size-5" />
+      <ComputerIcon environmentId={environmentId} className="size-5" />
     </span>
+  );
+}
+
+/** A computer's machine icon in the project color, for rows too dense to carry a tile. */
+export function ComputerIcon({
+  environmentId,
+  className,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly className?: string;
+}) {
+  const machines = useEnvironmentMachines();
+  return (
+    <EnvironmentMachineIcon
+      aria-hidden
+      kind={machines.get(environmentId) ?? "server"}
+      className={cn("size-4 shrink-0 text-(--project-color)", className)}
+    />
   );
 }
 

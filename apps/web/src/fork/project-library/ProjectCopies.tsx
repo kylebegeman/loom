@@ -35,7 +35,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { CopyProfileSetup } from "./ProfileReadiness";
-import { ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
+import { ComputerIcon, ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
 import { projectLibrary, useLibraryPermission } from "./state";
 
 export type CopyRequest = {
@@ -521,7 +521,7 @@ export function CopiesSummary({
         <ul className="divide-y divide-border border-t border-border">
           {active.map((copy) => (
             <li key={copy.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-              <ComputerTile environmentId={copy.environmentId} className="size-8 rounded-lg" />
+              <ComputerIcon environmentId={copy.environmentId} />
               <span className="min-w-0 truncate text-sm font-medium">
                 {hostLabel(copy.environmentId)}
               </span>
