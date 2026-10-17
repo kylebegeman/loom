@@ -487,7 +487,11 @@ function TimelineRow({
       </View>
       <View className="min-w-0 flex-1 gap-0.5 pt-1">
         <Text className="text-sm font-t3-medium text-foreground">{summary}</Text>
-        <Text numberOfLines={1} className="text-xs text-foreground-muted">
+        {/* At accessibility sizes one line would cut off the time, which ends the line. */}
+        <Text
+          numberOfLines={fontScale < STACK_TIME_FONT_SCALE ? 1 : undefined}
+          className="text-xs text-foreground-muted"
+        >
           {[where, folder, timeWidth === null ? shownTime : null].filter(Boolean).join(" · ")}
         </Text>
       </View>
