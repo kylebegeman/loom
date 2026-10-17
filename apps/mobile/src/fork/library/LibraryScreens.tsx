@@ -50,6 +50,7 @@ import {
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
+import { LibraryRestingProjects } from "./LibraryTidy";
 import { LibraryProjectTile } from "./libraryProjectColors";
 
 const RECENT_CONVERSATIONS = 5;
@@ -250,6 +251,7 @@ export function LibraryRouteScreen() {
               />
             ))}
           </SettingsSection>
+          {!archived && !query ? <LibraryRestingProjects /> : null}
           {!catalog.isPending && !catalog.error && !projects.length ? (
             <View className="gap-3 py-4">
               <Text className="text-base font-t3-medium text-foreground">
