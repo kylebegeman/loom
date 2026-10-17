@@ -688,6 +688,7 @@ function LibraryStartContent(props: {
               setCarryContext(text);
             }}
             multiline
+            textAlignVertical="top"
             editable={!locked}
             className="min-h-32 rounded-xl border border-input-border bg-input p-3 text-base text-foreground"
           />
