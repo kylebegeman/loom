@@ -34,6 +34,10 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
       const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
       const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
       return ForkRpcGroup.of({
+        [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
+        [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
+        [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),
+        [S.runChecks]: () => auth.effect(S.runChecks, sites.runChecks()),
         [S.snapshot]: () => auth.effect(S.snapshot, sites.snapshot),
         [S.analytics]: (input) => auth.effect(S.analytics, sites.analytics(input)),
         [N.get]: () => auth.effect(N.get, naming.current),

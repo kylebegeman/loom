@@ -220,7 +220,7 @@ it.effect(
         const metadata = yield* identity.metadata;
         expect(metadata.enabled).toBe(false);
         expect(encodeJson(metadata)).not.toContain("private-client-secret");
-        expect((yield* Effect.result(identity.beginLogin))._tag).toBe("Failure");
+        expect((yield* Effect.result(identity.beginLogin()))._tag).toBe("Failure");
       }).pipe(Effect.provide(test.layer));
     }),
 );
@@ -257,7 +257,7 @@ it.effect(
       const test = yield* fixture;
       yield* Effect.gen(function* () {
         const identity = yield* PocketId.PocketId;
-        const login = yield* identity.beginLogin;
+        const login = yield* identity.beginLogin();
         const authorization = new URL(login.authorizationUrl);
         const state = authorization.searchParams.get("state")!;
         expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
@@ -297,7 +297,7 @@ it.effect("rejects expired callback state before contacting the token endpoint",
     const test = yield* fixture;
     yield* Effect.gen(function* () {
       const identity = yield* PocketId.PocketId;
-      const login = yield* identity.beginLogin;
+      const login = yield* identity.beginLogin();
       const state = new URL(login.authorizationUrl).searchParams.get("state")!;
       yield* TestClock.adjust(Duration.minutes(6));
       expect(
@@ -320,7 +320,7 @@ it.effect("rejects mismatched browser token nonces before issuing a host session
     const test = yield* fixture;
     yield* Effect.gen(function* () {
       const identity = yield* PocketId.PocketId;
-      const login = yield* identity.beginLogin;
+      const login = yield* identity.beginLogin();
       test.tokenReply.access = yield* test.access();
       test.tokenReply.id = yield* test.signed(
         { nonce: "another-browser-session" },
@@ -371,5 +371,37 @@ it.effect("identity sessions remain locally revocable and expire with their acce
       ).toBe("Failure");
       expect((yield* Effect.result(local.verify(second.access_token)))._tag).toBe("Failure");
     }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect("binds safe return paths to the single-use login state", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      for (const requested of [
+        "/sites?range=30#checks",
+        "https://attacker.invalid",
+        "//attacker.invalid",
+        "/\\attacker.invalid",
+        "/sites\r\nLocation: https://attacker.invalid",
+      ]) {
+        const login = yield* identity.beginLogin(requested);
+        const authorization = new URL(login.authorizationUrl);
+        test.tokenReply.access = yield* test.access();
+        test.tokenReply.id = yield* test.signed(
+          { nonce: authorization.searchParams.get("nonce")! },
+          CLIENT_ID,
+          "JWT",
+        );
+        const session = yield* identity.completeLogin({
+          state: authorization.searchParams.get("state")!,
+          code: "one-time-code",
+          cookieValue: login.cookieValue,
+          client: CLIENT,
+        });
+        expect(session.returnTo).toBe(requested.startsWith("/sites?") ? requested : "/");
+      }
+    }).pipe(Effect.provide(test.layer));
   }),
 );

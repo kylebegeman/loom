@@ -1,3 +1,4 @@
+import { SITES_WS_METHODS as S } from "./sites.ts";
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
 import { LIBRARY_READINESS_WS_METHODS as LR } from "./project-library-readiness.ts";
@@ -19,6 +20,10 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [S.saveSite]: AuthSettingsWriteScope,
+  [S.saveService]: AuthSettingsWriteScope,
+  [S.saveCheck]: AuthSettingsWriteScope,
+  [S.runChecks]: AuthSettingsWriteScope,
   [LIB.flushHistory]: AuthOrchestrationOperateScope,
   [LIB.registerThread]: AuthOrchestrationOperateScope,
   [LIB.inspectFolder]: AuthTerminalOperateScope,

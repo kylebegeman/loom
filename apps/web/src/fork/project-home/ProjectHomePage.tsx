@@ -1,3 +1,4 @@
+import { LocalProjectSites } from "../sites/ProjectSites";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
@@ -268,6 +269,7 @@ function ProjectHomeContent({
             <TooltipPopup>Project settings</TooltipPopup>
           </Tooltip>
         </div>
+        <LocalProjectSites projectRefs={group.memberProjectRefs} />
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-64 min-w-0 max-w-full">

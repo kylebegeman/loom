@@ -308,3 +308,4 @@ apps/web/src/routes/welcome.tsx	library-only	4
 scripts/setup-worktree.ts	dev-db	1
 scripts/setup-worktree.ts	setup-reuse	4
 scripts/smoke-cli-archive.ts	smoke-port-race	3
+apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1

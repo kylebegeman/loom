@@ -22,7 +22,7 @@ it("ages cached healthy checks without showing offline data as current", () => {
   expect(
     siteCheckState({ ...check, state: "disabled" }, 900, Date.parse("2026-10-18T00:00:00Z")),
   ).toBe("disabled");
-  expect(siteCheckState({ ...check, last: null }, 900, Date.parse("2026-10-17T00:10:00Z"))).toBe(
+  expect(siteCheckState({ ...check, last: null }, 900, Date.parse("2026-10-18T00:00:00Z"))).toBe(
     "unknown",
   );
 });

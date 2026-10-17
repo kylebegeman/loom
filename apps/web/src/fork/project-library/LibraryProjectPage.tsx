@@ -1,3 +1,4 @@
+import { SitesSummary } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -293,6 +294,7 @@ function ProjectView({
                 resources={project.resources}
                 onShowAll={() => show("repositories")}
               />
+              <SitesSummary environmentId={authorityId} projectId={project.id} />
             </aside>
             {/* Below both columns, so the side cards never leave it a narrow strip. */}
             <TimelinePreview

@@ -5,6 +5,7 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
   "sites",
+  "sites-management",
   "project-library",
   "library-project-profile",
   "computer-naming",

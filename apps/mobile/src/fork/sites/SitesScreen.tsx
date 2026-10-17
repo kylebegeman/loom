@@ -1,27 +1,27 @@
 import { useState } from "react";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Linking, View } from "react-native";
-import {
-  createSitesAtoms,
-  siteCheckState,
-  supportsLoomFeature,
-} from "@t3tools/client-runtime/fork";
-import { SITES_FEATURE } from "@t3tools/contracts/fork";
+import { siteCheckState, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { SITES_FEATURE, SITES_MANAGEMENT_FEATURE } from "@t3tools/contracts/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { connectionAtomRuntime } from "../../connection/runtime";
+import { useAtomValue } from "@effect/atom-react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { sites } from "./state";
+import { SiteEditor, type SiteEditTarget } from "./SiteEditor";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { LibraryPage } from "../library/LibraryScreens";
-import { useLibraryAuthority } from "../library/libraryState";
+import { library, useLibraryAuthority } from "../library/libraryState";
 
-const sites = createSitesAtoms(connectionAtomRuntime);
-export function SitesRouteScreen() {
+export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string } | undefined>) {
   const authority = useLibraryAuthority();
   const navigation = useNavigation();
   const config = useEnvironmentServerConfig(authority.environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
-  const [selection, select] = useState<string | null>(null);
+  const selection = route.params?.siteId;
+  const select = (siteId: string) => navigation.navigate("Sites", { siteId });
   const [linkError, setLinkError] = useState<string | null>(null);
   const query = useEnvironmentQuery(
     authority.environmentId && supported
@@ -35,6 +35,37 @@ export function SitesRouteScreen() {
       ? sites.analytics({ environmentId: authority.environmentId, input: { siteId: selected.id } })
       : null,
   );
+  const manages = supportsLoomFeature(config?.environment.capabilities, SITES_MANAGEMENT_FEATURE);
+  const allowed = useAtomValue(sites.saveSite.permissionAtom(authority.environmentId));
+  const canManage = Boolean(
+    manages && query.data?.managementConfigured && allowed && authority.connected,
+  );
+  const projects = useEnvironmentQuery(
+    authority.environmentId
+      ? library.projects({
+          environmentId: authority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
+  const [editing, setEditing] = useState<SiteEditTarget | null>(null);
+  const [running, setRunning] = useState(false),
+    [actionError, setActionError] = useState<string | null>(null);
+  const runChecks = useAtomCommand(sites.runChecks, { reportFailure: false });
+  const run = async () => {
+    if (!authority.environmentId || !canManage || running) return;
+    setRunning(true);
+    setActionError(null);
+    try {
+      const result = await runChecks({ environmentId: authority.environmentId, input: {} });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      query.refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Could not run checks.");
+    } finally {
+      setRunning(false);
+    }
+  };
   const open = (url: string) => {
     setLinkError(null);
     void Linking.openURL(url).catch(() => setLinkError("Could not open your browser. Try again."));
@@ -46,9 +77,10 @@ export function SitesRouteScreen() {
       </Text>
       <View className="flex-row flex-wrap gap-2">
         <Button
-          label="Manage sites"
+          label="Register site"
           tone="primary"
-          onPress={() => open("https://api.begam.in/admin#/sites")}
+          disabled={!canManage || !snapshot}
+          onPress={() => setEditing({ kind: "site" })}
         />
         <Button
           label="Refresh"
@@ -59,6 +91,14 @@ export function SitesRouteScreen() {
           }}
         />
       </View>
+      {actionError ? <Text accessibilityRole="alert">{actionError}</Text> : null}
+      {supported && query.data?.configured && !query.data.managementConfigured ? (
+        <Text>
+          {manages
+            ? "Site management needs a manager connection on your Library server."
+            : "Update your Library server to manage sites here."}
+        </Text>
+      ) : null}
       {linkError ? <Text accessibilityRole="alert">{linkError}</Text> : null}
       {!authority.environmentId ? (
         <Button
@@ -76,10 +116,7 @@ export function SitesRouteScreen() {
       {query.isPending && !snapshot ? <Text>Loading sites…</Text> : null}
       {query.error ? <Text accessibilityRole="alert">{query.error}</Text> : null}
       {query.data?.configured === false ? (
-        <Text>
-          Connect the personal API to your Library server to view sites here. You can still manage
-          sites directly.
-        </Text>
+        <Text>Connect the personal API to your Library server to view sites here.</Text>
       ) : null}
       {snapshot ? (
         <>
@@ -87,7 +124,9 @@ export function SitesRouteScreen() {
             Updated {new Date(snapshot.observedAt).toLocaleString()} through {authority.label}.
           </Text>
           {snapshot.sites.length === 0 ? (
-            <Text>No sites registered yet. Add your first site in Manage sites.</Text>
+            <Text>
+              No sites registered yet. Register your first site to connect it to a project.
+            </Text>
           ) : null}
           <View className="flex-row flex-wrap gap-2">
             {snapshot.sites.map((site) => (
@@ -102,11 +141,32 @@ export function SitesRouteScreen() {
           {selected ? (
             <View className="gap-5">
               <Text className="text-xl font-t3-semibold">{selected.name}</Text>
+              <Button
+                label="Edit site"
+                disabled={!canManage}
+                onPress={() => setEditing({ kind: "site", row: selected })}
+              />
               <Button label="Visit site" tone="text" onPress={() => open(selected.url)} />
+              <Text className="font-t3-semibold">Projects</Text>
+              {!selected.projectIds?.length ? (
+                <Text>Link this existing site to at least one project in Edit site.</Text>
+              ) : null}
+              {selected.projectIds?.map((projectId) => (
+                <Button
+                  key={projectId}
+                  label={projects.data?.find((p) => p.id === projectId)?.title ?? projectId}
+                  onPress={() => navigation.navigate("LibraryProject", { projectId })}
+                />
+              ))}
               <Text className="font-t3-semibold">Services and checks</Text>
+              <Button
+                label={running ? "Running checks…" : "Run checks now"}
+                disabled={!canManage || running}
+                onPress={() => void run()}
+              />
               {selected.serviceIds.length === 0 ? (
                 <Text>
-                  No services linked. Link a service in Manage sites to monitor its endpoints.
+                  No services linked. Link a service in Edit site to monitor its endpoints.
                 </Text>
               ) : null}
               {snapshot.services
@@ -119,9 +179,24 @@ export function SitesRouteScreen() {
                         {service.name}
                         {!service.active ? " (paused)" : ""}
                       </Text>
+                      <Button
+                        label="Edit service"
+                        disabled={!canManage}
+                        onPress={() => setEditing({ kind: "service", row: service })}
+                      />
+                      <Button
+                        label="Add check"
+                        disabled={!canManage}
+                        onPress={() => setEditing({ kind: "check", serviceId: service.id })}
+                      />
                       {checks.length === 0 ? <Text>No endpoint checks configured.</Text> : null}
                       {checks.map((check) => (
                         <View key={check.id} className="gap-1">
+                          <Button
+                            label="Edit check"
+                            disabled={!canManage}
+                            onPress={() => setEditing({ kind: "check", row: check })}
+                          />
                           <Text>
                             {check.name}:{" "}
                             {siteCheckState(check, snapshot.staleAfterSeconds, Date.now())}
@@ -171,6 +246,61 @@ export function SitesRouteScreen() {
             </View>
           ) : null}
         </>
+      ) : null}
+      {snapshot ? (
+        <View className="gap-3">
+          <Text className="font-t3-semibold">Shared services</Text>
+          <Button
+            label="Register service"
+            disabled={!canManage}
+            onPress={() => setEditing({ kind: "service" })}
+          />
+          {snapshot.services.map((service) => (
+            <View key={service.id} className="gap-2 rounded-xl bg-surface p-4">
+              <Text>
+                {service.name}
+                {!service.active ? " (paused)" : ""}
+              </Text>
+              <Text>{service.url}</Text>
+              <Button
+                label="Edit service"
+                disabled={!canManage}
+                onPress={() => setEditing({ kind: "service", row: service })}
+              />
+              <Button
+                label="Add check"
+                disabled={!canManage}
+                onPress={() => setEditing({ kind: "check", serviceId: service.id })}
+              />
+              {snapshot.checks
+                .filter((c) => c.service_id === service.id)
+                .map((check) => (
+                  <Button
+                    key={check.id}
+                    label={`Edit ${check.name}`}
+                    disabled={!canManage}
+                    onPress={() => setEditing({ kind: "check", row: check })}
+                  />
+                ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {snapshot && authority.environmentId && editing ? (
+        <SiteEditor
+          key={`${editing.kind}:${editing.row?.id ?? "new"}`}
+          target={editing}
+          snapshot={snapshot}
+          environmentId={authority.environmentId}
+          connected={canManage}
+          onClose={() => setEditing(null)}
+          onSaved={(id) => {
+            if (editing.kind === "site") select(id);
+            setEditing(null);
+            query.refresh();
+            analytics.refresh();
+          }}
+        />
       ) : null}
       <Button
         label="Explore the personal API"

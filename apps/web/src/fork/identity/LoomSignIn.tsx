@@ -7,6 +7,7 @@ import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
 import { readLoomIdentity, loomBrowserLoginUrl } from "~/rpc/loomIdentity";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
 
 /** Keep Loom host authentication distinct from the existing T3 Connect account. */
@@ -65,7 +66,13 @@ export function LoomSignIn({
     return () => abort.abort();
   }, [baseUrl, checkAttempt, onAvailabilityChange]);
   const active = identity && (!baseUrl || identity.baseUrl === baseUrl) ? identity : null;
-  const browserUrl = active ? loomBrowserLoginUrl(active.baseUrl, active.metadata) : null;
+  const browserUrl = active
+    ? loomBrowserLoginUrl(
+        active.baseUrl,
+        active.metadata,
+        new URL(loomSignInDestination(window.location.href), window.location.href).href,
+      )
+    : null;
   const nativeEnabled =
     active?.metadata.enabled &&
     active.metadata.nativeClientId &&
