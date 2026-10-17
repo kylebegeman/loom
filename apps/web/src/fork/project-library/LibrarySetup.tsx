@@ -67,26 +67,32 @@ export function LibrarySetup({
           once. You’ll choose a computer when starting work.
         </p>
       </div>
-      <Select
-        items={eligible.map((entry) => ({
-          value: entry.environmentId,
-          label: entry.label,
-        }))}
-        value={candidate}
-        onValueChange={(value) => setCandidate(value)}
-      >
-        <SelectTrigger aria-label="Library connection">
-          <SelectValue placeholder="Choose your Library connection" />
-        </SelectTrigger>
-        <SelectPopup>
-          {eligible.map((entry) => (
-            <SelectItem key={entry.environmentId} value={entry.environmentId}>
-              {entry.label}
-              {entry.connection.phase === "connected" ? "" : " (offline)"}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
+      {eligible.length === 0 ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          No Library connection yet. Sign in to your Library or add its address below.
+        </p>
+      ) : (
+        <Select
+          items={eligible.map((entry) => ({
+            value: entry.environmentId,
+            label: entry.label,
+          }))}
+          value={candidate}
+          onValueChange={(value) => setCandidate(value)}
+        >
+          <SelectTrigger aria-label="Library connection">
+            <SelectValue placeholder="Choose your Library connection" />
+          </SelectTrigger>
+          <SelectPopup>
+            {eligible.map((entry) => (
+              <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                {entry.label}
+                {entry.connection.phase === "connected" ? "" : " (offline)"}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      )}
       {candidate ? (
         <p className="text-xs text-muted-foreground" role="status">
           {!connected
