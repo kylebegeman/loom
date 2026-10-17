@@ -261,8 +261,6 @@ export const makeWith = (options: AppleBuildOptions) =>
       ? Effect.void
       : Effect.fail(error("unsupported-platform", "Xcode builds need a Mac environment."));
 
-    // --- Workspace ---------------------------------------------------------------------------
-
     const resolveWorkspace = Effect.fn("AppleBuild.resolveWorkspace")(function* (
       ref: AppleWorkspaceRef,
     ) {
@@ -293,8 +291,6 @@ export const makeWith = (options: AppleBuildOptions) =>
         return yield* error("container-not-found", `${requested.path} was not found.`);
       return { found, containers };
     });
-
-    // --- Toolchain ---------------------------------------------------------------------------
 
     const firstLine = (text: string) => text.trim().split("\n")[0]?.trim() || null;
     const versionOf = (result: ExecResult | null) =>
@@ -371,8 +367,6 @@ export const makeWith = (options: AppleBuildOptions) =>
     const xcodegenPath = toolchain.pipe(
       Effect.map((chain) => (chain.tools.xcodegen === null ? null : tool("xcodegen"))),
     );
-
-    // --- Status, inspect, destinations -------------------------------------------------------
 
     const status = Effect.fn("AppleBuild.status")(function* (ref: AppleWorkspaceRef) {
       const { cwd } = yield* resolveWorkspace(ref);
@@ -513,8 +507,6 @@ export const makeWith = (options: AppleBuildOptions) =>
       ] satisfies ReadonlyArray<AppleDestination>;
     });
 
-    // --- XcodeGen and readiness --------------------------------------------------------------
-
     const xcodegenFor = Effect.fn("AppleBuild.xcodegenFor")(function* (cwd: string, spec: string) {
       yield* findContainer(cwd, { kind: "xcodegen", path: spec });
       return yield* xcodegenReport({
@@ -642,8 +634,6 @@ export const makeWith = (options: AppleBuildOptions) =>
         latestTest,
       });
     });
-
-    // --- Run state ---------------------------------------------------------------------------
 
     const publishRuns = (cwd: string | null) =>
       Effect.sync(() => {
@@ -786,8 +776,6 @@ export const makeWith = (options: AppleBuildOptions) =>
           }),
         };
       });
-
-    // --- Pipelines ---------------------------------------------------------------------------
 
     const failure = (
       exitCode: number | null,
@@ -1153,8 +1141,6 @@ export const makeWith = (options: AppleBuildOptions) =>
         }
       });
 
-    // --- Run lifecycle -----------------------------------------------------------------------
-
     const removeRunDirs = (dirs: ReadonlyArray<string>) =>
       Effect.promise(() =>
         Promise.all(
@@ -1460,8 +1446,6 @@ export const makeWith = (options: AppleBuildOptions) =>
         }),
       );
 
-    // --- Settings and storage ----------------------------------------------------------------
-
     const sizeOf = (path: string) =>
       exec(tool("du"), ["-sk", path], { timeoutSeconds: 30 }).pipe(
         Effect.map((result) =>
@@ -1529,8 +1513,6 @@ export const makeWith = (options: AppleBuildOptions) =>
       const opened = yield* exec(tool("open"), [resultBundlePath]);
       if (!succeeded(opened)) return yield* failedCommand("open", opened);
     });
-
-    // --- Startup -----------------------------------------------------------------------------
 
     yield* store.markInterrupted(yield* nowIso).pipe(orDie);
     yield* Effect.promise(() =>

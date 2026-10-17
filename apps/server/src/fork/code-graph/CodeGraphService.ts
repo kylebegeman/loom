@@ -139,8 +139,6 @@ export const makeWith = (options: CodeGraphOptions) =>
       while (indexes.size > INDEXES_KEPT) indexes.delete(indexes.keys().next().value!);
     };
 
-    // --- Graphify -------------------------------------------------------------------------
-
     const availability = (refresh = false) =>
       Effect.gen(function* () {
         const key = settings.command.join("\0");
@@ -184,8 +182,6 @@ export const makeWith = (options: CodeGraphOptions) =>
             ),
       ),
     );
-
-    // --- Projects and freshness -------------------------------------------------------------
 
     const projectOf = (projectId: string) =>
       projects.get(ProjectId.make(projectId)).pipe(
@@ -276,8 +272,6 @@ export const makeWith = (options: CodeGraphOptions) =>
           agentTool: record.agentTool,
         } satisfies CodeGraphStatus;
       });
-
-    // --- Builds -----------------------------------------------------------------------------
 
     /** Reads a finished build's graph.json into the record and the index cache. */
     const loadBuilt = (projectId: string, built: GraphRecord) =>
@@ -516,8 +510,6 @@ export const makeWith = (options: CodeGraphOptions) =>
         lastAutoUpdate.set(projectId, now);
         yield* enqueue(projectId, "update", true);
       });
-
-    // --- Queries ----------------------------------------------------------------------------
 
     const readGraph = (file: string) =>
       Effect.promise(() =>

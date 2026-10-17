@@ -300,8 +300,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     } = { table: null, simulators: null, docker: null, listeners: new Map(), slowAt: 0 };
     let slotHolders: ReadonlyArray<SlotHolder> = [];
 
-    // --- Threads ---------------------------------------------------------------------------
-
     const loadThreads = Effect.gen(function* () {
       const [snapshot, shells] = yield* Effect.all([
         threads.getShellSnapshot({ location: "active" }),
@@ -330,8 +328,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           holdsLane(thread) &&
           checkoutOf(thread, view.projects) !== lane.checkoutPath,
       );
-
-    // --- Shell files -------------------------------------------------------------------------
 
     const slotCount = (settings: ProjectLifecycleSettings) =>
       settings.buildSlots ?? autoBuildSlots(NodeOS.availableParallelism());
@@ -374,8 +370,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         shellInstalled = hasProfileBlock(text);
       }),
     );
-
-    // --- Status ------------------------------------------------------------------------------
 
     const laneView = (
       lane: LaneRow,
@@ -469,8 +463,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       return next;
     });
 
-    // --- Measuring ---------------------------------------------------------------------------
-
     const measureHost = Effect.fn("ProjectLifecycle.measureHost")(function* () {
       let path = rootOf(yield* getSettings);
       while (path !== "/" && !(yield* exists(path))) path = NodePath.dirname(path);
@@ -494,8 +486,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       }
       return entry;
     });
-
-    // --- Leases ------------------------------------------------------------------------------
 
     const readLedger = (lane: Pick<LaneRow, "laneDir">) =>
       Effect.promise(() =>
@@ -680,8 +670,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         { discard: true },
       );
     });
-
-    // --- Lane operations ---------------------------------------------------------------------
 
     const attach = (lane: LaneRow) =>
       Effect.gen(function* () {
@@ -1040,8 +1028,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       return next;
     });
 
-    // --- Steering ----------------------------------------------------------------------------
-
     const steer = (thread: Thread, key: string, text: string) =>
       threads
         .sendToThread({
@@ -1056,8 +1042,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           creationSource: "server",
         })
         .pipe(Effect.ignore({ log: true }));
-
-    // --- Watchdog ----------------------------------------------------------------------------
 
     const tick = Effect.fn("ProjectLifecycle.tick")(function* () {
       const settings = yield* getSettings;
@@ -1156,8 +1140,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       }
       return yield* publish();
     });
-
-    // --- Actions -----------------------------------------------------------------------------
 
     const requireLane = (laneId: string): Effect.Effect<LaneRow, ProjectLifecycleError> => {
       const lane = lanes.get(laneId);
@@ -1352,8 +1334,6 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* refreshShellInstalled;
       yield* publish();
     });
-
-    // --- Lifecycle ---------------------------------------------------------------------------
 
     /** Reattaches lanes after reboot, hides existing mounts and removes lanes nobody holds. */
     const reconcile = Effect.fn("ProjectLifecycle.reconcile")(function* () {
