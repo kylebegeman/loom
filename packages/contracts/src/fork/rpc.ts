@@ -1,3 +1,4 @@
+import { SitesRpcGroup } from "./sites.ts";
 import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
 import { ProjectLibraryHealthRpcGroup } from "./project-library-health.ts";
 import { LibrarySearchRpcGroup } from "./project-library-search.ts";
@@ -47,6 +48,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  SitesRpcGroup,
   ProjectLibraryRpcGroup,
   ProjectLibraryHealthRpcGroup,
   LibrarySearchRpcGroup,

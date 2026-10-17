@@ -1700,6 +1700,18 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  actionItems.push({
+    kind: "action",
+    value: "action:sites",
+    title: "Sites",
+    searchTerms: ["websites", "analytics", "monitoring", "personal api"],
+    icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      setOpen(false);
+      await navigate({ to: "/sites" });
+    },
+  });
+
   if (projects.length > 0) {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??

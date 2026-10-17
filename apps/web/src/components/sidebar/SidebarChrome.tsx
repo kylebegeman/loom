@@ -1,4 +1,10 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, FolderKanbanIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
+  FolderKanbanIcon,
+  GlobeIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -221,6 +227,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
+          />
+          <SidebarUtilityItem
+            icon={<GlobeIcon />}
+            label="Sites"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/sites" });
+            }}
           />
           <SidebarUtilityItem
             icon={<FolderKanbanIcon />}

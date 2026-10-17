@@ -1,3 +1,4 @@
+import type { SitesService } from "./sites/SitesService.ts";
 import type { LibraryRecoveryStore } from "./project-library/assets/LibraryRecoveryStore.ts";
 import type { LibraryReplication } from "./project-library/LibraryReplication.ts";
 import type { LibraryHistorySource } from "./project-library/LibraryHistorySource.ts";
@@ -24,6 +25,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | SitesService
   | LibraryRecoveryStore
   | LibraryReplication
   | LibraryHistorySource

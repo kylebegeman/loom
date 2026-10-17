@@ -4,6 +4,7 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
+  "sites",
   "project-library",
   "library-project-profile",
   "computer-naming",

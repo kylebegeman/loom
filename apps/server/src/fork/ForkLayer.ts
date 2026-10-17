@@ -1,3 +1,4 @@
+import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
 import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
@@ -65,6 +66,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer)),
   LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
   LibraryTimeline.layer,
   LibraryLaunchCandidates.layer.pipe(

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UsageRouteImport } from './routes/usage'
+import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as LocalRouteImport } from './routes/local'
@@ -54,6 +55,11 @@ const WelcomeRoute = WelcomeRouteImport.update({
 const UsageRoute = UsageRouteImport.update({
   id: '/usage',
   path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitesRoute = SitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/sites': typeof SitesRoute
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/computers': typeof ChatComputersRoute
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/sites': typeof SitesRoute
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/computers': typeof ChatComputersRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/sites': typeof SitesRoute
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/_chat/computers': typeof ChatComputersRoute
@@ -351,6 +360,7 @@ export interface FileRouteTypes {
     | '/local'
     | '/pair'
     | '/settings'
+    | '/sites'
     | '/usage'
     | '/welcome'
     | '/computers'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/local'
     | '/pair'
     | '/settings'
+    | '/sites'
     | '/usage'
     | '/welcome'
     | '/computers'
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | '/local'
     | '/pair'
     | '/settings'
+    | '/sites'
     | '/usage'
     | '/welcome'
     | '/_chat/computers'
@@ -463,6 +475,7 @@ export interface RootRouteChildren {
   LocalRoute: typeof LocalRoute
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  SitesRoute: typeof SitesRoute
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
@@ -484,6 +497,13 @@ declare module '@tanstack/react-router' {
       path: '/usage'
       fullPath: '/usage'
       preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sites': {
+      id: '/sites'
+      path: '/sites'
+      fullPath: '/sites'
+      preLoaderRoute: typeof SitesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -811,6 +831,7 @@ const rootRouteChildren: RootRouteChildren = {
   LocalRoute: LocalRoute,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  SitesRoute: SitesRoute,
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,

@@ -1,3 +1,4 @@
+import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
 import { LIBRARY_HEALTH_WS_METHODS as LH } from "@t3tools/contracts/fork";
 import { LIBRARY_SEARCH_WS_METHODS as LS } from "@t3tools/contracts/fork";
@@ -33,6 +34,8 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [S.snapshot]: AuthOrchestrationReadScope,
+  [S.analytics]: AuthOrchestrationReadScope,
   [LIB.subscribeRefreshes]: AuthOrchestrationReadScope,
   [LIB.replicationStatus]: AuthOrchestrationReadScope,
   [LIB.preparation]: AuthOrchestrationReadScope,

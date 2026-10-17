@@ -1,3 +1,5 @@
+import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
+import * as SitesService from "./sites/SitesService.ts";
 import { makeProjectLibraryRpcHandlers } from "./project-library/rpc.ts";
 import { makeProjectCheckoutRpcHandlers } from "./project-checkout/rpc.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
@@ -27,10 +29,13 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
   ForkRpcGroup.toLayer(
     Effect.gen(function* () {
       const auth = makeForkRpcAuth(session);
+      const sites = yield* withForkRuntime(SitesService.SitesService);
       const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
       const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
       const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
       return ForkRpcGroup.of({
+        [S.snapshot]: () => auth.effect(S.snapshot, sites.snapshot),
+        [S.analytics]: (input) => auth.effect(S.analytics, sites.analytics(input)),
         [N.get]: () => auth.effect(N.get, naming.current),
         [N.rename]: (input) => auth.effect(N.rename, naming.rename(input)),
         [GH.start]: (input) => auth.effect(GH.start, github.start(input)),

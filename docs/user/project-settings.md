@@ -438,3 +438,18 @@ as well as for new worktrees, so make the command safe to repeat and preserve ex
 Keep a reset command as an ordinary project action for restoring known test data.
 Choose the isolated development instance explicitly; resetting fixtures should never
 reset an instance that holds real application data.
+
+## Sites and the personal API
+
+Open **Sites** from the sidebar or command palette to see registered websites,
+their endpoint checks, and thirty days of activity. On mobile, open **Sites and
+activity** from Projects. Sites uses your chosen Library server independently of
+the computer running your work. Reconnect the Library and refresh to get current
+results; stale checks do not count as healthy.
+
+**Manage sites** opens the personal API admin in your browser through Loom
+Identity. Register future websites there, link their services, and give each its
+own analytics origins. The personal API catalog at
+`https://api.begam.in/v1/public/catalog` lists capabilities available to other
+projects. Public reads work across origins; private data and administration
+keep their own access requirements.

@@ -1,3 +1,4 @@
+import { SitesRouteScreen } from "./fork/sites/SitesScreen";
 // fork: library
 import {
   LibraryRouteScreen,
@@ -695,6 +696,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     headerShown: false,
   },
   screens: {
+    Sites: createNativeStackScreen({
+      screen: SitesRouteScreen,
+      linking: "sites",
+      options: SOLID_HEADER_OPTIONS,
+    }),
     // fork: library
     Library: createNativeStackScreen({
       screen: LibraryRouteScreen,
