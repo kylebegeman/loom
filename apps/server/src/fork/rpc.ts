@@ -1,3 +1,7 @@
+import type * as Layer from "effect/Layer";
+import type * as Rpc from "effect/rpc/Rpc";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import { makeVaultBrokerRpcHandlers } from "./vault/broker-rpc.ts";
 import { makeVaultAccessRpcHandlers } from "./vault/access-rpc.ts";
 import { makeVaultCoreRpcHandlers } from "./vault/rpc.ts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
@@ -27,7 +31,9 @@ import { makeForkRpcAuth } from "./rpcAuthorization.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
-export const makeForkRpcLayer = (session: AuthenticatedSession) =>
+export const makeForkRpcLayer = (
+  session: AuthenticatedSession,
+): Layer.Layer<Rpc.ToHandler<RpcGroup.Rpcs<typeof ForkRpcGroup>>> =>
   ForkRpcGroup.toLayer(
     Effect.gen(function* () {
       const auth = makeForkRpcAuth(session);
@@ -36,6 +42,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
       const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
       const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
       return ForkRpcGroup.of({
+        ...(yield* withForkRuntime(makeVaultBrokerRpcHandlers(auth, session.subject))),
         ...(yield* withForkRuntime(makeVaultCoreRpcHandlers(auth, session.subject))),
         ...(yield* withForkRuntime(makeVaultAccessRpcHandlers(auth, session.subject))),
         [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),

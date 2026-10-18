@@ -1,9 +1,13 @@
+import { brokerCommand } from "./broker-cli.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI process boundary reads its authenticated connection environment.
 import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
   status: "loom_vault_status",
+  brokers: "loom_vault_brokers",
+  "broker-invite": "loom_vault_brokers_invite",
+  "broker-apply": "loom_vault_brokers_apply",
   grants: "loom_vault_grants",
   "grant-preview": "loom_vault_grants_preview",
   "grant-apply": "loom_vault_grants_apply",
@@ -17,8 +21,9 @@ export const vaultCommand = Command.make("vault").pipe(
   Command.withDescription(
     "Inspect Loom Vault or change item lifecycle through the authenticated Loom connection. Enter secret values privately in Loom.",
   ),
-  Command.withSubcommands(
-    Object.entries(actions).map(([action, tool]) =>
+  Command.withSubcommands([
+    brokerCommand,
+    ...Object.entries(actions).map(([action, tool]) =>
       Command.make(action, {
         argumentsJson: Argument.String("arguments-json").pipe(
           Argument.withDefault(
@@ -35,5 +40,5 @@ export const vaultCommand = Command.make("vault").pipe(
         ),
       ),
     ),
-  ),
+  ] as const),
 );

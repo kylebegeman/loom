@@ -5,6 +5,7 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
   "vault-core",
+  "vault-brokers",
   "vault-grants",
   "vault-access-inspector",
   "vault-readiness",

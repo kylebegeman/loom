@@ -1,3 +1,4 @@
+export * from "./vault-brokers.ts";
 export * from "./vault-access.ts";
 export * from "./vault-core.ts";
 export * from "./apple-build-tooling.ts";

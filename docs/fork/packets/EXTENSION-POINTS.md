@@ -2958,7 +2958,7 @@ prints 2. Run the existing ChangedFilesTree tests when altering the seam.
 
 ## Loom Vault foundation (`ext-vault`)
 
-Status: **Encrypted records, online workload policy and inspection implemented; broader foundation in progress.** Kyle
+Status: **Encrypted records, online workload policy, inspection and reviewed host enrollment implemented; broader foundation in progress.** Kyle
 selected all sixteen packets for implementation and OpenBao as the backend on 2026-10-17.
 The active shared boundary lives outside the feature packet folders:
 
@@ -2995,7 +2995,16 @@ These checks do not isolate same-user full-access processes from host credential
 
 Limits: 128 grants, 32 item IDs per grant, 256 operational history events, 32 mutation receipts,
 50 history entries in the management snapshot and 10 recent decisions in an item explanation.
-No immutable audit ledger, platform membership, enrolled broker, delivery lease or provider
+Shared `vault-brokers.ts` contracts and `VaultBrokers` provide a separate encrypted CAS
+registry, reviewed public-key invitation/claim/approval, cancellation and permanent disable.
+`BrokerIdentity` and `BrokerRunner` own private host identity files and signed online heartbeat
+HTTP; the macOS/Linux foreground CLI uses no administrator/backend token. Web/mobile management
+is gated by `vault-brokers`, with access:read/access:write scopes. MCP administrator clients
+manage hosts, while calling threads cannot enroll or approve themselves. Snapshots omit nonce
+material and cap machines/invitations/activity. Presence renews every minute for two minutes;
+it is not a workload credential lease. No offline decrypted cache or boot service is installed.
+
+No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. Readiness with credential-use requirements explicitly reports unsupported broker
 or delivery capability. Do not infer unattended SSH readiness from a policy decision.
 
@@ -3014,4 +3023,5 @@ rg 'VaultCoreRpcGroup' packages/contracts/src/fork/rpc.ts
 
 [LOOM-VAULT-FOUNDATION.md](./LOOM-VAULT-FOUNDATION.md) records the larger target model.
 Promote additional shared contracts independently as their consumers arrive. Do not fabricate
-broker, lease, identity, approval or delivery capabilities because records already exist.
+workload, credential lease, platform identity, remote approval or delivery capabilities because
+records or enrolled hosts already exist.

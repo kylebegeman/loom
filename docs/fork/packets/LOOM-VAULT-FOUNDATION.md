@@ -133,6 +133,20 @@ known bindings and retention; physical deletion and upstream revocation are diff
 If a kind cannot be restored or an external mutation cannot be reversed, preview that irreversible
 step. Do not offer a cosmetic undo that cannot restore the provider-side state.
 
+## Implemented host enrollment boundary
+
+Shared `vault-brokers.ts` and `VaultBrokers` implement reviewed Ed25519 enrollment and signed,
+single-use online heartbeat challenges. OpenBao holds the environment-scoped CAS registry;
+local identity files are owner-only plaintext, outside the current working tree. The runner
+holds no central backend token. Web/mobile and administrator CLI/MCP share service methods;
+agent threads cannot approve themselves. See [L79](./L79-vault-brokers/TECHNICAL.md).
+
+The foreground macOS/Linux process proves machine identity and renews two-minute presence.
+This does not attest a workload, issue credential leases, sign SSH, configure boot startup or
+provide offline use. A same-user agent can read the broker's local identity file. Restore from
+an old backend snapshot can restore older approvals; revocation reconciliation remains part of
+recovery. Those limits apply even when the UI shows Online.
+
 ## Key custody and headless unlock
 
 D2 must identify who can decrypt, how wrapping keys are protected, what the service receives at

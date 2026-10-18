@@ -1,3 +1,6 @@
+import { VaultBrokerHttpRoutes } from "./vault/broker-http.ts";
+import * as VaultBrokers from "./vault/VaultBrokers.ts";
+import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
 import * as VaultAccess from "./vault/VaultAccess.ts";
 import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
 import * as VaultCore from "./vault/VaultCore.ts";
@@ -77,6 +80,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultBrokers.layer.pipe(Layer.provide(Layer.merge(layerVaultStore, BrokerCrypto.layer))),
   layerVaultCore,
   layerVaultAccess,
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
@@ -195,6 +199,7 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
   Layer.empty,
+  VaultBrokerHttpRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

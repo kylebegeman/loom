@@ -1,8 +1,7 @@
 # OpenBao connection for Loom Vault
 
-This guide configures the implemented record and online policy foundation. It does not deploy OpenBao, enroll
-machines, rewrite Git remotes or migrate personal credentials. Platform accounts, production
-unseal/recovery custody and broker identities remain unfinished. Use synthetic credentials
+This guide configures the implemented record and online policy foundation. It does not deploy OpenBao, rewrite Git remotes or migrate personal credentials. Platform accounts, production
+unseal/recovery custody, workload channels and unattended boot remain unfinished. Use synthetic credentials
 until those controls and the full audit path are complete.
 
 ## Configure an existing isolated service
@@ -27,7 +26,8 @@ rotating a token. Configuration changes require restarting the owning Loom envir
 
 The minimal engine policy needs read on `<mount>/config`, read/create/update on
 `<mount>/data/environments/<namespace>/items/*`, read/create/update on
-`<mount>/data/environments/<namespace>/access-policy`, and list on
+`<mount>/data/environments/<namespace>/access-policy`, read/create/update on
+`<mount>/data/environments/<namespace>/brokers`, and list on
 `<mount>/metadata/environments/<namespace>/items`. The namespace is the lowercase hexadecimal
 SHA-256 of the persisted Loom server environment ID, not a client-chosen project ID. Keep
 policies scoped to that environment; creating another environment ID deliberately creates a
@@ -82,3 +82,29 @@ is exclusively for disposable data.
 Official references: [OpenBao docs](https://openbao.org/docs/),
 [KV v2](https://openbao.org/docs/secrets/kv/kv-v2/),
 [Raft storage](https://openbao.org/docs/configuration/storage/raft/).
+
+## Broker identity and presence
+
+See the [enrollment flow](../user/vault.md#enroll-an-execution-host). The runner defaults to
+`~/.config/loom/vault-broker`, with mode 0700 on the directory and 0600 on its PKCS8 identity
+and pinned connection files. Store it outside project/worktree directories. The local machine
+key is plaintext in owner-only storage. It is separate from the encrypted central registry,
+and cannot isolate an agent with the same OS-user filesystem privileges. Do not clone it,
+copy it into a project, share it with another host or import a personal SSH key for enrollment.
+
+Only the owning Loom server needs OpenBao access. The execution host uses its private identity
+and signed proof HTTP, with no administrator bearer token or OpenBao service token. The Loom
+origin must use HTTPS except loopback HTTP for isolated tests. Direct reachable origins are
+supported; a relay that requires a human session is not a supported headless runner route yet.
+
+This milestone supports foreground macOS/Linux processes, online-only checks and renewal every
+minute. Registration presence lasts two minutes. These are not credential-use leases. Starting
+before login, reboot/logout recovery, Windows custody, workload authentication and SSH signing
+remain pending. A sealed/unavailable backend denies checks; no decrypted offline cache or
+personal-agent fallback exists. After a control-plane restart, request a new heartbeat challenge.
+
+The encrypted registry retains 128 safe activity events and 32 mutation receipts. Disable is
+permanent for that identity, survives normal restart and prevents new renewal. New identity
+approval is required to restore a host. Restoring older backend data can restore older machine
+approval state; reconcile disables before resuming traffic after any rollback. The complete
+recovery/revocation process remains L87 work. This activity history is not an immutable ledger.
