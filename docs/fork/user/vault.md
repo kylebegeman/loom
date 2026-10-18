@@ -116,3 +116,62 @@ Automatic runner setup and actual credential delivery remain unfinished. Human a
 clients and inactive or restricted threads cannot open workload sessions. Web, desktop and
 mobile agents reach the same authenticated tools; no separate workload-management screen is
 provided in this milestone.
+
+## Run a mediated SSH command
+
+Loom can run a bounded SSH command from its server using a dedicated Vault key. The target
+must be reachable from that server. This does not configure Dorothy's local SSH agent, rewrite
+Git remotes or attach credentials automatically to Pi or other providers.
+
+Use an authenticated full-access administrator MCP client for `loom_vault_ssh_generate` and
+`loom_vault_ssh_trust`, or the corresponding `loom vault ssh-generate` and `ssh-trust` commands.
+Agent threads cannot create keys or approve host trust. These commands reuse the CLI's existing
+MCP connection environment; never put an authorization token in command arguments or chat.
+
+For example, create a key with no trusted host yet:
+
+```sh
+loom vault ssh-generate '{"id":"11111111111111111111111111111111","operationId":"22222222222222222222222222222222","label":"Development SSH","target":{"hostname":"dev.example.test","username":"loom","port":22,"hostKey":null}}'
+```
+
+Choose fresh IDs for each key and mutation; retain them for retries. The result contains only
+public metadata. Copy the public key for registration on the development host. Verify the
+host's Ed25519 public key independently, then use `ssh-trust` with the item ID, current
+`expectedVersion`, a new `operationId` and that public `hostKey`. Unverified key scans are not
+trust approval. `ssh-info` with `{"id":"your-item-id"}` returns public identity, destination,
+fingerprints and the current item version. Threads need a separate inspect grant to use it.
+
+Set `hostKey:null` through `ssh-trust` to remove trust without replacing the user key. You can
+restore a verified pin later. Archive/restore/delete use the ordinary Vault item actions.
+These actions stop future authorized use; removing a public key from the remote host and
+revoking external copies remain separate work.
+
+Grant the active thread `use` access to this item and its exact returned destination. Enroll
+its machine, keep its heartbeat running and open a workload session as described above. Save
+that public session JSON on the runner. Create a command file containing the current key
+version, a harmless argv and a timeout, for example:
+
+```json
+{ "expectedVersion": 2, "argv": ["/usr/bin/printf", "Loom SSH is ready"], "timeoutMs": 8000 }
+```
+
+Execute with the machine identity and separate workload identity:
+
+```sh
+loom vault broker ssh-exec --state-dir /absolute/private/machine-directory \
+  --workload-state-dir /absolute/private/workload-directory session.json command.json
+```
+
+Loom signs this exact command request and rechecks policy, host presence and key version.
+Only macOS/Linux servers with compatible OpenSSH host-bound authentication and Ed25519 host
+keys are supported. There is no password, personal-agent, host-key bypass or forwarding fallback.
+IPv6 targets, SSH aliases and certificates are not implemented. Keys stay in OpenBao/server
+memory; the SSH operation writes only public identity/host-trust files and removes its local
+resources afterward.
+
+Commands are limited to eight seconds, 2 KiB stdout and four concurrent executions. The CLI
+prints JSON with `exitCode` and `stdout`; inspect the remote exit code, since it is not used as
+the CLI process exit status. SSH failures fail the CLI. Do not place credentials in argv or
+print sensitive remote values. Timeout, cancellation or a lost response can leave remote
+effects, and a fresh retry can repeat them. Revocation blocks new authorization/signatures;
+it cannot undo an already authenticated command. Release the workload session when finished.

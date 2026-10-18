@@ -16,6 +16,9 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+The mediated-command milestone adds fork-owned contracts, Vault services, a scoped Node SSH
+adapter and HTTP/MCP/CLI registration through existing fork registries. It extends the shared
+workload proof with an operation-specific digest while preserving check/release signing messages.
+No upstream file, SQL schema, application dependency, global SSH setting or personal credential
+store is changed. Full provider/client integration still needs review. Focused merge verification
+is recorded in TESTING.md; no landing or deployment is implied.

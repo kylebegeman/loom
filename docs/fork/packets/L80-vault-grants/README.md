@@ -19,7 +19,8 @@ permission ceiling. Human environment administration remains governed by access:
 agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
 thread, but credential-use leases and automatic external runner attestation are not delivered.
 L84 now binds signed channel checks to an active run and its current item/destination use grants. L79 now provides
-reviewed host enrollment and heartbeat presence, without credential-use authority.
+reviewed host enrollment and heartbeat presence, without credential-use authority. L81 mediated
+SSH commands consume a fresh command-bound proof and recheck this policy before signing.
 
 ## Remaining selected scope
 
@@ -44,8 +45,9 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Reviewed host enrollment is implemented. Workload channels, platform identity and delivery
-portions remain target designs; inspect the exact specification before consuming them.
+`ext-vault` has implemented records, grants, host enrollment, workload proofs and mediated SSH.
+Platform identity and additional delivery portions remain target designs; inspect the exact
+specification before consuming them.
 
 ## Dependencies and future opportunities
 

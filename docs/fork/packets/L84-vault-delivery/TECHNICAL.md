@@ -29,8 +29,8 @@ grant; signed release allows an overdue heartbeat, while a disabled host fails c
 owning active MCP thread can close sessions, and expiry also releases control-plane state.
 
 The service exposes authorization checks only. Its result must never be accepted as a future
-credential-use token. SSH delivery must bind the actual operation payload to a new supported
-proof and recheck current policy immediately before its side effect. No provider adapter gets
+credential-use token. L81 mediated SSH binds the actual command payload and key version to an `ssh-exec` proof and
+rechecks current policy before spawn/signature. Future delivery modes must do the same. No provider adapter gets
 keys or launch environment changes from this milestone. Authenticated Loom MCP callers across
 providers share the same tool path; external clients, inactive/background-only callers and
 runtimes below full-access/default cannot open sessions. Actual Pi/provider delivery is pending.

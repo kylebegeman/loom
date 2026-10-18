@@ -4,6 +4,26 @@
 
 Use dedicated Loom-managed SSH keys for development connections and Git operations.
 
+## Available mediated-command milestone
+
+An administrator creates a dedicated Ed25519 key and verifies the host public key independently.
+Trust may start empty, be replaced after review or be removed without replacing the user key.
+Copy the public key for manual registration; no real host registration is performed automatically.
+The authenticated workload needs a separate exact-destination use grant and current machine
+heartbeat. A standalone runner signs a bounded command request using both local identities.
+
+Execution occurs on the Loom server, with at most four concurrent commands, eight seconds per
+command and 2 KiB of standard output. Results contain the remote exit code and output; the CLI
+prints JSON and does not propagate the remote exit code as its own process status. SSH transport
+failures fail the CLI. Do not supply secrets in command arguments or print sensitive remote data.
+Lost responses, timeout or cancellation may leave remote effects; no automatic retry or remote
+rollback is promised.
+
+No new SSH management screen is delivered yet. Existing Vault screens handle item metadata and
+archive/restore/delete. The new generation, public inspection and host-trust actions are available
+through authenticated administrator MCP/CLI; agents cannot approve their own trust. Automatic
+provider/Git wiring and the complete multi-surface management experience remain selected work.
+
 ## How it works
 
 Generate or explicitly import keys, keep private material behind the broker signing interface, and track public-key registrations and host trust independently. Give workloads a restricted identity set through platform-appropriate agent transport. Validate destination constraints using supported SSH mechanisms or a mediated connection, not an assumed hostname in generic signing requests.
@@ -53,8 +73,8 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- Which key algorithms and import formats are required initially?
-- D7: Select mediated connections versus supported destination-constrained agent use, and decide whether forwarding is supported.
+- Initial generated keys and host pins use Ed25519. Private keys are stored as PKCS8 inside the encrypted item payload. Imports and additional algorithms remain open.
+- D7 is resolved for this milestone: mediated connections from the Loom server, operation-scoped POSIX sockets, verified OpenSSH host-bound authentication and no forwarding. General runner-side sockets and Windows transports remain open.
 - Is commit signing part of a later extension of this packet? It is not required by the current SSH outcome.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

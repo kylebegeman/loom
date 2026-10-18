@@ -13,7 +13,7 @@ Web/desktop and native mobile manage invitations, fingerprint approval, cancella
 disable. The foreground macOS/Linux runner generates a private Ed25519 machine identity, proves
 its invitation and renews an online registration lease. No personal credential manager is used.
 Enrollment grants no item access. L84 now supplies signed workload authorization checks;
-SSH signing, actual workload delivery channels, boot/logout
+L81 adds signed mediated SSH commands from the control plane. Runner-side agent sockets, boot/logout
 startup, Windows support and offline credential delivery remain selected work. See
 [user help](../../user/vault.md) and the [operator guide](../../operations/vault.md).
 
@@ -32,8 +32,8 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+`ext-vault` has implemented records, reviewed enrollment, workload proofs and mediated SSH.
+Additional delivery modes, boot custody and platform identity remain target designs.
 
 ## Dependencies and future opportunities
 

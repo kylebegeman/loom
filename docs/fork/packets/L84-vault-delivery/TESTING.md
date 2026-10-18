@@ -34,8 +34,9 @@ interaction checks in this cycle. Existing web/iOS broker evidence remains recor
 - Verify actual remote/relay/tunnel and platform matrices, plus retained/recovered state.
 - Demonstrate that normal responses, argv, prompts, receipts and logs contain no raw values.
 
-No actual credential-delivery, Pi launch, SSH/GitHub login, Android, boot/logout or production
-recovery claim is made. A successful check is not a reusable credential-use capability.
+These check-only tests establish no actual credential-delivery, Pi launch, SSH/GitHub login,
+Android, boot/logout or production recovery claim. L81 separately verifies a mediated SSH
+command using fresh command-bound proofs. A successful check is not a reusable use capability.
 
 ## Merge safety
 

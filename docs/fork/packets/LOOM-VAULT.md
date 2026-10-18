@@ -1,7 +1,7 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment, L84 workload-check sessions and L80/L77/L72 grants, inspector and server-readiness milestones
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment, L84 workload-check sessions, L81 mediated SSH and L80/L77/L72 grants, inspector and server-readiness milestones
 are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
@@ -24,7 +24,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72 and L84 are in progress; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84 and L81 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 
@@ -115,17 +115,17 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 
 ## Design decisions before building
 
-| ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                          |
-| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- |
-| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed |
-| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                            |
-| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                            |
-| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open                                                            |
-| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                            |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                  |
-| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Open                                                            |
-| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open                                                            |
-| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                            |
+| ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                              |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------- |
+| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed     |
+| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                                |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                                |
+| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open                                                                |
+| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                      |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Mediated Ed25519/host-bound slice resolved; general transports open |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open                                                                |
+| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                |
 
 Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.
 Record decided choices, concrete contracts and precise seams as implementation advances.

@@ -235,9 +235,9 @@
       <p>
         All sixteen proposals are documented. Key custody and operating policies remain
         implementation decisions. All sixteen packets are selected to build; OpenBao is selected.
-        Encrypted records, access policy, reviewed host enrollment and signed workload checks are
-        implemented milestones; workload delivery and the full platform remain in progress. No
-        deployment is authorized.
+        Encrypted records, access policy, reviewed host enrollment, signed workload checks and
+        mediated SSH commands are implemented milestones; full delivery and the platform remain in
+        progress. No deployment is authorized.
       </p>
       <nav aria-label="Document links">
         <a href="./LOOM-VAULT.md">Product index</a
@@ -755,10 +755,13 @@
             </p>
             <h4>Open decisions</h4>
             <ul>
-              <li>Which key algorithms and import formats are required initially?</li>
               <li>
-                D7: Select mediated connections versus supported destination-constrained agent use,
-                and decide whether forwarding is supported.
+                Generated keys and host pins use Ed25519; imports and further algorithms remain
+                open.
+              </li>
+              <li>
+                D7: The implemented slice uses mediated host-bound connections with no forwarding.
+                General runner sockets and Windows transports remain open.
               </li>
               <li>
                 Is commit signing part of a later extension of this packet? It is not required by

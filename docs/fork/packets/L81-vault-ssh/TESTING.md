@@ -1,46 +1,63 @@
 # L81 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L78; they do not establish this packet's acceptance.
+Status: the mediated SSH milestone is verified against disposable OpenSSH and OpenBao services;
+complete packet acceptance remains pending.
 
-## Automated behavior
+## Focused automated behavior
 
-- The agent lists and signs only the identities assigned to the workload.
-- A generic signing request cannot bypass the documented destination enforcement mechanism.
-- Changed host keys fail independently of successful user authentication.
-- A restarted broker resumes authorized work; personal SSH configuration and unrelated agent sockets remain unchanged.
+`SshCrypto.test.ts` independently constructs host-bound agent frames and verifies real Ed25519
+signatures. Generic signing, wrong users/identities/host pins, unbound sessions, forged host
+signatures and forwarding fail. `VaultSsh.test.ts` uses real core/policy/broker/workload services
+with an in-memory backend and a controlled transport. It covers idempotent generation/trust,
+CAS conflicts, trust removal/restoration, command tampering/replay, archive/restore, permission
+reduction, grant changes, disabled hosts, bounded concurrency and cancellation permit recovery.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
+The same tests exercise authenticated MCP administration and signed runner/HTTP requests:
+threads/read-only clients cannot generate keys or approve host trust, inspection requires its
+own grant, HTTP execution carries no administrator bearer token, tampered result bindings fail
+and revoked grants are rechecked. Existing host/workload/MCP regression tests remain required.
+Targeted contracts/server/client-runtime/web/mobile typechecks and changed-file lint pass.
+Focused runs cover 43 distinct tests across 11 files: the 27-test combined regression run,
+21-test lifecycle/access run (overlapping the SSH service file), final eight-test service rerun
+and two real integration tests. CLI help, the seam manifest, Python syntax and 237 changed-doc
+local links also pass. No repository-wide suite was run.
 
-## Manual and integrated acceptance
+## Real disposable proof
 
-Use disposable SSH hosts and a test Git repository. Fetch repeatedly, reconnect and restart without 1Password prompts, then remove host trust and revoke a key. Verify Windows support or the explicit unsupported state selected at design review.
-
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
-
-## Focused verification commands
-
-Once implementation files exist, assign concrete test filenames in this document and run:
+Run the following with the previously verified official OpenBao 2.7.1 binary:
 
 ```sh
-vp test run apps/server/src/fork/vault-ssh/service.test.ts
-vp lint apps/server/src/fork/vault-ssh
-vp run --filter t3 typecheck
+python3 apps/server/src/fork/vault/testkit/ssh_proof.py --bao /absolute/path/to/bao
 ```
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+The fixture creates a loopback OpenSSH host with a synthetic host key and authorized-keys file,
+and a separate initialized/unsealed KV v2 OpenBao. `VaultSsh.integration.test.ts` uses real key,
+policy, enrollment, heartbeat and workload services. It registers only a synthetic public key
+on that disposable host, authenticates repeatedly, checks exact argv quoting, denies a wrong
+host pin and a fresh grant revocation, and verifies public-file/socket cleanup. A separate real
+transport test covers timeout, output bounds, a policy denial after initial admission and
+cancellation. The stopped Raft files are checked for private-key text. The fixture stops only
+its own processes and removes its temporary data. It never reads personal SSH credentials.
 
-## Merge safety and results
+No new web/mobile control was added this cycle, so browser/device interaction was not repeated.
+Native Windows/Linux execution, actual provider launch/Git access, real VPS routing, relay
+headless authentication and production restart/recovery are not verified by this macOS proof.
+Remote effects may survive timeout or disconnect. No production registration or deployment ran.
 
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+## Remaining full acceptance
+
+- Build and verify the selected web/desktop/mobile key and trust workflows, including focus,
+  empty/error states, narrow layouts, permission gating and every reverse action.
+- Exercise Git fetch repeatedly through Pi, another provider and scheduled tasks without a
+  personal key manager; verify runtime launch attachment, cancellation and restart behavior.
+- Verify chosen OS boundaries, imports/algorithms and Windows support or explicit unsupported
+  behavior on real Windows; exercise remote/relay/tunnel matrices and skewed capabilities.
+- Verify provider-side registration/revocation reconciliation and production custody/recovery.
+
+## Merge safety
+
+The implementation uses fork-owned paths and existing registries, with no new upstream seam.
+Source commit `44adff693f` previews cleanly against the newest local upstream nightly,
+`v0.1.1-nightly.20261017.3238`, using `git merge-tree --write-tree --name-only --no-messages`.
+Full post-landing rehearsal remains a separate integration check. No fetch, landing, push,
+production registration or deployment was performed.

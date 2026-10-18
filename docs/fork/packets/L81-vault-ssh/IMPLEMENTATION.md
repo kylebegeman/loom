@@ -1,6 +1,7 @@
 # L81 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress. Dedicated key/trust management and a signed mediated command are implemented.
+The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Before starting
@@ -9,6 +10,14 @@ Read the packet index, conventions, shared Vault documents and every file in thi
 Resolve its open product choices and relevant D gates, promote any required extension contract,
 and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
 schema and live infrastructure changes still follow the repository's authorization rules.
+
+## Next selected section
+
+Add web/desktop and native mobile key generation, public-key copying, host-trust review/removal
+and a harmless authenticated connection test through the same services and permission boundary.
+Then attach workload setup to actual provider/task launches and add Git workflows. Imports,
+additional algorithms, Windows, direct runner sockets and production registration remain pending.
+No existing Git remote or personal 1Password configuration was changed.
 
 ## Steps
 

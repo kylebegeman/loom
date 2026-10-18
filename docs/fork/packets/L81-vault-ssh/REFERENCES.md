@@ -8,11 +8,23 @@ an old Loom implementation or inherited P/F selection.
 
 ## Current source
 
-Verified against `2f385ee835`; refresh line citations before implementation.
+Initial review against `2f385ee835`; the mediated implementation starts from `c27859db7d`.
 
 - [`packages/ssh/src/auth.ts:1`](../../../../packages/ssh/src/auth.ts#L1): Existing askpass and SSH authentication abstraction.
 - [`apps/server/src/device/SshDeviceHost.ts:241`](../../../../apps/server/src/device/SshDeviceHost.ts#L241): Device-host SSH consumer.
 - [`apps/server/src/fork/mini-offload/MiniSshTransport.ts:27`](../../../../apps/server/src/fork/mini-offload/MiniSshTransport.ts#L27): Worker SSH uses batch mode and verified host keys.
+
+## Implemented source
+
+- [SSH contract](../../../../packages/contracts/src/fork/vault-ssh.ts),
+  [key/trust service](../../../../apps/server/src/fork/vault/VaultSsh.ts) and
+  [scoped SSH transport](../../../../apps/server/src/fork/vault/SshTransport.ts).
+- [SSH protocol adapter](../../../../apps/server/src/fork/vault/SshCrypto.ts) and
+  [disposable proof](../../../../apps/server/src/fork/vault/testkit/ssh_proof.py).
+- [OpenSSH agent extensions](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.agent)
+  and [host-bound authentication implementation](https://github.com/openssh/openssh-portable/blob/master/sshconnect2.c):
+  verified session binding and the signed user-authentication payload. RFC 4252 assigns message
+  50 to SSH_MSG_USERAUTH_REQUEST; the independent real-client proof exercises that discriminator.
 
 ## Shared design and prior art
 

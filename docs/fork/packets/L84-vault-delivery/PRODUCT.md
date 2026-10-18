@@ -16,7 +16,9 @@ bearer token or proof of successful SSH/GitHub login.
 The supported execution mode is an active full-access/default Loom run with a current broker
 heartbeat. Workload setup and session-file transfer are manual in this milestone. Same-user
 processes able to read the key files can impersonate those identities. Automatic launch binding,
-OS isolation and actual delivery remain separate unfinished requirements.
+OS isolation and general delivery remain separate unfinished requirements. L81 now uses fresh
+command-bound proofs for bounded mediated SSH execution; authorization-check results still
+cannot authorize those operations.
 
 ## How it works
 

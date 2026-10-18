@@ -20,4 +20,5 @@ The workload-check milestone uses shared contracts/services and existing fork-ow
 HTTP, MCP and CLI registries. It adds no upstream seam, SQL migration, production dependency
 or provider prompt injection. Broker HTTP validation is shared by the two runner services.
 There are no new web/native controls; the existing agent/tool path is used from each surface.
-Real provider launch hooks and purpose-specific delivery still require integration review.
+L81 adds purpose-specific command-bound SSH delivery through the same fork-owned registries.
+Real provider launch hooks and additional delivery modes still require integration review.

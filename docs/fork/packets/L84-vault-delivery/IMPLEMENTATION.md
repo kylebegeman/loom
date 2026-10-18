@@ -13,8 +13,8 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 ## Next execution integration
 
-Bind a purpose-specific operation payload to the current workload and implement SSH key
-management/signing before claiming credential use. Then attach sessions automatically at real
+L81 now binds the command payload and key version to a fresh dual-proof challenge and executes
+mediated SSH with independently pinned host trust. Next attach sessions automatically at real
 provider/task launch, with signal/cancellation cleanup and any required OS boundary. Add GitHub
 connection adapters and harmless execution probes. This milestone's check cannot authorize a
 later operation from a cached response. No live credential or deployment change was made.

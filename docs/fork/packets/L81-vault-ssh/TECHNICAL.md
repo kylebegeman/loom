@@ -1,9 +1,59 @@
 # L81 technical design
 
 Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
+OpenBao for encrypted storage. The implemented boundary is specified below; remaining imports,
+client UI and launch integration still need implementation review.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+
+## Implemented boundary
+
+`vault-ssh.ts` specifies safe key metadata, generation/trust inputs, the command payload and its
+result. `VaultSsh` stores a versioned private-key envelope through `VaultCore` into existing
+OpenBao item paths. Generation uses a caller-held item/operation ID; repeated creation returns
+the same public identity, while competing creation conflicts. Trust has independent CAS and
+retry semantics. Null trust blocks use. Archive/delete and trust changes block old-version
+commands; they do not remove public registrations from remote hosts or destroy KV history.
+
+`VaultWorkloads` issues an `ssh-exec` challenge whose dual signatures bind the command digest.
+The digest includes exact argv, expected item version and timeout. Consuming that challenge is
+single-use; check/release proofs cannot execute commands. Session ownership, active run/mode,
+machine approval/heartbeat and the persisted item/destination use decision are revalidated.
+`VaultSsh` verifies the item version/destination, then rechecks policy and version before spawn
+and during agent requests, including before signing. There is no reusable readiness capability.
+
+`SshTransport` runs `/usr/bin/ssh` from the control plane, ignoring user/system SSH config,
+existing agent sockets, connection multiplexing, password/keyboard prompts, proxy commands,
+forwarding and known-host stores. It writes only public identity and known-host files in a
+private temporary directory. `SshCrypto` implements identities, session-bind and a narrow signing
+subset: verify the pinned Ed25519 host signature on the exchange session ID, then require a
+host-bound SSH user-authentication message for that session, user, host key and assigned key.
+Generic signing, forwarded bindings, unknown identities and additional signatures fail closed.
+This requires host-bound-capable OpenSSH and Ed25519 host keys; IPv6 and SSH certificates are
+not implemented. Hostnames/IPv4 addresses are explicit, with no SSH aliases or discovery trust.
+
+Four simultaneous commands are allowed. Agent frames/queues/sockets and command/output sizes
+are bounded. Each command runs for at most eight seconds and returns at most 2 KiB stdout;
+SSH stderr is drained but not returned or logged. Nonzero remote exits are reported in JSON;
+255 or signal termination is a transport failure. A scoped finalizer kills only its own SSH
+child, waits for close, closes sockets and removes public temporary files after success, failure,
+timeout or cancellation. An abrupt server kill may leave public temporary files. No private key
+file is created. Remote command effects can survive disconnect; a lost response has an unknown
+outcome. Consumed challenges reject retry; a fresh proof can repeat the remote effect.
+
+Revocation prevents new signatures/operations when checked. It does not recall an already
+issued signature or roll back an authenticated remote command. No generic socket is exposed to
+workloads, and the returned JSON contains no key or bearer capability. Same-user processes can
+still read backend token/identity files or interfere with server memory/sockets; this is not an
+OS isolation boundary. Production host isolation, boot custody and operational recovery remain
+separate design gates.
+
+The HTTP endpoint is `/api/loom/vault-brokers/workloads/ssh-exec`. Administrator MCP generation
+and trust require a human full-access client; threads can inspect public metadata only with an
+inspect grant. Existing signed runner/CLI transport makes execution available to authenticated
+Loom agent terminals without an administrator/backend token. New client UI and per-provider
+launch attachment are not included. General readiness stays conservative and does not perform
+this execution probe automatically.
 
 ## Overview
 
