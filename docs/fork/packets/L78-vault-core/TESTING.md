@@ -57,6 +57,7 @@ The platform account model, broker identity, full durable audit and production c
 are unfinished. No live credential migration, SSH/GitHub registration, VPS rollout or personal
 1Password change was performed. Complete PRODUCT acceptance before marking the packet Done.
 
-Seam-only validation and changed Markdown link checks pass. The final merge-tree preview result
-is recorded after committing the integrated milestone; no full upstream integration rehearsal
-is claimed from this feature worktree.
+Seam-only validation and changed Markdown link checks pass. The merge-tree preview of the
+integrated milestone against the newest locally available nightly,
+`v0.1.1-nightly.20261017.3238`, exited 0 with no conflicts. No fetch or full upstream
+integration rehearsal is claimed from this feature worktree.
