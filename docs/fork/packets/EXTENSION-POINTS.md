@@ -2955,3 +2955,21 @@ without router context so upstream static card tests keep working. Register a pa
 Existence check: `test -f apps/web/src/fork/changedFiles/registry.ts` and
 `git grep -c 'fork: ext-changed-files' -- apps/web/src/components/chat/ChangedFilesTree.tsx`
 prints 2. Run the existing ChangedFilesTree tests when altering the seam.
+
+## Loom Vault foundation proposal (`ext-vault`)
+
+Status: **Proposed for design review; not an implementable extension point.** Kyle selected
+all sixteen Vault ideas for documentation on 2026-10-17, not for immediate implementation.
+The normal copy-verbatim/existence-check workflow above does not apply to this proposal yet.
+
+[LOOM-VAULT-FOUNDATION.md](./LOOM-VAULT-FOUNDATION.md) specifies the proposed shared boundary
+for encrypted records, references, authenticated principals, grants, brokers, delivery, minimum
+audit and operation state. [LOOM-VAULT.md](./LOOM-VAULT.md) maps its design owners and open
+backend, custody, identity and recovery decisions.
+
+Before implementation, agree the minimal shared contract, refresh V2 integration points, then
+replace this proposal with an exact specification and existence checks. A feature packet may
+create a missing approved portion in its own extension commit and must degrade gracefully when
+optional adapters are absent. No packet imports another packet's internals or invents a separate
+secret/policy implementation to avoid the shared boundary. Existing extension specifications
+and the implement-now queue remain authoritative for non-Vault work.

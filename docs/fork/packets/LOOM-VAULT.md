@@ -1,0 +1,152 @@
+# Loom Vault product and packet index
+
+Status: **Designing**. Kyle selected all 16 proposals for documentation on 2026-10-17.
+None is selected for implementation or deployment. The V01 to V16 identifiers remain stable
+from the brainstorm; L72 to L87 are their repository packet IDs.
+
+Loom Vault is a development resource system for credentials, accounts and other secure records.
+It separates agent/development access from Kyle's personal 1Password vault. Dorothy, other
+computers, remote workers and CI should use explicitly granted development identities without
+repeated personal key approvals. Kyle's VPS, begam.in services and Loom platform are available
+hosting/integration options, not infrastructure to replace or deploy without review.
+
+## Product scope and confirmed intent
+
+- All sixteen outcomes below are retained, including the core storage, broker and policy systems.
+- Manage through web, desktop and mobile; use through Loom, CLI, MCP and enrolled runners.
+- Store and manage dedicated SSH keys, service connections, test accounts and extensible secure records.
+- Prefer reusable references, clear account selection and durable access grants over copied values.
+- Keep personal credentials separate. Imports and configuration changes are explicit and reviewable.
+- Document before building. Selection for documentation settles scope, not backend or policy decisions.
+
+## Packet catalog
+
+Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
+Complexity and impact are the brainstorm estimates, not delivery dates. Every packet is Designing.
+
+### Minor Features & Improvements
+
+| Idea | Packet and complete outcome                                                    | Complexity | Impact |
+| ---- | ------------------------------------------------------------------------------ | ---------- | ------ |
+| V01  | [L72 Headless readiness checks](./L72-vault-readiness/)                        | Medium     | High   |
+| V02  | [L73 Searchable credential references everywhere](./L73-vault-references/)     | Medium     | High   |
+| V03  | [L74 Guided migration from personal credential stores](./L74-vault-migration/) | Medium     | High   |
+| V04  | [L75 Project environment profiles](./L75-vault-profiles/)                      | Medium     | High   |
+| V05  | [L76 Credential health and maintenance inbox](./L76-vault-health/)             | Medium     | High   |
+| V06  | [L77 Explain access and preview changes](./L77-vault-access-inspector/)        | Medium     | High   |
+
+### Major Features, Systems & Refactors
+
+| Idea | Packet and complete outcome                                                             | Complexity | Impact           |
+| ---- | --------------------------------------------------------------------------------------- | ---------- | ---------------- |
+| V07  | [L78 Encrypted Vault and self-hosted control plane](./L78-vault-core/)                  | Large      | Transformational |
+| V08  | [L79 Enrolled machines and headless brokers](./L79-vault-brokers/)                      | Large      | Transformational |
+| V09  | [L80 Agent identities and persistent access grants](./L80-vault-grants/)                | Large      | Transformational |
+| V10  | [L81 SSH key management and Loom SSH agent](./L81-vault-ssh/)                           | Large      | High             |
+| V11  | [L82 Developer service accounts and authentication connectors](./L82-vault-connectors/) | Large      | High             |
+| V12  | [L83 Test account collections and provisioning](./L83-vault-test-accounts/)             | Massive    | Transformational |
+| V13  | [L84 Credential delivery API, CLI, and runner integrations](./L84-vault-delivery/)      | Large      | Transformational |
+| V14  | [L85 Remote approvals and temporary access](./L85-vault-approvals/)                     | Large      | High             |
+| V15  | [L86 Credential lifecycle automation and short-lived access](./L86-vault-lifecycle/)    | Massive    | High             |
+| V16  | [L87 Backup, recovery, and portability](./L87-vault-recovery/)                          | Large      | High             |
+
+Read the [shared foundation proposal](./LOOM-VAULT-FOUNDATION.md) for technical boundaries,
+identity, key custody, recovery and backend evaluation. The [HTML overview](./LOOM-VAULT.html)
+is a navigable companion; packet Markdown remains the authoritative design record.
+
+## Proposed platform shape
+
+A central authority hosted on the VPS manages Vault records, policy and durable history. Local
+brokers on enrolled execution hosts authenticate workloads and deliver authorized access to
+tools. Loom clients and a possible begam.in management surface speak to that authority through
+versioned service interfaces. They are not holders of all machine credentials.
+
+This is the recommended direction for review. It is not an assertion that the current platform
+already exposes the required auth, key service, notification or deployment APIs. Inspect those
+contracts in their owning project before selecting an integration. A domain name or existing
+login is not sufficient proof of Vault authorization.
+
+A single backend adapter isolates engine choice. Compare a maintained self-hosted engine with a
+narrow service using supported cryptographic libraries. Keep Loom-specific accounts, profiles,
+runner ergonomics and permission semantics out of backend-specific clients.
+
+## Capability dependencies and packet independence
+
+The proposed `ext-vault` boundary owns common record, identity, policy, audit, broker and delivery
+interfaces. It is not yet an approved extension point. See the explicit proposal in
+[EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-proposal-ext-vault).
+Before implementation, promote the smallest approved contract into that extension specification.
+A packet can supply a missing approved portion of the shared extension in a separate commit;
+it must not import another feature packet's internals or assume its UI exists.
+
+| Shared capability                                       | Primary design owner    | Consumers and graceful absence                                                                |
+| ------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Encrypted records, stable references, baseline recovery | V07 / L78               | All Vault features; no backend means clearly unavailable, never fallback to personal secrets. |
+| Enrolled host and workload channels                     | V08 / L79               | Readiness, SSH, delivery and automation; absent broker means no unattended-use claim.         |
+| Grants, principal attestation, minimum decision audit   | V09 / L80               | All execution and explanation paths; absence denies use.                                      |
+| Purpose-specific delivery adapters                      | V13 / L84               | SSH, connectors and account sessions; unsupported modes fail before launch.                   |
+| Provider connection/issuance adapters                   | V11 / L82 and V15 / L86 | Checks, health and renewal; report each adapter's capability rather than assuming support.    |
+| Durable requests and account leases                     | V14 / L85 and V12 / L83 | Approval and QA consumers; existing grants/stored accounts work without automation UI.        |
+
+The owner column identifies who develops the design, not a compulsory sequence of sixteen
+feature builds. Each packet's optional adapters must be independently installable or unavailable
+with an honest explanation. There is no speculative requirement to build a plugin framework.
+
+## Suggested delivery groups for later review
+
+These groups preserve all selected outcomes. They are recommendations, not the implement-now queue.
+
+1. **Establish the foundation:** decide engine, identity, custody and recovery together; build the
+   approved minimum record, broker and grant interfaces. Prove baseline restore before real secrets.
+2. **Resolve Dorothy's current workflow:** SSH keys, GitHub connection, runner delivery, readiness
+   and reviewed migration. Prove repeated operations and service restart without 1Password prompts.
+3. **Make daily use coherent:** references, profiles, health, explanations and remote exceptions.
+4. **Expand managed resources:** test-account pools/provisioning and short-lived issuance/rotation.
+5. **Complete recovery operations:** polished backup management, recovery exercises and portability.
+   This expands the baseline recovery required in group 1; backups are not deferred to this group.
+
+The first working proof uses disposable accounts and SSH hosts. A local green test is not
+permission to migrate personal keys, register a public endpoint or deploy on the live VPS.
+
+## Design decisions before building
+
+| ID  | Choice and evidence needed                                                                                           | Design owner  | Status |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Open   |
+| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open   |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open   |
+| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open   |
+| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open   |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Open   |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Open   |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open   |
+| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open   |
+
+Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.
+A future implementation handoff records the decided choices, concrete API/storage designs,
+source refresh and precise seams, then moves the chosen packet into IMPLEMENT-NOW.md. No
+production dependency or database schema has been added by these documents.
+
+## What success looks like
+
+On a disposable equivalent of Dorothy, enroll the machine, create dedicated development access,
+attach it to a project, then perform GitHub and SSH work through Pi and another installed runner.
+Restart both broker and Loom service and repeat from a mobile client without personal key-manager
+approval. Revoke access, inspect the explanation and prove that subsequent online use is denied.
+Test an outage according to the chosen offline policy and restore the Vault on a clean host.
+
+Test accounts can then be reserved by parallel QA workers, reset or quarantined safely, and
+released without mixing personal identities or leaking sessions into conversations. Rotation
+and recovery must report partial external outcomes rather than claim universal revocation.
+
+## Priorities retained from the brainstorm
+
+**Highest ROI:** headless broker plus Loom SSH agent (V08/V10), GitHub integration (V11),
+readiness (V01) and reusable environment profiles (V04), on sufficient storage/policy foundations.
+
+**Long-term value:** encrypted shared Vault, broker and grants (V07/V08/V09); test-account
+provisioning (V12); common delivery (V13); lifecycle automation (V15); recovery/portability (V16).
+
+**Noticeable early slices:** readiness diagnostics, an inventory of personal credential
+dependencies, stable references for existing secret settings and consolidated expiry warnings.
+Early slices do not substitute for completing the selected packet scope.

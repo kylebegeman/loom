@@ -4,6 +4,14 @@ This is the entry point for selecting the next Loom packet. It overrides older b
 and individual packet labels. Kyle completed this selection review on 2026-09-27. Only packets in the selected queue
 are designated for implementation; retained proposals remain parked.
 
+## Loom Vault documentation selection
+
+Kyle selected all sixteen Loom Vault proposals for documentation on 2026-10-17. The
+[Vault index](./LOOM-VAULT.md) maps V01 to V16 to L72 to L87 and records shared design gates.
+All remain **Designing**, outside the implementation queue. Finish product/backend/identity
+review and record an explicit implementation selection here before any Vault packet starts.
+This documentation selection does not change the existing queue below.
+
 ## Selected queue
 
 | Order | Packet                                                | Status                                        | Decision                                                                                        |
