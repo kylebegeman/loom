@@ -213,6 +213,14 @@ L05 adds the outline toggle and column to the file viewer in
 lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
 [user help](docs/fork/user/file-outline.md).
 
+`LOOM_SERVER_SELF_UPDATE=false` turns off the service launcher's self-update
+(`fork: runtime-owner`; `apps/server/src/cloud/selfUpdate.ts`, 4 marker lines, and
+`apps/server/src/environment/ServerEnvironment.ts`, 3 marker lines). LoomOS sets it because
+its signed releases ship the runtime, and a second updater would replace it. The descriptor
+then omits `serverSelfUpdate`, so clients offer no update, and a direct request is refused
+with a reason that names the operating system. The setting lives in
+`apps/server/src/fork/runtime-owner/selfUpdateSwitch.ts`.
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:

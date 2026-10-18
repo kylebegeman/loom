@@ -18,6 +18,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveServerInstallation } from "../cli/invocation.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
+import { serverSelfUpdateEnabled } from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -193,9 +194,10 @@ export const make = Effect.gen(function* () {
   const { label } = yield* naming.current; // fork: computer-naming
   const machine = yield* detectServerEnvironmentMachineKind();
   const launcher = yield* resolveServiceLauncherMode();
+  const selfUpdateEnabled = yield* serverSelfUpdateEnabled; // fork: runtime-owner
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
     desktopManaged: serverConfig.mode === "desktop",
-    launcherManaged: launcher.managed,
+    launcherManaged: launcher.managed && selfUpdateEnabled, // fork: runtime-owner
   });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
   // Static is correct: the control fd is known at bootstrap, and the desktop
