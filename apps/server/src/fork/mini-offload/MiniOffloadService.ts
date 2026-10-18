@@ -34,12 +34,13 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as Ssh from "./MiniSshTransport.ts";
+import * as WorkerSource from "./MiniWorkerSource.ts";
+import { atomicJson, disk, readJson } from "./storage.ts";
 
 const jsonBytes = (value: object) => Buffer.byteLength(JSON.stringify(value)) + 1;
 const MAX_BYTES = 64 * 1024 * 1024;
 const Stored = Schema.Struct({ receipt: MiniReceipt, worker: MiniWorker });
 type Stored = typeof Stored.Type;
-const Workers = Schema.Array(MiniWorker);
 const Received = Schema.Struct({
   request_id: Schema.String,
   source_revision: Schema.String,
@@ -92,37 +93,6 @@ const decode = <S extends Schema.Top>(schema: S, value: unknown) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError((cause) => new MiniOffloadError({ reason: "response", cause })),
   );
-const disk = <A>(action: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: action,
-    catch: (cause) => new MiniOffloadError({ reason: "storage", cause }),
-  });
-const readJson = async (path: string): Promise<unknown | null> => {
-  try {
-    return JSON.parse(await NodeFSP.readFile(path, "utf8"));
-  } catch (cause) {
-    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT")
-      return null;
-    throw cause;
-  }
-};
-const atomicJson = async (path: string, value: unknown) => {
-  const temporary = path + "." + NodeCrypto.randomUUID() + ".tmp";
-  const file = await NodeFSP.open(temporary, "wx", 0o600);
-  try {
-    await file.writeFile(JSON.stringify(value));
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await NodeFSP.rename(temporary, path);
-  const directory = await NodeFSP.open(NodePath.dirname(path), "r");
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
-  }
-};
 const sha256File = async (path: string) => {
   const hash = NodeCrypto.createHash("sha256");
   for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
@@ -245,15 +215,12 @@ const make = Effect.gen(function* () {
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const ssh = yield* Ssh.MiniSshTransport;
+  const source = yield* WorkerSource.MiniWorkerSource;
   // Protect specification creation and registry changes. Each request has a separate transfer lock.
   const registryLock = yield* Semaphore.make(1);
   const requestLocks = new Map<string, { lock: Semaphore.Semaphore; count: number }>();
   const root = NodePath.join(config.stateDir, "fork", "mini-offload");
   const pathFor = (rid: string) => NodePath.join(root, rid);
-  const loadWorkers = Effect.gen(function* () {
-    const value = yield* disk(() => readJson(NodePath.join(root, "workers.json")));
-    return value === null ? [] : yield* decode(Workers, value);
-  });
   const summary = (worker: MiniWorker) => ({
     id: worker.id,
     name: worker.name,
@@ -388,7 +355,7 @@ const make = Effect.gen(function* () {
     prepare = false,
   ) {
     yield* decode(MiniWorkerRef, input);
-    const worker = (yield* loadWorkers).find((worker) => worker.id === input.workerId);
+    const worker = (yield* source.list).find((worker) => worker.id === input.workerId);
     if (!worker || (prepare && !worker.enabled)) return yield* fail("worker");
     const result = yield* ssh
       .request(worker, "rpc", {
@@ -477,43 +444,10 @@ const make = Effect.gen(function* () {
   return MiniOffloadService.of({
     check: (input) => readiness(input),
     prepare: (input) => readiness(input, true),
-    workers: loadWorkers.pipe(Effect.map((workers) => workers.map(summary))),
-    register: (input) =>
-      registryLock.withPermit(
-        Effect.gen(function* () {
-          const worker = yield* decode(MiniWorker, input);
-          if (worker.sshConfig !== null && !NodePath.isAbsolute(worker.sshConfig))
-            return yield* fail("worker");
-          const workers = yield* loadWorkers;
-          const old = workers.find((row) => row.id === worker.id);
-          if (old && (old.target !== worker.target || old.sshConfig !== worker.sshConfig))
-            return yield* fail("worker");
-          yield* disk(async () => {
-            await NodeFSP.mkdir(root, { recursive: true, mode: 0o700 });
-            await atomicJson(NodePath.join(root, "workers.json"), [
-              ...workers.filter((row) => row.id !== worker.id),
-              worker,
-            ]);
-          });
-          return summary(worker);
-        }),
-      ),
+    workers: source.list.pipe(Effect.map((workers) => workers.map(summary))),
+    register: (input) => registryLock.withPermit(source.register(input)).pipe(Effect.map(summary)),
     setEnabled: (input) =>
-      registryLock.withPermit(
-        Effect.gen(function* () {
-          const workers = yield* loadWorkers;
-          const worker = workers.find((row) => row.id === input.workerId);
-          if (!worker) return yield* fail("worker");
-          const next = { ...worker, enabled: input.enabled };
-          yield* disk(() =>
-            atomicJson(
-              NodePath.join(root, "workers.json"),
-              workers.map((row) => (row.id === next.id ? next : row)),
-            ),
-          );
-          return summary(next);
-        }),
-      ),
+      registryLock.withPermit(source.setEnabled(input)).pipe(Effect.map(summary)),
     submit: (input) =>
       decode(MiniSubmit, input).pipe(
         Effect.flatMap((request) =>
@@ -532,7 +466,7 @@ const make = Effect.gen(function* () {
               }
               const stored = yield* registryLock.withPermit(
                 Effect.gen(function* () {
-                  const worker = (yield* loadWorkers).find(
+                  const worker = (yield* source.list).find(
                     (row) => row.id === request.workerId && row.enabled,
                   );
                   if (!worker) return yield* fail("worker");
@@ -725,4 +659,6 @@ const make = Effect.gen(function* () {
       }),
   });
 });
-export const layer = Layer.effect(MiniOffloadService, make);
+export const layer = Layer.effect(MiniOffloadService, make).pipe(
+  Layer.provide(WorkerSource.layerFile),
+);
