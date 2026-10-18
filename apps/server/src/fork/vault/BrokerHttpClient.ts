@@ -1,4 +1,9 @@
-import { VaultError, VaultBrokerError, VaultWorkloadError } from "@t3tools/contracts/fork";
+import {
+  VaultError,
+  VaultBrokerError,
+  VaultWorkloadError,
+  VaultSshError,
+} from "@t3tools/contracts/fork";
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -10,12 +15,13 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
-type Failure = VaultError | VaultBrokerError | VaultWorkloadError;
+type Failure = VaultError | VaultBrokerError | VaultWorkloadError | VaultSshError;
 type Operation =
   | "claim"
   | "challenge"
   | "heartbeat"
   | "workloads/challenge"
+  | "workloads/ssh-exec"
   | "workloads/check"
   | "workloads/release";
 export const brokerOrigin = (input: string) => {
@@ -55,6 +61,9 @@ const decodeWorkloadFailure = Schema.decodeUnknownOption(
 const decodeVaultFailure = Schema.decodeUnknownOption(
   Schema.Struct({ reason: VaultError.fields.reason }),
 );
+const decodeSshFailure = Schema.decodeUnknownOption(
+  Schema.Struct({ reason: VaultSshError.fields.reason }),
+);
 const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
   return BrokerHttpClient.of({
@@ -85,6 +94,10 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => new VaultBrokerError({ reason: "unavailable" })),
       );
       if (response.status !== 200) {
+        if (operation === "workloads/ssh-exec") {
+          const ssh = decodeSshFailure(value);
+          if (Option.isSome(ssh)) return yield* new VaultSshError(ssh.value);
+        }
         if (operation.startsWith("workloads/")) {
           const workload = decodeWorkloadFailure(value);
           if (Option.isSome(workload)) return yield* new VaultWorkloadError(workload.value);

@@ -62,7 +62,8 @@ export const VaultWorkloadChallengeRequest = Schema.Struct({
   environmentId: EnvironmentId,
   sessionId: VaultItemId,
   requestId: VaultItemId,
-  operation: Schema.Literals(["check", "release"]),
+  operation: Schema.Literals(["check", "release", "ssh-exec"]),
+  payloadDigest: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   at: Time,
   machineSignature: VaultBrokerSignature,
   workloadSignature: VaultBrokerSignature,
@@ -74,7 +75,8 @@ export const VaultWorkloadChallenge = Schema.Struct({
   machineId: VaultItemId,
   sessionId: VaultItemId,
   requestId: VaultItemId,
-  operation: Schema.Literals(["check", "release"]),
+  operation: Schema.Literals(["check", "release", "ssh-exec"]),
+  payloadDigest: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   nonce: VaultBrokerNonce,
   expiresAt: Time,
 });
@@ -101,6 +103,7 @@ export const vaultWorkloadRequestMessage = (
     input.requestId,
     input.operation,
     input.at,
+    ...(input.operation === "ssh-exec" ? [input.payloadDigest ?? null] : []),
   ]);
 export const vaultWorkloadProofMessage = (input: VaultWorkloadChallenge) =>
   JSON.stringify([
@@ -113,4 +116,5 @@ export const vaultWorkloadProofMessage = (input: VaultWorkloadChallenge) =>
     input.operation,
     input.nonce,
     input.expiresAt,
+    ...(input.operation === "ssh-exec" ? [input.payloadDigest ?? null] : []),
   ]);

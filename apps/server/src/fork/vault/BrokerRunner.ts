@@ -53,6 +53,7 @@ const make = Effect.gen(function* () {
   ) =>
     client.post(origin, operation, input, schema).pipe(
       Effect.catchTags({
+        VaultSshError: () => Effect.fail(new VaultBrokerError({ reason: "invalid-proof" })),
         VaultWorkloadError: () => Effect.fail(new VaultBrokerError({ reason: "invalid-proof" })),
       }),
     );

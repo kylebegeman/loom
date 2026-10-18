@@ -1,7 +1,7 @@
 # OpenBao connection for Loom Vault
 
 This guide configures the implemented record and online policy foundation. It does not deploy OpenBao, rewrite Git remotes or migrate personal credentials. Platform accounts, production
-unseal/recovery custody, workload channels and unattended boot remain unfinished. Use synthetic credentials
+unseal/recovery custody, general workload launch attachment and unattended boot remain unfinished. Use synthetic credentials
 until those controls and the full audit path are complete.
 
 ## Configure an existing isolated service
@@ -56,8 +56,8 @@ operations. Item mutation receipts support immediate retries. The access-policy 
 receipts and 256 safe policy/decision events; omitted-event counts are visible. This is not a
 complete or immutable audit ledger. Policy audit must persist before a gated action is allowed.
 A service token without policy-path access receives a denial, with no privilege fallback.
-There is no offline decrypted cache, forwarding agent, workload lease or platform-account
-administration in this milestone.
+There is no offline decrypted cache, forwarding agent, general workload lease or platform-account
+administration. The signed mediated SSH operation is described below.
 
 ## Reproduce the disposable backend proof
 
@@ -99,8 +99,8 @@ supported; a relay that requires a human session is not a supported headless run
 
 This milestone supports foreground macOS/Linux processes, online-only checks and renewal every
 minute. Registration presence lasts two minutes. These are not credential-use leases. Starting
-before login, reboot/logout recovery, Windows custody, workload authentication and SSH signing
-remain pending. A sealed/unavailable backend denies checks; no decrypted offline cache or
+before login, reboot/logout recovery, Windows custody, automatic workload launch binding and runner-side SSH agents
+remain pending. Signed workload and mediated SSH operations are described below. A sealed/unavailable backend denies checks; no decrypted offline cache or
 personal-agent fallback exists. After a control-plane restart, request a new heartbeat challenge.
 
 The encrypted registry retains 128 safe activity events and 32 mutation receipts. Disable is
@@ -120,5 +120,45 @@ A control-plane restart deliberately invalidates all sessions and challenges. Op
 session from the current authenticated thread after reconnecting. Durable grants and enrolled
 host approvals remain in OpenBao. Session list/close are caller-owned MCP operations; machine
 disable or grant revocation prevents new allowed checks. Existing keys remain operator-owned.
-Actual delivery, automatic launch attestation, process isolation and production recovery remain
-separate unfinished boundaries. Do not treat a successful check as cached use authority.
+General delivery adapters, automatic launch attestation, process isolation and production recovery
+remain separate unfinished boundaries. Do not treat a successful check as cached use authority.
+
+## Mediated SSH execution
+
+`vault-ssh-mediated` uses existing encrypted item paths and the existing policy/broker paths;
+no additional OpenBao privileges, mount or application dependency is introduced. Administrator
+MCP/CLI generation creates PKCS8 Ed25519 key envelopes in OpenBao. The user-facing SSH tools
+return public metadata. Existing explicit administrator reveal/export rights and backend/service
+access remain powerful; this is not an OS isolation mechanism.
+
+A destination pin is independently managed and may be empty. Only exact hostname/IPv4,
+username and port targets with verified Ed25519 host keys are accepted. The server needs
+`/usr/bin/ssh` with OpenSSH host-bound authentication and a reachable destination. It ignores
+personal SSH configuration, agent sockets, known-host stores, proxies and multiplexed sessions.
+The operation-scoped agent verifies the pinned host's exchange signature and accepts only the
+assigned identity's host-bound authentication message. No generic signing or forwarding is
+exposed. Windows and runner-side agent sockets remain unfinished.
+
+Signed workload requests bind command argv, current item version and timeout. Policy/backend,
+run/mode, machine heartbeat and item version are rechecked before execution/signing. Item
+archive/delete, pin removal, a version change, workload closure or grant revocation blocks new
+use when checked. An existing authenticated connection or issued signature cannot be recalled.
+The command times out within eight seconds; local cancellation does not guarantee remote
+rollback. Consumed proofs cannot be replayed. A lost response has an unknown outcome; do not
+blindly retry commands with external effects.
+
+The server bounds concurrency at four, agent sockets at four per operation, queued agent
+frames at eight, frames at 16 KiB and stdout at 2 KiB. It drains SSH stderr without exposing it.
+Scoped cleanup waits for its SSH child to close, then removes its socket and public temporary
+files. An abrupt server kill may leave public temporary directories; private key files are not
+created. Policy audit records access decisions, not successful remote-command receipts. Durable
+operation reconciliation, production isolation/recovery and comprehensive audit remain pending.
+
+Reproduce the synthetic macOS SSH/OpenBao proof without touching an existing SSH service:
+
+```sh
+python3 apps/server/src/fork/vault/testkit/ssh_proof.py --bao /absolute/path/to/bao
+```
+
+The fixture uses loopback, generated keys and a temporary authorized-keys file. It registers no
+production credential, changes no user SSH setting and stops only processes it started.

@@ -1,5 +1,6 @@
 import {
   VaultError,
+  VaultSshExecute,
   VaultWorkloadChallengeRequest,
   VaultWorkloadProof,
 } from "@t3tools/contracts/fork";
@@ -11,8 +12,9 @@ import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
+import * as VaultSsh from "./VaultSsh.ts";
 
-const handler = (operation: "challenge" | "check" | "release") =>
+const handler = (operation: "challenge" | "check" | "release" | "ssh-exec") =>
   withForkRuntime(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -31,11 +33,15 @@ const handler = (operation: "challenge" | "check" | "release") =>
           Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
         );
       const result =
-        operation === "challenge"
-          ? yield* service.challenge(yield* decode(VaultWorkloadChallengeRequest))
-          : operation === "check"
-            ? yield* service.check(yield* decode(VaultWorkloadProof))
-            : yield* service.release(yield* decode(VaultWorkloadProof));
+        operation === "ssh-exec"
+          ? yield* Effect.flatMap(VaultSsh.VaultSsh, (ssh) =>
+              decode(VaultSshExecute).pipe(Effect.flatMap((input) => ssh.execute(input))),
+            )
+          : operation === "challenge"
+            ? yield* service.challenge(yield* decode(VaultWorkloadChallengeRequest))
+            : operation === "check"
+              ? yield* service.check(yield* decode(VaultWorkloadProof))
+              : yield* service.release(yield* decode(VaultWorkloadProof));
       return HttpServerResponse.jsonUnsafe(result, { headers: { "cache-control": "no-store" } });
     }),
   ).pipe(
@@ -53,6 +59,23 @@ const handler = (operation: "challenge" | "check" | "release") =>
                     : error.reason === "conflict"
                       ? 409
                       : 503,
+              headers: { "cache-control": "no-store" },
+            },
+          ),
+        ),
+      VaultSshError: (error) =>
+        Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            { reason: error.reason },
+            {
+              status:
+                error.reason === "capacity"
+                  ? 429
+                  : error.reason === "invalid-operation" || error.reason === "invalid-key"
+                    ? 400
+                    : error.reason === "timeout"
+                      ? 504
+                      : 502,
               headers: { "cache-control": "no-store" },
             },
           ),
@@ -81,12 +104,12 @@ const handler = (operation: "challenge" | "check" | "release") =>
 export const VaultWorkloadHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
-    const route = (operation: "challenge" | "check" | "release") =>
+    const route = (operation: "challenge" | "check" | "release" | "ssh-exec") =>
       HttpRouter.add(
         "POST",
         `/api/loom/vault-brokers/workloads/${operation}`,
         handler(operation).pipe(Effect.provideService(ForkRuntime, runtime)),
       );
-    return Layer.mergeAll(route("challenge"), route("check"), route("release"));
+    return Layer.mergeAll(route("challenge"), route("check"), route("release"), route("ssh-exec"));
   }),
 );

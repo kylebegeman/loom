@@ -3013,9 +3013,23 @@ closes only the authenticated thread's sessions. `vault-workload-checks` adverti
 capability. No raw values or reusable use tokens are returned. Actual delivery must authenticate
 its own operation payload and current policy, rather than trusting a prior check result.
 
+Shared `vault-ssh.ts`, `VaultSsh`, `SshCrypto` and `SshTransport` add the `vault-ssh-mediated`
+capability. Full-access administrator clients manage generated Ed25519 keys and independent
+host pins using MCP; existing Vault core actions archive/restore/delete items. Agent public
+inspection requires an inspect grant. Signed `ssh-exec` HTTP/runner requests bind exact argv,
+key version and timeout to a fresh single-use workload challenge. Current policy, host/run
+state and item version are rechecked before spawn and agent signing. The server mediates the
+connection using a scoped POSIX socket, verified OpenSSH session-bind and host-bound user
+authentication; generic signing and forwarding are unsupported. Private key bytes never leave
+the server/OpenBao through this operation. Only public temporary files are written. The target
+must be reachable from the Loom server. Commands are bounded to four concurrent executions,
+eight seconds and 2 KiB stdout. Cancellation/timeout closes local resources but cannot promise
+remote rollback. Already-issued signatures cannot be recalled. New UI, provider/Git attachment,
+Windows and general runner-side sockets remain unfinished.
+
 No immutable audit ledger, platform membership, workload delivery lease or provider
-probe exists. Readiness with credential-use requirements explicitly reports unsupported broker
-or delivery capability. Do not infer unattended SSH readiness from a policy decision.
+probe exists. General readiness with credential-use requirements reports an unsupported execution probe.
+Mediated SSH is a separate operation with its own proof; it is not run by readiness. Do not infer unattended SSH readiness from a policy decision.
 
 Existence checks:
 

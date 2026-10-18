@@ -60,7 +60,7 @@ const EMPTY: Policy = {
 };
 const UNKNOWN = [
   "External credential copies and provider-side revocation are not tracked.",
-  "Broker leases, approvals and profile bindings are not implemented; their consumers are unknown.",
+  "Automatic workload launch, profile bindings and external consumers are not tracked.",
 ];
 
 export class VaultAccess extends Context.Service<
@@ -532,9 +532,10 @@ const make = Effect.gen(function* () {
         checks.push({
           id: "broker-delivery",
           state: "unsupported",
-          reason: "No enrolled broker or credential-delivery adapter is installed.",
+          reason:
+            "This readiness check does not perform an enrolled-broker or credential-use probe.",
           repair:
-            "Complete broker and delivery setup before claiming unattended SSH or provider access.",
+            "Run a supported signed SSH operation to verify that destination. Provider launch and Git readiness are not verified here.",
         });
       return {
         environmentId,

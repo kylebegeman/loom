@@ -1,5 +1,9 @@
 import {
   VaultError,
+  VaultSshError,
+  VaultSshCommand,
+  VaultSshResult,
+  vaultSshCommandMessage,
   VaultBrokerError,
   VaultWorkloadError,
   VaultWorkloadSession,
@@ -9,6 +13,7 @@ import {
   vaultWorkloadRequestMessage,
   vaultWorkloadProofMessage,
 } from "@t3tools/contracts/fork";
+import * as Hex from "effect/encoding/Hex";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -19,10 +24,16 @@ import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
 import * as BrokerHttpClient from "./BrokerHttpClient.ts";
 
-type Failure = VaultError | VaultBrokerError | VaultWorkloadError;
+type Failure = VaultError | VaultBrokerError | VaultWorkloadError | VaultSshError;
 export class WorkloadRunner extends Context.Service<
   WorkloadRunner,
   {
+    readonly ssh: (
+      machineDirectory: string,
+      workloadDirectory: string,
+      sessionFile: string,
+      commandFile: string,
+    ) => Effect.Effect<VaultSshResult, Failure>;
     readonly check: (
       machineDirectory: string,
       workloadDirectory: string,
@@ -36,6 +47,7 @@ export class WorkloadRunner extends Context.Service<
   }
 >()("t3/fork/vault/WorkloadRunner") {}
 const decodeSession = Schema.decodeUnknownEffect(VaultWorkloadSession);
+const decodeSshCommand = Schema.decodeUnknownEffect(VaultSshCommand);
 const encodeSession = Schema.encodeEffect(Schema.fromJsonString(VaultWorkloadSession));
 const invalid = () => new VaultWorkloadError({ reason: "invalid-proof" });
 const make = Effect.gen(function* () {
@@ -47,7 +59,8 @@ const make = Effect.gen(function* () {
     machineDirectory: string,
     workloadDirectory: string,
     sessionFile: string,
-    operation: "check" | "release",
+    operation: "check" | "release" | "ssh-exec",
+    payloadDigest?: string,
   ) {
     const machine = yield* identities.read(machineDirectory),
       workload = yield* identities.read(workloadDirectory);
@@ -76,6 +89,7 @@ const make = Effect.gen(function* () {
       ),
       at: yield* Clock.currentTimeMillis,
       operation,
+      ...(payloadDigest ? { payloadDigest } : {}),
     };
     const challenge = yield* http.post(
       connection.origin,
@@ -95,7 +109,8 @@ const make = Effect.gen(function* () {
       challenge.machineId !== session.machineId ||
       challenge.sessionId !== session.id ||
       challenge.requestId !== input.requestId ||
-      challenge.operation !== operation
+      challenge.operation !== operation ||
+      challenge.payloadDigest !== payloadDigest
     )
       return yield* invalid();
     const body = {
@@ -109,6 +124,38 @@ const make = Effect.gen(function* () {
     return { connection, session, body };
   });
   return WorkloadRunner.of({
+    ssh: Effect.fn("WorkloadRunner.ssh")(
+      function* (machineDirectory, workloadDirectory, sessionFile, commandFile) {
+        const command = yield* decodeSshCommand(yield* identities.invitation(commandFile)).pipe(
+          Effect.mapError(() => new VaultSshError({ reason: "invalid-operation" })),
+        );
+        const digest = yield* crypto
+          .digest("SHA-256", new TextEncoder().encode(vaultSshCommandMessage(command)))
+          .pipe(
+            Effect.map(Hex.encode),
+            Effect.mapError(() => new VaultSshError({ reason: "failed" })),
+          );
+        const request = yield* proof(
+          machineDirectory,
+          workloadDirectory,
+          sessionFile,
+          "ssh-exec",
+          digest,
+        );
+        const result = yield* http.post(
+          request.connection.origin,
+          "workloads/ssh-exec",
+          { proof: request.body, command },
+          VaultSshResult,
+        );
+        if (
+          result.sessionId !== request.session.id ||
+          result.requestId !== request.body.challenge.requestId
+        )
+          return yield* invalid();
+        return result;
+      },
+    ),
     check: Effect.fn("WorkloadRunner.check")(
       function* (machineDirectory, workloadDirectory, sessionFile) {
         const request = yield* proof(machineDirectory, workloadDirectory, sessionFile, "check");

@@ -156,6 +156,20 @@ Sessions are intentionally invalidated by control-plane restart; they do not ext
 grants into offline authority. No credential delivery or OS process isolation is established by
 these checks. See [the exact boundary](./L84-vault-delivery/TECHNICAL.md).
 
+## Implemented mediated SSH
+
+L81 generates dedicated Ed25519 keys into existing encrypted item records and keeps host trust
+independent of user-key identity. Administrator clients can pin/replace/remove a host key;
+ordinary workloads cannot approve their own trust. A command-bound dual proof authorizes a
+short mediated connection from the Loom server. A private scoped agent verifies the host's
+exchange signature and signs only the assigned host-bound user-authentication payload. It does
+not expose a generic workload signing API or private-key files. See [L81](./L81-vault-ssh/).
+
+This milestone requires online policy/backend availability and a reachable target. Revocation
+prevents new signatures at subsequent checks; remote effects and already-issued signatures
+are not recalled. Automatic Dorothy/Pi/Git launch wiring and complete management UI remain
+pending. No real account migration, service deployment or global SSH configuration changed.
+
 ## Key custody and headless unlock
 
 D2 must identify who can decrypt, how wrapping keys are protected, what the service receives at

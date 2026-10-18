@@ -1,3 +1,6 @@
+import * as VaultSsh from "./vault/VaultSsh.ts";
+import * as SshCrypto from "./vault/SshCrypto.ts";
+import * as SshTransport from "./vault/SshTransport.ts";
 import * as VaultWorkloads from "./vault/VaultWorkloads.ts";
 import { VaultWorkloadHttpRoutes } from "./vault/workload-http.ts";
 import { VaultBrokerHttpRoutes } from "./vault/broker-http.ts";
@@ -71,6 +74,17 @@ const layerVaultWorkloads = VaultWorkloads.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultBrokers, layerVaultAccess, BrokerCrypto.layer)),
 );
 
+const layerVaultSsh = VaultSsh.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      layerVaultWorkloads,
+      SshCrypto.layer,
+      SshTransport.layer.pipe(Layer.provide(SshCrypto.layer)),
+    ),
+  ),
+);
+
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
@@ -89,6 +103,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,
   layerVaultCore,

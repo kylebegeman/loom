@@ -27,6 +27,21 @@ export const brokerCommand = Command.make("broker").pipe(
     "Run a Loom Vault broker with a private machine identity. Foreground macOS/Linux mode; no boot service is installed.",
   ),
   Command.withSubcommands([
+    Command.make("ssh-exec", {
+      stateDir,
+      workloadStateDir: Flag.String("workload-state-dir"),
+      sessionFile: Argument.String("session-file"),
+      commandFile: Argument.String("command-file"),
+    }).pipe(
+      Command.withDescription(
+        "Execute a bounded command from the Loom server using a pinned host and Vault SSH key. Remote effects may survive cancellation; retries require a fresh signed request.",
+      ),
+      Command.withHandler(({ stateDir, workloadStateDir, sessionFile, commandFile }) =>
+        Effect.flatMap(WorkloadRunner.WorkloadRunner, (runner) =>
+          runner.ssh(stateDir, workloadStateDir, sessionFile, commandFile),
+        ).pipe(Effect.flatMap(print), Effect.provide(runtime)),
+      ),
+    ),
     ...(["check", "release"] as const).map((operation) =>
       Command.make(`workload-${operation}`, {
         stateDir,

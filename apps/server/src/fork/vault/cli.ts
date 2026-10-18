@@ -4,6 +4,9 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "ssh-generate": "loom_vault_ssh_generate",
+  "ssh-info": "loom_vault_ssh_info",
+  "ssh-trust": "loom_vault_ssh_trust",
   "workload-open": "loom_vault_workload_open",
   workloads: "loom_vault_workloads",
   "workload-close": "loom_vault_workload_close",
