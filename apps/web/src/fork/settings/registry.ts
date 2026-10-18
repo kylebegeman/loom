@@ -1,3 +1,4 @@
+import { VaultBrokerSettingsSection } from "../vault/BrokerSettingsSection";
 import { VaultAccessSettingsSection } from "../vault/AccessSettingsSection";
 import { VaultSettingsSection } from "../vault/SettingsSection";
 import { MiniOffloadSettingsSection } from "../mini-offload/settings";
@@ -15,6 +16,7 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "vault-brokers", title: "Vault brokers", Component: VaultBrokerSettingsSection },
   { id: "vault", title: "Vault", Component: VaultSettingsSection },
   { id: "vault-access", title: "Vault access", Component: VaultAccessSettingsSection },
   { id: "mini-offload", title: "Command workers", Component: MiniOffloadSettingsSection },

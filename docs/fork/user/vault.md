@@ -25,11 +25,12 @@ checked again with **Refresh**. Vault does not fall back to your personal passwo
 
 Agents with a manage grant can save values using Loom's private secret prompt and a one-use reference. Never paste
 credentials into chat. Normal agent tools return metadata, not stored values. The authenticated
-`t3 vault status`, `t3 vault list` and `t3 vault change` commands provide the same metadata and
+`loom vault status`, `loom vault list` and `loom vault change` commands provide the same metadata and
 lifecycle operations through an existing Loom connection.
 
 This foundation does not yet route Git, SSH or runner launches through Vault. Adding an SSH key
-record alone will not remove existing 1Password approvals. Enrolled brokers and authentication connectors remain selected work in the Vault roadmap.
+record alone will not remove existing 1Password approvals. Broker enrollment is available below; credential delivery and authentication connectors remain
+selected work in the Vault roadmap.
 
 ## Grant recurring access
 
@@ -49,9 +50,36 @@ palette. Select the thread, item, action and optional exact destination, then ru
 The result explains the matching rule or denial and identifies unknown external consumers.
 Readiness is checked in the Loom server context, expires after a minute, and must be repeated
 after policy changes. It does not yet test SSH or GitHub; credential delivery reports unsupported
-until a broker is implemented. Pending checks can be cancelled.
+until a supported workload delivery channel is implemented. Pending checks can be cancelled.
 
-Administrator CLI clients can use `t3 vault grants`, `grant-preview`, `grant-apply`, `explain`
+Administrator CLI clients can use `loom vault grants`, `grant-preview`, `grant-apply`, `explain`
 and `readiness` through the same services. Agent threads can inspect their own access and
 delegate narrower grants to an authenticated direct subagent when allowed; they cannot approve
 their own root grants. Normal responses contain references and safe metadata.
+
+## Enroll an execution host
+
+Open **Vault brokers** in the selected computer's Loom settings. On the intended macOS/Linux
+execution host, run `loom vault broker identity` and enter its public key, name and platform in
+**Enroll broker**. Download the invitation, transfer it to that host and run:
+
+```sh
+loom vault broker enroll --server https://your-loom-host.example invitation.json
+```
+
+Return to settings, refresh brokers and review approval. Compare the entire fingerprint with
+the identity output on the intended host before approving. Then run `loom vault broker run` on
+that host, or `loom vault broker check` for one check. Restart reuses the same identity. This is
+a foreground process; automatic startup before login or after reboot is not configured.
+For a source checkout, use `node apps/server/src/bin.ts` in place of `loom`.
+
+An online heartbeat shows machine presence only. Enrollment does not grant access to Vault
+items, route SSH through Vault or remove 1Password prompts. No personal key manager is needed
+for the broker's identity. Stop the foreground process to stop renewals; presence lapses after
+two minutes. Refresh settings to see changes. Offline credential use is unavailable.
+
+Cancel an unused invitation or review **Disable** to permanently reject that machine identity.
+To enroll again after disabling or losing a key, use a new private `--state-dir` outside the
+working tree, generate a new identity and repeat approval. Disable does not revoke provider
+credentials or erase copies held elsewhere. On mobile, invitations can be shared as public
+challenge JSON; private keys always remain on the execution host.

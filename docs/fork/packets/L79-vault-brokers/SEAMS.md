@@ -16,6 +16,12 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+The enrollment slice adds shared contracts/services/client atoms and registers them in existing
+fork-owned core, HTTP, RPC, CLI, MCP, permission and settings registries. Native mobile mounts
+its broker section through the fork-owned Vault settings component. No new upstream seam or
+SQL migration is needed. `makeForkRpcLayer` has an explicit checked handler-layer return type
+so adding groups does not widen inferred Effect requirements to `any`.
+
+Visible CLI/pairing branding is adjacent fork branding work, listed separately in FORK.md and
+`docs/fork/seams.tsv`; it is not a new broker transport. Legacy internal identifiers remain
+compatible. The selected full packet still needs the service/workload integration review above.

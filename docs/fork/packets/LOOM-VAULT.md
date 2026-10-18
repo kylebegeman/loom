@@ -1,7 +1,7 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records and L80/L77/L72 grants, inspector and server-readiness milestones
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment and L80/L77/L72 grants, inspector and server-readiness milestones
 are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
@@ -24,7 +24,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78, L80, L77 and L72 are in progress; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77 and L72 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 
@@ -76,7 +76,8 @@ runner ergonomics and permission semantics out of backend-specific clients.
 ## Capability dependencies and packet independence
 
 The `ext-vault` boundary has implemented encrypted-record contracts and services. Thread/project policy, bounded decision history, explanations and server-context readiness
-are implemented. Platform identity, full audit, broker and delivery target interfaces remain
+are implemented. Reviewed host enrollment and online heartbeat presence are implemented. Platform identity, full
+audit, workload channels and delivery target interfaces remain
 subject to their packet designs. See the explicit proposal in
 [EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
 Promote each implemented shared contract into that specification as it becomes usable.
@@ -131,7 +132,7 @@ Record decided choices, concrete contracts and precise seams as implementation a
 The current foundation uses OpenBao KV v2 with no new application dependency or SQL migration.
 It uses the existing environment session for management and an operator-provisioned service
 token file for backend access. These are development defaults, not completed platform ownership,
-machine enrollment or production unseal/recovery decisions.
+workload delivery or production unseal/recovery decisions.
 
 ## What success looks like
 

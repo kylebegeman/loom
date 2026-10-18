@@ -1,3 +1,4 @@
+import { VaultBrokerSettingsSection } from "./BrokerSettingsSection";
 import { VaultAccessSettingsSection, VaultAccessCheckSheet } from "./AccessSettingsSection";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
@@ -61,6 +62,7 @@ export function VaultSettingsSection({
           <Text>Your access to this computer does not include Vault inspection.</Text>
         )}
       </SettingsSection>
+      <VaultBrokerSettingsSection environmentId={environmentId} connected={connected} />
       <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
     </>
   );

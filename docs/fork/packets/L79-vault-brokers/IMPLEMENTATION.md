@@ -1,6 +1,7 @@
 # L79 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress. Enrollment, approval, disable and foreground heartbeat renewal are implemented.
+The sequence below retains the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Before starting
@@ -9,6 +10,14 @@ Read the packet index, conventions, shared Vault documents and every file in thi
 Resolve its open product choices and relevant D gates, promote any required extension contract,
 and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
 schema and live infrastructure changes still follow the repository's authorization rules.
+
+## Remaining delivery work
+
+Implement workload attestation and a purpose-specific authenticated local channel before
+connecting use grants to SSH/delivery. Select boot/unlock custody with real macOS logout and
+Linux service evidence, then extend the supported matrix. Keep enrollment presence separate
+from credential authority. Validate restart/outage/revocation across actual remote hosts.
+No production service or installation has been changed.
 
 ## Steps
 

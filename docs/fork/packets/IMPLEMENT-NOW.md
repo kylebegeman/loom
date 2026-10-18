@@ -13,7 +13,9 @@ mapped to L72 to L87 in the [Vault index](./LOOM-VAULT.md). No packet was droppe
 L78 encrypted records and L80/L77/L72 grants, access explanations and server-context readiness
 are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
 delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
-Next is Dorothy's broker/SSH/GitHub/delivery path, followed by the remaining workflows. The
+L79 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
+with web/mobile management and a foreground macOS/Linux runner. Credential delivery, SSH,
+GitHub and authenticated workload channels are next, followed by the remaining workflows. The
 current readiness check explicitly does not prove unattended SSH or provider authentication.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

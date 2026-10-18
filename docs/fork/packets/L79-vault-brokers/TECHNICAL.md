@@ -5,6 +5,37 @@ OpenBao for encrypted storage. Packet-specific contracts still need implementati
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 
+## Implemented enrollment boundary
+
+Shared `vault-brokers.ts` contracts expose snapshot/begin/apply with access:read/access:write
+scopes. `VaultBrokers` owns the encrypted CAS registry at
+`environments/<sha256(environmentId)>/brokers`, capped at 64 machines, 16 live invitations,
+128 events and 32 mutation receipts. Lifecycle/claim changes advance metadata revisions;
+heartbeats only update presence and bounded activity. Four CAS attempts preserve concurrent edits.
+
+Invitations bind protocol, environment, enrollment, fingerprint, nonce and ten-minute expiry.
+The host proves its pre-generated Ed25519 key before a separate administrator approval. Normal
+snapshots omit enrollment nonces. Proof HTTP is public-key authenticated under
+`/api/loom/vault-brokers/{claim,challenge,heartbeat}` with 16 KB JSON limits. Heartbeat challenge
+requests bind environment, machine, stable request ID and a timestamp within 30 seconds.
+Challenges expire after 60 seconds and are single-use, with bounded process-local storage.
+Service restart discards challenges; runners request another. Persisted disable is rechecked
+before heartbeat CAS, and registry/audit write failure prevents success.
+
+`BrokerIdentity` writes owner-only PKCS8 identity and connection files in a private directory
+(default `~/.config/loom/vault-broker`), outside the current working tree. Symlinked identity
+paths and public modes are rejected. The host private key is not encrypted by OpenBao; same-user
+processes are inside its trust boundary. Connection origin/environment/machine are pinned.
+`BrokerRunner` needs no administrator token or backend token, permits HTTPS or loopback HTTP,
+rejects redirects and uses bounded responses/timeouts. It checks response identity bindings.
+
+MCP management is restricted to full-access administrator clients. Calling threads cannot
+enroll or approve themselves, regardless of their own Vault grants. CLI management calls the
+same tools; the independent runner uses only signed proof HTTP. Web/desktop and mobile share
+protected commands and gate on `vault-brokers`. They expose explicit refresh instead of
+continuously polling. Presence changes require refresh. Provider adapters receive no keys or
+new launch behavior in this slice.
+
 ## Overview
 
 Enroll a host through a reviewed, expiring challenge, then issue a renewable machine identity held outside projects. A local broker exposes authenticated per-workload channels and obtains bounded use leases. Report boot, unlock, reconnect, disable and re-enrollment states explicitly.
@@ -13,8 +44,8 @@ Enroll a host through a reviewed, expiring challenge, then issue a renewable mac
 
 Enrollment start/claim/approve/complete and machine list/disable/re-enroll are distinct operations. Broker handshake binds host, workload and protocol version; a local socket path alone is not proof of caller identity. Status never returns enrollment secrets.
 
-Use packet-owned `loom.vault-brokers.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
+Use packet-owned `loom.vault-brokers.*` RPC methods if Loom transport is needed; enrollment schemas
+are implemented; workload/use-lease schemas remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.
 Metadata visibility, item management and credential use are distinct rights.

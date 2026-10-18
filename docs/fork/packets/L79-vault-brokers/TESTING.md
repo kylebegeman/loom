@@ -1,46 +1,57 @@
 # L79 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L78; they do not establish this packet's acceptance.
+Status: Enrollment/heartbeat foundation verified locally; full packet acceptance remains pending.
+All credentials and hosts used in verification are synthetic and isolated from the live Loom home.
 
-## Automated behavior
+## Automated evidence
 
-- A copied enrollment code cannot claim a different machine or be reused.
-- Service restart works under the intended OS account without personal vault access.
-- A disabled online host cannot obtain a new lease; offline leases expire at the published bound.
-- An unrelated local process cannot impersonate a workload through a socket path or guessed thread ID.
+- `VaultBrokers.test.ts`: reviewed enrollment, mismatched key denial, approval boundary,
+  single-use challenges/replay, cancellation with later-claim denial, environment binding/expiry,
+  disable across reconstruction,
+  CAS contention/idempotency, audit failures and authorization failure.
+- `BrokerRunner.test.ts`: owner-only identity persistence, reconstructed runner, project/public
+  state rejection, real proof HTTP with Ed25519 and no administrator token, approval-pending,
+  renewal, disable, malformed requests and body limits. HTTP integration uses a live clock;
+  controlled-clock protocol tests cover expiry without sleeps.
+- `broker-mcp.test.ts`: thread self-approval and read-only clients are refused before mutation;
+  a full-access administrator uses the same service and live authorization callback.
+- `vault-brokers.permissions.test.ts`: destination environment grants and revoked permission
+  are checked at command execution.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
+The four focused files pass 11 tests. Registration and exhaustive RPC scope checks cover the
+new tool/method registration. The CLI branding/ownership and shared authorization suite passes
+78 tests across six existing files. POSIX invocation tests use `TMPDIR=/private/tmp` on this
+Mac to avoid long Unix socket paths and noncanonical `/tmp` prefix comparisons.
 
-## Manual and integrated acceptance
+Changed consumer packages pass typecheck: contracts, client-runtime, server, web, mobile and
+desktop. Fork-owned code lint passes with warnings denied; formatting and mobile static checks pass.
+The upstream connection screen retains its existing React memo-dependency and set-state-in-effect
+warnings outside the copy-only branding diff; their state-management cleanup is deferred. Repo-wide suites and live
+infrastructure checks were not run.
 
-Enroll isolated macOS and Linux hosts, restart their services, disconnect the control plane and disable one host. Test the macOS logged-out case and report actual support rather than assuming LaunchAgent startup equals boot startup.
+## Integrated evidence and remaining coverage
 
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
+A disposable OpenBao Raft fixture and isolated Loom server back the web/iOS native client checks.
+The macOS CLI generates its own private identity and claims a web-created invitation through
+proof HTTP. Before approval, checks return approval-pending. Native mobile compares/reviews the
+fingerprint and approves the host. Subsequent CLI checks run in new processes using the same
+identity. Web/mobile inspection and permanent disable are exercised against that shared state.
 
-## Focused verification commands
+No claim of Android interaction verification, Linux/Pi execution, Windows custody, Electron
+native shell verification, automatic
+boot/logout startup, authenticated workload channels, SSH signing or offline credential delivery
+is made. Direct loopback HTTP is the integrated test route; production relay/tunnel routing and
+real remote-host verification remain pending. The shared web bundle is used by desktop, but
+launcher behavior is tested through isolated filesystem/real-shell tests, not a global install.
 
-Once implementation files exist, assign concrete test filenames in this document and run:
+## Full packet acceptance targets
 
-```sh
-vp test run apps/server/src/fork/vault-brokers/service.test.ts
-vp lint apps/server/src/fork/vault-brokers
-vp run --filter t3 typecheck
-```
+- Service boot, logout, reconnect and outage behavior on every selected OS/account mode.
+- A local process cannot impersonate an isolated workload by copying a socket path or thread ID.
+- Disabled hosts cannot receive new credential-use leases; publish any accepted offline bound.
+- Verify actual SSH/GitHub execution through supported provider adapters without personal keys.
+- Exercise supported remote connection modes and restore/revocation reconciliation.
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
-
-## Merge safety and results
-
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+Use the product-native Browser and Device skills for authorized integrated checks, retain
+isolated state for review, and never use production credentials. Preserve complete selected
+scope until these targets pass. Enrollment presence alone cannot establish readiness for use.

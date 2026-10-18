@@ -1,10 +1,20 @@
 # L79: Enrolled machines and headless brokers
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: In progress. Reviewed public-key enrollment and online heartbeat foundation implemented.
+Kyle selected the full packet on 2026-10-17; workload delivery and unattended boot remain pending.
 
 Give each execution host a durable identity and reliable unattended credential access.
 
 V08 | Major system | Complexity: Large | Impact: Transformational
+
+## Delivered boundary
+
+Web/desktop and native mobile manage invitations, fingerprint approval, cancellation and permanent
+disable. The foreground macOS/Linux runner generates a private Ed25519 machine identity, proves
+its invitation and renews an online registration lease. No personal credential manager is used.
+Enrollment grants no item access. SSH signing, authenticated per-workload channels, boot/logout
+startup, Windows support and offline credential delivery remain selected work. See
+[user help](../../user/vault.md) and the [operator guide](../../operations/vault.md).
 
 ## Scope
 
@@ -30,8 +40,8 @@ Implements the broker portion of ext-vault; optional delivery adapters register 
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+The enrollment slice uses existing fork-owned registries, with no new upstream code seam.
+[SEAMS.md](./SEAMS.md) records the shared boundary and remaining integration review.
 
 ## Documents
 
