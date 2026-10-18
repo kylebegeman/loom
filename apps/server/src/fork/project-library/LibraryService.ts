@@ -254,6 +254,17 @@ const make = Effect.gen(function* () {
     if ("digest" in saved) return saved.digest;
     return yield* versionDigest(yield* decode(codecs.archive, saved.payload));
   });
+  // Earlier releases kept a whole archive for each version. The one a save supersedes is reduced to
+  // a digest of its own content, before putThread, which can then free an archive the two shared.
+  // An archive that cannot be read is left for offline repair rather than blocking the save.
+  const compactVersion = Effect.fnUntraced(function* (id: string, sequence: number) {
+    const kept = yield* Effect.gen(function* () {
+      const saved = yield* store.threadVersion(id, sequence);
+      if (saved === null || "digest" in saved) return null;
+      return yield* decode(codecs.archive, saved.payload);
+    }).pipe(Effect.orElseSucceed(() => null));
+    if (kept) yield* store.compactThreadVersion(id, sequence, yield* versionDigest(kept));
+  });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
     store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);
   const getProject = Effect.fnUntraced(function* (projectId: string, revision?: number) {
@@ -432,24 +443,19 @@ const make = Effect.gen(function* () {
         Date.parse(old.summary.updatedAt) > Date.parse(summary.updatedAt)
       )
         return old;
+      // Each sequence holds one archive. The saved conversation is compared rather than its
+      // version's digest, which predates any field a later contract fills with a default.
+      if (old.summary.sequence === summary.sequence) {
+        if ((yield* versionDigest(old)) !== (yield* versionDigest(archive)))
+          return yield* new LibraryError({ reason: "sequence-conflict" });
+        return old;
+      }
     }
     const fingerprint = yield* versionDigest(archive);
     const version = yield* savedVersionDigest(summary.id, summary.sequence);
     if (version !== null && version !== fingerprint)
       return yield* new LibraryError({ reason: "sequence-conflict" });
-    // A replay at the current sequence is saved only when it matches that version apart from
-    // syncedAt, so the current archive digests the same as the version it supersedes. Compacting
-    // first lets putThread free the archive the two shared in releases before digest versions.
-    if (
-      old &&
-      old.summary.sequence < summary.sequence &&
-      (yield* store.threadVersionHoldsArchive(summary.id, old.summary.sequence))
-    )
-      yield* store.compactThreadVersion(
-        summary.id,
-        old.summary.sequence,
-        yield* versionDigest(old),
-      );
+    if (old) yield* compactVersion(summary.id, old.summary.sequence);
     const normalized = { ...archive, summary: { ...summary, syncedAt: yield* now } };
     yield* store.putThread({
       id: summary.id,
@@ -806,15 +812,17 @@ const make = Effect.gen(function* () {
     }
     const attachments = new Map<string, { id: string; bytes: number }>();
     for (const thread of input.threads) {
-      if (
-        (yield* savedVersionDigest(thread.summary.id, thread.summary.sequence)) !==
-        (yield* versionDigest(thread))
-      )
-        logicalRecordsVerified = false;
-      const current = yield* store.thread(input.sourceEnvironmentId, thread.summary.threadId);
+      const saved = yield* store.thread(input.sourceEnvironmentId, thread.summary.threadId);
+      const current = saved === null ? null : yield* decode(codecs.archive, saved);
+      // Like saveThread, a proof of the current sequence is checked against the conversation.
+      const expected =
+        current?.summary.sequence === thread.summary.sequence
+          ? yield* versionDigest(current)
+          : yield* savedVersionDigest(thread.summary.id, thread.summary.sequence);
       if (
         current === null ||
-        (yield* decode(codecs.archive, current)).summary.sequence < thread.summary.sequence
+        current.summary.sequence < thread.summary.sequence ||
+        expected !== (yield* versionDigest(thread))
       )
         logicalRecordsVerified = false;
       for (const attachment of libraryAttachments(thread))

@@ -11,12 +11,14 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
+import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryStore from "./LibraryStore.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
   source,
@@ -722,6 +724,21 @@ describe("independent Library catalog and durable history", () => {
         const receipt = yield* service.importShadow(input);
         expect(receipt).toMatchObject({ projects: 1, copies: 1, threads: 1, verified: true });
         expect(yield* service.verifyImport({ requestId: "import" })).toEqual(receipt);
+        const sql = yield* SqlClient.SqlClient;
+        // The current conversation is compared directly, so a digest from an earlier contract is
+        // harmless while it is current.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json='loom:sha256:stale'`;
+        expect(yield* service.verifyImport({ requestId: "import" })).toEqual(receipt);
+        // A version kept whole by an earlier release is reduced to a digest of its own archive.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+        yield* service.registerThread({
+          requestId: "later",
+          thread: { ...thread, summary: { ...thread.summary, sequence: 10 } },
+        });
+        expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+          logicalRecordsVerified: true,
+          verified: true,
+        });
         expect((yield* service.history({ id: thread.summary.id })).projection.thread.id).toBe(
           threadId,
         );
@@ -877,6 +894,31 @@ describe("independent Library catalog and durable history", () => {
       }),
     ),
   );
+  it.effect("keeps the saved conversation when a replay matches it under today's contract", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const thread = yield* archiveFor(project, 2);
+        const saved = yield* service.registerThread({ requestId: "first", thread });
+        const sql = yield* SqlClient.SqlClient;
+        const stored = yield* sql`SELECT payload_json FROM fork_library_threads`;
+        // A digest taken before a contract gained a defaulted field no longer matches the archive.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json='loom:sha256:stale'`;
+        yield* TestClock.adjust("1 hour");
+        expect(yield* service.registerThread({ requestId: "again", thread })).toEqual(saved);
+        expect(yield* sql`SELECT payload_json FROM fork_library_threads`).toEqual(stored);
+        expect(
+          (yield* service
+            .registerThread({
+              requestId: "rewritten",
+              thread: { ...thread, projection: { ...thread.projection, messages: [] } },
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+      }),
+    ),
+  );
   it.effect("frees archives kept by versions saved before versions held only digests", () =>
     run((service) =>
       Effect.gen(function* () {
@@ -885,25 +927,35 @@ describe("independent Library catalog and durable history", () => {
         const first = yield* archiveFor(project, 1);
         yield* service.registerThread({ requestId: "first", thread: first });
         const sql = yield* SqlClient.SqlClient;
-        // Earlier releases pointed each version at the same compressed archive as its conversation.
+        // Earlier releases pointed each version at its first compressed archive, then rewrote the
+        // conversation's own archive with a new syncedAt on every replay.
         yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
-        const rewritten = {
-          ...first,
-          projection: { ...first.projection, messages: [] },
-        };
-        expect(
-          (yield* service
-            .registerThread({ requestId: "rewritten", thread: rewritten })
-            .pipe(Effect.flip)).reason,
-        ).toBe("sequence-conflict");
-        yield* service.registerThread({ requestId: "same-again", thread: first });
+        const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+        const row = (yield* sql<{
+          summary_json: string;
+          working_copy_id: string | null;
+        }>`SELECT summary_json, working_copy_id FROM fork_library_threads`)[0]!;
+        yield* store.putThread({
+          id: first.summary.id,
+          environmentId: source,
+          threadId: first.summary.threadId,
+          projectId: project.id,
+          workingCopyId: row.working_copy_id,
+          sourceSequence: 1,
+          summary: row.summary_json,
+          payload: yield* encodeArchive({
+            ...first,
+            summary: { ...first.summary, syncedAt: "2026-02-01T00:00:00.000Z" },
+          }),
+          updatedAt: first.summary.updatedAt,
+        });
+        const blobs = sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`;
+        expect(yield* blobs).toEqual([{ count: 2 }]);
         yield* service.registerThread({
           requestId: "second",
           thread: { ...first, summary: { ...first.summary, sequence: 2 } },
         });
-        expect(yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`).toEqual([
-          { count: 1 },
-        ]);
+        expect(yield* blobs).toEqual([{ count: 1 }]);
         const versions = yield* sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_thread_versions ORDER BY source_sequence`;

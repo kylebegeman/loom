@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { isSqlError } from "effect/sql/SqlError";
 import * as SqlClient from "effect/sql/SqlClient";
+import type { Fragment } from "effect/sql/Statement";
 
 export class LibraryStoreError extends Schema.TaggedError<LibraryStoreError>()(
   "LibraryStoreError",
@@ -126,10 +127,6 @@ export class LibraryStore extends Context.Service<
       { readonly digest: string } | { readonly payload: string } | null,
       LibraryStoreError
     >;
-    readonly threadVersionHoldsArchive: (
-      id: string,
-      sourceSequence: number,
-    ) => Effect.Effect<boolean, LibraryStoreError>;
     readonly putThreadVersion: (
       id: string,
       sourceSequence: number,
@@ -172,6 +169,7 @@ export class LibraryStore extends Context.Service<
 const compress = NodeUtil.promisify(NodeZlib.gzip);
 const decompress = NodeUtil.promisify(NodeZlib.gunzip);
 const BLOB_PREFIX = "loom:gzip:";
+type PackedRow = { readonly payload_json: string; readonly bytes: Uint8Array | null };
 const VERSION_DIGEST_PREFIX = "loom:sha256:";
 const HISTORY_PAGE_BYTES = 2 * 1024 * 1024;
 const ArchiveJson = Schema.fromJsonString(
@@ -223,20 +221,21 @@ const make = Effect.gen(function* () {
   // share an archive with it. Ingested entries no longer reference archives.
   const release = (payload: string, libraryId: string) =>
     payload.startsWith(BLOB_PREFIX)
-      ? sql`DELETE FROM fork_library_history_blobs WHERE digest=${payload.slice(BLOB_PREFIX.length)} AND NOT EXISTS (SELECT 1 FROM fork_library_threads WHERE payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_thread_versions WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_import_proofs WHERE payload_json=${payload})`.pipe(
+      ? sql`DELETE FROM fork_library_history_blobs WHERE digest=${payload.slice(BLOB_PREFIX.length)} AND NOT EXISTS (SELECT 1 FROM fork_library_threads WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_thread_versions WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_import_proofs WHERE payload_json=${payload})`.pipe(
           Effect.asVoid,
         )
       : Effect.void;
-  const unpack = Effect.fnUntraced(function* (payload: string | null) {
-    if (payload === null || !payload.startsWith(BLOB_PREFIX)) return payload;
-    const digest = payload.slice(BLOB_PREFIX.length);
-    const row = (yield* sql<{
-      bytes: Uint8Array;
-    }>`SELECT bytes FROM fork_library_history_blobs WHERE digest=${digest}`)[0];
-    if (!row)
+  // Saves free superseded blobs, so a row and its blob are read in one statement. Two reads could
+  // straddle a save that commits in between and find the blob already gone.
+  const packed = (table: string, where: Fragment) =>
+    sql<PackedRow>`SELECT r.payload_json, b.bytes FROM ${sql(table)} r LEFT JOIN fork_library_history_blobs b ON b.digest = substr(r.payload_json, ${BLOB_PREFIX.length + 1}) WHERE ${where}`;
+  const unpack = Effect.fnUntraced(function* (row: PackedRow | null) {
+    if (row === null || !row.payload_json.startsWith(BLOB_PREFIX)) return row?.payload_json ?? null;
+    const { bytes } = row;
+    if (bytes === null)
       return yield* new LibraryStoreError({ operation: "missing-history-blob", cause: null });
-    const text = (yield* Effect.tryPromise(() => decompress(row.bytes))).toString("utf8");
-    if ((yield* hash(text)) !== digest)
+    const text = (yield* Effect.tryPromise(() => decompress(bytes))).toString("utf8");
+    if ((yield* hash(text)) !== row.payload_json.slice(BLOB_PREFIX.length))
       return yield* new LibraryStoreError({ operation: "corrupt-history-blob", cause: null });
     return text;
   });
@@ -399,23 +398,17 @@ const make = Effect.gen(function* () {
         }),
       ),
     history: (id) =>
-      run(
-        "history",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_threads WHERE library_id = ${id}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
+      run("history", packed("fork_library_threads", sql`r.library_id = ${id}`)).pipe(
+        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)))),
       ),
     thread: (environmentId, threadId) =>
       run(
         "thread",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
-      ),
+        packed(
+          "fork_library_threads",
+          sql`r.source_environment_id = ${environmentId} AND r.source_thread_id = ${threadId}`,
+        ),
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
     threads: (projectId, limit, offset) =>
       run(
         "threads",
@@ -483,27 +476,21 @@ const make = Effect.gen(function* () {
     threadVersion: (id, sourceSequence) =>
       run(
         "thread-version",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
+        packed(
+          "fork_library_thread_versions",
+          sql`r.library_id = ${id} AND r.source_sequence = ${sourceSequence}`,
+        ),
       ).pipe(
         Effect.flatMap(
           Effect.fnUntraced(function* (rows) {
-            const saved = first(rows)?.payload_json;
-            if (saved === undefined) return null;
-            if (saved.startsWith(VERSION_DIGEST_PREFIX))
-              return { digest: saved.slice(VERSION_DIGEST_PREFIX.length) };
-            return { payload: (yield* run("unpack-history", unpack(saved))) ?? saved };
+            const saved = first(rows);
+            if (saved === null) return null;
+            if (saved.payload_json.startsWith(VERSION_DIGEST_PREFIX))
+              return { digest: saved.payload_json.slice(VERSION_DIGEST_PREFIX.length) };
+            return { payload: (yield* run("unpack-history", unpack(saved))) ?? saved.payload_json };
           }),
         ),
       ),
-    threadVersionHoldsArchive: (id, sourceSequence) =>
-      run(
-        "thread-version",
-        sql<{
-          held: number;
-        }>`SELECT substr(payload_json, 1, ${VERSION_DIGEST_PREFIX.length}) <> ${VERSION_DIGEST_PREFIX} AS held FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
-      ).pipe(Effect.map((rows) => first(rows)?.held === 1)),
     putThreadVersion: (id, sourceSequence, digest) =>
       run(
         "put-thread-version",
@@ -526,12 +513,8 @@ const make = Effect.gen(function* () {
     importProof: (requestId) =>
       run(
         "import-proof",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_import_proofs WHERE request_id = ${requestId}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
-      ),
+        packed("fork_library_import_proofs", sql`r.request_id = ${requestId}`),
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
     putImportProof: (requestId, payload) =>
       run(
         "save-history",
