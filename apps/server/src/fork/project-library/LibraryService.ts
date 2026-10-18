@@ -248,26 +248,29 @@ const make = Effect.gen(function* () {
       }),
     );
   });
+  // A version's digest as the saving release encoded it. Re-encoding under today's contract can add
+  // a defaulted field and miss.
+  const encodedVersionDigest = Effect.fnUntraced(function* (archive: unknown) {
+    return typeof archive === "object" &&
+      archive !== null &&
+      "summary" in archive &&
+      typeof archive.summary === "object" &&
+      archive.summary !== null
+      ? yield* digestValue({
+          ...archive,
+          summary: { ...archive.summary, syncedAt: VERSION_SYNCED_AT },
+        })
+      : null;
+  });
   // Digests of a proof's archives as the importing release encoded them, which is what saveThread
-  // recorded. Re-encoding under today's contract can add a defaulted field and miss.
+  // recorded.
   const importedVersionDigests = Effect.fnUntraced(function* (proof: string) {
     const parsed = decodeUnknownJson(proof);
     const threads =
       typeof parsed === "object" && parsed !== null && "threads" in parsed ? parsed.threads : null;
     const digests: Array<string | null> = [];
     for (const archive of Array.isArray(threads) ? threads : [])
-      digests.push(
-        typeof archive === "object" &&
-          archive !== null &&
-          "summary" in archive &&
-          typeof archive.summary === "object" &&
-          archive.summary !== null
-          ? yield* digestValue({
-              ...archive,
-              summary: { ...archive.summary, syncedAt: VERSION_SYNCED_AT },
-            })
-          : null,
-      );
+      digests.push(yield* encodedVersionDigest(archive));
     return digests;
   });
   const savedVersionDigest = Effect.fnUntraced(function* (id: string, sequence: number) {
@@ -277,15 +280,17 @@ const make = Effect.gen(function* () {
     return yield* versionDigest(yield* decode(codecs.archive, saved.payload));
   });
   // Earlier releases kept a whole archive for each version. The one a save supersedes is reduced to
-  // a digest of its own content, before putThread, which can then free an archive the two shared.
+  // a digest of the archive exactly as stored, which an import proof of it still matches after a
+  // contract change. This runs before putThread, which can then free an archive the two shared.
   // An archive that cannot be read is left for offline repair rather than blocking the save.
   const compactVersion = Effect.fnUntraced(function* (id: string, sequence: number) {
     const kept = yield* Effect.gen(function* () {
       const saved = yield* store.threadVersion(id, sequence);
       if (saved === null || "digest" in saved) return null;
-      return yield* decode(codecs.archive, saved.payload);
+      yield* decode(codecs.archive, saved.payload);
+      return yield* encodedVersionDigest(decodeUnknownJson(saved.payload));
     }).pipe(Effect.orElseSucceed(() => null));
-    if (kept) yield* store.compactThreadVersion(id, sequence, yield* versionDigest(kept));
+    if (kept) yield* store.compactThreadVersion(id, sequence, kept);
   });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
     store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);

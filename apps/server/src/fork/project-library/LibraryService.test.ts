@@ -1003,6 +1003,85 @@ describe("independent Library catalog and durable history", () => {
     ),
   );
   it.effect(
+    "reduces an imported version kept whole to a digest of the encoding it was saved in",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = { ...(yield* create(service)), id: "imported" };
+          const copy = copyFor(project);
+          const thread = yield* archiveFor(project, 9);
+          yield* service.importShadow({
+            requestId: "import",
+            sourceEnvironmentId: source,
+            journalId: "import-journal",
+            projects: [project],
+            copies: [copy],
+            threads: [thread],
+            throughSequence: 9,
+          });
+          // An importing release that predates a defaulted field wrote the proof, the conversation
+          // and its version without it, with the version sharing the conversation's archive.
+          const sql = yield* SqlClient.SqlClient;
+          const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+          const proof = JSON.parse((yield* store.importProof("import"))!);
+          delete proof.threads[0].projection.thread.settledOverride;
+          yield* sql`DELETE FROM fork_library_import_proofs WHERE request_id='import'`;
+          yield* store.putImportProof("import", JSON.stringify(proof));
+          const archived = proof.threads[0];
+          const row = (yield* sql<{
+            summary_json: string;
+          }>`SELECT summary_json FROM fork_library_threads`)[0]!;
+          yield* store.putThread({
+            id: thread.summary.id,
+            environmentId: source,
+            threadId: thread.summary.threadId,
+            projectId: project.id,
+            workingCopyId: copy.id,
+            sourceSequence: 9,
+            summary: row.summary_json,
+            payload: JSON.stringify({
+              ...archived,
+              summary: { ...archived.summary, syncedAt: "2026-02-01T00:00:00.000Z" },
+            }),
+            updatedAt: thread.summary.updatedAt,
+          });
+          yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+          const shared = (yield* sql<{
+            payload_json: string;
+          }>`SELECT payload_json FROM fork_library_threads`)[0]!.payload_json;
+          yield* service.registerThread({
+            requestId: "later",
+            thread: { ...thread, summary: { ...thread.summary, sequence: 10 } },
+          });
+          // Re-encoding would fill in the field, and the proof would stop matching once a later
+          // contract fills in another.
+          const stored = Hex.encode(
+            yield* (yield* Crypto.Crypto).digest(
+              "SHA-256",
+              new TextEncoder().encode(
+                JSON.stringify(
+                  canonical({
+                    ...archived,
+                    summary: { ...archived.summary, syncedAt: VERSION_EPOCH },
+                  }),
+                ),
+              ),
+            ),
+          );
+          expect(
+            yield* sql`SELECT payload_json FROM fork_library_thread_versions WHERE source_sequence=9`,
+          ).toEqual([{ payload_json: `loom:sha256:${stored}` }]);
+          expect(
+            yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs WHERE digest=${shared.slice("loom:gzip:".length)}`,
+          ).toEqual([{ count: 0 }]);
+          expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+            logicalRecordsVerified: true,
+            verified: true,
+          });
+        }),
+      ),
+  );
+  it.effect(
     "hides retired borrowed registrations while preserving their historical association and pinned revision",
     () =>
       run((service) =>
