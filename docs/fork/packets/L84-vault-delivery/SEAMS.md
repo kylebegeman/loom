@@ -16,9 +16,10 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-The workload-check milestone uses shared contracts/services and existing fork-owned core,
-HTTP, MCP and CLI registries. It adds no upstream seam, SQL migration, production dependency
-or provider prompt injection. Broker HTTP validation is shared by the two runner services.
-There are no new web/native controls; the existing agent/tool path is used from each surface.
-L81 adds purpose-specific command-bound SSH delivery through the same fork-owned registries.
-Real provider launch hooks and additional delivery modes still require integration review.
+Services, signed SSH/Git contracts and hosted operations use existing fork-owned registries.
+There is no SQL migration, production dependency or new web/native control. One upstream file,
+`packages/provider-core/src/server/orchestrationInstructions.ts`, imports fork-owned Vault
+guidance and prepends it through the existing provider instruction constant. Both marked
+`fork: ext-vault` lines are registered in FORK.md and `docs/fork/seams.tsv`; no provider adapter
+is edited. This shared instruction boundary is recorded in EXTENSION-POINTS.md. Ordinary
+terminal environment attachment and additional delivery modes still need integration review.

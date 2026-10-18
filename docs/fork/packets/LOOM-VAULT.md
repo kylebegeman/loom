@@ -1,7 +1,7 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment, L84 workload-check sessions, L81 mediated SSH and client key/trust management, and L80/L77/L72 grants, inspector and server-readiness milestones
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment, L84 automatic hosted run access, L81 mediated SSH/Git and client key/trust management, and L80/L77/L72 grants, inspector and server-readiness milestones
 are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 

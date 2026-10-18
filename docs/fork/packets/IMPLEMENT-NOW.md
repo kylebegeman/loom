@@ -14,24 +14,25 @@ L78 encrypted records and L80/L77/L72 grants, access explanations and server-con
 are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
 delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
 L79 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
-with web/mobile management and a foreground macOS/Linux runner. Credential delivery, SSH and
-GitHub authentication remain ahead, followed by the remaining workflows. The current readiness
+with web/mobile management and a foreground macOS/Linux runner. Hosted SSH/Git use is now
+implemented below; GitHub account authentication and remaining delivery modes stay selected. The current readiness
 check explicitly does not prove unattended SSH or provider authentication.
 L84 now adds signed workload authorization-check sessions bound to active runs and current
-use grants, with CLI/MCP cleanup. General delivery and automatic launch attachment remain pending;
+use grants, with CLI/MCP cleanup. Existing provider/task launches now expose authenticated
+tools with automatic on-demand session setup/release for hosted SSH and Git ref listing/fetch.
+The server's enrolled broker must be configured and online. General terminal delivery remains pending;
 L81 supplies the bounded SSH operation described below.
 
 L81 now adds dedicated Ed25519 generation and independent trust replacement/removal, with keys
 stored in OpenBao. Dual-proof runner requests execute bounded commands from the Loom server
 through a strict host-bound SSH agent. Web/desktop and native mobile now provide dedicated
 key creation, copying, reviewed host trust and a fixed authenticated connection test. Synthetic
-web/iOS and real disposable SSH/OpenBao checks pass. Provider/Git launch attachment and
-production registration remain unfinished.
+web/iOS and disposable SSH/OpenBao checks pass. Real Git ref listing/repeated fetches also
+pass with exact repository grants, wrong-pin/revocation/timeout denial and cleanup. Ordinary
+terminal routing, clone/push and production registration remain unfinished.
 Kyle requested that every work-cycle overview suggest a concrete next section for his approval
 until the selected work is complete. Finish the current section, report its exact verification
-and limits, then propose the next bounded section. The next suggested section is automatic
-provider/task workload attachment and Git integration, verified first with disposable hosts
-and accounts through Pi and another provider, including cancellation and cleanup. Real credential registration/
+and limits, then propose the next bounded section. The next suggested section is Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings. Real credential registration/
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

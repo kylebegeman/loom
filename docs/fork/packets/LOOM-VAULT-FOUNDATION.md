@@ -170,8 +170,12 @@ prevents new signatures at subsequent checks; remote effects and already-issued 
 are not recalled. Web/desktop/mobile management now includes key creation, public copying,
 reviewed trust replacement/removal and a fixed authenticated administrator probe. That probe
 uses the same transport with Vault write rights; agent arbitrary commands still need a signed
-workload and use grant. General readiness does not invoke it. Automatic Dorothy/Pi/Git launch
-wiring, imports and general runner sockets remain pending. No real account migration, service deployment or global SSH configuration changed.
+workload and use grant. General readiness does not invoke it. Existing provider/task launches
+now attach authenticated SSH/Git tools with on-demand workload setup/release. Git ref listing
+and fetch are mediated on the Loom server using a repository-specific grant and current thread
+checkout. The operator enrolls/configures the server broker once; its private identity remains
+owner-only plaintext and the workload key is memory-only. Ordinary shell Git/SSH, clone/push,
+imports and general runner sockets remain pending. No real account migration, service deployment or global SSH configuration changed.
 
 ## Key custody and headless unlock
 

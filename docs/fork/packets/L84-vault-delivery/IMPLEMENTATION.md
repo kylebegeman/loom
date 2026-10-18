@@ -1,6 +1,6 @@
 # L84 implementation plan
 
-Status: In progress. Dual-proof workload session opening, checks and cleanup are implemented.
+Status: In progress. Dual-proof checks plus automatic hosted SSH/Git workload setup and cleanup are implemented.
 The sequence below retains the full packet outcome;
 see README for delivered progress and remaining work.
 
@@ -13,11 +13,12 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 ## Next execution integration
 
-L81 now binds the command payload and key version to a fresh dual-proof challenge and executes
-mediated SSH with independently pinned host trust. Next attach sessions automatically at real
-provider/task launch, with signal/cancellation cleanup and any required OS boundary. Add GitHub
-connection adapters and harmless execution probes. This milestone's check cannot authorize a
-later operation from a cached response. No live credential or deployment change was made.
+The approved section uses the authenticated MCP channel already attached to provider/task
+launches. Hosted SSH and Git ref listing/fetch acquire and release their sessions automatically.
+Ordinary terminal agent sockets, clone/push, GitHub account adapters and general SDK/CLI delivery
+remain selected. Next suggested section for Kyle's approval: Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings.
+A check cannot authorize a later operation from a cached response. No live credential or
+deployment change was made.
 
 ## Steps
 

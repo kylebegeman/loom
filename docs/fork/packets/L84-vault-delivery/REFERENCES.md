@@ -14,6 +14,16 @@ Verified against `2f385ee835`; refresh line citations before implementation.
 - [`apps/server/src/mcp/McpInvocationContext.ts:1`](../../../../apps/server/src/mcp/McpInvocationContext.ts#L1): MCP caller identity and capability scope.
 - [`apps/server/src/fork/mcp/index.ts:1`](../../../../apps/server/src/fork/mcp/index.ts#L1): Fork toolkit registration.
 
+## Hosted execution source
+
+- [Automatic workload service](../../../../apps/server/src/fork/vault/VaultLaunch.ts) and
+  [behavior tests](../../../../apps/server/src/fork/vault/VaultLaunch.test.ts).
+- [Shared provider guidance](../../../../packages/provider-core/src/fork/vaultInstructions.ts),
+  [Pi system-prompt delivery](../../../../packages/provider-pi/src/server/mcpExtensionSource.ts)
+  and [Codex application context](../../../../apps/server/src/provider/CodexDeveloperInstructions.ts).
+- [Scheduled-run launch](../../../../apps/server/src/scheduledTasks/ScheduledTaskService.ts):
+  tasks use ordinary thread launches and their existing authenticated provider connection.
+
 ## Shared design and prior art
 
 - [Shared foundation](../LOOM-VAULT-FOUNDATION.md): shared boundaries and backend selection.

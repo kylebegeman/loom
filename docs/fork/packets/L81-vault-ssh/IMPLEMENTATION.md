@@ -14,10 +14,10 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 ## Next selected section
 
-The approved client-management section is implemented and verified on web and iOS. Suggested
-next section for Kyle's approval: attach workload setup to actual provider/task launches and
-add Git workflows, starting with disposable hosts/accounts and explicit project destinations.
-Cover Pi and another provider, scheduled execution, cancellation and cleanup. Imports,
+Client management is verified on web/iOS. The approved follow-up now provides automatic
+workload setup/release through existing provider/task MCP connections and Git ref listing/fetch
+with repository-specific grants. Next suggested section for Kyle's approval: Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings.
+Ordinary terminal routing, clone/push, imports,
 additional algorithms, Windows, direct runner sockets and production registration remain pending.
 No existing Git remote or personal 1Password configuration was changed.
 

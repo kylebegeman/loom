@@ -170,3 +170,41 @@ python3 apps/server/src/fork/vault/testkit/ssh_proof.py --bao /absolute/path/to/
 
 The fixture uses loopback, generated keys and a temporary authorized-keys file. It registers no
 production credential, changes no user SSH setting and stops only processes it started.
+
+## Enable hosted agent SSH and Git access
+
+Enroll the machine running this Loom server using the existing broker procedure. Approve its
+fingerprint in Vault brokers and keep `loom vault broker run` active on that machine. Set
+`LOOM_VAULT_EXECUTION_BROKER_DIR` on the Loom server to that broker's absolute private state
+directory, then restart the isolated environment. The directory must remain outside the
+working tree with owner-only permissions. It holds the existing plaintext machine identity
+and public connection metadata; it is not a new OpenBao token or encrypted machine-key store.
+Use the same environment used for enrollment. Missing configuration or stale presence denies use.
+
+Provider launches already attach an authenticated thread-bound MCP connection. Hosted
+`loom_vault_ssh_exec` and `loom_vault_git` operations use it to acquire an in-memory workload
+identity/session, sign a fresh operation proof with both identities and release the session on
+completion, error or cancellation. The machine's service identity is never passed to a provider.
+An active full-access/default thread and matching use grant are required. Fresh scheduled
+agent threads can use project grants; command-only tasks and administrator MCP clients cannot
+impersonate a thread through these tools. The CLI dispatches through the same connection.
+
+Git ref listing/fetch runs in the thread's current server checkout with a canonical SSH URL,
+verified host-bound key and a separate repository destination grant. Relative repository
+`team/repo.git` uses `git+ssh://git@host.example:22/team/repo.git`; absolute `/srv/repo.git`
+uses `git+ssh://git@host.example:22/:absolute/srv/repo.git`. The stored key's SSH destination
+alone does not match this repository scope. Grants with no destination are deliberately broader.
+
+The operation invokes `/usr/bin/git`, ignores global/system config, uses no credential helper
+or personal agent, disables hooks and other transports, and does not fetch submodules or run
+maintenance. Fetch writes objects and `FETCH_HEAD`, without merging or changing origin.
+It is capped at 30 seconds and 64 KiB stdout; SSH remains 8 seconds/2 KiB. Both share the
+four-operation limit. Process-group cleanup covers local Git/SSH children. A completed fetch
+or other remote effect cannot be undone after cancellation, revocation or a lost response.
+No automatic retry is performed. A nonzero Git exit code is returned in JSON; CLI process
+status follows transport success, so consumers must inspect that field.
+
+This provides on-demand access through the connection established at provider launch. It
+does not install terminal agent sockets, configure ordinary shell Git, clone/push, GitHub
+accounts or reboot startup. There is no offline cache or process isolation from the same OS
+user. No production registration or rollout is implied by the disposable proof.

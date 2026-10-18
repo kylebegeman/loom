@@ -1,8 +1,8 @@
 # L81 technical design
 
 Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. The implemented boundary is specified below; remaining imports and
-launch integration still need implementation review.
+OpenBao for encrypted storage. The implemented boundary is specified below; remaining imports, general terminal attachment and
+additional Git operations still need implementation review.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 
@@ -51,8 +51,9 @@ separate design gates.
 The HTTP endpoint is `/api/loom/vault-brokers/workloads/ssh-exec`. Administrator MCP generation
 and trust require a human full-access client; threads can inspect public metadata only with an
 inspect grant. Existing signed runner/CLI transport makes execution available to authenticated
-Loom agent terminals without an administrator/backend token. Per-provider launch attachment
-remains unfinished. General readiness stays conservative and does not perform this probe
+Loom agent terminals without an administrator/backend token. Existing provider/task launches
+also expose hosted tools that create/release the operation's session automatically. General
+terminal credential attachment remains unfinished. General readiness stays conservative and does not perform this probe
 automatically.
 
 The separate `vault-ssh-management` capability advertises `loom.vault-ssh.info`, `generate`,
@@ -70,6 +71,16 @@ Only destination, fingerprints, version, timestamp and authentication evidence a
 This is an explicit human administration operation; arbitrary workload execution continues to
 require its signed session and persisted use grant. MCP rejects agent callers for the probe.
 Separate RPC handler layers avoid TypeScript recursion limits without weakening handler types.
+
+## Hosted Git and automatic workload access
+
+[L84's implemented boundary](../L84-vault-delivery/TECHNICAL.md#automatic-access-through-provider-launches)
+owns session setup using the existing authenticated provider connection. `VaultSsh.git` consumes
+an independent `git-exec` proof binding repository, action, server checkout, timeout and key
+version. It verifies the exact repository grant and rechecks active policy/item state at
+transport/signing and after completion. The shared transport runs Git ref listing/fetch through
+the scoped pinned agent, with 30-second/64-KiB limits and process-group cleanup. SSH remains
+8-second/2-KiB. Neither operation installs a persistent socket or changes the personal vault.
 
 ## Overview
 

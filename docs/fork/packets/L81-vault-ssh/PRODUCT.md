@@ -24,8 +24,9 @@ host-pin replacement/removal. The thread command palette opens the selected comp
 An explicit fixed-command test reports authentication success for the exact item version;
 it does not establish provider/Git readiness or grant future use. Existing item actions handle
 archive/restore/delete. Administrator MCP/CLI offer the same actions; agents cannot approve
-their own trust or invoke the administrator probe. Automatic provider/Git wiring, imports and
-the remaining complete packet outcome stay selected.
+their own trust or invoke the administrator probe. Automatic operation-scoped SSH/Git tools now use the connection already established at
+provider/task launch. Ordinary terminal routing, clone/push, imports and the remaining
+complete packet outcome stay selected.
 
 ## How it works
 

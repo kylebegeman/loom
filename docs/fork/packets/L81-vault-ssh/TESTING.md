@@ -74,16 +74,32 @@ half-height sheet required expansion for reliable automation. No native primitiv
 Interactive read-only/locked/offline and older-server matrices were not driven; destination
 permission reduction and revocation are covered by focused service/client tests and capability
 gating is implemented. Android and a separate Electron client were not driven. Native
-Windows/Linux execution, actual provider launch/Git access, real VPS routing, relay headless
+Windows/Linux execution, live provider-model/scheduler runs, real VPS routing, relay headless
 authentication and production restart/recovery are not verified by the macOS proof.
 Remote effects may survive timeout or disconnect. No production registration or deployment ran.
+
+## Automatic hosted SSH/Git access
+
+L84's [current testing record](../L84-vault-delivery/TESTING.md) covers automatic session setup,
+dual signing and release through authenticated Pi/Codex MCP caller contexts, including both
+SSH and Git tools, read-only/mismatched caller denial and cancellation. Project grants cover
+a synthetic fresh scheduled thread and stop after revocation. Existing Pi native system-prompt
+and launch-bridge tests plus Codex instruction regressions pass. No paid/live model or timer
+was started, so that evidence does not claim a complete installed-provider/scheduler run.
+
+The extended disposable proof now passes three integration tests, including real Git ref
+listing and repeated fetches into an isolated checkout. It reads the fetched README with Git,
+rejects a wrong host pin and a fresh grant revocation, and times out a stalled command. The
+hosted service reads the real owner-only synthetic broker identity/connection from disk and
+releases sessions after failure/timeout. The key remains encrypted in OpenBao. No real remote,
+GitHub account, personal credential or global Git/SSH setting is changed.
 
 ## Remaining full acceptance
 
 - Extend client coverage to Android, Electron-specific behavior and interactive read-only,
   sealed/offline and older-server connection matrices.
-- Exercise Git fetch repeatedly through Pi, another provider and scheduled tasks without a
-  personal key manager; verify runtime launch attachment, cancellation and restart behavior.
+- Complete live installed-provider/scheduler acceptance and ordinary terminal Git attachment.
+  Synthetic Pi/Codex callers and project-granted future task threads are verified below.
 - Verify chosen OS boundaries, imports/algorithms and Windows support or explicit unsupported
   behavior on real Windows; exercise remote/relay/tunnel matrices and skewed capabilities.
 - Verify provider-side registration/revocation reconciliation and production custody/recovery.
@@ -93,5 +109,6 @@ Remote effects may survive timeout or disconnect. No production registration or 
 The implementation uses fork-owned paths and existing registries, with no new upstream seam.
 Source commit `30ac9197b6` previews cleanly against the newest local upstream nightly,
 `v0.1.1-nightly.20261017.3238`, using `git merge-tree --write-tree --name-only --no-messages`.
-Full post-landing rehearsal remains a separate integration check. No fetch, landing, push,
+The hosted SSH/Git follow-up, source commit `fe77b4fb01`, also previews cleanly against that
+nightly. Full post-landing rehearsal remains a separate integration check. No fetch, landing, push,
 production registration or deployment was performed.

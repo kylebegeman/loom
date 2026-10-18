@@ -1,6 +1,6 @@
 # L84: Credential delivery API, CLI, and runner integrations
 
-Status: In progress. Signed workload checks and command-bound mediated SSH requests implemented; complete delivery scope retained.
+Status: In progress. Signed workload checks and automatic operation-scoped SSH/Git access through authenticated provider launches implemented; complete delivery scope retained.
 
 Give agents, developer tools and automation one consistent way to consume Vault access.
 
@@ -16,9 +16,13 @@ with credential delivery explicitly unsupported. No secret material, SSH signatu
 login is returned. Control-plane restart invalidates sessions.
 
 See [user help](../../user/vault.md#check-an-authenticated-workload-channel) and
-[TESTING.md](./TESTING.md). L81 now consumes fresh command-bound proofs for mediated SSH execution. Automatic provider
-launch attachment, runner-side SSH/Git helpers, general CLI exec,
-SDK delivery modes, temporary-resource cleanup and per-workload OS isolation remain pending.
+[TESTING.md](./TESTING.md). Existing provider launches also attach authenticated tools that
+create, sign and release a workload automatically for SSH commands or Git ref listing/fetch.
+The operator must configure an enrolled broker for the server first. No workload key/session
+file transfer is required for these operations. Git uses the current thread checkout and an
+exact repository grant. See [use from an agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run).
+Ordinary terminal SSH/Git routing, clone/push, general CLI exec, SDK delivery modes and
+per-workload OS isolation remain pending.
 
 ## Scope
 
@@ -45,7 +49,7 @@ Implements ext-vault delivery adapters and workload launch integration. Uses sto
 ## Packet seams
 
 The shared boundary registers through existing fork-owned service/HTTP/MCP/CLI registries.
-No new upstream seam or dependency is required. See [SEAMS.md](./SEAMS.md).
+A small shared-provider instruction seam adds Vault guidance; no dependency is added. See [SEAMS.md](./SEAMS.md).
 
 ## Documents
 

@@ -28,9 +28,10 @@ credentials into chat. Normal agent tools return metadata, not stored values. Th
 `loom vault status`, `loom vault list` and `loom vault change` commands provide the same metadata and
 lifecycle operations through an existing Loom connection.
 
-This foundation does not yet route Git, SSH or runner launches through Vault. Adding an SSH key
-record alone will not remove existing 1Password approvals. Broker enrollment is available below; credential delivery and authentication connectors remain
-selected work in the Vault roadmap.
+Agents can now use the authenticated Vault SSH/Git tools described below after an administrator
+configures this computer's execution broker and grants access. Adding a key alone does not route
+ordinary terminal commands through Vault or remove their existing 1Password approvals.
+Authentication connectors and general credential delivery remain selected work.
 
 ## Grant recurring access
 
@@ -112,8 +113,9 @@ and are lost when the control plane restarts. Release/expiry does not delete you
 manage those private directories separately. A process with the same filesystem privileges
 can read those files, so these checks do not provide OS-user/process isolation.
 
-Automatic runner setup and actual credential delivery remain unfinished. Human administrator
-clients and inactive or restricted threads cannot open workload sessions. Web, desktop and
+Hosted SSH/Git tools below perform their own workload setup automatically. General terminal
+setup and other credential-delivery modes remain unfinished. Human administrator clients and
+inactive or restricted threads cannot open workload sessions. Web, desktop and
 mobile agents reach the same authenticated tools; no separate workload-management screen is
 provided in this milestone.
 
@@ -142,6 +144,49 @@ Administrator MCP/CLI clients can use `loom_vault_ssh_probe` or `loom vault ssh-
 item ID and current `expectedVersion`. Agent threads cannot invoke this administrator test.
 It does not configure Git, attach credentials to Pi or grant an agent access. General
 readiness stays separate. Existing 1Password prompts continue until those consumers are wired.
+
+## Use Vault from an agent or scheduled run
+
+Ask an active Loom agent to use `loom_vault_ssh_exec` with the key item ID and current version,
+or `loom_vault_git` to list remote refs or fetch a development repository. The computer's
+administrator first enrolls and configures its execution broker, keeps it online, and grants
+the thread or project permission to use the selected item at the exact destination. The agent
+cannot approve its own key, host trust or root grant. Full-access/default mode is required.
+
+Loom automatically creates, signs and releases the workload for each operation. No session
+file or workload-key transfer is needed. It executes on the selected Loom server. Pi, Codex
+and other providers use their existing authenticated Loom tools; web, desktop and mobile
+agents reach the same service. Scheduled agent runs use the same permissions. A project grant
+can cover new scheduled threads; a thread grant covers only that thread. Command-only jobs
+do not inherit this agent access.
+
+For Git, supply a repository path on the key's host, such as `team/repo.git`, with action
+`ls-remote` or `fetch`. Use its exact Git destination when granting access, for example
+`git+ssh://git@dev.example.test:22/team/repo.git`. An absolute `/srv/repo.git` uses
+`git+ssh://git@dev.example.test:22/:absolute/srv/repo.git`. The ordinary SSH destination grant
+does not automatically grant these Git destinations. Git runs in the current thread checkout.
+Fetch updates objects and `FETCH_HEAD`; it does not merge, change origin or configure tracking.
+Clone, push and submodules are not available through this tool yet.
+
+The authenticated CLI offers the same operations. For example, from an active agent's
+existing Loom connection:
+
+```sh
+loom vault git '{"id":"your-item-id","expectedVersion":2,"repository":"team/repo.git","action":"fetch","timeoutMs":30000}'
+```
+
+Replace the ID with the actual item reference and use its current version. Do not pass a
+backend token or private key. Git results include `exitCode` and bounded `stdout`; inspect
+the exit code even when the CLI successfully prints JSON. A successful fetch can have no
+standard output. Hosted Git is limited to 30 seconds and 64 KiB stdout; SSH uses 8 seconds
+and 2 KiB. Do not print secret remote values. Cancelled or lost responses can follow a
+completed operation, so check its state before retrying.
+
+Unconfigured/offline brokers, missing grants, changed versions and untrusted hosts report an
+error. Request the corresponding administrator change rather than falling back to personal
+credentials. These tools do not configure the terminal's SSH agent or ordinary `git fetch`;
+those commands can still invoke 1Password until separately routed. Personal credentials stay
+separate. A process with the same OS permissions can still read broker identity files.
 
 ## Run a mediated SSH command
 

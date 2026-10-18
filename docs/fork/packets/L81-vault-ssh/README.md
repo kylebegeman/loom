@@ -20,7 +20,9 @@ authentication. Private key material stays in server memory and OpenBao.
 An explicit administrator connection test runs only `/usr/bin/true` with the current item
 version and pin, returning safe authentication evidence. It requires Vault write access and
 does not give workloads a use grant. The target must be reachable from the Loom server.
-Automatic provider launch attachment, Git integration, imports, general runner sockets,
+Existing provider launches now expose authenticated SSH/Git tools with automatic workload
+setup/release. Git supports ref listing and fetch into the thread checkout using an exact
+repository grant. Ordinary terminal routing, clone/push, imports, general runner sockets,
 Windows and unattended boot remain pending.
 See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and [TESTING.md](./TESTING.md).
 
