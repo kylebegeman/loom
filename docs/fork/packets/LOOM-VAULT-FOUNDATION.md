@@ -147,6 +147,15 @@ provide offline use. A same-user agent can read the broker's local identity file
 an old backend snapshot can restore older approvals; revocation reconciliation remains part of
 recovery. Those limits apply even when the UI shows Online.
 
+## Implemented workload authorization checks
+
+L84 adds five-minute sessions bound to the authenticated active run, provider, project, enrolled
+machine, item and destination. Separate machine/workload signatures protect single-use check
+and cleanup requests. Policy and runtime permissions are checked again after the challenge.
+Sessions are intentionally invalidated by control-plane restart; they do not extend durable
+grants into offline authority. No credential delivery or OS process isolation is established by
+these checks. See [the exact boundary](./L84-vault-delivery/TECHNICAL.md).
+
 ## Key custody and headless unlock
 
 D2 must identify who can decrypt, how wrapping keys are protected, what the service receives at

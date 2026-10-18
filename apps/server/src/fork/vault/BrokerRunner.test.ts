@@ -1,3 +1,4 @@
+import * as BrokerHttpClient from "./BrokerHttpClient.ts";
 import { brokerFixture } from "./VaultBrokers.testkit.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
@@ -82,7 +83,7 @@ it.live(
       const dependencies = Layer.mergeAll(
         BrokerCrypto.layer,
         BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
-        FetchHttpClient.layer,
+        BrokerHttpClient.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       );
       const runnerLayer = BrokerRunner.layer.pipe(
         Layer.provide(dependencies),

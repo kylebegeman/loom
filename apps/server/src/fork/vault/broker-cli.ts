@@ -1,3 +1,5 @@
+import * as WorkloadRunner from "./WorkloadRunner.ts";
+import * as BrokerHttpClient from "./BrokerHttpClient.ts";
 import { Argument, Command, Flag } from "effect/cli";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -7,10 +9,10 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as BrokerRunner from "./BrokerRunner.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
-const runtime = BrokerRunner.layer.pipe(
+const runtime = Layer.mergeAll(BrokerRunner.layer, WorkloadRunner.layer).pipe(
   Layer.provide(
     Layer.mergeAll(
-      FetchHttpClient.layer,
+      BrokerHttpClient.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       BrokerCrypto.layer,
       BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
     ),
@@ -25,6 +27,21 @@ export const brokerCommand = Command.make("broker").pipe(
     "Run a Loom Vault broker with a private machine identity. Foreground macOS/Linux mode; no boot service is installed.",
   ),
   Command.withSubcommands([
+    ...(["check", "release"] as const).map((operation) =>
+      Command.make(`workload-${operation}`, {
+        stateDir,
+        workloadStateDir: Flag.String("workload-state-dir"),
+        sessionFile: Argument.String("session-file"),
+      }).pipe(
+        Command.withHandler(({ stateDir, workloadStateDir, sessionFile }) =>
+          Effect.flatMap(WorkloadRunner.WorkloadRunner, (runner) =>
+            operation === "check"
+              ? runner.check(stateDir, workloadStateDir, sessionFile).pipe(Effect.flatMap(print))
+              : runner.release(stateDir, workloadStateDir, sessionFile).pipe(Effect.flatMap(print)),
+          ).pipe(Effect.provide(runtime)),
+        ),
+      ),
+    ),
     Command.make("identity", { stateDir }).pipe(
       Command.withHandler(({ stateDir }) =>
         Effect.flatMap(BrokerRunner.BrokerRunner, (runner) => runner.identity(stateDir)).pipe(

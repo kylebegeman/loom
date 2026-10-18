@@ -1,3 +1,5 @@
+import * as VaultWorkloads from "./vault/VaultWorkloads.ts";
+import { VaultWorkloadHttpRoutes } from "./vault/workload-http.ts";
 import { VaultBrokerHttpRoutes } from "./vault/broker-http.ts";
 import * as VaultBrokers from "./vault/VaultBrokers.ts";
 import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
@@ -62,6 +64,13 @@ const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
 );
 
+const layerVaultBrokers = VaultBrokers.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultStore, BrokerCrypto.layer)),
+);
+const layerVaultWorkloads = VaultWorkloads.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultBrokers, layerVaultAccess, BrokerCrypto.layer)),
+);
+
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
@@ -80,7 +89,8 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
-  VaultBrokers.layer.pipe(Layer.provide(Layer.merge(layerVaultStore, BrokerCrypto.layer))),
+  layerVaultBrokers,
+  layerVaultWorkloads,
   layerVaultCore,
   layerVaultAccess,
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
@@ -200,6 +210,7 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 export const ForkRoutesLayer = Layer.mergeAll(
   Layer.empty,
   VaultBrokerHttpRoutes,
+  VaultWorkloadHttpRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

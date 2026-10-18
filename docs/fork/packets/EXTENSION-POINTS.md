@@ -3004,6 +3004,15 @@ manage hosts, while calling threads cannot enroll or approve themselves. Snapsho
 material and cap machines/invitations/activity. Presence renews every minute for two minutes;
 it is not a workload credential lease. No offline decrypted cache or boot service is installed.
 
+Shared `vault-workloads.ts` and `VaultWorkloads` now provide active-run/item/destination-bound
+check sessions. Machine and workload Ed25519 proofs are both required; current host state,
+run/mode and persisted use-policy decisions are rechecked. Process-local sessions expire after
+five minutes or control-plane restart. `WorkloadRunner` and the common `BrokerHttpClient` expose
+signed check/release routes under `/api/loom/vault-brokers/workloads/`, while MCP opens/lists/
+closes only the authenticated thread's sessions. `vault-workload-checks` advertises this limited
+capability. No raw values or reusable use tokens are returned. Actual delivery must authenticate
+its own operation payload and current policy, rather than trusting a prior check result.
+
 No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. Readiness with credential-use requirements explicitly reports unsupported broker
 or delivery capability. Do not infer unattended SSH readiness from a policy decision.

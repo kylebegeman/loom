@@ -108,3 +108,17 @@ permanent for that identity, survives normal restart and prevents new renewal. N
 approval is required to restore a host. Restoring older backend data can restore older machine
 approval state; reconcile disables before resuming traffic after any rollback. The complete
 recovery/revocation process remains L87 work. This activity history is not an immutable ledger.
+
+## Workload channel checks
+
+`vault-workload-checks` adds process-local, five-minute sessions for active full-access/default
+Loom runs. Sessions require distinct machine/workload proofs, a current host heartbeat, and a
+current item/destination use grant. Signed checks use the existing encrypted policy/audit path;
+no additional OpenBao policy path or backend token is needed. No credential payload is delivered.
+
+A control-plane restart deliberately invalidates all sessions and challenges. Open a new
+session from the current authenticated thread after reconnecting. Durable grants and enrolled
+host approvals remain in OpenBao. Session list/close are caller-owned MCP operations; machine
+disable or grant revocation prevents new allowed checks. Existing keys remain operator-owned.
+Actual delivery, automatic launch attestation, process isolation and production recovery remain
+separate unfinished boundaries. Do not treat a successful check as cached use authority.

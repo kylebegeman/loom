@@ -4,6 +4,9 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "workload-open": "loom_vault_workload_open",
+  workloads: "loom_vault_workloads",
+  "workload-close": "loom_vault_workload_close",
   status: "loom_vault_status",
   brokers: "loom_vault_brokers",
   "broker-invite": "loom_vault_brokers_invite",
