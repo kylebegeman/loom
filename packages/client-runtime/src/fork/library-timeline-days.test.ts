@@ -4,6 +4,7 @@ import {
   groupTimelineByDay,
   timelineDayDetail,
   timelineDayLabel,
+  timelineNewestFirst,
 } from "./library-timeline-days.ts";
 
 const local = (month: number, day: number, hour: number, year = 2026) =>
@@ -27,10 +28,12 @@ describe("timeline days", () => {
     expect(timelineDayDetail(local(10, 2, 12), now, "en-US")).toBeNull();
   });
 
-  it("groups by local calendar day and folds an out of order entry into its day", () => {
+  it("groups by local calendar day, newest first, whatever order entries were recorded in", () => {
     const at = (date: Date, id: string) => ({ id, at: date.toISOString() });
     const days = groupTimelineByDay(
       [
+        // A computer that was offline reports an older commit after today's activity.
+        at(local(10, 14, 12), "late"),
         at(local(10, 17, 8), "a"),
         at(local(10, 17, 0), "b"),
         at(local(10, 16, 23), "c"),
@@ -40,8 +43,23 @@ describe("timeline days", () => {
       "en-US",
     );
     expect(days.map((day) => [day.label, day.entries.map((entry) => entry.id)])).toEqual([
-      ["Today", ["a", "b", "estimated"]],
+      ["Today", ["a", "estimated", "b"]],
       ["Yesterday", ["c"]],
+      ["Wednesday", ["late"]],
+    ]);
+  });
+
+  it("keeps the recorded order for entries with the same time", () => {
+    const same = local(10, 17, 8).toISOString();
+    const entries = [
+      { id: "older", at: local(10, 16, 8).toISOString() },
+      { id: "first", at: same },
+      { id: "second", at: same },
+    ];
+    expect(timelineNewestFirst(entries).map((entry) => entry.id)).toEqual([
+      "first",
+      "second",
+      "older",
     ]);
   });
 });

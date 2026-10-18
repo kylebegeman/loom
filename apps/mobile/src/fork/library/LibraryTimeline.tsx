@@ -10,6 +10,7 @@ import {
   libraryTimelineEntryLink,
   libraryTimelineEntrySummary,
   libraryTimelineFilters,
+  timelineNewestFirst,
   libraryTimelineKinds,
   mergeLibraryTimelinePage,
   supportsLoomFeature,
@@ -129,7 +130,7 @@ export function LibraryTimelinePreview({ projectId }: { readonly projectId: stri
   const ink = useProjectInk(projectId, authorityId);
   const open = useOpenLibraryTimelineLink(projectId);
   if (!supported || !authorityId) return null;
-  const entries = latest.data?.entries ?? [];
+  const entries = timelineNewestFirst(latest.data?.entries ?? []);
   return (
     <SettingsSection title="Lately">
       {entries.map((entry, index) => (

@@ -35,10 +35,24 @@ export function timelineDayDetail(date: Date, now: Date, locale?: string) {
   return date.toLocaleDateString(locale, { month: "long", day: "numeric" });
 }
 
+const entryTime = (entry: { readonly at: string }) => {
+  const time = Date.parse(entry.at);
+  return Number.isNaN(time) ? -Infinity : time;
+};
+
 /**
- * One group per local day, in the order days first appear. Estimated times can land an entry
- * out of order, so a day seen again joins its earlier group instead of repeating.
+ * Newest first by the time each entry shows; equal times keep their order. The feed arrives in
+ * the order entries were recorded, and computers can report commits, scheduled runs and Mini
+ * jobs days after they happen.
  */
+export function timelineNewestFirst<T extends { readonly at: string }>(entries: readonly T[]): T[] {
+  return entries
+    .map((entry, index) => ({ entry, index, time: entryTime(entry) }))
+    .sort((a, b) => b.time - a.time || a.index - b.index)
+    .map(({ entry }) => entry);
+}
+
+/** One group per local day, newest first. */
 export function groupTimelineByDay<T extends { readonly at: string }>(
   entries: readonly T[],
   now: Date,
@@ -48,7 +62,7 @@ export function groupTimelineByDay<T extends { readonly at: string }>(
     string,
     { key: string; label: string; detail: string | null; entries: T[] }
   >();
-  for (const entry of entries) {
+  for (const entry of timelineNewestFirst(entries)) {
     const date = new Date(entry.at);
     const key = String(startOfDay(date));
     const day = days.get(key);
