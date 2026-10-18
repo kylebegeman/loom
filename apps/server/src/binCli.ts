@@ -35,7 +35,8 @@ import { triageCommand } from "./cli/triage.ts";
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+  // fork: brand
+  "Loom Connect commands are unavailable: this build is missing Loom Connect public configuration.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -46,12 +47,14 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 const connectUnavailableCommand = Command.make("connect", {
   command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  // fork: brand
+  Command.withDescription("Loom Connect is unavailable in builds without public configuration."),
   Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["t3", "connect"],
+        // fork: brand
+        commandPath: ["loom", "connect"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -59,15 +62,17 @@ const connectUnavailableCommand = Command.make("connect", {
 );
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the T3 Code server."),
+  // fork: brand
+  Command.make("loom", { ...sharedServerCommandFlags }).pipe(
+    Command.withDescription("Run the Loom server."), // fork: brand
     Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
       ...FORK_CLI_COMMANDS, // fork: ext-cli
       Command.make("help").pipe(
         Command.withDescription("Show command help."),
         Command.withHandler(() =>
-          Effect.fail(new CliError.ShowHelp({ commandPath: ["t3"], errors: [] })),
+          // fork: brand
+          Effect.fail(new CliError.ShowHelp({ commandPath: ["loom"], errors: [] })),
         ),
       ),
       acpMcpBridgeCommand,

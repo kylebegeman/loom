@@ -246,7 +246,8 @@ function itemSummary({
             "Use GitHub access above to prepare this host."
           ) : item.kind === "github" ? (
             <>
-              Run <code className="rounded bg-muted px-1 py-px text-2xs">t3 github setup</code> on
+              {/* fork: brand */}
+              Run <code className="rounded bg-muted px-1 py-px text-2xs">loom github setup</code> on
               the server host to prepare access for projects and change requests.
             </>
           ) : (

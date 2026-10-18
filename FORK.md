@@ -2,8 +2,8 @@
 
 Loom is a personal fork of [T3 Code](https://github.com/pingdotgg/t3code). The fork is
 additive: it tracks upstream and keeps upstream's internal names so merges stay easy.
-The `fork/branding` work is purely cosmetic. The app shows the name "Loom" and its own
-icon; behavior, data locations and identifiers are upstream's.
+The branding layer supplies the Loom display name, icon and primary CLI command. Existing
+data locations, protocol names and compatibility identifiers remain upstream-compatible.
 
 ## Implementation packets
 
@@ -230,6 +230,38 @@ L05 adds the outline toggle and column to the file viewer in
 `apps/web/src/components/files/FilePreviewPanel.tsx` (`fork: file-outline`, 3 marker
 lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
 [user help](docs/fork/user/file-outline.md).
+
+## Loom CLI and pairing copy
+
+User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`
+alongside its compatibility executable, and new pairing credentials are labelled `Loom pairing`.
+Desktop command settings now install `loom`; existing `t3` launchers and package aliases remain
+compatible. Stored connection identifiers are unchanged. No global command was installed during
+this task. Package-runner examples keep the actual upstream npm package name; do not substitute
+`npx loom`, which could fetch an unrelated package.
+
+| File                                                                | Marker      | Why                                           |
+| ------------------------------------------------------------------- | ----------- | --------------------------------------------- |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `brand`     | Loom pairing instructions in the scanner.     |
+| `apps/web/src/components/onboarding/WelcomeWizard.tsx`              | `brand`     | Loom CLI pairing/start examples.              |
+| `apps/server/src/binCli.ts`                                         | `brand`     | Loom CLI root/help naming.                    |
+| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`        | `brand`     | Loom server errors and new credential labels. |
+| `apps/server/package.json`                                          | (no marker) | Add the `loom` executable alias.              |
+
+| `apps/desktop/src/app/DesktopCliCommand.ts` | `brand` | Install, inspect and remove the Loom command without replacing unrelated executables. |
+| `apps/desktop/src/app/DesktopCliShim.ts` | `brand` | Use the Loom launcher filename; preserve legacy shim ownership and runtime identifiers. |
+| `apps/desktop/src/app/DesktopCliCommand.test.ts` | `brand` | Exercise installation, ownership, PATH shadowing and removal under the Loom name. |
+| `apps/desktop/src/app/DesktopCliShim.test.ts` | `brand` | Verify moved-install messaging uses Loom. |
+| `apps/server/src/cli/invocation.ts` | `brand` | Suggest Loom for direct invocations; keep actual npm package runner specs compatible. |
+| `apps/server/src/cli/invocation.test.ts` | `brand` | Verify direct Loom invocations alongside actual package runner and launcher paths. |
+| `apps/server/src/cli/server.ts` | `brand` | Use Loom in server command help and unknown-command examples. |
+| `apps/web/src/components/settings/CliCommandSettingsRow.tsx` | `brand` | Describe the installed Loom command and actionable PATH errors. |
+| `apps/web/src/components/settings/settingsSearch.ts` | `brand` | Discover the Loom command setting by its product name. |
+| `apps/web/src/components/settings/SourceControlSettings.tsx` | `brand` | Recommend Loom GitHub setup in connection guidance. |
+
+| `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
+| `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
+| `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
 
 ## Identifiers kept on purpose
 
