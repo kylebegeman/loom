@@ -465,7 +465,11 @@ const config: ExpoConfig = {
     },
     ...(identity.expoProjectId ? { eas: { projectId: identity.expoProjectId } } : {}),
   },
-  ...(identity.expoOwner ? { owner: identity.expoOwner } : {}),
+  ...(identity.expoOwner ? { owner: identity.expoOwner } : {}), // fork: mobile-identity
+  experiments: {
+    // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
+    reactCompiler: true,
+  },
 };
 
 export default config;

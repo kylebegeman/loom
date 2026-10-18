@@ -1,7 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { AsyncResult, Atom } from "effect/reactivity";
-import { useMemo } from "react";
+import { AsyncResult } from "effect/reactivity";
 
 import { APP_VERSION } from "~/branding";
 import {
@@ -15,8 +14,9 @@ import {
   isRuntimeArchivePublished,
   useRuntimeReleaseAssets,
 } from "~/fork/connections/runtimeRelease";
-import { serverEnvironment } from "~/state/server";
-import { environmentSession } from "~/state/session";
+import { environmentIdsKey } from "~/state/environmentAtomList";
+import { environmentUpdateStatesAtom } from "~/state/server";
+import { environmentSessionStatesAtom } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
@@ -48,35 +48,24 @@ export type ReportLocalUpdateError = (title: string, description: string) => voi
 export function useUpdateEverything(localUpdateVersion: string | null, scope: UpdateScope) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments: allEnvironments } = useEnvironments();
-  const environments = useMemo(
-    () =>
-      allEnvironments.filter((environment) =>
-        updateEnvironmentInScope(environment.entry.target, scope, isElectron),
-      ),
-    [allEnvironments, scope],
+  const environments = allEnvironments.filter((environment) =>
+    updateEnvironmentInScope(environment.entry.target, scope, isElectron),
   );
-  const environmentIds = useMemo(
-    () => new Set(environments.map((environment) => environment.environmentId)),
-    [environments],
+  const scopedEnvironmentIds = new Set(
+    environments.map((environment) => environment.environmentId),
   );
-  const machinesAtom = useMemo(
-    () =>
-      Atom.make((get) =>
-        environments.map((environment) => ({
-          environmentId: environment.environmentId,
-          label: environment.label,
-          serverConfig: environment.serverConfig,
-          connected: environment.entry.enabled && environment.connection.phase === "connected",
-          hostedByThisApp: isLocalUpdateEnvironment(environment.entry.target, isElectron),
-          canMaintain: canUpdateServer(
-            get(environmentSession.sessionStateAtom(environment.environmentId)),
-          ),
-          updateState: get(serverEnvironment.updateStateAtom(environment.environmentId)),
-        })),
-      ),
-    [environments],
-  );
-  const machines = useAtomValue(machinesAtom);
+  const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
+  const sessionStates = useAtomValue(environmentSessionStatesAtom(environmentIds));
+  const updateStates = useAtomValue(environmentUpdateStatesAtom(environmentIds));
+  const machines = environments.map((environment, index) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    serverConfig: environment.serverConfig,
+    connected: environment.entry.enabled && environment.connection.phase === "connected",
+    hostedByThisApp: isLocalUpdateEnvironment(environment.entry.target, isElectron),
+    canMaintain: canUpdateServer(sessionStates[index]!),
+    updateState: updateStates[index]!,
+  }));
   const { targets: behindServers, skipped: unreachable } = collectServerUpdateTargets(
     machines,
     targetVersion,
@@ -109,7 +98,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     servers,
     scope === "local" && localUpdateVersion !== null,
   );
-  const providers = useProviderUpdates(environmentIds);
+  const providers = useProviderUpdates(scopedEnvironmentIds);
   const updateServer = useServerUpdate();
 
   const { summary, lines } = describeUpdateEverything({

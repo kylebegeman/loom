@@ -102,6 +102,11 @@ The lockfile changes are limited to those packages and their required dependenci
 dropped it in `v0.0.46-nightly.20261010.2935`; a seam row keeps the next merge from
 removing it again.
 
+`apps/web` keeps `jsdom` ^30.0.1, `react-test-renderer` 19.2.6 and
+`@types/react-test-renderer` 19.1.0 for the fork's component tests in `src/fork/`.
+Upstream moved its own DOM tests to the browser test project and dropped them in
+`v0.1.1-nightly.20261018.3302`; seam rows keep the next merge from removing them again.
+
 ### Packet seams
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`

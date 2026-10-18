@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
@@ -16,7 +16,6 @@ export function NoProjectsHero({
 }: {
   readonly savedProjectsUnavailable?: boolean;
 }) {
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
@@ -56,7 +55,7 @@ export function NoProjectsHero({
                 <EmptyDescription>New work starts on {scratchComputer.label}.</EmptyDescription>
               )}
               <div className="mt-6 flex flex-wrap justify-center gap-2">
-                <Button size="sm" onClick={openAddProject}>
+                <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>
