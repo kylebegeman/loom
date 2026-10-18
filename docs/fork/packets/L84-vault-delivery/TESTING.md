@@ -1,46 +1,45 @@
 # L84 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L78; they do not establish this packet's acceptance.
+Status: signed authorization-check channel verified; full delivery acceptance remains pending.
 
-## Automated behavior
+## Passing milestone checks
 
-- Tokens do not appear in normal RPC/MCP responses, argv, receipts or structured logs.
-- Cancellation and crashes clean up temporary resources; concurrent workloads cannot read each other's handles.
-- A restricted T3 caller cannot gain access through CLI or a raw broker endpoint.
-- Codex, Claude, Cursor, Grok, OpenCode, Antigravity, Pi, Muse and ACP paths each receive an explicit supported or unavailable decision.
+`VaultWorkloads.test.ts` covers current-run/item/destination binding, default denial, both-key
+proofs, tampering and replay, policy revocation, runtime reductions, replaced runs, disabled
+hosts, cleanup after grant revocation/overdue heartbeat, session/challenge expiry, bounded
+issuance and control-plane reconstruction. A fresh Layer verifies sessions are truly lost.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
+`workload-integration.test.ts` exercises the real MCP handler and proof HTTP routes with real
+Ed25519 signatures. It proves the caller cannot supply another thread ID, administrator and
+read-only clients cannot mint sessions, runner requests carry no administrator bearer token,
+response binding tampering is rejected, malformed bodies fail, current grants are rechecked
+and signed cleanup succeeds after grant revocation. The HTTP test uses an in-process real
+router/client transport with synthetic authority and host state; it does not contact production.
 
-## Manual and integrated acceptance
+Seven new tests and the existing host/runner/MCP registration regression checks pass: 17 tests
+across six files in the combined run. The
+broker CLI help resolves `loom vault broker workload-check` with explicit machine/workload
+state directories and a public session file. Targeted typechecks and lint cover changed
+contracts, server, client-runtime, web and mobile. No new client UI or native code requires browser/device
+interaction checks in this cycle. Existing web/iOS broker evidence remains recorded in L79.
 
-Run the same harmless authenticated task through Pi, another installed provider, a standalone CLI and a scheduled workload. Interrupt each and verify cleanup and consistent account selection.
+## Remaining full acceptance
 
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
+- Execute a harmless authenticated SSH/GitHub operation through Pi and another installed
+  provider, standalone runner and scheduled workload.
+- Attest real launched processes; prove socket/workload isolation at the chosen OS boundary.
+- Revoke or reduce permissions during delivery and verify no new online use is granted.
+- Verify signal/exit-code propagation, cancellation, crash cleanup and temporary-resource
+  lifetimes for actual delivery modes.
+- Verify actual remote/relay/tunnel and platform matrices, plus retained/recovered state.
+- Demonstrate that normal responses, argv, prompts, receipts and logs contain no raw values.
 
-## Focused verification commands
+No actual credential-delivery, Pi launch, SSH/GitHub login, Android, boot/logout or production
+recovery claim is made. A successful check is not a reusable credential-use capability.
 
-Once implementation files exist, assign concrete test filenames in this document and run:
+## Merge safety
 
-```sh
-vp test run apps/server/src/fork/vault-delivery/service.test.ts
-vp lint apps/server/src/fork/vault-delivery
-vp run --filter t3 typecheck
-```
-
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
-
-## Merge safety and results
-
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+The source milestone at `e6bcd7c24a` previews cleanly against the newest local upstream
+nightly, `v0.1.1-nightly.20261017.3238`, using `git merge-tree --write-tree --name-only
+--no-messages`. The seam manifest check also passes. No fetch, landing, push or production
+rollout was performed. Full post-landing rehearsal remains a separate integration check.

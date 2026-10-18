@@ -12,7 +12,8 @@ V08 | Major system | Complexity: Large | Impact: Transformational
 Web/desktop and native mobile manage invitations, fingerprint approval, cancellation and permanent
 disable. The foreground macOS/Linux runner generates a private Ed25519 machine identity, proves
 its invitation and renews an online registration lease. No personal credential manager is used.
-Enrollment grants no item access. SSH signing, authenticated per-workload channels, boot/logout
+Enrollment grants no item access. L84 now supplies signed workload authorization checks;
+SSH signing, actual workload delivery channels, boot/logout
 startup, Windows support and offline credential delivery remain selected work. See
 [user help](../../user/vault.md) and the [operator guide](../../operations/vault.md).
 

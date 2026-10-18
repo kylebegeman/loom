@@ -4,6 +4,20 @@
 
 Give agents, developer tools and automation one consistent way to consume Vault access.
 
+## Available authorization-check milestone
+
+Use a fresh workload public key and an existing use grant to open a session from the active
+thread. The calling thread is established by Loom's authenticated MCP context; supplied thread
+IDs, project paths or prompt text cannot select another principal. Checks need both that
+workload key and the approved machine key. Close through MCP or release through signed HTTP;
+sessions expire in five minutes. A signed check reports policy/channel status, never a usable
+bearer token or proof of successful SSH/GitHub login.
+
+The supported execution mode is an active full-access/default Loom run with a current broker
+heartbeat. Workload setup and session-file transfer are manual in this milestone. Same-user
+processes able to read the key files can impersonate those identities. Automatic launch binding,
+OS isolation and actual delivery remain separate unfinished requirements.
+
 ## How it works
 
 Provide a broker-backed CLI, SDK and MCP facade over shared use requests. Prefer purpose-specific SSH agents, Git helpers and authenticated service calls; support scoped environment and temporary-file delivery where tools require raw secrets. Keep management APIs separate from delivery and attach workload identity at launch.

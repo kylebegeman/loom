@@ -83,3 +83,36 @@ To enroll again after disabling or losing a key, use a new private `--state-dir`
 working tree, generate a new identity and repeat approval. Disable does not revoke provider
 credentials or erase copies held elsewhere. On mobile, invitations can be shared as public
 challenge JSON; private keys always remain on the execution host.
+
+## Check an authenticated workload channel
+
+An agent in an active full-access/default Loom run can use `loom_vault_workload_open` with an
+enrolled machine ID, item reference, exact destination and a separate workload public key.
+Generate that key outside your project with `loom vault broker identity --state-dir
+/absolute/private/workload-directory`. Use a different directory from the machine identity.
+Never send private keys through tools or chat. An existing use grant is required; the tool
+cannot grant access or choose another thread from a supplied ID.
+
+Save the returned public session binding as JSON on the execution host, then check it with:
+
+```sh
+loom vault broker workload-check --state-dir /absolute/private/machine-directory \
+  --workload-state-dir /absolute/private/workload-directory session.json
+```
+
+Keep the machine broker running so its heartbeat stays current. Both identities must match the
+session. The check rechecks the current active run, runtime permissions and use grant; it
+returns metadata with credential delivery unsupported. It does not log in to SSH or GitHub,
+expose the stored value or grant a reusable token for a later operation.
+
+Use `workload-release` with the same arguments, or the owning thread's
+`loom_vault_workload_close`, to close the session. The owning thread can list its current-run
+sessions with `loom_vault_workloads` if a response is lost. Sessions expire after five minutes
+and are lost when the control plane restarts. Release/expiry does not delete your key files;
+manage those private directories separately. A process with the same filesystem privileges
+can read those files, so these checks do not provide OS-user/process isolation.
+
+Automatic runner setup and actual credential delivery remain unfinished. Human administrator
+clients and inactive or restricted threads cannot open workload sessions. Web, desktop and
+mobile agents reach the same authenticated tools; no separate workload-management screen is
+provided in this milestone.

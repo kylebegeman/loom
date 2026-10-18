@@ -1,10 +1,23 @@
 # L84: Credential delivery API, CLI, and runner integrations
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: In progress. Signed workload authorization-check sessions implemented; complete delivery scope retained.
 
 Give agents, developer tools and automation one consistent way to consume Vault access.
 
 V13 | Major system | Complexity: Large | Impact: Transformational
+
+## Delivered boundary
+
+An authenticated active Loom thread can open, list and close a five-minute session bound to its
+current run, provider instance, project, enrolled host, item and exact destination. The host and
+workload each prove a separate Ed25519 identity through single-use HTTP challenges. CLI checks
+revalidate current use grants, host presence and thread permissions. They return safe metadata
+with credential delivery explicitly unsupported. No secret material, SSH signature or provider
+login is returned. Control-plane restart invalidates sessions.
+
+See [user help](../../user/vault.md#check-an-authenticated-workload-channel) and
+[TESTING.md](./TESTING.md). Automatic provider launch attachment, SSH/Git helpers, CLI exec,
+SDK delivery modes, temporary-resource cleanup and per-workload OS isolation remain pending.
 
 ## Scope
 
@@ -21,7 +34,7 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
+`ext-vault` has an implemented encrypted-record boundary. Host enrollment and workload channel checks are implemented. Actual delivery portions
 remain target designs; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
@@ -30,8 +43,8 @@ Implements ext-vault delivery adapters and workload launch integration. Uses sto
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+The shared boundary registers through existing fork-owned service/HTTP/MCP/CLI registries.
+No new upstream seam or dependency is required. See [SEAMS.md](./SEAMS.md).
 
 ## Documents
 

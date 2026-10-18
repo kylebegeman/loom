@@ -1,6 +1,7 @@
 # L84 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress. Dual-proof workload session opening, checks and cleanup are implemented.
+The sequence below retains the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Before starting
@@ -9,6 +10,14 @@ Read the packet index, conventions, shared Vault documents and every file in thi
 Resolve its open product choices and relevant D gates, promote any required extension contract,
 and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
 schema and live infrastructure changes still follow the repository's authorization rules.
+
+## Next execution integration
+
+Bind a purpose-specific operation payload to the current workload and implement SSH key
+management/signing before claiming credential use. Then attach sessions automatically at real
+provider/task launch, with signal/cancellation cleanup and any required OS boundary. Add GitHub
+connection adapters and harmless execution probes. This milestone's check cannot authorize a
+later operation from a cached response. No live credential or deployment change was made.
 
 ## Steps
 

@@ -23,3 +23,11 @@ Verified against `2f385ee835`; refresh line citations before implementation.
 External engines and specs in the foundation are evaluation references. No external code or
 assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
 this packet adds no application dependency.
+
+## Implemented shared boundary
+
+- [Workload contracts](../../../../packages/contracts/src/fork/vault-workloads.ts).
+- [Session authority](../../../../apps/server/src/fork/vault/VaultWorkloads.ts).
+- [Signed runner](../../../../apps/server/src/fork/vault/WorkloadRunner.ts) and
+  [shared HTTP client](../../../../apps/server/src/fork/vault/BrokerHttpClient.ts).
+- [Broker identity milestone](../L79-vault-brokers/README.md).

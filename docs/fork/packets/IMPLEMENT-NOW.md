@@ -14,9 +14,18 @@ L78 encrypted records and L80/L77/L72 grants, access explanations and server-con
 are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
 delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
 L79 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
-with web/mobile management and a foreground macOS/Linux runner. Credential delivery, SSH,
-GitHub and authenticated workload channels are next, followed by the remaining workflows. The
-current readiness check explicitly does not prove unattended SSH or provider authentication.
+with web/mobile management and a foreground macOS/Linux runner. Credential delivery, SSH and
+GitHub authentication remain ahead, followed by the remaining workflows. The current readiness
+check explicitly does not prove unattended SSH or provider authentication.
+L84 now adds signed workload authorization-check sessions bound to active runs and current
+use grants, with CLI/MCP cleanup. Actual operation delivery and automatic launch attachment
+remain pending.
+
+Kyle requested that every work-cycle overview suggest a concrete next section for his approval
+until the selected work is complete. Finish the current section, report its exact verification
+and limits, then propose the next bounded section. The next suggested section is dedicated SSH
+keys, strict host trust and a broker-mediated SSH operation tested against disposable hosts;
+real credential registration/migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and

@@ -16,6 +16,8 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+The workload-check milestone uses shared contracts/services and existing fork-owned core,
+HTTP, MCP and CLI registries. It adds no upstream seam, SQL migration, production dependency
+or provider prompt injection. Broker HTTP validation is shared by the two runner services.
+There are no new web/native controls; the existing agent/tool path is used from each surface.
+Real provider launch hooks and purpose-specific delivery still require integration review.

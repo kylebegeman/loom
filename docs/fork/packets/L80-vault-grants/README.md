@@ -17,7 +17,8 @@ suspension is reversible. Workload identity comes from ThreadManagement, never p
 Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
 permission ceiling. Human environment administration remains governed by access:read/write;
 agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but workload leases and external runner attestation are not delivered. L79 now provides
+thread, but credential-use leases and automatic external runner attestation are not delivered.
+L84 now binds signed channel checks to an active run and its current item/destination use grants. L79 now provides
 reviewed host enrollment and heartbeat presence, without credential-use authority.
 
 ## Remaining selected scope
