@@ -80,6 +80,19 @@ const ensureFreeSpace = Effect.fnUntraced(function* (directory: string, bytes: n
       cause: `Library snapshot needs ${describeBytes(needed)} free in ${directory}, but only ${describeBytes(available)} are available.`,
     });
 });
+// The space check allows for one copy, so a second snapshot started meanwhile could fill the volume.
+const ensureNoSnapshotRunning = Effect.fnUntraced(function* (backupsDir: string, now: number) {
+  const fs = yield* FileSystem.FileSystem;
+  if (!(yield* fs.exists(backupsDir))) return;
+  for (const name of yield* fs.readDirectory(backupsDir)) {
+    const match = BACKUP_NAME.exec(name);
+    if (match?.[2] !== undefined && now - Number(match[1]) < STALE_SNAPSHOT_MS)
+      return yield* new LibraryError({
+        reason: "request-conflict",
+        cause: `Another Library snapshot is still copying into ${name} in ${backupsDir}. If it was interrupted, prune removes it six hours after it started.`,
+      });
+  }
+});
 const sourceLayer = (database: string, stateDir: string, readonly = true) => {
   const config = Layer.effect(
     ServerConfig.ServerConfig,
@@ -106,11 +119,12 @@ export const createLibraryBackup = Effect.fnUntraced(function* (input: {
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const time = DateTime.toEpochMillis(yield* DateTime.now);
+  yield* ensureNoSnapshotRunning(input.backupsDir, time);
   yield* ensureFreeSpace(
     input.backupsDir,
     (yield* fileBytes(input.database)) + (yield* fileBytes(`${input.database}-wal`)),
   );
-  const time = DateTime.toEpochMillis(yield* DateTime.now);
   const directory = path.join(input.backupsDir, `library-backup-${time}-${yield* randomUuidV4}`);
   const staging = `${directory}${PARTIAL_SUFFIX}`;
   const build = Effect.gen(function* () {
@@ -273,8 +287,11 @@ export const pruneLibraryBackups = Effect.fnUntraced(function* (input: {
     const match = BACKUP_NAME.exec(name);
     if (!match) continue;
     const directory = path.join(root, name);
-    const stat = yield* fs.stat(directory);
-    if (stat.type !== "Directory" || (yield* fs.realPath(directory)) !== directory) continue;
+    // A snapshot renames or removes its staging directory as it ends, perhaps after this listing.
+    const entry = yield* Effect.all([fs.stat(directory), fs.realPath(directory)]).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+    );
+    if (entry === null || entry[0].type !== "Directory" || entry[1] !== directory) continue;
     const partial = match[2] !== undefined;
     if (!partial && (yield* fs.exists(path.join(directory, "complete")))) {
       const verified = yield* verifyLibraryBackup(directory).pipe(Effect.option);
@@ -283,12 +300,13 @@ export const pruneLibraryBackups = Effect.fnUntraced(function* (input: {
       else eligible.push({ directory, createdAt: Date.parse(verified.value.manifest.createdAt) });
       continue;
     }
-    // Final-named directories without a complete marker predate staging and were interrupted.
+    // Final-named directories without a complete marker predate staging. They were interrupted, or
+    // an asset check failed, and neither kind can be restored.
     if (now - Number(match[1]) < STALE_SNAPSHOT_MS) {
       inProgress.push(directory);
       continue;
     }
-    yield* fs.remove(directory, { recursive: true });
+    yield* fs.remove(directory, { recursive: true, force: true });
     (partial ? stalePartial : staleIncomplete).push(directory);
   }
   eligible.sort((a, b) => b.createdAt - a.createdAt);
@@ -317,11 +335,13 @@ const snapshot = Command.make(
   (input) =>
     createLibraryBackup(input).pipe(
       Effect.catchIf(
-        (error): error is LibraryError => isLibraryError(error) && error.reason === "storage-limit",
+        (error): error is LibraryError =>
+          isLibraryError(error) &&
+          (error.reason === "storage-limit" || error.reason === "request-conflict"),
         (error) =>
           Effect.fail(
             new LibrarySnapshotSkipped({
-              message: `${String(error.cause)} No backup was written. Free space on that volume or pass a --backups-dir on a larger one.`,
+              message: `${String(error.cause)} No backup was written.${error.reason === "storage-limit" ? " Free space on that volume or pass a --backups-dir on a larger one." : ""}`,
             }),
           ),
       ),

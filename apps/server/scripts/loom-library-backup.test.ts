@@ -242,6 +242,48 @@ describe("cold Library backup and recovery commands", () => {
       }),
     ),
   );
+  it.effect("refuses to start a snapshot while another is still copying", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const running = f.path.join(
+          f.backupsDir,
+          "library-backup-0-00000000-0000-4000-8000-000000000001.partial",
+        );
+        yield* f.fs.makeDirectory(running, { recursive: true });
+        expect(yield* createLibraryBackup(f).pipe(Effect.flip)).toMatchObject({
+          reason: "request-conflict",
+          cause: expect.stringContaining(f.path.basename(running)),
+        });
+        expect(yield* f.fs.readDirectory(f.backupsDir)).toEqual([f.path.basename(running)]);
+        // One that is still unfinished after six hours died without cleaning up.
+        yield* TestClock.adjust("7 hours");
+        expect((yield* createLibraryBackup(f)).manifest).toBeDefined();
+      }),
+    ),
+  );
+  it.effect("skips a listed snapshot that finishes or is cleaned up before prune reaches it", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const kept = yield* createLibraryBackup(f);
+        const vanished = "library-backup-0-00000000-0000-4000-8000-000000000001.partial";
+        const pruned = yield* pruneLibraryBackups({
+          backupsDir: f.backupsDir,
+          keep: 1,
+          days: 1,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...f.fs,
+            readDirectory: (directory, options) =>
+              f.fs
+                .readDirectory(directory, options)
+                .pipe(Effect.map((entries) => [vanished, ...entries])),
+          }),
+        );
+        expect(pruned).toMatchObject({ retained: 1, stalePartial: [], inProgress: [] });
+        expect(yield* verifyLibraryBackup(kept.directory)).toBeDefined();
+      }),
+    ),
+  );
   it.effect("leaves no staging or backup directory when the copy or manifest fails", () =>
     run((f) =>
       Effect.gen(function* () {
