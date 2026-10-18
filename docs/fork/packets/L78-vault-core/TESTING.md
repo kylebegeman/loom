@@ -54,8 +54,8 @@ operation, file import/export, dismiss/focus behavior, reconnect with an active 
 loss during an operation and remote/version-skew behavior in real clients. Static capability and
 permission gates exist but do not substitute for these interaction checks.
 
-The platform account model, broker identity, full durable audit and production custody/recovery
-are unfinished. No live credential migration, SSH/GitHub registration, VPS rollout or personal
+Reviewed broker host identity is implemented in L79. The platform account model, authenticated
+workload delivery, full durable audit and production custody/recovery are unfinished. No live credential migration, SSH/GitHub registration, VPS rollout or personal
 1Password change was performed. Complete PRODUCT acceptance before marking the packet Done.
 
 Seam-only validation and changed Markdown link checks pass. The merge-tree preview of the

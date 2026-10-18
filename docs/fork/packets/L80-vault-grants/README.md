@@ -17,11 +17,12 @@ suspension is reversible. Workload identity comes from ThreadManagement, never p
 Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
 permission ceiling. Human environment administration remains governed by access:read/write;
 agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but enrollment, workload leases and external runner attestation are not delivered.
+thread, but workload leases and external runner attestation are not delivered. L79 now provides
+reviewed host enrollment and heartbeat presence, without credential-use authority.
 
 ## Remaining selected scope
 
-Finish enrolled machine/runner identities, schedule attestation beyond T3 thread identity,
+Finish per-workload runner attestation, schedule attestation beyond Loom thread identity,
 platform membership and role mapping, external-use leases and broker revocation propagation.
 Decide which deployment boundaries require separate OS users or containers. The current
 allow-list union has no explicit deny rules. Same-user full-access processes remain outside
@@ -42,8 +43,8 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, platform identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+`ext-vault` has an implemented encrypted-record boundary. Reviewed host enrollment is implemented. Workload channels, platform identity and delivery
+portions remain target designs; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
 

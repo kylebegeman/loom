@@ -13,7 +13,8 @@ safe summaries; the authenticated CLI provides status, metadata listing and life
 
 A disposable OpenBao 2.7.1 Raft instance passed CAS, encrypted persistence and clean restore.
 Focused tests exercise version conflicts, environment namespaces, private-input retry recovery
-and management permissions. Integrated browser/device verification has not run.
+and management permissions. Isolated web/native iOS item and grant flows have been verified;
+see [TESTING.md](./TESTING.md) for remaining interaction and platform coverage.
 
 ## Remaining complete scope
 
