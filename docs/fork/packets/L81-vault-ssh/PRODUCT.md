@@ -19,10 +19,13 @@ failures fail the CLI. Do not supply secrets in command arguments or print sensi
 Lost responses, timeout or cancellation may leave remote effects; no automatic retry or remote
 rollback is promised.
 
-No new SSH management screen is delivered yet. Existing Vault screens handle item metadata and
-archive/restore/delete. The new generation, public inspection and host-trust actions are available
-through authenticated administrator MCP/CLI; agents cannot approve their own trust. Automatic
-provider/Git wiring and the complete multi-surface management experience remain selected work.
+Web/desktop and native mobile settings now provide creation, public-key copying and reviewed
+host-pin replacement/removal. The thread command palette opens the selected computer's Vault.
+An explicit fixed-command test reports authentication success for the exact item version;
+it does not establish provider/Git readiness or grant future use. Existing item actions handle
+archive/restore/delete. Administrator MCP/CLI offer the same actions; agents cannot approve
+their own trust or invoke the administrator probe. Automatic provider/Git wiring, imports and
+the remaining complete packet outcome stay selected.
 
 ## How it works
 

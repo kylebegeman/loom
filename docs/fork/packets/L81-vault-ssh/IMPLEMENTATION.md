@@ -1,6 +1,7 @@
 # L81 implementation plan
 
-Status: In progress. Dedicated key/trust management and a signed mediated command are implemented.
+Status: In progress. Dedicated key/trust management, a signed mediated command and web/mobile
+management with fixed authenticated connection tests are implemented.
 The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
@@ -13,9 +14,10 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 ## Next selected section
 
-Add web/desktop and native mobile key generation, public-key copying, host-trust review/removal
-and a harmless authenticated connection test through the same services and permission boundary.
-Then attach workload setup to actual provider/task launches and add Git workflows. Imports,
+The approved client-management section is implemented and verified on web and iOS. Suggested
+next section for Kyle's approval: attach workload setup to actual provider/task launches and
+add Git workflows, starting with disposable hosts/accounts and explicit project destinations.
+Cover Pi and another provider, scheduled execution, cancellation and cleanup. Imports,
 additional algorithms, Windows, direct runner sockets and production registration remain pending.
 No existing Git remote or personal 1Password configuration was changed.
 

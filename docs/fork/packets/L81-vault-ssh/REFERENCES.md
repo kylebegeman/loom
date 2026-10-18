@@ -19,6 +19,10 @@ Initial review against `2f385ee835`; the mediated implementation starts from `c2
 - [SSH contract](../../../../packages/contracts/src/fork/vault-ssh.ts),
   [key/trust service](../../../../apps/server/src/fork/vault/VaultSsh.ts) and
   [scoped SSH transport](../../../../apps/server/src/fork/vault/SshTransport.ts).
+- [Protected management RPCs](../../../../apps/server/src/fork/vault/ssh-rpc.ts),
+  [shared client atoms and fingerprint parsing](../../../../packages/client-runtime/src/fork/vault-ssh.ts),
+  [web/desktop dialog](../../../../apps/web/src/fork/vault/SshDialog.tsx) and
+  [native mobile sheet](../../../../apps/mobile/src/fork/vault/SshSheet.tsx).
 - [SSH protocol adapter](../../../../apps/server/src/fork/vault/SshCrypto.ts) and
   [disposable proof](../../../../apps/server/src/fork/vault/testkit/ssh_proof.py).
 - [OpenSSH agent extensions](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.agent)

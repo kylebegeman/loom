@@ -1,8 +1,8 @@
 # L81 technical design
 
 Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. The implemented boundary is specified below; remaining imports,
-client UI and launch integration still need implementation review.
+OpenBao for encrypted storage. The implemented boundary is specified below; remaining imports and
+launch integration still need implementation review.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 
@@ -51,9 +51,25 @@ separate design gates.
 The HTTP endpoint is `/api/loom/vault-brokers/workloads/ssh-exec`. Administrator MCP generation
 and trust require a human full-access client; threads can inspect public metadata only with an
 inspect grant. Existing signed runner/CLI transport makes execution available to authenticated
-Loom agent terminals without an administrator/backend token. New client UI and per-provider
-launch attachment are not included. General readiness stays conservative and does not perform
-this execution probe automatically.
+Loom agent terminals without an administrator/backend token. Per-provider launch attachment
+remains unfinished. General readiness stays conservative and does not perform this probe
+automatically.
+
+The separate `vault-ssh-management` capability advertises `loom.vault-ssh.info`, `generate`,
+`trust` and `probe` RPCs. Public inspection requires environment access:read; mutations and
+the explicit administrator probe require access:write. Clients use protected destination-bound
+commands, shared inventory invalidation and public-key/fingerprint parsing in client-runtime.
+Core archive/restore refreshes mounted SSH details; generation/trust refreshes mounted item
+lists across atom factories. Web/desktop use a dialog and native mobile a sheet with copy,
+confirmation, busy/error and archived/read-only states. Older servers hide these entry points.
+
+The administrator probe uses the same strict transport and shared four-operation concurrency
+limit, but fixes argv to `/usr/bin/true` and timeout to eight seconds. It rechecks administrator
+authority and exact active item version before transport, while signing and after completion.
+Only destination, fingerprints, version, timestamp and authentication evidence are returned.
+This is an explicit human administration operation; arbitrary workload execution continues to
+require its signed session and persisted use grant. MCP rejects agent callers for the probe.
+Separate RPC handler layers avoid TypeScript recursion limits without weakening handler types.
 
 ## Overview
 
@@ -63,8 +79,8 @@ Generate or explicitly import keys, keep private material behind the broker sign
 
 Key generate/import/list/publicKey/test/archive/remove and host-trust inspect/accept/remove are separate operations. Signing endpoints accept an authenticated workload and authorized identity; they never return private key bytes. Do not promise remote revocation until registration removal is confirmed.
 
-Use packet-owned `loom.vault-ssh.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
+Use the implemented packet-owned `loom.vault-ssh.*` RPC schemas for client management.
+Additional imports and delivery operations need their own reviewed schemas. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.
 Metadata visibility, item management and credential use are distinct rights.

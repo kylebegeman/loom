@@ -127,7 +127,9 @@ remain separate unfinished boundaries. Do not treat a successful check as cached
 
 `vault-ssh-mediated` uses existing encrypted item paths and the existing policy/broker paths;
 no additional OpenBao privileges, mount or application dependency is introduced. Administrator
-MCP/CLI generation creates PKCS8 Ed25519 key envelopes in OpenBao. The user-facing SSH tools
+Web/desktop/mobile and administrator MCP/CLI generation create PKCS8 Ed25519 key envelopes
+in OpenBao. Client management is separately advertised as `vault-ssh-management`; older
+servers without it hide those controls. The user-facing SSH tools
 return public metadata. Existing explicit administrator reveal/export rights and backend/service
 access remain powerful; this is not an OS isolation mechanism.
 
@@ -138,6 +140,12 @@ personal SSH configuration, agent sockets, known-host stores, proxies and multip
 The operation-scoped agent verifies the pinned host's exchange signature and accepts only the
 assigned identity's host-bound authentication message. No generic signing or forwarding is
 exposed. Windows and runner-side agent sockets remain unfinished.
+
+The explicit administrator probe requires Vault write access and executes only `/usr/bin/true`
+with the current pin/version, an eight-second limit and the same strict transport. It shares
+the four-operation limit with workload commands. It rechecks authority/version through signing
+and after completion, and returns safe evidence without remote output. It does not grant a
+workload or make general readiness report SSH-ready. Agent MCP callers cannot invoke it.
 
 Signed workload requests bind command argv, current item version and timeout. Policy/backend,
 run/mode, machine heartbeat and item version are rechecked before execution/signing. Item

@@ -20,5 +20,6 @@ The mediated-command milestone adds fork-owned contracts, Vault services, a scop
 adapter and HTTP/MCP/CLI registration through existing fork registries. It extends the shared
 workload proof with an operation-specific digest while preserving check/release signing messages.
 No upstream file, SQL schema, application dependency, global SSH setting or personal credential
-store is changed. Full provider/client integration still needs review. Focused merge verification
+store is changed. Client key/trust UI, protected RPCs, palette navigation and shared refresh
+reuse existing fork-owned registries. Full provider/Git integration still needs review. Focused merge verification
 is recorded in TESTING.md; no landing or deployment is implied.

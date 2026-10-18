@@ -1,6 +1,6 @@
 # L81: SSH key management and Loom SSH agent
 
-Status: In progress. OpenBao-backed Ed25519 key management and signed mediated SSH commands implemented; full packet scope retained.
+Status: In progress. OpenBao-backed Ed25519 keys, signed mediated SSH commands and web/mobile key/trust management with authenticated probes implemented; full packet scope retained.
 
 Use dedicated Loom-managed SSH keys for development connections and Git operations.
 
@@ -8,17 +8,21 @@ V10 | Major system | Complexity: Large | Impact: High
 
 ## Delivered boundary
 
-Full-access administrator MCP clients can generate a dedicated key, inspect its public identity
-and pin, replace or remove host trust. Existing Vault item actions archive, restore and delete
+Web/desktop and native mobile users with Vault write access can generate a dedicated key,
+copy its public identity, review fingerprints and pin, replace or remove host trust. The
+thread command palette opens the selected environment's Vault settings. Authenticated
+administrator MCP/CLI clients use the same services. Existing Vault item actions archive, restore and delete
 the key. No private key is returned by SSH tools. A signed runner request binds a command,
 timeout and item version to the authenticated workload session. The Loom server executes it
 using a private operation-scoped SSH agent, strict host verification and host-bound Ed25519
 authentication. Private key material stays in server memory and OpenBao.
 
-The target must be reachable from the Loom server. This is a bounded command operation, not
-an agent socket on Dorothy or a Git credential helper. New web/mobile SSH management, automatic
-provider launch attachment, Git integration, imports, Windows and unattended boot remain pending.
-See [user help](../../user/vault.md#run-a-mediated-ssh-command) and [TESTING.md](./TESTING.md).
+An explicit administrator connection test runs only `/usr/bin/true` with the current item
+version and pin, returning safe authentication evidence. It requires Vault write access and
+does not give workloads a use grant. The target must be reachable from the Loom server.
+Automatic provider launch attachment, Git integration, imports, general runner sockets,
+Windows and unattended boot remain pending.
+See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and [TESTING.md](./TESTING.md).
 
 ## Scope
 

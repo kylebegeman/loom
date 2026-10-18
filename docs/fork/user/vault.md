@@ -117,6 +117,32 @@ clients and inactive or restricted threads cannot open workload sessions. Web, d
 mobile agents reach the same authenticated tools; no separate workload-management screen is
 provided in this milestone.
 
+## Manage SSH keys and test a connection
+
+In the selected computer's Vault settings, choose **Create SSH key**, enter its development
+host, SSH user and port, then copy the generated public key for registration on that host.
+The private key stays in Vault. Existing SSH items offer **Manage SSH key**. On web/desktop,
+**Manage Vault SSH keys** in a thread's command palette opens that computer's Vault settings.
+On mobile, expand the sheet when you need more space for the form.
+
+Verify the host's Ed25519 public-key fingerprint through an independent trusted channel.
+Paste that public key, review the proposed fingerprint and confirm before saving. A key scan
+alone does not establish trust. **Remove host trust** requires confirmation and blocks new
+connections; save a verified pin later to restore access. Archive/restore uses the normal
+item actions. Removing trust or archiving does not unregister the public key on the host.
+
+After registering the public key and saving host trust, choose **Test SSH connection**.
+Loom runs a fixed harmless command from its server, using this key and pinned host. Success
+names the tested item version. The target must be reachable from that server and support
+Ed25519 host keys and OpenSSH host-bound authentication. Unsupported hosts and authentication
+failures report an error. Key changes invalidate earlier test evidence. Changes and tests
+require Vault write access; public inspection and copying require read access.
+
+Administrator MCP/CLI clients can use `loom_vault_ssh_probe` or `loom vault ssh-probe` with the
+item ID and current `expectedVersion`. Agent threads cannot invoke this administrator test.
+It does not configure Git, attach credentials to Pi or grant an agent access. General
+readiness stays separate. Existing 1Password prompts continue until those consumers are wired.
+
 ## Run a mediated SSH command
 
 Loom can run a bounded SSH command from its server using a dedicated Vault key. The target

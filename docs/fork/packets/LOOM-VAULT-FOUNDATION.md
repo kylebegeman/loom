@@ -167,8 +167,11 @@ not expose a generic workload signing API or private-key files. See [L81](./L81-
 
 This milestone requires online policy/backend availability and a reachable target. Revocation
 prevents new signatures at subsequent checks; remote effects and already-issued signatures
-are not recalled. Automatic Dorothy/Pi/Git launch wiring and complete management UI remain
-pending. No real account migration, service deployment or global SSH configuration changed.
+are not recalled. Web/desktop/mobile management now includes key creation, public copying,
+reviewed trust replacement/removal and a fixed authenticated administrator probe. That probe
+uses the same transport with Vault write rights; agent arbitrary commands still need a signed
+workload and use grant. General readiness does not invoke it. Automatic Dorothy/Pi/Git launch
+wiring, imports and general runner sockets remain pending. No real account migration, service deployment or global SSH configuration changed.
 
 ## Key custody and headless unlock
 

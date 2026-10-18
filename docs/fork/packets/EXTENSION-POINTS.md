@@ -3024,8 +3024,17 @@ authentication; generic signing and forwarding are unsupported. Private key byte
 the server/OpenBao through this operation. Only public temporary files are written. The target
 must be reachable from the Loom server. Commands are bounded to four concurrent executions,
 eight seconds and 2 KiB stdout. Cancellation/timeout closes local resources but cannot promise
-remote rollback. Already-issued signatures cannot be recalled. New UI, provider/Git attachment,
-Windows and general runner-side sockets remain unfinished.
+remote rollback. Already-issued signatures cannot be recalled. Provider/Git attachment, Windows
+and general runner-side sockets remain unfinished.
+
+`vault-ssh-management` separately advertises public-info and key/trust/probe RPCs, protected by
+environment access:read/access:write. Web/desktop and mobile use the shared client-runtime
+commands and item-change signal so core lifecycle and SSH edits refresh one another. A fixed
+administrator probe runs only `/usr/bin/true`, rechecking current authority and item version
+before, during and after transport. It returns safe evidence without stdout. MCP allows this
+probe only for human full-access administrators; arbitrary agent commands keep the signed
+workload/use-grant boundary. Older servers without this capability hide management entry points.
+The server registers the SSH handler layer separately to bound TypeScript RPC-union inference.
 
 No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. General readiness with credential-use requirements reports an unsupported execution probe.

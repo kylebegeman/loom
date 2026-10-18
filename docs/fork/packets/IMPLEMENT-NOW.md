@@ -23,13 +23,15 @@ L81 supplies the bounded SSH operation described below.
 
 L81 now adds dedicated Ed25519 generation and independent trust replacement/removal, with keys
 stored in OpenBao. Dual-proof runner requests execute bounded commands from the Loom server
-through a strict host-bound SSH agent. The real disposable-host proof passes; no provider/Git
-launch attachment, new SSH management screen or production registration is delivered.
+through a strict host-bound SSH agent. Web/desktop and native mobile now provide dedicated
+key creation, copying, reviewed host trust and a fixed authenticated connection test. Synthetic
+web/iOS and real disposable SSH/OpenBao checks pass. Provider/Git launch attachment and
+production registration remain unfinished.
 Kyle requested that every work-cycle overview suggest a concrete next section for his approval
 until the selected work is complete. Finish the current section, report its exact verification
-and limits, then propose the next bounded section. The next suggested section is SSH key and host-trust management on
-web/desktop and native mobile, including a harmless authenticated connection test through the
-same service boundary. Automatic provider/Git wiring follows. Real credential registration/
+and limits, then propose the next bounded section. The next suggested section is automatic
+provider/task workload attachment and Git integration, verified first with disposable hosts
+and accounts through Pi and another provider, including cancellation and cleanup. Real credential registration/
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
