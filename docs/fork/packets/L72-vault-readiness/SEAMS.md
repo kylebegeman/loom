@@ -11,3 +11,7 @@ and SSH integration remain future work; no new provider or SSH seam is claimed h
 
 The isolated fixture-home validation fix was committed separately. It is tracked under
 `fork: ext-dev-fixtures` in FORK.md and the seam manifest, independent of these features.
+
+The committed milestone merge-tree preview against local nightly
+`v0.1.1-nightly.20261017.3238` passed with no conflicts. No fetch or post-merge full rehearsal
+was run from this feature worktree.

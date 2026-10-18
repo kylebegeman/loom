@@ -55,5 +55,6 @@ passing typecheck. No enrolled runner, SSH signing, external service authenticat
 binding, approval workflow or full immutable audit is implemented by this chunk.
 
 Changed Markdown links, whitespace and the seam manifest were checked. No new upstream seams
-were added by these three features. The final committed merge preview is recorded below after
-verification; no production integration rehearsal or fetch is implied.
+were added by these three features. The committed merge-tree preview against the newest locally available nightly,
+`v0.1.1-nightly.20261017.3238`, exited 0 with no conflicts. No fetch or full production
+integration rehearsal was run.
