@@ -1,6 +1,10 @@
+import { LOOM_VAULT_INSTRUCTIONS } from "../fork/vaultInstructions.ts"; // fork: ext-vault
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
-export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
+// fork: ext-vault
+export const T3_CODE_ORCHESTRATION_INSTRUCTIONS =
+  LOOM_VAULT_INSTRUCTIONS +
+  `
 
 ## T3 Code orchestration
 

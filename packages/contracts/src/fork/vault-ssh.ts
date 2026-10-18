@@ -149,3 +149,55 @@ export const VaultSshRpcGroup = RpcGroup.make(
     error: rpcError,
   }),
 );
+
+export const VaultGitCommand = Schema.Struct({
+  kind: Schema.Literal("git"),
+  expectedVersion: PositiveInt,
+  action: Schema.Literals(["ls-remote", "fetch"]),
+  repository: Schema.String.check(
+    Schema.isPattern(/^\/?[a-zA-Z0-9_][a-zA-Z0-9_./-]{0,1023}$/),
+    Schema.makeFilter(
+      (value) =>
+        !value
+          .replace(/^\//, "")
+          .split("/")
+          .some((part) => part === "." || part === ".." || part === ""),
+    ),
+  ),
+  cwd: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+  timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 30000 })),
+});
+export type VaultGitCommand = typeof VaultGitCommand.Type;
+export const VaultGitRun = Schema.Struct({
+  id: VaultItemId,
+  expectedVersion: PositiveInt,
+  action: VaultGitCommand.fields.action,
+  repository: VaultGitCommand.fields.repository,
+  timeoutMs: VaultGitCommand.fields.timeoutMs,
+});
+export type VaultGitRun = typeof VaultGitRun.Type;
+export const VaultSshRun = Schema.Struct({ id: VaultItemId, command: VaultSshCommand });
+export type VaultSshRun = typeof VaultSshRun.Type;
+export const VaultGitExecute = Schema.Struct({
+  proof: VaultWorkloadProof,
+  command: VaultGitCommand,
+});
+export type VaultGitExecute = typeof VaultGitExecute.Type;
+export const VaultGitResult = Schema.Struct({
+  sessionId: VaultItemId,
+  requestId: VaultItemId,
+  exitCode: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 })),
+  stdout: Schema.String.check(Schema.isMaxLength(65536)),
+});
+export type VaultGitResult = typeof VaultGitResult.Type;
+export const vaultGitCommandMessage = (command: VaultGitCommand) =>
+  JSON.stringify([
+    "loom-vault-git-exec-v1",
+    command.expectedVersion,
+    command.action,
+    command.repository,
+    command.cwd,
+    command.timeoutMs,
+  ]);
+export const vaultGitDestination = (target: VaultSshTarget, repository: string) =>
+  `git+${vaultSshDestination(target)}/${repository.startsWith("/") ? ":absolute/" + repository.slice(1) : repository}`;

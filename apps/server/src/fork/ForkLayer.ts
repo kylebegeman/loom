@@ -1,3 +1,5 @@
+import * as VaultLaunch from "./vault/VaultLaunch.ts";
+import * as BrokerIdentity from "./vault/BrokerIdentity.ts";
 import * as VaultSsh from "./vault/VaultSsh.ts";
 import * as SshCrypto from "./vault/SshCrypto.ts";
 import * as SshTransport from "./vault/SshTransport.ts";
@@ -103,6 +105,17 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultLaunch.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerVaultSsh,
+        layerVaultWorkloads,
+        BrokerCrypto.layer,
+        BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
+        ProjectStore.layer,
+      ),
+    ),
+  ),
   layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,

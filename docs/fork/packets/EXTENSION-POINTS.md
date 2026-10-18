@@ -3036,6 +3036,22 @@ probe only for human full-access administrators; arbitrary agent commands keep t
 workload/use-grant boundary. Older servers without this capability hide management entry points.
 The server registers the SSH handler layer separately to bound TypeScript RPC-union inference.
 
+`VaultLaunch` now uses the provider's existing authenticated MCP connection to create a
+memory-only workload identity and fresh signed operation, then closes the session on every
+exit. `vault-run-access` advertises hosted SSH and Git ref-list/fetch tools; CLI dispatch uses
+the same handlers. The operator enrolls the Loom server broker and configures its private
+`LOOM_VAULT_EXECUTION_BROKER_DIR`; no thread can enroll/approve itself. Current online presence,
+run/mode, item version and use grants remain required. Git signs its own `git-exec` payload,
+uses the thread checkout, and requires its exact repository destination. Workloads are not
+OS-isolated and ordinary terminal commands receive no secret environment or socket.
+
+`packages/provider-core/src/fork/vaultInstructions.ts` supplies static, capability-aware
+instructions to the existing common provider prompt channel. The two marked `ext-vault` lines
+in `packages/provider-core/src/server/orchestrationInstructions.ts` import/prepend that string.
+Pi uses its native system-prompt hook; other adapters retain their existing common instruction
+paths. No per-provider seam or additional MCP process is added. FORK.md and the seam manifest
+record the file. This extension does not alter upstream wire/events or provider permissions.
+
 No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. General readiness with credential-use requirements reports an unsupported execution probe.
 Mediated SSH is a separate operation with its own proof; it is not run by readiness. Do not infer unattended SSH readiness from a policy decision.

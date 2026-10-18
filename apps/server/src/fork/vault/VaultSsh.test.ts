@@ -493,7 +493,7 @@ it.effect(
             input.authorize.pipe(
               Effect.tap(() =>
                 Effect.sync(() => {
-                  observed = input.command.argv;
+                  observed = "kind" in input.command ? [] : input.command.argv;
                 }),
               ),
               Effect.as({ exitCode: 0, stdout: "remote output stays private" }),

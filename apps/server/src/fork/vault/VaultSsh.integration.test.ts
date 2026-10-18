@@ -1,18 +1,22 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Integration fixture inspects disposable public files and socket cleanup with Node filesystem APIs.
 import * as NodeFSP from "node:fs/promises";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
-import { VaultError } from "@t3tools/contracts/fork";
+import * as Redacted from "effect/Redacted";
+import { VaultError, vaultGitDestination } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import { sshFixture } from "./VaultSsh.testkit.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as SshCrypto from "./SshCrypto.ts";
+import * as VaultLaunch from "./VaultLaunch.ts";
+import * as BrokerIdentity from "./BrokerIdentity.ts";
 
 const configured = Boolean(
   process.env.LOOM_VAULT_TEST_SSH_PORT && process.env.LOOM_VAULT_TEST_OPENBAO_URL,
@@ -189,4 +193,148 @@ it.live.skipIf(!configured)(
       ),
     ),
   20000,
+);
+
+it.live.skipIf(!configured)(
+  "automatically signs Git ref listing and repeated fetches, denies wrong pins and revoked access, and releases sessions",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* sshFixture();
+      const target = {
+        hostname: "127.0.0.1",
+        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+      };
+      const key = yield* f.ssh.generate(
+        { id: f.itemId, operationId: yield* f.id, label: "Disposable Git key", target },
+        "fixture-admin",
+        Effect.void,
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
+          mode: 0o600,
+        }),
+      );
+      const repository = process.env.LOOM_VAULT_TEST_GIT_REMOTE!,
+        cwd = process.env.LOOM_VAULT_TEST_GIT_CHECKOUT!;
+      f.state.thread = { ...f.state.thread, worktreePath: cwd };
+      yield* f.grant(vaultGitDestination(target, repository));
+      const temporaryRoot =
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => NodeFSP.mkdtemp(temporaryRoot + "/loom-launch-broker-")),
+        (directory) =>
+          Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(
+          directory + "/identity.json",
+          JSON.stringify({
+            protocol: 1,
+            privateKey: Redacted.value(f.machine.privateKey),
+            publicKey: f.machine.publicKey,
+            fingerprint: f.machine.fingerprint,
+          }),
+          { mode: 0o600 },
+        ),
+      );
+      const identity = yield* BrokerIdentity.BrokerIdentity.pipe(
+        Effect.provide(BrokerIdentity.layer),
+        Effect.provide(f.context),
+      );
+      yield* identity.connect(directory, {
+        protocol: 1,
+        machineId: f.machineId,
+        environmentId: f.environmentId,
+        origin: "http://127.0.0.1:1",
+      });
+      const launch = yield* VaultLaunch.VaultLaunch.pipe(
+        Effect.provide(VaultLaunch.layer),
+        Effect.provide(f.context),
+        Effect.provideService(BrokerIdentity.BrokerIdentity, identity),
+        Effect.provideService(HostProcess.Environment, {
+          LOOM_VAULT_EXECUTION_BROKER_DIR: directory,
+        }),
+      );
+      const input = {
+        id: f.itemId,
+        expectedVersion: 1,
+        repository,
+        action: "ls-remote" as const,
+        timeoutMs: 30000,
+      };
+      const refs = (yield* launch.git(input, f.threadId)).stdout;
+      expect(refs).toContain("refs/heads/main");
+      for (let i = 0; i < 2; i++)
+        expect((yield* launch.git({ ...input, action: "fetch" }, f.threadId)).exitCode).toBe(0);
+      expect(
+        yield* Effect.promise(() => NodeFSP.readFile(cwd + "/.git/FETCH_HEAD", "utf8")),
+      ).toContain(refs.split("\t")[0]);
+      expect(
+        yield* Effect.promise(
+          () =>
+            new Promise<string>((resolve, reject) => {
+              NodeChildProcess.execFile(
+                "/usr/bin/git",
+                ["-C", cwd, "show", "FETCH_HEAD:README"],
+                {
+                  env: {
+                    PATH: "/usr/bin:/bin",
+                    GIT_CONFIG_NOSYSTEM: "1",
+                    GIT_CONFIG_GLOBAL: "/dev/null",
+                  },
+                },
+                (error, stdout) => (error ? reject(error) : resolve(stdout)),
+              );
+            }),
+        ),
+      ).toBe("Disposable Vault Git proof\n");
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+      const wrong = yield* f.sshKeys.create;
+      yield* f.ssh.trust(
+        { id: f.itemId, expectedVersion: 1, operationId: yield* f.id, hostKey: wrong.publicKey },
+        "fixture-admin",
+        Effect.void,
+      );
+      expect(
+        (yield* launch.git({ ...input, expectedVersion: 2 }, f.threadId).pipe(Effect.flip)).reason,
+      ).toBe("failed");
+      yield* f.ssh.trust(
+        { id: f.itemId, expectedVersion: 2, operationId: yield* f.id, hostKey: target.hostKey },
+        "fixture-admin",
+        Effect.void,
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(
+          process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          'command="/bin/sleep 15" ' + key.publicKey + "\n",
+          { mode: 0o600 },
+        ),
+      );
+      expect(
+        (yield* launch
+          .git({ ...input, expectedVersion: 3, timeoutMs: 500 }, f.threadId)
+          .pipe(Effect.flip)).reason,
+      ).toBe("timeout");
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
+          mode: 0o600,
+        }),
+      );
+      yield* f.access.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: 1,
+          change: { type: "state", id: f.grantId, state: "revoked" },
+        },
+        "fixture-admin",
+      );
+      expect(
+        (yield* launch.git({ ...input, expectedVersion: 3 }, f.threadId).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+  30000,
 );

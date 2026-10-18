@@ -339,3 +339,4 @@ apps/web/src/components/settings/SourceControlSettings.tsx	brand	1
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	brand	1
 apps/mobile/src/features/connection/CloudEnvironmentRows.tsx	brand	2
 apps/mobile/src/features/connection/GitHubRoutingSettings.tsx	brand	1
+packages/provider-core/src/server/orchestrationInstructions.ts	ext-vault	2

@@ -13,6 +13,8 @@ import { VaultBrokerPublicKey, VaultBrokerSignature, VaultBrokerNonce } from "./
 const Time = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }));
 const Destination = TrimmedNonEmptyString.check(Schema.isMaxLength(2048));
 const reasons = {
+  "not-configured":
+    "An administrator must configure this Loom server with an enrolled execution broker directory and keep its heartbeat online.",
   "invalid-proof":
     "The workload proof is invalid, belongs to another context or has already been used.",
   expired:
@@ -62,7 +64,7 @@ export const VaultWorkloadChallengeRequest = Schema.Struct({
   environmentId: EnvironmentId,
   sessionId: VaultItemId,
   requestId: VaultItemId,
-  operation: Schema.Literals(["check", "release", "ssh-exec"]),
+  operation: Schema.Literals(["check", "release", "ssh-exec", "git-exec"]),
   payloadDigest: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   at: Time,
   machineSignature: VaultBrokerSignature,
@@ -75,7 +77,7 @@ export const VaultWorkloadChallenge = Schema.Struct({
   machineId: VaultItemId,
   sessionId: VaultItemId,
   requestId: VaultItemId,
-  operation: Schema.Literals(["check", "release", "ssh-exec"]),
+  operation: Schema.Literals(["check", "release", "ssh-exec", "git-exec"]),
   payloadDigest: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
   nonce: VaultBrokerNonce,
   expiresAt: Time,
@@ -103,7 +105,9 @@ export const vaultWorkloadRequestMessage = (
     input.requestId,
     input.operation,
     input.at,
-    ...(input.operation === "ssh-exec" ? [input.payloadDigest ?? null] : []),
+    ...(input.operation === "ssh-exec" || input.operation === "git-exec"
+      ? [input.payloadDigest ?? null]
+      : []),
   ]);
 export const vaultWorkloadProofMessage = (input: VaultWorkloadChallenge) =>
   JSON.stringify([
@@ -116,5 +120,7 @@ export const vaultWorkloadProofMessage = (input: VaultWorkloadChallenge) =>
     input.operation,
     input.nonce,
     input.expiresAt,
-    ...(input.operation === "ssh-exec" ? [input.payloadDigest ?? null] : []),
+    ...(input.operation === "ssh-exec" || input.operation === "git-exec"
+      ? [input.payloadDigest ?? null]
+      : []),
   ]);

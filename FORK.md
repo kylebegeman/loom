@@ -65,6 +65,7 @@ The shared plumbing packets register into, specified in
 
 | File                                                                                         | Marker            | Why                                                                                                         |
 | -------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `packages/provider-core/src/server/orchestrationInstructions.ts`                             | `fork: ext-vault` | Add capability-aware Vault guidance through existing provider instruction channels.                         |
 | `apps/server/src/ws.ts`                                                                      | `ext-core`        | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                                              |
 | `apps/server/src/server.ts`                                                                  | `ext-core`        | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes.                             |
 | `apps/server/src/environment/ServerEnvironment.ts`                                           | `ext-core`        | Advertises `capabilities.loomFeatures`.                                                                     |

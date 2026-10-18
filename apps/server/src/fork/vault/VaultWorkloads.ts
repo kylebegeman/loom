@@ -44,6 +44,10 @@ export class VaultWorkloads extends Context.Service<
       { session: VaultWorkloadSession; checkedAt: number; credentialDelivery: "unsupported" },
       Failure
     >;
+    readonly acceptGit: (
+      proof: VaultWorkloadProof,
+      payloadDigest: string,
+    ) => Effect.Effect<VaultWorkloadSession, Failure>;
     readonly acceptSsh: (
       proof: VaultWorkloadProof,
       payloadDigest: string,
@@ -138,7 +142,7 @@ const make = Effect.gen(function* () {
   });
   const consume = Effect.fnUntraced(function* (
     input: VaultWorkloadProof,
-    operation: "check" | "release" | "ssh-exec",
+    operation: "check" | "release" | "ssh-exec" | "git-exec",
   ) {
     if (
       !isProof(input) ||
@@ -228,6 +232,11 @@ const make = Effect.gen(function* () {
         next.delete(sessionId);
         return next;
       });
+      yield* Ref.update(
+        challenges,
+        (current) =>
+          new Map([...current].filter(([, value]) => value.challenge.sessionId !== sessionId)),
+      );
     }),
     challenge: Effect.fn("VaultWorkloads.challenge")(function* (input) {
       if (
@@ -245,7 +254,11 @@ const make = Effect.gen(function* () {
         input,
       );
       if (input.operation !== "release") yield* authorize(session);
-      if (input.operation === "ssh-exec" && !input.payloadDigest) return yield* invalid();
+      if (
+        (input.operation === "ssh-exec" || input.operation === "git-exec") &&
+        !input.payloadDigest
+      )
+        return yield* invalid();
       const now = yield* Clock.currentTimeMillis;
       const challenge: VaultWorkloadChallenge = {
         protocol: 1,
@@ -254,7 +267,9 @@ const make = Effect.gen(function* () {
         sessionId: session.id,
         requestId: input.requestId,
         operation: input.operation,
-        ...(input.operation === "ssh-exec" ? { payloadDigest: input.payloadDigest } : {}),
+        ...(input.operation === "ssh-exec" || input.operation === "git-exec"
+          ? { payloadDigest: input.payloadDigest }
+          : {}),
         nonce: (yield* id) + (yield* id),
         expiresAt: Math.min(session.expiresAt, now + CHALLENGE_MS),
       };
@@ -300,6 +315,13 @@ const make = Effect.gen(function* () {
       if (current !== session) return yield* invalid();
       yield* authorize(session);
       if (!(yield* Ref.get(sessions)).has(session.id)) return yield* invalid();
+    }),
+    acceptGit: Effect.fn("VaultWorkloads.acceptGit")(function* (proof, payloadDigest) {
+      if (proof.challenge.payloadDigest !== payloadDigest) return yield* invalid();
+      const session = yield* consume(proof, "git-exec");
+      yield* authorize(session);
+      if (!(yield* Ref.get(sessions)).has(session.id)) return yield* invalid();
+      return session;
     }),
     acceptSsh: Effect.fn("VaultWorkloads.acceptSsh")(function* (proof, payloadDigest) {
       if (proof.challenge.payloadDigest !== payloadDigest) return yield* invalid();

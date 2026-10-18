@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, IsoDateTime } from "@t3tools/contracts";
 import {
   vaultBrokerClaimMessage,
   vaultBrokerChallengeMessage,
@@ -6,6 +6,8 @@ import {
   vaultWorkloadRequestMessage,
   vaultWorkloadProofMessage,
   vaultSshCommandMessage,
+  vaultGitCommandMessage,
+  type VaultGitCommand,
   type VaultSshCommand,
   type VaultWorkloadSession,
 } from "@t3tools/contracts/fork";
@@ -15,6 +17,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
@@ -44,9 +47,27 @@ export const sshFixture = (
     const dependencies = Layer.mergeAll(
       Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
       Layer.mock(ThreadManagementService)({
-        getThreadShell: (id) => Effect.sync(() => (id === threadId ? state.thread : null)),
+        getThreadShell: (id) => Effect.sync(() => (id === state.thread.id ? state.thread : null)),
       }),
-      Layer.mock(ProjectStoreV2)({}),
+      Layer.mock(ProjectStoreV2)({
+        get: (projectId) =>
+          Effect.succeed(
+            Option.some({
+              projectId,
+              title: "Disposable project",
+              workspaceRoot: "/private/project",
+              defaultModelSelection: null,
+              defaultThreadEnvMode: null,
+              autoPull: false,
+              faviconPath: null,
+              projectIcon: null,
+              scripts: [],
+              createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+              updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+              deletedAt: null,
+            }),
+          ),
+      }),
       BrokerCrypto.layer,
       SshCrypto.layer,
     );
@@ -153,17 +174,22 @@ export const sshFixture = (
       );
     const proof = Effect.fnUntraced(function* (
       session: VaultWorkloadSession,
-      command: VaultSshCommand,
+      command: VaultSshCommand | VaultGitCommand,
     ) {
       const payloadDigest = yield* random
-        .digest("SHA-256", new TextEncoder().encode(vaultSshCommandMessage(command)))
+        .digest(
+          "SHA-256",
+          new TextEncoder().encode(
+            "kind" in command ? vaultGitCommandMessage(command) : vaultSshCommandMessage(command),
+          ),
+        )
         .pipe(Effect.map(Hex.encode));
       const request = {
         environmentId,
         sessionId: session.id,
         requestId: yield* id,
         at: yield* Clock.currentTimeMillis,
-        operation: "ssh-exec" as const,
+        operation: "kind" in command ? ("git-exec" as const) : ("ssh-exec" as const),
         payloadDigest,
       };
       const challenge = yield* workloads.challenge({

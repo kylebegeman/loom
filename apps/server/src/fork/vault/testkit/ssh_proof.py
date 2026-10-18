@@ -61,11 +61,25 @@ def main() -> None:
             token_file = root / "service-token"
             token_file.touch(mode=0o600)
             token_file.write_text(token)
+            git_env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+            def git(*arguments: str) -> None:
+                subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *arguments], env=git_env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            source = root / "source"
+            remote = root / "remote.git"
+            checkout = root / "checkout"
+            git("init", "--initial-branch=main", str(source))
+            (source / "README").write_text("Disposable Vault Git proof\n")
+            git("-C", str(source), "add", "README")
+            git("-C", str(source), "-c", "user.name=Loom fixture", "-c", "user.email=fixture@example.test", "commit", "-m", "Synthetic fixture")
+            git("clone", "--bare", str(source), str(remote))
+            git("init", str(checkout))
             environment = dict(os.environ,
                 TMPDIR="/private/tmp" if os.uname().sysname == "Darwin" else tempfile.gettempdir(),
                 LOOM_VAULT_TEST_OPENBAO_URL=fixture.origin,
                 LOOM_VAULT_TEST_OPENBAO_TOKEN_FILE=str(token_file),
                 LOOM_VAULT_TEST_SSH_PORT=str(port),
+                LOOM_VAULT_TEST_GIT_REMOTE=str(remote),
+                LOOM_VAULT_TEST_GIT_CHECKOUT=str(checkout),
                 LOOM_VAULT_TEST_SSH_USER=getpass.getuser(),
                 LOOM_VAULT_TEST_SSH_HOST_KEY=" ".join((root / "host.pub").read_text().split()[:2]),
                 LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS=str(authorized),

@@ -3,6 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 import * as NodeChildProcess from "node:child_process";
 import {
   VaultError,
@@ -10,6 +11,7 @@ import {
   VaultWorkloadError,
   type VaultSshTarget,
   type VaultSshCommand,
+  type VaultGitCommand,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -28,7 +30,7 @@ export class SshTransport extends Context.Service<
       target: VaultSshTarget;
       publicKey: string;
       privateKey: Redacted.Redacted<string>;
-      command: VaultSshCommand;
+      command: VaultSshCommand | VaultGitCommand;
       authorize: Effect.Effect<void, Failure>;
     }) => Effect.Effect<{ exitCode: number; stdout: string }, Failure>;
   }
@@ -184,7 +186,8 @@ const make = Effect.gen(function* () {
           "ConnectionAttempts=1",
           "ConnectTimeout=3",
         ];
-        const args = [
+        const git = "kind" in input.command ? input.command : null;
+        const sshArgs = [
           "-F",
           "none",
           ...options.flatMap((option) => ["-o", option]),
@@ -193,14 +196,52 @@ const make = Effect.gen(function* () {
           String(input.target.port),
           "-l",
           input.target.username,
-          "--",
-          input.target.hostname,
-          input.command.argv.map(quote).join(" "),
         ];
+        const gitUrl = `ssh://${input.target.username}@${input.target.hostname}:${input.target.port}/${git?.repository ?? ""}`;
+        const sshCommand = ["/usr/bin/ssh", ...sshArgs].map(quote).join(" ");
+        const args = git
+          ? [
+              "-c",
+              "core.hooksPath=/dev/null",
+              "-c",
+              "credential.helper=",
+              "-c",
+              "protocol.allow=never",
+              "-c",
+              "protocol.ssh.allow=always",
+              "-c",
+              `core.sshCommand=${sshCommand}`,
+              ...(git.action === "fetch"
+                ? [
+                    "fetch",
+                    "--no-tags",
+                    "--no-recurse-submodules",
+                    "--no-auto-maintenance",
+                    "--",
+                    gitUrl,
+                  ]
+                : ["ls-remote", "--refs", "--", gitUrl]),
+            ]
+          : [
+              ...sshArgs,
+              "--",
+              input.target.hostname,
+              ("kind" in input.command ? [] : input.command.argv).map(quote).join(" "),
+            ];
         const run = Effect.callback<{ exitCode: number; stdout: string }, VaultSshError>(
           (resume) => {
-            const child = NodeChildProcess.spawn("/usr/bin/ssh", args, {
-              env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LC_ALL: "C" },
+            const child = NodeChildProcess.spawn(git ? "/usr/bin/git" : "/usr/bin/ssh", args, {
+              ...(git ? { cwd: git.cwd } : {}),
+              detached: true,
+              env: {
+                PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+                LC_ALL: "C",
+                HOME: directory,
+                GIT_CONFIG_NOSYSTEM: "1",
+                GIT_CONFIG_GLOBAL: "/dev/null",
+                GIT_TERMINAL_PROMPT: "0",
+                GIT_SSH_VARIANT: "ssh",
+              },
               stdio: ["ignore", "pipe", "pipe"],
             });
             let bytes = 0,
@@ -218,7 +259,8 @@ const make = Effect.gen(function* () {
             child.stderr.resume();
             child.stdout.on("data", (chunk: Buffer) => {
               bytes += chunk.length;
-              if (bytes > 2048) finish(Effect.fail(new VaultSshError({ reason: "output-limit" })));
+              if (bytes > (git ? 65536 : 2048))
+                finish(Effect.fail(new VaultSshError({ reason: "output-limit" })));
               else chunks.push(chunk);
             });
             child.on("close", (code) => {
@@ -240,7 +282,13 @@ const make = Effect.gen(function* () {
                     return;
                   }
                   child.once("close", () => resolve());
-                  if (child.exitCode === null) child.kill("SIGKILL");
+                  if (child.pid !== undefined) {
+                    try {
+                      NodeProcess.kill(-child.pid, "SIGKILL");
+                    } catch {
+                      if (child.exitCode === null) child.kill("SIGKILL");
+                    }
+                  }
                 }),
             );
           },
