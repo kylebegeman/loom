@@ -55,3 +55,10 @@ launcher behavior is tested through isolated filesystem/real-shell tests, not a 
 Use the product-native Browser and Device skills for authorized integrated checks, retain
 isolated state for review, and never use production credentials. Preserve complete selected
 scope until these targets pass. Enrollment presence alone cannot establish readiness for use.
+
+## Merge compatibility
+
+The committed client/service chunk at `7709bf9fd6` previews cleanly against the newest local
+nightly tag `v0.1.1-nightly.20261017.3238` using `git merge-tree --write-tree --name-only
+--no-messages`. Seam-manifest and local documentation link checks pass. No upstream fetch,
+full integration rehearsal, push, release or deployment was performed.
