@@ -92,6 +92,12 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`      | Persist and reopen fork documents; retire archived inspector history.                                       |
 | `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header` | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
 
+### Development fixture seam
+
+| File                                 | Marker         | Why                                                                                         |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
+| `apps/server/scripts/seed-dev-db.ts` | `dev-fixtures` | Permit recognized worktree fixture homes while retaining live-state and symlink protection. |
+
 ### Vault seams
 
 | File                                                                         | Marker       | Why                                                                          |
