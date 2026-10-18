@@ -183,6 +183,8 @@ const codecs = {
   ),
 };
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+// The Library rewrites syncedAt on every save, so versions compare archives without it.
+const VERSION_SYNCED_AT = "1970-01-01T00:00:00.000Z";
 const isLibraryError = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause });
@@ -228,15 +230,67 @@ const make = Effect.gen(function* () {
     codec
       .encode(value)
       .pipe(Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })));
-  const digest = Effect.fnUntraced(function* (encoded: string) {
+  const digestValue = Effect.fnUntraced(function* (value: unknown) {
     return Hex.encode(
       yield* crypto
-        .digest(
-          "SHA-256",
-          new TextEncoder().encode(encodeUnknownJson(canonicalJson(decodeUnknownJson(encoded)))),
-        )
+        .digest("SHA-256", new TextEncoder().encode(encodeUnknownJson(canonicalJson(value))))
         .pipe(Effect.mapError(io)),
     );
+  });
+  const digest = Effect.fnUntraced(function* (encoded: string) {
+    return yield* digestValue(decodeUnknownJson(encoded));
+  });
+  const versionDigest = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
+    return yield* digest(
+      yield* encode(codecs.archive, {
+        ...archive,
+        summary: { ...archive.summary, syncedAt: VERSION_SYNCED_AT },
+      }),
+    );
+  });
+  // A version's digest as the saving release encoded it. Re-encoding under today's contract can add
+  // a defaulted field and miss.
+  const encodedVersionDigest = Effect.fnUntraced(function* (archive: unknown) {
+    return typeof archive === "object" &&
+      archive !== null &&
+      "summary" in archive &&
+      typeof archive.summary === "object" &&
+      archive.summary !== null
+      ? yield* digestValue({
+          ...archive,
+          summary: { ...archive.summary, syncedAt: VERSION_SYNCED_AT },
+        })
+      : null;
+  });
+  // Digests of a proof's archives as the importing release encoded them, which is what saveThread
+  // recorded.
+  const importedVersionDigests = Effect.fnUntraced(function* (proof: string) {
+    const parsed = decodeUnknownJson(proof);
+    const threads =
+      typeof parsed === "object" && parsed !== null && "threads" in parsed ? parsed.threads : null;
+    const digests: Array<string | null> = [];
+    for (const archive of Array.isArray(threads) ? threads : [])
+      digests.push(yield* encodedVersionDigest(archive));
+    return digests;
+  });
+  const savedVersionDigest = Effect.fnUntraced(function* (id: string, sequence: number) {
+    const saved = yield* store.threadVersion(id, sequence);
+    if (saved === null) return null;
+    if ("digest" in saved) return saved.digest;
+    return yield* versionDigest(yield* decode(codecs.archive, saved.payload));
+  });
+  // Earlier releases kept a whole archive for each version. The one a save supersedes is reduced to
+  // a digest of the archive exactly as stored, which an import proof of it still matches after a
+  // contract change. This runs before putThread, which can then free an archive the two shared.
+  // An archive that cannot be read is left for offline repair rather than blocking the save.
+  const compactVersion = Effect.fnUntraced(function* (id: string, sequence: number) {
+    const kept = yield* Effect.gen(function* () {
+      const saved = yield* store.threadVersion(id, sequence);
+      if (saved === null || "digest" in saved) return null;
+      yield* decode(codecs.archive, saved.payload);
+      return yield* encodedVersionDigest(decodeUnknownJson(saved.payload));
+    }).pipe(Effect.orElseSucceed(() => null));
+    if (kept) yield* store.compactThreadVersion(id, sequence, kept);
   });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
     store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);
@@ -416,20 +470,19 @@ const make = Effect.gen(function* () {
         Date.parse(old.summary.updatedAt) > Date.parse(summary.updatedAt)
       )
         return old;
+      // Each sequence holds one archive. The saved conversation is compared rather than its
+      // version's digest, which predates any field a later contract fills with a default.
+      if (old.summary.sequence === summary.sequence) {
+        if ((yield* versionDigest(old)) !== (yield* versionDigest(archive)))
+          return yield* new LibraryError({ reason: "sequence-conflict" });
+        return old;
+      }
     }
-    const version = yield* store.threadVersion(summary.id, summary.sequence);
-    if (version !== null) {
-      const saved = yield* decode(codecs.archive, version);
-      if (
-        (yield* digest(
-          yield* encode(codecs.archive, {
-            ...saved,
-            summary: { ...saved.summary, syncedAt: summary.syncedAt },
-          }),
-        )) !== (yield* digest(yield* encode(codecs.archive, archive)))
-      )
-        return yield* new LibraryError({ reason: "sequence-conflict" });
-    }
+    const fingerprint = yield* versionDigest(archive);
+    const version = yield* savedVersionDigest(summary.id, summary.sequence);
+    if (version !== null && version !== fingerprint)
+      return yield* new LibraryError({ reason: "sequence-conflict" });
+    if (old) yield* compactVersion(summary.id, old.summary.sequence);
     const normalized = { ...archive, summary: { ...summary, syncedAt: yield* now } };
     yield* store.putThread({
       id: summary.id,
@@ -443,12 +496,7 @@ const make = Effect.gen(function* () {
       updatedAt: summary.updatedAt,
     });
     yield* historySearch.index(summary.id);
-    if (version === null)
-      yield* store.putThreadVersion(
-        summary.id,
-        summary.sequence,
-        yield* encode(codecs.archive, normalized),
-      );
+    if (version === null) yield* store.putThreadVersion(summary.id, summary.sequence, fingerprint);
     yield* LibraryTimeline.recordTimeline(
       store,
       LibraryTimeline.threadTimeline(
@@ -711,8 +759,7 @@ const make = Effect.gen(function* () {
         for (const [index, entry] of input.entries.entries()) {
           if (entry.sequence !== input.fromSequence + index + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          const payload = yield* encode(codecs.archive, entry.thread);
-          const fingerprint = yield* digest(payload);
+          const fingerprint = yield* digest(yield* encode(codecs.archive, entry.thread));
           if (entry.sequence <= cursor) {
             if (
               (yield* store.ingestedDigest(
@@ -732,7 +779,6 @@ const make = Effect.gen(function* () {
             input.journalId,
             entry.sequence,
             fingerprint,
-            payload,
           );
           cursor = entry.sequence;
           applied++;
@@ -752,7 +798,10 @@ const make = Effect.gen(function* () {
         };
       }),
     );
-  const verifyProof = Effect.fnUntraced(function* (input: LibraryImportShadowRequest) {
+  const verifyProof = Effect.fnUntraced(function* (
+    input: LibraryImportShadowRequest,
+    proof: string,
+  ) {
     let logicalRecordsVerified = true;
     for (const project of input.projects) {
       const saved = yield* store.projectRevision(project.id, project.revision);
@@ -792,27 +841,22 @@ const make = Effect.gen(function* () {
         logicalRecordsVerified = false;
     }
     const attachments = new Map<string, { id: string; bytes: number }>();
-    for (const thread of input.threads) {
-      const saved = yield* store.threadVersion(thread.summary.id, thread.summary.sequence);
-      if (saved === null) logicalRecordsVerified = false;
-      else {
-        const archive = yield* decode(codecs.archive, saved);
-        const normalized = {
-          ...archive,
-          summary: { ...archive.summary, syncedAt: thread.summary.syncedAt },
-        };
-        if (
-          (yield* digest(yield* encode(codecs.archive, normalized))) !==
-          (yield* digest(yield* encode(codecs.archive, thread)))
-        )
-          logicalRecordsVerified = false;
-      }
-      const current = yield* store.thread(input.sourceEnvironmentId, thread.summary.threadId);
-      if (
-        current === null ||
-        (yield* decode(codecs.archive, current)).summary.sequence < thread.summary.sequence
-      )
+    let imported: ReadonlyArray<string | null> | undefined;
+    for (const [index, thread] of input.threads.entries()) {
+      const saved = yield* store.thread(input.sourceEnvironmentId, thread.summary.threadId);
+      const current = saved === null ? null : yield* decode(codecs.archive, saved);
+      // Like saveThread, a proof of the current sequence is checked against the conversation.
+      const expected =
+        current?.summary.sequence === thread.summary.sequence
+          ? yield* versionDigest(current)
+          : yield* savedVersionDigest(thread.summary.id, thread.summary.sequence);
+      if (current === null || current.summary.sequence < thread.summary.sequence)
         logicalRecordsVerified = false;
+      else if (expected !== (yield* versionDigest(thread))) {
+        // Parsed only on a mismatch, since a proof can be as large as the computer's history.
+        imported ??= yield* importedVersionDigests(proof);
+        if (expected === null || expected !== imported[index]) logicalRecordsVerified = false;
+      }
       for (const attachment of libraryAttachments(thread))
         attachments.set(attachment.id, { id: attachment.id, bytes: attachment.sizeBytes });
     }
@@ -843,7 +887,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const proof = yield* store.importProof(input.requestId);
         if (proof === null) return yield* new LibraryError({ reason: "not-found" });
-        return yield* verifyProof(yield* decode(codecs.import, proof));
+        return yield* verifyProof(yield* decode(codecs.import, proof), proof);
       }),
     );
   const importShadow = (input: LibraryImportShadowRequest) =>
@@ -881,8 +925,9 @@ const make = Effect.gen(function* () {
         if (input.throughSequence < cursor)
           return yield* new LibraryError({ reason: "sequence-conflict" });
         yield* store.putCursor(input.sourceEnvironmentId, input.journalId, input.throughSequence);
-        yield* store.putImportProof(input.requestId, yield* encode(codecs.import, input));
-        return yield* verifyProof(input);
+        const proof = yield* encode(codecs.import, input);
+        yield* store.putImportProof(input.requestId, proof);
+        return yield* verifyProof(input, proof);
       }),
     );
   const catalogRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>

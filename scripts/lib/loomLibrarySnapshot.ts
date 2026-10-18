@@ -21,8 +21,9 @@ export async function sqliteSnapshot(
   await NodeFSP.mkdir(NodePath.dirname(destinationPath), { recursive: true, mode: 0o700 });
   const reserved = await NodeFSP.open(destinationPath, "wx", 0o600);
   await reserved.close();
-  const database = new NodeSqlite.DatabaseSync(sourcePath, { readOnly: true });
+  let database: NodeSqlite.DatabaseSync | undefined;
   try {
+    database = new NodeSqlite.DatabaseSync(sourcePath, { readOnly: true });
     // Other connections restart an unpinned online backup on every commit.
     // Keep one WAL read snapshot while copying, then release it before verification.
     database.exec("BEGIN");
@@ -48,7 +49,7 @@ export async function sqliteSnapshot(
     await NodeFSP.rm(destinationPath, { force: true });
     throw error;
   } finally {
-    database.close();
+    database?.close();
   }
 }
 export async function fileFingerprint(file: string): Promise<{ digest: string; bytes: number }> {
@@ -59,4 +60,8 @@ export async function fileFingerprint(file: string): Promise<{ digest: string; b
     bytes += chunk.length;
   }
   return { digest: hash.digest("hex"), bytes };
+}
+export async function availableBytes(directory: string): Promise<number> {
+  const stats = await NodeFSP.statfs(directory);
+  return stats.bavail * stats.bsize;
 }

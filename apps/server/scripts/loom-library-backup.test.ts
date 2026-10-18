@@ -4,7 +4,9 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Store from "../src/fork/project-library/LibraryStore.ts";
 import * as Hex from "effect/encoding/Hex";
@@ -34,6 +36,7 @@ import {
   verifyLibraryBackup,
   restoreLibraryBackup,
   pruneLibraryBackups,
+  LibraryBackupFreeSpace,
 } from "./loom-library-backup.ts";
 
 const fixture = Effect.gen(function* () {
@@ -221,6 +224,163 @@ describe("cold Library backup and recovery commands", () => {
           expect(pruned.removed).toHaveLength(1);
           expect(pruned.retained).toBe(1);
           expect(yield* f.fs.readLink(link)).toBe(one.directory);
+        }),
+      ),
+  );
+  it.effect("refuses to start a snapshot when the backups volume lacks room", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const error = yield* createLibraryBackup(f).pipe(
+          Effect.provideService(LibraryBackupFreeSpace, () => Effect.succeed(4096)),
+          Effect.flip,
+        );
+        expect(error).toMatchObject({
+          reason: "storage-limit",
+          cause: expect.stringContaining("only 4096 bytes"),
+        });
+        expect(yield* f.fs.exists(f.backupsDir)).toBe(false);
+      }),
+    ),
+  );
+  it.effect("refuses to start a snapshot while another is still copying", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const running = f.path.join(
+          f.backupsDir,
+          "library-backup-0-00000000-0000-4000-8000-000000000001.partial",
+        );
+        yield* f.fs.makeDirectory(running, { recursive: true });
+        expect(yield* createLibraryBackup(f).pipe(Effect.flip)).toMatchObject({
+          reason: "request-conflict",
+          cause: expect.stringContaining(f.path.basename(running)),
+        });
+        expect(yield* f.fs.readDirectory(f.backupsDir)).toEqual([f.path.basename(running)]);
+        // One that is still unfinished after six hours died without cleaning up.
+        yield* TestClock.adjust("7 hours");
+        expect((yield* createLibraryBackup(f)).manifest).toBeDefined();
+      }),
+    ),
+  );
+  it.effect("skips a listed snapshot that finishes or is cleaned up before prune reaches it", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const kept = yield* createLibraryBackup(f);
+        const vanished = "library-backup-0-00000000-0000-4000-8000-000000000001.partial";
+        const pruned = yield* pruneLibraryBackups({
+          backupsDir: f.backupsDir,
+          keep: 1,
+          days: 1,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...f.fs,
+            readDirectory: (directory, options) =>
+              f.fs
+                .readDirectory(directory, options)
+                .pipe(Effect.map((entries) => [vanished, ...entries])),
+          }),
+        );
+        expect(pruned).toMatchObject({ retained: 1, stalePartial: [], inProgress: [] });
+        expect(yield* verifyLibraryBackup(kept.directory)).toBeDefined();
+      }),
+    ),
+  );
+  it.effect("leaves no staging or backup directory when the copy or manifest fails", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const notDatabase = f.path.join(f.base, "not-a-database.sqlite");
+        yield* f.fs.writeFileString(notDatabase, "not a database");
+        expect(
+          yield* createLibraryBackup({ ...f, database: notDatabase }).pipe(Effect.flip),
+        ).toMatchObject({ reason: "io", cause: expect.anything() });
+        const unrelated = f.path.join(f.base, "unrelated.sqlite");
+        yield* SqlClient.SqlClient.use((sql) => sql`CREATE TABLE unrelated(value INTEGER)`).pipe(
+          Effect.provide(NodeSqliteClient.layer({ filename: unrelated })),
+        );
+        yield* createLibraryBackup({ ...f, database: unrelated }).pipe(Effect.flip);
+        expect(yield* f.fs.readDirectory(f.backupsDir)).toEqual([]);
+      }),
+    ),
+  );
+  it.effect("removes the staging directory when a snapshot is interrupted after its copy", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const paused = yield* Deferred.make<void>();
+        let checks = 0;
+        const fiber = yield* createLibraryBackup(f).pipe(
+          Effect.provideService(LibraryBackupFreeSpace, () =>
+            checks++ === 0
+              ? Effect.succeed(Number.MAX_SAFE_INTEGER)
+              : Deferred.succeed(paused, undefined).pipe(Effect.andThen(Effect.never)),
+          ),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(paused);
+        const staged = yield* f.fs.readDirectory(f.backupsDir);
+        expect(staged).toHaveLength(1);
+        expect(yield* f.fs.exists(f.path.join(f.backupsDir, staged[0]!, "statev2.sqlite"))).toBe(
+          true,
+        );
+        yield* Fiber.interrupt(fiber);
+        expect(yield* f.fs.readDirectory(f.backupsDir)).toEqual([]);
+      }),
+    ),
+  );
+  it.effect(
+    "prunes dead snapshots but keeps running ones, unverifiable finished backups, and the newest verified backup",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const names = (directories: ReadonlyArray<string>) =>
+            directories.map((directory) => f.path.basename(directory)).toSorted();
+          const leftover = Effect.fnUntraced(function* (time: number, id: number, suffix: string) {
+            const directory = f.path.join(
+              f.backupsDir,
+              `library-backup-${time}-00000000-0000-4000-8000-${String(id).padStart(12, "0")}${suffix}`,
+            );
+            yield* f.fs.makeDirectory(directory);
+            yield* f.fs.writeFileString(f.path.join(directory, "statev2.sqlite"), "half copied");
+            return directory;
+          });
+          const old = yield* createLibraryBackup(f);
+          const corrupt = yield* createLibraryBackup(f);
+          yield* f.fs.writeFileString(f.path.join(corrupt.directory, "statev2.sqlite"), "corrupt");
+          const deadPartial = yield* leftover(0, 1, ".partial");
+          const deadLegacy = yield* leftover(0, 2, "");
+          const precious = f.path.join(f.base, "precious");
+          yield* f.fs.makeDirectory(precious);
+          const linkedPartial = f.path.join(
+            f.backupsDir,
+            "library-backup-0-00000000-0000-4000-8000-000000000005.partial",
+          );
+          yield* f.fs.symlink(precious, linkedPartial);
+          yield* TestClock.adjust("7 hours");
+          const newest = yield* createLibraryBackup(f);
+          const runningPartial = yield* leftover(7 * 3_600_000, 3, ".partial");
+          const runningLegacy = yield* leftover(7 * 3_600_000, 4, "");
+
+          const first = yield* pruneLibraryBackups({ backupsDir: f.backupsDir, keep: 1, days: 1 });
+          expect(first.retained).toBe(2);
+          expect(first.removed).toEqual([]);
+          expect(names(first.stalePartial)).toEqual(names([deadPartial]));
+          expect(names(first.staleIncomplete)).toEqual(names([deadLegacy]));
+          expect(names(first.unverified)).toEqual(names([corrupt.directory]));
+          expect(names(first.inProgress)).toEqual(names([runningPartial, runningLegacy]));
+          expect(yield* f.fs.exists(deadPartial)).toBe(false);
+          expect(yield* f.fs.exists(deadLegacy)).toBe(false);
+          expect(yield* f.fs.exists(runningPartial)).toBe(true);
+          expect(yield* f.fs.exists(runningLegacy)).toBe(true);
+          expect(yield* f.fs.readLink(linkedPartial)).toBe(precious);
+          expect(yield* f.fs.exists(precious)).toBe(true);
+
+          yield* TestClock.adjust("2 days");
+          const later = yield* pruneLibraryBackups({ backupsDir: f.backupsDir, keep: 1, days: 1 });
+          expect(later.retained).toBe(1);
+          expect(names(later.removed)).toEqual(names([old.directory]));
+          expect(names(later.stalePartial)).toEqual(names([runningPartial]));
+          expect(names(later.staleIncomplete)).toEqual(names([runningLegacy]));
+          expect(names(later.unverified)).toEqual(names([corrupt.directory]));
+          expect(yield* verifyLibraryBackup(newest.directory)).toBeDefined();
+          expect(yield* f.fs.exists(corrupt.directory)).toBe(true);
         }),
       ),
   );
