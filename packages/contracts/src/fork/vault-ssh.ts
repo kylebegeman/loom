@@ -1,3 +1,8 @@
+import * as Rpc from "effect/rpc/Rpc";
+import * as RpcGroup from "effect/rpc/RpcGroup";
+import { EnvironmentAuthorizationError } from "../auth.ts";
+import { VaultError } from "./vault-core.ts";
+import { VaultWorkloadError } from "./vault-workloads.ts";
 import * as Schema from "effect/Schema";
 import { PositiveInt } from "../baseSchemas.ts";
 import { VaultItemId, VaultItemSummary } from "./vault-core.ts";
@@ -97,3 +102,50 @@ export const vaultSshCommandMessage = (command: VaultSshCommand) =>
     command.argv,
     command.timeoutMs,
   ]);
+
+export const VaultSshProbe = Schema.Struct({ id: VaultItemId, expectedVersion: PositiveInt });
+export type VaultSshProbe = typeof VaultSshProbe.Type;
+export const VaultSshProbeResult = Schema.Struct({
+  id: VaultItemId,
+  version: PositiveInt,
+  destination: Schema.String,
+  fingerprint: Schema.String,
+  hostFingerprint: Schema.String,
+  checkedAt: Schema.Int,
+  authenticated: Schema.Literal(true),
+});
+export type VaultSshProbeResult = typeof VaultSshProbeResult.Type;
+export const VAULT_SSH_WS_METHODS = {
+  info: "loom.vault-ssh.info",
+  generate: "loom.vault-ssh.generate",
+  trust: "loom.vault-ssh.trust",
+  probe: "loom.vault-ssh.probe",
+} as const;
+const rpcError = Schema.Union([
+  VaultError,
+  VaultSshError,
+  VaultWorkloadError,
+  EnvironmentAuthorizationError,
+]);
+export const VaultSshRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_SSH_WS_METHODS.info, {
+    payload: Schema.Struct({ id: VaultItemId }),
+    success: VaultSshInfo,
+    error: rpcError,
+  }),
+  Rpc.make(VAULT_SSH_WS_METHODS.generate, {
+    payload: VaultSshGenerate,
+    success: VaultSshInfo,
+    error: rpcError,
+  }),
+  Rpc.make(VAULT_SSH_WS_METHODS.trust, {
+    payload: VaultSshTrust,
+    success: VaultSshInfo,
+    error: rpcError,
+  }),
+  Rpc.make(VAULT_SSH_WS_METHODS.probe, {
+    payload: VaultSshProbe,
+    success: VaultSshProbeResult,
+    error: rpcError,
+  }),
+);

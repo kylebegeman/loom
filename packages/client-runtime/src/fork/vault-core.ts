@@ -31,13 +31,13 @@ export const vaultStatusMessage = (status: VaultCoreStatus) =>
     misconfigured:
       "The Vault connection needs repair. Check its origin, private token file and KV v2 mount.",
   })[status.state];
-const listChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
-const refreshLists = (
+export const vaultItemChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+export const refreshVaultItems = (
   target: { readonly environmentId: EnvironmentId },
   registry: AtomRegistry.AtomRegistry,
 ) =>
   Effect.sync(() => {
-    const signal = listChanges(target.environmentId);
+    const signal = vaultItemChanges(target.environmentId);
     registry.set(signal, registry.get(signal) + 1);
   });
 export function createVaultCoreAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
@@ -49,17 +49,17 @@ export function createVaultCoreAtoms<R, E>(runtime: Atom.AtomRuntime<Environment
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:list",
       tag: V.list,
-      refreshTrigger: ({ environmentId }) => listChanges(environmentId),
+      refreshTrigger: ({ environmentId }) => vaultItemChanges(environmentId),
     }),
     save: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:save",
       tag: V.save,
-      onSuccess: refreshLists,
+      onSuccess: refreshVaultItems,
     }),
     change: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:change",
       tag: V.change,
-      onSuccess: refreshLists,
+      onSuccess: refreshVaultItems,
     }),
     reveal: createEnvironmentRpcCommand(runtime, { label: "loom:vault:reveal", tag: V.reveal }),
   };

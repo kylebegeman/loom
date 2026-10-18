@@ -1,3 +1,4 @@
+import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -81,6 +82,11 @@ export function VaultSettingsSection() {
   );
 }
 function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
+  const configs = useServerConfigs();
+  const sshEnabled = loomFeaturesOf(configs.get(environmentId)?.environment.capabilities).includes(
+    "vault-ssh-management",
+  );
+  const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const statusAtom = vault.status({ environmentId, input: {} });
   const statusResult = useAtomValue(statusAtom);
   const status = Option.getOrNull(AsyncResult.value(statusResult));
@@ -162,6 +168,16 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
           <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
             Refresh
           </Button>
+          {sshEnabled ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canSave || busy || status?.state !== "ready"}
+              onClick={() => setSshItem(null)}
+            >
+              Create SSH key
+            </Button>
+          ) : null}
           <Button
             size="sm"
             disabled={!canSave || status?.state !== "ready" || busy}
@@ -239,6 +255,19 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                         >
                           Why this access?
                         </Button>
+                        {sshEnabled && item.kind === "ssh-key" ? (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => {
+                              setRevealed(null);
+                              setSshItem(item.id);
+                            }}
+                          >
+                            Manage SSH key
+                          </Button>
+                        ) : null}
                         <Button
                           size="xs"
                           variant="ghost"
@@ -320,6 +349,14 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
           )}
         </>
       )}
+      {sshItem !== undefined ? (
+        <VaultSshDialog
+          key={`${environmentId}:${sshItem ?? "new"}`}
+          environmentId={environmentId}
+          itemId={sshItem}
+          onClose={() => setSshItem(undefined)}
+        />
+      ) : null}
       {editing !== null && (
         <VaultEditor
           key={typeof editing === "string" ? editing : editing.id}

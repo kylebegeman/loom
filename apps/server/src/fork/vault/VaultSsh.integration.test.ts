@@ -65,6 +65,9 @@ it.live.skipIf(!configured)(
       yield* f.grant(key.destination);
       const session = yield* f.session(key.destination);
       const before = yield* Effect.promise(() => NodeFSP.readdir(temporaryDirectory));
+      expect(
+        (yield* f.ssh.probe({ id: f.itemId, expectedVersion: 1 }, Effect.void)).authenticated,
+      ).toBe(true);
       const proof = yield* f.proof(session, command);
       expect((yield* f.ssh.execute({ proof, command })).stdout).toBe(command.argv[2]);
       expect((yield* f.ssh.execute({ proof, command }).pipe(Effect.flip)).reason).toBe(

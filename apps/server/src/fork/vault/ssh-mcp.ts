@@ -4,6 +4,8 @@ import {
   VaultSshError,
   VaultWorkloadError,
   VaultSshGenerate,
+  VaultSshProbe,
+  VaultSshProbeResult,
   VaultSshTrust,
   VaultSshInfo,
   VaultItemId,
@@ -25,6 +27,14 @@ const failure = Schema.Union([
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
+  Tool.make("loom_vault_ssh_probe", {
+    description:
+      "Test one pinned SSH destination from the Loom server with a fixed /usr/bin/true command and current key version. Human full-access administrator clients only. Does not configure provider/Git access or grant an agent credential use.",
+    parameters: VaultSshProbe,
+    success: VaultSshProbeResult,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_vault_ssh_generate", {
     description:
       "Generate a dedicated Ed25519 SSH key in OpenBao, bound to one explicit user/host/port and independently verified Ed25519 host public key, or null to leave the destination untrusted. Return only public metadata. Full-access administrator clients only; threads cannot generate or approve host trust. Retain id/operationId for retries. Does not register the public key on a host.",
@@ -63,6 +73,20 @@ export const vaultSshHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_ssh_probe: McpToolAccess.writesEnvironment((input, check) =>
+        Effect.gen(function* () {
+          yield* administrator;
+          const context = yield* Effect.context<Effect.Services<typeof check>>();
+          const authorize = check.pipe(
+            Effect.provide(context),
+            Effect.asVoid,
+            Effect.mapError(() => new VaultError({ reason: "denied" })),
+          );
+          return yield* onHost(
+            Effect.flatMap(VaultSsh.VaultSsh, (service) => service.probe(input, authorize)),
+          );
+        }),
+      ),
       loom_vault_ssh_info: McpToolAccess.reads((input) =>
         Effect.gen(function* () {
           const caller = yield* McpInvocationContext;

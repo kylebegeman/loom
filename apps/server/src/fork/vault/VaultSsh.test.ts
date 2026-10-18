@@ -259,6 +259,15 @@ it.effect(
           Effect.flip,
         );
       expect(trust._tag).toBe("VaultError");
+      const probe = yield* toolkit
+        .handle("loom_vault_ssh_probe", { id: f.itemId, expectedVersion: 1 })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provide(f.context),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.flip,
+        );
+      expect(probe._tag).toBe("VaultError");
       expect(
         (yield* invoke({
           ...scope,
@@ -471,4 +480,97 @@ it.effect(
       expect((yield* Fiber.join(next)).stdout).toBe("ok");
       for (const fiber of fibers.slice(1)) yield* Fiber.join(fiber);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
+  "runs only a fixed administrator probe, returns safe evidence and rejects stale or untrusted keys",
+  () =>
+    Effect.gen(function* () {
+      let observed: readonly string[] = [];
+      const f = yield* sshFixture(
+        Layer.succeed(SshTransport.SshTransport, {
+          execute: (input) =>
+            input.authorize.pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  observed = input.command.argv;
+                }),
+              ),
+              Effect.as({ exitCode: 0, stdout: "remote output stays private" }),
+            ),
+        }),
+      );
+      const host = yield* f.sshKeys.create,
+        key = yield* f.ssh.generate(
+          {
+            id: f.itemId,
+            operationId: yield* f.id,
+            label: "SSH",
+            target: {
+              hostname: "example.test",
+              username: "git",
+              port: 22,
+              hostKey: host.publicKey,
+            },
+          },
+          "admin",
+          Effect.void,
+        );
+      const input = { id: f.itemId, expectedVersion: 1 };
+      expect(
+        (yield* f.ssh
+          .probe(input, Effect.fail(new VaultError({ reason: "denied" })))
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      const result = yield* f.ssh.probe(input, Effect.void);
+      expect(observed).toEqual(["/usr/bin/true"]);
+      expect(result).toMatchObject({
+        id: f.itemId,
+        version: 1,
+        destination: key.destination,
+        authenticated: true,
+      });
+      expect(result).not.toHaveProperty("stdout");
+      yield* f.ssh.trust(
+        { id: f.itemId, operationId: yield* f.id, expectedVersion: 1, hostKey: null },
+        "admin",
+        Effect.void,
+      );
+      expect((yield* f.ssh.probe(input, Effect.void).pipe(Effect.flip)).reason).toBe("conflict");
+      expect(
+        (yield* f.ssh.probe({ ...input, expectedVersion: 2 }, Effect.void).pipe(Effect.flip))
+          .reason,
+      ).toBe("untrusted-host");
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+it.effect("rechecks administrator authorization at the transport boundary before probing", () =>
+  Effect.gen(function* () {
+    let allowed = true;
+    const f = yield* sshFixture(
+      Layer.succeed(SshTransport.SshTransport, {
+        execute: (input) =>
+          Effect.sync(() => {
+            allowed = false;
+          }).pipe(Effect.andThen(input.authorize), Effect.as({ exitCode: 0, stdout: "" })),
+      }),
+    );
+    const host = yield* f.sshKeys.create;
+    yield* f.ssh.generate(
+      {
+        id: f.itemId,
+        operationId: yield* f.id,
+        label: "SSH",
+        target: { hostname: "example.test", username: "git", port: 22, hostKey: host.publicKey },
+      },
+      "admin",
+      Effect.void,
+    );
+    const authorize = Effect.suspend(() =>
+      allowed ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+    );
+    expect(
+      (yield* f.ssh.probe({ id: f.itemId, expectedVersion: 1 }, authorize).pipe(Effect.flip))
+        .reason,
+    ).toBe("denied");
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

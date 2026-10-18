@@ -5,6 +5,8 @@ import {
   VaultSshTarget,
   VaultSshPublicKey,
   VaultSshGenerate,
+  VaultSshProbe,
+  type VaultSshProbeResult,
   VaultSshTrust,
   VaultSshExecute,
   type VaultSshInfo,
@@ -13,6 +15,7 @@ import {
   vaultSshDestination,
   vaultSshCommandMessage,
 } from "@t3tools/contracts/fork";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -41,6 +44,10 @@ export class VaultSsh extends Context.Service<
       actor: string,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultSshInfo, Failure>;
+    readonly probe: (
+      input: VaultSshProbe,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultSshProbeResult, Failure>;
     readonly execute: (input: VaultSshExecute) => Effect.Effect<VaultSshResult, Failure>;
   }
 >()("t3/fork/vault/VaultSsh") {}
@@ -56,7 +63,8 @@ const decodeKey = Schema.decodeEffect(Schema.fromJsonString(StoredKey));
 const encodeKey = Schema.encodeEffect(Schema.fromJsonString(StoredKey));
 const isGenerate = Schema.is(VaultSshGenerate),
   isTrust = Schema.is(VaultSshTrust),
-  isExecute = Schema.is(VaultSshExecute);
+  isExecute = Schema.is(VaultSshExecute),
+  isProbe = Schema.is(VaultSshProbe);
 const invalid = () => new VaultSshError({ reason: "invalid-key" });
 const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore,
@@ -87,7 +95,54 @@ const make = Effect.gen(function* () {
       destination: vaultSshDestination(record.key.target),
     };
   });
+  const run = (input: Parameters<SshTransport.SshTransport["Service"]["execute"]>[0]) =>
+    Effect.acquireUseRelease(
+      Ref.modify(active, (count) =>
+        count < 4 ? ([true, count + 1] as const) : ([false, count] as const),
+      ).pipe(
+        Effect.flatMap((ok) =>
+          ok ? Effect.void : Effect.fail(new VaultSshError({ reason: "capacity" })),
+        ),
+      ),
+      () => transport.execute(input),
+      () => Ref.update(active, (count) => count - 1),
+    );
   return VaultSsh.of({
+    probe: Effect.fn("VaultSsh.probe")(function* (input, authorize) {
+      if (!isProbe(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      yield* authorize;
+      const record = yield* load(input.id);
+      if (record.item.state !== "active" || record.item.version !== input.expectedVersion)
+        return yield* new VaultError({ reason: "conflict" });
+      const revalidate = Effect.gen(function* () {
+        yield* authorize;
+        const current = yield* core.inspect(input.id);
+        if (!current || current.state !== "active" || current.version !== input.expectedVersion)
+          return yield* new VaultError({ reason: "conflict" });
+      });
+      yield* revalidate;
+      if (!record.key.target.hostKey) return yield* new VaultSshError({ reason: "untrusted-host" });
+      const result = yield* run({
+        ...record.key,
+        command: {
+          expectedVersion: input.expectedVersion,
+          argv: ["/usr/bin/true"],
+          timeoutMs: 8000,
+        },
+        authorize: revalidate,
+      });
+      if (result.exitCode !== 0) return yield* new VaultSshError({ reason: "failed" });
+      yield* revalidate;
+      return {
+        id: record.item.id,
+        version: record.item.version,
+        destination: vaultSshDestination(record.key.target),
+        fingerprint: yield* keys.fingerprint(record.key.publicKey),
+        hostFingerprint: yield* keys.fingerprint(record.key.target.hostKey),
+        checkedAt: yield* Clock.currentTimeMillis,
+        authenticated: true as const,
+      };
+    }),
     info: Effect.fn("VaultSsh.info")(function* (id) {
       return yield* info(yield* load(id));
     }),
@@ -196,24 +251,13 @@ const make = Effect.gen(function* () {
         )
           return yield* new VaultError({ reason: "conflict" });
       });
-      const result = yield* Effect.acquireUseRelease(
-        Ref.modify(active, (count) =>
-          count < 4 ? ([true, count + 1] as const) : ([false, count] as const),
-        ).pipe(
-          Effect.flatMap((ok) =>
-            ok ? Effect.void : Effect.fail(new VaultSshError({ reason: "capacity" })),
-          ),
-        ),
-        () =>
-          transport.execute({
-            target: record.key.target,
-            publicKey: record.key.publicKey,
-            privateKey: record.key.privateKey,
-            command: input.command,
-            authorize,
-          }),
-        () => Ref.update(active, (count) => count - 1),
-      );
+      const result = yield* run({
+        target: record.key.target,
+        publicKey: record.key.publicKey,
+        privateKey: record.key.privateKey,
+        command: input.command,
+        authorize,
+      });
       return { sessionId: session.id, requestId: input.proof.challenge.requestId, ...result };
     }),
   });

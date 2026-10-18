@@ -1,3 +1,4 @@
+import { VaultSshSheet } from "./SshSheet";
 import { VaultBrokerSettingsSection } from "./BrokerSettingsSection";
 import { VaultAccessSettingsSection, VaultAccessCheckSheet } from "./AccessSettingsSection";
 import { useState } from "react";
@@ -74,6 +75,9 @@ function VaultItems({
   environmentId: EnvironmentId;
   connected: boolean;
 }) {
+  const config = useEnvironmentServerConfig(environmentId);
+  const sshEnabled = supportsLoomFeature(config?.environment.capabilities, "vault-ssh-management");
+  const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const status = useEnvironmentQuery(connected ? vault.status({ environmentId, input: {} }) : null);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [cursors, setCursors] = useState<ReadonlyArray<string | null>>([null]);
@@ -178,6 +182,13 @@ function VaultItems({
       )}
       <View className="flex-row flex-wrap gap-2">
         <Button label="Refresh" disabled={!connected || busy} onPress={refresh} />
+        {sshEnabled ? (
+          <Button
+            label="Create SSH key"
+            disabled={!connected || !canSave || busy || status.data?.state !== "ready"}
+            onPress={() => setSshItem(null)}
+          />
+        ) : null}
         <Button
           label="Add item"
           tone="primary"
@@ -220,6 +231,16 @@ function VaultItems({
                     setCheckingItem(item.id);
                   }}
                 />
+                {sshEnabled && item.kind === "ssh-key" ? (
+                  <Button
+                    label="Manage SSH key"
+                    disabled={!connected || busy}
+                    onPress={() => {
+                      setRevealed(null);
+                      setSshItem(item.id);
+                    }}
+                  />
+                ) : null}
                 <Button
                   label={
                     item.kind === "secure-file"
@@ -282,6 +303,15 @@ function VaultItems({
           environmentId={environmentId}
           itemId={checkingItem}
           onClose={() => setCheckingItem(null)}
+        />
+      ) : null}
+      {sshItem !== undefined ? (
+        <VaultSshSheet
+          key={`${environmentId}:${sshItem ?? "new"}`}
+          environmentId={environmentId}
+          itemId={sshItem}
+          connected={connected}
+          onClose={() => setSshItem(undefined)}
         />
       ) : null}
       {editing !== null ? (

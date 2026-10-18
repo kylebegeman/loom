@@ -5,6 +5,7 @@ import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
   "ssh-generate": "loom_vault_ssh_generate",
+  "ssh-probe": "loom_vault_ssh_probe",
   "ssh-info": "loom_vault_ssh_info",
   "ssh-trust": "loom_vault_ssh_trust",
   "workload-open": "loom_vault_workload_open",
