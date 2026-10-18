@@ -117,16 +117,29 @@ export class LibraryStore extends Context.Service<
       journalId: string,
       sequence: number,
       digest: string,
-      payload: string,
     ) => Effect.Effect<void, LibraryStoreError>;
+    /** Versions record a digest. Ones saved by earlier releases still return their archive. */
     readonly threadVersion: (
       id: string,
       sourceSequence: number,
-    ) => Effect.Effect<string | null, LibraryStoreError>;
+    ) => Effect.Effect<
+      { readonly digest: string } | { readonly payload: string } | null,
+      LibraryStoreError
+    >;
+    readonly threadVersionHoldsArchive: (
+      id: string,
+      sourceSequence: number,
+    ) => Effect.Effect<boolean, LibraryStoreError>;
     readonly putThreadVersion: (
       id: string,
       sourceSequence: number,
-      payload: string,
+      digest: string,
+    ) => Effect.Effect<void, LibraryStoreError>;
+    /** Replaces an earlier release's retained version archive with its digest and frees the archive. */
+    readonly compactThreadVersion: (
+      id: string,
+      sourceSequence: number,
+      digest: string,
     ) => Effect.Effect<void, LibraryStoreError>;
     readonly importProof: (requestId: string) => Effect.Effect<string | null, LibraryStoreError>;
     readonly putImportProof: (
@@ -159,6 +172,7 @@ export class LibraryStore extends Context.Service<
 const compress = NodeUtil.promisify(NodeZlib.gzip);
 const decompress = NodeUtil.promisify(NodeZlib.gunzip);
 const BLOB_PREFIX = "loom:gzip:";
+const VERSION_DIGEST_PREFIX = "loom:sha256:";
 const HISTORY_PAGE_BYTES = 2 * 1024 * 1024;
 const ArchiveJson = Schema.fromJsonString(
   Schema.Struct({
@@ -205,6 +219,14 @@ const make = Effect.gen(function* () {
     }
     return BLOB_PREFIX + digest;
   });
+  // Blob content embeds its conversation's Library id, so only that conversation's versions can
+  // share an archive with it. Ingested entries no longer reference archives.
+  const release = (payload: string, libraryId: string) =>
+    payload.startsWith(BLOB_PREFIX)
+      ? sql`DELETE FROM fork_library_history_blobs WHERE digest=${payload.slice(BLOB_PREFIX.length)} AND NOT EXISTS (SELECT 1 FROM fork_library_threads WHERE payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_thread_versions WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_import_proofs WHERE payload_json=${payload})`.pipe(
+          Effect.asVoid,
+        )
+      : Effect.void;
   const unpack = Effect.fnUntraced(function* (payload: string | null) {
     if (payload === null || !payload.startsWith(BLOB_PREFIX)) return payload;
     const digest = payload.slice(BLOB_PREFIX.length);
@@ -421,10 +443,16 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const packed = yield* pack(input.payload);
           yield* indexHistory(input.id, input.payload);
-          return yield* run(
+          const previous = first(
+            yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_threads WHERE source_environment_id = ${input.environmentId} AND source_thread_id = ${input.threadId}`,
+          )?.payload_json;
+          yield* run(
             "put-thread",
             sql`INSERT INTO fork_library_threads (library_id, source_environment_id, source_thread_id, project_id, working_copy_id, source_sequence, summary_json, payload_json, updated_at) VALUES (${input.id}, ${input.environmentId}, ${input.threadId}, ${input.projectId}, ${input.workingCopyId}, ${input.sourceSequence}, ${input.summary}, ${packed}, ${input.updatedAt}) ON CONFLICT(source_environment_id, source_thread_id) DO UPDATE SET working_copy_id = excluded.working_copy_id, source_sequence = excluded.source_sequence, summary_json = excluded.summary_json, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
-          ).pipe(Effect.asVoid);
+          );
+          if (previous !== undefined && previous !== packed) yield* release(previous, input.id);
         }),
       ),
     cursor: (environmentId, journalId) =>
@@ -446,17 +474,12 @@ const make = Effect.gen(function* () {
           payload_digest: string;
         }>`SELECT payload_digest FROM fork_library_ingested_entries WHERE environment_id = ${environmentId} AND journal_id = ${journalId} AND sequence = ${sequence}`,
       ).pipe(Effect.map((rows) => first(rows)?.payload_digest ?? null)),
-    putIngestedDigest: (environmentId, journalId, sequence, digest, payload) =>
+    // Replays are checked against the digest alone, so the archive is never kept for them.
+    putIngestedDigest: (environmentId, journalId, sequence, digest) =>
       run(
-        "save-history",
-        Effect.gen(function* () {
-          const packed = yield* pack(payload);
-          return yield* run(
-            "put-ingested-digest",
-            sql`INSERT INTO fork_library_ingested_entries (environment_id, journal_id, sequence, payload_digest, payload_json) VALUES (${environmentId}, ${journalId}, ${sequence}, ${digest}, ${packed})`,
-          ).pipe(Effect.asVoid);
-        }),
-      ),
+        "put-ingested-digest",
+        sql`INSERT INTO fork_library_ingested_entries (environment_id, journal_id, sequence, payload_digest, payload_json) VALUES (${environmentId}, ${journalId}, ${sequence}, ${digest}, '')`,
+      ).pipe(Effect.asVoid),
     threadVersion: (id, sourceSequence) =>
       run(
         "thread-version",
@@ -464,17 +487,40 @@ const make = Effect.gen(function* () {
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
       ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
+        Effect.flatMap(
+          Effect.fnUntraced(function* (rows) {
+            const saved = first(rows)?.payload_json;
+            if (saved === undefined) return null;
+            if (saved.startsWith(VERSION_DIGEST_PREFIX))
+              return { digest: saved.slice(VERSION_DIGEST_PREFIX.length) };
+            return { payload: (yield* run("unpack-history", unpack(saved))) ?? saved };
+          }),
+        ),
       ),
-    putThreadVersion: (id, sourceSequence, payload) =>
+    threadVersionHoldsArchive: (id, sourceSequence) =>
       run(
-        "save-history",
+        "thread-version",
+        sql<{
+          held: number;
+        }>`SELECT substr(payload_json, 1, ${VERSION_DIGEST_PREFIX.length}) <> ${VERSION_DIGEST_PREFIX} AS held FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
+      ).pipe(Effect.map((rows) => first(rows)?.held === 1)),
+    putThreadVersion: (id, sourceSequence, digest) =>
+      run(
+        "put-thread-version",
+        sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${id}, ${sourceSequence}, ${VERSION_DIGEST_PREFIX + digest})`,
+      ).pipe(Effect.asVoid),
+    compactThreadVersion: (id, sourceSequence, digest) =>
+      run(
+        "compact-thread-version",
         Effect.gen(function* () {
-          const packed = yield* pack(payload);
-          return yield* run(
-            "put-thread-version",
-            sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${id}, ${sourceSequence}, ${packed})`,
-          ).pipe(Effect.asVoid);
+          const saved = first(
+            yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
+          )?.payload_json;
+          if (saved === undefined || saved.startsWith(VERSION_DIGEST_PREFIX)) return;
+          yield* sql`UPDATE fork_library_thread_versions SET payload_json = ${VERSION_DIGEST_PREFIX + digest} WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`;
+          yield* release(saved, id);
         }),
       ),
     importProof: (requestId) =>

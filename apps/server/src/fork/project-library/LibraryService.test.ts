@@ -172,11 +172,11 @@ describe("independent Library catalog and durable history", () => {
           expect(older.projection.messages.map((m) => m.id)).toEqual(["large-0", "large-1"]);
           expect(older.window?.hasMore).toBe(false);
           const sql = yield* SqlClient.SqlClient;
-          const rows = yield* sql<{
-            payload_json: string;
-          }>`SELECT payload_json FROM fork_library_threads UNION ALL SELECT payload_json FROM fork_library_thread_versions`;
-          expect(rows.every((row) => row.payload_json.startsWith("loom:gzip:"))).toBe(true);
-          expect(new Set(rows.map((row) => row.payload_json)).size).toBe(1);
+          expect(
+            (yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_threads`)[0]!.payload_json,
+          ).toMatch(/^loom:gzip:/);
           const stats = (yield* sql<{
             count: number;
             bytes: number;
@@ -817,6 +817,98 @@ describe("independent Library catalog and durable history", () => {
             .pipe(Effect.flip)).reason,
         ).toBe("sequence-conflict");
         expect((yield* service.threads({ projectId: project.id }))[0]?.sequence).toBe(2);
+      }),
+    ),
+  );
+  it.effect("keeps one compressed archive per conversation as its history advances", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const first = yield* archiveFor(project, 1);
+        const edit = (sequence: number, text: string) => ({
+          ...first,
+          summary: { ...first.summary, sequence },
+          projection: {
+            ...first.projection,
+            messages: [{ ...first.projection.messages[0]!, text }],
+          },
+        });
+        const second = edit(2, "Second turn");
+        const ingest = (
+          requestId: string,
+          fromSequence: number,
+          entries: ReadonlyArray<typeof first>,
+        ) =>
+          service.ingestHistory({
+            requestId,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence,
+            entries: entries.map((thread, index) => ({
+              sequence: fromSequence + index + 1,
+              thread,
+            })),
+          });
+        yield* ingest("first", 0, [first]);
+        yield* ingest("second", 1, [second]);
+        expect((yield* ingest("replay", 1, [second])).applied).toBe(0);
+        yield* service.registerThread({ requestId: "same-again", thread: second });
+        const sql = yield* SqlClient.SqlClient;
+        expect(yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`).toEqual([
+          { count: 1 },
+        ]);
+        expect(
+          yield* sql`SELECT payload_json FROM fork_library_ingested_entries ORDER BY sequence`,
+        ).toEqual([{ payload_json: "" }, { payload_json: "" }]);
+        const versions = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM fork_library_thread_versions ORDER BY source_sequence`;
+        expect(versions).toHaveLength(2);
+        expect(versions.every((row) => row.payload_json.startsWith("loom:sha256:"))).toBe(true);
+        expect(
+          (yield* service.history({ id: first.summary.id })).projection.messages[0]!.text,
+        ).toBe("Second turn");
+        expect(
+          (yield* service
+            .registerThread({ requestId: "rewritten", thread: edit(2, "Rewritten") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+      }),
+    ),
+  );
+  it.effect("frees archives kept by versions saved before versions held only digests", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const first = yield* archiveFor(project, 1);
+        yield* service.registerThread({ requestId: "first", thread: first });
+        const sql = yield* SqlClient.SqlClient;
+        // Earlier releases pointed each version at the same compressed archive as its conversation.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+        const rewritten = {
+          ...first,
+          projection: { ...first.projection, messages: [] },
+        };
+        expect(
+          (yield* service
+            .registerThread({ requestId: "rewritten", thread: rewritten })
+            .pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+        yield* service.registerThread({ requestId: "same-again", thread: first });
+        yield* service.registerThread({
+          requestId: "second",
+          thread: { ...first, summary: { ...first.summary, sequence: 2 } },
+        });
+        expect(yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`).toEqual([
+          { count: 1 },
+        ]);
+        const versions = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM fork_library_thread_versions ORDER BY source_sequence`;
+        expect(versions.every((row) => row.payload_json.startsWith("loom:sha256:"))).toBe(true);
+        expect((yield* service.history({ id: first.summary.id })).summary.sequence).toBe(2);
       }),
     ),
   );

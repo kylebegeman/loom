@@ -183,6 +183,8 @@ const codecs = {
   ),
 };
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+// The Library rewrites syncedAt on every save, so versions compare archives without it.
+const VERSION_SYNCED_AT = "1970-01-01T00:00:00.000Z";
 const isLibraryError = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause });
@@ -237,6 +239,20 @@ const make = Effect.gen(function* () {
         )
         .pipe(Effect.mapError(io)),
     );
+  });
+  const versionDigest = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
+    return yield* digest(
+      yield* encode(codecs.archive, {
+        ...archive,
+        summary: { ...archive.summary, syncedAt: VERSION_SYNCED_AT },
+      }),
+    );
+  });
+  const savedVersionDigest = Effect.fnUntraced(function* (id: string, sequence: number) {
+    const saved = yield* store.threadVersion(id, sequence);
+    if (saved === null) return null;
+    if ("digest" in saved) return saved.digest;
+    return yield* versionDigest(yield* decode(codecs.archive, saved.payload));
   });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
     store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);
@@ -417,19 +433,23 @@ const make = Effect.gen(function* () {
       )
         return old;
     }
-    const version = yield* store.threadVersion(summary.id, summary.sequence);
-    if (version !== null) {
-      const saved = yield* decode(codecs.archive, version);
-      if (
-        (yield* digest(
-          yield* encode(codecs.archive, {
-            ...saved,
-            summary: { ...saved.summary, syncedAt: summary.syncedAt },
-          }),
-        )) !== (yield* digest(yield* encode(codecs.archive, archive)))
-      )
-        return yield* new LibraryError({ reason: "sequence-conflict" });
-    }
+    const fingerprint = yield* versionDigest(archive);
+    const version = yield* savedVersionDigest(summary.id, summary.sequence);
+    if (version !== null && version !== fingerprint)
+      return yield* new LibraryError({ reason: "sequence-conflict" });
+    // A replay at the current sequence is saved only when it matches that version apart from
+    // syncedAt, so the current archive digests the same as the version it supersedes. Compacting
+    // first lets putThread free the archive the two shared in releases before digest versions.
+    if (
+      old &&
+      old.summary.sequence < summary.sequence &&
+      (yield* store.threadVersionHoldsArchive(summary.id, old.summary.sequence))
+    )
+      yield* store.compactThreadVersion(
+        summary.id,
+        old.summary.sequence,
+        yield* versionDigest(old),
+      );
     const normalized = { ...archive, summary: { ...summary, syncedAt: yield* now } };
     yield* store.putThread({
       id: summary.id,
@@ -443,12 +463,7 @@ const make = Effect.gen(function* () {
       updatedAt: summary.updatedAt,
     });
     yield* historySearch.index(summary.id);
-    if (version === null)
-      yield* store.putThreadVersion(
-        summary.id,
-        summary.sequence,
-        yield* encode(codecs.archive, normalized),
-      );
+    if (version === null) yield* store.putThreadVersion(summary.id, summary.sequence, fingerprint);
     yield* LibraryTimeline.recordTimeline(
       store,
       LibraryTimeline.threadTimeline(
@@ -711,8 +726,7 @@ const make = Effect.gen(function* () {
         for (const [index, entry] of input.entries.entries()) {
           if (entry.sequence !== input.fromSequence + index + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          const payload = yield* encode(codecs.archive, entry.thread);
-          const fingerprint = yield* digest(payload);
+          const fingerprint = yield* digest(yield* encode(codecs.archive, entry.thread));
           if (entry.sequence <= cursor) {
             if (
               (yield* store.ingestedDigest(
@@ -732,7 +746,6 @@ const make = Effect.gen(function* () {
             input.journalId,
             entry.sequence,
             fingerprint,
-            payload,
           );
           cursor = entry.sequence;
           applied++;
@@ -793,20 +806,11 @@ const make = Effect.gen(function* () {
     }
     const attachments = new Map<string, { id: string; bytes: number }>();
     for (const thread of input.threads) {
-      const saved = yield* store.threadVersion(thread.summary.id, thread.summary.sequence);
-      if (saved === null) logicalRecordsVerified = false;
-      else {
-        const archive = yield* decode(codecs.archive, saved);
-        const normalized = {
-          ...archive,
-          summary: { ...archive.summary, syncedAt: thread.summary.syncedAt },
-        };
-        if (
-          (yield* digest(yield* encode(codecs.archive, normalized))) !==
-          (yield* digest(yield* encode(codecs.archive, thread)))
-        )
-          logicalRecordsVerified = false;
-      }
+      if (
+        (yield* savedVersionDigest(thread.summary.id, thread.summary.sequence)) !==
+        (yield* versionDigest(thread))
+      )
+        logicalRecordsVerified = false;
       const current = yield* store.thread(input.sourceEnvironmentId, thread.summary.threadId);
       if (
         current === null ||
