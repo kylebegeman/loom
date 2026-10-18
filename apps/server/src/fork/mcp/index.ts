@@ -1,3 +1,4 @@
+import { VaultCoreToolkit, vaultCoreHandlers } from "../vault/mcp.ts";
 import { SitesToolkit, sitesHandlers } from "../sites/mcp.ts";
 import { ProjectLibraryToolkit, projectLibraryHandlers } from "../project-library/mcp.ts";
 import { ProjectCheckoutToolkit, projectCheckoutHandlers } from "../project-checkout/mcp.ts";
@@ -14,6 +15,12 @@ import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: VaultCoreToolkit,
+    handlers: vaultCoreHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultCoreToolkit, vaultCoreHandlers),
+  },
   {
     toolkit: SitesToolkit,
     handlers: sitesHandlers,

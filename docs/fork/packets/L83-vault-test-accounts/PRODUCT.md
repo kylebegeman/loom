@@ -49,7 +49,7 @@ Uses account records, grants and delivery interfaces. Provisioning and mail adap
 
 ## Decisions and open questions
 
-Confirmed: this complete idea is selected for documentation. The personal/development Vault
+Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
@@ -57,5 +57,4 @@ subject to design review; the following choices are not resolved by selection:
 - Which owned test-mail domain and mail service should be used, and what cleanup rules apply?
 - How should shared accounts differ from exclusive reservations, and which sessions may be reused?
 
-Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) before moving
-this packet into the implement-now queue. Do not silently reduce the selected scope.
+Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

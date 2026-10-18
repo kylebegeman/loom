@@ -1,51 +1,72 @@
 # L78 technical design
 
-Design draft against `2f385ee835`. No wire schema, database migration or backend is approved.
-Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
-permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+Kyle selected OpenBao, not Loom-native cryptography. The active encrypted-record interface is
+specified in [ext-vault](../EXTENSION-POINTS.md#loom-vault-foundation-ext-vault). The complete
+control-plane target remains in [the foundation](../LOOM-VAULT-FOUNDATION.md).
 
-## Overview
+## Implemented data and concurrency boundaries
 
-Provide authenticated metadata and encrypted versioned payload storage behind a backend adapter. Host the authority alongside the begam.in/Loom platform on the VPS if that deployment is selected. Separate human platform identity, machine enrollment, storage-key custody and workload grants.
+The server derives a namespace from SHA-256 of its persisted environment ID. Callers cannot
+choose another environment's backend path. Each item is one KV v2 record containing versioned
+payload, metadata and the most recent mutation receipt. CAS writes commit them atomically;
+expectedVersion 0 creates and positive versions replace. Stable operation IDs and request/actor
+fingerprints make retries idempotent. Reusing an ID for different input conflicts. A subsequent
+mutation supersedes the previous receipt; this is not yet a permanent operation/audit ledger.
 
-## Contracts and authorization
+Renaming can omit value. Kind changes require explicit value replacement. Archive retains the
+value and forbids replacement until restored. Delete writes a tombstone and clears the current
+value; encrypted prior versions remain until backend retention destroys them. Deletion does
+not claim provider-side revocation or secure erasure of backups.
 
-Propose `loom.vault-core.*` metadata and management methods plus private value ingress. Keep backend service APIs versioned independently of Loom RPC. Separate inspect, manage and use rights. Human reveal/export is a distinct sensitive action, never a normal list or agent response.
+Values are redacted internally and encoded only across the protected transport/backend
+boundary. Secret-bearing OpenBao writes use streaming request bodies whose inspection does not
+show payloads. Errors normalize backend failures without echoing response bodies. Metadata
+pages read at most 25 records, with concurrency 4; key enumeration is capped at 4096 entries.
+Values are capped at 1 MiB; client file import is capped at 512 KiB before base64 encoding.
 
-Use packet-owned `loom.vault-core.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
-unavailable and operation-failed outcomes as appropriate, including environment authorization
-errors. Register protected methods in the fork permission map and use environment RPC commands.
-Metadata visibility, item management and credential use are distinct rights.
+## Authorization and private ingress
 
-## Server and storage
+Authenticated environment access:read permits status/list. Access:write permits save, lifecycle
+changes and explicit human reveal. Web/mobile commands use the shared permission boundary;
+server RPC authorization remains authoritative. This initial management model is coarser than
+the complete inspect/manage/use/reveal/export grant model selected in L80.
 
-Implement services in fork-owned paths and keep HTTP/RPC/MCP handlers thin. All credential
-access goes through the shared backend/broker adapter; the feature never reads a personal
-password manager as a fallback.
+MCP status is safe metadata. Item listing, storage and lifecycle changes currently require the
+existing full-access/default environment-caller ceiling. Private storage additionally requires
+an authenticated T3 thread. `VaultPrivateInput` obtains the thread's project from ThreadManagement,
+checks current permission, checks for a committed receipt, then transfers the private source.
+The transfer claim hashes request, backend origin/mount and server environment, preventing a
+retry from silently delivering to another destination. Permission is checked again immediately
+before persistence. There is no raw-value MCP tool or CLI reveal command.
 
-Choose the backend and key-custody model at D1/D2 before schemas. Use a maintained encrypted engine or vetted primitives through supported libraries, authenticated encryption and explicit key versions. Define sensitive metadata treatment, size limits, immutable payload versions and deletion/retention semantics.
+`SecretRequests.transfer` durably claims a ref before calling an idempotent destination. Failure
+retains the source only for that operation; cleanup failure retains the claim. A matching Vault
+receipt returns the committed result even after source consumption or a lost response. Existing
+SecretRequests storage is owner-only plaintext, and this work does not convert upstream auth
+storage into an encrypted vault.
 
-## Clients and agent-facing tools
+## Connection and custody
 
-Place shared client state in client-runtime and surface it through web, desktop and mobile.
-Gate on advertised Vault capability/version; disable unsupported operations without disabling
-ordinary T3 behavior. Agent tools use `loom_vault_core_*` names if exposed and
-return safe summaries or operation handles. An agent cannot approve its own access, export raw
-values by default or widen the caller's existing T3 permissions.
+The operator configures an OpenBao origin, a private token file and KV v2 mount. Tokens are
+re-read on each request, enabling file rotation. Origins must be HTTPS, except loopback HTTP for
+isolated tests. Redirects, URL credentials, paths, queries and fragments are rejected. Requests
+and bodies have timeouts; response size is bounded. Status distinguishes unconfigured,
+misconfigured, ready, locked, denied and unavailable. It checks health plus KV v2 configuration,
+not the token's ability to perform every later item operation.
 
-## Performance and failure handling
+The service token is not the encryption key. OpenBao owns encryption and unseal; the isolated
+proof uses Raft on OpenBao 2.7.1, MPL 2.0. Production unseal/recovery custody, platform owner
+mapping and service identity provisioning remain decisions. New remote use is online-only;
+there is no offline decrypted cache. Same-user full-access agents may read local service
+credentials or memory, so this design does not claim OS-level agent isolation.
 
-Use bounded pages and operation-scoped updates. Never subscribe to secret payloads, poll every
-item continuously or repaint an idle UI. Reconnect by operation ID and persisted revision;
-mutation retries use stable idempotency keys. External effects run after durable acceptance and
-reconcile partial completion. Evidence tests await receipts or Deferreds, not sleeps.
+## Integration and remaining work
 
-## Alternatives and integration review
+Shared Effect services live under `apps/server/src/fork/vault/`, registered once through
+ForkLayer/ForkRuntime. RPC/MCP/CLI adapters are thin. Client-runtime commands serve web/desktop
+and native mobile; capability checks hide controls on unsupported servers. No provider launcher,
+SSH agent, live platform API or personal credential source is modified.
 
-Reuse fork RPC, HTTP and service registries. Review ServerSecretStore/settingsSecrets only for explicit adapter or migration boundaries; do not silently replace upstream auth storage or relocate provider sessions.
-
-Prefer existing registries over new upstream seams. A direct provider-specific secret path
-would duplicate policy and is not the recommended design. Where the shared interface is absent,
-report unavailable or implement the approved minimal extension independently; do not import
-another packet's UI/service internals.
+The existing begam.in platform and Helios were inspected read-only. Their identity/deployment
+contracts remain the integration direction; no separate parallel login or deployment stack is
+introduced. Backend service tokens must not become the permanent Loom account model.

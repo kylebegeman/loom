@@ -49,12 +49,11 @@ Implements ext-vault delivery adapters and workload launch integration. Uses sto
 
 ## Decisions and open questions
 
-Confirmed: this complete idea is selected for documentation. The personal/development Vault
+Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
 - Which delivery modes must the initial SDK support, and which tools require unavoidable raw-value delivery?
 - How are externally launched CLI processes authenticated without treating a project path as identity?
 
-Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) before moving
-this packet into the implement-now queue. Do not silently reduce the selected scope.
+Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

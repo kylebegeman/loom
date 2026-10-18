@@ -92,6 +92,17 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`      | Persist and reopen fork documents; retire archived inspector history.                                       |
 | `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header` | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
 
+### Vault seams
+
+| File                                             | Marker      | Why                                                                          |
+| ------------------------------------------------ | ----------- | ---------------------------------------------------------------------------- |
+| `apps/server/src/secrets/SecretRequests.ts`      | `ext-vault` | Bind private input transfers durably to an idempotent destination operation. |
+| `apps/server/src/secrets/SecretRequests.test.ts` | `ext-vault` | Cover private transfer retries and cleanup failures.                         |
+
+L78's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L78-vault-core/),
+[user help](docs/fork/user/vault.md) and [operating guide](docs/fork/operations/vault.md).
+No live deployment or personal credential migration is part of the foundation milestone.
+
 ### Dependencies added by packets
 
 L23 adds `three` and `@types/three` 0.186.0 to `apps/web`, approved by Kyle on

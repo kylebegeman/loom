@@ -3,8 +3,8 @@
 ## Extension points
 
 Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); it has no implementation commit and
-must be approved and reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
+future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
 
 ## Packet integration review
 

@@ -49,12 +49,11 @@ Uses shared storage, grants and delivery interfaces. Starts with GitHub; other c
 
 ## Decisions and open questions
 
-Confirmed: this complete idea is selected for documentation. The personal/development Vault
+Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
 - D8: Which GitHub identity mechanism best fits Kyle's repositories and service-account ownership?
 - Which additional services are initial commitments versus later connector implementations?
 
-Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) before moving
-this packet into the implement-now queue. Do not silently reduce the selected scope.
+Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

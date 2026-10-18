@@ -49,13 +49,13 @@ Owns the storage/control-plane implementation of proposed ext-vault interfaces. 
 
 ## Decisions and open questions
 
-Confirmed: this complete idea is selected for documentation. The personal/development Vault
+Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- D1: Which backend meets product needs and sustainable self-hosting requirements?
+- D1 resolved: Kyle selected self-hosted OpenBao behind Loom UI/account/broker boundaries.
+  OpenBao 2.7.1 passed the disposable encrypted-storage/restore proof.
 - D2: Who can decrypt stored values, where are wrapping keys kept, and how is unattended unlock recovered?
 - D3: How does the existing platform identify a human Vault owner without assuming unverified production auth contracts?
 
-Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) before moving
-this packet into the implement-now queue. Do not silently reduce the selected scope.
+Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

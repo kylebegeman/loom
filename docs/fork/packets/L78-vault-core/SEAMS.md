@@ -1,21 +1,25 @@
 # L78 seams
 
-## Extension points
+## Shared extension
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); it has no implementation commit and
-must be approved and reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+`ext-vault` provides contracts, backend/domain services, private handoff and client commands.
+It uses existing fork RPC, service, settings, MCP and CLI registries. Those registries are
+fork-owned and require no upstream seams. The extension specification records exact contracts
+and existence checks; packet consumers do not import another packet's UI.
 
-## Packet integration review
+| Upstream file                                                                | Marker       | Purpose                                                                                   |
+| ---------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------- |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`  | Destination-bound idempotent private transfer; existing consume retains one-use behavior. |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`  | Retry, competing-destination and failed-cleanup behavior coverage.                        |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core` | Import and render the fork-owned native settings section.                                 |
 
-Reuse fork RPC, HTTP and service registries. Review ServerSecretStore/settingsSecrets only for explicit adapter or migration boundaries; do not silently replace upstream auth storage or relocate provider sessions.
+The private handoff seam adds an optional claim to existing private-source records; it does not
+migrate their contents or change stored provider sessions. The native settings seam is one
+import and one component expression. FORK.md and docs/fork/seams.tsv track all three files.
+No package dependency, SQL migration, generated route or desktop IPC seam is added.
 
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
+## Merge verification
 
-## Actual seams and merge status
-
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+Run the seam-only manifest validation and a merge-tree preview after committing the milestone.
+No upstream fetch, merge, push or deployment is implied. Current code is additive outside these
+marked seams; results and verification limits belong in TESTING.md.

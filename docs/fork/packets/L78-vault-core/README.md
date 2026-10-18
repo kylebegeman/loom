@@ -1,42 +1,39 @@
 # L78: Encrypted Vault and self-hosted control plane
 
-Status: Designing. Selected for documentation by Kyle on 2026-10-17; not approved to build.
+Status: **In progress**. Kyle authorized the complete packet and selected self-hosted OpenBao
+on 2026-10-17. V07 | Major system | Complexity: Large | Impact: Transformational.
 
-Create the shared home for development credentials and extensible secure records on Kyle's infrastructure.
+## Delivered foundation
 
-V07 | Major system | Complexity: Large | Impact: Transformational
+Versioned encrypted records now use OpenBao KV v2 through the shared `ext-vault` services.
+Web/desktop Loom Settings and native mobile computer settings provide creation, metadata-only
+rename, explicit value replacement/reveal, archive, restore and deletion. Small secure files
+have explicit import/download or share. MCP accepts private secret references and returns only
+safe summaries; the authenticated CLI provides status, metadata listing and lifecycle changes.
 
-## Scope
+A disposable OpenBao 2.7.1 Raft instance passed CAS, encrypted persistence and clean restore.
+Focused tests exercise version conflicts, environment namespaces, private-input retry recovery
+and management permissions. Integrated browser/device verification has not run.
 
-The complete selected outcome is described in [PRODUCT.md](./PRODUCT.md). Shared guarantees,
-backend choices and design gates are in [Loom Vault](../LOOM-VAULT.md) and the
-[proposed foundation](../LOOM-VAULT-FOUNDATION.md). This packet does not authorize deployment,
-credential imports or changes to the personal vault.
+## Remaining complete scope
 
-## Surfaces
+Platform-owned Vault accounts/control plane, production key custody and unattended backend
+unlock, full durable decision audit, richer typed account/connection records, and production
+operating/recovery integration remain unfinished. The current service token connection is a
+development bootstrap, not enrolled-host authentication or per-item workload grants. Dorothy's
+SSH setup and personal 1Password integration have not changed.
 
-Web, desktop, mobile and remote management are required. CLI/MCP availability and any
-OS-specific execution constraints are defined in the product and technical documents.
+All sixteen Vault packets remain selected. See [PRODUCT.md](./PRODUCT.md) for the complete
+outcome and [Loom Vault](../LOOM-VAULT.md) for dependency groups and open decisions. No live
+rollout, personal-vault migration or credential registration is implied by this local work.
 
-## Extension points used
+## Surfaces and boundaries
 
-Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-Proposed `ext-vault` is a design boundary, not an existing extension to copy or deploy.
+Web and desktop share the settings implementation. Mobile embeds the shared commands in the
+selected computer's settings. All operations target that environment over authenticated RPC;
+older/upstream servers have no Vault controls. MCP exposes no raw reveal/export operation.
+Provider execution integrations are selected work in L79/L81/L82/L84, not part of this milestone.
 
-## Dependencies and future opportunities
-
-Owns the storage/control-plane implementation of proposed ext-vault interfaces. All other proposals consume that boundary rather than this packet's UI. Baseline audit, durable writes and a proven backup/restore path are required before real credentials; V16 adds full recovery management.
-
-## Packet seams
-
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
-
-## Documents
-
-- [PRODUCT.md](./PRODUCT.md)
-- [TECHNICAL.md](./TECHNICAL.md)
-- [SEAMS.md](./SEAMS.md)
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md)
-- [TESTING.md](./TESTING.md)
-- [REFERENCES.md](./REFERENCES.md)
+[User help](../../user/vault.md) · [Operating guide](../../operations/vault.md) ·
+[Technical design](./TECHNICAL.md) · [Seams](./SEAMS.md) ·
+[Implementation](./IMPLEMENTATION.md) · [Testing](./TESTING.md) · [References](./REFERENCES.md).

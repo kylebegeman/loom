@@ -49,12 +49,11 @@ Uses foundation import, connector and SSH adapter interfaces when available; mis
 
 ## Decisions and open questions
 
-Confirmed: this complete idea is selected for documentation. The personal/development Vault
+Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
 - Which initial import formats are worth supporting, and how should user-selected imports enter from mobile?
 - Should the default flow always create a new development identity rather than reuse an existing one?
 
-Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) before moving
-this packet into the implement-now queue. Do not silently reduce the selected scope.
+Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

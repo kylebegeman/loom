@@ -1,3 +1,5 @@
+import { VAULT_CORE_WS_METHODS as V } from "@t3tools/contracts/fork";
+import { AuthAccessReadScope, AuthAccessWriteScope } from "@t3tools/contracts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
 import { LIBRARY_HEALTH_WS_METHODS as LH } from "@t3tools/contracts/fork";
@@ -34,6 +36,11 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [V.status]: AuthAccessReadScope,
+  [V.list]: AuthAccessReadScope,
+  [V.save]: AuthAccessWriteScope,
+  [V.change]: AuthAccessWriteScope,
+  [V.reveal]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

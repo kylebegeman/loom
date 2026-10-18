@@ -1,14 +1,13 @@
 # L75 implementation plan
 
-Status: design documentation only. The following is an implementation sequence for later use,
-not permission to begin coding.
+Status: Selected for implementation. The sequence below describes the full packet outcome;
+see README for delivered progress and remaining work.
 
 ## Before starting
 
 Read the packet index, conventions, shared Vault documents and every file in this packet.
 Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Implementation starts only after
-Kyle selects it into [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
+and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
 schema and live infrastructure changes still follow the repository's authorization rules.
 
 ## Steps

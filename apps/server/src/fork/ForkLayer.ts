@@ -1,3 +1,6 @@
+import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
+import * as VaultCore from "./vault/VaultCore.ts";
+import * as OpenBaoStore from "./vault/OpenBaoStore.ts";
 import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
@@ -48,6 +51,10 @@ import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
+const layerVaultCore = VaultCore.layer.pipe(
+  Layer.provide(OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+);
+
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
@@ -66,6 +73,8 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  layerVaultCore,
+  VaultPrivateInput.layer.pipe(Layer.provide(layerVaultCore)),
   SitesService.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),

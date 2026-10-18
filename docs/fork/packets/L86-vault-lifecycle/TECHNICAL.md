@@ -1,6 +1,7 @@
 # L86 technical design
 
-Design draft against `2f385ee835`. No wire schema, database migration or backend is approved.
+Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
+OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 

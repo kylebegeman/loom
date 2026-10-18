@@ -1,9 +1,27 @@
-# Loom Vault shared foundation proposal
+# Loom Vault shared foundation
 
-Status: design proposal. This document specifies cross-packet constraints to review before
-promoting `ext-vault` into an implementable extension point. It does not select a backend,
-create infrastructure or make the sixteen packets ready to build. Product intent and decision
+Status: implementation authorized. OpenBao is selected; the encrypted-record boundary is
+implemented in `ext-vault`. Broker, identity and delivery portions below describe the full
+target and must not be mistaken for implemented guarantees. This work creates no live infrastructure. Product intent and decision
 owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
+
+## Implemented record boundary
+
+`packages/contracts/src/fork/vault-core.ts` and `apps/server/src/fork/vault/` implement
+versioned KV v2 records with per-environment namespaces, safe metadata pages, explicit protected
+human reveal, CAS lifecycle changes and request fingerprints. Private input goes through
+`VaultPrivateInput` and a destination-bound `SecretRequests.transfer`; a committed receipt can
+be returned after its one-use input is consumed. This transfer extends the existing private
+input store, which remains owner-only plaintext until the value reaches OpenBao.
+
+Management uses the existing environment access:read/access:write scopes. Full-access/default
+agent callers can store private inputs and manage item lifecycle; there is no raw-value MCP
+tool. This is not per-item workload authorization. Policy/grants remain L80 work; enrollment, leases, complete audit and broker channels are
+not present.
+The selected control-plane/account integration is not yet deployed or connected.
+
+The exact active extension contract and existence checks are in
+[EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
 
 ## Existing foundation and the actual gap
 
@@ -56,7 +74,7 @@ to the execution environment. Platform UI can be a separate client of the same a
 capabilities and preserve policy/error semantics. It cannot treat a backend token as permission
 to skip Loom's own workload authorization.
 
-## Backend evaluation before D1
+## Backend selection and alternatives
 
 | Option                                              | Why evaluate                                                                           | What the disposable proof must establish                                                                                                                           |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -64,8 +82,9 @@ to skip Loom's own workload authorization.
 | Application-oriented service such as Infisical      | Existing developer-secret workflows may fit accounts/projects and SDK ergonomics.      | Self-hosted feature availability, machine identity, permission semantics, delivery/offline options, recovery, upgrade process and license on the selected release. |
 | Narrow Loom-owned service using supported libraries | Product-specific records and broker semantics may justify a smaller custom API.        | A maintainable key hierarchy, authenticated encryption, recovery, operational ownership and no improvised cryptographic algorithms.                                |
 
-These are candidates, not verified claims about a current release or a recommendation to run
-several engines. Select one after a bounded prototype using synthetic records. Document
+**Decision:** Kyle selected self-hosted OpenBao behind Loom's product surfaces. OpenBao 2.7.1
+(MPL 2.0) passed a disposable Raft/KV v2 proof for CAS, encrypted persistence and clean restore.
+The alternatives above retain the comparison context, not parallel implementation plans. Document
 version/license and operational constraints before adding dependencies. A database choice,
 including PostgreSQL, remains open; no SQL/schema is specified in this design pass.
 
@@ -227,6 +246,6 @@ are test fixtures.
 - [Git credential helper interface](https://git-scm.com/docs/gitcredentials): integration boundary for broker-backed Git access.
 - [GitHub authentication documentation](https://docs.github.com/en/authentication): evaluate supported account/app access and revocation.
 
-These are official starting points for implementation research, not a completed engine selection
-or a claim about a currently installed release. Verify supported versions, licenses and APIs in
+These are official references for ongoing adapter and operational research. OpenBao is selected;
+no production OpenBao instance has been installed by this work. Verify supported versions, licenses and APIs in
 the relevant design review before reusing code, adding dependencies or promising capabilities.

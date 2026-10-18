@@ -4,13 +4,22 @@ This is the entry point for selecting the next Loom packet. It overrides older b
 and individual packet labels. Kyle completed this selection review on 2026-09-27. Only packets in the selected queue
 are designated for implementation; retained proposals remain parked.
 
-## Loom Vault documentation selection
+## Loom Vault implementation selection
 
-Kyle selected all sixteen Loom Vault proposals for documentation on 2026-10-17. The
-[Vault index](./LOOM-VAULT.md) maps V01 to V16 to L72 to L87 and records shared design gates.
-All remain **Designing**, outside the implementation queue. Finish product/backend/identity
-review and record an explicit implementation selection here before any Vault packet starts.
-This documentation selection does not change the existing queue below.
+Kyle authorized implementation of all sixteen Loom Vault packets on 2026-10-17 and selected
+**self-hosted OpenBao** behind Loom's UI, identity model and agent broker. V01 to V16 remain
+mapped to L72 to L87 in the [Vault index](./LOOM-VAULT.md). No packet was dropped.
+
+L78 and the shared encrypted-record foundation are **In progress**. The current milestone
+provides versioned OpenBao records, protected management, private secret ingress and web/mobile
+settings. The other packets are **Selected; queued**, with L80 retaining the complete grant/policy design.
+Implement foundation/policy, then Dorothy's broker/SSH/GitHub/delivery/readiness path, followed
+by the remaining product workflows. Their complete PRODUCT scope remains selected.
+
+Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
+production dependencies beyond the selected OpenBao service, personal-vault migration and
+production credential registration are separate actions. Browser/device verification follows
+the repository's explicit-authorization rule. This selection leaves non-Vault priorities below intact.
 
 ## Selected queue
 

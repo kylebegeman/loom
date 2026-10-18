@@ -1,3 +1,5 @@
+import { VAULT_CORE_WS_METHODS as V } from "./vault-core.ts";
+import { AuthAccessWriteScope } from "../auth.ts";
 import { SITES_WS_METHODS as S } from "./sites.ts";
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
@@ -20,6 +22,9 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [V.save]: AuthAccessWriteScope,
+  [V.change]: AuthAccessWriteScope,
+  [V.reveal]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

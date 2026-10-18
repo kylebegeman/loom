@@ -1,45 +1,62 @@
 # L78 testing
 
-Status: acceptance design. No implementation checks have run because this change is docs only.
+Status: encrypted-record foundation checked locally. The complete packet remains in progress.
+All credentials and OpenBao data in these checks are synthetic.
 
-## Automated behavior
+## Passing automated checks
 
-- Unauthorized users cannot list or retrieve another scope's items, including via guessed IDs.
-- Stored payloads and backups do not contain synthetic plaintext; wrong keys and corrupted ciphertext fail explicitly.
-- Interrupted updates leave one committed version; archived and deleted records have distinct behavior.
-- Restore a disposable Vault and prove item decryption plus grant invalidation after key recovery.
+Focused backend/contract/client checks cover 68 tests across these files:
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
+- `apps/server/src/fork/vault/OpenBaoStore.test.ts`: configuration, private-token handling,
+  status, bounded responses, CAS and redacted requests/errors.
+- `VaultCore.test.ts`: safe metadata, idempotent mutation retries, CAS races, record lifecycle,
+  metadata-only rename, reveal preconditions, private receipts, live authorization checks,
+  pagination, environment namespace separation and invalid/oversized input.
+- `VaultPrivateInput.test.ts`: committed-response loss, consumed-source retry, authenticated
+  project binding, missing threads and authorization revocation before persistence.
+- `vault/rpc.test.ts` and `fork/rpcAuthorization.test.ts`: read/write separation, explicit reveal
+  protection, no work before denial, exhaustive scope mapping and no upstream tag collisions.
+- `secrets/SecretRequests.test.ts`: existing one-use behavior plus claimed-transfer retries and
+  failed cleanup. `fork/mcp/registration.test.ts`: all registered tools compile at startup.
+- `packages/contracts/src/fork/vault-core.test.ts`: redacted values, metadata-only input,
+  private-reference ingress and secure-file boundary validation.
+- `packages/client-runtime/src/fork/vault-core.permissions.test.ts`: destination-scoped
+  permissions and revocation for save, lifecycle changes and reveal.
 
-## Manual and integrated acceptance
+The integrated focused run passed 65 non-contract tests and 2 contract tests; one malformed
+base64 fixture was actually valid base64. After correcting that test input, all 3 contract tests
+passed on the final rerun. No production behavior was weakened to satisfy it.
 
-Exercise item creation and replacement from mobile and desktop against an isolated service. Restart it while a client reconnects; verify clear locked/unavailable states and no secret values in normal RPC, logs or saved conversations.
+Affected contracts, server, client-runtime, web and mobile packages typecheck. Targeted lint and
+format checks pass. Native mobile static checks passed SwiftLint, ktlint and detekt. No repo-wide
+suite or application/browser/device process was launched.
 
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
+## Real OpenBao proof
 
-## Focused verification commands
+The repository fixture `apps/server/src/fork/vault/testkit/openbao_proof.py` passed against the
+checksum-verified official OpenBao **2.7.1** binary. It runs the integration test twice: initial
+CAS/version/encrypted-persistence assertions and clean restored-record assertions. Each stage
+runs its applicable test and skips the other stage's test. The fixture waits on startup/active
+leadership events, stops captured processes and removes temporary data in finally.
 
-Once implementation files exist, assign concrete test filenames in this document and run:
+Persisted Raft bytes did not contain the synthetic canary, and the restored instance decrypted
+the expected version after unseal. This is baseline evidence, not a production restore drill,
+wrong-key/corruption acceptance or complete recovery/grant-invalidation implementation.
 
-```sh
-vp test run apps/server/src/fork/vault-core/service.test.ts
-vp lint apps/server/src/fork/vault-core
-vp run --filter t3 typecheck
-```
+Reproduction instructions are in [the operating guide](../../operations/vault.md).
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+## Integration and remaining acceptance
 
-## Merge safety and results
+Browser, Electron and device interaction verification has **not run**; repository instructions
+require explicit authorization. Remaining checks include responsive layout, keyboard/screen-reader
+operation, file import/export, dismiss/focus behavior, reconnect with an active editor, permission
+loss during an operation and remote/version-skew behavior in real clients. Static capability and
+permission gates exist but do not substitute for these interaction checks.
 
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+The platform account model, broker identity, full durable audit and production custody/recovery
+are unfinished. No live credential migration, SSH/GitHub registration, VPS rollout or personal
+1Password change was performed. Complete PRODUCT acceptance before marking the packet Done.
+
+Seam-only validation and changed Markdown link checks pass. The final merge-tree preview result
+is recorded after committing the integrated milestone; no full upstream integration rehearsal
+is claimed from this feature worktree.

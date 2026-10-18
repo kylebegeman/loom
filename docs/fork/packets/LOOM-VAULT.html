@@ -226,15 +226,16 @@
   </head>
   <body>
     <main>
-      <p class="eyebrow">PRODUCT DESIGN · SELECTED FOR DOCUMENTATION · 17 OCTOBER 2026</p>
+      <p class="eyebrow">IMPLEMENTATION · ALL SIXTEEN SELECTED · 17 OCTOBER 2026</p>
       <h1>Loom Vault</h1>
       <p class="lede">
         Development credentials, accounts and secure records for agents and people, managed on
         infrastructure you control.
       </p>
       <p>
-        All sixteen proposals are documented. Backend, key custody and operating policies remain
-        design decisions. Nothing is approved to build or deploy.
+        All sixteen proposals are documented. Key custody and operating policies remain
+        implementation decisions. All sixteen packets are selected to build; OpenBao is selected.
+        The encrypted-record foundation is in progress. No deployment is authorized.
       </p>
       <nav aria-label="Document links">
         <a href="./LOOM-VAULT.md">Product index</a
@@ -242,7 +243,7 @@
         ><a href="./IMPLEMENT-NOW.md">Implementation queue</a>
       </nav>
       <div class="metrics">
-        <div class="metric"><strong>16</strong><span>documented proposals</span></div>
+        <div class="metric"><strong>16</strong><span>selected packets</span></div>
         <div class="metric"><strong>112</strong><span>packet documents</span></div>
         <div class="metric"><strong>9</strong><span>shared design decisions</span></div>
       </div>
@@ -262,8 +263,8 @@
         </section>
       </div>
       <p class="muted">
-        This is a proposed division of responsibilities. No existing platform API, engine or
-        deployment topology is assumed.
+        This is a proposed division of responsibilities. No live platform integration or deployment
+        topology is assumed.
       </p>
       <h2>Review the complete scope</h2>
       <div class="filters">
@@ -599,7 +600,7 @@
             <h4>Open decisions</h4>
             <ul>
               <li>
-                D1: Which backend meets product needs and sustainable self-hosting requirements?
+                D1 resolved: self-hosted OpenBao selected by Kyle; production custody remains open.
               </li>
               <li>
                 D2: Who can decrypt stored values, where are wrapping keys kept, and how is
@@ -1041,10 +1042,10 @@
         </article>
       </section>
       <section>
-        <h2>Design decisions before building</h2>
+        <h2>Implementation decisions</h2>
         <div class="decision">
-          <strong>D1 · Engine</strong>Compare a maintained self-hosted engine with a narrow Loom
-          service using disposable data.
+          <strong>D1 · Engine selected</strong>Self-hosted OpenBao behind Loom UI, account model and
+          broker. The 2.7.1 encrypted-record proof passed. L78 is in progress.
         </div>
         <div class="decision">
           <strong>D2–D4 · Identity and operation</strong>Settle key custody and recovery, verify
@@ -1079,7 +1080,7 @@
       </section>
       <footer>
         Packet Markdown is authoritative. Filters only change this view; they do not select or
-        authorize implementation.
+        authorize deployment.
       </footer>
     </main>
     <script>

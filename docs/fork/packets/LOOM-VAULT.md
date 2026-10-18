@@ -1,7 +1,8 @@
 # Loom Vault product and packet index
 
-Status: **Designing**. Kyle selected all 16 proposals for documentation on 2026-10-17.
-None is selected for implementation or deployment. The V01 to V16 identifiers remain stable
+Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records are in progress; the
+remaining packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
@@ -17,12 +18,13 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 - Store and manage dedicated SSH keys, service connections, test accounts and extensible secure records.
 - Prefer reusable references, clear account selection and durable access grants over copied values.
 - Keep personal credentials separate. Imports and configuration changes are explicit and reviewable.
-- Document before building. Selection for documentation settles scope, not backend or policy decisions.
+- The implementation packets preserve the selected scope. OpenBao is selected; custody,
+  platform ownership and production rollout decisions remain explicit.
 
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. Every packet is Designing.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78 is in progress; the remaining packets are selected and queued.
 
 ### Minor Features & Improvements
 
@@ -66,16 +68,17 @@ already exposes the required auth, key service, notification or deployment APIs.
 contracts in their owning project before selecting an integration. A domain name or existing
 login is not sufficient proof of Vault authorization.
 
-A single backend adapter isolates engine choice. Compare a maintained self-hosted engine with a
-narrow service using supported cryptographic libraries. Keep Loom-specific accounts, profiles,
+A backend adapter isolates the selected self-hosted OpenBao engine. Kyle chose OpenBao over
+Loom-native encrypted storage; a disposable OpenBao 2.7.1 proof passed CAS, encrypted persistence
+and clean restore. Keep Loom-specific accounts, profiles,
 runner ergonomics and permission semantics out of backend-specific clients.
 
 ## Capability dependencies and packet independence
 
-The proposed `ext-vault` boundary owns common record, identity, policy, audit, broker and delivery
-interfaces. It is not yet an approved extension point. See the explicit proposal in
-[EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-proposal-ext-vault).
-Before implementation, promote the smallest approved contract into that extension specification.
+The `ext-vault` boundary has implemented encrypted-record contracts and services. Identity,
+policy, audit, broker and delivery target interfaces remain subject to their packet designs. See the explicit proposal in
+[EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
+Promote each implemented shared contract into that specification as it becomes usable.
 A packet can supply a missing approved portion of the shared extension in a separate commit;
 it must not import another feature packet's internals or assume its UI exists.
 
@@ -92,9 +95,9 @@ The owner column identifies who develops the design, not a compulsory sequence o
 feature builds. Each packet's optional adapters must be independently installable or unavailable
 with an honest explanation. There is no speculative requirement to build a plugin framework.
 
-## Suggested delivery groups for later review
+## Delivery groups
 
-These groups preserve all selected outcomes. They are recommendations, not the implement-now queue.
+These groups preserve all selected outcomes. All groups are selected; IMPLEMENT-NOW.md records progress.
 
 1. **Establish the foundation:** decide engine, identity, custody and recovery together; build the
    approved minimum record, broker and grant interfaces. Prove baseline restore before real secrets.
@@ -110,22 +113,24 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 
 ## Design decisions before building
 
-| ID  | Choice and evidence needed                                                                                           | Design owner  | Status |
-| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
-| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Open   |
-| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open   |
-| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open   |
-| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open   |
-| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open   |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Open   |
-| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Open   |
-| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open   |
-| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open   |
+| ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- |
+| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed |
+| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                            |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                            |
+| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open                                                            |
+| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                            |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Open                                                            |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Open                                                            |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open                                                            |
+| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                            |
 
 Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.
-A future implementation handoff records the decided choices, concrete API/storage designs,
-source refresh and precise seams, then moves the chosen packet into IMPLEMENT-NOW.md. No
-production dependency or database schema has been added by these documents.
+Record decided choices, concrete contracts and precise seams as implementation advances.
+The current foundation uses OpenBao KV v2 with no new application dependency or SQL migration.
+It uses the existing environment session for management and an operator-provisioned service
+token file for backend access. These are development defaults, not completed platform ownership,
+machine enrollment or production unseal/recovery decisions.
 
 ## What success looks like
 

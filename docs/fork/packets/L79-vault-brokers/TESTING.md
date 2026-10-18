@@ -1,6 +1,7 @@
 # L79 testing
 
-Status: acceptance design. No implementation checks have run because this change is docs only.
+Status: acceptance targets for this packet. No complete packet implementation has been verified.
+Shared foundation checks are recorded in L78; they do not establish this packet's acceptance.
 
 ## Automated behavior
 

@@ -1,6 +1,6 @@
 # L79: Enrolled machines and headless brokers
 
-Status: Designing. Selected for documentation by Kyle on 2026-10-17; not approved to build.
+Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
 
 Give each execution host a durable identity and reliable unattended credential access.
 
@@ -21,7 +21,8 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-Proposed `ext-vault` is a design boundary, not an existing extension to copy or deploy.
+`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
+remain target designs; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
 

@@ -313,3 +313,7 @@ apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1
 apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	1
 apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	1
 apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
+
+# Loom Vault encrypted record foundation
+apps/server/src/secrets/SecretRequests.ts	ext-vault	7
+apps/server/src/secrets/SecretRequests.test.ts	ext-vault	2

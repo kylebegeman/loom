@@ -44,7 +44,12 @@ const refFor = (salt: string, threadId: ThreadId, turnItemId: string) =>
   );
 
 const StoredSecret = Schema.fromJsonString(
-  Schema.Struct({ projectId: Schema.String, value: Schema.String, savedAt: Schema.Number }),
+  Schema.Struct({
+    projectId: Schema.String,
+    value: Schema.String,
+    savedAt: Schema.Number,
+    claimedBy: Schema.optional(Schema.String), // fork: ext-vault
+  }),
 );
 const encodeStored = Schema.encodeEffect(StoredSecret);
 const decodeStored = Schema.decodeUnknownOption(StoredSecret);
@@ -57,6 +62,15 @@ export class SecretRequests extends Context.Service<
       readonly threadId: ThreadId;
       readonly turnItemId: string;
     }) => Effect.Effect<Option.Option<SecretRef>>;
+    // fork: ext-vault
+    readonly transfer: <A, E, R>(
+      input: {
+        readonly ref: SecretRef;
+        readonly projectId: ProjectId;
+        readonly operationId: string;
+      },
+      use: (value: string) => Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | SecretRequestError, R>;
     readonly consume: (input: {
       readonly ref: SecretRef;
       readonly projectId: ProjectId;
@@ -191,7 +205,8 @@ const make = Effect.gen(function* () {
       Effect.withSpan("SecretRequests.consume"),
     );
 
-  const consumeRef = (input: { readonly ref: SecretRef; readonly projectId: ProjectId }) =>
+  // fork: ext-vault
+  const readRef = (input: { readonly ref: SecretRef; readonly projectId: ProjectId }) =>
     Effect.gen(function* () {
       if (!REF_PATTERN.test(input.ref))
         return yield* new SecretRequestError({ reason: "invalid_ref" });
@@ -208,13 +223,47 @@ const make = Effect.gen(function* () {
         yield* removeLogged(storeName(input.ref));
         return yield* new SecretRequestError({ reason: "ref_expired" });
       }
-      // One use: the value moves into whatever consumed it. If it cannot be
-      // deleted, it is not handed out, so a ref is never used twice.
-      if (!(yield* removeLogged(storeName(input.ref)))) {
-        return yield* new SecretRequestError({ reason: "consume_failed" });
-      }
-      return decoded.value.value;
+      return decoded.value;
     });
+
+  // fork: ext-vault
+  const consumeRef = (input: { readonly ref: SecretRef; readonly projectId: ProjectId }) =>
+    Effect.gen(function* () {
+      const stored = yield* readRef(input);
+      // fork: ext-vault
+      if (stored.claimedBy !== undefined)
+        return yield* new SecretRequestError({ reason: "ref_unavailable" });
+      if (!(yield* removeLogged(storeName(input.ref))))
+        return yield* new SecretRequestError({ reason: "consume_failed" });
+      return stored.value;
+    });
+
+  // fork: ext-vault
+  const transfer: SecretRequests["Service"]["transfer"] = (input, use) =>
+    Effect.gen(function* () {
+      if (!input.operationId || input.operationId.length > 512)
+        return yield* new SecretRequestError({ reason: "invalid_ref" });
+      const stored = yield* readRef(input);
+      if (stored.claimedBy !== undefined && stored.claimedBy !== input.operationId) {
+        return yield* new SecretRequestError({ reason: "ref_unavailable" });
+      }
+      if (stored.claimedBy === undefined) {
+        const claimed = yield* encodeStored({ ...stored, claimedBy: input.operationId }).pipe(
+          Effect.mapError((cause) => new SecretRequestError({ reason: "consume_failed", cause })),
+        );
+        // Bind before the external effect: a failed transfer can retry only its original destination.
+        yield* store
+          .set(storeName(input.ref), new TextEncoder().encode(claimed))
+          .pipe(
+            Effect.mapError((cause) => new SecretRequestError({ reason: "consume_failed", cause })),
+          );
+      }
+      const result = yield* use(stored.value);
+      // A retained claim prevents another consumer from reusing a committed value if cleanup fails.
+      yield* removeLogged(storeName(input.ref));
+      yield* Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" });
+      return result;
+    }).pipe(consumeLock.withPermits(1), Effect.withSpan("SecretRequests.transfer"));
 
   const sweepExpired = Effect.gen(function* () {
     if (store.directory === undefined) return;
@@ -244,7 +293,8 @@ const make = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
-  return SecretRequests.of({ answer, savedRef, consume });
+  // fork: ext-vault
+  return SecretRequests.of({ answer, savedRef, consume, transfer });
 });
 
 export const layer = Layer.effect(SecretRequests, make);

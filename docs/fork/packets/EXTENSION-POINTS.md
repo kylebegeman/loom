@@ -2956,20 +2956,46 @@ Existence check: `test -f apps/web/src/fork/changedFiles/registry.ts` and
 `git grep -c 'fork: ext-changed-files' -- apps/web/src/components/chat/ChangedFilesTree.tsx`
 prints 2. Run the existing ChangedFilesTree tests when altering the seam.
 
-## Loom Vault foundation proposal (`ext-vault`)
+## Loom Vault foundation (`ext-vault`)
 
-Status: **Proposed for design review; not an implementable extension point.** Kyle selected
-all sixteen Vault ideas for documentation on 2026-10-17, not for immediate implementation.
-The normal copy-verbatim/existence-check workflow above does not apply to this proposal yet.
+Status: **Encrypted-record boundary implemented; broader foundation in progress.** Kyle
+selected all sixteen packets for implementation and OpenBao as the backend on 2026-10-17.
+The active shared boundary lives outside the feature packet folders:
 
-[LOOM-VAULT-FOUNDATION.md](./LOOM-VAULT-FOUNDATION.md) specifies the proposed shared boundary
-for encrypted records, references, authenticated principals, grants, brokers, delivery, minimum
-audit and operation state. [LOOM-VAULT.md](./LOOM-VAULT.md) maps its design owners and open
-backend, custody, identity and recovery decisions.
+- Contracts: `packages/contracts/src/fork/vault-core.ts`, exported through the fork group.
+  `VaultItemSummary` contains no value; `VaultItemSave.value` is redacted and optional for
+  metadata-only updates. Mutations carry stable item/operation IDs and expected versions.
+  `VaultPrivateSave` takes a one-use secretRef. Explicit `VaultItemReveal` is separate.
+- Storage: `apps/server/src/fork/vault/OpenBaoStore.ts` implements status, read, CAS write
+  and bounded key listing for the selected KV v2 mount. It owns backend token access.
+- Domain: `VaultCore` implements environment-owned records and atomic mutation receipts;
+  `VaultPrivateInput` binds private ingress to authenticated thread/project/environment/backend
+  context. Other packets consume these shared services, not L78 UI internals.
+- Private handoff seam: `SecretRequests.transfer(input, callback)` durably claims a ref for
+  one destination operation before the callback. A callback must be idempotent. Failure retains
+  the claim for that operation only; success removes the source. Source deletion failures
+  retain the claim, and Vault receipts recover already-committed saves.
+- Registries: ForkLayer/ForkRuntime publish the services; fork RPC, MCP and CLI registries
+  provide thin authenticated adapters. Client-runtime exposes protected commands shared by
+  web/desktop and mobile. No global replacement of ServerSecretStore/provider auth occurs.
 
-Before implementation, agree the minimal shared contract, refresh V2 integration points, then
-replace this proposal with an exact specification and existence checks. A feature packet may
-create a missing approved portion in its own extension commit and must degrade gracefully when
-optional adapters are absent. No packet imports another packet's internals or invents a separate
-secret/policy implementation to avoid the shared boundary. Existing extension specifications
-and the implement-now queue remain authoritative for non-Vault work.
+Management currently uses environment access:read for safe inspection and access:write for
+save/change/reveal. MCP raw reveal/export is absent. Existing full-access/default callers are
+required for environment mutations. These scopes are a management ceiling, not per-item agent
+isolation. L80 retains the policy/grant target; no workload may claim a persistent Vault grant or
+unattended-use capability until those services and broker consumers exist.
+
+Existence checks:
+
+```sh
+test -f packages/contracts/src/fork/vault-core.ts
+test -f apps/server/src/fork/vault/OpenBaoStore.ts
+test -f apps/server/src/fork/vault/VaultCore.ts
+test -f apps/server/src/fork/vault/VaultPrivateInput.ts
+rg 'transfer|claimedBy' apps/server/src/secrets/SecretRequests.ts
+rg 'VaultCoreRpcGroup' packages/contracts/src/fork/rpc.ts
+```
+
+[LOOM-VAULT-FOUNDATION.md](./LOOM-VAULT-FOUNDATION.md) records the larger target model.
+Promote additional shared contracts independently as their consumers arrive. Do not fabricate
+broker, lease, identity, approval or delivery capabilities because records already exist.
