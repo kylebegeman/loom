@@ -4,6 +4,12 @@ import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
   status: "loom_vault_status",
+  grants: "loom_vault_grants",
+  "grant-preview": "loom_vault_grants_preview",
+  "grant-apply": "loom_vault_grants_apply",
+  explain: "loom_vault_access_explain",
+  readiness: "loom_vault_readiness",
+  delegate: "loom_vault_grants_delegate",
   list: "loom_vault_items",
   change: "loom_vault_change",
 } as const;
@@ -16,7 +22,11 @@ export const vaultCommand = Command.make("vault").pipe(
       Command.make(action, {
         argumentsJson: Argument.String("arguments-json").pipe(
           Argument.withDefault(
-            action === "list" ? '{"cursor":null,"includeArchived":false}' : "{}",
+            action === "list"
+              ? '{"cursor":null,"includeArchived":false}'
+              : action === "readiness"
+                ? '{"requirements":[]}'
+                : "{}",
           ),
         ),
       }).pipe(

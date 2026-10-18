@@ -1,7 +1,7 @@
 # Loom Vault shared foundation
 
 Status: implementation authorized. OpenBao is selected; the encrypted-record boundary is
-implemented in `ext-vault`. Broker, identity and delivery portions below describe the full
+implemented in `ext-vault`. Broker, platform identity and delivery portions below describe the full
 target and must not be mistaken for implemented guarantees. This work creates no live infrastructure. Product intent and decision
 owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
 
@@ -14,11 +14,31 @@ human reveal, CAS lifecycle changes and request fingerprints. Private input goes
 be returned after its one-use input is consumed. This transfer extends the existing private
 input store, which remains owner-only plaintext until the value reaches OpenBao.
 
-Management uses the existing environment access:read/access:write scopes. Full-access/default
-agent callers can store private inputs and manage item lifecycle; there is no raw-value MCP
-tool. This is not per-item workload authorization. Policy/grants remain L80 work; enrollment, leases, complete audit and broker channels are
-not present.
-The selected control-plane/account integration is not yet deployed or connected.
+Human management uses environment access:read/access:write. Authenticated threads now need
+per-item grants for metadata, private ingress and lifecycle operations, under T3's permission
+ceiling. The shared VaultAccess service provides online policy, bounded safe decision history,
+previews and server-context readiness. There is no raw-value MCP tool. Enrolled brokers,
+workload leases, full audit and platform-account integration are not present.
+
+## Implemented policy boundary
+
+Policy is encrypted in an environment-scoped OpenBao CAS record. Thread/project allow grants
+are unioned under default deny and specify exact item IDs, actions, optional project and exact
+destination, start/expiry and parent lineage. Delegation requires an attested direct subagent
+in the same project and cannot broaden actions, resources, scope or lifetime. An ancestor's
+suspension, expiry or revocation invalidates descendants. Revocation is permanent; create a
+new grant to restore access. There is no offline policy cache or new credential-delivery path.
+
+Grant mutation receipts retain 32 results; a matching operation/actor/request retries safely.
+Audit retains 256 events and exposes omitted counts; this is operational history, not the final
+immutable ledger. Decision audit persistence fails closed. Item writes and policy checks are
+separate backend operations, so this is not an OS isolation boundary or a distributed lease.
+Same-user full-access agents can access host files and are not contained by these grants.
+
+Readiness covers at most 16 declared requirements and expires after 60 seconds. It explicitly
+names the Loom server context, does not probe SSH/GitHub, and reports missing broker/delivery
+support for use/reveal/export. Profile discovery, launch preflight and external probes remain
+in the complete packet targets.
 
 The exact active extension contract and existence checks are in
 [EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
@@ -153,9 +173,9 @@ OpenSSH destination constraints or mediate connections before claiming host-scop
 
 ## Offline operation and revocation
 
-Recommended starting behavior for review: online-only acquisition of new use leases. Outages
-produce an explicit unavailable state; there is no fallback to the personal agent or stale
-ambient credentials. This default is not yet a settled product decision.
+The implemented policy milestone evaluates online and has no offline decrypted cache or
+personal-agent fallback. Future broker use leases are still proposed as online-only acquisition;
+their offline lifetime and production outage behavior require review.
 
 If D5 selects offline access, define encrypted cache contents, allowed operations, effective
 expiry, trusted-clock behavior, restart rules and maximum revocation delay. A disconnected

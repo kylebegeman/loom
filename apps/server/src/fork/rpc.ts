@@ -1,3 +1,4 @@
+import { makeVaultAccessRpcHandlers } from "./vault/access-rpc.ts";
 import { makeVaultCoreRpcHandlers } from "./vault/rpc.ts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import * as SitesService from "./sites/SitesService.ts";
@@ -36,6 +37,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
       const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
       return ForkRpcGroup.of({
         ...(yield* withForkRuntime(makeVaultCoreRpcHandlers(auth, session.subject))),
+        ...(yield* withForkRuntime(makeVaultAccessRpcHandlers(auth, session.subject))),
         [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
         [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
         [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),

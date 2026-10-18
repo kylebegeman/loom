@@ -1,3 +1,9 @@
+import { EnvironmentId, ThreadId, ProjectId, RunId } from "@t3tools/contracts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
+import * as VaultAccess from "./VaultAccess.ts";
+import * as VaultCore from "./VaultCore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -52,4 +58,105 @@ it.live.skipIf(!configured || !restoring)(
       expect(record?.version).toBe(2);
       expect(Redacted.value(record!.value)).toEqual({ value: secret, revision: 2 });
     }).pipe(Effect.provide(layer)),
+);
+
+// The policy and encrypted item share a real backend but retain independent CAS records.
+const policyEnvironment = EnvironmentId.make("openbao-policy-integration");
+const policyThread = ThreadId.make("openbao-policy-thread");
+const policyItem = "7".repeat(32),
+  policyGrant = "8".repeat(32);
+const policyDependencies = Layer.mergeAll(
+  NodeServices.layer,
+  layer,
+  Layer.succeed(ServerEnvironmentIdentity, {
+    getEnvironmentId: Effect.succeed(policyEnvironment),
+  }),
+  Layer.mock(ProjectStoreV2)({}),
+  Layer.mock(ThreadManagementService)({
+    getThreadShell: () =>
+      Effect.succeed({
+        id: policyThread,
+        projectId: ProjectId.make("openbao-project"),
+        archivedAt: null,
+        deletedAt: null,
+        activeRunId: RunId.make("openbao-run"),
+      } as never),
+  }),
+);
+const policyCore = VaultCore.layer.pipe(Layer.provide(policyDependencies));
+const policyLayer = VaultAccess.layer.pipe(
+  Layer.provideMerge(policyCore),
+  Layer.provide(policyDependencies),
+);
+
+it.live.skipIf(!configured || restoring)(
+  "persists an access grant, decision history and revocation in real OpenBao",
+  () =>
+    Effect.gen(function* () {
+      const core = yield* VaultCore.VaultCore;
+      yield* core.save(
+        {
+          id: policyItem,
+          operationId: "9".repeat(32),
+          expectedVersion: 0,
+          label: "Synthetic service identity",
+          kind: "secret",
+          value: Redacted.make(secret),
+        },
+        "fixture-admin",
+      );
+      const access = yield* VaultAccess.VaultAccess;
+      yield* access.apply(
+        {
+          operationId: "a".repeat(32),
+          expectedRevision: 0,
+          change: {
+            type: "save",
+            grant: {
+              id: policyGrant,
+              label: "Synthetic grant",
+              principal: { kind: "thread", id: policyThread },
+              itemIds: [policyItem],
+              actions: ["inspect"],
+              projectId: "openbao-project",
+              destination: null,
+              notBefore: 0,
+              expiresAt: null,
+              parentId: null,
+            },
+          },
+        },
+        "fixture-admin",
+      );
+      yield* access.require(policyThread, policyItem, "inspect", null);
+      yield* access.apply(
+        {
+          operationId: "b".repeat(32),
+          expectedRevision: 1,
+          change: { type: "state", id: policyGrant, state: "revoked" },
+        },
+        "fixture-admin",
+      );
+      expect(
+        (yield* access.require(policyThread, policyItem, "inspect", null).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect((yield* access.snapshot).audit[0]?.reason).toBe("not-active");
+    }).pipe(Effect.provide(policyLayer)),
+);
+it.live.skipIf(!configured || !restoring)(
+  "retains policy revocation and safe decision history after clean restore",
+  () =>
+    Effect.gen(function* () {
+      const access = yield* VaultAccess.VaultAccess;
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.revision).toBe(2);
+      expect(snapshot.grants[0]?.state).toBe("revoked");
+      expect(
+        snapshot.audit.some((event) => event.type === "decision" && event.reason === "allowed"),
+      ).toBe(true);
+      expect(
+        (yield* access.require(policyThread, policyItem, "inspect", null).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(JSON.stringify(snapshot)).not.toContain(secret);
+    }).pipe(Effect.provide(policyLayer)),
 );

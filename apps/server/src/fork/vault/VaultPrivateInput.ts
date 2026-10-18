@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
+import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultCore from "./VaultCore.ts";
 
 export class VaultPrivateInput extends Context.Service<
@@ -35,6 +36,7 @@ const encodeOperation = Schema.encodeEffect(
 );
 const make = Effect.gen(function* () {
   const vault = yield* VaultCore.VaultCore;
+  const access = yield* VaultAccess.VaultAccess;
   const secrets = yield* SecretRequests.SecretRequests;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const identity = yield* ServerEnvironmentIdentity;
@@ -42,7 +44,10 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   return VaultPrivateInput.of({
     store: Effect.fn("VaultPrivateInput.store")(function* (input, threadId, authorize) {
-      yield* authorize;
+      const check = authorize.pipe(
+        Effect.andThen(access.require(threadId, input.id, "manage", null)),
+      );
+      yield* check;
       const thread = yield* threads
         .getThreadShell(threadId)
         .pipe(Effect.mapError(() => new VaultError({ reason: "denied" })));
@@ -85,7 +90,7 @@ const make = Effect.gen(function* () {
               value: Redacted.make(value),
             },
             actorId,
-            authorize,
+            check,
             input.secretRef,
           ),
       );

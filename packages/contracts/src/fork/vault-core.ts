@@ -41,7 +41,8 @@ export type VaultCoreStatus = typeof VaultCoreStatus.Type;
 const messages = {
   configuration: "Configure this environment's OpenBao connection and private service token file.",
   locked: "OpenBao is sealed. Unlock the backend before using Loom Vault.",
-  denied: "The Vault service credential does not allow this operation.",
+  denied:
+    "This Vault operation is not permitted. Check the connection permissions and workload grant.",
   unavailable: "OpenBao could not be reached. Retry after checking its connection.",
   "invalid-response": "OpenBao returned an unsupported or invalid response.",
   "not-found": "This Vault item is unavailable.",

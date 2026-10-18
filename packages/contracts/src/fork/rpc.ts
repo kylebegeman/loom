@@ -1,3 +1,4 @@
+import { VaultAccessRpcGroup } from "./vault-access.ts";
 import { VaultCoreRpcGroup } from "./vault-core.ts";
 import { SitesRpcGroup } from "./sites.ts";
 import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
@@ -50,6 +51,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   VaultCoreRpcGroup,
+  VaultAccessRpcGroup,
   SitesRpcGroup,
   ProjectLibraryRpcGroup,
   ProjectLibraryHealthRpcGroup,

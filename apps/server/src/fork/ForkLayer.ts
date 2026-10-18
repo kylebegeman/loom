@@ -1,3 +1,4 @@
+import * as VaultAccess from "./vault/VaultAccess.ts";
 import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
 import * as VaultCore from "./vault/VaultCore.ts";
 import * as OpenBaoStore from "./vault/OpenBaoStore.ts";
@@ -51,8 +52,11 @@ import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
-const layerVaultCore = VaultCore.layer.pipe(
-  Layer.provide(OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
+const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
+
+const layerVaultAccess = VaultAccess.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
 );
 
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
@@ -74,7 +78,8 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   layerVaultCore,
-  VaultPrivateInput.layer.pipe(Layer.provide(layerVaultCore)),
+  layerVaultAccess,
+  VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),

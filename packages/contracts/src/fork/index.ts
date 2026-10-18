@@ -1,3 +1,4 @@
+export * from "./vault-access.ts";
 export * from "./vault-core.ts";
 export * from "./keybindings.ts";
 export * from "./rpc.ts";

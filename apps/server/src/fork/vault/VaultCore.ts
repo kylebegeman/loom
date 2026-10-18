@@ -26,6 +26,7 @@ export class VaultCore extends Context.Service<
   VaultCore,
   {
     readonly status: Effect.Effect<VaultCoreStatus>;
+    readonly inspect: (id: string) => Effect.Effect<VaultItemSummary | null, VaultError>;
     readonly list: (input: VaultItemList) => Effect.Effect<VaultItemPage, VaultError>;
     readonly reveal: (input: VaultItemReveal) => Effect.Effect<VaultItemValue, VaultError>;
     readonly savedPrivate: (
@@ -122,6 +123,13 @@ const make = Effect.gen(function* () {
   });
   return VaultCore.of({
     status: store.status,
+    inspect: Effect.fn("VaultCore.inspect")(function* (id) {
+      if (!/^[a-f0-9]{32}$/.test(id)) return yield* new VaultError({ reason: "invalid-input" });
+      const record = yield* load(id);
+      return record === null || record.item.state === "deleted"
+        ? null
+        : summary(record.item, record.version);
+    }),
     savedPrivate: Effect.fn("VaultCore.savedPrivate")(function* (input, actorId) {
       const current = yield* load(input.id);
       if (current === null || current.item.mutation.operationId !== input.operationId) return null;

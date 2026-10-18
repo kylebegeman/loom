@@ -2958,7 +2958,7 @@ prints 2. Run the existing ChangedFilesTree tests when altering the seam.
 
 ## Loom Vault foundation (`ext-vault`)
 
-Status: **Encrypted-record boundary implemented; broader foundation in progress.** Kyle
+Status: **Encrypted records, online workload policy and inspection implemented; broader foundation in progress.** Kyle
 selected all sixteen packets for implementation and OpenBao as the backend on 2026-10-17.
 The active shared boundary lives outside the feature packet folders:
 
@@ -2979,11 +2979,25 @@ The active shared boundary lives outside the feature packet folders:
   provide thin authenticated adapters. Client-runtime exposes protected commands shared by
   web/desktop and mobile. No global replacement of ServerSecretStore/provider auth occurs.
 
-Management currently uses environment access:read for safe inspection and access:write for
-save/change/reveal. MCP raw reveal/export is absent. Existing full-access/default callers are
-required for environment mutations. These scopes are a management ceiling, not per-item agent
-isolation. L80 retains the policy/grant target; no workload may claim a persistent Vault grant or
-unattended-use capability until those services and broker consumers exist.
+Shared `vault-access.ts` contracts and `VaultAccess`/`VaultPolicy` add thread/project grants,
+ancestry attenuation, permanent revocation, bounded audited decisions, previews and 60-second
+server-context readiness. These services share the same environment namespace and OpenBao
+adapter as records. Policy uses a separate CAS document; policy revisions change only on edits.
+Grant state, receipts and decision history persist across restart and restore. No new upstream
+seams are needed; services and transports register through existing fork-owned extension points.
+
+Human management uses environment access:read for inspection and access:write for changes and
+explicit reveal. Threads need item inspect/manage grants on the existing metadata, private
+input and lifecycle paths, while full-access/default requirements still apply to mutations.
+MCP threads cannot administer root grants or reveal raw values. Direct-child delegation is
+attested through ThreadManagement and never increases the existing T3 permission ceiling.
+These checks do not isolate same-user full-access processes from host credential files.
+
+Limits: 128 grants, 32 item IDs per grant, 256 operational history events, 32 mutation receipts,
+50 history entries in the management snapshot and 10 recent decisions in an item explanation.
+No immutable audit ledger, platform membership, enrolled broker, delivery lease or provider
+probe exists. Readiness with credential-use requirements explicitly reports unsupported broker
+or delivery capability. Do not infer unattended SSH readiness from a policy decision.
 
 Existence checks:
 
@@ -2992,6 +3006,8 @@ test -f packages/contracts/src/fork/vault-core.ts
 test -f apps/server/src/fork/vault/OpenBaoStore.ts
 test -f apps/server/src/fork/vault/VaultCore.ts
 test -f apps/server/src/fork/vault/VaultPrivateInput.ts
+test -f packages/contracts/src/fork/vault-access.ts
+test -f apps/server/src/fork/vault/VaultAccess.ts
 rg 'transfer|claimedBy' apps/server/src/secrets/SecretRequests.ts
 rg 'VaultCoreRpcGroup' packages/contracts/src/fork/rpc.ts
 ```

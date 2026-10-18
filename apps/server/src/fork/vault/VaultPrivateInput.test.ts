@@ -15,6 +15,7 @@ import * as Redacted from "effect/Redacted";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { SecretRequests } from "../../secrets/SecretRequests.ts";
+import { VaultAccess } from "./VaultAccess.ts";
 import { VaultCore } from "./VaultCore.ts";
 import * as VaultPrivateInput from "./VaultPrivateInput.ts";
 
@@ -57,6 +58,7 @@ function withService<A, E>(
   };
   const dependencies = Layer.mergeAll(
     NodeServices.layer,
+    Layer.mock(VaultAccess)({ require: () => Effect.void }),
     Layer.succeed(HostProcess.Environment, {}),
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("private-test")),

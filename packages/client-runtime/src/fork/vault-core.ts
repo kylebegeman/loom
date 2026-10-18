@@ -3,7 +3,10 @@ import {
   type VaultCoreStatus,
   type VaultItemKind,
 } from "@t3tools/contracts/fork";
-import type { Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
+import type { AtomRegistry } from "effect/reactivity";
+import type { EnvironmentId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
@@ -28,15 +31,36 @@ export const vaultStatusMessage = (status: VaultCoreStatus) =>
     misconfigured:
       "The Vault connection needs repair. Check its origin, private token file and KV v2 mount.",
   })[status.state];
+const listChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+const refreshLists = (
+  target: { readonly environmentId: EnvironmentId },
+  registry: AtomRegistry.AtomRegistry,
+) =>
+  Effect.sync(() => {
+    const signal = listChanges(target.environmentId);
+    registry.set(signal, registry.get(signal) + 1);
+  });
 export function createVaultCoreAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   return {
     status: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:status",
       tag: V.status,
     }),
-    list: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:vault:list", tag: V.list }),
-    save: createEnvironmentRpcCommand(runtime, { label: "loom:vault:save", tag: V.save }),
-    change: createEnvironmentRpcCommand(runtime, { label: "loom:vault:change", tag: V.change }),
+    list: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:list",
+      tag: V.list,
+      refreshTrigger: ({ environmentId }) => listChanges(environmentId),
+    }),
+    save: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:save",
+      tag: V.save,
+      onSuccess: refreshLists,
+    }),
+    change: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:change",
+      tag: V.change,
+      onSuccess: refreshLists,
+    }),
     reveal: createEnvironmentRpcCommand(runtime, { label: "loom:vault:reveal", tag: V.reveal }),
   };
 }

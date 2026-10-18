@@ -1,6 +1,6 @@
 # OpenBao connection for Loom Vault
 
-This guide configures the implemented record foundation. It does not deploy OpenBao, enroll
+This guide configures the implemented record and online policy foundation. It does not deploy OpenBao, enroll
 machines, rewrite Git remotes or migrate personal credentials. Platform accounts, production
 unseal/recovery custody and broker identities remain unfinished. Use synthetic credentials
 until those controls and the full audit path are complete.
@@ -26,7 +26,8 @@ bits there. It re-reads the file on every request, so operators can atomically r
 rotating a token. Configuration changes require restarting the owning Loom environment.
 
 The minimal engine policy needs read on `<mount>/config`, read/create/update on
-`<mount>/data/environments/<namespace>/items/*` and list on
+`<mount>/data/environments/<namespace>/items/*`, read/create/update on
+`<mount>/data/environments/<namespace>/access-policy`, and list on
 `<mount>/metadata/environments/<namespace>/items`. The namespace is the lowercase hexadecimal
 SHA-256 of the persisted Loom server environment ID, not a client-chosen project ID. Keep
 policies scoped to that environment; creating another environment ID deliberately creates a
@@ -51,7 +52,10 @@ personal credentials separate and provision narrow development credentials.
 
 Delete writes an empty current payload/tombstone. Previous KV versions remain under OpenBao
 retention; provider revocation, historical version destruction and backup deletion are separate
-operations. Latest mutation receipts support immediate retries, not a complete audit ledger.
+operations. Item mutation receipts support immediate retries. The access-policy record retains 32 grant
+receipts and 256 safe policy/decision events; omitted-event counts are visible. This is not a
+complete or immutable audit ledger. Policy audit must persist before a gated action is allowed.
+A service token without policy-path access receives a denial, with no privilege fallback.
 There is no offline decrypted cache, forwarding agent, workload lease or platform-account
 administration in this milestone.
 

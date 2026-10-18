@@ -16,6 +16,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as VaultPrivateInput from "./VaultPrivateInput.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultCore from "./VaultCore.ts";
 const failure = Schema.Union([VaultError, SecretRequestError, OrchestratorMcpFailure]);
 export const VaultCoreToolkit = Toolkit.make(
@@ -27,7 +28,7 @@ export const VaultCoreToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_items", {
     description:
-      "List safe Vault item metadata. Values are never returned. Requires a full-access/default caller while per-item grants are being integrated. Cursor pagination is bounded; includeArchived shows archived items.",
+      "List safe Vault item metadata. Values are never returned. Only returns items covered by the authenticated thread's inspect grants; full-access clients retain administrator visibility. Cursor pagination is bounded; includeArchived shows archived items.",
     parameters: VaultItemList,
     success: VaultItemPage,
     failure,
@@ -35,7 +36,7 @@ export const VaultCoreToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_store", {
     description:
-      "Store or replace a Vault item using a secretRef from request_secret. Never ask for or pass a raw secret in chat. Retain id and operationId for retries. expectedVersion:0 creates; replacement requires the current version. Requires a full-access/default T3 thread.",
+      "Store or replace a Vault item using a secretRef from request_secret. Never ask for or pass a raw secret in chat. Retain id and operationId for retries. expectedVersion:0 creates; replacement requires the current version. Requires a full-access/default T3 thread and a matching manage grant for the item ID.",
     parameters: VaultPrivateSave,
     success: VaultItemSummary,
     failure,
@@ -60,8 +61,21 @@ export const vaultCoreHandlers = McpToolAccess.toLayer(
       loom_vault_status: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(VaultCore.VaultCore, (service) => service.status)),
       ),
-      loom_vault_items: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(VaultCore.VaultCore, (service) => service.list(input))),
+      loom_vault_items: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (caller.thread)
+            return yield* onHost(
+              Effect.flatMap(VaultAccess.VaultAccess, (service) =>
+                service.listForThread(input, caller.thread!.threadId),
+              ),
+            );
+          if (caller.client?.access !== "full-access")
+            return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(VaultCore.VaultCore, (service) => service.list(input)),
+          );
+        }),
       ),
       loom_vault_store: McpToolAccess.writesEnvironment((input, check) =>
         Effect.gen(function* () {
@@ -97,9 +111,21 @@ export const vaultCoreHandlers = McpToolAccess.toLayer(
             ? `thread:${caller.thread.threadId}`
             : `client:${caller.client?.sessionId ?? "unknown"}`;
           return yield* onHost(
-            Effect.flatMap(VaultCore.VaultCore, (service) =>
-              service.change(input, actor, authorize),
-            ),
+            Effect.gen(function* () {
+              const service = yield* VaultCore.VaultCore;
+              const access = yield* VaultAccess.VaultAccess;
+              return yield* service.change(
+                input,
+                actor,
+                caller.thread
+                  ? authorize.pipe(
+                      Effect.andThen(
+                        access.require(caller.thread.threadId, input.id, "manage", null),
+                      ),
+                    )
+                  : authorize,
+              );
+            }),
           );
         }),
       ),
