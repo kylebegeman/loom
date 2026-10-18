@@ -313,3 +313,7 @@ apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1
 apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	1
 apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	1
 apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
+
+apps/server/src/cloud/selfUpdate.ts	runtime-owner	4
+apps/server/src/environment/ServerEnvironment.ts	runtime-owner	3
+apps/server/src/cli/update.ts	runtime-owner	2

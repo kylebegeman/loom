@@ -21,6 +21,10 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
 import {
+  OS_MANAGED_RUNTIME_REASON,
+  serverSelfUpdateEnabled,
+} from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
+import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
   PinnedRuntimeInstallError,
@@ -305,6 +309,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   readonly allowDowngrade: boolean;
   readonly assumeYes: boolean;
 }) {
+  // An agent running under an operating system's service inherits the switch and would
+  // otherwise replace the runtime that system ships.
+  if (!(yield* serverSelfUpdateEnabled)) {
+    return yield* new CliUpdateError({ reason: OS_MANAGED_RUNTIME_REASON }); // fork: runtime-owner
+  }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
