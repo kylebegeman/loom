@@ -10,6 +10,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { libraryLaunchCandidateSummary } from "@t3tools/shared/fork/library-launch";
 import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentProviders } from "~/state/environments";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { EnvironmentId, ModelSelection, RuntimeMode, ThreadId } from "@t3tools/contracts";
 import {
@@ -90,6 +91,7 @@ export function NewConversationDialog({
   readonly onClose: () => void;
 }) {
   const authority = useLibraryAuthority();
+  const providersByEnvironment = useEnvironmentProviders();
   const navigate = useNavigate();
   const [attempt, saveAttempt] = useLibraryAttempt(
     `loom:library:conversation:${authority.authorityId}:${project.id}`,
@@ -165,7 +167,7 @@ export function NewConversationDialog({
     const entry = authority.environments.find((item) => item.environmentId === environmentId);
     return entry?.serverConfig
       ? resolveDefaultProviderModelSelection(
-          entry.serverConfig.providers,
+          providersByEnvironment.get(entry.environmentId) ?? [],
           entry.serverConfig.settings.defaultModelSelection,
         )
       : null;

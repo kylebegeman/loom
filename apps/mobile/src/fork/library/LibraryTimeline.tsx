@@ -37,6 +37,7 @@ import { useScaledTextRole } from "../../features/settings/appearance/useScaledT
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { useEnvironmentQuery } from "../../state/query";
+import { PullRequestGlyph } from "../../features/pull-requests/pullRequestGlyphs";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import { library } from "./libraryState";
@@ -57,7 +58,7 @@ const timelineOfflineDetail = (label: string) =>
 
 const FILTER_ICONS: Record<LibraryTimelineFilter, AppSymbolName> = {
   conversations: "text.bubble",
-  "pull-requests": "arrow.triangle.pull",
+  "pull-requests": PullRequestGlyph.pullRequest,
   brief: "pencil",
   copies: "internaldrive",
   commits: "git.commit",
@@ -75,9 +76,9 @@ const KIND_DISPLAY: Record<
   "conversation-settled": { icon: "checkmark.circle", tone: "quiet" },
   "conversation-failed": { icon: "exclamationmark.circle", tone: "warning" },
   "conversation-archived": { icon: "archivebox", tone: "quiet" },
-  "pull-request-linked": { icon: "arrow.triangle.pull", tone: "project" },
-  "pull-request-merged": { icon: "arrow.triangle.merge", tone: "success" },
-  "pull-request-closed": { icon: "git.pull-request.closed", tone: "quiet" },
+  "pull-request-linked": { icon: PullRequestGlyph.pullRequest, tone: "project" },
+  "pull-request-merged": { icon: PullRequestGlyph.merged, tone: "success" },
+  "pull-request-closed": { icon: PullRequestGlyph.closed, tone: "quiet" },
   "pull-request-checks-failed": { icon: "exclamationmark.circle", tone: "warning" },
   "brief-revised": { icon: "pencil", tone: "project" },
   "brief-proposed": { icon: "sparkles", tone: "project" },
@@ -220,7 +221,7 @@ export function LibraryTimelineRouteScreen({
       >
         <Chip
           label="Everything"
-          icon="square.3.layers.3d"
+          icon={PullRequestGlyph.stack}
           selected={!filters.length}
           onPress={() => setFilters([])}
         />
