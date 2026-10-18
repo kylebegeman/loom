@@ -113,8 +113,8 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
     [
       10,
       "IngestedEntryDigests",
-      // Replays compare only the digest, so nothing reads the archive an entry referenced. The
-      // archives themselves are left for offline compaction: freeing gigabytes of pages here would
+      // Replays compare only the digest, so nothing reads the archive an entry referenced. Deleting
+      // the archives is left to a pass with the app stopped: freeing gigabytes of pages here would
       // hold startup past its health check. Idempotent because parallel packets renumber at merge.
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;

@@ -5,6 +5,7 @@ import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryThreadArchive } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -60,6 +61,17 @@ const create = (service: LibraryService.LibraryService["Service"], requestId = "
   service.createProject({ requestId, title: "AspectAvy", resources: [resource] });
 const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive));
 const encodeArchive = Schema.encodeEffect(archiveCodec);
+const VERSION_EPOCH = "1970-01-01T00:00:00.000Z";
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value === null || typeof value !== "object"
+      ? value
+      : Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, item]) => [key, canonical(item)]),
+        );
 
 describe("independent Library catalog and durable history", () => {
   it.effect(
@@ -735,6 +747,32 @@ describe("independent Library catalog and durable history", () => {
           requestId: "later",
           thread: { ...thread, summary: { ...thread.summary, sequence: 10 } },
         });
+        expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+          logicalRecordsVerified: true,
+          verified: true,
+        });
+        // An importing release that predates a defaulted field wrote the proof and its version
+        // without it. Today's contract fills the field in, but the proof still verifies.
+        const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+        const proof = JSON.parse((yield* store.importProof("import"))!);
+        delete proof.threads[0].projection.thread.settledOverride;
+        yield* sql`DELETE FROM fork_library_import_proofs WHERE request_id='import'`;
+        yield* store.putImportProof("import", JSON.stringify(proof));
+        const archived = proof.threads[0];
+        const marker = Hex.encode(
+          yield* (yield* Crypto.Crypto).digest(
+            "SHA-256",
+            new TextEncoder().encode(
+              JSON.stringify(
+                canonical({
+                  ...archived,
+                  summary: { ...archived.summary, syncedAt: VERSION_EPOCH },
+                }),
+              ),
+            ),
+          ),
+        );
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=${`loom:sha256:${marker}`} WHERE source_sequence=9`;
         expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
           logicalRecordsVerified: true,
           verified: true,
