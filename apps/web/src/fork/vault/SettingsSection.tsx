@@ -1,3 +1,4 @@
+import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
@@ -227,6 +228,17 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => {
+                            setRevealed(null);
+                            openVaultAccess({ environmentId, itemId: item.id });
+                          }}
+                        >
+                          Why this access?
+                        </Button>
                         <Button
                           size="xs"
                           variant="ghost"
@@ -498,7 +510,7 @@ function VaultEditor({
               disabled={busy || (item !== null && !replace)}
             >
               <SelectTrigger aria-labelledby={`${fieldId}-kind`}>
-                <SelectValue />
+                <SelectValue>{VAULT_KIND_LABELS[kind]}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {VaultItemKind.literals.map((value) => (

@@ -1,28 +1,28 @@
-# L77 implementation plan
+# L77 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. Kyle authorized the complete packet. This local milestone implements
+access explanations and change previews; it does not deploy a service or migrate personal credentials.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+The local milestone exposes the execution evaluator through an authorized explanation
+service. It shows policy/grant revisions, ancestry and recent safe decisions. A versioned preview
+shows known descendant grants and item references before applying a change, with explicit
+unknowns for external copies and unimplemented consumers. Abandoning a preview changes nothing.
 
-## Steps
+Web/desktop Settings, a contextual item link and the active-thread command palette reach the
+inspector. Mobile has equivalent settings and an item-context sheet. Updated policy hides old
+results in the mounted management view; readiness expires after 60 seconds. CLI/MCP reuse the
+same service. Calling threads can explain only themselves and need inspect access for item
+metadata; full-access administrator clients may specify a thread.
 
-1. Expose structured explanations from the execution evaluator and safe usage summaries.
-2. Build impact preview against binding and grant revisions, including incomplete external visibility.
-3. Add item and denial entry points with accessible relationship lists and links to owning editors.
+## Remaining
 
-## Integration and completion
+Join profile bindings, enrolled broker leases, pending approvals, provider identity and
+rotation impact when their owning packets provide authoritative contracts. Add complete audit
+retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+interaction checks remain separate coverage. A preview cannot inventory external copies.
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Use the complete PRODUCT target and shared extension contract when extending this milestone.
+Keep thin transports and one execution evaluator. Checks and integrated evidence are in
+[TESTING.md](./TESTING.md). No production rollout is implied by passing local verification.

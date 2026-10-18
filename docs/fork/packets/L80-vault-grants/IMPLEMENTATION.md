@@ -1,29 +1,29 @@
-# L80 implementation plan
+# L80 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. Kyle authorized the complete packet. This local milestone implements
+thread/project grants; it does not deploy a service or migrate personal credentials.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+The local milestone provides environment-owned thread/project grants, one default-deny
+evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
+attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
+survive restart and OpenBao restore. UI changes require an explicit preview and apply;
+suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
 
-## Steps
+Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
+permission ceiling. Human environment administration remains governed by access:read/write;
+agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
+thread, but enrollment, workload leases and external runner attestation are not delivered.
 
-1. Specify policy precedence, destination semantics and principal attestation with concrete allow/deny examples.
-2. Implement one evaluator and monotonic grant revision/revocation semantics.
-3. Bind delegation and schedules to authenticated workloads without widening existing T3 permissions.
-4. Add grant management and explanations shared by UI, CLI and broker.
+## Remaining
 
-## Integration and completion
+Finish enrolled machine/runner identities, schedule attestation beyond T3 thread identity,
+platform membership and role mapping, external-use leases and broker revocation propagation.
+Decide which deployment boundaries require separate OS users or containers. The current
+allow-list union has no explicit deny rules. Same-user full-access processes remain outside
+any promise of per-item host isolation.
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Use the complete PRODUCT target and shared extension contract when extending this milestone.
+Keep thin transports and one execution evaluator. Checks and integrated evidence are in
+[TESTING.md](./TESTING.md). No production rollout is implied by passing local verification.

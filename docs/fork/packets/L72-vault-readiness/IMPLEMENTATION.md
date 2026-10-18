@@ -1,28 +1,26 @@
-# L72 implementation plan
+# L72 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. Kyle authorized the complete packet. This local milestone implements
+server-context readiness; it does not deploy a service or migrate personal credentials.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
+16 explicit item/action/destination requirements through the execution evaluator. Results name
+the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
+mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
 
-## Steps
+Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
+The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
+GitHub authentication, host trust, provider tools or unattended launch readiness.
 
-1. Implement check adapters with explicit supported, unavailable and failed results; never invoke an interactive login as a check.
-2. Run adapters under the same principal, environment and tool configuration as the intended workload.
-3. Expose cancellable results through RPC, CLI and MCP, then add environment and project preflight UI.
+## Remaining
 
-## Integration and completion
+Implement enrolled broker/runner context probes, profile requirement discovery, harmless
+SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
+preflight with project launches and schedules. Durable long-running check operations are not
+needed by the current bounded server check, but remain required for future external probes.
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Use the complete PRODUCT target and shared extension contract when extending this milestone.
+Keep thin transports and one execution evaluator. Checks and integrated evidence are in
+[TESTING.md](./TESTING.md). No production rollout is implied by passing local verification.

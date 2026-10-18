@@ -21,7 +21,9 @@ local foundation is reviewable without deploying a service or importing personal
    actor provenance and recovery behavior. Do not log payloads or private references.
 4. Finish structured kinds, binding/deletion impact and control-plane administration against
    the full PRODUCT scope. Coordinate interfaces with grants, brokers and recovery packets.
-5. Perform authorized web/desktop/mobile/remote interaction verification before marking Done.
+5. Complete broader client acceptance beyond the authorized web/native iOS grant milestone,
+   including Electron-specific, Android, remote relay/tunnel and file export/reconnect behavior.
 
-Other Vault packets remain selected and queued. Foundation work does not complete their
+L80/L77/L72 now have local policy, inspector and server-readiness milestones; their complete
+PRODUCT outcomes remain in progress. Other Vault packets remain selected and queued. Foundation work does not complete their
 readiness, SSH, GitHub, provisioning, approval, lifecycle or recovery-management outcomes.

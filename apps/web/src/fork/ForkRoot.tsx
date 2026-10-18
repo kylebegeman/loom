@@ -1,3 +1,4 @@
+import { VaultAccessHost } from "./vault/AccessHost";
 import { LibraryActionHost } from "./project-library/LibraryActionHost";
 import { WorkspaceHandoffHost } from "./workspace-handoff/WorkspaceHandoffHost";
 import { PcbPreviewCommandHost } from "./pcb-preview/commands";
@@ -17,6 +18,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   readonly id: string;
   readonly Component: ComponentType;
 }> = [
+  { id: "vault-access", Component: VaultAccessHost },
   { id: "project-library-actions", Component: LibraryActionHost },
   { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },
   { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },

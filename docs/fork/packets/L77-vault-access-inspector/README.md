@@ -1,10 +1,30 @@
 # L77: Explain access and preview changes
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress**. Local access explanations and change previews milestone implemented; full packet scope retained.
 
 Explain effective credential access and the impact of changing it.
 
 V06 | Minor improvement | Complexity: Medium | Impact: High
+
+## Delivered milestone
+
+The local milestone exposes the execution evaluator through an authorized explanation
+service. It shows policy/grant revisions, ancestry and recent safe decisions. A versioned preview
+shows known descendant grants and item references before applying a change, with explicit
+unknowns for external copies and unimplemented consumers. Abandoning a preview changes nothing.
+
+Web/desktop Settings, a contextual item link and the active-thread command palette reach the
+inspector. Mobile has equivalent settings and an item-context sheet. Updated policy hides old
+results in the mounted management view; readiness expires after 60 seconds. CLI/MCP reuse the
+same service. Calling threads can explain only themselves and need inspect access for item
+metadata; full-access administrator clients may specify a thread.
+
+## Remaining selected scope
+
+Join profile bindings, enrolled broker leases, pending approvals, provider identity and
+rotation impact when their owning packets provide authoritative contracts. Add complete audit
+retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+interaction checks remain separate coverage. A preview cannot inventory external copies.
 
 ## Scope
 
@@ -21,7 +41,7 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
+`ext-vault` has an implemented encrypted-record boundary. Broker, platform identity and delivery portions
 remain target designs; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
@@ -30,8 +50,8 @@ Uses the shared evaluator, metadata and minimum audit interfaces. Approval and r
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+All implementation lives in fork-owned code and existing registries. No new upstream seams
+were required for this chunk. See [SEAMS.md](./SEAMS.md) for the shared boundary.
 
 ## Documents
 

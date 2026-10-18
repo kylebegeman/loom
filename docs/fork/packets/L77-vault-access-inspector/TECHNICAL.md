@@ -1,9 +1,43 @@
 # L77 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
-Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
-permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+## Implemented boundary
+
+The local milestone exposes the execution evaluator through an authorized explanation
+service. It shows policy/grant revisions, ancestry and recent safe decisions. A versioned preview
+shows known descendant grants and item references before applying a change, with explicit
+unknowns for external copies and unimplemented consumers. Abandoning a preview changes nothing.
+
+Web/desktop Settings, a contextual item link and the active-thread command palette reach the
+inspector. Mobile has equivalent settings and an item-context sheet. Updated policy hides old
+results in the mounted management view; readiness expires after 60 seconds. CLI/MCP reuse the
+same service. Calling threads can explain only themselves and need inspect access for item
+metadata; full-access administrator clients may specify a thread.
+
+Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implementation is
+`apps/server/src/fork/vault/VaultAccess.ts` and `VaultPolicy.ts`. The active contract is in
+[EXTENSION-POINTS.md](../EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
+
+Policy is one OpenBao KV v2 CAS document at
+`environments/<sha256(environmentId)>/access-policy`, separate from item records. It caps grants
+at 128, resources per grant at 32, audit retention at 256 and mutation receipts at 32. Policy
+revision changes only on grant edits; audit writes still CAS against the backend version.
+Decisions must persist before authorizing a gated action. Four contention attempts fail closed.
+This is a bounded operational history, not an immutable audit service.
+
+RPC tags are `loom.vault-grants.catalog`, `.snapshot`, `.apply`,
+`loom.vault-access-inspector.preview`, `.explain` and `loom.vault-readiness.check`. Inspection
+uses access:read and mutation uses access:write. MCP names are `loom_vault_grants`,
+`loom_vault_grants_apply`, `loom_vault_grants_preview`, `loom_vault_access_explain`,
+`loom_vault_readiness` and `loom_vault_grants_delegate`. There is no raw-value agent tool.
+
+## Remaining target design
+
+Join profile bindings, enrolled broker leases, pending approvals, provider identity and
+rotation impact when their owning packets provide authoritative contracts. Add complete audit
+retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+interaction checks remain separate coverage. A preview cannot inventory external copies.
+
+The following sections retain the complete target design where it exceeds this milestone.
 
 ## Overview
 
@@ -13,8 +47,7 @@ Expose the same policy evaluator used at execution as an authorized explanation 
 
 `explain` evaluates a principal/resource/action context; `previewChange` returns known impacted consumers and a policy revision. Outputs include explicit unknowns. This feature does not create a separate grant evaluator or secretly apply changes.
 
-Use packet-owned `loom.vault-access-inspector.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
+Use packet-owned `loom.vault-access-inspector.*` RPC methods if Loom transport is needed; the current schemas are in the shared contract. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.
 Metadata visibility, item management and credential use are distinct rights.
@@ -31,7 +64,7 @@ Read shared relationships with bounded pagination. Previews are short-lived and 
 
 Place shared client state in client-runtime and surface it through web, desktop and mobile.
 Gate on advertised Vault capability/version; disable unsupported operations without disabling
-ordinary T3 behavior. Agent tools use `loom_vault_access_inspector_*` names if exposed and
+ordinary T3 behavior. Agent tools use the names listed in the implemented boundary and
 return safe summaries or operation handles. An agent cannot approve its own access, export raw
 values by default or widen the caller's existing T3 permissions.
 

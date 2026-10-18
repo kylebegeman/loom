@@ -10,11 +10,11 @@ Kyle authorized implementation of all sixteen Loom Vault packets on 2026-10-17 a
 **self-hosted OpenBao** behind Loom's UI, identity model and agent broker. V01 to V16 remain
 mapped to L72 to L87 in the [Vault index](./LOOM-VAULT.md). No packet was dropped.
 
-L78 and the shared encrypted-record foundation are **In progress**. The current milestone
-provides versioned OpenBao records, protected management, private secret ingress and web/mobile
-settings. The other packets are **Selected; queued**, with L80 retaining the complete grant/policy design.
-Implement foundation/policy, then Dorothy's broker/SSH/GitHub/delivery/readiness path, followed
-by the remaining product workflows. Their complete PRODUCT scope remains selected.
+L78 encrypted records and L80/L77/L72 grants, access explanations and server-context readiness
+are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
+delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
+Next is Dorothy's broker/SSH/GitHub/delivery path, followed by the remaining workflows. The
+current readiness check explicitly does not prove unattended SSH or provider authentication.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and

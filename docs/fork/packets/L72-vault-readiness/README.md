@@ -1,10 +1,28 @@
 # L72: Headless readiness checks
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress**. Local server-context readiness milestone implemented; full packet scope retained.
 
 Prove an environment can perform its configured unattended work before launching a task.
 
 V01 | Minor improvement | Complexity: Medium | Impact: High
+
+## Delivered milestone
+
+The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
+16 explicit item/action/destination requirements through the execution evaluator. Results name
+the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
+mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
+
+Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
+The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
+GitHub authentication, host trust, provider tools or unattended launch readiness.
+
+## Remaining selected scope
+
+Implement enrolled broker/runner context probes, profile requirement discovery, harmless
+SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
+preflight with project launches and schedules. Durable long-running check operations are not
+needed by the current bounded server check, but remain required for future external probes.
 
 ## Scope
 
@@ -21,7 +39,7 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
+`ext-vault` has an implemented encrypted-record boundary. Broker, platform identity and delivery portions
 remain target designs; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
@@ -30,8 +48,8 @@ Uses shared inspection and connector-check interfaces. Can check existing GitHub
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+All implementation lives in fork-owned code and existing registries. No new upstream seams
+were required for this chunk. See [SEAMS.md](./SEAMS.md) for the shared boundary.
 
 ## Documents
 

@@ -28,8 +28,8 @@ base64 fixture was actually valid base64. After correcting that test input, all 
 passed on the final rerun. No production behavior was weakened to satisfy it.
 
 Affected contracts, server, client-runtime, web and mobile packages typecheck. Targeted lint and
-format checks pass. Native mobile static checks passed SwiftLint, ktlint and detekt. No repo-wide
-suite or application/browser/device process was launched.
+format checks pass. Native mobile static checks passed SwiftLint, ktlint and detekt. No repo-wide suite was run. The subsequent access milestone has authorized isolated web/native
+iOS verification; see L80/L77/L72 TESTING.md for its exact coverage.
 
 ## Real OpenBao proof
 
@@ -47,8 +47,9 @@ Reproduction instructions are in [the operating guide](../../operations/vault.md
 
 ## Integration and remaining acceptance
 
-Browser, Electron and device interaction verification has **not run**; repository instructions
-require explicit authorization. Remaining checks include responsive layout, keyboard/screen-reader
+The access milestone exercised isolated web and native iOS item/grant flows with Kyle's
+authorization. Electron-specific and Android interaction verification remain unrun. Remaining
+checks include complete keyboard/screen-reader
 operation, file import/export, dismiss/focus behavior, reconnect with an active editor, permission
 loss during an operation and remote/version-skew behavior in real clients. Static capability and
 permission gates exist but do not substitute for these interaction checks.

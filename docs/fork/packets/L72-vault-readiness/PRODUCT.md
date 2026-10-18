@@ -1,5 +1,21 @@
 # L72 product
 
+## Current delivery boundary
+
+The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
+16 explicit item/action/destination requirements through the execution evaluator. Results name
+the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
+mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
+
+Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
+The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
+GitHub authentication, host trust, provider tools or unattended launch readiness.
+
+The complete selected product below remains the acceptance target. Implement enrolled broker/runner context probes, profile requirement discovery, harmless
+SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
+preflight with project launches and schedules. Durable long-running check operations are not
+needed by the current bounded server check, but remain required for future external probes.
+
 ## Summary
 
 Prove an environment can perform its configured unattended work before launching a task.
@@ -50,8 +66,7 @@ Uses shared inspection and connector-check interfaces. Can check existing GitHub
 ## Decisions and open questions
 
 Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
-separation and self-hosting option are product requirements. Proposed behavior above remains
-subject to design review; the following choices are not resolved by selection:
+separation and self-hosting option are product requirements. The delivered decisions are recorded in TECHNICAL.md; these broader choices remain:
 
 - Which checks block a launch versus warn, and what freshness window is acceptable?
 - Should scheduled tasks require preflight by default or only when their profile requests it?

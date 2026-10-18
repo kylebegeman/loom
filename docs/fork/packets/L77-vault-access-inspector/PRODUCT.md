@@ -1,5 +1,23 @@
 # L77 product
 
+## Current delivery boundary
+
+The local milestone exposes the execution evaluator through an authorized explanation
+service. It shows policy/grant revisions, ancestry and recent safe decisions. A versioned preview
+shows known descendant grants and item references before applying a change, with explicit
+unknowns for external copies and unimplemented consumers. Abandoning a preview changes nothing.
+
+Web/desktop Settings, a contextual item link and the active-thread command palette reach the
+inspector. Mobile has equivalent settings and an item-context sheet. Updated policy hides old
+results in the mounted management view; readiness expires after 60 seconds. CLI/MCP reuse the
+same service. Calling threads can explain only themselves and need inspect access for item
+metadata; full-access administrator clients may specify a thread.
+
+The complete selected product below remains the acceptance target. Join profile bindings, enrolled broker leases, pending approvals, provider identity and
+rotation impact when their owning packets provide authoritative contracts. Add complete audit
+retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+interaction checks remain separate coverage. A preview cannot inventory external copies.
+
 ## Summary
 
 Explain effective credential access and the impact of changing it.
@@ -50,10 +68,10 @@ Uses the shared evaluator, metadata and minimum audit interfaces. Approval and r
 ## Decisions and open questions
 
 Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
-separation and self-hosting option are product requirements. Proposed behavior above remains
-subject to design review; the following choices are not resolved by selection:
+separation and self-hosting option are product requirements. The delivered decisions are recorded in TECHNICAL.md; these broader choices remain:
 
 - Which usage details may project members see versus Vault administrators?
-- What audit history window should explanations include by default?
+- Current retention is 256 events, with 50 in management and 10 per-item decisions in
+  explanations; long-term durable audit policy remains open.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

@@ -1,3 +1,4 @@
+import { VaultAccessSettingsSection, VaultAccessCheckSheet } from "./AccessSettingsSection";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -48,17 +49,20 @@ export function VaultSettingsSection({
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-core")) return null;
   return (
-    <SettingsSection title="Vault">
-      {canRead ? (
-        <VaultItems
-          key={`${environmentId}:${canWrite}:${connected}`}
-          environmentId={environmentId}
-          connected={connected}
-        />
-      ) : (
-        <Text>Your access to this computer does not include Vault inspection.</Text>
-      )}
-    </SettingsSection>
+    <>
+      <SettingsSection title="Vault">
+        {canRead ? (
+          <VaultItems
+            key={`${environmentId}:${canWrite}:${connected}`}
+            environmentId={environmentId}
+            connected={connected}
+          />
+        ) : (
+          <Text>Your access to this computer does not include Vault inspection.</Text>
+        )}
+      </SettingsSection>
+      <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
+    </>
   );
 }
 function VaultItems({
@@ -84,6 +88,7 @@ function VaultItems({
   const canReveal = useAtomValue(vault.reveal.permissionAtom(environmentId));
   const saveChange = useAtomCommand(vault.change, { reportFailure: false });
   const revealItem = useAtomCommand(vault.reveal, { reportFailure: false });
+  const [checkingItem, setCheckingItem] = useState<string | null>(null);
   const [editing, setEditing] = useState<VaultItemSummary | "new" | null>(null);
   const [revealed, setRevealed] = useState<{ id: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -206,6 +211,14 @@ function VaultItems({
               </Text>
               <View className="flex-row flex-wrap gap-2">
                 <Button
+                  label="Why this access?"
+                  disabled={!connected || busy}
+                  onPress={() => {
+                    setRevealed(null);
+                    setCheckingItem(item.id);
+                  }}
+                />
+                <Button
                   label={
                     item.kind === "secure-file"
                       ? "Share file"
@@ -262,6 +275,13 @@ function VaultItems({
           </View>
         </>
       )}
+      {checkingItem !== null ? (
+        <VaultAccessCheckSheet
+          environmentId={environmentId}
+          itemId={checkingItem}
+          onClose={() => setCheckingItem(null)}
+        />
+      ) : null}
       {editing !== null ? (
         <VaultEditor
           key={editing === "new" ? "new" : editing.id}
@@ -375,6 +395,7 @@ function VaultEditor({
       onClose={onClose}
     >
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
         contentContainerClassName="gap-4 px-5 pb-8"

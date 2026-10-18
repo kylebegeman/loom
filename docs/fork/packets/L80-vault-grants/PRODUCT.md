@@ -1,5 +1,24 @@
 # L80 product
 
+## Current delivery boundary
+
+The local milestone provides environment-owned thread/project grants, one default-deny
+evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
+attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
+survive restart and OpenBao restore. UI changes require an explicit preview and apply;
+suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
+
+Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
+permission ceiling. Human environment administration remains governed by access:read/write;
+agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
+thread, but enrollment, workload leases and external runner attestation are not delivered.
+
+The complete selected product below remains the acceptance target. Finish enrolled machine/runner identities, schedule attestation beyond T3 thread identity,
+platform membership and role mapping, external-use leases and broker revocation propagation.
+Decide which deployment boundaries require separate OS users or containers. The current
+allow-list union has no explicit deny rules. Same-user full-access processes remain outside
+any promise of per-item host isolation.
+
 ## Summary
 
 Authorize recurring agent work at a useful scope without granting access to the personal vault.
@@ -50,10 +69,11 @@ Implements ext-vault policy and principal interfaces. Metadata readers, SSH and 
 ## Decisions and open questions
 
 Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
-separation and self-hosting option are product requirements. Proposed behavior above remains
-subject to design review; the following choices are not resolved by selection:
+separation and self-hosting option are product requirements. The delivered decisions are recorded in TECHNICAL.md; these broader choices remain:
 
-- D6: What are the initial grant scopes and conflict precedence, and are deny rules necessary?
+- D6 is resolved for the local milestone: default deny, union of allow grants, exact scopes,
+  parent attenuation, online evaluation and permanent revocation. Explicit deny rules and
+  platform role mapping remain open.
 - Which workloads need OS-user or container isolation beyond broker authorization?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

@@ -22,3 +22,12 @@ Verified against `2f385ee835`; refresh line citations before implementation.
 External engines and specs in the foundation are evaluation references. No external code or
 assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
 this packet adds no application dependency.
+
+## Implemented source
+
+- [Shared access contract](../../../../packages/contracts/src/fork/vault-access.ts)
+- [Policy evaluator](../../../../apps/server/src/fork/vault/VaultPolicy.ts)
+- [Access service](../../../../apps/server/src/fork/vault/VaultAccess.ts)
+- [Behavior tests](../../../../apps/server/src/fork/vault/VaultAccess.test.ts)
+- [User guide](../../user/vault.md)
+- [Operating guide](../../operations/vault.md)

@@ -1,8 +1,8 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records are in progress; the
-remaining packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records and L80/L77/L72 grants, inspector and server-readiness milestones
+are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
@@ -24,7 +24,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78 is in progress; the remaining packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78, L80, L77 and L72 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 
@@ -75,8 +75,9 @@ runner ergonomics and permission semantics out of backend-specific clients.
 
 ## Capability dependencies and packet independence
 
-The `ext-vault` boundary has implemented encrypted-record contracts and services. Identity,
-policy, audit, broker and delivery target interfaces remain subject to their packet designs. See the explicit proposal in
+The `ext-vault` boundary has implemented encrypted-record contracts and services. Thread/project policy, bounded decision history, explanations and server-context readiness
+are implemented. Platform identity, full audit, broker and delivery target interfaces remain
+subject to their packet designs. See the explicit proposal in
 [EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
 Promote each implemented shared contract into that specification as it becomes usable.
 A packet can supply a missing approved portion of the shared extension in a separate commit;
@@ -120,7 +121,7 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 | D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                            |
 | D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open                                                            |
 | D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                            |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Open                                                            |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                  |
 | D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Open                                                            |
 | D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open                                                            |
 | D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                            |

@@ -1,3 +1,4 @@
+import { vaultAccessPaletteSource } from "../vault/access-palette";
 import { workspaceHandoffPaletteSource } from "../workspace-handoff/palette";
 import { miniOffloadPaletteSource } from "../mini-offload/palette";
 import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
@@ -57,6 +58,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  vaultAccessPaletteSource,
   miniOffloadPaletteSource,
   fileOutlinePaletteSource,
   // snippetsPaletteSource,

@@ -1,21 +1,13 @@
 # L72 seams
 
-## Extension points
+No new upstream seams were needed. Server services, contracts, shared client state, RPC, MCP,
+CLI, web/desktop settings, palette and mobile UI use fork-owned files and existing registries.
+Mobile mounts access management through its existing fork-owned VaultSettingsSection.
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
-future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+`ext-vault` now includes shared policy, explanation and readiness contracts. See
+[EXTENSION-POINTS.md](../EXTENSION-POINTS.md#loom-vault-foundation-ext-vault). Packet clients
+consume these shared services rather than another packet's UI internals. Broker/runner launch
+and SSH integration remain future work; no new provider or SSH seam is claimed here.
 
-## Packet integration review
-
-Inspect GitHubHostSetup and runner launch preparation. Prefer adapter registration; do not insert credential probing into the pure orchestrator.
-
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
-
-## Actual seams and merge status
-
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+The isolated fixture-home validation fix was committed separately. It is tracked under
+`fork: ext-dev-fixtures` in FORK.md and the seam manifest, independent of these features.
