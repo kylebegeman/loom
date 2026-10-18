@@ -94,10 +94,11 @@ The shared plumbing packets register into, specified in
 
 ### Vault seams
 
-| File                                             | Marker      | Why                                                                          |
-| ------------------------------------------------ | ----------- | ---------------------------------------------------------------------------- |
-| `apps/server/src/secrets/SecretRequests.ts`      | `ext-vault` | Bind private input transfers durably to an idempotent destination operation. |
-| `apps/server/src/secrets/SecretRequests.test.ts` | `ext-vault` | Cover private transfer retries and cleanup failures.                         |
+| File                                                                         | Marker       | Why                                                                          |
+| ---------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------- |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`  | Bind private input transfers durably to an idempotent destination operation. |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`  | Cover private transfer retries and cleanup failures.                         |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core` | Mount Vault management in the selected computer's native settings.           |
 
 L78's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L78-vault-core/),
 [user help](docs/fork/user/vault.md) and [operating guide](docs/fork/operations/vault.md).
