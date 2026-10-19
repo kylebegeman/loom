@@ -74,7 +74,7 @@ apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
-apps/server/scripts/migrate-dev-db.ts	dev-db	3
+apps/server/scripts/migrate-dev-db.ts	dev-db	7
 apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1
 apps/server/src/config.ts	mini-managed-projects	1
