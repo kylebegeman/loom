@@ -41,7 +41,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
-import { libraryAttachments } from "./attachments.ts";
+import { libraryAttachments, libraryPageUploads } from "./attachments.ts";
 import {
   LibraryAsset,
   type LibraryAsset as LibraryAssetType,
@@ -158,7 +158,10 @@ const make = Effect.gen(function* () {
     const localLibrary = yield* LibraryService.LibraryService;
     const localAssets = yield* Assets.LibraryAssetService;
     const publishLocalAttachments = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
-      for (const attachment of libraryAttachments(archive)) {
+      for (const attachment of [
+        ...libraryAttachments(archive),
+        ...(yield* libraryPageUploads(fs, config.attachmentsDir, archive)),
+      ]) {
         const sourcePath = resolveAttachmentPathById({
           attachmentsDir: config.attachmentsDir,
           attachmentId: attachment.id,
@@ -391,7 +394,10 @@ const make = Effect.gen(function* () {
   });
   const publishAttachments = Effect.fnUntraced(
     function* (archive: LibraryThreadArchive) {
-      for (const attachment of libraryAttachments(archive)) {
+      for (const attachment of [
+        ...libraryAttachments(archive),
+        ...(yield* libraryPageUploads(fs, config.attachmentsDir, archive)),
+      ]) {
         const published = yield* sql<{
           bytes: number;
         }>`SELECT bytes FROM fork_library_source_assets WHERE attachment_id=${attachment.id}`;
