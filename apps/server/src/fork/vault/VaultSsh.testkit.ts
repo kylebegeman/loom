@@ -1,3 +1,7 @@
+import * as VaultGitHub from "./VaultGitHub.ts";
+import * as GitHubTransport from "./GitHubTransport.ts";
+import * as GitHubCli from "./GitHubCli.ts";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import { EnvironmentId, ThreadId, IsoDateTime, type OrchestrationV2Run } from "@t3tools/contracts";
 import {
@@ -38,6 +42,10 @@ export const sshFixture = (
     never,
     SshCrypto.SshCrypto
   > = SshTransport.layer,
+  githubAdapters = Layer.mergeAll(
+    GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+    GitHubCli.layer,
+  ),
 ) =>
   Effect.gen(function* () {
     const random = yield* Crypto.Crypto;
@@ -95,7 +103,11 @@ export const sshFixture = (
         ),
       ),
     );
-    const context = yield* Layer.build(VaultProfiles.layer.pipe(Layer.provideMerge(layer))),
+    const github = VaultGitHub.layer.pipe(
+      Layer.provideMerge(layer),
+      Layer.provideMerge(githubAdapters),
+    );
+    const context = yield* Layer.build(VaultProfiles.layer.pipe(Layer.provideMerge(github))),
       ssh = Context.get(context, VaultSsh.VaultSsh),
       core = Context.get(context, VaultCore.VaultCore),
       access = Context.get(context, VaultAccess.VaultAccess),

@@ -13,7 +13,7 @@ marked and is reused through its fork-owned string.
 
 ## Future review areas
 
-Ordinary Git HTTPS/helper routing and explicit project/default selection must review existing
+Ordinary Git HTTPS/helper routing must review existing
 GitHubHostSetup/GitHubCredentials, retain ambient precedence for unmigrated projects and list
 any actual marked upstream integration before adding it. Other packets consume the shared
 contract/service boundary rather than these client components.
@@ -22,3 +22,7 @@ contract/service boundary rather than these client components.
 
 Read-only merge previews and baseline differences are recorded in [TESTING.md](./TESTING.md).
 A baseline conflict is not a clean merge claim; no working-tree merge or deployment is implied.
+
+GitHub profile binding reuses L75 shared profile/launch contracts and fork-only client components.
+The optional execution guard rechecks profile authority without importing profile internals into
+the connector. No upstream file or manifest changes are introduced by this section.

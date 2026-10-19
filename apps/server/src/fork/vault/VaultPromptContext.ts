@@ -28,7 +28,7 @@ export class VaultPromptError extends Schema.TaggedError<VaultPromptError>()("Va
       "profile-changed":
         "The reviewed Vault profile changed. Review and attach its current version before retrying.",
       "profile-blocked":
-        "The Vault profile is not ready for this thread. Check required keys, host trust and use grants.",
+        "The Vault profile is not ready for this thread. Check required connections, repositories, keys, host trust and use grants.",
       "reference-blocked":
         "A Vault reference is archived, missing or not inspect-granted to this thread. Repair or remove it before retrying.",
     }[this.reason];

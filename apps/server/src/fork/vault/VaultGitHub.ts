@@ -29,12 +29,12 @@ type Failure = VaultError | VaultGitHubError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
-    readonly info: (id: string) => Effect.Effect<VaultGitHubInfo, Failure>;
+    readonly info: (id: string) => Effect.Effect<VaultGitHubInfo, VaultError>;
     readonly list: (
       cursor: string | null,
     ) => Effect.Effect<
       { items: ReadonlyArray<VaultGitHubInfo>; nextCursor: string | null },
-      Failure
+      VaultError
     >;
     readonly save: (
       input: VaultGitHubSave,
@@ -49,10 +49,11 @@ export class VaultGitHub extends Context.Service<
       input: VaultItemChange,
       actor: string,
       authorize: Effect.Effect<void, VaultError>,
-    ) => Effect.Effect<VaultGitHubInfo["item"], Failure>;
+    ) => Effect.Effect<VaultGitHubInfo["item"], VaultError>;
     readonly run: (
       input: VaultGitHubRun,
       threadId: ThreadId,
+      guard?: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultGitHubResult, Failure>;
   }
 >()("t3/fork/vault/VaultGitHub") {}
@@ -200,13 +201,14 @@ const make = Effect.gen(function* () {
       yield* load(input.id);
       return yield* core.change(input, actor, authorize);
     }),
-    run: Effect.fn("VaultGitHub.run")(function* (input, threadId) {
+    run: Effect.fn("VaultGitHub.run")(function* (input, threadId, guard = Effect.void) {
       if (!isRun(input)) return yield* fail("invalid-input");
       const initial = yield* threads
         .getThreadShell(threadId)
         .pipe(Effect.mapError(() => fail("denied")));
       if (!initial?.activeRunId) return yield* fail("denied");
       const authorize = Effect.gen(function* () {
+        yield* guard;
         const thread = yield* threads
           .getThreadShell(threadId)
           .pipe(Effect.mapError(() => fail("denied")));

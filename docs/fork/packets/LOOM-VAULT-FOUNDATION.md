@@ -8,7 +8,7 @@ owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
 ## Implemented reference and profile boundary
 
 L73/L75 now provide metadata search, stable environment/item references and project-local
-SSH/Git profiles through existing shared `ext-vault` services and client state. Profiles
+SSH/Git/GitHub profiles through existing shared `ext-vault` services and client state. Profiles
 hold no values. First use durably pins a profile revision and key versions for the active run;
 current policy/key/host/archive checks still gate execution. OpenBao paths and retention limits
 include manual terminal-run retirement with durable tombstones and retained OpenBao history,
@@ -331,4 +331,7 @@ Mediated GH uses exact repository grants, stable current run/version checks and 
 CLI configuration. It does not give ordinary terminals GitHub credentials or isolate same-user
 full-access processes. App session tokens are repository-limited and released best effort; local
 disconnection, provider revocation and OpenBao history are distinct outcomes. The [L82 design](./L82-vault-connectors/TECHNICAL.md)
-records implementation limits and the selected onboarding/connector work still to do.
+records implementation limits and the selected onboarding/connector work still to do. GitHub project bindings now reuse the
+profile/run-pin boundary, with configuration/grant preflight and named mediated GH execution.
+Version 2 declarations omit all local connection/repository bindings; SSH/Git exports retain
+version 1. Configuration review is distinct from live provider/API or CLI readiness.

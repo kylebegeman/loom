@@ -12,9 +12,11 @@ import { Button } from "../../components/ui/Button";
 import { uuidv4 } from "../../lib/uuid";
 export function VaultRequirementImport({
   disabled,
+  supportsGitHub,
   onImport,
 }: {
   disabled: boolean;
+  supportsGitHub: boolean;
   onImport: (p: VaultProfileDefinition) => void;
 }) {
   const [open, setOpen] = useState(false),
@@ -34,8 +36,8 @@ export function VaultRequirementImport({
       {open ? (
         <>
           <Text>
-            Paste a Loom requirements declaration. Keys and repositories stay local. Imported
-            requirements start unbound.
+            Paste a Loom requirements declaration. Keys, connections and repositories stay local.
+            Imported requirements start unbound.
           </Text>
           <TextInput
             accessibilityLabel="Portable Vault requirements"
@@ -52,8 +54,8 @@ export function VaultRequirementImport({
           />
           {error ? (
             <Text accessibilityRole="alert">
-              Use a version 1 Loom requirements declaration with unique SSH or Git requirements and
-              no local bindings or extra fields.
+              Use a Loom declaration with unique SSH, Git or GitHub requirements. GitHub needs
+              version 2 and server support. Include no local bindings or extra fields.
             </Text>
           ) : null}
           <Button
@@ -61,7 +63,10 @@ export function VaultRequirementImport({
             disabled={disabled || !text.trim()}
             onPress={() => {
               const declaration = readVaultProfileRequirements(text);
-              if (!declaration) {
+              if (
+                !declaration ||
+                (!supportsGitHub && declaration.requirements.some((r) => r.kind === "github"))
+              ) {
                 setError(true);
                 return;
               }

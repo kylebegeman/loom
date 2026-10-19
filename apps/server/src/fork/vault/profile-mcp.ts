@@ -1,4 +1,5 @@
 import {
+  VaultGitHubError,
   VaultProfilePinList,
   VaultProfilePinPage,
   VaultProfilePinRetire,
@@ -31,6 +32,7 @@ import * as VaultProfiles from "./VaultProfiles.ts";
 import * as VaultReferences from "./VaultReferences.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 const failure = Schema.Union([
+  VaultGitHubError,
   VaultError,
   VaultSshError,
   VaultWorkloadError,
@@ -72,7 +74,7 @@ export const VaultProfileToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_profiles", {
     description:
-      "List this authenticated thread's project profiles and named SSH/Git requirements, including the default for new runs. Profiles contain references, not values, and grant no access. Administrator clients must supply projectId; threads cannot select another project.",
+      "List this authenticated thread's project profiles and named SSH/Git/GitHub requirements, including the default for new runs. Profiles contain references, not values, and grant no access. Administrator clients must supply projectId; threads cannot select another project.",
     parameters: Schema.Struct({
       projectId: Schema.optional(VaultProfileMutation.fields.projectId),
     }),
@@ -101,7 +103,7 @@ export const VaultProfileToolkit = Toolkit.make(
   }),
   Tool.make("loom_vault_profile_resolve", {
     description:
-      "Resolve this active full-access/default run's selected project profile. profileId:null chooses the project default on first use. All requirements need current use grants and trusted active SSH keys. Persist a run-bound snapshot of profile revision and key versions, never secret values. Later edits/default switches apply to future runs; changing profile or rotating a key requires a new run. Archive/revocation blocks new use. This resolution is not an access token.",
+      "Resolve this active full-access/default run's selected project profile. profileId:null chooses the project default on first use. All requirements need current use grants and active versioned keys/connections. SSH/Git also require host trust; GitHub requires its repository allowlist. No live GitHub API or CLI probe occurs at resolution. Persist a run-bound snapshot of profile revision and key versions, never secret values. Later edits/default switches apply to future runs; changing profile or rotating a key requires a new run. Archive/revocation blocks new use. This resolution is not an access token.",
     parameters: Schema.Struct({ profileId: Schema.NullOr(VaultItemId) }),
     success: VaultProfileResolution,
     failure,
@@ -109,7 +111,7 @@ export const VaultProfileToolkit = Toolkit.make(
   }),
   Tool.make("loom_vault_profile_run", {
     description:
-      "Execute a named SSH/Git binding using this run's pinned project profile, without repeating item IDs or destinations. profileId:null uses the existing run selection or project default. SSH operation accepts kind:ssh, argv, timeoutMs; Git accepts kind:git, action:ls-remote|fetch, timeoutMs. Workload setup and release are automatic through the configured server broker. Current grants, host trust, key version and profile archive state are rechecked. No raw secrets, global SSH config, clone/push or terminal socket setup.",
+      "Execute a named SSH/Git/GitHub binding using this run's pinned project profile, without repeating item IDs or destinations. profileId:null uses the existing run selection or project default. SSH operation accepts kind:ssh, argv, timeoutMs; Git accepts kind:git, action:ls-remote|fetch, timeoutMs. GitHub accepts kind:github and operation:{action:repo-view|pr-list|issue-list|pr-view|issue-view|pr-checks|pr-comment|issue-comment|issue-create,...documented fields}. It uses the bound connection/repository through isolated GH, with no SSH broker needed. GitHub write outcomes may be unknown on timeout; inspect before retry. Workload setup and release for SSH/Git are automatic through the configured server broker. Current grants, host trust, key version and profile archive state are rechecked. No raw secrets, global SSH config, clone/push or terminal socket setup.",
     parameters: VaultProfileRun,
     success: VaultProfileRunResult,
     failure,

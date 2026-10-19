@@ -45,3 +45,6 @@ contracts and both transfer components use existing profile registrations and ad
 
 Retained-selection inspection and retirement reuse the existing fork profile/RPC/settings/CLI/MCP
 registrations. This milestone adds no upstream seams, dependencies or SQL migrations.
+
+GitHub bindings reuse existing profile contracts/services, fork provider guidance and web/native
+settings/attachment controls. No new upstream seam, SQL migration or dependency is added.

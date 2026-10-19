@@ -10,9 +10,11 @@ import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 export function VaultRequirementImport({
   disabled,
+  supportsGitHub,
   onImport,
 }: {
   disabled: boolean;
+  supportsGitHub: boolean;
   onImport: (p: VaultProfileDefinition) => void;
 }) {
   const [text, setText] = useState(""),
@@ -22,8 +24,8 @@ export function VaultRequirementImport({
       <summary>Import portable requirements</summary>
       <div className="flex flex-col gap-2 py-2">
         <p className="text-sm">
-          Paste a Loom requirements declaration. Keys and repositories stay local. Imported
-          requirements start unbound; review them before saving.
+          Paste a Loom requirements declaration. Keys, connections and repositories stay local.
+          Imported requirements start unbound; review them before saving.
         </p>
         <Textarea
           aria-label="Portable Vault requirements"
@@ -37,8 +39,8 @@ export function VaultRequirementImport({
         />
         {error ? (
           <p role="alert">
-            Use a version 1 Loom requirements declaration with unique names and SSH or Git kinds.
-            Remove all local bindings and extra fields.
+            Use a Loom declaration with unique SSH, Git or GitHub names. GitHub requires version 2
+            and a server with GitHub profile support. Remove all local bindings and extra fields.
           </p>
         ) : null}
         <Button
@@ -46,7 +48,10 @@ export function VaultRequirementImport({
           disabled={disabled || !text.trim()}
           onClick={() => {
             const declaration = readVaultProfileRequirements(text);
-            if (!declaration) {
+            if (
+              !declaration ||
+              (!supportsGitHub && declaration.requirements.some((r) => r.kind === "github"))
+            ) {
               setError(true);
               return;
             }
@@ -69,8 +74,8 @@ export function VaultRequirementExport({ profile }: { profile: VaultProfileDefin
       <summary>Export requirements for {profile.label}</summary>
       <div className="flex flex-col gap-2 py-2">
         <p className="text-sm">
-          Includes the label, names and operation kinds only. Keys, repositories, grants and
-          defaults remain on this computer. Check labels before sharing.
+          Includes the label, names and operation kinds only. Keys, connections, repositories,
+          grants and defaults remain on this computer. Check labels before sharing.
         </p>
         <Textarea aria-label={`Requirements for ${profile.label}`} value={text} readOnly />
         <Button

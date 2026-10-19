@@ -27,3 +27,6 @@ OpenBao. The dedicated App/token milestone extends parent `78c8d44b17`.
 
 Uses existing jose, Effect and Node tooling. No external code or new production dependency is
 copied. Disposable provider/CLI test fixtures do not establish live GitHub acceptance.
+
+- [GitHub profile integration](../../../../apps/server/src/fork/vault/VaultGitHubProfiles.test.ts)
+- [Shared profile design](../L75-vault-profiles/TECHNICAL.md#github-profile-binding-and-mediated-execution)

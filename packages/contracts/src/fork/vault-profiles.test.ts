@@ -27,7 +27,7 @@ describe("portable Vault requirements", () => {
     const declaration = vaultProfileRequirements(profile);
     for (const candidate of [
       { ...declaration, token: "forbidden" },
-      { ...declaration, version: 2 },
+      { ...declaration, version: 3 },
       { ...declaration, requirements: [{ name: "code", kind: "git", itemId: "b".repeat(32) }] },
       { ...declaration, requirements: [declaration.requirements[0], declaration.requirements[0]] },
       { ...declaration, requirements: [{ name: "code", kind: "unsupported" }] },
@@ -37,4 +37,32 @@ describe("portable Vault requirements", () => {
     expect(readVaultProfileRequirements(" ".repeat(16385))).toBeNull();
     expect(readVaultProfileRequirements("invalid JSON")).toBeNull();
   });
+});
+
+it("versions GitHub declarations without carrying local connection or repository bindings", () => {
+  const source = {
+    ...profile,
+    bindings: [
+      ...profile.bindings,
+      {
+        name: "github",
+        kind: "github" as const,
+        itemId: "d".repeat(32),
+        repository: "private/api",
+      },
+    ],
+  };
+  const declaration = vaultProfileRequirements(source);
+  expect(declaration.version).toBe(2);
+  expect(readVaultProfileRequirements(JSON.stringify(declaration))).toEqual(declaration);
+  expect(readVaultProfileRequirements(JSON.stringify({ ...declaration, version: 1 }))).toBeNull();
+  expect(JSON.stringify(declaration)).not.toContain("private/api");
+  expect(JSON.stringify(declaration)).not.toContain("d".repeat(32));
+  expect(vaultProfileFromRequirements(declaration, "c".repeat(32)).bindings[1]).toEqual({
+    name: "github",
+    kind: "github",
+    itemId: null,
+    repository: null,
+  });
+  expect(vaultProfileRequirements(profile).version).toBe(1);
 });

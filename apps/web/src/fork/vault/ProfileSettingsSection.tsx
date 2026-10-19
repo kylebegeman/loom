@@ -1,3 +1,4 @@
+import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
@@ -87,9 +88,9 @@ function ProfileProjects({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Give SSH and Git requirements stable names. Profiles hold references and grant no access. A
-        run keeps the revision and key versions it first resolves; later edits and default changes
-        apply to later runs.
+        Give SSH, Git and GitHub requirements stable names. Profiles hold references and grant no
+        access. A run keeps the revision and key versions it first resolves; later edits and default
+        changes apply to later runs.
       </p>
       <label className="flex flex-col gap-1 text-sm">
         Project
@@ -143,6 +144,11 @@ function ProfileManager({
   canWrite: boolean;
   threads: ReadonlyArray<{ id: string; label: string }>;
 }) {
+  const configs = useServerConfigs();
+  const supportsGitHub = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    "vault-profile-github",
+  );
   const atom = profiles.list({ environmentId, input: { projectId } }),
     result = useAtomValue(atom),
     snapshot = data(result);
@@ -187,7 +193,7 @@ function ProfileManager({
       const parsed = decode(editing);
       if (Option.isNone(parsed))
         throw new Error(
-          "Use a label, unique lowercase binding names and valid Git paths. Add at least one requirement.",
+          "Use a label, unique lowercase binding names and valid Git paths or GitHub owner/repository names. Add at least one requirement.",
         );
       setReview(
         await runVault(profiles.preview, {
@@ -227,6 +233,7 @@ function ProfileManager({
         </Button>
       </div>
       <VaultRequirementImport
+        supportsGitHub={supportsGitHub}
         disabled={locked || !!editing || !snapshot || snapshot.profiles.length >= 32}
         onImport={edit}
       />
@@ -362,7 +369,13 @@ function ProfileManager({
                         n === i
                           ? {
                               ...old,
-                              kind: e.target.value === "git" ? "git" : "ssh",
+                              kind:
+                                e.target.value === "github"
+                                  ? "github"
+                                  : e.target.value === "git"
+                                    ? "git"
+                                    : "ssh",
+                              itemId: null,
                               repository: null,
                             }
                           : old,
@@ -371,15 +384,17 @@ function ProfileManager({
                   }
                 >
                   <option value="ssh">SSH command</option>
-                  <option value="git">Git repository</option>
+                  <option value="git">Git repository over SSH</option>
+                  {supportsGitHub ? <option value="github">GitHub operations</option> : null}
                 </select>
               </label>
-              {b.kind === "git" ? (
+              {b.kind !== "ssh" ? (
                 <label className="flex flex-col gap-1 text-sm">
-                  Repository path
+                  {b.kind === "github" ? "GitHub repository" : "Repository path"}
                   <Input
                     value={b.repository ?? ""}
-                    placeholder="team/repo.git"
+                    aria-label={`Requirement ${i + 1} repository`}
+                    placeholder={b.kind === "github" ? "owner/repository" : "team/repo.git"}
                     disabled={locked}
                     onChange={(e) =>
                       update({
@@ -393,28 +408,49 @@ function ProfileManager({
                 </label>
               ) : null}
               <p className="text-sm">
-                Selected key:{" "}
+                {b.kind === "github" ? "Selected connection: " : "Selected key: "}
                 {b.itemId ? (
                   <VaultBoundReference environmentId={environmentId} id={b.itemId} />
+                ) : b.kind === "github" ? (
+                  "No connection bound"
                 ) : (
                   "No key bound"
                 )}
               </p>
               <details>
-                <summary className="cursor-pointer text-sm">Choose or replace SSH key</summary>
-                <VaultReferencePicker
-                  environmentId={environmentId}
-                  kind="ssh-key"
-                  disabled={locked}
-                  onSelect={(ref) =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i ? { ...old, itemId: ref.item.id } : old,
-                      ),
-                    })
-                  }
-                />
+                <summary className="cursor-pointer text-sm">
+                  {b.kind === "github"
+                    ? "Choose or replace GitHub connection"
+                    : "Choose or replace SSH key"}
+                </summary>
+                {b.kind === "github" ? (
+                  <VaultGitHubConnectionPicker
+                    environmentId={environmentId}
+                    disabled={locked}
+                    onSelect={(itemId, repository) =>
+                      update({
+                        ...editing,
+                        bindings: editing.bindings.map((old, n) =>
+                          n === i ? { ...old, itemId, repository } : old,
+                        ),
+                      })
+                    }
+                  />
+                ) : (
+                  <VaultReferencePicker
+                    environmentId={environmentId}
+                    kind="ssh-key"
+                    disabled={locked}
+                    onSelect={(ref) =>
+                      update({
+                        ...editing,
+                        bindings: editing.bindings.map((old, n) =>
+                          n === i ? { ...old, itemId: ref.item.id } : old,
+                        ),
+                      })
+                    }
+                  />
+                )}
               </details>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -430,7 +466,7 @@ function ProfileManager({
                     })
                   }
                 >
-                  Unbind key
+                  {b.kind === "github" ? "Unbind connection" : "Unbind key"}
                 </Button>
                 <Button
                   size="sm"
@@ -488,7 +524,8 @@ function ProfileManager({
           </label>
           <p className="text-sm">
             Archiving blocks further profile use. Restoring does not restore the project default.
-            Incomplete profiles can be saved for later repair.
+            Review checks saved configuration and use grants. GitHub API health and GH CLI
+            availability are checked separately. Incomplete profiles can be saved for later repair.
           </p>
           {review ? (
             <div role="region" aria-label="Profile review" className="flex flex-col gap-2">

@@ -146,3 +146,48 @@ retention is enabled.
 The latest baseline preview against `v0.1.1-nightly.20261019.3348` has 60 conflicting files at
 parent `78c8d44b17`. This section adds no upstream seams; its committed preview has the identical
 60-file conflict set with no new conflicting files. The existing upstream synchronization remains separate work.
+
+## GitHub profile binding milestone
+
+The focused integrated set passes **35 tests in 9 files**: GitHub profile service/MCP/preflight,
+GitHub connection service, existing profile MCP/launch/prompt services, portable contracts and
+client permission/refresh regressions. New cases exercise local previews without provider calls,
+missing/wrong-kind/invalid-repository bindings, exact use grants, pinned versions across service
+reconstruction and profile edits, named GH without an SSH broker, mismatched operation kind,
+archive/version/run/grant changes during token acquisition, scoped cleanup, launch denial/repair,
+authenticated MCP execution and create-only portable GitHub import followed by local repair.
+
+```sh
+node_modules/.bin/vp test run apps/server/src/fork/vault/VaultGitHubProfiles.test.ts apps/server/src/fork/vault/VaultGitHub.test.ts apps/server/src/fork/vault/profile-mcp.test.ts apps/server/src/fork/vault/VaultPromptContext.test.ts apps/server/src/fork/vault/VaultLaunch.test.ts apps/server/src/fork/vault/VaultProfiles.test.ts packages/contracts/src/fork/vault-profiles.test.ts packages/client-runtime/src/fork/vault-profiles.test.ts packages/client-runtime/src/fork/vault-profiles.permissions.test.ts
+```
+
+Scoped contracts, client-runtime, provider-core, server, web, mobile and desktop typechecks,
+changed-source lint and mobile native static checks pass. The native fingerprint is compatible;
+no rebuild was needed. No repo-wide suite was run. The service test fixture now composes the
+GitHub external adapters explicitly; unrelated synthetic connection tests keep their own adapters.
+
+Web verified selecting a synthetic dedicated connection/repository, configuration-only review,
+save/reopen, version 2 export without local bindings, fresh unbound import, local repair and
+thread-specific denial without grants. Desktop-width and 390px layouts were inspected; picker
+action labels were shortened with contextual accessible names. Native verified the shared
+GitHub profile, dedicated connection/repository picker and configuration review. A
+concurrent web import correctly rejected the stale native registry update; the editor was
+refreshed before retry. Native then saved and reopened the persisted GitHub connection/repository. After a cold
+launch, unbind/rebind, thread selection, denied-grant review and another save/reopen passed.
+The editor uses the existing full-screen modal pattern with fixed review/save controls:
+its former nested sheet measured beyond the visible detent and clipped those controls.
+Connection and thread selection now use pages in the same modal, avoiding
+native-sheet touch delivery across modal roots.
+
+The GitHub record was seeded directly into disposable OpenBao and is not a working provider
+credential. Client QA proves management wiring, not successful live provider authentication.
+No live GitHub write, provider model, production state, deployment or personal-vault change was
+used. Successful named execution and launch boundaries use real services with synthetic API/CLI
+adapters. Live API/CLI health, terminal gh/Git HTTPS, Android, standalone Electron and relay/tunnel
+transports are not independently verified here. Other selected packet scope remains open.
+
+After fetching tags, parent `c1a61e657a` has **61 baseline conflicts** against
+`v0.1.1-nightly.20261019.3360`. This section changes no upstream-owned source or seam manifest;
+the committed preview has the same 61-file conflict set, with no added conflicting files.
+No working-tree merge,
+push, PR or deployment is authorized by these checks.

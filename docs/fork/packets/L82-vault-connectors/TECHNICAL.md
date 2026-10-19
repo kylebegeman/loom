@@ -59,7 +59,10 @@ tool availability. No adapter-specific model changes are required; command-only 
 do not acquire it. Agent runs on any exposed provider can call the tool under the same policy.
 
 Existing GitHubHostSetup, GitHubCredentials, terminal gh/Git HTTPS, personal login and SSH
-remote behavior remain outside this path. Future explicit project/reference bindings must
-choose integration and opt-in migration without silently overriding unmigrated credentials.
+remote behavior remain outside this path. Project profiles bind the explicit connection/repository,
+with portable declarations, current configuration/grant checks, version-pinned launch and named GH
+execution. Profile archive and originating run identity are rechecked through token acquisition
+and before spawn using the service guard. Profile use still inherits exact item use permission.
+Future terminal routing must choose opt-in migration without overriding unmigrated credentials.
 OAuth/device flows, Enterprise, reusable connector registration, additional providers, provider
 revocation management and broader operations remain full selected scope.

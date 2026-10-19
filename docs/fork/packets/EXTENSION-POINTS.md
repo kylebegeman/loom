@@ -3051,7 +3051,7 @@ both describe as null. Search scans at most four 25-record pages and preserves s
 Client-runtime queries share the item-change signal; web/native pickers are reusable consumers.
 
 Shared `vault-profiles.ts`/`VaultProfiles` add project-local CAS registries, named required
-SSH/Git bindings, active defaults and archive/restore. Profiles contain references only.
+SSH/Git/GitHub bindings, active defaults and archive/restore. Profiles contain references only.
 The first active-run resolution persists a CAS-created profile/key-version pin in OpenBao;
 later edits/default switches apply to later runs. Every use rechecks current authority and
 key versions, and profile archive is checked at transport/signing. Management requires
@@ -3062,6 +3062,12 @@ automatic retention cleanup yet. Administrator inspection/terminal-run retiremen
 current pins with durable no-reselection tombstones; older OpenBao versions remain. Clients gate
 on vault-profile-history. Web/desktop/mobile, palette, MCP and CLI reuse existing registries.
 Composer/task launch selection is implemented below; other credential kinds remain open.
+The vault-profile-github capability adds dedicated connection/repository selection and pinned
+GH execution through the shared profile boundary. Preview/preflight checks saved configuration
+and exact use grants, never live provider health. GitHub profile execution passes a guard to
+VaultGitHub so profile archive and originating run identity remain live through token acquisition
+and CLI spawn. Portable GitHub declarations use version 2 with no local bindings; legacy SSH/Git
+exports remain version 1. Older servers cannot decode stored GitHub profile kinds.
 
 Shared vault-github contracts and VaultGitHub expose dedicated github.com connections, not
 ambient terminal credentials. App/token material uses encrypted service-connection records;

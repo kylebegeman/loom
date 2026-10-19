@@ -20,6 +20,7 @@ import {
   type VaultProfilePreviewInput,
   type VaultProfileBinding,
   vaultGitDestination,
+  vaultGitHubDestination,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -34,6 +35,7 @@ import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 
 type Failure = VaultError | VaultSshError | VaultWorkloadError;
@@ -121,7 +123,8 @@ const fail = (reason: VaultError["reason"]) => new VaultError({ reason });
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore,
     access = yield* VaultAccess.VaultAccess,
-    ssh = yield* VaultSsh.VaultSsh;
+    ssh = yield* VaultSsh.VaultSsh,
+    github = yield* VaultGitHub.VaultGitHub;
   const projects = yield* ProjectStoreV2,
     threads = yield* ThreadManagementService,
     identity = yield* ServerEnvironmentIdentity,
@@ -202,8 +205,40 @@ const make = Effect.gen(function* () {
       version: null as number | null,
       destination: null as string | null,
     };
-    if (!binding.itemId || (binding.kind === "git" && !binding.repository))
+    if (!binding.itemId || (binding.kind !== "ssh" && !binding.repository))
       return { ...base, state: "missing" as const };
+    if (binding.kind === "github") {
+      const info = yield* github.info(binding.itemId).pipe(
+        Effect.map(Option.some),
+        Effect.catchTags({
+          VaultError: (error) =>
+            error.reason === "not-found" ? Effect.succeedNone : Effect.fail(error),
+        }),
+      );
+      if (Option.isNone(info) || info.value.item.state !== "active")
+        return { ...base, state: "unavailable" as const };
+      const destination = vaultGitHubDestination(binding.repository!);
+      if (!info.value.repositories.includes(binding.repository!.toLowerCase()))
+        return { ...base, state: "denied" as const };
+      if (threadId) {
+        const allowed = yield* access.require(threadId, binding.itemId, "use", destination).pipe(
+          Effect.as(true),
+          Effect.catchTags({
+            VaultError: (error) =>
+              error.reason === "denied" || error.reason === "not-found"
+                ? Effect.succeed(false)
+                : Effect.fail(error),
+          }),
+        );
+        if (!allowed) return { ...base, state: "denied" as const };
+      }
+      return {
+        ...base,
+        version: info.value.item.version,
+        destination,
+        state: threadId ? ("ready" as const) : ("unchecked" as const),
+      };
+    }
     const info = yield* ssh.info(binding.itemId).pipe(
       Effect.map(Option.some),
       Effect.catchTags({

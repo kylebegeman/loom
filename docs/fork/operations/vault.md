@@ -245,6 +245,11 @@ Execution creates private temporary HOME/config directories and explicitly suppl
 token, with bounded concurrency/output/time. Personal GH configuration and SSH agent sockets
 are excluded. Same-user/full-access processes are not OS-isolated. Local archive prevents new
 use; remote provider revocation and OpenBao version history are separate operator decisions.
-Ordinary terminal GH/Git HTTPS, project binding and existing host-setup precedence are not
-changed. No real App registration, provider write, personal migration or production rollout is
+Ordinary terminal GH/Git HTTPS and existing host-setup precedence are not changed.
+Project profiles now support explicit GitHub connection/repository bindings with pinned versions,
+configuration/grant preflight and named mediated execution; GitHub-only operations need no SSH
+broker. A live API/CLI probe remains separate from configuration preflight.
+The vault-profile-github capability gates choices/imports on older servers. Version 2 portable
+requirements carry no local connection/repository IDs; version 1 remains SSH/Git-only. Servers
+with stored GitHub profile kinds cannot be downgraded safely without a reviewed restore plan. No real App registration, provider write, personal migration or production rollout is
 part of the synthetic acceptance checks.

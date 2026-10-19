@@ -17,7 +17,9 @@ App tokens are limited to the selected repository for use and released on scope 
 GitHub permits it. A failed release can leave the token valid until expiry.
 
 This does not configure ordinary terminal gh, Git HTTPS, upstream GitHub auth precedence or
-SSH remotes. OAuth/device onboarding, Enterprise hosts, project/profile bindings, additional
+SSH remotes. Project profiles now bind connections/repositories, pin their versions and
+execute named GitHub operations through the same service. Version 2 declarations share requirements
+without local bindings. OAuth/device onboarding, Enterprise hosts, additional
 connectors and managed provider revocation remain selected. No personal credential migration,
 live account registration, push, PR or deployment is authorized by this milestone.
 

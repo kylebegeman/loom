@@ -207,6 +207,10 @@ function PromptEditor(props: {
           <p className="text-sm font-medium">
             {review.profile.label} · Version {review.profile.version}
           </p>
+          <p className="text-sm">
+            Review checks saved configuration and use grants. GitHub API health and GH CLI
+            availability are checked separately.
+          </p>
           {review.preview.bindings.map((b) => (
             <p key={b.name} className="break-words text-sm">
               {b.name}: {vaultProfileBindingMessage(b.state)}

@@ -62,7 +62,7 @@ const fixture = Effect.gen(function* () {
   const service = yield* VaultGitHub.VaultGitHub.pipe(
     Effect.provide(
       VaultGitHub.layer.pipe(
-        Layer.provide(Layer.mergeAll(transport, cli, Layer.succeedContext(f.context))),
+        Layer.provide(Layer.mergeAll(Layer.succeedContext(f.context), transport, cli)),
       ),
     ),
   );

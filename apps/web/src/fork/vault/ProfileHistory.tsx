@@ -74,7 +74,8 @@ function History({
               <p>Profile version {pin.resolution.profileVersion}</p>
               {pin.resolution.bindings.map((b) => (
                 <p key={b.name} className="break-all text-sm">
-                  {b.name} · key {b.itemId} version {b.version} · {b.destination}
+                  {b.name} · {b.kind === "github" ? "connection" : "key"} {b.itemId} version{" "}
+                  {b.version} · {b.destination}
                 </p>
               ))}
             </details>

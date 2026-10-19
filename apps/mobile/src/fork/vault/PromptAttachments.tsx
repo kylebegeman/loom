@@ -157,6 +157,10 @@ function PromptSheet(props: Props & { projectId: ProjectId; onClose: () => void 
             <Text>
               {review.profile.label} · Version {review.profile.version}
             </Text>
+            <Text>
+              Review checks saved configuration and use grants. GitHub API health and GH CLI
+              availability are checked separately.
+            </Text>
             {review.preview.bindings.map((b) => (
               <Text key={b.name}>
                 {b.name}: {vaultProfileBindingMessage(b.state)}

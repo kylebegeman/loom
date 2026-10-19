@@ -93,9 +93,26 @@ const layerVaultSsh = VaultSsh.layer.pipe(
   ),
 );
 
+const layerVaultGitHub = VaultGitHub.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      layerVaultAccess,
+      GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+      GitHubCli.layer,
+    ),
+  ),
+);
+
 const layerVaultProfiles = VaultProfiles.layer.pipe(
   Layer.provide(
-    Layer.mergeAll(layerVaultStore, layerVaultAccess, layerVaultSsh, ProjectStore.layer),
+    Layer.mergeAll(
+      layerVaultStore,
+      layerVaultAccess,
+      layerVaultSsh,
+      layerVaultGitHub,
+      ProjectStore.layer,
+    ),
   ),
 );
 const layerVaultReferences = VaultReferences.layer.pipe(
@@ -120,16 +137,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
-  VaultGitHub.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerVaultCore,
-        layerVaultAccess,
-        GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
-        GitHubCli.layer,
-      ),
-    ),
-  ),
+  layerVaultGitHub,
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),
@@ -139,6 +147,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(
       Layer.mergeAll(
         layerVaultProfiles,
+        layerVaultGitHub,
         layerVaultSsh,
         layerVaultWorkloads,
         BrokerCrypto.layer,

@@ -48,10 +48,13 @@ remains. L82 adds dedicated github.com App/token management and scoped headless 
 with repository grants, isolated CLI configuration and short-lived App token release attempts.
 Both sections remain local milestones within the complete selected packet scopes.
 
-The next proposed section is GitHub requirements in project profiles and portable declarations,
-including environment-local connection binding, launch preflight and named mediated execution.
-After that, terminal gh/Git HTTPS routing and provider-aware readiness can close the remaining
-split between mediated tools and normal developer commands. Real credential registration,
+GitHub requirements now bind dedicated connections/repositories in project profiles, pin versions
+for each run, participate in launch preflight and execute by name. Version 2 portable declarations
+carry requirement names/kinds without local bindings; SSH/Git-only exports retain version 1.
+Configuration/grant checks deliberately do not claim live GitHub API or CLI readiness.
+
+The next proposed section is explicit terminal gh/Git HTTPS credential routing, plus provider-aware
+readiness, to close the split between mediated tools and normal developer commands. Real credential registration,
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

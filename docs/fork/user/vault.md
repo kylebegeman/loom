@@ -255,15 +255,16 @@ use **Vault references**. References contain no credential values and grant no a
 **More references** when a sparse search page has no matches but more records remain.
 
 Open **Vault project profiles**, choose the destination computer and project, and create a
-profile with named SSH or Git requirements. Choose an SSH key for each requirement and, for
-Git, its exact repository path. Review with a project thread to check its current use grants;
-**Host checks only** does not prove that a thread can use the key. You may save an incomplete
+profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for
+Git, its exact repository path. For GitHub operations, choose a dedicated connection and one
+of its allowed repositories. Switching operation kinds clears the previous binding. Review with a project thread to check its current use grants;
+**Host checks only** does not prove that a thread can use the key or connection. You may save an incomplete
 profile for later repair. Edit to replace/unbind keys or remove requirements; clone to start
 another profile without copying secret values.
 
 Set a profile as the default for new run resolutions, or clear the default. A run keeps the
 profile revision and key versions it first resolves. Later edits/default changes apply to
-later runs. A changed key version requires a new run. Current grants, host trust and item state
+later runs. A changed key or connection version requires a new run. Current grants, host trust and item state
 still apply. Archiving blocks further profile use and clears its default; restoring does not
 select it again. Profile selection grants no access and never changes your personal SSH agent.
 
@@ -275,8 +276,8 @@ own access or change profiles. The CLI exposes `loom vault references-search`,
 the existing authenticated tool path. Agent-only resolve/run commands require a running thread.
 
 Explicit launch attachments are described below. Automatic profile selection without an attachment is still pending.
-The current profile supports SSH commands and Git ref listing/fetch, with existing output and
-time limits. It does not configure ordinary terminal SSH/Git commands or deliver raw values.
+Profiles support SSH commands, Git ref listing/fetch and the documented mediated GH operations,
+with existing output and time limits. GitHub uses the dedicated connection without an SSH broker. It does not configure ordinary terminal SSH/Git commands or deliver raw values.
 
 ## Attach Vault requirements before an agent run
 
@@ -287,7 +288,8 @@ credential values. Remove/replace them through the control, or delete their line
 prompt. Keep attachment links on their own lines; inline or quoted examples are not requirements.
 
 A profile requires a full-access/default agent run. Every required SSH/Git binding must have
-an active key, verified host trust and a matching use grant. A reference alone requires active
+an active key, verified host trust and a matching use grant. GitHub bindings need an active connection and exact repository use
+grant within its allowlist. A reference alone requires active
 metadata and inspect access; it grants no credential use. Host-only review for a new scheduled
 thread does not prove its grants. Grant the project deliberately when future scheduled threads
 need access. Editing a profile requires reviewing and attaching its new version before a later
@@ -306,18 +308,20 @@ Command-only jobs and upstream servers without attachment support do not perform
 ## Share requirements without sharing local bindings
 
 In **Vault project profiles**, export or copy a profile's requirements. The declaration includes
-its label and SSH/Git requirement names and kinds. Review those labels before sharing. Keys,
-repositories, grants, defaults and run selections stay on the source computer.
+its label and SSH/Git/GitHub requirement names and kinds. Review those labels before sharing.
+Keys, connection IDs, repositories, grants, defaults and run selections stay on the source computer.
 
 On the destination computer, choose a project and **Import portable requirements**. Paste the
-version 1 declaration, review the fresh profile and choose local keys/repositories. You may save
+declaration, review the fresh profile and choose local keys/connections/repositories. SSH/Git-only
+exports use version 1; GitHub exports use version 2 and require GitHub profile support on the
+destination computer. You may save
 it unbound for later repair. Importing does not replace an existing profile, change its default
 or grant access. Cancel editing to discard the import; archive a saved profile when finished.
 
 For automation, `loom vault profile-requirements` exports through the authenticated connection.
 A human administrator can use `profiles-apply` with `change.type: "import"`, a fresh `id` and
 `declaration`, plus the current registry revision and operation ID. Agents may export their own
-project's requirements but cannot import or edit bindings. Other credential kinds and automatic
+project's requirements but cannot import or edit bindings. Additional credential kinds and automatic
 Library/project-file distribution are not available yet.
 
 ## Inspect and retire old run selections
@@ -358,5 +362,24 @@ running thread. No command accepts raw GitHub tokens from chat.
 
 These mediated GH operations use temporary private configuration on the Loom server. They do
 not log into your personal account, configure ordinary terminal gh/Git HTTPS or change SSH
-remotes. GitHub Enterprise, OAuth/device onboarding, project/profile binding and other service
-connectors are not available in this milestone.
+remotes. GitHub Enterprise, OAuth/device onboarding and other service connectors are not
+available in this milestone. Project profiles can bind a GitHub connection/repository explicitly.
+
+## Use a named GitHub profile binding
+
+Choose **GitHub operations** for a profile requirement, then select a dedicated connection
+and an allowed repository. You can unbind or replace it later. Review checks saved configuration
+and the selected thread's grants. Host checks alone do not prove a thread can use the connection;
+neither review nor launch preflight tests live GitHub API health or GH CLI installation.
+
+Attach the reviewed profile in the composer or scheduled prompt. A new run pins its connection
+version and repository. Current use grants, repository allowlist and connection/profile state
+still apply. Replacing credentials requires a new run; changing a profile requires reviewing its
+new version before attaching it to later runs. Configuration or access failures block launch.
+
+An agent can call `loom_vault_profile_run` with the binding name and, for example,
+`operation:{"kind":"github","operation":{"action":"pr-list"}}`. The authenticated CLI
+`loom vault profile-run` uses the same input and needs a running agent thread. The profile
+supplies the pinned item/version/repository. This runs through isolated server-side GH and
+inherits its limits and inspect-before-retry rule for uncertain writes. It does not configure
+ordinary terminal gh/Git HTTPS or your personal credentials.

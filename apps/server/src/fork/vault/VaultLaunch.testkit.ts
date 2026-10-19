@@ -36,9 +36,12 @@ export const memoryVault = Layer.sync(OpenBaoStore.OpenBaoStore, () => {
       }),
   });
 });
-export const launchFixture = (transport: Layer.Layer<SshTransport.SshTransport>) =>
+export const launchFixture = (
+  transport: Layer.Layer<SshTransport.SshTransport>,
+  githubAdapters?: Parameters<typeof sshFixture>[1],
+) =>
   Effect.gen(function* () {
-    const f = yield* sshFixture(transport);
+    const f = yield* sshFixture(transport, githubAdapters);
     const identity = BrokerIdentity.BrokerIdentity.of({
       read: () =>
         Effect.succeed({

@@ -74,7 +74,12 @@ An API test does not prove GH CLI installation or Git transport access. Unknown 
 require inspection before retrying; Loom does not silently replay writes.
 
 This milestone runs on the server, including when controlled remotely from a phone. It does
-not export credentials into an ordinary terminal or select project defaults. Local disconnection
+not export credentials into an ordinary terminal or sign into a personal account. Project profiles can explicitly bind connections and repositories
+with reviewed defaults for new resolutions. Local disconnection
 blocks future use; remote revocation and already issued credentials have separate lifetimes.
 Human administrators retain the Vault core's explicit reveal/export powers. Full-access agents
 and other same-user processes are not isolated by an OS security boundary.
+
+GitHub project profiles now provide named selection, portable requirements, explicit launch
+preflight and execution. See [L75 product](../L75-vault-profiles/PRODUCT.md) for the complete
+binding, reverse-action and configuration-preview behavior.

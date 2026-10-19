@@ -38,3 +38,7 @@ this packet adds no application dependency.
 - [Web retained selections](../../../../apps/web/src/fork/vault/ProfileHistory.tsx)
 - [Native retained selections](../../../../apps/mobile/src/fork/vault/ProfileHistory.tsx)
 - [Retirement permission coverage](../../../../packages/client-runtime/src/fork/vault-profiles.permissions.test.ts)
+
+- [GitHub profile behavior](../../../../apps/server/src/fork/vault/VaultGitHubProfiles.test.ts)
+- [Web connection/repository picker](../../../../apps/web/src/fork/vault/GitHubConnectionPicker.tsx)
+- [Native connection/repository picker](../../../../apps/mobile/src/fork/vault/GitHubConnectionPicker.tsx)

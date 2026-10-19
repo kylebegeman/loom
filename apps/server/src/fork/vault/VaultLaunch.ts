@@ -4,6 +4,7 @@ import {
   VaultError,
   VaultWorkloadError,
   VaultSshError,
+  VaultGitHubError,
   VaultSshRun,
   VaultProfileRun,
   type VaultProfileRunResult,
@@ -30,10 +31,12 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
+import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
 
-type Failure = VaultError | VaultSshError | VaultWorkloadError;
+type HostedFailure = VaultError | VaultSshError | VaultWorkloadError;
+type Failure = HostedFailure | VaultGitHubError;
 export class VaultLaunch extends Context.Service<
   VaultLaunch,
   {
@@ -44,11 +47,11 @@ export class VaultLaunch extends Context.Service<
     readonly ssh: (
       input: VaultSshRun,
       threadId: ThreadId,
-    ) => Effect.Effect<VaultSshResult, Failure>;
+    ) => Effect.Effect<VaultSshResult, HostedFailure>;
     readonly git: (
       input: VaultGitRun,
       threadId: ThreadId,
-    ) => Effect.Effect<VaultGitResult, Failure>;
+    ) => Effect.Effect<VaultGitResult, HostedFailure>;
   }
 >()("t3/fork/vault/VaultLaunch") {}
 const denied = () => new VaultError({ reason: "denied" });
@@ -65,7 +68,8 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment,
     path = yield* Path.Path,
     crypto = yield* Crypto.Crypto;
-  const profiles = yield* VaultProfiles.VaultProfiles;
+  const profiles = yield* VaultProfiles.VaultProfiles,
+    github = yield* VaultGitHub.VaultGitHub;
   const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR;
   const run = <A>(
     threadId: ThreadId,
@@ -75,7 +79,7 @@ const make = Effect.gen(function* () {
     message: string,
     execute: (
       proof: Parameters<VaultSsh.VaultSsh["Service"]["execute"]>[0]["proof"],
-    ) => Effect.Effect<A, Failure>,
+    ) => Effect.Effect<A, HostedFailure>,
   ) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -137,7 +141,7 @@ const make = Effect.gen(function* () {
     ssh: Effect.fn("VaultLaunch.ssh")(function* (
       input: VaultSshRun,
       threadId: ThreadId,
-      guard: Effect.Effect<void, Failure> = Effect.void,
+      guard: Effect.Effect<void, HostedFailure> = Effect.void,
     ) {
       if (!isSsh(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
@@ -153,7 +157,7 @@ const make = Effect.gen(function* () {
     git: Effect.fn("VaultLaunch.git")(function* (
       input: VaultGitRun,
       threadId: ThreadId,
-      guard: Effect.Effect<void, Failure> = Effect.void,
+      guard: Effect.Effect<void, HostedFailure> = Effect.void,
     ) {
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
@@ -185,11 +189,34 @@ const make = Effect.gen(function* () {
     ...operations,
     profile: Effect.fn("VaultLaunch.profile")(function* (input, threadId) {
       if (!isProfileRun(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const initial = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+      if (!initial?.activeRunId) return yield* denied();
       const resolved = yield* profiles.resolve(threadId, input.profileId);
       const binding = resolved.bindings.find((b) => b.name === input.binding);
       if (!binding || binding.kind !== input.operation.kind)
         return yield* new VaultSshError({ reason: "invalid-operation" });
-      const guard = profiles.assertActive(resolved.projectId, resolved.profileId);
+      const guard = Effect.gen(function* () {
+        yield* profiles.assertActive(resolved.projectId, resolved.profileId);
+        const current = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+        if (
+          !current ||
+          current.activeRunId !== initial.activeRunId ||
+          current.projectId !== initial.projectId ||
+          current.providerInstanceId !== initial.providerInstanceId
+        )
+          return yield* denied();
+      });
+      if (input.operation.kind === "github")
+        return yield* github.run(
+          {
+            id: binding.itemId,
+            expectedVersion: binding.version,
+            repository: binding.repository!,
+            operation: input.operation.operation,
+          },
+          threadId,
+          guard,
+        );
       return yield* input.operation.kind === "ssh"
         ? operations.ssh(
             {

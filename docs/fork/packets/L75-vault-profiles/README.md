@@ -15,13 +15,15 @@ credential imports or changes to the personal vault.
 
 ## Delivered milestone
 
-Web/desktop and native mobile manage project-local SSH/Git profiles: create, edit, clone,
+Web/desktop and native mobile manage project-local SSH/Git/GitHub profiles: create, edit, clone,
 preview, choose/clear a default, archive, restore and repair bindings. MCP/CLI resolve and
 execute named bindings. The first resolution durably pins the profile revision and key
 versions for the authenticated run; current grants, keys and archive state remain authoritative.
 
-Interactive/scheduled launch selectors and server preflight are implemented for SSH/Git.
-Portable declarations import/export without local bindings. Scheduled task status follows its
+Interactive/scheduled launch selectors and server preflight are implemented for SSH/Git/GitHub.
+Portable declarations import/export without local bindings. GitHub declarations use version 2;
+SSH/Git-only declarations retain version 1. GitHub execution uses the dedicated connection
+without requiring an SSH broker. Scheduled task status follows its
 latest Vault-attached provider run and offers review/retry. Other credential kinds,
 account provisioning, Library sharing and run-pin retention automation remain selected.
 Administrators can inspect retained run selections and explicitly retire confirmed terminal runs.

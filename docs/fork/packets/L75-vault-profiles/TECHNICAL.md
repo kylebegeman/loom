@@ -2,7 +2,7 @@
 
 ## Implemented contract
 
-The shared `vault-profiles.ts` contract defines named SSH/Git requirements and the
+The shared `vault-profiles.ts` contract defines named SSH/Git/GitHub requirements and the
 `loom.vault-profiles.list/apply/preview` RPCs. Administrator management requires environment
 access:read/access:write. The service validates project ownership, mutation shape, expected
 revision, unique names and bounded profile counts. Profiles store references and Git paths,
@@ -75,7 +75,7 @@ requirements. Keep attachment links on their own lines; moving a link into prose
 No explicit attachment means no Vault lookup. Invalid/duplicate/cross-environment links,
 missing or inspect-denied references, changed profile versions and incomplete/use-denied
 bindings block with a safe failed-run timeline item. A profile is pinned to that exact active
-run before delivery; current checks at SSH/Git use remain authoritative. Steering rechecks
+run before delivery; current checks at SSH/Git/GitHub use remain authoritative. Steering rechecks
 the same guard and cannot switch a pinned profile. Metadata labels never confer authority.
 
 Scheduled agent prompts use the same guard. New scheduled threads need project grants;
@@ -110,9 +110,10 @@ replayed. Editing/removing requirements does not retroactively change an earlier
 
 ## Portable requirements and local bindings
 
-`VaultProfileRequirements` is a version 1 `loom-vault-requirements` declaration containing a
-label and 1 to 16 unique SSH/Git requirement names/kinds. Export omits profile/environment/item
-IDs, key versions, repositories, grants, defaults and run pins. Labels are user-authored metadata;
+`VaultProfileRequirements` is a `loom-vault-requirements` declaration containing a
+label and 1 to 16 unique SSH/Git/GitHub requirement names/kinds. SSH/Git-only exports use version 1;
+exports containing GitHub use version 2. Version 1 rejects GitHub requirements. Export omits profile/environment/item
+IDs, connection/key versions, repositories, grants, defaults and run pins. Labels are user-authored metadata;
 review them before sharing. The bounded text importer rejects unknown fields, unsupported kinds,
 unsupported versions and duplicate names.
 
@@ -147,3 +148,29 @@ Web/desktop and native management offer inspection, explicit irreversible confir
 MCP/CLI inspection/retirement are human-administrator operations; agents cannot inspect other runs
 or retire themselves. Capability `vault-profile-history` hides the flow on older servers.
 OpenBao older versions remain: this is neither secure erasure nor credential/provider revocation.
+
+## GitHub profile binding and mediated execution
+
+Kind `github` binds a dedicated connection item ID plus an allowlisted `owner/repository`.
+Preview reads saved active connection metadata, checks the normalized repository allowlist and,
+when a target thread is supplied, its exact `https://github.com/owner/repo` use grant. With no
+thread it reports unchecked. This performs no live provider call, CLI probe or token issuance.
+Missing bindings are repairable, unsupported/wrong-kind/archived records are unavailable and
+repository/grant denial blocks resolution. The original SSH host-trust checks still apply to SSH/Git.
+
+Run resolution pins the connection version and repository alongside the profile revision. Later
+profile edits apply to new runs; replacing connection credentials invalidates existing pins.
+Named execution accepts `operation:{kind:"github",operation:{action:"pr-list"}}` and delegates
+to VaultGitHub using the pinned connection/repository. It needs no SSH broker enrollment.
+The launch guard preserves the originating run/provider/project identity and current profile
+archive state through token acquisition and the final CLI authorization. Current connection
+state/version, repository allowlist and grants remain live checks. Token release and unknown
+write-outcome rules are inherited from the GitHub service; secrets never enter profiles.
+
+`vault-profile-github` enables GitHub choices and imports in web/native clients. Existing SSH/Git
+profiles and version 1 declarations remain readable. A client paired with an older server hides
+GitHub choices and rejects GitHub imports. Older servers cannot decode a registry/pin containing
+the new kind; do not downgrade a server with such data without a reviewed backup/restore plan.
+Portable GitHub imports create fresh profiles with null connection/repository bindings. They
+carry no local IDs, account/repository names, defaults, grants or pinned versions. Labels remain
+user-authored metadata and should be reviewed before sharing. Library distribution remains open.

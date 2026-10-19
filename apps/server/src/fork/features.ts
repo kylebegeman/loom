@@ -11,6 +11,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-profiles",
   "vault-github",
   "vault-profile-history",
+  "vault-profile-github",
   "vault-portable-requirements",
   "vault-scheduled-outcomes",
   "vault-prompt-attachments",

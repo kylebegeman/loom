@@ -72,9 +72,9 @@ export const vaultProfileBindingMessage = (
 ) =>
   ({
     ready: "Ready for this thread",
-    unchecked: "Host checked; choose a thread to check its grant",
-    missing: "Choose a key and, for Git, a repository",
-    unavailable: "The key is missing, archived or unsupported",
+    unchecked: "Configuration checked; choose a thread to check its grant",
+    missing: "Choose a key or connection and its required repository",
+    unavailable: "The key or connection is missing, archived or unsupported",
     untrusted: "Verify host trust before use",
-    denied: "This thread needs a matching use grant",
+    denied: "Check the repository allowlist and this thread's use grant",
   })[state];

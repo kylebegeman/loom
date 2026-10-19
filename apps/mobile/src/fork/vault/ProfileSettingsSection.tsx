@@ -1,7 +1,9 @@
+import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
-import { ScrollView, Switch, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -212,8 +214,8 @@ function ProfileProjects({
   return (
     <View className="gap-3">
       <Text>
-        Profiles hold named SSH and Git references. They grant no access. A run keeps the revision
-        and key versions it first resolves; later changes apply to later runs.
+        Profiles hold named SSH, Git and GitHub references. They grant no access. A run keeps the
+        revision and key versions it first resolves; later changes apply to later runs.
       </Text>
       <Button
         label={
@@ -287,6 +289,11 @@ function ProfileManager({
   canWrite: boolean;
   threads: ReadonlyArray<{ id: string; label: string }>;
 }) {
+  const config = useEnvironmentServerConfig(environmentId);
+  const supportsGitHub = supportsLoomFeature(
+    config?.environment.capabilities,
+    "vault-profile-github",
+  );
   const snapshot = useEnvironmentQuery(
     connected ? profiles.list({ environmentId, input: { projectId } }) : null,
   );
@@ -300,6 +307,15 @@ function ProfileManager({
     [picking, setPicking] = useState<number | null>(null),
     [choosingThread, setChoosingThread] = useState(false);
   const locked = !canWrite || !connected || busy || snapshot.isPending || !!snapshot.error;
+  const closeEditorPage = () => {
+    if (busy) return;
+    if (picking !== null) setPicking(null);
+    else if (choosingThread) setChoosingThread(false);
+    else {
+      setEditing(null);
+      setReview(null);
+    }
+  };
   const act = async (work: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -343,7 +359,7 @@ function ProfileManager({
       const parsed = decode(editing);
       if (Option.isNone(parsed))
         throw new Error(
-          "Use a label, unique lowercase binding names and valid Git paths. Add at least one requirement.",
+          "Use a label, unique lowercase binding names and valid Git paths or GitHub owner/repository names. Add at least one requirement.",
         );
       const result = await previewCommand({
         environmentId,
@@ -374,6 +390,7 @@ function ProfileManager({
         }
       />
       <VaultRequirementImport
+        supportsGitHub={supportsGitHub}
         disabled={locked || !!editing || !snapshot.data || snapshot.data.profiles.length >= 32}
         onImport={edit}
       />
@@ -437,225 +454,296 @@ function ProfileManager({
         canWrite={canWrite}
         connected={connected}
       />
+      {/* Nested native sheets clip long forms and lose React touches inside RN modals. */}
       {editing ? (
-        <Sheet
-          title="Vault profile"
-          dismissible={!busy}
-          onClose={() => {
-            setEditing(null);
-            setReview(null);
-          }}
+        <Modal
+          visible
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={closeEditorPage}
         >
-          <ScrollView
-            contentInsetAdjustmentBehavior="automatic"
-            keyboardShouldPersistTaps="handled"
-            contentContainerClassName="gap-4 p-4"
-          >
-            <Text>Profile label</Text>
-            <TextInput
-              accessibilityLabel="Profile label"
-              value={editing.label}
-              maxLength={120}
-              editable={!locked}
-              onChangeText={(label) => update({ ...editing, label })}
-            />
-            {editing.bindings.map((b, i) => (
-              <View key={b.rowId} className="gap-3 rounded-lg bg-subtle p-3">
-                <Text>Requirement {i + 1}</Text>
-                <TextInput
-                  accessibilityLabel={`Requirement ${i + 1} name`}
-                  value={b.name}
-                  maxLength={64}
-                  autoCapitalize="none"
-                  editable={!locked}
-                  onChangeText={(name) =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i ? { ...old, name } : old,
-                      ),
-                    })
-                  }
-                />
-                <Button
-                  label={`Operation: ${b.kind === "git" ? "Git repository" : "SSH command"}`}
-                  disabled={locked}
-                  onPress={() =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i
-                          ? { ...old, kind: old.kind === "git" ? "ssh" : "git", repository: null }
-                          : old,
-                      ),
-                    })
-                  }
-                />
-                {b.kind === "git" ? (
-                  <TextInput
-                    accessibilityLabel={`Requirement ${i + 1} repository`}
-                    placeholder="team/repo.git"
-                    autoCapitalize="none"
-                    value={b.repository ?? ""}
-                    editable={!locked}
-                    onChangeText={(repository) =>
-                      update({
-                        ...editing,
-                        bindings: editing.bindings.map((old, n) =>
-                          n === i ? { ...old, repository: repository || null } : old,
-                        ),
-                      })
-                    }
-                  />
-                ) : null}
-                {b.itemId ? (
-                  <BoundReference
-                    environmentId={environmentId}
-                    id={b.itemId}
-                    connected={connected}
-                  />
-                ) : (
-                  <Text>No key bound</Text>
-                )}
-                <Button
-                  label={`Choose key for ${b.name || `requirement ${i + 1}`}`}
-                  disabled={locked}
-                  onPress={() => setPicking(i)}
-                />
-                <Button
-                  label={`Unbind ${b.name || `requirement ${i + 1}`}`}
-                  disabled={locked || !b.itemId}
-                  onPress={() =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i ? { ...old, itemId: null } : old,
-                      ),
-                    })
-                  }
-                />
-                <Button
-                  label={`Remove requirement ${i + 1}`}
-                  disabled={locked || editing.bindings.length === 1}
-                  onPress={() =>
-                    update({ ...editing, bindings: editing.bindings.filter((_, n) => n !== i) })
-                  }
-                />
-              </View>
-            ))}
-            <Button
-              label="Add requirement"
-              disabled={locked || editing.bindings.length >= 16}
-              onPress={() =>
-                update({
-                  ...editing,
-                  bindings: [
-                    ...editing.bindings,
-                    {
-                      rowId: newId(),
-                      name: `requirement_${editing.bindings.length + 1}`,
-                      kind: "ssh",
-                      itemId: null,
-                      repository: null,
-                    },
-                  ],
-                })
-              }
-            />
-            <Button
-              label={
-                thread
-                  ? `Preview: ${threads.find((t) => t.id === thread)?.label ?? thread}`
-                  : "Preview thread: host checks only"
-              }
-              disabled={locked}
-              onPress={() => setChoosingThread(true)}
-            />
-            <Text>
-              Incomplete profiles can be saved for repair. Archiving blocks further profile use;
-              restoring does not restore the project default.
-            </Text>
-            {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-            {review ? (
-              <View className="gap-2">
-                <Text>Review {editing.label}</Text>
-                {review.bindings.map((b) => (
-                  <Text key={b.name}>
-                    {b.name}: {vaultProfileBindingMessage(b.state)}
-                    {b.destination ? ` · ${b.destination}` : ""}
-                  </Text>
-                ))}
-                <Button
-                  label="Save reviewed profile"
-                  disabled={locked}
-                  onPress={() => void apply({ type: "save", profile: editing })}
-                />
-              </View>
-            ) : (
-              <Button label="Review profile" disabled={locked} onPress={() => void preview()} />
-            )}
-            <Button
-              label="Cancel profile editing"
-              disabled={busy}
-              onPress={() => {
-                setEditing(null);
-                setReview(null);
-              }}
-            />
-          </ScrollView>
-          {picking !== null ? (
-            <Sheet title="Choose profile key" onClose={() => setPicking(null)}>
-              <ScrollView
-                contentInsetAdjustmentBehavior="automatic"
-                keyboardShouldPersistTaps="handled"
-                contentContainerClassName="gap-3 p-4"
-              >
-                <VaultReferenceSearch
-                  environmentId={environmentId}
-                  connected={connected && !locked}
-                  kind="ssh-key"
-                  onSelect={(r) => {
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((b, i) =>
-                        i === picking ? { ...b, itemId: r.item.id } : b,
-                      ),
-                    });
-                    setPicking(null);
-                  }}
-                />
-              </ScrollView>
-            </Sheet>
-          ) : null}
-          {choosingThread ? (
-            <Sheet title="Preview thread" onClose={() => setChoosingThread(false)}>
-              <ScrollView
-                contentInsetAdjustmentBehavior="automatic"
-                contentContainerClassName="gap-3 p-4"
-              >
-                <Button
-                  label="Host checks only"
-                  onPress={() => {
-                    setThread(null);
-                    setReview(null);
-                    setChoosingThread(false);
-                  }}
-                />
-                {threads.map((t) => (
-                  <Button
-                    key={t.id}
-                    label={t.label}
-                    onPress={() => {
-                      setThread(ThreadId.make(t.id));
-                      setReview(null);
-                      setChoosingThread(false);
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            </Sheet>
-          ) : null}
-        </Sheet>
+          <View accessibilityViewIsModal className="flex-1 bg-sheet">
+            <SafeAreaProvider>
+              <SafeAreaView style={{ flex: 1 }}>
+                <KeyboardAvoidingView
+                  className="flex-1 bg-sheet"
+                  behavior={Platform.OS === "ios" ? "padding" : undefined}
+                >
+                  <View className="flex-row items-center justify-between gap-3 px-4 py-3">
+                    <Text className="min-w-0 flex-1 text-xl font-t3-semibold">
+                      {picking !== null
+                        ? editing.bindings[picking]?.kind === "github"
+                          ? "Choose GitHub connection"
+                          : "Choose profile key"
+                        : choosingThread
+                          ? "Preview thread"
+                          : "Vault profile"}
+                    </Text>
+                    <Button
+                      label={
+                        picking !== null || choosingThread
+                          ? "Back to profile"
+                          : "Close Vault profile"
+                      }
+                      disabled={busy}
+                      onPress={closeEditorPage}
+                    />
+                  </View>
+                  {picking === null && !choosingThread ? (
+                    <>
+                      <ScrollView
+                        className="flex-1"
+                        contentInsetAdjustmentBehavior="automatic"
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerClassName="gap-4 p-4"
+                      >
+                        <Text>Profile label</Text>
+                        <TextInput
+                          accessibilityLabel="Profile label"
+                          value={editing.label}
+                          maxLength={120}
+                          editable={!locked}
+                          onChangeText={(label) => update({ ...editing, label })}
+                        />
+                        {editing.bindings.map((b, i) => (
+                          <View key={b.rowId} className="gap-3 rounded-lg bg-subtle p-3">
+                            <Text>Requirement {i + 1}</Text>
+                            <TextInput
+                              accessibilityLabel={`Requirement ${i + 1} name`}
+                              value={b.name}
+                              maxLength={64}
+                              autoCapitalize="none"
+                              editable={!locked}
+                              onChangeText={(name) =>
+                                update({
+                                  ...editing,
+                                  bindings: editing.bindings.map((old, n) =>
+                                    n === i ? { ...old, name } : old,
+                                  ),
+                                })
+                              }
+                            />
+                            <Button
+                              label={`Operation: ${b.kind === "github" ? "GitHub operations" : b.kind === "git" ? "Git repository over SSH" : "SSH command"}`}
+                              disabled={locked}
+                              onPress={() =>
+                                update({
+                                  ...editing,
+                                  bindings: editing.bindings.map((old, n) =>
+                                    n === i
+                                      ? {
+                                          ...old,
+                                          kind:
+                                            old.kind === "ssh"
+                                              ? "git"
+                                              : old.kind === "git" && supportsGitHub
+                                                ? "github"
+                                                : "ssh",
+                                          itemId: null,
+                                          repository: null,
+                                        }
+                                      : old,
+                                  ),
+                                })
+                              }
+                            />
+                            {b.kind !== "ssh" ? (
+                              <TextInput
+                                accessibilityLabel={`Requirement ${i + 1} repository`}
+                                placeholder={
+                                  b.kind === "github" ? "owner/repository" : "team/repo.git"
+                                }
+                                autoCapitalize="none"
+                                value={b.repository ?? ""}
+                                editable={!locked}
+                                onChangeText={(repository) =>
+                                  update({
+                                    ...editing,
+                                    bindings: editing.bindings.map((old, n) =>
+                                      n === i ? { ...old, repository: repository || null } : old,
+                                    ),
+                                  })
+                                }
+                              />
+                            ) : null}
+                            {b.itemId ? (
+                              <BoundReference
+                                environmentId={environmentId}
+                                id={b.itemId}
+                                connected={connected}
+                              />
+                            ) : (
+                              <Text>
+                                {b.kind === "github" ? "No connection bound" : "No key bound"}
+                              </Text>
+                            )}
+                            <Button
+                              label={`Choose ${b.kind === "github" ? "GitHub connection" : "key"} for ${b.name || `requirement ${i + 1}`}`}
+                              disabled={locked}
+                              onPress={() => setPicking(i)}
+                            />
+                            <Button
+                              label={`Unbind ${b.name || `requirement ${i + 1}`}`}
+                              disabled={locked || !b.itemId}
+                              onPress={() =>
+                                update({
+                                  ...editing,
+                                  bindings: editing.bindings.map((old, n) =>
+                                    n === i ? { ...old, itemId: null } : old,
+                                  ),
+                                })
+                              }
+                            />
+                            <Button
+                              label={`Remove requirement ${i + 1}`}
+                              disabled={locked || editing.bindings.length === 1}
+                              onPress={() =>
+                                update({
+                                  ...editing,
+                                  bindings: editing.bindings.filter((_, n) => n !== i),
+                                })
+                              }
+                            />
+                          </View>
+                        ))}
+                        <Button
+                          label="Add requirement"
+                          disabled={locked || editing.bindings.length >= 16}
+                          onPress={() =>
+                            update({
+                              ...editing,
+                              bindings: [
+                                ...editing.bindings,
+                                {
+                                  rowId: newId(),
+                                  name: `requirement_${editing.bindings.length + 1}`,
+                                  kind: "ssh",
+                                  itemId: null,
+                                  repository: null,
+                                },
+                              ],
+                            })
+                          }
+                        />
+                        <Button
+                          label={
+                            thread
+                              ? `Preview: ${threads.find((t) => t.id === thread)?.label ?? thread}`
+                              : "Preview thread: host checks only"
+                          }
+                          disabled={locked}
+                          onPress={() => setChoosingThread(true)}
+                        />
+                        <Text>
+                          Review checks saved configuration and use grants. GitHub API health and GH
+                          CLI availability must be checked separately. Incomplete profiles can be
+                          saved for repair. Archiving blocks further profile use; restoring does not
+                          restore the project default.
+                        </Text>
+                        {review ? (
+                          <View className="gap-2">
+                            <Text>Review {editing.label}</Text>
+                            {review.bindings.map((b) => (
+                              <Text key={b.name}>
+                                {b.name}: {vaultProfileBindingMessage(b.state)}
+                                {b.destination ? ` · ${b.destination}` : ""}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : null}
+                      </ScrollView>
+                      <View className="gap-2 bg-sheet px-4 pt-3 pb-8">
+                        {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+                        <Button
+                          label={review ? "Save reviewed profile" : "Review profile"}
+                          disabled={locked}
+                          onPress={() =>
+                            review ? void apply({ type: "save", profile: editing }) : void preview()
+                          }
+                        />
+                        <Button
+                          label="Cancel profile editing"
+                          disabled={busy}
+                          onPress={closeEditorPage}
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                  {picking !== null ? (
+                    <>
+                      <ScrollView
+                        className="flex-1"
+                        contentInsetAdjustmentBehavior="automatic"
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerClassName="gap-3 p-4"
+                      >
+                        {editing.bindings[picking]?.kind === "github" ? (
+                          <VaultGitHubConnectionPicker
+                            environmentId={environmentId}
+                            connected={connected && !locked}
+                            onSelect={(itemId, repository) => {
+                              update({
+                                ...editing,
+                                bindings: editing.bindings.map((b, i) =>
+                                  i === picking ? { ...b, itemId, repository } : b,
+                                ),
+                              });
+                              setPicking(null);
+                            }}
+                          />
+                        ) : (
+                          <VaultReferenceSearch
+                            environmentId={environmentId}
+                            connected={connected && !locked}
+                            kind="ssh-key"
+                            onSelect={(r) => {
+                              update({
+                                ...editing,
+                                bindings: editing.bindings.map((b, i) =>
+                                  i === picking ? { ...b, itemId: r.item.id } : b,
+                                ),
+                              });
+                              setPicking(null);
+                            }}
+                          />
+                        )}
+                      </ScrollView>
+                    </>
+                  ) : null}
+                  {choosingThread ? (
+                    <>
+                      <ScrollView
+                        className="flex-1"
+                        contentInsetAdjustmentBehavior="automatic"
+                        contentContainerClassName="gap-3 p-4"
+                      >
+                        <Button
+                          label="Host checks only"
+                          onPress={() => {
+                            setThread(null);
+                            setReview(null);
+                            setChoosingThread(false);
+                          }}
+                        />
+                        {threads.map((t) => (
+                          <Button
+                            key={t.id}
+                            label={t.label}
+                            onPress={() => {
+                              setThread(ThreadId.make(t.id));
+                              setReview(null);
+                              setChoosingThread(false);
+                            }}
+                          />
+                        ))}
+                      </ScrollView>
+                    </>
+                  ) : null}
+                </KeyboardAvoidingView>
+              </SafeAreaView>
+            </SafeAreaProvider>
+          </View>
+        </Modal>
       ) : null}
     </View>
   );
@@ -674,13 +762,13 @@ function BoundReference({
   );
   return (
     <Text>
-      Selected key:{" "}
+      Selected reference:{" "}
       {result.error
         ? "Reference unavailable; refresh to retry"
         : result.data
           ? `${result.data.item.label}${result.data.item.state === "archived" ? " (archived)" : ""}`
           : result.isPending
-            ? "Loading selected key…"
+            ? "Loading selected reference…"
             : "Unavailable reference"}
     </Text>
   );

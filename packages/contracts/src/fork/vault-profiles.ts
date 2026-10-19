@@ -19,29 +19,49 @@ import {
   VaultGitResult,
   VaultSshError,
 } from "./vault-ssh.ts";
+import {
+  VaultGitHubRepository,
+  VaultGitHubOperation,
+  VaultGitHubResult,
+  VaultGitHubError,
+} from "./vault-github.ts";
 import { VaultWorkloadError } from "./vault-workloads.ts";
 export const VaultBindingName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_-]{0,63}$/));
 export const VaultProfileRequirement = Schema.Struct({
   name: VaultBindingName,
-  kind: Schema.Literals(["ssh", "git"]),
+  kind: Schema.Literals(["ssh", "git", "github"]),
 });
 export const VaultProfileRequirements = Schema.Struct({
   format: Schema.Literal("loom-vault-requirements"),
-  version: Schema.Literal(1),
+  version: Schema.Literals([1, 2]),
   label: VaultItemSummary.fields.label,
   requirements: Schema.Array(VaultProfileRequirement).check(
     Schema.isMinLength(1),
     Schema.isMaxLength(16),
     Schema.makeFilter((items) => new Set(items.map((item) => item.name)).size === items.length),
   ),
-});
+}).check(
+  Schema.makeFilter(
+    (value) => value.version === 2 || value.requirements.every((r) => r.kind !== "github"),
+  ),
+);
 export type VaultProfileRequirements = typeof VaultProfileRequirements.Type;
 export const VaultProfileBinding = Schema.Struct({
   ...VaultProfileRequirement.fields,
   itemId: Schema.NullOr(VaultItemId),
-  repository: Schema.NullOr(VaultGitCommand.fields.repository),
+  repository: Schema.NullOr(
+    Schema.Union([VaultGitCommand.fields.repository, VaultGitHubRepository]),
+  ),
 });
 export type VaultProfileBinding = typeof VaultProfileBinding.Type;
+const isGitHubRepository = Schema.is(VaultGitHubRepository),
+  isGitRepository = Schema.is(VaultGitCommand.fields.repository);
+const validRepository = (binding: VaultProfileBinding) =>
+  binding.kind === "ssh"
+    ? binding.repository === null
+    : binding.kind === "github"
+      ? binding.repository === null || isGitHubRepository(binding.repository)
+      : binding.repository === null || isGitRepository(binding.repository);
 export const VaultProfileDefinition = Schema.Struct({
   id: VaultItemId,
   label: VaultItemSummary.fields.label,
@@ -51,7 +71,7 @@ export const VaultProfileDefinition = Schema.Struct({
     Schema.makeFilter(
       (bindings) =>
         new Set(bindings.map((b) => b.name)).size === bindings.length &&
-        bindings.every((b) => b.kind === "git" || b.repository === null),
+        bindings.every(validRepository),
     ),
   ),
 });
@@ -127,7 +147,9 @@ export const VaultProfileResolution = Schema.Struct({
       itemId: VaultItemId,
       version: PositiveInt,
       destination: Schema.String,
-      repository: Schema.NullOr(VaultGitCommand.fields.repository),
+      repository: Schema.NullOr(
+        Schema.Union([VaultGitCommand.fields.repository, VaultGitHubRepository]),
+      ),
     }),
   ).check(
     Schema.isMinLength(1),
@@ -135,7 +157,7 @@ export const VaultProfileResolution = Schema.Struct({
     Schema.makeFilter(
       (bindings) =>
         new Set(bindings.map((b) => b.name)).size === bindings.length &&
-        bindings.every((b) => (b.kind === "git" ? b.repository !== null : b.repository === null)),
+        bindings.every((b) => validRepository(b) && (b.kind === "ssh" || b.repository !== null)),
     ),
   ),
 });
@@ -149,6 +171,7 @@ export const VaultProfileRun = Schema.Struct({
       argv: VaultSshCommand.fields.argv,
       timeoutMs: VaultSshCommand.fields.timeoutMs,
     }),
+    Schema.Struct({ kind: Schema.Literal("github"), operation: VaultGitHubOperation }),
     Schema.Struct({
       kind: Schema.Literal("git"),
       action: VaultGitCommand.fields.action,
@@ -157,7 +180,11 @@ export const VaultProfileRun = Schema.Struct({
   ]),
 });
 export type VaultProfileRun = typeof VaultProfileRun.Type;
-export const VaultProfileRunResult = Schema.Union([VaultSshResult, VaultGitResult]);
+export const VaultProfileRunResult = Schema.Union([
+  VaultSshResult,
+  VaultGitResult,
+  VaultGitHubResult,
+]);
 export const VaultProfilePinList = Schema.Struct({
   projectId: ProjectId,
   cursor: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
@@ -199,6 +226,7 @@ const error = Schema.Union([
   VaultError,
   VaultSshError,
   VaultWorkloadError,
+  VaultGitHubError,
   EnvironmentAuthorizationError,
 ]);
 export const VaultProfileRpcGroup = RpcGroup.make(
@@ -233,7 +261,7 @@ export const vaultProfileRequirements = (
   profile: VaultProfileDefinition,
 ): VaultProfileRequirements => ({
   format: "loom-vault-requirements",
-  version: 1,
+  version: profile.bindings.some((b) => b.kind === "github") ? 2 : 1,
   label: profile.label,
   requirements: profile.bindings.map(({ name, kind }) => ({ name, kind })),
 });

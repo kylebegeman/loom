@@ -60,7 +60,7 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Which profile metadata should be shared through Library, and which stays strictly environment-local?
-- SSH/Git resolution pins the profile and key versions on first use in a run. A key version change requires a new run. Version-following policy for future credential kinds remains open.
+- SSH/Git/GitHub resolution pins the profile and key versions on first use in a run. A key or connection version change requires a new run. Version-following policy for future credential kinds remains open.
 - Portable declarations contain names/kinds only and start unbound on import. Durable pin inspection/retention, Library publication and project-file discovery remain open.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
@@ -74,3 +74,17 @@ requires explicit irreversible confirmation. It clears the current binding snaps
 a metadata tombstone and prevents the same run selecting again. New runs can select normally.
 Active/unavailable runs remain retained. OpenBao older versions remain; no physical erasure,
 automatic retention policy or provider revocation is implied. Cancel leaves the snapshot intact.
+
+## Delivered GitHub requirements
+
+Administrators choose GitHub operations in the profile editor, pick a dedicated connection and
+one of its allowed repositories, review and save. Switching operation kinds clears the previous
+binding; unbind, replace, remove, cancel and archive/restore remain available. Web/desktop and
+native mobile share the service authority. Host-only review checks configuration; a selected
+thread adds grant checks. Live GitHub API health and GH CLI availability are separate checks.
+
+Agents execute a named GitHub binding without repeating the item ID, version or repository.
+Interactive and scheduled profile attachments use the same required-version/run preflight.
+Denied grants, archived records/profiles, changed versions or disallowed repositories block use.
+Version 2 portable declarations share GitHub requirement names/kinds and leave all local
+connection/repository bindings empty on import. Other credential kinds remain selected work.
