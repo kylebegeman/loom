@@ -4,6 +4,8 @@ import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
+import { FORK_KNOWN_BAILOUTS } from "./fork/reactCompilerBailouts"; // fork: react-compiler
+
 const mobileRoot = NodePath.resolve(__dirname, "..");
 const requireFromMobile = NodeModule.createRequire(NodePath.join(mobileRoot, "package.json"));
 const babel: {
@@ -16,6 +18,7 @@ const metroConfig: Promise<{ transformer: { babelTransformerPath: string } }> =
 // This list only shrinks: the test fails when a file here starts compiling, so
 // delete its entry (and its manual useMemo/useCallback/memo) in the same change.
 const KNOWN_BAILOUTS: Record<string, string> = {
+  ...FORK_KNOWN_BAILOUTS, // fork: react-compiler
   "src/components/ComposerAttachmentStrip.tsx": "unsupported syntax",
   "src/components/ui/AndroidAnchoredMenu.tsx": "ref read during render",
   "src/components/ui/Menu.tsx": "ref read during render",

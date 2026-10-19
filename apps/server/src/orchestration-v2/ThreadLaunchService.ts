@@ -577,7 +577,8 @@ const make = Effect.gen(function* () {
         );
       }
 
-      if (runId !== null && worktreePath !== null) {
+      // fork: project-lifecycle -- main-checkout launches show their setup phase too.
+      if (runId !== null) {
         yield* threads
           .dispatch({
             type: "prepared-run.progress",
@@ -596,27 +597,24 @@ const make = Effect.gen(function* () {
         (yield* fileSystem
           .exists(rootSetupMarker)
           .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId))));
-      // A restored managed checkout still owes its setup; other main-checkout threads skip it.
-      const setup =
-        worktreePath === null && !rootSetupPending
-          ? ({ status: "no-script" } as const)
-          : yield* setupScripts
-              .runForThread({
-                threadId,
-                projectId: input.projectId,
-                projectCwd: project.workspaceRoot,
-                worktreePath: setupCwd,
-                observeCompletion: {
-                  onOutputLine: (line: string) =>
-                    setupTracker.appendTail(threadId, "setup-script", line),
-                },
-                project: {
-                  id: project.id,
-                  workspaceRoot: project.workspaceRoot,
-                  scripts: project.scripts,
-                },
-              })
-              .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
+      // Loom runs setup in the main checkout too (docs/user/project-settings.md). A restored
+      // managed checkout's pending marker also makes the launch wait for it.
+      const setup = yield* setupScripts // fork: project-lifecycle
+        .runForThread({
+          threadId,
+          projectId: input.projectId,
+          projectCwd: project.workspaceRoot,
+          worktreePath: setupCwd,
+          observeCompletion: {
+            onOutputLine: (line: string) => setupTracker.appendTail(threadId, "setup-script", line),
+          },
+          project: {
+            id: project.id,
+            workspaceRoot: project.workspaceRoot,
+            scripts: project.scripts,
+          },
+        })
+        .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
 
       let awaitAsyncSetup = Effect.void;
       if (setup.status === "started") {

@@ -132,7 +132,7 @@ apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	1
+apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	2
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	2
 apps/server/src/storageCleanup.test.ts	project-lifecycle	13
 packages/contracts/src/settings.test.ts	project-lifecycle	1
@@ -276,6 +276,7 @@ apps/server/src/orchestration-v2/ProjectionStore.test.ts	detached-session-recove
 apps/server/src/orchestration-v2/ProjectionStore.ts	detached-session-recovery	9
 apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	mini-native-retention	2
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	workspace-handoff	1
+apps/server/src/orchestration-v2/ThreadLaunchService.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecycle	5
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	10
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	3
@@ -339,3 +340,5 @@ apps/mobile/src/native/useOpenPullRequest.ts	preview-links	2
 apps/mobile/src/features/threads/HtmlRenderWebView.tsx	preview-links	4
 apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2
 apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	2
+apps/mobile/src/reactCompilerCoverage.test.ts	react-compiler	2
+vite.config.ts	ext-lint	1

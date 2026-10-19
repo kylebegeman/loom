@@ -1347,7 +1347,8 @@ it.effect("runs a Scratch thread launched at the root in its own folder", () =>
   }),
 );
 
-it.effect("starts a thread in the main checkout without running the setup action", () =>
+// fork: project-lifecycle -- Loom runs setup in the main checkout too.
+it.effect("starts a thread in the main checkout and runs its setup action", () =>
   Effect.gen(function* () {
     const harness = makeHarness();
     yield* Effect.gen(function* () {
@@ -1368,12 +1369,12 @@ it.effect("starts a thread in the main checkout without running the setup action
         ),
         Stream.runCollect,
       );
-      assert.isFalse(
+      assert.isTrue(
         events.some(
           (stored) => stored.commandId === CommandId.make(`${input.commandId}:progress:setup`),
         ),
       );
-      assert.equal(harness.runSetup.mock.calls.length, 0);
+      assert.equal(harness.runSetup.mock.calls.length, 1);
     }).pipe(Effect.provide(harness.layer));
   }),
 );

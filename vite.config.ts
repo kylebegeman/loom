@@ -378,6 +378,12 @@ export default defineConfig({
         rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },
       {
+        // fork: ext-lint -- Fork web code gets mobile's ratchet: it keeps its manual memo hooks
+        // until each package moves them to the compiler.
+        files: ["apps/web/src/fork/**/*.{ts,tsx}", "apps/web/src/routes/settings.loom*.tsx"],
+        rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
+      },
+      {
         // The compiler only compiles a use* function that calls a hook; one that calls none is
         // silently left as a plain function, so whatever it returns loses its caching.
         files: ["apps/web/src/**/*.{ts,tsx}", "apps/mobile/src/**/*.{ts,tsx}"],
