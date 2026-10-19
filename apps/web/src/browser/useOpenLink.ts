@@ -17,6 +17,7 @@ import {
   resolveLinkTarget,
 } from "./browserLinkTarget";
 import { BrowserSettingsReadError, openUrlInPreview } from "./openFileInPreview";
+import { openEnvironmentUrlExternally } from "~/fork/preview-links/navigation"; // fork: preview-links
 
 const NO_MODIFIER = { metaKey: false, ctrlKey: false } as const;
 
@@ -61,6 +62,7 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       }
       const api = readLocalApi();
       if (!api) throw new Error("Link opening is unavailable.");
+      if (targetThreadRef) return openEnvironmentUrlExternally(targetThreadRef.environmentId, url); // fork: preview-links
       await api.shell.openExternal(url);
     },
     [openPreview, threadRef],

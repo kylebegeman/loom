@@ -10,6 +10,7 @@ import {
 import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
+import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -61,11 +62,14 @@ export async function openTerminalLinkInPreview<E>(
 
   const defaults = await resolveBrowserDefaults();
   const runtime = previewRuntimeFor(input.threadRef.environmentId);
+  // fork: preview-links: the failure was shown, and the system browser cannot reach the port either.
+  const url = await navigablePreviewUrlFor(input.threadRef, input.url, runtime); // fork: preview-links
+  if (url === null) return; // fork: preview-links
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
-      url: input.url,
+      url, // fork: preview-links
       viewport: browserDefaultOpenViewport(defaults),
       profileId: browserDefaultOpenProfileId(defaults),
       ...(runtime === undefined ? {} : { runtime }),

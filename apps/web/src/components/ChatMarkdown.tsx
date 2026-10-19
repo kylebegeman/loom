@@ -214,6 +214,10 @@ import {
   BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
+import {
+  openEnvironmentUrlExternally,
+  takeUnreachableLoopbackClick,
+} from "../fork/preview-links/navigation"; // fork: preview-links
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 
 interface ChatMarkdownProps {
@@ -2980,6 +2984,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 canOpenInApp: canOpenInPreview,
               }) !== "app"
             ) {
+              if (takeUnreachableLoopbackClick(event, threadRef?.environmentId, href)) return; // fork: preview-links
               // Chromium turns an Option/Alt-click into a download that never reaches the
               // shell. On desktop, open the link here while the key is still down, so link
               // routers such as Finicky can still read it.
@@ -3006,7 +3011,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 result.cause,
               );
               if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
-              void readLocalApi()?.shell.openExternal(href);
+              void openEnvironmentUrlExternally(threadRef?.environmentId, href); // fork: preview-links
             });
           }}
           onContextMenu={(event) => {
@@ -3037,7 +3042,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
                   );
                 }
               },
-              openExternal: (target) => api.shell.openExternal(target),
+              openExternal: (target) =>
+                openEnvironmentUrlExternally(threadRef?.environmentId, target), // fork: preview-links
               copyLink: (target) => writeTextToClipboard(target, "link"),
               updateThreadLink: updateThreadPullRequestLink,
               reportFailure: (operation, cause) => {

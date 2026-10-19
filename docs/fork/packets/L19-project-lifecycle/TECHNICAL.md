@@ -213,14 +213,24 @@ release behavior on 2026-10-08 (see PRODUCT).
 - **Release order.** Removing a lane releases its leases first, then detaches the space, so
   a stopped server's open files no longer block the unmount. If a release fails the lane is
   still removed and the failure is logged; if the unmount is still busy, the next tick tries
-  both again.
+  both again. Only the first attempt stops port listeners. They are matched by port alone, so
+  a retry would stop whatever took the port after the lane was let go, every 30 seconds while
+  the lane stays stuck (seen 2026-10-19: a VM process and a 1Password agent whose working
+  folder was the lane's `tmp` kept two lanes busy). Retries still stop recorded processes. A
+  lane a thread holds again sweeps its ports on its next release.
 - **Devices.** On `thread.settled`, `archived` and `deleted`, the released thread's device
   panels close (L09's `DeviceService`). A device another active thread shows stays on; any
   other is shut down. Lane simulators are deleted only with their lane, and not while a thread
   from another lane has them open.
 - **Ports.** Each lane gets 20 ports from 41000 to 48999, below the macOS ephemeral range and
   away from dev runner ports. Lanes made before migration 2 get a block on first load.
-  `LOOM_LANE_PORT` and `LOOM_LANE_PORTS` are exported by the hook.
+  `LOOM_LANE_PORT` and `LOOM_LANE_PORTS` are exported by the hook. Every Loom server on the
+  computer (the app, dev servers, other homes) draws from this one range and a release stops
+  listeners on the lane's ports, so blocks are claimed in `~/.loom/lane-ports/<base>`, one
+  file per block created exclusively and naming the owner's state folder. A claim lives as
+  long as the lane; a server drops its own claims for lanes it no longer has on start, and a
+  claim whose owner's state folder is gone is free. A lane whose block another server claimed
+  first moves to a free one when its server starts, and its `LANE.md` is rewritten.
 - **Build slots.** `lane-slot` takes one of `slots/count` slots with `lockf -k -t 0` (Linux:
   `flock -n -E 75`) around the command; the lock is released when the command exits, and
   background children do not hold it, so Xcode's build service cannot keep a slot. A marker

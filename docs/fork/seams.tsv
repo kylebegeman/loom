@@ -74,7 +74,7 @@ apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
-apps/server/scripts/migrate-dev-db.ts	dev-db	3
+apps/server/scripts/migrate-dev-db.ts	dev-db	7
 apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1
 apps/server/src/config.ts	mini-managed-projects	1
@@ -317,3 +317,23 @@ apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
 apps/server/src/cloud/selfUpdate.ts	runtime-owner	4
 apps/server/src/environment/ServerEnvironment.ts	runtime-owner	3
 apps/server/src/cli/update.ts	runtime-owner	2
+
+apps/web/src/browser/browserTargetResolver.ts	preview-links	5
+apps/web/src/browser/browserTargetResolver.test.ts	preview-links	15
+apps/web/src/browser/openFileInPreview.ts	preview-links	4
+apps/web/src/browser/useOpenLink.ts	preview-links	2
+apps/web/src/components/ChatMarkdown.tsx	preview-links	4
+apps/web/src/components/ThreadTerminalDrawer.tsx	preview-links	2
+apps/web/src/components/preview/openPreviewSession.ts	preview-links	5
+apps/web/src/components/preview/openTerminalLinkInPreview.ts	preview-links	5
+apps/web/src/components/preview/PreviewView.tsx	preview-links	9
+apps/web/src/components/preview/PreviewLocalServerCard.tsx	preview-links	3
+apps/web/src/localApi.ts	preview-links	3
+apps/mobile/src/Stack.tsx	preview-links	2
+apps/mobile/src/features/settings/components/settings-sheet-targets.ts	preview-links	1
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	preview-links	1
+apps/mobile/src/lib/openExternalUrl.ts	preview-links	2
+apps/mobile/src/native/useOpenPullRequest.ts	preview-links	2
+apps/mobile/src/features/threads/HtmlRenderWebView.tsx	preview-links	4
+apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2
+apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	3

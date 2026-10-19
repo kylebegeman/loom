@@ -4,11 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 const readPreparedConnection = vi.fn();
 const env = vi.hoisted(() => ({ isElectron: false }));
 
+const advertisesPreviewLinks = vi.hoisted(() => vi.fn(() => false)); // fork: preview-links
+
 vi.mock("~/state/session", () => ({ readPreparedConnection }));
 vi.mock("~/env", () => env);
+// fork: preview-links
+vi.mock("~/fork/preview-links/advertised", () => ({
+  environmentAdvertisesPreviewLinks: advertisesPreviewLinks, // fork: preview-links
+})); // fork: preview-links
 
 describe("browser target resolver", () => {
   beforeEach(() => readPreparedConnection.mockReset());
+  beforeEach(() => void advertisesPreviewLinks.mockReset().mockReturnValue(false)); // fork: preview-links
 
   it("maps environment ports onto a private network host", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" });
@@ -126,7 +133,8 @@ describe("browser target resolver", () => {
     });
   });
 
-  it("refuses public relay hosts until the authenticated gateway exists", async () => {
+  // fork: preview-links
+  it("points public relay hosts at preview links", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://relay.example.com" });
     const { resolveBrowserNavigationTarget } = await import("./browserTargetResolver");
     expect(() =>
@@ -134,7 +142,7 @@ describe("browser target resolver", () => {
         kind: "environment-port",
         port: 5173,
       }),
-    ).toThrow(/authenticated preview gateway/);
+    ).toThrow(/Settings > Loom > Previews/); // fork: preview-links
     expect(
       resolveBrowserNavigationTarget(EnvironmentId.make("environment-1"), {
         kind: "url",
@@ -161,6 +169,17 @@ describe("browser target resolver", () => {
       resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"),
     ).toBe("http://192.168.1.25:3000/app");
   });
+
+  // fork: preview-links
+  it("leaves loopback servers for preview links when the environment shares them", async () => {
+    readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" }); // fork: preview-links
+    advertisesPreviewLinks.mockReturnValue(true); // fork: preview-links
+    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver"); // fork: preview-links
+    // fork: preview-links
+    expect(
+      resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"), // fork: preview-links
+    ).toBe("http://localhost:3000/app"); // fork: preview-links
+  }); // fork: preview-links
 
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {
     // WSL NAT mode serves the backend on the distro IP, but a loopback-only dev

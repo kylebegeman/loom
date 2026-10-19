@@ -6,7 +6,7 @@ import { CommonActions } from "@react-navigation/native";
 import { androidWorkspaceNavigationState } from "../lib/android-workspace-navigation";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useThreadShell } from "../state/entities";
-import { tryOpenExternalUrl } from "../lib/openExternalUrl";
+import { openThreadUrlExternally } from "../fork/preview-links/navigation"; // fork: preview-links
 
 export function useOpenPullRequest(options?: {
   readonly replace?: boolean;
@@ -43,7 +43,7 @@ export function useOpenPullRequest(options?: {
           ? { environmentId: String(environmentId), projectId: String(projectId) }
           : null,
       );
-      if (!params) return tryOpenExternalUrl(url, "pull-request");
+      if (!params) return openThreadUrlExternally(environmentId, url, "pull-request"); // fork: preview-links
       if (Platform.OS === "android")
         navigation.dispatch((state) =>
           CommonActions.reset(

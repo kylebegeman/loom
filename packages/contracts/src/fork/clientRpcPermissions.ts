@@ -17,6 +17,8 @@ import { PROJECT_LIFECYCLE_WS_METHODS as L } from "./project-lifecycle.ts";
 import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "./apple-build-tooling.ts";
 import { DEVICE_QA_WS_METHODS as Q } from "./device-qa.ts";
 import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
+import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
+import { AuthPreviewOperateScope } from "../auth.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -142,4 +144,12 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [G.deleteGraph]: AuthOrchestrationOperateScope,
   [G.setAgentTool]: AuthOrchestrationOperateScope,
   [G.updateSettings]: AuthTerminalOperateScope,
+  [PL.configure]: AuthSettingsWriteScope,
+  [PL.share]: AuthPreviewOperateScope,
+  [PL.open]: AuthPreviewOperateScope,
+  [PL.extend]: AuthPreviewOperateScope,
+  [PL.revoke]: AuthPreviewOperateScope,
+  [PL.restore]: AuthPreviewOperateScope,
+  [PL.revokeAll]: AuthPreviewOperateScope,
+  [PL.signOutBrowsers]: AuthPreviewOperateScope,
 } as const;

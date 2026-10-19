@@ -15,7 +15,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import type { ProjectLifecycleStatus } from "@t3tools/contracts/fork";
+import { ProjectLifecycleError, type ProjectLifecycleStatus } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -35,7 +35,7 @@ import * as ProcessRunner from "../../processRunner.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
 import { GB } from "./policy.ts";
-import { makeWith } from "./ProjectLifecycleService.ts";
+import { makeWith, type ProjectLifecycleOptions } from "./ProjectLifecycleService.ts";
 import { makeStore } from "./store.ts";
 
 /** Unused service methods fail immediately instead of silently returning a fake value. */
@@ -99,7 +99,8 @@ case "$1 $2" in
   "volume ls") printf 'db-data\\t%s\\n' "$lane" ;;
 esac`,
   );
-  stub("lsof", "exit 1");
+  // Reports the pids in <home>/listening as listeners on the lane's ports.
+  stub("lsof", `[ -s '${home}/listening' ] || exit 1\nsed 's/^/p/' '${home}/listening'`);
   return { stubs, log };
 };
 
@@ -116,7 +117,12 @@ const alive = (pid: number) => {
 };
 
 /** `devUrl` makes the service behave as a dev server would. */
-const setupWith = (options: { readonly devUrl?: URL } = {}) =>
+const setupWith = (
+  options: {
+    readonly devUrl?: URL;
+    readonly wrapSpaces?: ProjectLifecycleOptions["wrapSpaces"];
+  } = {},
+) =>
   Effect.gen(function* () {
     const home = NodeFS.realpathSync(
       NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-lc-")),
@@ -199,6 +205,7 @@ const setupWith = (options: { readonly devUrl?: URL } = {}) =>
       xcrunPath: NodePath.join(stubs, "xcrun"),
       dockerPath: NodePath.join(stubs, "docker"),
       lsofPath: NodePath.join(stubs, "lsof"),
+      ...(options.wrapSpaces === undefined ? {} : { wrapSpaces: options.wrapSpaces }),
       // Growth and reserve steering depend on free space, so the host is pinned well above both.
       hostSpace: async () => ({ free: 1000 * GB, total: 2000 * GB }),
     }).pipe(
@@ -272,6 +279,50 @@ describe("ProjectLifecycleService", () => {
       expect(NodeFS.existsSync(feature.laneDir)).toBe(false);
       expect(NodeFS.existsSync(t.worktree)).toBe(true);
       expect(NodeFS.readFileSync(`${lanes}/.loom/lanes.tsv`, "utf8")).not.toContain(t.worktree);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("claims lane ports against every other server on the computer", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const claimsDir = `${t.home}/.loom/lane-ports`;
+      const claimOf = (base: number) =>
+        JSON.parse(NodeFS.readFileSync(`${claimsDir}/${base}`, "utf8")) as {
+          owner: string;
+          laneId: string;
+        };
+      const otherState = `${t.home}/other/userdata`;
+      NodeFS.mkdirSync(otherState, { recursive: true });
+      NodeFS.mkdirSync(claimsDir, { recursive: true });
+      // A running server holds the first block; a deleted worktree's server left the second.
+      const other = `${JSON.stringify({ owner: otherState, laneId: "theirs" })}\n`;
+      NodeFS.writeFileSync(`${claimsDir}/41000`, other);
+      NodeFS.writeFileSync(
+        `${claimsDir}/41020`,
+        JSON.stringify({ owner: `${t.home}/gone/userdata`, laneId: "old" }),
+      );
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).toBe(41020);
+      expect(claimOf(41020).laneId).toBe(lane.id);
+      const owner = claimOf(41020).owner;
+      expect(owner).not.toBe(otherState);
+
+      // A block another server claimed first moves this server's lane when it starts.
+      NodeFS.writeFileSync(`${claimsDir}/41020`, other);
+      yield* t.create;
+      const moved = (yield* t.store.listLanes()).find((row) => row.id === lane.id);
+      expect(moved?.portBase).toBe(41040);
+      expect(claimOf(41040)).toEqual({ owner, laneId: lane.id });
+      expect(NodeFS.readFileSync(`${lane.laneDir}/LANE.md`, "utf8")).toContain(
+        "Ports: 41040 to 41059",
+      );
+
+      // Removing the lane gives its block back and leaves other servers' claims alone.
+      const service = yield* t.create;
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      yield* service.tick();
+      expect(NodeFS.readdirSync(claimsDir).sort()).toEqual(["41000", "41020"]);
     }).pipe(Effect.scoped),
   );
 
@@ -525,6 +576,69 @@ describe("ProjectLifecycleService", () => {
         .releaseLease(lane.id, "process", String(pid))
         .pipe(Effect.flip);
       expect(missing.reason).toBe("not-found");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("stops a stuck lane's port listeners on its first release attempt only", () =>
+    Effect.gen(function* () {
+      let busy = true;
+      const t = yield* setupWith({
+        wrapSpaces: (spaces) => ({
+          ...spaces,
+          folder: {
+            ...spaces.folder,
+            detach: (paths, device) =>
+              busy
+                ? Effect.fail(
+                    new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
+                  )
+                : spaces.folder.detach(paths, device),
+          },
+        }),
+      });
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      const sleeper = () => {
+        const child = NodeChildProcess.spawn("/bin/sleep", ["60"], { stdio: "ignore" });
+        return child.pid!;
+      };
+      const started: Array<number> = [];
+      const listen = () => {
+        const pid = sleeper();
+        started.push(pid);
+        NodeFS.writeFileSync(`${t.home}/listening`, `${pid}\n`);
+        return pid;
+      };
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const pid of started) if (alive(pid)) process.kill(pid, "SIGKILL");
+        }),
+      );
+      const settle = (settled: boolean) => {
+        t.threads[0] = thread("worker", settled ? { settledAt: DateTime.nowUnsafe() } : {});
+      };
+
+      const original = listen();
+      settle(true);
+      expect(laneOf(yield* t.service.tick(), t.checkout)?.id).toBe(lane.id);
+      expect(alive(original)).toBe(false);
+
+      // Another server took the port while the unmount stayed busy; a recorded process did not.
+      const newcomer = listen();
+      const recorded = sleeper();
+      started.push(recorded);
+      yield* t.service.adoptLease(lane.id, "process", String(recorded), "worker");
+      expect(laneOf(yield* t.service.tick(), t.checkout)?.id).toBe(lane.id);
+      expect(alive(newcomer)).toBe(true);
+      expect(alive(recorded)).toBe(false);
+
+      // Held again and released again, the lane's ports are its own once more.
+      settle(false);
+      yield* t.service.tick();
+      settle(true);
+      busy = false;
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      expect(alive(newcomer)).toBe(false);
     }).pipe(Effect.scoped),
   );
 
