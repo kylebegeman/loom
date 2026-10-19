@@ -16,19 +16,33 @@ const [Effect, Layer, FileSystem, Path] = await Promise.all([
 const app = (file) => import(NodeURL.pathToFileURL(root + "/apps/server/src/" + file + ".ts"));
 const providerCore = (file) =>
   import(NodeURL.pathToFileURL(root + "/packages/provider-core/src/server/" + file + ".ts"));
-const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Auth, Testkit] =
-  await Promise.all([
-    app("orchestration-v2/ProviderTurnStartService"),
-    app("orchestration-v2/ProjectionStore"),
-    app("orchestration-v2/RunExecutionService"),
-    app("orchestration-v2/ProviderSessionManager"),
-    app("orchestration-v2/RuntimePolicy"),
-    providerCore("IdAllocator"),
-    app("orchestration-v2/EventSink"),
-    app("orchestration-v2/ContextHandoffService"),
-    app("provider/ProviderAuthService"),
-    app("orchestration-v2/ProviderTurnStartService.testkit"),
-  ]);
+const [
+  Start,
+  Projection,
+  Run,
+  Sessions,
+  Policy,
+  Id,
+  Sink,
+  Handoff,
+  Auth,
+  Testkit,
+  Config,
+  Settings,
+] = await Promise.all([
+  app("orchestration-v2/ProviderTurnStartService"),
+  app("orchestration-v2/ProjectionStore"),
+  app("orchestration-v2/RunExecutionService"),
+  app("orchestration-v2/ProviderSessionManager"),
+  app("orchestration-v2/RuntimePolicy"),
+  providerCore("IdAllocator"),
+  app("orchestration-v2/EventSink"),
+  app("orchestration-v2/ContextHandoffService"),
+  app("provider/ProviderAuthService"),
+  app("orchestration-v2/ProviderTurnStartService.testkit"),
+  app("config"),
+  app("serverSettings"),
+]);
 let current;
 let fullReads = 0;
 let threadReads = 0;
@@ -52,6 +66,8 @@ const dependencies = Layer.mergeAll(
   FileSystem.layerNoop({}),
   Path.layer,
   Layer.mock(Auth.ProviderAuthService)({}),
+  Layer.mock(Config.ServerConfig)({ worktreesDir: "/synthetic-worktrees" }),
+  Settings.layerTest(),
   Layer.mock(Projection.ProjectionStoreV2)({
     getThreadProjection: () =>
       Effect.sync(() => {

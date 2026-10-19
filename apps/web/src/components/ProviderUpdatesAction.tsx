@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react"; // fork: machine-updates
 import { Atom } from "effect/reactivity"; // fork: machine-updates
 
-import { useEnvironments } from "~/state/environments";
+import { useEnvironmentProviders, useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
@@ -32,6 +32,7 @@ export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) 
       ),
   );
   const permitted = useAtomValue(permittedAtom); // fork: machine-updates
+  const providersByEnvironment = useEnvironmentProviders();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
@@ -39,7 +40,7 @@ export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) 
     if (!permitted.has(environment.environmentId)) return []; // fork: machine-updates
     // fork: machine-updates
     if (environmentIds !== undefined && !environmentIds.has(environment.environmentId)) return [];
-    const providers = environment.serverConfig?.providers ?? [];
+    const providers = providersByEnvironment.get(environment.environmentId) ?? [];
     // fork: machine-updates - Switched-off computers are not updated.
     if (!environment.entry.enabled || environment.connection.phase !== "connected") {
       return [];
