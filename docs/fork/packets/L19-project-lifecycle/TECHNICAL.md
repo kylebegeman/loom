@@ -213,7 +213,11 @@ release behavior on 2026-10-08 (see PRODUCT).
 - **Release order.** Removing a lane releases its leases first, then detaches the space, so
   a stopped server's open files no longer block the unmount. If a release fails the lane is
   still removed and the failure is logged; if the unmount is still busy, the next tick tries
-  both again.
+  both again. Only the first attempt stops port listeners. They are matched by port alone, so
+  a retry would stop whatever took the port after the lane was let go, every 30 seconds while
+  the lane stays stuck (seen 2026-10-19: a VM process and a 1Password agent whose working
+  folder was the lane's `tmp` kept two lanes busy). Retries still stop recorded processes. A
+  lane a thread holds again sweeps its ports on its next release.
 - **Devices.** On `thread.settled`, `archived` and `deleted`, the released thread's device
   panels close (L09's `DeviceService`). A device another active thread shows stays on; any
   other is shut down. Lane simulators are deleted only with their lane, and not while a thread
