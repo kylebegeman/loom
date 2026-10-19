@@ -31,8 +31,8 @@ export function PreviewLinkCardActions({
 
   const share = () => runCommand(previewLinks.share, { environmentId, input: { port } });
   const copy = () =>
-    void action.act("Unable to copy preview link", async () =>
-      copyPreviewLink((await share()).url),
+    void action.act("Unable to copy preview link", () =>
+      copyPreviewLink(share().then((link) => link.url)),
     );
   const openInBrowser = () =>
     void action.act("Unable to open preview", () =>

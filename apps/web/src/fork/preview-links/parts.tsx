@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { writePendingLinkToClipboard } from "./clipboard";
 import { errorText, openPreviewLinksSettings } from "./state";
 
 const isPreviewLinksError = Schema.is(PreviewLinksError);
@@ -12,7 +13,7 @@ const isPreviewLinksError = Schema.is(PreviewLinksError);
 export const failureOf = <A, E>(result: AsyncResult.AsyncResult<A, E>): string | null =>
   result._tag === "Failure" ? errorText(Cause.squash(result.cause)) : null;
 
-/** A failure toast; one caused by missing setup offers a way to Settings > Previews. */
+/** A failure toast; one caused by missing setup offers a way to Settings > Loom > Previews. */
 export function toastFailure(title: string, error: unknown) {
   const needsSetup = isPreviewLinksError(error) && error.reason === "not-configured";
   const toastId = toastManager.add(
@@ -54,17 +55,21 @@ export function useAction() {
 }
 
 /**
- * Copies a link and confirms it. A host that blocks the clipboard, or a browser that drops the
- * write because the click came before a network request, gets the link to copy by hand.
+ * Copies a link, or one still being made, and confirms it. Call it during the click so a pending
+ * link can still be written. A host that blocks the clipboard gets the link to copy by hand; a
+ * link that could not be made fails instead.
  */
-export async function copyPreviewLink(url: string) {
+export async function copyPreviewLink(url: string | Promise<string>) {
   try {
-    await writeTextToClipboard(url, "link");
+    await (typeof url === "string"
+      ? writeTextToClipboard(url, "link")
+      : writePendingLinkToClipboard(url));
   } catch {
+    const link = await url;
     toastManager.add({
       type: "warning",
       title: "This host blocks copying",
-      description: `Copy it by hand: ${url}`,
+      description: `Copy it by hand: ${link}`,
     });
     return;
   }
