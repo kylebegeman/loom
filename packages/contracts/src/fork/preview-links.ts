@@ -223,6 +223,12 @@ export function parsePreviewLinkHost(
   return { port, share: match[2]!, machine: match[3]! };
 }
 
+/** True when `host` is one of this computer's preview hosts under the current settings. */
+export function isCurrentPreviewHost(host: string, settings: PreviewLinksSettings): boolean {
+  if (settings.suffix === null) return false;
+  return parsePreviewLinkHost(host, settings.suffix)?.machine === settings.machine;
+}
+
 /** True when `url` looks like a preview link on some suffix, before knowing which computer owns it. */
 export function looksLikePreviewLinkUrl(url: string): boolean {
   try {

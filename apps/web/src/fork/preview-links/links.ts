@@ -1,6 +1,7 @@
 import {
   PreviewLinkSuffix,
   PreviewMachineName,
+  isCurrentPreviewHost,
   type PreviewLink,
   type PreviewLinkLifetime,
   type PreviewLinksSettings,
@@ -67,9 +68,13 @@ export function tunnelStatus(setup: PreviewLinksSetup): string {
   return tunnel.message && tunnel.state !== "connected" ? `${base}: ${tunnel.message}` : base;
 }
 
-export function canRestore(link: PreviewLink, now: number): boolean {
+/** A link made under another domain or computer name has no address here until settings change back. */
+function canRestore(link: PreviewLink, settings: PreviewLinksSettings, now: number): boolean {
   return (
-    link.state !== "open" && link.restorableUntil !== null && Date.parse(link.restorableUntil) > now
+    link.state !== "open" &&
+    link.restorableUntil !== null &&
+    Date.parse(link.restorableUntil) > now &&
+    isCurrentPreviewHost(link.host, settings)
   );
 }
 
@@ -78,13 +83,14 @@ const endedAt = (link: PreviewLink) => Date.parse(link.endedAt ?? link.expiresAt
 /** Open links newest first, then ended links that can still be restored, most recent first. */
 export function visibleLinks(
   links: ReadonlyArray<PreviewLink>,
+  settings: PreviewLinksSettings,
   now: number,
 ): ReadonlyArray<PreviewLink> {
   const open = links
     .filter((link) => link.state === "open")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const ended = links
-    .filter((link) => canRestore(link, now))
+    .filter((link) => canRestore(link, settings, now))
     .sort((left, right) => endedAt(right) - endedAt(left));
   return [...open, ...ended];
 }

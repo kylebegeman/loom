@@ -8,6 +8,7 @@ import {
   PREVIEW_LINK_LIFETIMES,
   type PreviewLink,
   type PreviewLinkLifetime,
+  type PreviewLinksSettings,
 } from "@t3tools/contracts/fork";
 import { BRAND_NAME } from "@t3tools/shared/brand";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -117,7 +118,9 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
   const [failure, setFailure] = useState<LinkFailure | null>(null);
   const snapshot = query.data;
   const status = snapshot ? previewSetupStatus(snapshot.setup) : null;
-  const links = snapshot ? visiblePreviewLinks(snapshot.links, props.now) : [];
+  const links = snapshot
+    ? visiblePreviewLinks(snapshot.links, snapshot.setup.settings, props.now)
+    : [];
 
   async function run(linkId: string, fallback: string, action: () => Promise<void>) {
     if (pendingRef.current) return;
@@ -204,17 +207,20 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
           {query.error}
         </Text>
       ) : null}
-      {links.map((link) => (
-        <PreviewLinkRow
-          key={link.id}
-          link={link}
-          now={props.now}
-          permissions={permissions}
-          pending={pending === link.id}
-          error={failure?.linkId === link.id ? failure.message : null}
-          onAction={(action, lifetime) => perform(link, action, lifetime)}
-        />
-      ))}
+      {snapshot
+        ? links.map((link) => (
+            <PreviewLinkRow
+              key={link.id}
+              link={link}
+              settings={snapshot.setup.settings}
+              now={props.now}
+              permissions={permissions}
+              pending={pending === link.id}
+              error={failure?.linkId === link.id ? failure.message : null}
+              onAction={(action, lifetime) => perform(link, action, lifetime)}
+            />
+          ))
+        : null}
       {snapshot && links.length === 0 ? (
         <Text className="px-4 pb-4 text-sm text-foreground-muted">
           No preview links on this computer.
@@ -244,6 +250,7 @@ const EXTEND_PREFIX = "extend:";
 
 function PreviewLinkRow(props: {
   readonly link: PreviewLink;
+  readonly settings: PreviewLinksSettings;
   readonly now: number;
   readonly permissions: PreviewLinkPermissions;
   readonly pending: boolean;
@@ -252,7 +259,7 @@ function PreviewLinkRow(props: {
 }) {
   const { link } = props;
   const summary = previewLinkSummary(link, props.now);
-  const available = previewLinkActions(link, props.permissions, props.now);
+  const available = previewLinkActions(link, props.permissions, props.settings, props.now);
   const menuActions = available.map(({ action, enabled }): MenuAction => ({
     id: action,
     title: ACTION_LABELS[action],

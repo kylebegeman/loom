@@ -4,7 +4,6 @@ import type { ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIME_MS,
   PREVIEW_LINK_RESTORE_WINDOW_MS,
-  parsePreviewLinkHost,
   type PreviewLink,
   type PreviewLinksSettings,
 } from "@t3tools/contracts/fork";
@@ -67,12 +66,6 @@ export function formatPreviewHost(input: {
   readonly suffix: string;
 }): string {
   return `${input.port}-${input.share}-${input.machine}.${input.suffix}`;
-}
-
-/** True when `host` is one of this computer's preview hosts under the current settings. */
-export function isCurrentPreviewHost(host: string, settings: PreviewLinksSettings): boolean {
-  if (settings.suffix === null) return false;
-  return parsePreviewLinkHost(host, settings.suffix)?.machine === settings.machine;
 }
 
 export function randomPreviewLinkId(): string {

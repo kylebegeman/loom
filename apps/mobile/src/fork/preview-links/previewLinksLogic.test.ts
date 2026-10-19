@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
-import type { PreviewLink, PreviewLinksSetup } from "@t3tools/contracts/fork";
+import type { PreviewLink, PreviewLinksSettings, PreviewLinksSetup } from "@t3tools/contracts/fork";
 import {
   connectionReachesLoopback,
   formatPreviewDuration,
@@ -39,6 +39,8 @@ function computer(
     ...overrides,
   };
 }
+
+const SETTINGS: PreviewLinksSettings = setup({}).settings;
 
 function link(overrides: Partial<PreviewLink> = {}): PreviewLink {
   return {
@@ -147,10 +149,19 @@ describe("visiblePreviewLinks", () => {
       restorableUntil: at(-MINUTE),
     });
     expect(
-      visiblePreviewLinks([expiredEarlier, older, lapsed, endedRecently, newer], NOW).map(
+      visiblePreviewLinks([expiredEarlier, older, lapsed, endedRecently, newer], SETTINGS, NOW).map(
         (entry) => entry.id,
       ),
     ).toEqual(["newer", "older", "ended-recently", "expired-earlier"]);
+  });
+
+  it("hides ended links from another computer name or domain until settings change back", () => {
+    const ended = link({ state: "revoked", endedAt: at(-HOUR), restorableUntil: at(HOUR) });
+    const ids = (settings: PreviewLinksSettings) =>
+      visiblePreviewLinks([ended], settings, NOW).map((entry) => entry.id);
+    expect(ids({ ...SETTINGS, machine: "laptop" })).toEqual([]);
+    expect(ids({ ...SETTINGS, suffix: "example.com" })).toEqual([]);
+    expect(ids(SETTINGS)).toEqual(["link"]);
   });
 });
 
@@ -180,7 +191,7 @@ describe("previewLinkActions", () => {
   const all = { open: true, extend: true, end: true, restore: true };
 
   it("offers open, copy, extend and end on an open link, gated by permission", () => {
-    expect(previewLinkActions(link(), { ...all, extend: false }, NOW)).toEqual([
+    expect(previewLinkActions(link(), { ...all, extend: false }, SETTINGS, NOW)).toEqual([
       { action: "open", enabled: true },
       { action: "copy", enabled: true },
       { action: "extend", enabled: false },
@@ -188,15 +199,15 @@ describe("previewLinkActions", () => {
     ]);
   });
 
-  it("offers restore on an ended link only within its restore window", () => {
+  it("offers restore on an ended link only within its restore window and at its address", () => {
     const restorable = link({ state: "revoked", restorableUntil: at(HOUR) });
     const lapsed = link({ state: "expired", restorableUntil: at(-HOUR) });
-    expect(previewLinkActions(restorable, all, NOW)[0]).toEqual({
-      action: "restore",
-      enabled: true,
-    });
-    expect(previewLinkActions(lapsed, all, NOW)[0]).toEqual({ action: "restore", enabled: false });
-    expect(previewLinkActions(restorable, { ...all, restore: false }, NOW)[0]?.enabled).toBe(false);
+    const restore = (entry: PreviewLink, permissions = all, settings = SETTINGS) =>
+      previewLinkActions(entry, permissions, settings, NOW)[0];
+    expect(restore(restorable)).toEqual({ action: "restore", enabled: true });
+    expect(restore(lapsed)).toEqual({ action: "restore", enabled: false });
+    expect(restore(restorable, { ...all, restore: false })?.enabled).toBe(false);
+    expect(restore(restorable, all, { ...SETTINGS, machine: "laptop" })?.enabled).toBe(false);
   });
 });
 

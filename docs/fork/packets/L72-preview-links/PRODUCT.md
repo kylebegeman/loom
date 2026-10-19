@@ -46,7 +46,8 @@ this link from Loom". A browser stays signed in to that one link for up to 12 ho
   at the same address. After that it is removed.
 - Sharing a port that already has an open link returns that link instead of a second one.
 - Changing the domain or computer name ends every open link, because every address moves.
-  Links made under the old name cannot be restored.
+  Links made under the old name leave the list and cannot be restored until the setting
+  changes back.
 
 ## Agent policy
 

@@ -1,10 +1,18 @@
-import type { PreviewLink } from "@t3tools/contracts/fork";
+import type { PreviewLink, PreviewLinksSettings } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "vite-plus/test";
 import { linkTiming, settingsFromDraft, visibleLinks, type SettingsDraft } from "./links";
 
 const NOW = Date.parse("2026-10-18T12:00:00.000Z");
 const HOUR = 3_600_000;
 const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
+
+const SETTINGS: PreviewLinksSettings = {
+  enabled: true,
+  suffix: "bagels.top",
+  machine: "dorothy",
+  defaultLifetime: "12h",
+  gatewayPort: 3779,
+};
 
 const link = (id: string, patch: Partial<PreviewLink> = {}): PreviewLink => ({
   id,
@@ -44,8 +52,24 @@ describe("visibleLinks", () => {
       restorableUntil: at(-HOUR),
     });
     expect(
-      visibleLinks([ended, older, tooOld, recentlyExpired, newer], NOW).map((each) => each.id),
+      visibleLinks([ended, older, tooOld, recentlyExpired, newer], SETTINGS, NOW).map(
+        (each) => each.id,
+      ),
     ).toEqual(["newer", "older", "expired", "ended"]);
+  });
+
+  it("hides ended links from another computer name or domain until settings change back", () => {
+    const ended = link("ended", {
+      state: "revoked",
+      endedAt: at(-HOUR),
+      restorableUntil: at(24 * HOUR),
+    });
+    const ids = (settings: PreviewLinksSettings) =>
+      visibleLinks([ended], settings, NOW).map((each) => each.id);
+    expect(ids({ ...SETTINGS, machine: "laptop" })).toEqual([]);
+    expect(ids({ ...SETTINGS, suffix: "example.com" })).toEqual([]);
+    expect(ids({ ...SETTINGS, suffix: null })).toEqual([]);
+    expect(ids(SETTINGS)).toEqual(["ended"]);
   });
 });
 

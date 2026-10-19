@@ -2,8 +2,10 @@ import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import {
   PREVIEW_LINKS_FEATURE,
+  isCurrentPreviewHost,
   type PreviewLink,
   type PreviewLinkLifetime,
+  type PreviewLinksSettings,
   type PreviewLinksSetup,
 } from "@t3tools/contracts/fork";
 import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
@@ -75,20 +77,29 @@ export function previewSetupStatus(setup: PreviewLinksSetup): PreviewSetupStatus
 /** Links that are open or can still be restored: open first, then the most recently ended. */
 export function visiblePreviewLinks(
   links: ReadonlyArray<PreviewLink>,
+  settings: PreviewLinksSettings,
   now: number,
 ): ReadonlyArray<PreviewLink> {
   const open = links
     .filter((link) => link.state === "open")
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const ended = links
-    .filter((link) => link.state !== "open" && canRestorePreviewLink(link, now))
+    .filter((link) => canRestorePreviewLink(link, settings, now))
     .sort((left, right) => endedAt(right) - endedAt(left));
   return [...open, ...ended];
 }
 
-export function canRestorePreviewLink(link: PreviewLink, now: number): boolean {
+/** A link made under another domain or computer name has no address here until settings change back. */
+export function canRestorePreviewLink(
+  link: PreviewLink,
+  settings: PreviewLinksSettings,
+  now: number,
+): boolean {
   return (
-    link.state !== "open" && link.restorableUntil !== null && Date.parse(link.restorableUntil) > now
+    link.state !== "open" &&
+    link.restorableUntil !== null &&
+    Date.parse(link.restorableUntil) > now &&
+    isCurrentPreviewHost(link.host, settings)
   );
 }
 
@@ -147,6 +158,7 @@ export interface PreviewLinkActionAvailability {
 export function previewLinkActions(
   link: PreviewLink,
   permissions: PreviewLinkPermissions,
+  settings: PreviewLinksSettings,
   now: number,
 ): ReadonlyArray<PreviewLinkActionAvailability> {
   if (link.state === "open") {
@@ -158,7 +170,10 @@ export function previewLinkActions(
     ];
   }
   return [
-    { action: "restore", enabled: permissions.restore && canRestorePreviewLink(link, now) },
+    {
+      action: "restore",
+      enabled: permissions.restore && canRestorePreviewLink(link, settings, now),
+    },
     { action: "copy", enabled: true },
   ];
 }

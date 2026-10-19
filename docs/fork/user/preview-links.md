@@ -92,7 +92,8 @@ in the command palette, or Settings > Previews on mobile:
 **End all links** closes every open link on that computer.
 
 Changing the domain or the computer name ends every open link, because every address
-changes. Those links cannot be restored.
+changes. Those links leave the list and cannot be restored. Change the setting back within
+7 days and they return, ready to restore.
 
 ## Signing out browsers
 

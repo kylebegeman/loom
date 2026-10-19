@@ -38,7 +38,7 @@ import {
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { useServerConfigs } from "~/state/entities";
 import { usePreparedConnection } from "~/state/session";
-import { LIFETIME_LABELS, canRestore, linkSummary, setupStatus, visibleLinks } from "./links";
+import { LIFETIME_LABELS, linkSummary, setupStatus, visibleLinks } from "./links";
 import { Alert, Muted, copyPreviewLink, failureOf, toastFailure, useAction } from "./parts";
 import {
   FEATURE,
@@ -131,11 +131,11 @@ function LinkRow({
               End
             </Button>
           </>
-        ) : canRestore(link, now) ? (
+        ) : (
           <Button size="xs" variant="outline" disabled={disabled} title={title} onClick={restore}>
             Restore
           </Button>
-        ) : null}
+        )}
       </div>
     </li>
   );
@@ -156,7 +156,8 @@ function EnvironmentLinks({
   const failure = failureOf(result);
   if (!snapshot) return failure ? <Alert>{failure}</Alert> : <Muted>Loading links...</Muted>;
   const status = setupStatus(snapshot.setup);
-  const links = visibleLinks(snapshot.links, now);
+  // Ended links listed here can all be restored.
+  const links = visibleLinks(snapshot.links, snapshot.setup.settings, now);
   return (
     <div className="flex flex-col gap-2">
       {!status.ready && (
