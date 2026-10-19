@@ -39,6 +39,7 @@ import { atomicJson, disk, readJson } from "./storage.ts";
 
 const jsonBytes = (value: object) => Buffer.byteLength(JSON.stringify(value)) + 1;
 const MAX_BYTES = 64 * 1024 * 1024;
+class ArchiveTooLarge extends Error {}
 const Stored = Schema.Struct({ receipt: MiniReceipt, worker: MiniWorker });
 type Stored = typeof Stored.Type;
 const Received = Schema.Struct({
@@ -123,7 +124,7 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
           const limit = new NodeStream.Transform({
             transform(chunk: Buffer, _encoding, callback) {
               bytes += chunk.length;
-              callback(bytes > MAX_BYTES ? new Error("Archive exceeds limit") : null, chunk);
+              callback(bytes > MAX_BYTES ? new ArchiveTooLarge() : null, chunk);
             },
           });
           const abort = () => {
@@ -153,7 +154,11 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
             signal.removeEventListener("abort", abort);
           }
         })()),
-      catch: (cause) => new MiniOffloadError({ reason: "storage", cause }),
+      catch: (cause) =>
+        new MiniOffloadError({
+          reason: cause instanceof ArchiveTooLarge ? "too_large" : "storage",
+          cause,
+        }),
     }).pipe(
       // A cancelled request keeps its lock until the child and partial file are gone.
       Effect.ensuring(Effect.promise(() => completion?.catch(() => {}) ?? Promise.resolve())),
@@ -497,7 +502,8 @@ const make = Effect.gen(function* () {
                       await file.close();
                     }
                   });
-                  if (bytes <= 0 || bytes > MAX_BYTES) return yield* fail("storage");
+                  if (bytes > MAX_BYTES) return yield* fail("too_large");
+                  if (bytes <= 0) return yield* fail("storage");
                   const checksum = yield* disk(() => sha256File(archive));
                   const initial: Stored = {
                     worker,

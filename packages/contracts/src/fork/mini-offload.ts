@@ -116,6 +116,7 @@ export class MiniOffloadError extends Schema.TaggedError<MiniOffloadError>()("Mi
     "dirty",
     "conflict",
     "storage",
+    "too_large",
     "transfer",
     "response",
     "patch",
@@ -130,6 +131,7 @@ export class MiniOffloadError extends Schema.TaggedError<MiniOffloadError>()("Mi
       dirty: "Commit local edits or explicitly send only the committed revision.",
       conflict: "This request ID already belongs to different work or another thread.",
       storage: "The offload receipt or source archive could not be saved or read.",
+      too_large: "The committed repository snapshot is larger than the 64 MiB offload limit.",
       transfer:
         "The worker could not be reached. A submission may have succeeded. Recover this receipt on the same worker.",
       response: "The worker returned an invalid or mismatched response.",

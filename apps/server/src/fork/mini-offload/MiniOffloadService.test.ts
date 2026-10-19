@@ -360,7 +360,7 @@ describe("native Mini offloading", () => {
         "-m",
         "Large",
       );
-      expect((yield* Effect.flip(service.submit(request))).reason).toBe("storage");
+      expect((yield* Effect.flip(service.submit(request))).reason).toBe("too_large");
       const directory = NodePath.join(state, "fork", "mini-offload", request.requestId);
       expect(NodeFS.existsSync(NodePath.join(directory, "source.tar"))).toBe(false);
       expect(NodeFS.existsSync(NodePath.join(directory, "receipt.json"))).toBe(false);
