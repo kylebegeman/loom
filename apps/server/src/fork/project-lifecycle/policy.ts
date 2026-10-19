@@ -161,10 +161,22 @@ export const machinePressure = (input: {
 export const PORT_RANGE = { first: 41000, last: 48999 } as const;
 export const PORT_BLOCK = 20;
 
-/** The lowest free port block, or null when every block is taken. */
-export const allocatePortBase = (taken: ReadonlySet<number>) => {
+const holdsBusyPort = (base: number, busyPorts: ReadonlySet<number>) => {
+  for (let port = base; port < base + PORT_BLOCK; port++) if (busyPorts.has(port)) return true;
+  return false;
+};
+
+/**
+ * The lowest block that is not taken and holds none of `busyPorts`, or null when there is none.
+ * A lane's release stops whatever listens on its block, so a block that starts out with a
+ * listener would take down something the lane never owned.
+ */
+export const allocatePortBase = (
+  taken: ReadonlySet<number>,
+  busyPorts: ReadonlySet<number> = new Set(),
+) => {
   for (let base = PORT_RANGE.first; base + PORT_BLOCK - 1 <= PORT_RANGE.last; base += PORT_BLOCK)
-    if (!taken.has(base)) return base;
+    if (!taken.has(base) && !holdsBusyPort(base, busyPorts)) return base;
   return null;
 };
 

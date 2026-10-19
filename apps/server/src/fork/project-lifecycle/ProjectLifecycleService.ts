@@ -27,6 +27,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -57,6 +58,7 @@ import {
 import {
   GB,
   PORT_BLOCK,
+  PORT_RANGE,
   allocatePortBase,
   autoBuildSlots,
   formatGb,
@@ -105,6 +107,7 @@ const FOLDER_MEASURE_INTERVAL_MS = 5 * 60 * 1000;
 const STATUS_ROUNDING_BYTES = 100_000_000;
 /** Simulators, Docker and port listeners are listed this often; processes every tick. */
 const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
+const BUSY_PORT_LOOKUP_TIMEOUT = "5 seconds";
 
 type Thread = OrchestrationV2ThreadShell;
 
@@ -276,21 +279,51 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       [...lanes.values()].flatMap((lane) =>
         lane.portBase === null || lane.id === except ? [] : [lane.portBase],
       );
-    /** A free block claimed for the lane, skipping this server's lanes and other servers' claims. */
+    /**
+     * Ports already in use across the lane range. Docker's published ports cover forwarders
+     * lsof cannot see, such as a root-owned docker-proxy. A lookup that fails or outlasts
+     * `BUSY_PORT_LOOKUP_TIMEOUT` adds nothing, so a Docker that is still starting cannot hold up
+     * a new lane.
+     */
+    const busyPorts = Effect.gen(function* () {
+      const busy = new Set<number>();
+      const [listening, published] = yield* Effect.all(
+        [
+          leaseOps
+            .listeners(PORT_RANGE.first, PORT_RANGE.last)
+            .pipe(Effect.timeoutOption(BUSY_PORT_LOOKUP_TIMEOUT)),
+          leaseOps.publishedPorts.pipe(Effect.timeoutOption(BUSY_PORT_LOOKUP_TIMEOUT)),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (Option.isSome(listening))
+        for (const listener of listening.value.values())
+          for (const port of listener.ports) busy.add(port);
+      if (Option.isSome(published)) for (const port of published.value ?? []) busy.add(port);
+      return busy;
+    });
+    /**
+     * A free block claimed for the lane, skipping this server's lanes, other servers' claims and
+     * blocks where something already listens.
+     */
     const claimPortBase = (laneId: string) =>
-      node("claim lane ports", async () => {
-        const taken = await claims.heldByOthers();
-        for (const base of ownBases(laneId)) taken.add(base);
-        for (;;) {
-          const base = allocatePortBase(taken);
-          if (base === null || (await claims.claim(base, laneId))) return base;
-          taken.add(base);
-        }
-      }).pipe(
-        // Without the shared claims, ports are still unique among this server's lanes.
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not claim lane ports", { cause }).pipe(
-            Effect.as(allocatePortBase(new Set(ownBases(laneId)))),
+      busyPorts.pipe(
+        Effect.flatMap((busy) =>
+          node("claim lane ports", async () => {
+            const taken = await claims.heldByOthers();
+            for (const base of ownBases(laneId)) taken.add(base);
+            for (;;) {
+              const base = allocatePortBase(taken, busy);
+              if (base === null || (await claims.claim(base, laneId))) return base;
+              taken.add(base);
+            }
+          }).pipe(
+            // Without the shared claims, ports are still unique among this server's lanes.
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not claim lane ports", { cause }).pipe(
+                Effect.as(allocatePortBase(new Set(ownBases(laneId)), busy)),
+              ),
+            ),
           ),
         ),
       );

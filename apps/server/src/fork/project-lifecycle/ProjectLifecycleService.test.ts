@@ -342,6 +342,28 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("gives a new lane a block nothing listens on or publishes, and never moves a lane", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      // Docker publishes a port in the first block and this server listens in the second.
+      NodeFS.writeFileSync(`${t.home}/published`, "0.0.0.0:41005->80/tcp\n");
+      NodeFS.writeFileSync(`${t.home}/listening`, `${process.pid} 41039 node\n`);
+      t.threads.push(thread("worker"), thread("feature", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).toBe(41040);
+
+      // A lane keeps its block across restarts even once something listens there.
+      NodeFS.appendFileSync(`${t.home}/listening`, `${process.pid} 41041 node\n`);
+      yield* t.create;
+      expect((yield* t.store.listLanes()).find((row) => row.id === lane.id)?.portBase).toBe(41040);
+
+      // Without Docker's answer its ports are unknown, and unknown ports block nothing.
+      NodeFS.writeFileSync(`${t.home}/docker-down`, "");
+      const feature = yield* t.service.ensureForThread(ThreadId.make("feature"));
+      expect(feature.portBase).toBe(41000);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("steers a running agent once, then clears tmp once the lane is idle", () =>
     Effect.gen(function* () {
       const t = yield* setup;
