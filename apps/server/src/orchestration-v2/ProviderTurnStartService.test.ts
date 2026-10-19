@@ -1452,3 +1452,21 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
     expect(sent.split("loom_library_brief_propose")).toHaveLength(2);
   }),
 );
+
+// fork: ext-vault-preflight
+effectIt.effect.each([
+  "[Vault profile: Broken](loom-vault-profile:bad)",
+  "[Vault reference: Synthetic key](loom-vault:unconfigured:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)",
+])("blocks explicit Vault attachments before opening a provider: %s", (text) =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({ text });
+    yield* harness.start;
+    expect(harness.open).not.toHaveBeenCalled();
+    expect(harness.startRootRun).not.toHaveBeenCalled();
+    expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+    expect(harness.projection().turnItems.at(-1)).toMatchObject({
+      type: "error",
+      title: "Vault launch blocked",
+    });
+  }),
+);

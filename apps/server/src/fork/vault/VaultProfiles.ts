@@ -1,4 +1,4 @@
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId, RunId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultSshError,
@@ -46,6 +46,12 @@ export class VaultProfiles extends Context.Service<
     readonly preview: (
       input: VaultProfilePreviewInput,
     ) => Effect.Effect<VaultProfilePreview, Failure>;
+    readonly prepare: (
+      threadId: ThreadId,
+      profileId: string,
+      version: number,
+      runId: RunId,
+    ) => Effect.Effect<VaultProfileResolution, Failure>;
     readonly resolve: (
       threadId: ThreadId,
       profileId: string | null,
@@ -209,6 +215,106 @@ const make = Effect.gen(function* () {
     );
     return { ready: bindings.every((b) => b.state === "ready"), bindings };
   });
+  const resolve = Effect.fn("VaultProfiles.resolve")(function* (
+    threadId: ThreadId,
+    requestedId: string | null,
+    expectedVersion?: number,
+    expectedRunId?: RunId,
+  ) {
+    const thread = yield* threadOf(threadId, true);
+    if (expectedRunId && thread.activeRunId !== expectedRunId) return yield* fail("denied");
+    const registry = yield* load(thread.projectId);
+    const pinPath =
+      registry.root +
+      "/runs/" +
+      (yield* hash(
+        yield* encodeRunKey({ threadId, runId: thread.activeRunId }).pipe(
+          Effect.mapError(() => fail("invalid-input")),
+        ),
+      ));
+    const readPin = Effect.gen(function* () {
+      const stored = yield* store.read(pinPath);
+      if (!stored) return null;
+      const decoded = decodePin(Redacted.value(stored.value));
+      if (
+        Option.isNone(decoded) ||
+        decoded.value.environmentId !== environmentId ||
+        decoded.value.threadId !== threadId ||
+        decoded.value.runId !== thread.activeRunId ||
+        decoded.value.resolution.projectId !== thread.projectId
+      )
+        return yield* fail("invalid-response");
+      return decoded.value.resolution;
+    });
+    let resolution = yield* readPin;
+    if (resolution && requestedId && requestedId !== resolution.profileId)
+      return yield* fail("conflict");
+    if (
+      resolution &&
+      expectedVersion !== undefined &&
+      resolution.profileVersion !== expectedVersion
+    )
+      return yield* fail("conflict");
+    if (!resolution) {
+      const selected = registry.value.profiles.find(
+        (p) => p.id === (requestedId ?? registry.value.activeProfileId) && p.state === "active",
+      );
+      if (!selected) return yield* fail("not-found");
+      if (expectedVersion !== undefined && selected.version !== expectedVersion)
+        return yield* fail("conflict");
+      const checked = yield* preview({
+        projectId: thread.projectId,
+        profile: selected,
+        threadId,
+      });
+      if (!checked.ready) return yield* fail("denied");
+      const candidate: VaultProfileResolution = {
+        projectId: thread.projectId,
+        profileId: selected.id,
+        label: selected.label,
+        profileVersion: selected.version,
+        bindings: selected.bindings.map((binding, i) => ({
+          ...binding,
+          itemId: binding.itemId!,
+          version: checked.bindings[i]!.version!,
+          destination: checked.bindings[i]!.destination!,
+        })),
+      };
+      const encoded = yield* encodePin({
+        schemaVersion: 1,
+        environmentId,
+        threadId,
+        runId: thread.activeRunId!,
+        resolution: candidate,
+      }).pipe(Effect.mapError(() => fail("invalid-input")));
+      yield* store.write(pinPath, Redacted.make(encoded), 0).pipe(
+        Effect.catchTags({
+          VaultError: (error) =>
+            error.reason === "conflict" ? Effect.succeed(0) : Effect.fail(error),
+        }),
+      );
+      resolution = yield* readPin;
+      if (!resolution || (requestedId && resolution.profileId !== requestedId))
+        return yield* fail("conflict");
+    }
+    const current = yield* load(thread.projectId);
+    if (!current.value.profiles.some((p) => p.id === resolution.profileId && p.state === "active"))
+      return yield* fail("denied");
+    const latestThread = yield* threadOf(threadId, true);
+    if (
+      latestThread.activeRunId !== thread.activeRunId ||
+      latestThread.projectId !== thread.projectId ||
+      latestThread.providerInstanceId !== thread.providerInstanceId
+    )
+      return yield* fail("denied");
+    for (const binding of resolution.bindings) {
+      const current = yield* inspect(binding, threadId);
+      if (current.state !== "ready") return yield* fail("denied");
+      if (current.version !== binding.version || current.destination !== binding.destination)
+        return yield* fail("conflict");
+    }
+    return resolution;
+  });
   return VaultProfiles.of({
     assertActive: (projectId, profileId) =>
       load(projectId).pipe(
@@ -285,94 +391,8 @@ const make = Effect.gen(function* () {
       );
       return snapshot(input.projectId, { ...loaded, revision, value });
     }),
-    resolve: Effect.fn("VaultProfiles.resolve")(function* (threadId, requestedId) {
-      const thread = yield* threadOf(threadId, true),
-        registry = yield* load(thread.projectId);
-      const pinPath =
-        registry.root +
-        "/runs/" +
-        (yield* hash(
-          yield* encodeRunKey({ threadId, runId: thread.activeRunId }).pipe(
-            Effect.mapError(() => fail("invalid-input")),
-          ),
-        ));
-      const readPin = Effect.gen(function* () {
-        const stored = yield* store.read(pinPath);
-        if (!stored) return null;
-        const decoded = decodePin(Redacted.value(stored.value));
-        if (
-          Option.isNone(decoded) ||
-          decoded.value.environmentId !== environmentId ||
-          decoded.value.threadId !== threadId ||
-          decoded.value.runId !== thread.activeRunId ||
-          decoded.value.resolution.projectId !== thread.projectId
-        )
-          return yield* fail("invalid-response");
-        return decoded.value.resolution;
-      });
-      let resolution = yield* readPin;
-      if (resolution && requestedId && requestedId !== resolution.profileId)
-        return yield* fail("conflict");
-      if (!resolution) {
-        const selected = registry.value.profiles.find(
-          (p) => p.id === (requestedId ?? registry.value.activeProfileId) && p.state === "active",
-        );
-        if (!selected) return yield* fail("not-found");
-        const checked = yield* preview({
-          projectId: thread.projectId,
-          profile: selected,
-          threadId,
-        });
-        if (!checked.ready) return yield* fail("denied");
-        const candidate: VaultProfileResolution = {
-          projectId: thread.projectId,
-          profileId: selected.id,
-          label: selected.label,
-          profileVersion: selected.version,
-          bindings: selected.bindings.map((binding, i) => ({
-            ...binding,
-            itemId: binding.itemId!,
-            version: checked.bindings[i]!.version!,
-            destination: checked.bindings[i]!.destination!,
-          })),
-        };
-        const encoded = yield* encodePin({
-          schemaVersion: 1,
-          environmentId,
-          threadId,
-          runId: thread.activeRunId!,
-          resolution: candidate,
-        }).pipe(Effect.mapError(() => fail("invalid-input")));
-        yield* store.write(pinPath, Redacted.make(encoded), 0).pipe(
-          Effect.catchTags({
-            VaultError: (error) =>
-              error.reason === "conflict" ? Effect.succeed(0) : Effect.fail(error),
-          }),
-        );
-        resolution = yield* readPin;
-        if (!resolution || (requestedId && resolution.profileId !== requestedId))
-          return yield* fail("conflict");
-      }
-      const current = yield* load(thread.projectId);
-      if (
-        !current.value.profiles.some((p) => p.id === resolution.profileId && p.state === "active")
-      )
-        return yield* fail("denied");
-      const latestThread = yield* threadOf(threadId, true);
-      if (
-        latestThread.activeRunId !== thread.activeRunId ||
-        latestThread.projectId !== thread.projectId ||
-        latestThread.providerInstanceId !== thread.providerInstanceId
-      )
-        return yield* fail("denied");
-      for (const binding of resolution.bindings) {
-        const current = yield* inspect(binding, threadId);
-        if (current.state !== "ready") return yield* fail("denied");
-        if (current.version !== binding.version || current.destination !== binding.destination)
-          return yield* fail("conflict");
-      }
-      return resolution;
-    }),
+    resolve: (threadId, profileId) => resolve(threadId, profileId),
+    prepare: (threadId, profileId, version, runId) => resolve(threadId, profileId, version, runId),
   });
 });
 export const layer = Layer.effect(VaultProfiles, make);

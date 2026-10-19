@@ -340,3 +340,6 @@ apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	brand	1
 apps/mobile/src/features/connection/CloudEnvironmentRows.tsx	brand	2
 apps/mobile/src/features/connection/GitHubRoutingSettings.tsx	brand	1
 packages/provider-core/src/server/orchestrationInstructions.ts	ext-vault	2
+apps/server/src/orchestration-v2/ProviderTurnStartService.ts	ext-vault-preflight	3
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	ext-vault-preflight	1
+apps/server/src/orchestration-v2/ProviderTurnControlService.ts	ext-vault-preflight	2

@@ -1,3 +1,4 @@
+import * as VaultPromptContext from "./vault/VaultPromptContext.ts";
 import * as VaultProfiles from "./vault/VaultProfiles.ts";
 import * as VaultReferences from "./vault/VaultReferences.ts";
 import * as VaultLaunch from "./vault/VaultLaunch.ts";
@@ -116,6 +117,9 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultPromptContext.layer.pipe(
+    Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
+  ),
   layerVaultProfiles,
   layerVaultReferences,
   VaultLaunch.layer.pipe(

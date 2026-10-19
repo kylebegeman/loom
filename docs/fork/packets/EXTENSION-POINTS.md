@@ -3068,6 +3068,31 @@ Pi uses its native system-prompt hook; other adapters retain their existing comm
 paths. No per-provider seam or additional MCP process is added. FORK.md and the seam manifest
 record the file. This extension does not alter upstream wire/events or provider permissions.
 
+`ext-vault-preflight` is a blocking launch guard, distinct from optional text contributors.
+`ProviderTurnStartService` calls the fork-owned guard after reading the current run/message
+and before provider session open or workspace preparation. Ordinary prompts perform no Vault
+lookup. Only standalone `[Vault profile: label](loom-vault-profile:<encoded-environment>:<id>:<version>)`
+and `[Vault reference: label](loom-vault:<encoded-environment>:<id>)` links declare requirements;
+fenced/quoted/inline examples do not. Links contain references only and remain visible in the
+transcript. Current environment identity selects a scoped registered guard; absent guard or
+backend denies explicit requirements. Registration belongs to ForkLayer and is removed with its
+scope, avoiding a dependency cycle with the earlier-constructed orchestration workers.
+
+A profile attachment checks its reviewed version, pins the complete configuration to the
+specific run, and checks all current use grants, keys and host trust. Item attachments require
+current inspect access and active metadata; they grant no credential use. Failure settles the
+run through the existing failed-run event path with a safe repair message. Full-access/default
+requirements remain in the shared profile service. Scheduled agent runs, queued messages,
+MCP/CLI launches and every provider pass through the same guard. No scheduler wire/storage
+change or automatic personal-credential fallback is introduced. Provider steering reuses the same guard and cannot change a pinned profile mid-run.
+Command-only jobs and upstream servers do not gain this preflight guarantee.
+
+`vault-launch-ui` adds two marked lines per client entry point: an import and a fork-owned
+attachment control in the web/native composer and scheduled-task prompt editor. The control
+reviews profiles and edits only the existing prompt, preserving normal draft, retry, queue and
+schedule persistence. There are no new event fields, database migrations or dependencies.
+Unlike `ext-turn-input`, this guard must never time out and silently skip a required check.
+
 No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. General readiness with credential-use requirements reports an unsupported execution probe.
 Mediated SSH is a separate operation with its own proof; it is not run by readiness. Do not infer unattended SSH readiness from a policy decision.
