@@ -159,9 +159,11 @@ local identity files are owner-only plaintext, outside the current working tree.
 holds no central backend token. Web/mobile and administrator CLI/MCP share service methods;
 agent threads cannot approve themselves. See [L79](./L79-vault-brokers/TECHNICAL.md).
 
-The foreground macOS/Linux process proves machine identity and renews two-minute presence.
-This does not attest a workload, issue credential leases, sign SSH, configure boot startup or
-provide offline use. A same-user agent can read the broker's local identity file. Restore from
+The macOS/Linux process proves machine identity and renews two-minute presence. It can run
+in the foreground or as a separately managed launchd GUI-user/systemd-user service. macOS
+requires login; Linux/Pi boot/logout continuity requires an available user manager and configured
+linger. Status distinguishes those prerequisites from current presence and backend lock state.
+Presence alone does not attest a workload, issue credential-use leases, sign SSH or provide offline use. A same-user agent can read the broker's local identity file. Restore from
 an old backend snapshot can restore older approvals; revocation reconciliation remains part of
 recovery. Those limits apply even when the UI shows Online.
 

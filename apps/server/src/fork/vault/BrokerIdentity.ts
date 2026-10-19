@@ -33,6 +33,7 @@ export class BrokerIdentity extends Context.Service<
   {
     readonly read: (
       directory: string,
+      create?: boolean,
     ) => Effect.Effect<
       typeof Identity.Type & { platform: "darwin" | "linux"; directory: string },
       VaultBrokerError
@@ -45,7 +46,7 @@ export class BrokerIdentity extends Context.Service<
     readonly invitation: (file: string) => Effect.Effect<unknown, VaultBrokerError>;
   }
 >()("t3/fork/vault/BrokerIdentity") {}
-const isisBrokerPlatform = Schema.is(VaultBrokerPlatform);
+const isBrokerPlatform = Schema.is(VaultBrokerPlatform);
 const encodeEffectIdentityJson = Schema.encodeEffect(Schema.fromJsonString(Identity));
 const decodeEffectIdentityJson = Schema.decodeEffect(Schema.fromJsonString(Identity));
 const decodeEffectConnectionJson = Schema.decodeEffect(Schema.fromJsonString(BrokerConnection));
@@ -60,21 +61,26 @@ const make = Effect.gen(function* () {
   const home = yield* HostProcess.HomeDirectory,
     cwd = yield* HostProcess.WorkingDirectory;
   const fail = () => new VaultBrokerError({ reason: "local-state" });
-  const privateDirectory = Effect.fnUntraced(function* (requested: string) {
-    if (!isisBrokerPlatform(platform))
-      return yield* new VaultBrokerError({ reason: "unsupported" });
+  const privateDirectory = Effect.fnUntraced(function* (requested: string, create: boolean) {
+    if (!isBrokerPlatform(platform)) return yield* new VaultBrokerError({ reason: "unsupported" });
     const directory = requested || path.join(home, ".config", "loom", "vault-broker");
     if (!path.isAbsolute(directory)) return yield* fail();
     const normalized = path.normalize(directory);
     const relative = path.relative(cwd, normalized);
+    // A shell started at home or / does not make that entire tree a project.
+    const shellRoot =
+      (cwd === home || cwd === path.parse(cwd).root) &&
+      !(yield* fs.exists(path.join(cwd, ".git")).pipe(Effect.mapError(fail)));
     if (
-      !relative ||
-      (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+      !shellRoot &&
+      (!relative ||
+        (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)))
     )
       return yield* fail();
-    yield* fs
-      .makeDirectory(normalized, { recursive: true, mode: 0o700 })
-      .pipe(Effect.mapError(fail));
+    if (create)
+      yield* fs
+        .makeDirectory(normalized, { recursive: true, mode: 0o700 })
+        .pipe(Effect.mapError(fail));
     const real = yield* fs.realPath(normalized).pipe(Effect.mapError(fail));
     const info = yield* fs.stat(normalized).pipe(Effect.mapError(fail));
     if (
@@ -99,10 +105,11 @@ const make = Effect.gen(function* () {
     return yield* fs.readFileString(file).pipe(Effect.mapError(fail));
   });
   return BrokerIdentity.of({
-    read: Effect.fn("BrokerIdentity.read")(function* (requested) {
-      const directory = yield* privateDirectory(requested),
+    read: Effect.fn("BrokerIdentity.read")(function* (requested, create = true) {
+      const directory = yield* privateDirectory(requested, create),
         file = path.join(directory, "identity.json");
       if (!(yield* fs.exists(file).pipe(Effect.mapError(fail)))) {
+        if (!create) return yield* fail();
         const created = yield* crypto.create;
         const encoded = yield* encodeEffectIdentityJson({
           protocol: 1,
@@ -126,13 +133,13 @@ const make = Effect.gen(function* () {
       return { ...identity, platform: platform as "darwin" | "linux", directory };
     }),
     connection: Effect.fn("BrokerIdentity.connection")(function* (requested) {
-      const directory = yield* privateDirectory(requested);
+      const directory = yield* privateDirectory(requested, false);
       return yield* decodeEffectConnectionJson(
         yield* readPrivate(path.join(directory, "connection.json")),
       ).pipe(Effect.mapError(fail));
     }),
     connect: Effect.fn("BrokerIdentity.connect")(function* (requested, connection) {
-      const directory = yield* privateDirectory(requested),
+      const directory = yield* privateDirectory(requested, false),
         file = path.join(directory, "connection.json");
       if (yield* fs.exists(file).pipe(Effect.mapError(fail))) {
         const current = yield* decodeEffectConnectionJson(yield* readPrivate(file)).pipe(

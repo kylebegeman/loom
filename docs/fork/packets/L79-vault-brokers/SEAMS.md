@@ -24,4 +24,7 @@ so adding groups does not widen inferred Effect requirements to `any`.
 
 Visible CLI/pairing branding is adjacent fork branding work, listed separately in FORK.md and
 `docs/fork/seams.tsv`; it is not a new broker transport. Legacy internal identifiers remain
-compatible. The selected full packet still needs the service/workload integration review above.
+compatible. The managed lifecycle uses fork-owned `BrokerService`, `BrokerDaemon` and the existing broker
+CLI registration, with no upstream service-launcher change. Host service controls are deliberately
+local; remote registry approval/disable remains on the existing authenticated management path.
+Broader local-agent transports and OS-isolated workload integration remain open.

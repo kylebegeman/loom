@@ -12,10 +12,21 @@ invitation, claim it on that host, compare the full fingerprint and approve it. 
 cancel an invitation or permanently disable an identity from either client. A disabled identity
 requires a new private directory/key to enroll again.
 
-`loom vault broker run` is a foreground macOS/Linux process. It renews every minute; the
-registration heartbeat lapses after two minutes. Restart reuses the same private key and pinned
-server connection. Online identity status conveys no item grant, successful provider login or
-credential-delivery readiness. No automatic boot service or offline access is available yet.
+`loom vault broker run` renews every minute; presence lapses after two minutes. A managed
+user service can run the same process independently of Electron: inspect its plan, install it
+with an absolute Loom launcher, then explicitly start it. Stop, restart, status and uninstall
+are host-local CLI actions. Uninstall preserves identity and connection files. macOS starts at
+GUI login; Linux/Pi uses the systemd user manager and requires operator-configured linger for
+boot/logout continuity. Status reports observed autostart and linger separately from process
+and heartbeat state. No live service is installed by the development milestone.
+
+Restart reuses the same private key and pinned connection. Network/backend outages and sealed
+OpenBao retry every minute. Permanent disable or invalid proof stops renewal; it cannot silently
+re-enroll or widen grants. Startup/status never generate a missing key. A clean exit prevents
+manager restart after a terminal denial; crashes restart with a 30-second throttle. Online
+identity status conveys no item grant, successful provider login or credential-delivery readiness.
+There is no decrypted offline cache. Owner-only local identity files require no personal key
+manager unlock and remain readable by processes with the same OS permissions.
 
 ## How it works
 
@@ -66,8 +77,9 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- D4: Foreground macOS/Linux is implemented. Boot/logout modes and Windows remain unresolved;
-  Linux and headless Pi integration still require their own host verification.
+- D4: Foreground and managed macOS launchd GUI-user/Linux systemd-user modes are implemented
+  locally. Real login/logout, reboot and Linux/Pi execution acceptance remain pending. Windows,
+  macOS pre-login/system-daemon modes and stronger local key custody remain unresolved.
 - D5: This slice is online-only with no decrypted cache. The two-minute heartbeat is machine
   presence, not an offline credential-use allowance. Any offline delivery policy remains open.
 

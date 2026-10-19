@@ -2998,11 +2998,14 @@ Limits: 128 grants, 32 item IDs per grant, 256 operational history events, 32 mu
 Shared `vault-brokers.ts` contracts and `VaultBrokers` provide a separate encrypted CAS
 registry, reviewed public-key invitation/claim/approval, cancellation and permanent disable.
 `BrokerIdentity` and `BrokerRunner` own private host identity files and signed online heartbeat
-HTTP; the macOS/Linux foreground CLI uses no administrator/backend token. Web/mobile management
+HTTP; the macOS/Linux foreground or managed-user-service CLI uses no administrator/backend token. Web/mobile management
 is gated by `vault-brokers`, with access:read/access:write scopes. MCP administrator clients
 manage hosts, while calling threads cannot enroll or approve themselves. Snapshots omit nonce
 material and cap machines/invitations/activity. Presence renews every minute for two minutes;
-it is not a workload credential lease. No offline decrypted cache or boot service is installed.
+it is not a workload credential lease. Fork-owned `BrokerService` and `BrokerDaemon` add explicit
+host-local user-service lifecycle and bounded safe diagnostics. macOS requires a GUI login;
+Linux/Pi continuity depends on operator-configured linger. No live service installation or
+offline decrypted cache is included. See [L79](./L79-vault-brokers/TECHNICAL.md).
 
 Shared `vault-workloads.ts` and `VaultWorkloads` now provide active-run/item/destination-bound
 check sessions. Machine and workload Ed25519 proofs are both required; current host state,

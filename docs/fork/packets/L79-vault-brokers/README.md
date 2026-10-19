@@ -1,7 +1,8 @@
 # L79: Enrolled machines and headless brokers
 
-Status: In progress. Reviewed public-key enrollment and online heartbeat foundation implemented.
-Kyle selected the full packet on 2026-10-17; workload delivery and unattended boot remain pending.
+Status: In progress. Reviewed enrollment, signed presence and managed macOS/Linux user-service
+startup/recovery are implemented locally. Kyle selected the full packet on 2026-10-17.
+Real-host boot/logout acceptance, additional custody modes and complete runner delivery remain open.
 
 Give each execution host a durable identity and reliable unattended credential access.
 
@@ -12,9 +13,13 @@ V08 | Major system | Complexity: Large | Impact: Transformational
 Web/desktop and native mobile manage invitations, fingerprint approval, cancellation and permanent
 disable. The foreground macOS/Linux runner generates a private Ed25519 machine identity, proves
 its invitation and renews an online registration lease. No personal credential manager is used.
-Enrollment grants no item access. L84 now supplies signed workload authorization checks;
-L81 adds signed mediated SSH commands from the control plane. Runner-side agent sockets, boot/logout
-startup, Windows support and offline credential delivery remain selected work. See
+Enrollment grants no item access. L84 supplies signed workload authorization checks;
+L81 adds signed mediated SSH commands from the control plane. Host-local CLI controls now plan,
+install, start, stop, restart, inspect and uninstall a separate broker user service. Diagnostics
+separate process state, autostart, Linux linger and recent signed heartbeat state. macOS requires
+a logged-in GUI user session; Linux/Pi continuity depends on an operator-configured systemd user
+manager and linger. Runner-side agent sockets, other boot/custody modes, Windows support and any
+selected offline policy remain open. See
 [user help](../../user/vault.md) and the [operator guide](../../operations/vault.md).
 
 ## Scope
@@ -33,7 +38,8 @@ OS-specific execution constraints are defined in the product and technical docum
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
 `ext-vault` has implemented records, reviewed enrollment, workload proofs and mediated SSH.
-Additional delivery modes, boot custody and platform identity remain target designs.
+Additional delivery modes, encrypted local custody, pre-login macOS service modes and platform
+identity remain target designs. No live service was installed for this milestone.
 
 ## Dependencies and future opportunities
 

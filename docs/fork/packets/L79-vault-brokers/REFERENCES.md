@@ -29,4 +29,13 @@ this packet adds no application dependency.
 - [Registry service](../../../../apps/server/src/fork/vault/VaultBrokers.ts) and
   [runner](../../../../apps/server/src/fork/vault/BrokerRunner.ts).
 - [Private local identity](../../../../apps/server/src/fork/vault/BrokerIdentity.ts).
-- [Operator guide](../../operations/vault.md) explains custody and foreground support.
+- [Operator guide](../../operations/vault.md) explains custody and foreground/managed-user-service support.
+
+## Managed lifecycle implementation
+
+- [Host lifecycle service](../../../../apps/server/src/fork/vault/BrokerService.ts) and
+  [recovery/reporting loop](../../../../apps/server/src/fork/vault/BrokerDaemon.ts).
+- [Lifecycle tests](../../../../apps/server/src/fork/vault/BrokerService.test.ts) and
+  [outage/recovery tests](../../../../apps/server/src/fork/vault/BrokerDaemon.test.ts).
+- [Existing server background service](../../../../apps/server/src/cloud/bootService.ts):
+  launchd/systemd conventions; its server/updater-specific identity is not reused for the broker.

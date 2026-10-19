@@ -70,9 +70,32 @@ loom vault broker enroll --server https://your-loom-host.example invitation.json
 
 Return to settings, refresh brokers and review approval. Compare the entire fingerprint with
 the identity output on the intended host before approving. Then run `loom vault broker run` on
-that host, or `loom vault broker check` for one check. Restart reuses the same identity. This is
-a foreground process; automatic startup before login or after reboot is not configured.
+that host, or `loom vault broker check` for one check. Restart reuses the same identity.
 For a source checkout, use `node apps/server/src/bin.ts` in place of `loom`.
+
+For background operation, run these commands on the execution host using the absolute path to
+its installed Loom launcher:
+
+```sh
+loom vault broker service plan --executable /absolute/path/to/loom
+loom vault broker service install --executable /absolute/path/to/loom
+loom vault broker service start
+loom vault broker service status
+```
+
+Use the same `--state-dir /absolute/private/directory` on every command if enrollment used a
+custom directory. Inspect the plan before installing. Installation enables startup in the user's
+service session; start runs it now. macOS requires a logged-in user. Linux/Pi needs an available
+systemd user manager; continuity after logout or boot additionally requires operator-configured
+linger. Status reports autostart, session continuity, process state and the last heartbeat
+separately. A running process can still be disconnected or waiting for OpenBao to be unsealed.
+
+Use `service stop` to stop renewals, `service restart` to retry after repairing configuration,
+and `service uninstall` to remove startup registration. Uninstall retains enrollment so a later
+installation can reuse it. Disabling the broker in Loom remains permanent for that identity.
+Outages and sealed OpenBao retry automatically; a disabled identity stops. Local broker keys
+require no personal key-manager unlock, but remain readable by processes with the same OS
+permissions. Configure backend unlock on the Loom control plane.
 
 An online heartbeat shows machine presence only. Enrollment does not grant access to Vault
 items, route SSH through Vault or remove 1Password prompts. No personal key manager is needed

@@ -1,6 +1,7 @@
 # L79 implementation plan
 
-Status: In progress. Enrollment, approval, disable and foreground heartbeat renewal are implemented.
+Status: In progress. Enrollment, approval, disable, foreground renewal and managed macOS/Linux
+user-service lifecycle/recovery are implemented locally.
 The sequence below retains the full packet outcome;
 see README for delivered progress and remaining work.
 
@@ -13,11 +14,13 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 ## Remaining delivery work
 
-Implement workload attestation and a purpose-specific authenticated local channel before
-connecting use grants to SSH/delivery. Select boot/unlock custody with real macOS logout and
-Linux service evidence, then extend the supported matrix. Keep enrollment presence separate
-from credential authority. Validate restart/outage/revocation across actual remote hosts.
-No production service or installation has been changed.
+Signed machine/workload channels and mediated SSH/Git operations are implemented in L84/L81;
+they do not provide an ordinary terminal agent socket or OS isolation. The managed lifecycle
+adds a launchd GUI-user/systemd-user service and honest startup, unlock and presence diagnostics.
+Verify actual login/logout, crash/reboot and remote reconnect on chosen macOS/Linux/Pi hosts,
+then extend the matrix only with evidence. Decide encrypted local custody, pre-login macOS
+service support and Windows support separately. Keep enrollment presence separate from current
+credential authority. No production service or installation has been changed.
 
 ## Steps
 

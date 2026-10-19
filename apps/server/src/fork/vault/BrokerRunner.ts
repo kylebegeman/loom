@@ -99,7 +99,7 @@ const make = Effect.gen(function* () {
       return result;
     }),
     check: Effect.fn("BrokerRunner.check")(function* (directory) {
-      const key = yield* identity.read(directory),
+      const key = yield* identity.read(directory, false),
         connection = yield* identity.connection(directory);
       if (connection.machineId !== key.fingerprint.slice(0, 32))
         return yield* new VaultBrokerError({ reason: "invalid-proof" });

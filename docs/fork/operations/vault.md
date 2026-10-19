@@ -1,7 +1,7 @@
 # OpenBao connection for Loom Vault
 
 This guide configures the implemented record and online policy foundation. It does not deploy OpenBao, rewrite Git remotes or migrate personal credentials. Platform accounts, production
-unseal/recovery custody, general workload launch attachment and unattended boot remain unfinished. Use synthetic credentials
+unseal/recovery custody, broader delivery modes and pre-login macOS startup remain unfinished. Use synthetic credentials
 until those controls and the full audit path are complete.
 
 ## Configure an existing isolated service
@@ -98,11 +98,54 @@ and signed proof HTTP, with no administrator bearer token or OpenBao service tok
 origin must use HTTPS except loopback HTTP for isolated tests. Direct reachable origins are
 supported; a relay that requires a human session is not a supported headless runner route yet.
 
-This milestone supports foreground macOS/Linux processes, online-only checks and renewal every
-minute. Registration presence lasts two minutes. These are not credential-use leases. Starting
-before login, reboot/logout recovery, Windows custody, automatic workload launch binding and runner-side SSH agents
-remain pending. Signed workload and mediated SSH operations are described below. A sealed/unavailable backend denies checks; no decrypted offline cache or
-personal-agent fallback exists. After a control-plane restart, request a new heartbeat challenge.
+The broker supports foreground operation and independent managed user services, online-only
+checks and renewal every minute. Registration presence lasts two minutes and grants no workload
+credential authority. Signed workload and mediated SSH operations are described below. A
+sealed/unavailable backend denies checks and the running broker retries; there is no decrypted
+offline cache or personal-agent fallback. Control-plane restart discards challenges and runners
+request fresh ones. Real boot/logout acceptance, Windows custody and runner-side SSH agent
+routing remain pending.
+
+### Manage background brokers
+
+Run `loom vault broker service plan --executable /absolute/path/to/loom` on the execution host,
+then `service install` with that executable and `service start`. Each command accepts the same
+`--state-dir` used during enrollment. Use an installed, stable absolute Loom launcher; passing
+the Node binary alone does not launch Loom. For source-based development, an executable wrapper
+must invoke both Node and the CLI entrypoint by absolute paths and forward its arguments.
+The service uses a stable directory outside projects and does not hydrate an interactive shell.
+Keep the launcher available across upgrades; a changed executable requires uninstall/reinstall.
+
+The broker owns `~/Library/LaunchAgents/com.loom.vault-broker.plist` on macOS or
+`~/.config/systemd/user/loom-vault-broker.service` on Linux. Installation enables startup but
+leaves immediate execution explicit. macOS uses the logged-in GUI user domain. Linux/Pi uses
+systemd's user manager; inspect `loginctl show-user <uid> --property=Linger --value` to establish
+boot/logout continuity. The CLI reports linger rather than enabling it, and never invokes sudo.
+Operators choose whether to enable lingering on the intended host. Pre-login macOS daemons and
+system-wide/root services are outside this implemented mode.
+
+`service status` is read-only: it never renews presence or creates an identity. It separates
+installation, autostart, session continuity, process state and last signed observation. Unknown
+manager/linger state remains unknown. Missing/unsafe local identity reports `localState: unavailable`;
+stop/uninstall remain available without generating replacement keys. A report becomes stale after two minutes or heartbeat
+expiry. `heartbeatCurrent` means recent machine presence from the managed process; use grants,
+workload state and provider readiness still need their own checks. The report names owner-only
+plaintext identity custody and control-plane backend unlock explicitly.
+
+`service stop` stops now and leaves next-session startup enabled. `service restart` restarts the
+existing enrollment. `service uninstall` stops/removes its definition and keeps private identity
+and connection files. Failed stop preserves the definition. A changed or unsafe definition is
+refused rather than overwritten. Re-running install with the identical plan can recover from a
+partially failed manager operation.
+
+The daemon writes one atomic mode-0600 `status.json` and safe JSON output; systemd retains output
+in its journal. Outages, approval-pending and sealed backends retry every minute. Disabled or
+invalid-proof identities stop after a terminal report, without regenerating keys or re-enrolling.
+Managers restart unsuccessful process exits after 30 seconds; startup failures before a report
+can be saved may therefore retry. Repair the underlying state and explicitly start/restart.
+Abrupt death can leave the previous observation, which must expire before it can be trusted as
+current again. No new access is allowed offline. General encrypted local custody, separate-user
+workload isolation and production unseal/recovery ownership remain open.
 
 The encrypted registry retains 128 safe activity events and 32 mutation receipts. Disable is
 permanent for that identity, survives normal restart and prevents new renewal. New identity

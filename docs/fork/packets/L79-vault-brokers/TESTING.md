@@ -1,64 +1,72 @@
 # L79 testing
 
-Status: Enrollment/heartbeat foundation verified locally; full packet acceptance remains pending.
-All credentials and hosts used in verification are synthetic and isolated from the live Loom home.
+Status: Enrollment and managed-user-service lifecycle/recovery verified locally. Full packet
+acceptance remains pending. Credentials, identity files and host fixtures are synthetic.
 
-## Automated evidence
+## Managed lifecycle evidence
 
-- `VaultBrokers.test.ts`: reviewed enrollment, mismatched key denial, approval boundary,
-  single-use challenges/replay, cancellation with later-claim denial, environment binding/expiry,
-  disable across reconstruction,
-  CAS contention/idempotency, audit failures and authorization failure.
-- `BrokerRunner.test.ts`: owner-only identity persistence, reconstructed runner, project/public
-  state rejection, real proof HTTP with Ed25519 and no administrator token, approval-pending,
-  renewal, disable, malformed requests and body limits. HTTP integration uses a live clock;
-  controlled-clock protocol tests cover expiry without sleeps.
-- `broker-mcp.test.ts`: thread self-approval and read-only clients are refused before mutation;
-  a full-access administrator uses the same service and live authorization callback.
-- `vault-brokers.permissions.test.ts`: destination environment grants and revoked permission
-  are checked at command execution.
+The current focused suite passes **33 tests in five files**:
 
-The four focused files pass 11 tests. Registration and exhaustive RPC scope checks cover the
-new tool/method registration. The CLI branding/ownership and shared authorization suite passes
-78 tests across six existing files. POSIX invocation tests use `TMPDIR=/private/tmp` on this
-Mac to avoid long Unix socket paths and noncanonical `/tmp` prefix comparisons.
+- `BrokerService.test.ts`: macOS/Linux plan without writes; safe descriptor rendering; explicit
+  install/start/restart/stop/uninstall; repeated install; enrollment preservation; failed stop
+  preserving its definition; foreign/public definitions refused; unavailable manager status;
+  independent autostart/linger/process observations; inspection never creates a missing identity; stop/uninstall remain available after identity loss.
+- `BrokerDaemon.test.ts`: deterministic outage, sealed backend, recovery and permanent-disable
+  sequence; no further renewal after disable; graceful stop, restart, stale observations,
+  foreign/symlink/public/oversized report rejection and private atomic status-file modes.
+- `BrokerRunner.test.ts`: private identity persistence, workspace/public-state rejection,
+  home-shell operation and home-repository denial; real signed proof HTTP enrollment, approval,
+  heartbeat and terminal daemon disable with unchanged identity.
+- `VaultBrokers.test.ts`: reviewed enrollment, mismatched proof, replay/expiry, cancellation,
+  environment binding, disable persistence, CAS/idempotency, audit and authorization failures.
+- `apps/server/src/cli/app.test.ts`: existing CLI composition and desktop invocation behavior.
 
-Changed consumer packages pass typecheck: contracts, client-runtime, server, web, mobile and
-desktop. Fork-owned code lint passes with warnings denied; formatting and mobile static checks pass.
-The upstream connection screen retains its existing React memo-dependency and set-state-in-effect
-warnings outside the copy-only branding diff; their state-management cleanup is deferred. Repo-wide suites and live
-infrastructure checks were not run.
+No tests wait on sleeps or polling. Recovery tests use controlled time and report milestones.
+The console adapter signals synchronous callbacks correctly; status milestones occur after the
+atomic file operation closes. The initial existing desktop CLI tests hit macOS Unix-socket
+path limits under the host's long temporary directory. Re-running with `TMPDIR=/tmp` passes;
+no product code or existing assertions were weakened for that infrastructure issue.
 
-## Integrated evidence and remaining coverage
+Actual macOS CLI subprocesses with a disposable HOME prove public identity generation,
+read-only plan, native `plutil` acceptance, signed HTTP request to a synthetic disabled control
+plane, successful terminal daemon exit, private report/status reading and unchanged identity.
+No launchd service is installed, loaded or otherwise mutated. Lifecycle manager adapters are
+isolated test doubles; real Linux/systemd/Pi process execution is not claimed.
 
-A disposable OpenBao Raft fixture and isolated Loom server back the web/iOS native client checks.
-The macOS CLI generates its own private identity and claims a web-created invitation through
-proof HTTP. Before approval, checks return approval-pending. Native mobile compares/reviews the
-fingerprint and approves the host. Subsequent CLI checks run in new processes using the same
-identity. Web/mobile inspection and permanent disable are exercised against that shared state.
+The server package typecheck, changed-source lint with warnings denied, formatting, seam
+manifest, documentation links and whitespace checks pass. No contracts or frontend code change
+in this milestone. Web, desktop and mobile continue their existing remote registry management;
+OS-service controls intentionally run on the execution host CLI. No new browser/device pass,
+repo-wide suite, dependency, SQL migration or live infrastructure check is part of this milestone.
 
-No claim of Android interaction verification, Linux/Pi execution, Windows custody, Electron
-native shell verification, automatic
-boot/logout startup, authenticated workload channels, SSH signing or offline credential delivery
-is made. Direct loopback HTTP is the integrated test route; production relay/tunnel routing and
-real remote-host verification remain pending. The shared web bundle is used by desktop, but
-launcher behavior is tested through isolated filesystem/real-shell tests, not a global install.
+## Earlier integrated evidence
 
-## Full packet acceptance targets
+The enrollment milestone used a disposable OpenBao Raft fixture and isolated Loom server for
+web/iOS native management. The macOS CLI claimed a web-created invitation, native mobile
+reviewed/approved the fingerprint, and subsequent CLI processes renewed with the same identity.
+Web/mobile inspection and permanent disable were exercised. Earlier MCP/permission tests
+also establish thread self-approval denial and destination-environment authorization.
+See L81/L84 testing notes for their subsequent mediated SSH and signed-workload evidence.
 
-- Service boot, logout, reconnect and outage behavior on every selected OS/account mode.
-- A local process cannot impersonate an isolated workload by copying a socket path or thread ID.
-- Disabled hosts cannot receive new credential-use leases; publish any accepted offline bound.
-- Verify actual SSH/GitHub execution through supported provider adapters without personal keys.
-- Exercise supported remote connection modes and restore/revocation reconciliation.
+## Remaining acceptance
 
-Use the product-native Browser and Device skills for authorized integrated checks, retain
-isolated state for review, and never use production credentials. Preserve complete selected
-scope until these targets pass. Enrollment presence alone cannot establish readiness for use.
+- Real macOS GUI login/logout and process crash/reboot behavior; no pre-login macOS claim.
+- Real Linux/Pi systemd-user execution, linger enabled/disabled and reboot/logout continuity.
+- Remote-host outage/reconnect, selected relay/tunnel routes and backend restore reconciliation.
+- Stronger local key custody and separate-user/container workload boundaries where selected.
+- Complete independent runner delivery, ordinary SSH-agent routing and adapter coverage.
+- Publish any future offline lease/revocation bound before enabling offline credential use.
+
+Owner-only machine identity files are plaintext and readable to same-user processes. Successful
+machine presence proves no workload isolation, item grant or provider login. No production
+service or personal credential was installed, migrated or changed.
 
 ## Merge compatibility
 
-The committed client/service chunk at `7709bf9fd6` previews cleanly against the newest local
-nightly tag `v0.1.1-nightly.20261017.3238` using `git merge-tree --write-tree --name-only
---no-messages`. Seam-manifest and local documentation link checks pass. No upstream fetch,
-full integration rehearsal, push, release or deployment was performed.
+Read-only merge previews against the latest fetched nightly,
+`v0.1.1-nightly.20261019.3373`, report the same 68 conflicting files for the section's starting
+commit `9d5461361b` and the completed lifecycle change. No conflicting file is added or removed
+by this milestone. The branch is not cleanly mergeable with that nightly; existing upstream
+integration remains separate work. No actual merge, push, PR or deployment was performed.
+Full integration rehearsal remains a clean-main step after Kyle lands the branch; this local
+milestone does not claim that the complete Vault packet or upstream integration is finished.

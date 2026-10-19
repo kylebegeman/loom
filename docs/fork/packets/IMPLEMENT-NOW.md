@@ -59,10 +59,17 @@ repository, and rechecks current active-run authority. Web/mobile can check API,
 HTTPS separately, select a thread and see denied or stale results. Persistent shell activation,
 automatic credential migration and independent runner readiness remain selected work.
 
-The next proposed section is managed broker startup and unattended recovery for macOS/Linux
-(including Pi hosts): explicit install/start/stop/status, restart recovery and truthful unlock/
-online diagnostics. Prepare and test locally; live service installation, credential registration,
-migration and production rollout remain separate actions.
+Managed broker startup/recovery is now implemented locally: plan/install/start/stop/restart/
+status/uninstall for launchd GUI-user and systemd-user hosts, bounded retry after outage or
+sealed OpenBao, terminal disable, preserved enrollment and separate process/autostart/linger/
+heartbeat diagnostics. Native plist parsing, actual CLI subprocesses and isolated manager tests
+provide local evidence. Linux/Pi execution and real login/logout/reboot acceptance remain pending;
+no live service was installed. These host-local controls do not claim workload-use readiness.
+
+The next proposed section for Kyle's approval is a dedicated Vault SSH agent for ordinary
+terminal SSH/Git: explicit activation, current run/use grants, host/destination checks and
+revocation, across supported provider launches. Preserve the current mediated SSH path and make
+same-user isolation limits explicit. Broader packet scopes remain In progress.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and

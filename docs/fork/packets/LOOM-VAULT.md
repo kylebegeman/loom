@@ -116,17 +116,17 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 
 ## Design decisions before building
 
-| ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                              |
-| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------- |
-| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed     |
-| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                                |
-| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                                |
-| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | Open                                                                |
-| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                      |
-| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Mediated Ed25519/host-bound slice resolved; general transports open |
-| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | App/token implemented locally; broader onboarding/adapters open     |
-| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                |
+| ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed                    |
+| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                                               |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                                               |
+| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | User-service matrix implemented locally; real-host acceptance and other modes open |
+| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                               |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                                     |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Mediated Ed25519/host-bound slice resolved; general transports open                |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | App/token implemented locally; broader onboarding/adapters open                    |
+| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                               |
 
 Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.
 Record decided choices, concrete contracts and precise seams as implementation advances.

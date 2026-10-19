@@ -19,6 +19,7 @@ import * as VaultBrokers from "./VaultBrokers.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerRunner from "./BrokerRunner.ts";
+import * as BrokerDaemon from "./BrokerDaemon.ts";
 import { VaultBrokerHttpRoutes } from "./broker-http.ts";
 
 const encodeEffectInvitationJson = Schema.encodeEffect(
@@ -86,7 +87,7 @@ it.live(
         BrokerHttpClient.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       );
       const runnerLayer = BrokerRunner.layer.pipe(
-        Layer.provide(dependencies),
+        Layer.provideMerge(dependencies),
         Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
       );
       const runner = yield* BrokerRunner.BrokerRunner.pipe(Effect.provide(runnerLayer));
@@ -154,5 +155,32 @@ it.live(
         "human",
       );
       expect((yield* runner.check(state).pipe(Effect.flip)).reason).toBe("disabled");
+      const daemon = yield* BrokerDaemon.BrokerDaemon.pipe(
+        Effect.provide(BrokerDaemon.layer.pipe(Layer.provide(runnerLayer))),
+      );
+      yield* daemon.run(state);
+      expect((yield* daemon.inspect(state)).report?.state).toBe("disabled");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "allows default private state from the home shell while retaining workspace rejection",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem,
+        path = yield* Path.Path;
+      const home = yield* fs
+        .makeTempDirectoryScoped({ prefix: "loom-broker-home-" })
+        .pipe(Effect.flatMap(fs.realPath));
+      const identity = yield* BrokerIdentity.BrokerIdentity.pipe(
+        Effect.provide(BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer))),
+        Effect.provideService(HostProcess.HomeDirectory, home),
+        Effect.provideService(HostProcess.WorkingDirectory, home),
+      );
+      const created = yield* identity.read("");
+      expect(created.directory).toBe(path.join(home, ".config", "loom", "vault-broker"));
+      expect((yield* identity.read("", false)).fingerprint).toBe(created.fingerprint);
+      yield* fs.makeDirectory(path.join(home, ".git"));
+      expect((yield* identity.read("", false).pipe(Effect.flip)).reason).toBe("local-state");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
