@@ -119,3 +119,9 @@ and existing scheduler tests cover terminal completion, schedule/webhook dispatc
 Raw scheduled_tasks rows and webhook delivery logs intentionally remain dispatch records; task
 list/subscribe and Run now show the derived provider outcome. Earlier untracked runs retain
 legacy dispatch status. Full packet acceptance remains open.
+
+Implementation: `d015748a84`. After fetching upstream tags, the final merge preview against
+`v0.1.1-nightly.20261018.3335` has the same 57 conflicting files as pre-section `5651900126`;
+this section adds no conflicting files. Existing scheduler form/seam conflicts still need porting
+in the upstream-sync task. `v0.1.1-nightly.20261017.3238` still previews cleanly. No working-tree
+merge was attempted. No push, PR or deployment was performed.
