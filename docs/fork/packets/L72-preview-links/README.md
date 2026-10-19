@@ -1,7 +1,8 @@
 # L72: Preview links
 
-Status: In progress (`feat/preview-links`). Slice 1 is implemented with focused tests; the
-real-client and live-tunnel checks in [TESTING.md](./TESTING.md#still-to-check) are pending.
+Status: In progress (`feat/preview-links`). Slice 1 is implemented with focused tests and a
+live smoke through bagels.top; the real-client checks in
+[TESTING.md](./TESTING.md#still-to-check) are pending.
 
 Selection: Hosted previews, Kyle 2026-10-18. User guide:
 [Preview links](../../user/preview-links.md).

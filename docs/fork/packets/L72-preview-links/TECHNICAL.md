@@ -283,7 +283,9 @@ entry per running request or upgrade, removed when it closes.
   Each request is re-authorized, so the next request on them fails.
 - `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.
 - Lanes released while the server was down are not ended at startup.
-- Readiness comes only from log lines. The "Unregistered tunnel connection" wording is not
-  verified against `cloudflared` 2026.10.0, and an outdated binary is not upgraded.
+- Readiness comes only from log lines. "Registered tunnel connection" is confirmed with a
+  `cloudflared` 2026.9.1 found on `PATH`; "Unregistered tunnel connection" has not been seen,
+  and neither line is checked against the 2026.10.0 that Loom installs. An outdated binary is
+  not upgraded.
 - The default gateway port 3779 collides when a dev server and the live install both enable
   previews on one computer.

@@ -1,19 +1,20 @@
 # L72 testing
 
-The implementers reported every file below passing in focused runs on 2026-10-18. They were
-not rerun when these docs were written; only `check_seams` was.
+The server files were rerun on 2026-10-19 after the access-key change: the 53 tests in
+`apps/server/src/fork/preview-links/` pass and the server typechecks. The contract and client
+files were reported passing on 2026-10-18; that round changed only server code.
 
 ## Automated tests
 
 Server, `apps/server/src/fork/preview-links/`:
 
-| File                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PreviewLinksService.test.ts` | Defaults and refusing to share while off; reuse of an open link and persistence across restarts; agent lane and terminal rules; agent revoke limits; denied, own and metrics ports; entry codes bound to host, clean path and 60 seconds; signed-out sessions and key rotation; expiry and purge; restore at the same address; domain change ends links and blocks restore; lane links ending only after the lane is seen and removed; starting and stopping only what changed; gateway listen failure and retry. |
-| `policy.test.ts`              | Denylist, machine names, share segments, path sanitizing (no host escape or header injection), cookie signing (tampering, other host, other key, expiry), sweep and next deadline.                                                                                                                                                                                                                                                                                                                                |
-| `gateway.test.ts`             | Against a real loopback upstream: 404 and 410, entry redemption and redirect, the open-from-Loom page, denied ports and cross-site requests, request and response header rewrites, the nothing-listening page, upgrade piping and closing, cross-origin upgrade refusal, busy port message.                                                                                                                                                                                                                       |
-| `tunnel.test.ts`              | With a fake connector script: progress, metrics port and connection without leaking the token; restart with backoff; an exit with no error output; installing a missing `cloudflared` and retrying a failed install.                                                                                                                                                                                                                                                                                              |
-| `mcp.test.ts`                 | Unique `loom_` names and object inputs; sharing as the caller and returning only the canonical link; listing only the caller's links; revoking only the caller's own; refusing act tools outside a live thread before the service runs.                                                                                                                                                                                                                                                                           |
+| File                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PreviewLinksService.test.ts` | Defaults and refusing to share while off; reuse of an open link and persistence across restarts; agent lane and terminal rules; agent revoke limits; denied, own and metrics ports; entry codes bound to host, clean path and 60 seconds; signed-out sessions and key rotation, including a sign-out whose caller is interrupted; sessions removed while being listed or before a restart; sessions admitted later waking the expiry timer; T3 Connect browsers staying in across hourly sessions, out once any session of the subject is removed, and still out after a restart while another session is listed; expiry and purge; restore at the same address; domain change ends links and blocks restore; lane links ending only after the lane is seen and removed; starting and stopping only what changed; gateway listen failure and retry. |
+| `policy.test.ts`              | Denylist, machine names, share segments, path sanitizing (no host escape or header injection), cookie signing (tampering, other host, other key, expiry), sweep and next deadline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `gateway.test.ts`             | Against a real loopback upstream: 404 and 410, entry redemption and redirect, the open-from-Loom page, denied ports and cross-site requests, request and response header rewrites, the nothing-listening page, `Origin: null` form posts (own page only), chunked bodies re-framed, streaming responses cut when their link or key ends, upgrade piping and closing, cross-origin upgrade refusal, an upgrade answered without switching being closed, busy port message.                                                                                                                                                                                                                                                                                                                                                                           |
+| `tunnel.test.ts`              | With a fake connector script: progress, metrics port and connection without leaking the token; restart with backoff; an exit with no error output; installing a missing `cloudflared` and retrying a failed install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `mcp.test.ts`                 | Unique `loom_` names and object inputs; sharing as the caller and returning only the canonical link; listing only the caller's links; revoking only the caller's own; refusing act tools outside a live thread before the service runs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 Contracts and clients:
 
@@ -42,21 +43,50 @@ bash -c 'source scripts/fork/loom.sh && check_seams'
 `scripts/fork/loom.sh check` does not typecheck `apps/mobile` (`TYPECHECK_DIRS`), so run its
 typecheck by hand.
 
+## Live smoke
+
+Run on 2026-10-19 against a worktree `.t3` (never the live install), gateway port 3779, and
+the `loom-previews-dorothy` tunnel on bagels.top, with curl and Node clients on Dorothy going
+out through Cloudflare. Loom sessions were bearer tokens issued with `t3 auth session issue`.
+Connector: Homebrew `cloudflared` 2026.9.1 from `PATH`.
+
+- Setup reaches ready, tunnel connected, gateway listening, with one `cloudflared` as a child
+  of the server, and again after a server restart.
+- Without a cookie: "Open this link from Loom", with `Cache-Control: private, no-store`,
+  `X-Robots-Tag: noindex, nofollow` and `cf-cache-status: DYNAMIC`.
+- Entry sets `__Host-loom_pv` (Secure, HttpOnly, SameSite=Lax, 12 hours) and redirects to the
+  path and fragment without the code. A reused entry gets 401, and one link's cookie is
+  refused on another.
+- Proxied requests reach the app as `localhost:<port>` without the preview cookie; `Location`
+  and `Set-Cookie` are rewritten, and the app's own cookies pass through.
+- Origin: foreign and sibling-link POST navigations 403, a foreign GET navigation 200, an
+  own-origin CORS POST 200, `Origin: null` 200 same-origin and 403 same-site.
+- WebSockets: own origin with a cookie opens and pipes both ways; a foreign origin gets 403
+  and no cookie 401. An upstream that does not upgrade is refused, the raw socket at the
+  gateway gets 404 and is closed, and the plain upstream saw none of the private requests.
+- Hosts: an unknown share on this computer 410, another computer 404, a bare label 404.
+- Refused ports: 22, 80, 3779, the server and web ports, 5432, 9229 and the connector's
+  metrics port.
+- Revoke closes a running WebSocket and event stream, then the cookie gets 410. Restore is
+  refused while the port has another open link, then reopens the same address and the old
+  cookie works again. Extending to 1 hour sticks across a restart.
+- A session revoked with the CLI while the server runs keeps its cookie (known gap) and loses
+  it after a restart. The live session's cookie and the link survive the restart.
+- Removing a session through the running server (`POST /api/auth/clients/revoke`) refuses its
+  browser at once, leaves another session's browser in, and saves the revocation in
+  `state.json`.
+- **Sign out preview browsers** refuses every cookie, and a fresh entry works afterwards.
+
 ## Still to check
 
-None of these have run. They need Kyle's permission, a worktree `.t3` (never the live
-install), a gateway port that does not collide with the live install, and a test domain and
-tunnel.
+These need Kyle's permission for a real browser or device.
 
-- Live tunnel: with a real connector token, the status reaches "Ready on <domain>"; removing
-  the token stops `cloudflared`; a wrong token shows the tunnel error. Confirm the
-  "Registered" and "Unregistered tunnel connection" log lines against `cloudflared`
-  2026.10.0.
-- Entry and cookie through Cloudflare: open a link from Loom and land on the app; the
-  address bar loses the code; the same URL in a fresh or private browser shows "Open this
-  link from Loom"; a replayed entry URL shows "Open the preview again from Loom"; responses
-  carry `Cache-Control: private, no-store` at the browser.
-- Vite hot reload and other WebSockets through the tunnel; ending the link closes them.
+- Removing the connector token stops `cloudflared`, and a wrong token shows the tunnel error.
+  The "Unregistered tunnel connection" log line has not been seen.
+- In a real browser: the address bar loses the code, a private window shows "Open this link
+  from Loom", and Vite hot reload works through the tunnel and stops when the link ends.
+- DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
+  hour, and removing that device signs it out.
 - Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer: chat
   links, terminal links, the preview panel, port card **Copy preview link** and **Open in
   browser**, the links sheet, the palette items and Settings > Previews. Check Safari's
@@ -64,12 +94,12 @@ tunnel.
 - Mobile on cellular: Settings > Previews actions, and tapping an agent's link in a thread.
 - An agent sharing a lane port and a terminal server, being refused another port, and its
   lane link ending when the lane is released.
-- Restore within 7 days, refusal after a domain or computer name change, and Sign out
-  preview browsers.
+- Restore refused after a domain or computer name change.
 - Upstream T3 server: no preview actions; the unreachable loopback error names Settings >
   Previews.
-- A runtime `ForkLayer` build (no test builds the full layer today).
 
 ## Merge safety
 
-Not run yet. See [SEAMS.md](./SEAMS.md#merge-check).
+On 2026-10-19 at the access-key commit: `check_seams` passes, and a merge with
+`v0.1.1-nightly.20261018.3335` touches the same 54 files as the branch's base, none added.
+See [SEAMS.md](./SEAMS.md#merge-check).
