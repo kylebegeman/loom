@@ -71,6 +71,22 @@ describe("visibleLinks", () => {
     expect(ids({ ...SETTINGS, suffix: null })).toEqual([]);
     expect(ids(SETTINGS)).toEqual(["ended"]);
   });
+
+  it("drops an ended container link, whose container is gone", () => {
+    const container = link("container", {
+      state: "revoked",
+      endedAt: at(-HOUR),
+      restorableUntil: at(24 * HOUR),
+      backing: {
+        kind: "container",
+        image: "nginx:alpine",
+        containerId: "0123456789ab",
+        containerPort: 80,
+        stopsAt: at(-HOUR),
+      },
+    });
+    expect(visibleLinks([container], SETTINGS, NOW)).toEqual([]);
+  });
 });
 
 describe("linkTiming", () => {

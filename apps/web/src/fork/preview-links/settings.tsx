@@ -77,6 +77,14 @@ function EnvironmentPreviewLinks({
   const disabled = !canSave || action.busy;
   const status = setupStatus(setup);
   const openCount = links.filter((link) => link.state === "open").length;
+  // Ending a container link removes its container, so only the other links can come back.
+  const restoreNote = links.some(
+    (link) => link.state === "open" && link.backing?.kind === "container",
+  )
+    ? "Port and folder links can be restored for 7 days; containers are removed."
+    : openCount === 1
+      ? "You can restore it for 7 days."
+      : "You can restore them for 7 days.";
 
   const save = () =>
     void action.act("Unable to save preview settings", async () => {
@@ -136,8 +144,8 @@ function EnvironmentPreviewLinks({
       if (
         !(await ensureLocalApi().dialogs.confirm(
           openCount === 1
-            ? `End the open preview link on ${label}? You can restore it for 7 days.`
-            : `End all ${openCount} open preview links on ${label}? You can restore them for 7 days.`,
+            ? `End the open preview link on ${label}? ${restoreNote}`
+            : `End all ${openCount} open preview links on ${label}? ${restoreNote}`,
         ))
       ) {
         return;

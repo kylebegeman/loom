@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { previewLinkBackingLabel } from "@t3tools/client-runtime/fork";
 import {
   PREVIEW_LINK_LIFETIMES,
   type PreviewLink,
@@ -173,7 +174,11 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
       case "end":
         Dialog.confirm({
           title: "End this link?",
-          message: `${link.host} stops working right away. You can restore it later.`,
+          // Ending removes the container, so that link cannot come back; an agent shares it again.
+          message:
+            link.backing?.kind === "container"
+              ? `${link.host} stops working right away and its container is removed.`
+              : `${link.host} stops working right away. You can restore it later.`,
           confirmText: "End link",
           destructive: true,
           onConfirm: () =>
@@ -261,6 +266,9 @@ function PreviewLinkRow(props: {
 }) {
   const { link } = props;
   const summary = previewLinkSummary(link, props.now);
+  const backing = previewLinkBackingLabel(link, props.now);
+  // A second footnote line keeps the shared row layout instead of adding a variant for one row.
+  const description = backing ? `${summary}\n${backing}` : summary;
   const available = previewLinkActions(link, props.permissions, props.settings, props.now);
   const menuActions = available.map(({ action, enabled }): MenuAction => ({
     id: action,
@@ -280,7 +288,7 @@ function PreviewLinkRow(props: {
   const row = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${link.host}, ${summary}`}
+      accessibilityLabel={`${link.host}, ${backing ? `${summary}, ${backing}` : summary}`}
       accessibilityHint="Shows actions for this link"
       accessibilityState={{ disabled: props.pending, busy: props.pending }}
       disabled={props.pending}
@@ -289,7 +297,7 @@ function PreviewLinkRow(props: {
       <ListRowLayout
         icon="link"
         label={link.host}
-        description={summary}
+        description={description}
         accessory={
           props.pending ? (
             <AppActivityIndicator colorClassName="accent-icon" />

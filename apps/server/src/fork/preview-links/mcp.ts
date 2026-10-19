@@ -1,6 +1,11 @@
 import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
 import {
+  PREVIEW_CONTAINER_DEFAULT_MINUTES,
+  PREVIEW_CONTAINER_MAX_MINUTES,
+  PreviewContainerShareInput,
+  PreviewFolderShareInput,
   PreviewLink,
+  PreviewLinkLifetime,
   PreviewLinkShareInput,
   PreviewLinksError,
   PreviewPage,
@@ -52,6 +57,45 @@ const PagePublishParams = Schema.Struct({
   ),
 });
 
+const lifetimeParam = Schema.optionalKey(
+  PreviewLinkLifetime.annotate({
+    description: "How long the link stays open. Defaults to the user's setting.",
+  }),
+);
+
+const FolderShareParams = Schema.Struct({
+  path: PreviewFolderShareInput.fields.path.annotate({
+    description:
+      "The built folder to serve, such as dist, relative to this thread's workspace root. It must be inside the workspace.",
+  }),
+  lifetime: lifetimeParam,
+});
+
+const containerFields = PreviewContainerShareInput.fields;
+const ContainerShareParams = Schema.Struct({
+  image: containerFields.image.annotate({
+    description: "The image to run, such as nginx:1.27. Docker pulls it if this computer lacks it.",
+  }),
+  containerPort: containerFields.containerPort.annotate({
+    description: "The port the server inside the container listens on.",
+  }),
+  env: Schema.optionalKey(
+    containerFields.env.schema.annotate({
+      description: "Environment variables for the container, by name.",
+    }),
+  ),
+  command: Schema.optionalKey(
+    containerFields.command.schema.annotate({
+      description: "Arguments after the image, in place of the image's default command.",
+    }),
+  ),
+  minutes: Schema.optionalKey(
+    containerFields.minutes.schema.annotate({
+      description: `How long the container runs, from 5 to ${PREVIEW_CONTAINER_MAX_MINUTES}. Defaults to ${PREVIEW_CONTAINER_DEFAULT_MINUTES}.`,
+    }),
+  ),
+});
+
 const pageSource = (
   input: typeof PagePublishParams.Type,
 ): Effect.Effect<PreviewPageSource, PreviewPagesError> =>
@@ -92,6 +136,27 @@ export const PreviewLinksToolkit = Toolkit.make(
     dependencies: [McpInvocationContext, ThreadManagementService],
   })
     .annotate(Tool.Title, "Preview links: share")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_preview_folder_share", {
+    description:
+      "Serve a built folder from this thread's workspace, such as dist, at an HTTPS link. Loom serves its files read-only on one of this thread's lane ports: index.html for a folder, no listings, no dotfiles and nothing outside the folder. It runs no dev server, so build the site first, and share a running dev server with loom_preview_link_share instead. Only the user can open the link, after signing in. Needs lanes on. Sharing the same folder again returns its open link. The link ends when its lifetime runs out, it is revoked or its lane is released.",
+    parameters: FolderShareParams,
+    success: PreviewLink,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Preview links: share a folder")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_preview_container_share", {
+    description: `Run a Docker image on one of this thread's lane ports and share it at an HTTPS link. Docker publishes containerPort on this computer's loopback only. Only the user can open the link, after signing in. Needs lanes on and Docker running; the first run of an image may wait for it to download. The container is removed and the link ends after minutes (${PREVIEW_CONTAINER_DEFAULT_MINUTES} by default), when the link is revoked, when its lane is released, or within a minute of the container stopping on its own. These links cannot be extended or restored; share the image again for more time.`,
+    parameters: ContainerShareParams,
+    success: PreviewLink,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Preview links: share a container")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_preview_link_revoke", {
@@ -184,6 +249,12 @@ export const previewLinksHandlers = McpToolAccess.toLayer(
       ),
       loom_preview_link_share: McpToolAccess.actsAsCaller((input) =>
         onCallerThread((service, threadId) => service.share(input, { _tag: "Agent", threadId })),
+      ),
+      loom_preview_folder_share: McpToolAccess.actsAsCaller((input) =>
+        onCallerThread((service, threadId) => service.shareFolder(input, threadId)),
+      ),
+      loom_preview_container_share: McpToolAccess.actsAsCaller((input) =>
+        onCallerThread((service, threadId) => service.shareContainer(input, threadId)),
       ),
       loom_preview_link_revoke: McpToolAccess.actsAsCaller((input) =>
         onCallerThread((service, threadId) =>

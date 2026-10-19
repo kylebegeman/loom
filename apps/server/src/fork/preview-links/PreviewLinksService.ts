@@ -4,8 +4,13 @@ import {
   PreviewLinksError,
   PreviewLinksSettings,
   DEFAULT_PREVIEW_GATEWAY_PORT,
+  PREVIEW_CONTAINER_DEFAULT_MINUTES,
   isCurrentPreviewHost,
+  type PreviewContainerShareInput,
+  type PreviewFolderShareInput,
+  type PreviewLinkBacking,
   type PreviewLinkEntry,
+  type PreviewLinkLifetime,
   type PreviewLinkLifetimeInput,
   type PreviewLinkOpenInput,
   type PreviewLinkShareInput,
@@ -39,9 +44,20 @@ import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { SessionStore } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
+import * as ProcessRunner from "../../processRunner.ts";
 import { forkParked } from "../../serverActivation.ts";
+import { isContained } from "../model-preview-3d/signedFiles.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
+import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
 import { ProjectLifecycleService } from "../project-lifecycle/ProjectLifecycleService.ts";
+import {
+  DOCKER_MISSING_MESSAGE,
+  makePreviewContainerOps,
+  makePreviewDockerLocator,
+  previewContainerRunArgs,
+  previewPortFree,
+  servePreviewFolder,
+} from "./backings.ts";
 import { startPreviewGateway } from "./gateway.ts";
 import {
   PREVIEW_COOKIE_MAX_AGE_SECONDS,
@@ -81,6 +97,7 @@ import type {
   PreviewGatewayView,
   PreviewTunnelStatus,
   RunPreviewTunnelOptions,
+  ServePreviewFolder,
   StartPreviewGateway,
 } from "./types.ts";
 
@@ -117,6 +134,16 @@ export class PreviewLinksService extends Context.Service<
       input: PreviewLinkLifetimeInput,
     ) => Effect.Effect<PreviewLink, PreviewLinksError>;
     readonly revokeAll: Effect.Effect<void, PreviewLinksError>;
+    /** Serves a built folder from the thread's workspace on one of its lane ports. Agents only. */
+    readonly shareFolder: (
+      input: PreviewFolderShareInput,
+      threadId: ThreadId,
+    ) => Effect.Effect<PreviewLink, PreviewLinksError>;
+    /** Runs an image on one of the thread's lane ports until its time is up. Agents only. */
+    readonly shareContainer: (
+      input: PreviewContainerShareInput,
+      threadId: ThreadId,
+    ) => Effect.Effect<PreviewLink, PreviewLinksError>;
     /** Rotates the cookie key, so every browser has to enter from Loom again. */
     readonly signOutBrowsers: Effect.Effect<void, PreviewLinksError>;
     readonly listForThread: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<PreviewLink>>;
@@ -140,6 +167,10 @@ const Sidecar = Schema.Struct({
   libraryKeys: Schema.optionalKey(
     Schema.Array(Schema.Struct({ key: Schema.String, until: Schema.String })),
   ),
+  /** A folder link's backing keeps only its path within the workspace, which can move. */
+  folderRoots: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ linkId: Schema.String, root: Schema.String })),
+  ),
 });
 const sidecarJson = Schema.fromJsonString(Sidecar);
 const isSettings = Schema.is(PreviewLinksSettings);
@@ -147,6 +178,8 @@ const isSettings = Schema.is(PreviewLinksSettings);
 const fail = (reason: PreviewLinksErrorReason, message: string) =>
   new PreviewLinksError({ reason, message });
 
+const CONTAINER_TIME_MESSAGE =
+  "Container links end when the container stops; share it again for more time.";
 const ENDED_MESSAGE =
   "This link ended. Restore it in Settings > Loom > Previews, or Settings > Previews on mobile.";
 const NOT_FOUND_MESSAGE = "That preview link was not found.";
@@ -208,13 +241,26 @@ interface TunnelRuntime {
   status: PreviewTunnelStatus;
 }
 
+interface FolderServerRuntime {
+  readonly scope: Scope.Closeable;
+  readonly port: number;
+}
+
+/** How often open container links are checked for a container that stopped on its own. */
+const CONTAINER_CHECK_INTERVAL = Duration.minutes(1);
+
 export interface PreviewLinksServiceDependencies {
   readonly startGateway: StartPreviewGateway;
   /** Never completes; interrupting it stops the connector. */
   readonly runTunnel: (options: RunPreviewTunnelOptions) => Effect.Effect<never>;
+  readonly serveFolder: ServePreviewFolder;
+  /** Whether nothing answers on the loopback port and it binds right now. */
+  readonly portFree: (port: number) => Effect.Effect<boolean>;
+  /** The docker binary, or null when this computer has none. */
+  readonly dockerPath: Effect.Effect<string | null>;
 }
 
-/** Builds the service with injected gateway and tunnel starters, so tests bind no ports. */
+/** Builds the service with injected gateway, tunnel and backing starters, so tests bind no ports. */
 export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(function* (
   dependencies: PreviewLinksServiceDependencies,
 ) {
@@ -228,6 +274,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const publisher = yield* LibraryPublisher;
   const clock = yield* Clock.Clock;
   const hostname = yield* HostProcess.Hostname;
+  const containers = yield* makePreviewContainerOps;
   const rootScope = yield* Effect.scope;
 
   const sidecarPath = path.join(config.stateDir, "fork", "preview-links", "state.json");
@@ -241,7 +288,13 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     defaultLifetime: "12h",
     gatewayPort: DEFAULT_PREVIEW_GATEWAY_PORT,
   };
-  const fresh = { settings: defaults, links: [], revokedKeys: [], libraryKeys: [] };
+  const fresh = {
+    settings: defaults,
+    links: [],
+    revokedKeys: [],
+    libraryKeys: [],
+    folderRoots: [],
+  };
   const saved = yield* fs.readFileString(sidecarPath).pipe(
     Effect.flatMap(Schema.decodeEffect(sidecarJson)),
     Effect.map((sidecar) => ({
@@ -249,6 +302,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       links: sidecar.links,
       revokedKeys: sidecar.revokedKeys ?? [],
       libraryKeys: sidecar.libraryKeys ?? [],
+      folderRoots: sidecar.folderRoots ?? [],
     })),
     Effect.catchIf(
       (cause) => "reason" in cause && cause.reason._tag === "NotFound",
@@ -322,6 +376,14 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const spentTickets = new Map<string, number>();
   /** The Library that signs cold browsers in, or null while none has said it will. */
   let libraryIssuer: PreviewTicketIssuer | null = null;
+  /** The realpath each folder link serves, by link id. */
+  const folderRoots = new Map(saved.folderRoots.map(({ linkId, root }) => [linkId, root]));
+  /** Running folder servers by link id. Only the backing reconcile closes them. */
+  const folderServers = new Map<string, FolderServerRuntime>();
+  /** Ended container links whose container is known to be gone. */
+  const removedContainers = new Set<string>();
+  /** Lane ports held for a container still starting, so a second share cannot take them. */
+  const pendingPorts = new Set<number>();
 
   const rebuildIndex = () => {
     openByHost = new Map(
@@ -487,6 +549,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   const lock = yield* Semaphore.make(1);
   const timerWake = yield* Latch.make(false);
+  const backingWake = yield* Latch.make(false);
 
   const persist = (next: {
     readonly settings: PreviewLinksSettings;
@@ -499,6 +562,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         ...next,
         revokedKeys: [...revokedKeys].map(([key, atMs]) => ({ key, revokedAt: isoAt(atMs) })),
         libraryKeys: [...libraryKeys].map(([key, untilMs]) => ({ key, until: isoAt(untilMs) })),
+        folderRoots: [...folderRoots]
+          .filter(([linkId]) => next.links.some((link) => link.id === linkId))
+          .map(([linkId, root]) => ({ linkId, root })),
       });
     }).pipe(
       Effect.flatMap((contents) =>
@@ -532,6 +598,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         dropConnections((connection) => closed.has(connection.host));
       }
       timerWake.openUnsafe();
+      backingWake.openUnsafe();
       return publish;
     });
 
@@ -697,6 +764,158 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const replaceLink = (updated: PreviewLink) =>
     links.map((link) => (link.id === updated.id ? updated : link));
 
+  const newLink = (options: {
+    readonly id: string;
+    readonly suffix: string;
+    readonly port: number;
+    readonly actor: PreviewLinkActor;
+    readonly laneId: string | null;
+    readonly lifetime: PreviewLinkLifetime;
+    readonly nowMs: number;
+    /** Defaults to the end of `lifetime`. */
+    readonly expiresAtMs?: number;
+    readonly backing?: PreviewLinkBacking;
+  }): PreviewLink => {
+    const host = uniqueHost(options.port, options.suffix);
+    return {
+      id: options.id,
+      kind: "port",
+      port: options.port,
+      host,
+      url: `https://${host}/`,
+      createdBy: options.actor._tag === "Agent" ? "agent" : "owner",
+      threadId: options.actor._tag === "Agent" ? options.actor.threadId : null,
+      laneId: options.laneId,
+      state: "open",
+      lifetime: options.lifetime,
+      createdAt: isoAt(options.nowMs),
+      expiresAt:
+        options.expiresAtMs === undefined
+          ? previewExpiry(options.nowMs, options.lifetime)
+          : isoAt(options.expiresAtMs),
+      endedAt: null,
+      restorableUntil: null,
+      ...(options.backing === undefined ? {} : { backing: options.backing }),
+    };
+  };
+
+  /** The lane a folder or container link goes on, which must have ports. */
+  const threadLane = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const lanesOff = fail(
+        "port-not-in-lane",
+        "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+      );
+      // With lanes off, ensureForThread still hands back a lane the thread already had.
+      if (!(yield* lifecycle.getSettings).enabled) return yield* lanesOff;
+      const lane = yield* lifecycle
+        .ensureForThread(threadId)
+        .pipe(
+          Effect.mapError((error) =>
+            error.reason === "disabled"
+              ? lanesOff
+              : fail(
+                  "port-not-in-lane",
+                  `Folder and container links need this thread's lane. ${error.message}`,
+                ),
+          ),
+        );
+      if (lane.portBase === null) {
+        return yield* fail(
+          "port-not-in-lane",
+          "This thread's lane has no ports, so folder and container links cannot be shared from it.",
+        );
+      }
+      return { id: lane.id, checkoutPath: lane.checkoutPath, portBase: lane.portBase };
+    });
+
+  /**
+   * Hands the first lane port no open link uses and nothing listens on to `claim`, which returns
+   * null when it lost the port after all. Runs under the lock, so two shares never pick one port.
+   */
+  const claimLanePort = <A>(
+    portBase: number,
+    claim: (port: number) => Effect.Effect<A | null, PreviewLinksError>,
+  ) =>
+    Effect.gen(function* () {
+      for (let port = portBase; port < portBase + PORT_BLOCK; port++) {
+        if (isPreviewPortDenied(port, ownPorts()) || pendingPorts.has(port)) continue;
+        if (links.some((link) => link.state === "open" && link.port === port)) continue;
+        if (!(yield* dependencies.portFree(port))) continue;
+        const claimed = yield* claim(port);
+        if (claimed !== null) return claimed;
+      }
+      return yield* fail(
+        "invalid",
+        `Ports ${portBase} to ${portBase + PORT_BLOCK - 1} of this thread's lane are all in use or shared. Stop a server on one of them or end one of this thread's links, then try again.`,
+      );
+    });
+
+  /**
+   * Whether the server is listening now. A failure leaves nothing running. Listening takes one
+   * bind, and an interruption midway would leave a server no map entry can close.
+   */
+  const startFolderServer = (linkId: string, root: string, port: number) =>
+    Effect.uninterruptible(
+      Effect.gen(function* () {
+        const scope = yield* Scope.fork(rootScope, "sequential");
+        const started = yield* Effect.exit(
+          dependencies.serveFolder({ root, port }).pipe(Scope.provide(scope)),
+        );
+        if (Exit.isFailure(started)) {
+          yield* Scope.close(scope, Exit.void);
+          return false;
+        }
+        folderServers.set(linkId, { scope, port });
+        return true;
+      }),
+    );
+
+  const closeFolderServer = (linkId: string) =>
+    Effect.suspend(() => {
+      const server = folderServers.get(linkId);
+      if (server === undefined) return Effect.void;
+      folderServers.delete(linkId);
+      return Scope.close(server.scope, Exit.void);
+    });
+
+  const isDirectory = (target: string) =>
+    fs.stat(target).pipe(
+      Effect.map((info) => info.type === "Directory"),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /** The folder's realpath and its path within the workspace, which must contain it. */
+  const resolveFolder = (checkoutPath: string, requested: string) =>
+    Effect.gen(function* () {
+      const workspace = yield* fs
+        .realPath(checkoutPath)
+        .pipe(
+          Effect.mapError(() => fail("invalid", "This thread's workspace folder was not found.")),
+        );
+      const root = yield* fs
+        .realPath(path.resolve(workspace, requested))
+        .pipe(
+          Effect.mapError(() =>
+            fail("invalid", `${requested} was not found in this thread's workspace.`),
+          ),
+        );
+      // Compared after resolving symlinks, so a link inside the workspace cannot reach out of it.
+      if (!isContained(workspace, root)) {
+        return yield* fail(
+          "invalid",
+          "Folder links can only share a folder inside this thread's workspace.",
+        );
+      }
+      if (!(yield* isDirectory(root))) {
+        return yield* fail(
+          "invalid",
+          `${requested} is not a folder. Share the built folder that holds the site, such as dist.`,
+        );
+      }
+      return { root, relativePath: path.relative(workspace, root) || "." };
+    });
+
   const libraryLock = yield* Semaphore.make(1);
   /** Whether the Library may still hold this computer's hosts from a registration this run. */
   let libraryRegistered = false;
@@ -811,28 +1030,142 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         yield* requirePortAllowed(input.port);
         const existing = links.find((link) => link.state === "open" && link.port === input.port);
         if (existing !== undefined) return existing;
-        const nowMs = now();
-        const lifetime = input.lifetime ?? settings.defaultLifetime;
-        const host = uniqueHost(input.port, suffix);
-        const link: PreviewLink = {
+        // The container share commits its own link on this port once Docker is done.
+        if (pendingPorts.has(input.port)) {
+          return yield* fail(
+            "invalid",
+            `A container is still starting on port ${input.port}. Its link appears when it is ready.`,
+          );
+        }
+        const link = newLink({
           id: randomPreviewLinkId(),
-          kind: "port",
+          suffix,
           port: input.port,
-          host,
-          url: `https://${host}/`,
-          createdBy: actor._tag === "Agent" ? "agent" : "owner",
-          threadId: actor._tag === "Agent" ? actor.threadId : null,
+          actor,
           laneId,
-          state: "open",
-          lifetime,
-          createdAt: isoAt(nowMs),
-          expiresAt: previewExpiry(nowMs, lifetime),
-          endedAt: null,
-          restorableUntil: null,
-        };
+          lifetime: input.lifetime ?? settings.defaultLifetime,
+          nowMs: now(),
+        });
         yield* commit({ settings, links: [...links, link] });
         return link;
       }),
+    );
+  });
+
+  const shareFolder = Effect.fn("PreviewLinksService.shareFolder")(function* (
+    input: PreviewFolderShareInput,
+    threadId: ThreadId,
+  ) {
+    yield* requireReady;
+    const lane = yield* threadLane(threadId);
+    const folder = yield* resolveFolder(lane.checkoutPath, input.path);
+    return yield* lock.withPermit(
+      Effect.gen(function* () {
+        const suffix = yield* requireReady;
+        const existing = links.find(
+          (link) =>
+            link.state === "open" &&
+            link.threadId === threadId &&
+            link.backing?.kind === "folder" &&
+            folderRoots.get(link.id) === folder.root,
+        );
+        if (existing !== undefined) return existing;
+        const id = randomPreviewLinkId();
+        return yield* Effect.gen(function* () {
+          const port = yield* claimLanePort(lane.portBase, (port) =>
+            startFolderServer(id, folder.root, port).pipe(
+              Effect.map((started) => (started ? port : null)),
+            ),
+          );
+          folderRoots.set(id, folder.root);
+          const link = newLink({
+            id,
+            suffix,
+            port,
+            actor: { _tag: "Agent", threadId },
+            laneId: lane.id,
+            lifetime: input.lifetime ?? settings.defaultLifetime,
+            nowMs: now(),
+            backing: { kind: "folder", path: folder.relativePath },
+          });
+          yield* commit({ settings, links: [...links, link] });
+          return link;
+        }).pipe(
+          Effect.onError(() =>
+            // An interruption can also land after the commit, when the server is the link's.
+            findLink(id) === undefined
+              ? closeFolderServer(id).pipe(
+                  Effect.andThen(Effect.sync(() => folderRoots.delete(id))),
+                )
+              : Effect.void,
+          ),
+        );
+      }),
+    );
+  });
+
+  const shareContainer = Effect.fn("PreviewLinksService.shareContainer")(function* (
+    input: PreviewContainerShareInput,
+    threadId: ThreadId,
+  ) {
+    yield* requireReady;
+    const lane = yield* threadLane(threadId);
+    const docker = yield* dependencies.dockerPath;
+    if (docker === null) return yield* fail("invalid", DOCKER_MISSING_MESSAGE);
+    const id = randomPreviewLinkId();
+    // Held outside the lock while Docker pulls and starts, which can take minutes.
+    return yield* Effect.acquireUseRelease(
+      lock.withPermit(
+        claimLanePort(lane.portBase, (port) =>
+          Effect.sync(() => {
+            pendingPorts.add(port);
+            return port;
+          }),
+        ),
+      ),
+      (port) =>
+        Effect.gen(function* () {
+          const containerId = yield* containers.run(
+            docker,
+            previewContainerRunArgs({ laneId: lane.id, linkId: id, port, input }),
+            { image: input.image, port },
+          );
+          return yield* lock.withPermit(
+            Effect.gen(function* () {
+              const suffix = yield* requireReady;
+              const nowMs = now();
+              const minutes = input.minutes ?? PREVIEW_CONTAINER_DEFAULT_MINUTES;
+              const stopsAtMs = nowMs + Duration.toMillis(Duration.minutes(minutes));
+              const link = newLink({
+                id,
+                suffix,
+                port,
+                actor: { _tag: "Agent", threadId },
+                laneId: lane.id,
+                // Never extended, so this only has to cover the container's time.
+                lifetime: minutes <= 60 ? "1h" : "12h",
+                nowMs,
+                expiresAtMs: stopsAtMs,
+                backing: {
+                  kind: "container",
+                  image: input.image,
+                  containerId,
+                  containerPort: input.containerPort,
+                  stopsAt: isoAt(stopsAtMs),
+                },
+              });
+              yield* commit({ settings, links: [...links, link] });
+              return link;
+            }),
+          );
+        }).pipe(
+          // Removing by label also catches a container Docker created before it failed or was cut
+          // off. An interruption can land after the commit too, when the container is the link's.
+          Effect.onError(() =>
+            findLink(id) === undefined ? containers.removeLabelled(docker, id) : Effect.void,
+          ),
+        ),
+      (port) => Effect.sync(() => pendingPorts.delete(port)),
     );
   });
 
@@ -875,6 +1208,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   ) {
     const link = findLink(input.linkId);
     if (link === undefined) return yield* fail("not-found", NOT_FOUND_MESSAGE);
+    if (link.backing?.kind === "container") return yield* fail("invalid", CONTAINER_TIME_MESSAGE);
     if (link.state !== "open") return yield* fail("not-found", ENDED_MESSAGE);
     const lifetime = input.lifetime ?? link.lifetime;
     const extended: PreviewLink = { ...link, lifetime, expiresAt: previewExpiry(now(), lifetime) };
@@ -897,6 +1231,32 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     return ended;
   }, lock.withPermit);
 
+  /** Brings an ended folder link's server back on the port its address names. */
+  const restartFolderServer = (link: PreviewLink) =>
+    Effect.gen(function* () {
+      const root = folderRoots.get(link.id);
+      if (root === undefined || !(yield* isDirectory(root))) {
+        return yield* fail(
+          "not-restorable",
+          "The folder this link served is gone. Share the folder again.",
+        );
+      }
+      // The backing reconcile may not have closed it yet.
+      if (folderServers.get(link.id)?.port === link.port) return;
+      yield* closeFolderServer(link.id);
+      // A pending port is a container still starting, which nothing listens on yet.
+      const started =
+        !pendingPorts.has(link.port) &&
+        (yield* dependencies.portFree(link.port)) &&
+        (yield* startFolderServer(link.id, root, link.port));
+      if (!started) {
+        return yield* fail(
+          "not-restorable",
+          `Port ${link.port} is in use now, so this folder link cannot come back at its address. Share the folder again.`,
+        );
+      }
+    });
+
   const restore = Effect.fn("PreviewLinksService.restore")(function* (
     input: PreviewLinkLifetimeInput,
   ) {
@@ -904,6 +1264,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     const link = findLink(input.linkId);
     if (link === undefined) return yield* fail("not-found", NOT_FOUND_MESSAGE);
     if (link.state === "open") return link;
+    if (link.backing?.kind === "container") {
+      return yield* fail("not-restorable", CONTAINER_TIME_MESSAGE);
+    }
     const nowMs = now();
     if (!isCurrentPreviewHost(link.host, settings)) {
       return yield* fail(
@@ -933,7 +1296,17 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       // The owner vouches for it now, so it no longer ends with the lane it came from.
       laneId: null,
     };
-    yield* commit({ settings, links: replaceLink(restored) });
+    yield* Effect.gen(function* () {
+      if (link.backing?.kind === "folder") yield* restartFolderServer(link);
+      yield* commit({ settings, links: replaceLink(restored) });
+    }).pipe(
+      Effect.onError(() =>
+        // An interruption can also land after the commit, when the server is the link's.
+        link.backing?.kind === "folder" && findLink(link.id)?.state !== "open"
+          ? closeFolderServer(link.id)
+          : Effect.void,
+      ),
+    );
     return restored;
   }, lock.withPermit);
 
@@ -1093,6 +1466,115 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     }),
   );
 
+  const containerOf = (link: PreviewLink) =>
+    link.backing?.kind === "container" ? link.backing : null;
+
+  /** Container links still to check: open ones, and ended ones whose container may remain. */
+  const watchedContainers = () =>
+    links.flatMap((link) => {
+      const backing = containerOf(link);
+      return backing !== null && (link.state === "open" || !removedContainers.has(link.id))
+        ? [{ link, containerId: backing.containerId }]
+        : [];
+    });
+
+  /** Ends open links as expired, skipping any that ended meanwhile. */
+  const expireLinks = (linkIds: ReadonlySet<string>) =>
+    Effect.suspend(() => {
+      const nowMs = now();
+      let changed = false;
+      const next = links.map((link) => {
+        if (link.state !== "open" || !linkIds.has(link.id)) return link;
+        changed = true;
+        return endPreviewLink(link, "expired", nowMs);
+      });
+      return changed ? commitBackground(next) : Effect.void;
+    });
+
+  const reconcileFolders = lock.withPermit(
+    Effect.gen(function* () {
+      const open = new Map(
+        links
+          .filter((link) => link.state === "open" && link.backing?.kind === "folder")
+          .map((link) => [link.id, link]),
+      );
+      for (const [linkId, server] of folderServers) {
+        if (open.get(linkId)?.port !== server.port) yield* closeFolderServer(linkId);
+      }
+      for (const linkId of folderRoots.keys()) {
+        if (findLink(linkId) === undefined) folderRoots.delete(linkId);
+      }
+      const failed = new Set<string>();
+      for (const link of open.values()) {
+        if (folderServers.has(link.id)) continue;
+        const root = folderRoots.get(link.id);
+        // Binding 127.0.0.1 can succeed beside a listener on ::1 or every address, which would
+        // then answer at this link's address, so the port is probed first as on share.
+        const started =
+          root !== undefined &&
+          (yield* isDirectory(root)) &&
+          (yield* dependencies.portFree(link.port)) &&
+          (yield* startFolderServer(link.id, root, link.port));
+        if (!started) failed.add(link.id);
+      }
+      if (failed.size === 0) return;
+      // Something else may hold the port now, and it must not answer at this link's address.
+      yield* Effect.logWarning("Ending folder links whose server could not start", {
+        linkIds: [...failed],
+      });
+      yield* expireLinks(failed);
+    }),
+  );
+
+  // Outside the lock: Docker can take seconds to answer, and shares must not wait on it.
+  const reconcileContainers = Effect.gen(function* () {
+    for (const linkId of removedContainers) {
+      if (findLink(linkId) === undefined) removedContainers.delete(linkId);
+    }
+    const watched = watchedContainers();
+    if (watched.length === 0) return;
+    const docker = yield* dependencies.dockerPath;
+    if (docker === null) return;
+    const gone = new Set<string>();
+    for (const { link, containerId } of watched) {
+      if (link.state !== "open") {
+        if (yield* containers.remove(docker, containerId)) removedContainers.add(link.id);
+        else yield* Effect.logWarning("Could not remove a preview container", { containerId });
+      } else if ((yield* containers.running(docker, containerId)) === false) {
+        gone.add(link.id);
+      }
+    }
+    if (gone.size > 0) yield* lock.withPermit(expireLinks(gone));
+  });
+
+  /**
+   * The one place backings start and stop. Runs at startup and after every commit, so a link
+   * ending by any path (revoke, expiry, its lane going, revoke all) also stops what served it.
+   * It logs and never fails, so no commit waits on or fails with it.
+   */
+  const reconcileBackings = Effect.andThen(reconcileFolders, reconcileContainers).pipe(
+    Effect.catchDefect((defect) =>
+      Effect.logError("Could not reconcile preview link backings", { defect }),
+    ),
+  );
+
+  yield* forkParked(
+    Effect.gen(function* () {
+      for (;;) {
+        yield* backingWake.close;
+        yield* reconcileBackings;
+        // A container that stops on its own announces nothing, so open ones are checked on a timer.
+        if (watchedContainers().length > 0) {
+          yield* backingWake.await.pipe(
+            Effect.timeoutOrElse({ duration: CONTAINER_CHECK_INTERVAL, orElse: () => Effect.void }),
+          );
+        } else {
+          yield* backingWake.await;
+        }
+      }
+    }),
+  );
+
   // Under the lock, so it never saves over a change still being committed.
   const saveRevocations = lock.withPermit(
     Effect.suspend(() => persist({ settings, links })).pipe(Effect.ignore),
@@ -1145,6 +1627,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     revoke,
     restore,
     revokeAll,
+    shareFolder,
+    shareContainer,
     signOutBrowsers,
     listForThread: (threadId) =>
       Effect.sync(() => links.filter((link) => link.threadId === threadId)),
@@ -1160,6 +1644,9 @@ export const layer = Layer.effect(
     return yield* makePreviewLinksService({
       startGateway: startPreviewGateway,
       runTunnel: (options) => runPreviewTunnel(options).pipe(Effect.provideContext(tunnelContext)),
+      serveFolder: servePreviewFolder,
+      portFree: previewPortFree,
+      dockerPath: makePreviewDockerLocator(),
     });
   }),
-);
+).pipe(Layer.provide(ProcessRunner.layer));

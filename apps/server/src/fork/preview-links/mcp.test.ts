@@ -3,6 +3,8 @@ import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts"
 import {
   PreviewLinksError,
   PreviewPagesError,
+  type PreviewContainerShareInput,
+  type PreviewFolderShareInput,
   type PreviewLink,
   type PreviewLinksSnapshot,
   type PreviewPage,
@@ -70,7 +72,12 @@ const makeService = () => {
     ["theirs", linkFor("theirs", 41020, other)],
     ["owners", linkFor("owners", 5173, null)],
   ]);
-  const calls = { share: [] as Array<PreviewLinkActor>, revoke: [] as Array<PreviewLinkActor> };
+  const calls = {
+    share: [] as Array<PreviewLinkActor>,
+    revoke: [] as Array<PreviewLinkActor>,
+    shareFolder: [] as Array<{ input: PreviewFolderShareInput; threadId: ThreadId }>,
+    shareContainer: [] as Array<{ input: PreviewContainerShareInput; threadId: ThreadId }>,
+  };
   const fields: Partial<PreviewLinksService["Service"]> = {
     snapshot: Effect.sync(() => snapshot([...links.values()])),
     listForThread: (threadId) =>
@@ -81,6 +88,25 @@ const makeService = () => {
         const link = linkFor("shared", input.port, actor._tag === "Agent" ? actor.threadId : null);
         links.set(link.id, link);
         return link;
+      }),
+    shareFolder: (input, threadId) =>
+      Effect.sync(() => {
+        calls.shareFolder.push({ input, threadId });
+        return { ...linkFor("folder", 41002, threadId), backing: { kind: "folder", path: "dist" } };
+      }),
+    shareContainer: (input, threadId) =>
+      Effect.sync(() => {
+        calls.shareContainer.push({ input, threadId });
+        return {
+          ...linkFor("container", 41003, threadId),
+          backing: {
+            kind: "container",
+            image: input.image,
+            containerId: "0123456789ab",
+            containerPort: input.containerPort,
+            stopsAt: "2026-10-18T02:00:00.000Z",
+          },
+        };
       }),
     revoke: (linkId, actor) =>
       Effect.suspend(() => {
@@ -224,7 +250,7 @@ it.effect("declares object input schemas under unique loom_ names", () =>
     const names = Object.keys(PreviewLinksToolkit.tools);
     expect(new Set(names).size).toBe(names.length);
     expect(
-      names.every((name) => name.startsWith("loom_preview_link") || name.startsWith("loom_page")),
+      names.every((name) => name.startsWith("loom_preview_") || name.startsWith("loom_page")),
     ).toBe(true);
     for (const tool of Object.values(PreviewLinksToolkit.tools)) {
       const schema = yield* decodeToolJson(Tool.getJsonSchema(tool));
@@ -246,6 +272,49 @@ it.effect("shares as the calling thread and returns only the canonical link", ()
       url: "https://41001-abc123-dorothy.bagels.top/",
     });
     expect(JSON.stringify(link)).not.toContain("__loom/enter");
+  }),
+);
+
+it.effect("shares folders and containers as the calling thread", () =>
+  Effect.gen(function* () {
+    const { service, calls } = makeService();
+    const invoke = yield* harness(service);
+    const folder = yield* invoke("loom_preview_folder_share", { path: "dist", lifetime: "1h" });
+    expect(folder).toMatchObject({ threadId: caller, backing: { kind: "folder", path: "dist" } });
+    const container = yield* invoke("loom_preview_container_share", {
+      image: "nginx:1.27",
+      containerPort: 80,
+      env: { MODE: "demo" },
+      command: ["nginx", "-g", "daemon off;"],
+      minutes: 30,
+    });
+    expect(container).toMatchObject({ threadId: caller, backing: { kind: "container" } });
+    expect(calls.shareFolder).toEqual([
+      { input: { path: "dist", lifetime: "1h" }, threadId: caller },
+    ]);
+    expect(calls.shareContainer).toEqual([
+      {
+        input: {
+          image: "nginx:1.27",
+          containerPort: 80,
+          env: { MODE: "demo" },
+          command: ["nginx", "-g", "daemon off;"],
+          minutes: 30,
+        },
+        threadId: caller,
+      },
+    ]);
+
+    // The contract's checks hold at the tool boundary, so a flag never reaches docker as an image.
+    const refused = yield* invoke("loom_preview_container_share", {
+      image: "--privileged",
+      containerPort: 80,
+    }).pipe(Effect.flip);
+    expect(refused).toMatchObject({
+      _tag: "AiError",
+      reason: { _tag: "ToolParameterValidationError" },
+    });
+    expect(calls.shareContainer).toHaveLength(1);
   }),
 );
 

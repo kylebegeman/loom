@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
-import type { PreviewPage } from "@t3tools/contracts/fork";
+import type { PreviewLink, PreviewPage } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import {
   canRestorePreviewPage,
   formatPreviewDuration,
+  previewLinkBackingLabel,
   previewPageControls,
   previewPageSummary,
   previewPageTiming,
@@ -155,5 +156,79 @@ describe("previewPageControls", () => {
     expect(previewPageControls(ended({ restorableUntil: at(-MINUTE) }), true, NOW)).toEqual([
       { control: "restore", enabled: false },
     ]);
+  });
+});
+
+describe("previewLinkBackingLabel", () => {
+  // Built from local fields so the day boundary holds in any time zone the tests run in.
+  // @effect-diagnostics-next-line globalDate:off
+  const local = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute);
+  const afternoon = local(19, 14).getTime();
+  // ICU separates the time from AM and PM with a narrow no-break space.
+  const label = (link: PreviewLink, now: number) =>
+    previewLinkBackingLabel(link, now, "en-US")?.replace(/\u202f/g, " ") ?? null;
+
+  function link(overrides: Partial<PreviewLink> = {}): PreviewLink {
+    return {
+      id: "link",
+      kind: "port",
+      port: 41_002,
+      host: "41002-k3f9x2-dorothy.bagels.top",
+      url: "https://41002-k3f9x2-dorothy.bagels.top/",
+      createdBy: "agent",
+      threadId: ThreadId.make("thread"),
+      laneId: "lane",
+      state: "open",
+      lifetime: "12h",
+      createdAt: at(-HOUR),
+      expiresAt: at(11 * HOUR),
+      endedAt: null,
+      restorableUntil: null,
+      ...overrides,
+    };
+  }
+
+  const container = (stopsAt: Date, overrides: Partial<PreviewLink> = {}) =>
+    link({
+      backing: {
+        kind: "container",
+        image: "nginx:alpine",
+        containerId: "0123456789ab",
+        containerPort: 80,
+        stopsAt: stopsAt.toISOString(),
+      },
+      ...overrides,
+    });
+
+  it("says nothing for a plain port, which is all an older server sends", () => {
+    expect(label(link(), afternoon)).toBeNull();
+  });
+
+  it("names the folder as the agent gave it, relative to the workspace", () => {
+    const folder = (path: string) => label(link({ backing: { kind: "folder", path } }), afternoon);
+    expect(folder("dist")).toBe("Folder dist");
+    expect(folder("./apps/site/dist/")).toBe("Folder apps/site/dist");
+    expect(folder(".")).toBe("Workspace root folder");
+  });
+
+  it("says when an open container stops, naming the day once it crosses midnight", () => {
+    expect(label(container(local(19, 15, 40)), afternoon)).toBe(
+      "Container nginx:alpine, stops 3:40 PM",
+    );
+    expect(label(container(local(20, 1, 10)), local(19, 23).getTime())).toBe(
+      "Container nginx:alpine, stops Tue 1:10 AM",
+    );
+    expect(label(container(local(19, 13, 59)), afternoon)).toBe(
+      "Container nginx:alpine, stopping now",
+    );
+  });
+
+  it("drops the stop time once the link has ended, since the container is gone", () => {
+    expect(
+      label(
+        container(local(19, 15, 40), { state: "revoked", endedAt: local(19, 13).toISOString() }),
+        afternoon,
+      ),
+    ).toBe("Container nginx:alpine");
   });
 });

@@ -79,6 +79,29 @@ export type StartPreviewGateway = (options: {
   readonly view: PreviewGatewayView;
 }) => Effect.Effect<PreviewGatewayHandle, PreviewGatewayListenError, Scope.Scope>;
 
+export class PreviewFolderListenError {
+  readonly _tag = "PreviewFolderListenError";
+  readonly port: number;
+  readonly message: string;
+  constructor(port: number, message: string) {
+    this.port = port;
+    this.message = message;
+  }
+}
+
+export interface PreviewFolderServer {
+  readonly port: number;
+}
+
+/**
+ * Serves `root`, already a realpath, read-only on 127.0.0.1 until the scope closes. It runs in
+ * Loom's own process, so releasing the lane never signals it; only the link ending stops it.
+ */
+export type ServePreviewFolder = (options: {
+  readonly root: string;
+  readonly port: number;
+}) => Effect.Effect<PreviewFolderServer, PreviewFolderListenError, Scope.Scope>;
+
 export interface PreviewTunnelStatus {
   readonly state: "starting" | "connected" | "error";
   /** Human-readable cause or progress. Never contains the token. */

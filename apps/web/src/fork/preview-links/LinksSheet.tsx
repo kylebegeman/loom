@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { previewLinkBackingLabel, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
@@ -66,6 +66,7 @@ function LinkRow({
   const action = useAction();
   const disabled = !canOperate || action.busy;
   const title = canOperate ? undefined : NO_ACCESS;
+  const backing = previewLinkBackingLabel(link, now);
 
   const open = () =>
     void action.act("Unable to open preview link", () =>
@@ -94,6 +95,7 @@ function LinkRow({
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="break-all font-mono text-xs">{link.host}</span>
         <span className="text-muted-foreground text-xs">{linkSummary(link, now)}</span>
+        {backing && <span className="break-words text-muted-foreground text-xs">{backing}</span>}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {link.state === "open" ? (
@@ -104,23 +106,26 @@ function LinkRow({
             <Button size="xs" variant="outline" disabled={action.busy} onClick={copy}>
               Copy link
             </Button>
-            <Menu>
-              <MenuTrigger
-                render={<Button size="xs" variant="outline" disabled={disabled} title={title} />}
-              >
-                Extend
-              </MenuTrigger>
-              <MenuPopup align="start">
-                <MenuGroup>
-                  <MenuGroupLabel>Keep open for</MenuGroupLabel>
-                  {PREVIEW_LINK_LIFETIMES.map((lifetime) => (
-                    <MenuItem key={lifetime} onClick={() => extend(lifetime)}>
-                      {LIFETIME_LABELS[lifetime]}
-                    </MenuItem>
-                  ))}
-                </MenuGroup>
-              </MenuPopup>
-            </Menu>
+            {/* A container link ends when its container stops; the agent shares it again for more time. */}
+            {link.backing?.kind !== "container" && (
+              <Menu>
+                <MenuTrigger
+                  render={<Button size="xs" variant="outline" disabled={disabled} title={title} />}
+                >
+                  Extend
+                </MenuTrigger>
+                <MenuPopup align="start">
+                  <MenuGroup>
+                    <MenuGroupLabel>Keep open for</MenuGroupLabel>
+                    {PREVIEW_LINK_LIFETIMES.map((lifetime) => (
+                      <MenuItem key={lifetime} onClick={() => extend(lifetime)}>
+                        {LIFETIME_LABELS[lifetime]}
+                      </MenuItem>
+                    ))}
+                  </MenuGroup>
+                </MenuPopup>
+              </Menu>
+            )}
             <Button
               size="xs"
               variant="destructive-outline"

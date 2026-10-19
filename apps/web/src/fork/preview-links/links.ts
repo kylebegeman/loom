@@ -69,10 +69,14 @@ export function tunnelStatus(setup: PreviewLinksSetup): string {
   return tunnel.message && tunnel.state !== "connected" ? `${base}: ${tunnel.message}` : base;
 }
 
-/** A link made under another domain or computer name has no address here until settings change back. */
+/**
+ * A link made under another domain or computer name has no address here until settings change back.
+ * A container link's container is removed when it ends, so it never comes back.
+ */
 function canRestore(link: PreviewLink, settings: PreviewLinksSettings, now: number): boolean {
   return (
     link.state !== "open" &&
+    link.backing?.kind !== "container" &&
     link.restorableUntil !== null &&
     Date.parse(link.restorableUntil) > now &&
     isCurrentPreviewHost(link.host, settings)

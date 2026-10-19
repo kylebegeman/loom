@@ -96,7 +96,10 @@ export function visiblePreviewLinks(
   return [...open, ...ended];
 }
 
-/** A link made under another domain or computer name has no address here until settings change back. */
+/**
+ * A link made under another domain or computer name has no address here until settings change back.
+ * A container link's container is removed when it ends, so it never comes back.
+ */
 export function canRestorePreviewLink(
   link: PreviewLink,
   settings: PreviewLinksSettings,
@@ -104,6 +107,7 @@ export function canRestorePreviewLink(
 ): boolean {
   return (
     link.state !== "open" &&
+    link.backing?.kind !== "container" &&
     link.restorableUntil !== null &&
     Date.parse(link.restorableUntil) > now &&
     isCurrentPreviewHost(link.host, settings)
@@ -159,7 +163,10 @@ export function previewLinkActions(
     return [
       { action: "open", enabled: permissions.open },
       { action: "copy", enabled: true },
-      { action: "extend", enabled: permissions.extend },
+      // A container link ends when its container stops; the agent shares it again for more time.
+      ...(link.backing?.kind === "container"
+        ? []
+        : [{ action: "extend" as const, enabled: permissions.extend }]),
       { action: "end", enabled: permissions.end },
     ];
   }

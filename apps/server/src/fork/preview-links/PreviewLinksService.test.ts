@@ -15,6 +15,7 @@ import {
   type PreviewLinksSettings,
   type PreviewLinksSnapshot,
   type ProjectLifecycleLane,
+  type ProjectLifecycleSettings,
   type ProjectLifecycleStatus,
 } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -27,6 +28,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -36,9 +38,11 @@ import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { SessionStore, type SessionCredentialChange } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
+import * as ProcessRunner from "../../processRunner.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { ProjectLifecycleService } from "../project-lifecycle/ProjectLifecycleService.ts";
 import type { LaneRow } from "../project-lifecycle/store.ts";
+import { DOCKER_MISSING_MESSAGE } from "./backings.ts";
 import { isoAt } from "./policy.ts";
 import {
   PREVIEW_COOKIE_KEY_SECRET,
@@ -56,9 +60,11 @@ import {
   signPreviewTicket,
 } from "./ticket.ts";
 import {
+  PreviewFolderListenError,
   PreviewGatewayListenError,
   type PreviewGatewayView,
   type RunPreviewTunnelOptions,
+  type ServePreviewFolder,
   type StartPreviewGateway,
 } from "./types.ts";
 
@@ -223,6 +229,28 @@ const expectRegistrations = (
     ),
   );
 
+const DOCKER = "/usr/local/bin/docker";
+
+const dockerReply = (code: number, stdout = "", stderr = ""): ProcessRunner.ProcessRunOutput => ({
+  stdout,
+  stderr,
+  code: ChildProcessSpawner.ExitCode(code),
+  timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+  stdoutInvalidUtf8: false,
+  stderrInvalidUtf8: false,
+});
+
+/** Takes events until one starts with `prefix`, so a test waits on what happened, never on time. */
+const nextEvent = (events: Queue.Queue<string>, prefix: string): Effect.Effect<string> =>
+  Queue.take(events).pipe(
+    Effect.filterOrElse(
+      (event) => event.startsWith(prefix),
+      () => nextEvent(events, prefix),
+    ),
+  );
+
 const makeHarness = Effect.fn("makeHarness")(function* (
   options: {
     readonly baseDir?: string;
@@ -231,6 +259,8 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     readonly devUrl?: URL;
     readonly failGatewayPort?: number;
     readonly lanes?: ReadonlyMap<ThreadId, LaneRow>;
+    /** Ports something listens on over ::1 only, from the start. */
+    readonly ipv6Ports?: ReadonlyArray<number>;
     readonly servers?: ReadonlyArray<DiscoveredLocalServer>;
     /** Sessions the store lists at start. One given by id is valid for 30 days. */
     readonly activeSessions?: ReadonlyArray<string | AuthClientSession>;
@@ -309,7 +339,96 @@ const makeHarness = Effect.fn("makeHarness")(function* (
       ),
     );
 
-  const service = yield* makePreviewLinksService({ startGateway, runTunnel }).pipe(
+  /** Folder servers by port. Events read `start <port>` and `stop <port>`. */
+  const folders = {
+    open: new Map<number, string>(),
+    events: yield* Queue.unbounded<string>(),
+  };
+  /** Ports something outside Loom listens on. */
+  const busyPorts = new Set<number>();
+  /**
+   * Ports something listens on over ::1 only. A 127.0.0.1 bind still succeeds beside it, but the
+   * port probe sees it.
+   */
+  const ipv6Ports = new Set<number>(options.ipv6Ports);
+  const serveFolder: ServePreviewFolder = ({ root, port }) =>
+    Effect.gen(function* () {
+      if (busyPorts.has(port) || folders.open.has(port)) {
+        return yield* Effect.fail(new PreviewFolderListenError(port, `Port ${port} is in use.`));
+      }
+      folders.open.set(port, root);
+      Queue.offerUnsafe(folders.events, `start ${port}`);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          folders.open.delete(port);
+          Queue.offerUnsafe(folders.events, `stop ${port}`);
+        }),
+      );
+      return { port };
+    });
+
+  /**
+   * A docker that runs nothing. Each command's arguments land in `commands`, and containers report
+   * the state in `states`, keyed by short id, until removed.
+   */
+  const docker = {
+    path: DOCKER as string | null,
+    runs: [] as Array<ReadonlyArray<string>>,
+    commands: yield* Queue.unbounded<string>(),
+    states: new Map<string, "true" | "false">(),
+    /** Stderr for `docker run` to fail with. */
+    failRun: null as string | null,
+    /** Holds each `docker run` after it is recorded in `commands`, until it completes. */
+    runGate: null as Deferred.Deferred<void> | null,
+  };
+  const reply = (args: ReadonlyArray<string>) => {
+    const target = args.at(-1) ?? "";
+    switch (args[0]) {
+      case "run": {
+        docker.runs.push(args);
+        if (docker.failRun !== null) return dockerReply(125, "", docker.failRun);
+        const id = String(docker.runs.length).padStart(12, "0");
+        docker.states.set(id, "true");
+        return dockerReply(0, `${id.padEnd(64, "f")}\n`);
+      }
+      case "inspect": {
+        const state = docker.states.get(target);
+        return state === undefined
+          ? dockerReply(1, "", `Error: No such object: ${target}`)
+          : dockerReply(0, `${state}\n`);
+      }
+      case "rm":
+        return docker.states.delete(target)
+          ? dockerReply(0, `${target}\n`)
+          : dockerReply(1, "", `Error: No such container: ${target}`);
+      case "ps":
+        return dockerReply(0);
+      default:
+        return dockerReply(1, "", "unknown command");
+    }
+  };
+  const runner = ProcessRunner.ProcessRunner.of({
+    run: (input) =>
+      Effect.suspend(() => {
+        if (input.command !== docker.path) {
+          return Effect.succeed(dockerReply(127, "", "not docker"));
+        }
+        Queue.offerUnsafe(docker.commands, input.args.join(" "));
+        const gate = input.args[0] === "run" ? docker.runGate : null;
+        return (gate === null ? Effect.void : Deferred.await(gate)).pipe(
+          Effect.andThen(Effect.sync(() => reply(input.args))),
+        );
+      }),
+  });
+
+  const service = yield* makePreviewLinksService({
+    startGateway,
+    runTunnel,
+    serveFolder,
+    portFree: (port) =>
+      Effect.sync(() => !busyPorts.has(port) && !ipv6Ports.has(port) && !folders.open.has(port)),
+    dockerPath: Effect.sync(() => docker.path),
+  }).pipe(
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(ServerConfig.ServerConfig, {
@@ -356,6 +475,17 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         }),
         Layer.mock(ProjectLifecycleService)({
           changes: SubscriptionRef.changes(lifecycleChanges),
+          getSettings: SubscriptionRef.get(lifecycleChanges).pipe(
+            Effect.map((status): ProjectLifecycleSettings => ({
+              enabled: status.enabled,
+              lanesRoot: status.lanesRoot,
+              defaultCapGb: 40,
+              appleCapGb: 100,
+              reserveGb: 40,
+              projectCapsGb: {},
+              buildSlots: null,
+            })),
+          ),
           ensureForThread: (threadId) => {
             const lane = options.lanes?.get(threadId);
             return lane === undefined
@@ -374,6 +504,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
             : { enabled: true, registerPreviews: options.library.registerPreviews },
         ),
         Layer.succeed(HostProcess.Hostname, "Dorothy.local"),
+        Layer.succeed(ProcessRunner.ProcessRunner, runner),
       ),
     ),
   );
@@ -391,6 +522,9 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     service,
     gateway,
     tunnel,
+    folders,
+    busyPorts,
+    docker,
     secretValues,
     waitFor,
     view,
@@ -429,6 +563,25 @@ const makeHarness = Effect.fn("makeHarness")(function* (
 });
 
 const codeOf = (url: string) => new URL(url).searchParams.get("code") ?? "";
+
+/** A workspace with a built site in `dist`, a file, and a symlink to a folder outside it. */
+const makeSite = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const workspace = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+  const outside = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+  const site = path.join(workspace, "dist");
+  yield* fs.makeDirectory(site);
+  yield* fs.writeFileString(path.join(site, "index.html"), "<h1>Site</h1>");
+  yield* fs.writeFileString(path.join(workspace, "notes.txt"), "notes");
+  yield* fs.symlink(outside, path.join(workspace, "outside"));
+  return { workspace, site };
+});
+
+const siteLanes = (workspace: string) =>
+  new Map([[threadA, { ...laneRow("lane-a", 41000), checkoutPath: workspace }]]);
+
+const containerLanes = new Map([[threadA, laneRow("lane-a", 41000)]]);
 
 it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
   it.effect("starts off with defaults and refuses to share", () =>
@@ -1129,6 +1282,385 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(yield* Queue.take(library.calls)).toEqual({
         machine: "dorothy",
         suffix: "bagels.top",
+      });
+    }),
+  );
+
+  it.effect("serves a workspace folder on the first free lane port, once per folder", () =>
+    Effect.gen(function* () {
+      const { workspace, site } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      harness.busyPorts.add(41000);
+      yield* harness.service.share({ port: 41001 }, agentA);
+
+      const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      expect(link).toMatchObject({
+        port: 41002,
+        createdBy: "agent",
+        threadId: threadA,
+        laneId: "lane-a",
+        backing: { kind: "folder", path: "dist" },
+      });
+      expect(harness.folders.open.get(41002)).toBe(site);
+      expect((yield* harness.view).route(link.host)).toEqual({
+        _tag: "Link",
+        linkId: link.id,
+        port: 41002,
+      });
+      expect((yield* harness.service.shareFolder({ path: "./dist/" }, threadA)).id).toBe(link.id);
+      expect([...harness.folders.open.keys()]).toEqual([41002]);
+    }),
+  );
+
+  it.effect("refuses folders outside the workspace, files, and threads without lane ports", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({
+        lanes: new Map([
+          [threadA, { ...laneRow("lane-a", 41000), checkoutPath: workspace }],
+          [threadB, { ...laneRow("lane-b", 41020), checkoutPath: workspace, portBase: null }],
+        ]),
+      });
+      yield* harness.service.configure({ settings: ready });
+      const refusal = (folder: string, threadId = threadA) =>
+        Effect.flip(harness.service.shareFolder({ path: folder }, threadId));
+
+      // `outside` is a symlink out of the workspace.
+      for (const folder of ["..", "outside", "/"]) {
+        expect(yield* refusal(folder)).toMatchObject({
+          reason: "invalid",
+          message: "Folder links can only share a folder inside this thread's workspace.",
+        });
+      }
+      expect(yield* refusal("notes.txt")).toMatchObject({
+        reason: "invalid",
+        message:
+          "notes.txt is not a folder. Share the built folder that holds the site, such as dist.",
+      });
+      expect(yield* refusal("nope")).toMatchObject({
+        reason: "invalid",
+        message: "nope was not found in this thread's workspace.",
+      });
+      expect(yield* refusal("dist", threadB)).toMatchObject({
+        reason: "port-not-in-lane",
+        message:
+          "This thread's lane has no ports, so folder and container links cannot be shared from it.",
+      });
+      expect(yield* refusal("dist", ThreadId.make("thread-c"))).toMatchObject({
+        reason: "port-not-in-lane",
+        message:
+          "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+      });
+      for (let port = 41000; port < 41020; port++) harness.busyPorts.add(port);
+      expect(yield* refusal("dist")).toMatchObject({
+        reason: "invalid",
+        message:
+          "Ports 41000 to 41019 of this thread's lane are all in use or shared. Stop a server on one of them or end one of this thread's links, then try again.",
+      });
+      harness.busyPorts.clear();
+      // Turning lanes off keeps the thread's lane, but no longer vouches for its ports.
+      yield* harness.setLanes(false, ["lane-a"]);
+      const lanesOff = {
+        reason: "port-not-in-lane",
+        message:
+          "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+      };
+      expect(yield* refusal("dist")).toMatchObject(lanesOff);
+      expect(
+        yield* Effect.flip(
+          harness.service.shareContainer({ image: "nginx", containerPort: 80 }, threadA),
+        ),
+      ).toMatchObject(lanesOff);
+      expect(harness.folders.open.size).toBe(0);
+      expect(harness.docker.runs).toEqual([]);
+      expect((yield* harness.service.snapshot).links).toEqual([]);
+    }),
+  );
+
+  it.effect("stops a folder's server when its link is revoked or its lane goes", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      const revoked = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      yield* nextEvent(harness.folders.events, "start 41000");
+      yield* harness.service.revoke(revoked.id, agentA);
+      yield* nextEvent(harness.folders.events, "stop 41000");
+
+      const laneLink = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      expect(laneLink.id).not.toBe(revoked.id);
+      yield* nextEvent(harness.folders.events, "start 41000");
+      yield* harness.setLanes(true, ["lane-a"]);
+      yield* harness.setLanes(true, []);
+      yield* harness.waitFor((snapshot) =>
+        snapshot.links.some((link) => link.id === laneLink.id && link.state === "revoked"),
+      );
+      yield* nextEvent(harness.folders.events, "stop 41000");
+      expect(harness.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect("restores a folder link on its own port only while that port is free", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { workspace, site } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      const endLink = harness.service
+        .revoke(link.id, owner)
+        .pipe(Effect.andThen(nextEvent(harness.folders.events, "stop 41000")));
+      yield* endLink;
+
+      expect(yield* harness.service.restore({ linkId: link.id })).toMatchObject({
+        host: link.host,
+        port: 41000,
+        state: "open",
+        laneId: null,
+      });
+      yield* nextEvent(harness.folders.events, "start 41000");
+      expect(harness.folders.open.get(41000)).toBe(site);
+
+      yield* endLink;
+      harness.busyPorts.add(41000);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message:
+          "Port 41000 is in use now, so this folder link cannot come back at its address. Share the folder again.",
+      });
+
+      harness.busyPorts.delete(41000);
+      yield* fs.remove(site, { recursive: true });
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message: "The folder this link served is gone. Share the folder again.",
+      });
+      expect((yield* harness.service.snapshot).links.map((each) => each.state)).toEqual([
+        "revoked",
+      ]);
+      expect(harness.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect("serves open folder links again after a restart, and ends one whose folder went", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { workspace, site } = yield* makeSite;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const first = yield* makeHarness({ baseDir, secrets, lanes: siteLanes(workspace) });
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.shareFolder({ path: "dist" }, threadA);
+
+      const reopened = yield* makeHarness({ baseDir, secrets });
+      yield* nextEvent(reopened.folders.events, "start 41000");
+      expect(reopened.folders.open.get(41000)).toBe(site);
+      expect((yield* reopened.service.snapshot).links).toEqual([link]);
+
+      yield* fs.remove(site, { recursive: true });
+      const withoutFolder = yield* makeHarness({ baseDir, secrets });
+      yield* withoutFolder.waitFor((snapshot) => snapshot.links[0]?.state === "expired");
+      expect(withoutFolder.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect("ends a folder link at restart when something else now answers on its port", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { workspace } = yield* makeSite;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const first = yield* makeHarness({ baseDir, secrets, lanes: siteLanes(workspace) });
+      yield* first.service.configure({ settings: ready });
+      yield* first.service.shareFolder({ path: "dist" }, threadA);
+
+      // A 127.0.0.1 bind succeeds beside it, but it would win the gateway's connections.
+      const reopened = yield* makeHarness({ baseDir, secrets, ipv6Ports: [41000] });
+      yield* reopened.waitFor((snapshot) => snapshot.links[0]?.state === "expired");
+      expect(reopened.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect(
+    "keeps a starting container's port from a share or restore, and frees it if cancelled",
+    () =>
+      Effect.gen(function* () {
+        const { workspace } = yield* makeSite;
+        const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+        yield* harness.service.configure({ settings: ready });
+        const folder = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+        yield* harness.service.revoke(folder.id, owner);
+        yield* nextEvent(harness.folders.events, "stop 41000");
+
+        harness.docker.runGate = yield* Deferred.make<void>();
+        const starting = yield* Effect.forkChild(
+          harness.service.shareContainer({ image: "nginx", containerPort: 80 }, threadA),
+        );
+        yield* nextEvent(harness.docker.commands, "run");
+        expect(yield* Effect.flip(harness.service.share({ port: 41000 }, owner))).toMatchObject({
+          reason: "invalid",
+          message:
+            "A container is still starting on port 41000. Its link appears when it is ready.",
+        });
+        expect(yield* Effect.flip(harness.service.restore({ linkId: folder.id }))).toMatchObject({
+          reason: "not-restorable",
+          message:
+            "Port 41000 is in use now, so this folder link cannot come back at its address. Share the folder again.",
+        });
+        expect(harness.folders.open.size).toBe(0);
+
+        // A cancelled tool call removes whatever Docker made and gives the port back.
+        yield* Fiber.interrupt(starting);
+        yield* nextEvent(harness.docker.commands, "ps -aq --filter label=loom.preview-link=");
+        expect((yield* harness.service.restore({ linkId: folder.id })).state).toBe("open");
+        expect(harness.folders.open.has(41000)).toBe(true);
+      }),
+  );
+
+  it.effect("runs a container on a lane port and removes it when its link ends", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const start = yield* Clock.currentTimeMillis;
+      const link = yield* harness.service.shareContainer(
+        {
+          image: "nginx:alpine",
+          containerPort: 80,
+          env: { MODE: "preview" },
+          command: ["nginx", "-g", "daemon off;"],
+          minutes: 30,
+        },
+        threadA,
+      );
+      expect(harness.docker.runs).toEqual([
+        [
+          "run",
+          "-d",
+          "--pull",
+          "missing",
+          "--label",
+          "loom.lane=lane-a",
+          "--label",
+          `loom.preview-link=${link.id}`,
+          "-p",
+          "127.0.0.1:41000:80",
+          "-e",
+          "MODE=preview",
+          "nginx:alpine",
+          "nginx",
+          "-g",
+          "daemon off;",
+        ],
+      ]);
+      const stopsAt = isoAt(start + 30 * 60 * 1000);
+      expect(link).toMatchObject({
+        port: 41000,
+        createdBy: "agent",
+        threadId: threadA,
+        laneId: "lane-a",
+        lifetime: "1h",
+        expiresAt: stopsAt,
+        backing: {
+          kind: "container",
+          image: "nginx:alpine",
+          containerId: "000000000001",
+          containerPort: 80,
+          stopsAt,
+        },
+      });
+      expect((yield* harness.view).route(link.host)).toEqual({
+        _tag: "Link",
+        linkId: link.id,
+        port: 41000,
+      });
+
+      yield* harness.service.revoke(link.id, agentA);
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000001");
+      expect(harness.docker.states.size).toBe(0);
+    }),
+  );
+
+  it.effect("ends a container link when its container stops or its time is up", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const stopped = yield* harness.service.shareContainer(
+        { image: "nginx", containerPort: 80 },
+        threadA,
+      );
+      yield* nextEvent(harness.docker.commands, "inspect -f {{.State.Running}} 000000000001");
+      harness.docker.states.set("000000000001", "false");
+      yield* TestClock.adjust("1 minute");
+      yield* harness.waitFor((snapshot) =>
+        snapshot.links.some((link) => link.id === stopped.id && link.state === "expired"),
+      );
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000001");
+
+      const timed = yield* harness.service.shareContainer(
+        { image: "nginx", containerPort: 80, minutes: 5 },
+        threadA,
+      );
+      expect(timed.port).toBe(41000);
+      yield* TestClock.adjust("5 minutes");
+      yield* harness.waitFor((snapshot) =>
+        snapshot.links.some((link) => link.id === timed.id && link.state === "expired"),
+      );
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000002");
+      expect(harness.docker.states.size).toBe(0);
+    }),
+  );
+
+  it.effect("refuses containers without Docker and cleans up after a failed start", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const input = { image: "nginx", containerPort: 80 };
+      expect(yield* Effect.flip(harness.service.shareContainer(input, threadB))).toMatchObject({
+        reason: "port-not-in-lane",
+      });
+
+      harness.docker.path = null;
+      expect(yield* Effect.flip(harness.service.shareContainer(input, threadA))).toMatchObject({
+        reason: "invalid",
+        message: DOCKER_MISSING_MESSAGE,
+      });
+      expect(harness.docker.runs).toEqual([]);
+
+      harness.docker.path = DOCKER;
+      harness.docker.failRun =
+        "docker: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+      expect(yield* Effect.flip(harness.service.shareContainer(input, threadA))).toMatchObject({
+        reason: "invalid",
+        message:
+          "Docker is not running. Start Docker Desktop or OrbStack, then share the container again.",
+      });
+      const label = harness.docker.runs[0]?.find((arg) => arg.startsWith("loom.preview-link="));
+      expect(label).toBeDefined();
+      yield* nextEvent(harness.docker.commands, `ps -aq --filter label=${label}`);
+      expect((yield* harness.service.snapshot).links).toEqual([]);
+
+      harness.docker.failRun = null;
+      expect((yield* harness.service.shareContainer(input, threadA)).port).toBe(41000);
+    }),
+  );
+
+  it.effect("will not extend or restore a container link", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.shareContainer(
+        { image: "nginx", containerPort: 80 },
+        threadA,
+      );
+      const message = "Container links end when the container stops; share it again for more time.";
+      expect(
+        yield* Effect.flip(harness.service.extend({ linkId: link.id, lifetime: "24h" })),
+      ).toMatchObject({ reason: "invalid", message });
+      yield* harness.service.revoke(link.id, owner);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message,
       });
     }),
   );

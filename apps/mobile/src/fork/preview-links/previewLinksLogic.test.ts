@@ -210,6 +210,24 @@ describe("previewLinkActions", () => {
     expect(restore(restorable, { ...all, restore: false })?.enabled).toBe(false);
     expect(restore(restorable, all, { ...SETTINGS, machine: "laptop" })?.enabled).toBe(false);
   });
+
+  it("offers neither extend nor restore on a container link, which ends with its container", () => {
+    const backing = {
+      kind: "container" as const,
+      image: "nginx:alpine",
+      containerId: "0123456789ab",
+      containerPort: 80,
+      stopsAt: at(HOUR),
+    };
+    expect(
+      previewLinkActions(link({ backing }), all, SETTINGS, NOW).map((each) => each.action),
+    ).toEqual(["open", "copy", "end"]);
+    const ended = link({ backing, state: "revoked", restorableUntil: at(HOUR) });
+    expect(previewLinkActions(ended, all, SETTINGS, NOW)[0]).toEqual({
+      action: "restore",
+      enabled: false,
+    });
+  });
 });
 
 describe("connectionReachesLoopback", () => {

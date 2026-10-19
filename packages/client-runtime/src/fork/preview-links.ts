@@ -1,5 +1,6 @@
 import {
   PREVIEW_LINKS_WS_METHODS as P,
+  type PreviewLink,
   type PreviewPage,
   type PreviewPageAction,
   type PreviewPageKind,
@@ -86,6 +87,45 @@ export function formatPreviewDuration(ms: number): string {
   const days = Math.floor(ms / DAY_MS);
   const hours = Math.floor((ms % DAY_MS) / HOUR_MS);
   return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
+}
+
+/** The agent names the folder relative to the workspace root, so `./dist/` and `dist` read alike. */
+function folderLabel(path: string): string {
+  const relative = path
+    .trim()
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return relative === "" || relative === "." ? "Workspace root folder" : `Folder ${relative}`;
+}
+
+/** A container runs for hours at most, so the day is named only when its stop crosses midnight. */
+function containerStopLabel(stopsAt: number, now: number, locale: string | undefined): string {
+  // @effect-diagnostics-next-line globalDate:off
+  const stop = new Date(stopsAt);
+  const time = stop.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  // @effect-diagnostics-next-line globalDate:off
+  if (stop.toDateString() === new Date(now).toDateString()) return time;
+  return `${stop.toLocaleDateString(locale, { weekday: "short" })} ${time}`;
+}
+
+/**
+ * What Loom serves behind a link it started, such as `Folder dist`, or null for a port the user's
+ * own server answers. Old servers send no backing, so their links stay plain port rows. An ended
+ * container link drops its stop time: the container is already gone.
+ */
+export function previewLinkBackingLabel(
+  link: PreviewLink,
+  now: number,
+  locale?: string,
+): string | null {
+  const { backing } = link;
+  if (backing === undefined) return null;
+  if (backing.kind === "folder") return folderLabel(backing.path);
+  const container = `Container ${backing.image}`;
+  const stopsAt = Date.parse(backing.stopsAt);
+  if (link.state !== "open" || Number.isNaN(stopsAt)) return container;
+  if (stopsAt <= now) return `${container}, stopping now`;
+  return `${container}, stops ${containerStopLabel(stopsAt, now, locale)}`;
 }
 
 /** One quiet line in place of the list when the computer has no Library that serves pages. */
