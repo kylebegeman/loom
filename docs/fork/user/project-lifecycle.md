@@ -49,7 +49,8 @@ Files in `data` are never cleared automatically.
 Besides its space, a lane owns things its agents start, and releases them when the lane is
 deleted:
 
-- Servers and watchers started with `lane-run`, and anything listening on the lane's ports.
+- Servers and watchers started with `lane-run`, and anything listening on the lane's ports
+  except the port forwarders of Docker, OrbStack or Podman.
   Add `--detach` to keep a server running after the agent's command returns, for example
   `lane-run --detach --name web npm run dev`; its output goes to a log in the lane's `tmp`
   folder. Each lane has 20 ports; the first is in `LOOM_LANE_PORT`.
