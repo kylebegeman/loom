@@ -74,8 +74,9 @@ A raw `node:http` server bound to `127.0.0.1:<gatewayPort>` (default 3779), beca
 by host before parsing and pipes raw upgrade sockets, which Effect's HTTP server cannot.
 Requests and upgrades pass one decision, in order:
 
-1. Host not a link: 404 "Not found". An ended link still in its restore window: 410 "This
-   preview has ended".
+1. Host not a link label under this computer's suffix and machine name: 404 "Not found". A
+   well-formed host on this computer with no open link (expired, ended or never issued): 410
+   "This preview has ended".
 2. `/__loom/enter` redeems a code (plain requests only). Any other `/__loom/` path: 404.
 3. Exactly one `__Host-loom_pv` cookie that verifies for this host, is unexpired and whose
    session is not signed out. Otherwise 401 "Open this link from Loom".
@@ -144,6 +145,14 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
   (mounted as `preview-links-host` in `ForkRoot`), `PortCardActions.tsx`, `palette.tsx`.
   `systemBrowser.ts` opens the window before awaiting on the web and hands the finished URL
   to the shell on desktop.
+- Web system browser: a link page opens nowhere outside Loom without an entry, so every way
+  out swaps it for a fresh one (`needsPreviewLinkEntry` in contracts skips `/__loom/` pages).
+  `localApi.ts` `shell.openExternal` calls `openPreviewLinkExternally`, covering Alt-click,
+  context menus, `useOpenLink` and the terminal and preview fallbacks. Plain anchor clicks that
+  React leaves to the browser are caught by a window click listener in `PreviewLinksHost`. The
+  preview's "Open in browser" uses `openPreviewInSystemBrowser`, which also turns a loopback
+  address into a link. `McpAppFrame`'s `openLink` calls `window.open` directly and is not
+  covered.
 - Gating: `capabilities.loomFeatures` includes `"preview-links"`
   (`advertised.ts`, `capability.ts`), plus each command's `permissionAtom`.
 - Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `externalUrl.ts`,

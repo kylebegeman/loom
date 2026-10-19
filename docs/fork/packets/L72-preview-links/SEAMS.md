@@ -18,8 +18,9 @@ Every marker is `fork: preview-links`. Lines are the counts `docs/fork/seams.tsv
 | `apps/web/src/browser/openFileInPreview.ts`                              | 4     | `openUrlInPreview` (chat links) resolves through `navigablePreviewUrlFor` and stops when it returns null.                                                                      |
 | `apps/web/src/components/preview/openPreviewSession.ts`                  | 5     | Opening a preview session with a URL resolves it through `navigablePreviewUrlFor`.                                                                                             |
 | `apps/web/src/components/preview/openTerminalLinkInPreview.ts`           | 5     | Terminal links resolve through `navigablePreviewUrlFor`.                                                                                                                       |
-| `apps/web/src/components/preview/PreviewView.tsx`                        | 11    | Server and desktop navigation, and "Open in browser", resolve first, so a link or loopback address gets a fresh entry.                                                         |
+| `apps/web/src/components/preview/PreviewView.tsx`                        | 8     | Server and desktop navigation resolve first, so a link or loopback address gets a fresh entry. "Open in browser" calls `openPreviewInSystemBrowser`.                           |
 | `apps/web/src/components/preview/PreviewLocalServerCard.tsx`             | 3     | Wraps the server row in `PreviewLinkCardActions` for **Copy preview link** and **Open in browser**.                                                                            |
+| `apps/web/src/localApi.ts`                                               | 3     | Imports and one line in `shell.openExternal` that opens a preview link through a fresh entry (`openPreviewLinkExternally`).                                                    |
 | `apps/mobile/src/Stack.tsx`                                              | 2     | Import and the `PreviewLinks` settings screen (`linking: "previews"`, title "Previews").                                                                                       |
 | `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` | 1     | The `"PreviewLinks"` target.                                                                                                                                                   |
 | `apps/mobile/src/features/settings/SettingsRouteScreen.tsx`              | 1     | The "Previews" row after Maintenance.                                                                                                                                          |
@@ -28,12 +29,12 @@ Every marker is `fork: preview-links`. Lines are the counts `docs/fork/seams.tsv
 Why seams and not extension points: web preview navigation has no extension point, and each
 navigation path had to resolve a URL before loading it. The seams are one call to
 `navigablePreviewUrlFor` plus a null check, so the logic stays in
-`apps/web/src/fork/preview-links/navigation.ts`. Mobile has no settings or external-link
-extension point.
+`apps/web/src/fork/preview-links/navigation.ts`. Neither client has an external-link extension
+point, and mobile has no settings one.
 
 ## Registrations (fork-owned files only)
 
-Contracts and shared client code, committed in `64487ea714`:
+Contracts and shared client code:
 
 | File                                                  | Entry                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -44,7 +45,7 @@ Contracts and shared client code, committed in `64487ea714`:
 | `apps/server/src/fork/rpcAuthorization.ts`            | Scopes for all nine tags.                                                      |
 | `apps/server/src/fork/features.ts`                    | `"preview-links"` in `LOOM_SERVER_FEATURES`.                                   |
 
-Server and clients, uncommitted on `feat/preview-links`:
+Server and clients:
 
 | File                                           | Entry                                                                           |
 | ---------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -58,7 +59,8 @@ Server and clients, uncommitted on `feat/preview-links`:
 
 ## Merge check
 
-Not run yet for this packet. Before landing:
+Last run 2026-10-18 against `v0.1.1-nightly.20261018.3335`: the packet adds no conflicting
+files to the ones `main` already has with that tag. Run it again before landing:
 
 ```sh
 git fetch -q upstream --tags
@@ -71,5 +73,5 @@ Conflicts must fall only on the lines above. `check_seams` passes with the rows 
 
 ## FORK.md rows
 
-One paragraph in "Packet seams" (FORK.md uses prose there), listing the eleven files with
+One paragraph in "Packet seams" (FORK.md uses prose there), listing the twelve files with
 their marker counts and linking here and to the user guide. No "Extension point seams" rows.

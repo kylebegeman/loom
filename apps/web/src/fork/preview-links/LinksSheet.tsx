@@ -5,6 +5,7 @@ import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
+  needsPreviewLinkEntry,
   type PreviewLink,
   type PreviewLinkLifetime,
 } from "@t3tools/contracts/fork";
@@ -38,7 +39,7 @@ import { useNowMinute } from "~/hooks/useNowMinute";
 import { useServerConfigs } from "~/state/entities";
 import { usePreparedConnection } from "~/state/session";
 import { LIFETIME_LABELS, canRestore, linkSummary, setupStatus, visibleLinks } from "./links";
-import { Alert, Muted, copyPreviewLink, failureOf, useAction } from "./parts";
+import { Alert, Muted, copyPreviewLink, failureOf, toastFailure, useAction } from "./parts";
 import {
   FEATURE,
   SETTINGS_HASH,
@@ -47,7 +48,7 @@ import {
   previewLinks,
   runCommand,
 } from "./state";
-import { openInSystemBrowser } from "./systemBrowser";
+import { openInSystemBrowser, openPreviewLinkExternally } from "./systemBrowser";
 
 const NO_ACCESS = "This connection cannot manage preview links.";
 
@@ -149,7 +150,8 @@ function EnvironmentLinks({
 }) {
   const result = useAtomValue(previewLinks.snapshot({ environmentId, input: {} }));
   const canOperate = useAtomValue(previewLinks.revoke.permissionAtom(environmentId));
-  const now = Date.parse(useNowMinute());
+  // The shared clock is a UTC minute written without its zone.
+  const now = Date.parse(`${useNowMinute()}Z`);
   const snapshot = Option.getOrNull(AsyncResult.value(result));
   const failure = failureOf(result);
   if (!snapshot) return failure ? <Alert>{failure}</Alert> : <Muted>Loading links...</Muted>;
@@ -244,6 +246,21 @@ function PreviewLinkSections({ openSettings }: { openSettings: () => void }) {
   ));
 }
 
+/**
+ * A plain click on a preview link, with the default system link target, navigates natively and
+ * never reaches `openExternal`, so the browser would get the link without an entry. This runs
+ * after React's handlers, so a link the app already opened, such as in the preview, is skipped.
+ */
+function onPreviewLinkClick(event: MouseEvent) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+  if (!(anchor instanceof HTMLAnchorElement) || !needsPreviewLinkEntry(anchor.href)) return;
+  event.preventDefault();
+  void openPreviewLinkExternally(anchor.href).catch((error: unknown) =>
+    toastFailure("Unable to open preview", error),
+  );
+}
+
 /** Mounted once; palette items, settings and toasts open it through the listener bus. */
 export function PreviewLinksHost() {
   const navigate = useNavigate();
@@ -254,6 +271,10 @@ export function PreviewLinksHost() {
   };
   useEffect(() => onOpenPreviewLinksSheet(() => setOpen(true)), []);
   useEffect(() => onOpenPreviewLinksSettings(openSettings), [openSettings]);
+  useEffect(() => {
+    window.addEventListener("click", onPreviewLinkClick);
+    return () => window.removeEventListener("click", onPreviewLinkClick);
+  }, []);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetPopup side="right">

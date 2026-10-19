@@ -2,8 +2,6 @@
 
 Status: In progress (`feat/preview-links`). Slice 1 is implemented with focused tests; the
 real-client and live-tunnel checks in [TESTING.md](./TESTING.md#still-to-check) are pending.
-Contracts, scopes and shared atoms are committed in `64487ea714`; the server, web and mobile
-work is not committed yet.
 
 Selection: Hosted previews, Kyle 2026-10-18. User guide:
 [Preview links](../../user/preview-links.md).

@@ -37,7 +37,10 @@ import {
   useThreadPreviewState,
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
-import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
+import {
+  navigablePreviewUrlFor,
+  openPreviewInSystemBrowser,
+} from "~/fork/preview-links/navigation"; // fork: preview-links
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
   useEnvironment,
@@ -415,10 +418,7 @@ export function PreviewView({
 
   const handleOpenInBrowser = () => {
     if (!localApi || !url) return;
-    // fork: preview-links: a loopback or link address needs a fresh entry to open outside Loom.
-    void navigablePreviewUrlFor(threadRef, url, undefined) // fork: preview-links
-      .then((target) => (target === null ? undefined : localApi.shell.openExternal(target))) // fork: preview-links
-      .catch(() => undefined); // fork: preview-links
+    void openPreviewInSystemBrowser(threadRef, url); // fork: preview-links
   };
 
   const moveTarget = alternatePreviewRuntime(

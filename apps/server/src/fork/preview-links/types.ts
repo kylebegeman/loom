@@ -1,5 +1,6 @@
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
+import { PREVIEW_LINK_GATEWAY_PATH } from "@t3tools/contracts/fork";
 
 /**
  * The gateway's only view of link state. It is synchronous because it runs on every proxied
@@ -79,9 +80,9 @@ export interface RunPreviewTunnelOptions {
 export const PREVIEW_COOKIE_NAME = "__Host-loom_pv";
 
 /** Every gateway-owned path lives under this prefix on every preview host. */
-export const PREVIEW_RESERVED_PATH = "/__loom/";
+export const PREVIEW_RESERVED_PATH = PREVIEW_LINK_GATEWAY_PATH;
 
-export const PREVIEW_ENTRY_PATH = "/__loom/enter";
+export const PREVIEW_ENTRY_PATH = `${PREVIEW_LINK_GATEWAY_PATH}enter`;
 
 /** Lowercases the Host header and drops its port; null when it is missing or malformed. */
 export function normalizeRequestHost(raw: string | undefined): string | null {

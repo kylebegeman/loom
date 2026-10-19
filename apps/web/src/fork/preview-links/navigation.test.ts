@@ -7,6 +7,7 @@ vi.mock("./navigationDeps", () => ({ appPreviewNavigationDeps: {} }));
 import {
   landingPath,
   navigablePreviewUrlWith,
+  previewLinkEntryUrlWith,
   resolvePreviewNavigationWith,
   type PreviewNavigationDeps,
 } from "./navigation";
@@ -381,5 +382,35 @@ describe("navigablePreviewUrlWith", () => {
       }),
     ).resolves.toBe("https://example.com/");
     expect(reportFailure).not.toHaveBeenCalled();
+  });
+});
+
+describe("previewLinkEntryUrlWith", () => {
+  const LINK = "https://5173-k3f9x2-dorothy.bagels.top/app?x=1";
+
+  it("asks each connected computer until one serves the link", async () => {
+    const { deps, open } = makeDeps({ previewLinkEnvironments: () => [OTHER, REMOTE] });
+    open.mockRejectedValueOnce(notFound());
+    await expect(previewLinkEntryUrlWith(deps, LINK)).resolves.toBe(
+      "https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc",
+    );
+    expect(open.mock.calls.map(([environmentId]) => environmentId)).toEqual([OTHER, REMOTE]);
+    expect(open).toHaveBeenLastCalledWith(REMOTE, { link: LINK, path: "/app?x=1" });
+  });
+
+  it("returns the link itself when no connected computer serves it", async () => {
+    const { deps, open, reportFailure } = makeDeps();
+    open.mockRejectedValue(notFound());
+    await expect(previewLinkEntryUrlWith(deps, LINK)).resolves.toBe(LINK);
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("reports an ended link once and returns null", async () => {
+    const { deps, open, reportFailure } = makeDeps();
+    open.mockRejectedValue(
+      new PreviewLinksError({ reason: "not-restorable", message: "This link has ended." }),
+    );
+    await expect(previewLinkEntryUrlWith(deps, LINK)).resolves.toBeNull();
+    expect(reportFailure).toHaveBeenCalledWith("This link has ended.");
   });
 });

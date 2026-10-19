@@ -236,6 +236,12 @@ const SettingsContentStack = createV5SheetStackNavigator({
     unstable_navigationItemStyle: undefined,
   },
   screens: {
+    // fork: preview-links
+    PreviewLinks: createNativeStackScreen({
+      screen: PreviewLinksRouteScreen,
+      linking: "previews",
+      options: { title: "Previews" },
+    }),
     Settings: createNativeStackScreen({
       screen: SettingsRouteScreen,
       linking: "",
@@ -433,12 +439,6 @@ const SettingsContentStack = createV5SheetStackNavigator({
       options: {
         title: "Usage",
       },
-    }),
-    // fork: preview-links
-    PreviewLinks: createNativeStackScreen({
-      screen: PreviewLinksRouteScreen,
-      linking: "previews",
-      options: { title: "Previews" },
     }),
   },
 });

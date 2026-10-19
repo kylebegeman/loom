@@ -234,3 +234,16 @@ export function looksLikePreviewLinkUrl(url: string): boolean {
     return false;
   }
 }
+
+/** Every gateway page, the single-use entry included, lives under this path on a link's host. */
+export const PREVIEW_LINK_GATEWAY_PATH = "/__loom/";
+
+/**
+ * True for a page a link serves. It opens nowhere until the browser has entered from Loom, so a
+ * client opening it outside Loom swaps it for a fresh entry. Gateway pages open as they are.
+ */
+export function needsPreviewLinkEntry(url: string): boolean {
+  return (
+    looksLikePreviewLinkUrl(url) && !new URL(url).pathname.startsWith(PREVIEW_LINK_GATEWAY_PATH)
+  );
+}

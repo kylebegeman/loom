@@ -323,8 +323,9 @@ apps/web/src/browser/browserTargetResolver.test.ts	preview-links	15
 apps/web/src/browser/openFileInPreview.ts	preview-links	4
 apps/web/src/components/preview/openPreviewSession.ts	preview-links	5
 apps/web/src/components/preview/openTerminalLinkInPreview.ts	preview-links	5
-apps/web/src/components/preview/PreviewView.tsx	preview-links	11
+apps/web/src/components/preview/PreviewView.tsx	preview-links	8
 apps/web/src/components/preview/PreviewLocalServerCard.tsx	preview-links	3
+apps/web/src/localApi.ts	preview-links	3
 apps/mobile/src/Stack.tsx	preview-links	2
 apps/mobile/src/features/settings/components/settings-sheet-targets.ts	preview-links	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	preview-links	1

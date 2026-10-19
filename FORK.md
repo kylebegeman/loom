@@ -233,13 +233,14 @@ client cannot reach becomes a link and a link becomes a fresh single-use entry:
 `apps/web/src/browser/openFileInPreview.ts` (4),
 `apps/web/src/components/preview/openPreviewSession.ts` (5),
 `apps/web/src/components/preview/openTerminalLinkInPreview.ts` (5) and
-`apps/web/src/components/preview/PreviewView.tsx` (11).
+`apps/web/src/components/preview/PreviewView.tsx` (8).
 `apps/web/src/components/preview/PreviewLocalServerCard.tsx` (3) adds the copy and open
-buttons to each server. On mobile, `apps/mobile/src/Stack.tsx` (2),
+buttons to each server, and `apps/web/src/localApi.ts` (3) opens a link in the system browser
+through a fresh entry. On mobile, `apps/mobile/src/Stack.tsx` (2),
 `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` (1) and
 `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` (1) add the Previews screen, and
-`apps/mobile/src/features/threads/ThreadFeed.tsx` (2) opens a thread's preview links through
-Loom. See the [L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
+`apps/mobile/src/lib/openExternalUrl.ts` (2) opens preview links leaving the app through a
+fresh entry. See the [L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
 [user help](docs/fork/user/preview-links.md).
 
 ## Identifiers kept on purpose

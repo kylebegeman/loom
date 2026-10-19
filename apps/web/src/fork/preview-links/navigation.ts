@@ -5,6 +5,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
+  PREVIEW_LINK_GATEWAY_PATH,
   PreviewLinksError,
   looksLikePreviewLinkUrl,
   type PreviewLink,
@@ -15,7 +16,9 @@ import {
 } from "@t3tools/contracts/fork";
 import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 import * as Schema from "effect/Schema";
+import { ensureLocalApi } from "~/localApi";
 import { appPreviewNavigationDeps } from "./navigationDeps";
+import { openInSystemBrowser } from "./systemBrowser";
 
 export interface PreviewNavigationRequest {
   readonly url: string;
@@ -44,12 +47,9 @@ export interface PreviewNavigationDeps {
   readonly reportFailure: (message: string) => void;
 }
 
-/** The gateway serves its own pages here, such as the single-use entry. */
-const RESERVED_PATH_PREFIX = "/__loom/";
-
 /** Path, query and fragment to land on. A stale entry or gateway page lands on the root. */
 export function landingPath(url: URL): string {
-  return url.pathname.startsWith(RESERVED_PATH_PREFIX)
+  return url.pathname.startsWith(PREVIEW_LINK_GATEWAY_PATH)
     ? "/"
     : `${url.pathname}${url.search}${url.hash}`;
 }
@@ -84,24 +84,23 @@ const parseUrl = (url: string): URL | null => {
 
 /** The thread's environment first: it most likely serves a link its agent posted. */
 export function linkOwnerCandidates(
-  preferred: EnvironmentId,
+  preferred: EnvironmentId | null,
   environments: ReadonlyArray<EnvironmentId>,
 ): ReadonlyArray<EnvironmentId> {
-  return environments.includes(preferred)
+  return preferred !== null && environments.includes(preferred)
     ? [preferred, ...environments.filter((environmentId) => environmentId !== preferred)]
     : environments;
 }
 
+/** The URL that opens a link through the computer serving it, or null when none connected does. */
 async function openLinkUrl(
   deps: PreviewNavigationDeps,
-  request: PreviewNavigationRequest,
   url: URL,
-): Promise<string> {
+  preferred: EnvironmentId | null,
+  runtime: PreviewRuntime | undefined,
+): Promise<string | null> {
   const path = landingPath(url);
-  for (const environmentId of linkOwnerCandidates(
-    request.environmentId,
-    deps.previewLinkEnvironments(),
-  )) {
+  for (const environmentId of linkOwnerCandidates(preferred, deps.previewLinkEnvironments())) {
     let entry: PreviewLinkEntry;
     try {
       entry = await deps.open(environmentId, { link: url.href, path });
@@ -112,12 +111,11 @@ async function openLinkUrl(
       throw error;
     }
     // A browser drawn on the link's own computer skips the tunnel and its sign-in.
-    return request.runtime === "server" && environmentId === request.environmentId
+    return runtime === "server" && environmentId === preferred
       ? `http://localhost:${entry.link.port}${path}`
       : entry.url;
   }
-  // No connected computer owns it, so it is somebody else's page.
-  return request.url;
+  return null;
 }
 
 async function shareLoopbackUrl(
@@ -160,7 +158,10 @@ export async function resolvePreviewNavigationWith(
 ): Promise<string> {
   const url = parseUrl(request.url);
   if (url === null) return request.url;
-  if (looksLikePreviewLinkUrl(url.href)) return openLinkUrl(deps, request, url);
+  if (looksLikePreviewLinkUrl(url.href)) {
+    // No connected computer owns it, so it is somebody else's page.
+    return (await openLinkUrl(deps, url, request.environmentId, request.runtime)) ?? request.url;
+  }
   if (!isLoopbackHost(url.hostname)) return request.url;
   if (request.runtime === "server" || deps.reachesLoopback(request.environmentId)) {
     return request.url;
@@ -192,9 +193,51 @@ export async function navigablePreviewUrlWith(
 export const navigablePreviewUrl = (request: PreviewNavigationRequest) =>
   navigablePreviewUrlWith(appPreviewNavigationDeps, request);
 
+/**
+ * For a link opened outside any thread, such as in the system browser: a fresh entry from
+ * whichever connected computer serves it, the link itself when none does, or null once the
+ * failure has been shown.
+ */
+export async function previewLinkEntryUrlWith(
+  deps: PreviewNavigationDeps,
+  link: string,
+): Promise<string | null> {
+  const url = parseUrl(link);
+  if (url === null) return link;
+  try {
+    return (await openLinkUrl(deps, url, null, undefined)) ?? link;
+  } catch (error) {
+    deps.reportFailure(failureMessage(error));
+    return null;
+  }
+}
+
+export const previewLinkEntryUrl = (link: string) =>
+  previewLinkEntryUrlWith(appPreviewNavigationDeps, link);
+
 /** For upstream seams, which keep each change to one line: a thread's preview URL to load. */
 export const navigablePreviewUrlFor = (
   threadRef: ScopedThreadRef,
   url: string,
   runtime: PreviewRuntime | undefined,
 ) => navigablePreviewUrl({ url, environmentId: threadRef.environmentId, runtime });
+
+/**
+ * For the preview's "Open in browser". A loopback or link address may need a fresh entry
+ * first, so it opens through a window taken while the click still counts as a user gesture.
+ */
+export async function openPreviewInSystemBrowser(
+  threadRef: ScopedThreadRef,
+  url: string,
+): Promise<void> {
+  const parsed = parseUrl(url);
+  const resolves =
+    parsed !== null && (looksLikePreviewLinkUrl(parsed.href) || isLoopbackHost(parsed.hostname));
+  try {
+    await (resolves
+      ? openInSystemBrowser(() => navigablePreviewUrlFor(threadRef, url, undefined))
+      : ensureLocalApi().shell.openExternal(url));
+  } catch (error) {
+    appPreviewNavigationDeps.reportFailure(failureMessage(error));
+  }
+}

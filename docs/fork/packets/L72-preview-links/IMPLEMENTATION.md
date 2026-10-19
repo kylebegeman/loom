@@ -1,7 +1,6 @@
 # L72 implementation plan
 
-Slice 1 was built in this order on `feat/preview-links`. Steps 1 and 2 are committed in
-`64487ea714`; the rest is in the working tree.
+Slice 1 was built in this order on `feat/preview-links`.
 
 ## Before starting
 
@@ -26,12 +25,11 @@ install's.
 7. MCP toolkit (`mcp.ts`) and its entry in `FORK_MCP_TOOLKITS`.
 8. Web: navigation and its upstream seams, settings section, links sheet, port card actions,
    palette source.
-9. Mobile: Previews screen, settings row and route, thread link interception.
+9. Mobile: Previews screen, settings row and route, external link interception.
 10. Docs: this packet, the user guide, FORK.md, the packet index and IMPLEMENT-NOW.
 
 ## Remaining for slice 1
 
-- Commit the server, web and mobile work on `feat/preview-links`.
 - Run the merge check in [SEAMS.md](./SEAMS.md#merge-check).
 - Run the real-client and live-tunnel checks in [TESTING.md](./TESTING.md#still-to-check),
   then set the index Status.

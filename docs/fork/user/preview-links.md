@@ -49,8 +49,9 @@ Setup is in the web and desktop apps. The mobile app shows each computer's statu
 ## Sharing a port
 
 When you open a local address such as `localhost:5173` from a device that cannot reach that
-computer, Loom shares the port and opens the link for you. This covers the preview panel,
-links in chat and the terminal, and **Open in browser**.
+computer, Loom shares the port and opens the link for you. This covers the preview panel and
+its **Open in browser**, plus links in chat and the terminal when **Open links in** is set to
+**T3 Code**.
 
 In the preview panel, each running server has two buttons:
 
@@ -118,10 +119,10 @@ out. Open the link from Loom again.
 
 ## Other pages you may see
 
-- **This preview has ended**: the link expired or was ended. Restore it or share the port
-  again.
+- **This preview has ended**: the link expired, was ended or no longer exists. Restore it if
+  it is still listed, or share the port again.
 - **Nothing is answering on port 5173 yet**: start the server on the computer, then reload.
 - **This port can't be previewed**: the port is one Loom keeps private.
 - **Request blocked**: a request came from another site, so Loom did not pass it on.
-- **Not found**: the address does not belong to an open or recently ended link on the
-  computer that answered. Check the domain, the computer name and the DNS record.
+- **Not found**: the address is for a different domain or computer name than the computer
+  that answered. Check the domain, the computer name and the DNS record.

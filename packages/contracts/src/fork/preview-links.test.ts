@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   looksLikePreviewLinkUrl,
+  needsPreviewLinkEntry,
   parsePreviewLinkHost,
   PreviewLinksSettings,
   PreviewLinkSuffix,
@@ -40,6 +41,16 @@ describe("looksLikePreviewLinkUrl", () => {
     expect(looksLikePreviewLinkUrl("http://5173-k3f9x2-dorothy.bagels.top/")).toBe(false);
     expect(looksLikePreviewLinkUrl("https://bagels.top/")).toBe(false);
     expect(looksLikePreviewLinkUrl("not a url")).toBe(false);
+  });
+});
+
+describe("needsPreviewLinkEntry", () => {
+  it.each([
+    ["https://5173-k3f9x2-dorothy.bagels.top/app?x=1", true],
+    ["https://5173-k3f9x2-dorothy.bagels.top/__loom/enter?code=abc", false],
+    ["https://github.com/pingdotgg/t3code", false],
+  ])("%s needs an entry: %s", (url, expected) => {
+    expect(needsPreviewLinkEntry(url)).toBe(expected);
   });
 });
 
