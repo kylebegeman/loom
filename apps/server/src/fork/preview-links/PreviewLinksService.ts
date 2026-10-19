@@ -145,6 +145,12 @@ export interface PreviewLinksSession {
 }
 
 const PREVIEW_COOKIE_MAX_AGE_MS = PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000;
+/**
+ * How long a DPoP session still counts after it runs out. Its client asks for the next session
+ * only once the server closes its socket at expiry, so the subject has no session for the few
+ * seconds the reconnect takes.
+ */
+const DPOP_RENEWAL_GRACE_MS = 5 * 60 * 1000;
 
 interface EntryCode {
   readonly host: string;
@@ -250,13 +256,15 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   let tunnel: TunnelRuntime | null = null;
   const entryCodes = new Map<string, EntryCode>();
   /**
-   * Loom sessions by id, with the access key their cookies carry. Seeded from the session store
-   * at start, so a device removed while this server was down never gets back in. Kept past
-   * expiry for as long as a cookie could outlive them, so a removal reported after a session ran
-   * out still reads as expiry.
+   * Loom sessions by id, with the access key their cookies carry and when they stop counting.
+   * Seeded from the session store at start, so a device removed while this server was down never
+   * gets back in.
    */
-  const sessionKeys = new Map<string, { readonly key: string; readonly expiresAtMs: number }>();
-  /** Access keys with an unexpired session, each with its latest session expiry. */
+  const sessionKeys = new Map<
+    string,
+    { readonly key: string; readonly expiresAtMs: number; readonly liveUntilMs: number }
+  >();
+  /** Access keys with a session that still counts, each until the latest one stops. */
   let liveKeys = new Map<string, number>();
   /** Sessions removed while running, so an upsert that arrives late cannot bring one back. */
   const removedSessions = new Map<string, number>();
@@ -803,9 +811,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     for (const [sid, untilMs] of removedSessions) if (untilMs <= nowMs) removedSessions.delete(sid);
     for (const [key, atMs] of revokedKeys) if (atMs <= forgetUntil) revokedKeys.delete(key);
     const next = new Map<string, number>();
-    for (const [sid, { key, expiresAtMs }] of sessionKeys) {
-      if (expiresAtMs <= forgetUntil) sessionKeys.delete(sid);
-      else if (expiresAtMs > nowMs) next.set(key, Math.max(next.get(key) ?? 0, expiresAtMs));
+    for (const [sid, { key, liveUntilMs }] of sessionKeys) {
+      if (liveUntilMs <= nowMs) sessionKeys.delete(sid);
+      else next.set(key, Math.max(next.get(key) ?? 0, liveUntilMs));
     }
     const ended = new Set([...liveKeys.keys()].filter((key) => !next.has(key)));
     if (alsoEnd !== undefined) ended.add(alsoEnd);
@@ -816,9 +824,12 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   // An upsert read just before a revoke committed can arrive after its removal; the removal wins.
   const admitSession = (session: AuthClientSession, nowMs: number) => {
     if (removedSessions.has(session.sessionId)) return;
+    const expiresAtMs = session.expiresAt.epochMilliseconds;
     sessionKeys.set(session.sessionId, {
       key: previewAccessKey(session),
-      expiresAtMs: session.expiresAt.epochMilliseconds,
+      expiresAtMs,
+      liveUntilMs:
+        session.method === "dpop-access-token" ? expiresAtMs + DPOP_RENEWAL_GRACE_MS : expiresAtMs,
     });
     refreshSessions(nowMs);
     // The timer may be sleeping past this session's expiry.
@@ -830,19 +841,17 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
    * Returns whether it revoked the key.
    */
   const removeSession = (sid: string, nowMs: number) => {
-    const known = sessionKeys.get(sid);
-    sessionKeys.delete(sid);
     removedSessions.set(sid, nowMs + PREVIEW_COOKIE_MAX_AGE_MS);
+    const known = sessionKeys.get(sid);
     // The store also reports a session removed when it disconnects after running out, which a
-    // DPoP session does every hour. That is expiry, so the rest of its subject stays in.
-    if (known !== undefined && known.expiresAtMs <= nowMs) {
-      refreshSessions(nowMs);
-      return false;
-    }
-    const key = known?.key ?? sid;
-    revokedKeys.set(key, nowMs);
-    for (const [code, entry] of entryCodes) if (entry.key === key) entryCodes.delete(code);
-    refreshSessions(nowMs, key);
+    // DPoP session does every hour. That is expiry: the session keeps its grace and the rest of
+    // its subject stays in. One not known here has run out already or was never seen, so it names
+    // no key to revoke: its own cannot come back, and a DPoP removal does not say its subject.
+    if (known === undefined || known.expiresAtMs <= nowMs) return false;
+    sessionKeys.delete(sid);
+    revokedKeys.set(known.key, nowMs);
+    for (const [code, entry] of entryCodes) if (entry.key === known.key) entryCodes.delete(code);
+    refreshSessions(nowMs, known.key);
     return true;
   };
 

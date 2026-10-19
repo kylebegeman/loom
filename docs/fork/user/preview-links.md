@@ -105,9 +105,10 @@ Removing a device's access to Loom also signs out the browsers it opened links i
 stay out after the computer restarts. The same happens when a device's Loom sign-in runs out,
 even while that device is offline. Pages already open in those browsers lose their connection
 too. Devices that reach this computer through T3 Connect count as one device here: removing
-any of them signs out the browsers opened from all of them. Restarting the desktop app signs
-out the browsers it opened links in. To be certain every browser is out, use **Sign out
-preview browsers**.
+any of them signs out the browsers opened from all of them. Their sign-in renews every hour,
+so their browsers stay in for 5 minutes after it runs out. Restarting the desktop app signs
+out the browsers it opened links in from the computer it runs on. To be certain every browser
+is out, use **Sign out preview browsers**.
 
 ## "Open this link from Loom"
 

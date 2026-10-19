@@ -81,13 +81,18 @@ new id, so its key is `dpop:<subject>` and a browser stays in across the roll. S
 not carry the proof key's thumbprint, so the subject is the finest grouping available without
 a schema change, and every T3 Connect device shares the subject `cloud-connect`.
 
-- A key is live while any of its sessions is unexpired, using the sessions the store lists at
-  start and the changes it sends after.
+- A key is live while any of its sessions still counts, using the sessions the store lists at
+  start and the changes it sends after. A session counts until it expires, and a DPoP session
+  for 5 minutes more: its client asks for the next session only once the server closes its
+  socket at expiry, so without the grace its browsers would lose their sockets and streams and
+  get 401 for the seconds every hourly reconnect takes.
 - Removing a session revokes its key for every cookie and entry code minted up to that moment.
   A later entry works again while another session of the key is live.
 - The store also reports a session removed when its socket closes after the session ran out,
   which a DPoP session does every hour. A removal of a session already past its expiry counts
-  as expiry, so the rest of its key stays in.
+  as expiry: the session keeps its grace and the rest of its key stays in. A removal of a
+  session this server does not know revokes nothing. Its key is either the session id, which
+  cannot be admitted again, or a DPoP subject the removal does not name.
 
 ### Gateway
 
@@ -117,14 +122,15 @@ length and the shared keep-alive upstream would read it as more requests. Respon
 `Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
 `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
 no-store` plus `X-Robots-Tag: noindex, nofollow` on everything. A refused port answers 502
-"Nothing is answering on port N yet", upgrades included. An upgrade goes upstream with
-`http.request` on a socket of its own, and nothing the browser sends is relayed until the
-upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back and both
-sides are piped. Any other answer is sent with the response rewrites and `Connection: close`,
-then both sockets close, because `cloudflared` pools gateway connections across visitors and
-a connection left open to the upstream would skip every check. Running requests and upgrades
-are tracked by host and access key, so ending a link, signing out, removing a client or its
-key expiring closes them, event streams included. A view that throws costs one 500 response.
+"Nothing is answering on port N yet", and an upgrade to one gets a bare 502. An upgrade goes
+upstream with `http.request` on a socket of its own, and nothing the browser sends is relayed
+until the upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back
+and both sides are piped. Any other answer is sent with the response rewrites and
+`Connection: close`, then both sockets close, because `cloudflared` pools gateway connections
+across visitors and a connection left open to the upstream would skip every check. Running
+requests and upgrades are tracked by host and access key, so ending a link, signing out,
+removing a client or its key expiring closes them, event streams included. A view that throws
+costs one 500 response.
 Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
 to listen on port N." and retry on the next save.
 
@@ -152,8 +158,9 @@ ends a lane link only after it has seen that lane present and then gone.
 ## Storage
 
 - `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links, revokedKeys }`,
-  written with `writeFileStringAtomically`. Missing gives the defaults (off, no domain, machine from the
-  host name, 12 hours, port 3779). Unreadable logs a warning and gives the defaults.
+  written with `writeFileStringAtomically`. Missing gives the defaults (off, no domain,
+  machine from the host name, 12 hours, port 3779). Unreadable logs a warning and gives the
+  defaults.
 - Links are bounded: the sweep expires open links at `expiresAt` (dating the end there, so
   downtime does not stretch the restore window) and drops ended links past
   `restorableUntil`.
@@ -163,9 +170,9 @@ ends a lane link only after it has seen that lane present and then gone.
 - `revokedKeys` holds when each access key last lost a session to removal, kept for 12 hours,
   the longest a cookie lives. It is saved because a DPoP subject's other sessions are listed
   again after a restart and would make the key live for cookies minted before the removal.
-- In memory only: entry codes, each Loom session's access key and expiry (rebuilt from the
-  session store's active sessions at every start), sessions removed while running (12 hours)
-  and running requests and upgrades.
+- In memory only: entry codes, each Loom session's access key and when it stops counting
+  (rebuilt from the session store's active sessions at every start), sessions removed while
+  running (12 hours) and running requests and upgrades.
 
 A sidecar file instead of fork tables: the data is small, per computer, and read whole.
 
@@ -273,12 +280,16 @@ entry per running request or upgrade, removed when it closes.
   same holds for a session revoked while the server is down. For a DPoP session the restart
   does not help while another session of its subject is still listed.
 - If the session store cannot be listed at start, every preview cookie is refused until its
-  Loom client reconnects.
+  Loom client reconnects. A DPoP session removed before this server knew it (the list failed,
+  or it was removed between subscribing to changes and reading the list) revokes nothing,
+  because a removal carries only the session id. Its browsers stay in while another session of
+  its subject is live.
 - Removing one T3 Connect device signs out the browsers opened from every T3 Connect device,
   because they share one access key. A T3 Connect device that just stops connecting keeps its
-  browsers in while another one stays signed in, up to the cookie's 12 hours.
-- Restarting the desktop app replaces its Loom session, and the store reports that as a
-  removal, so browsers opened from the desktop app have to enter again.
+  browsers in for 5 minutes after its last session runs out, and while another one stays
+  signed in, up to the cookie's 12 hours.
+- Restarting the desktop app replaces its session on its own computer, and the store reports
+  that as a removal, so browsers it opened that computer's links in have to enter again.
 - Idle keep-alive connections are not cut when a link ends; running requests on them are.
   Each request is re-authorized, so the next request on them fails.
 - `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.

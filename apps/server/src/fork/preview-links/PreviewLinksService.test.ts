@@ -195,6 +195,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     view: null as PreviewGatewayView | null,
     destroyed: yield* Queue.unbounded<(connection: Connection) => boolean>(),
   };
+  // See `sessionChangesHandled`. A marker's drops go to their own queue, out of the tests' way.
+  let markers = 0;
+  let pendingMarker: string | null = null;
+  const markerDropped = yield* Queue.unbounded<void>();
   const startGateway: StartPreviewGateway = ({ port, view }) =>
     Effect.gen(function* () {
       if (port === options.failGatewayPort) {
@@ -210,7 +214,11 @@ const makeHarness = Effect.fn("makeHarness")(function* (
       return {
         port,
         destroyConnections: (match) => {
-          Queue.offerUnsafe(gateway.destroyed, match);
+          if (pendingMarker !== null && match({ host: "", key: pendingMarker })) {
+            Queue.offerUnsafe(markerDropped, undefined);
+          } else {
+            Queue.offerUnsafe(gateway.destroyed, match);
+          }
         },
       };
     });
@@ -316,12 +324,22 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         clientSession: clientSession(sessionId, expiresAtMs, dpopSubject),
       }),
     /**
-     * Session changes are handled in order, so once a later removal drops its connections every
-     * change published before it has landed. Needs a running gateway.
+     * Session changes are handled in order, so once a marker session signs in and its removal
+     * drops its connections, every change published before it has landed. Needs a running gateway.
      */
-    sessionChangesHandled: removeSession("unrelated-session").pipe(
-      Effect.andThen(Queue.take(gateway.destroyed)),
-    ),
+    sessionChangesHandled: Effect.suspend(() => {
+      markers += 1;
+      const marker = `marker-${markers}`;
+      pendingMarker = marker;
+      return PubSub.publish(sessionChanges, {
+        type: "clientUpserted",
+        clientSession: clientSession(marker, sessionsExpireAt),
+      }).pipe(
+        Effect.andThen(removeSession(marker)),
+        Effect.andThen(Queue.take(markerDropped)),
+        Effect.ensuring(Effect.sync(() => void (pendingMarker = null))),
+      );
+    }),
     setLanes: (enabled: boolean, laneIds: ReadonlyArray<string>) =>
       SubscriptionRef.set(lifecycleChanges, lifecycleStatus(enabled, laneIds)),
   };
@@ -639,13 +657,16 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.sessionChangesHandled;
       const cookie = yield* enter("relay-a");
 
-      yield* TestClock.adjust("50 minutes");
-      yield* harness.upsertSession("relay-b", start + 110 * 60 * 1000, "cloud-connect");
-      yield* harness.sessionChangesHandled;
-      yield* TestClock.adjust("20 minutes");
-      // The store reports relay-a removed once its socket closes after it ran out.
+      // The client asks for its next session only once relay-a runs out and the store closes its
+      // socket, which the store reports as a removal.
+      yield* TestClock.adjust("1 hour");
       yield* harness.removeSession("relay-a");
       yield* harness.sessionChangesHandled;
+      expect(view.authorize(link.host, cookie)).toEqual(family);
+      yield* TestClock.adjust("2 seconds");
+      yield* harness.upsertSession("relay-b", start + 2 * HOUR + 2000, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      yield* TestClock.adjust("10 minutes");
       expect(Option.isNone(yield* Queue.poll(harness.gateway.destroyed))).toBe(true);
       expect(view.authorize(link.host, cookie)).toEqual(family);
 
@@ -660,6 +681,39 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.sessionChangesHandled;
       expect(view.authorize(link.host, cookie)).toBeNull();
       expect(view.authorize(link.host, yield* enter("relay-c"))).toEqual(family);
+    }),
+  );
+
+  it.effect("ends a T3 Connect browser's access once its device stays away past the grace", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ activeSessions: [] });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      const start = yield* Clock.currentTimeMillis;
+      yield* harness.upsertSession("relay-a", start + HOUR, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      const entry = yield* harness.service.open(
+        { link: link.id },
+        clientSession("relay-a", start + HOUR, "cloud-connect"),
+      );
+      const cookie = view.redeem(link.host, codeOf(entry.url))?.cookieValue ?? "";
+      const family = { key: "dpop:cloud-connect", sub: "cloud-connect" };
+
+      yield* TestClock.adjust("1 hour");
+      yield* harness.removeSession("relay-a");
+      yield* harness.sessionChangesHandled;
+      yield* TestClock.adjust("4 minutes");
+      expect(view.authorize(link.host, cookie)).toEqual(family);
+      yield* TestClock.adjust("1 minute");
+      expect(view.authorize(link.host, cookie)).toBeNull();
+      const ended = yield* Queue.take(harness.gateway.destroyed);
+      expect(ended({ host: link.host, key: "dpop:cloud-connect" })).toBe(true);
+
+      // Running out revokes nothing, so the device's next session lets the same browser back in.
+      yield* harness.upsertSession("relay-b", start + 2 * HOUR, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      expect(view.authorize(link.host, cookie)).toEqual(family);
     }),
   );
 
