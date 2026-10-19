@@ -33,6 +33,7 @@ import {
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
+import { ledgerLine, normalizeStart } from "./leases.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
 import { GB } from "./policy.ts";
 import { makeWith, type ProjectLifecycleOptions } from "./ProjectLifecycleService.ts";
@@ -89,18 +90,33 @@ const writeStubs = (home: string) => {
     "xcrun",
     `[ "$2" = list ] && printf '{"devices":{"iOS":[{"udid":"${SIMULATOR}","name":"Lane Phone","state":"Booted"}]}}'`,
   );
-  // Lists one container and one volume labelled for the lane id in <home>/lane-id.
+  // Lists one container and one volume labelled for the lane id in <home>/lane-id, and the
+  // published ports in <home>/published. `rm` logs which listeners were still alive. A
+  // <home>/docker-down file makes it answer as Docker does when it is installed but not running.
   stub(
     "docker",
-    `lane=$(cat '${home}/lane-id' 2>/dev/null)
+    `[ -e '${home}/docker-down' ] && exit 1
+case "$1 $2" in
+  "ps --format") cat '${home}/published' 2>/dev/null; exit 0 ;;
+  "rm -f")
+    for pid in $(awk '{ print $1 }' '${home}/listening' 2>/dev/null); do
+      kill -0 "$pid" 2>/dev/null && echo "listener $pid alive" >> '${log}'
+    done
+    exit 0 ;;
+esac
+lane=$(cat '${home}/lane-id' 2>/dev/null)
 [ -n "$lane" ] || exit 0
 case "$1 $2" in
   "ps -a") printf 'c0ffee\\t%s\\tdb\\trunning\\n' "$lane" ;;
   "volume ls") printf 'db-data\\t%s\\n' "$lane" ;;
 esac`,
   );
-  // Reports the pids in <home>/listening as listeners on the lane's ports.
-  stub("lsof", `[ -s '${home}/listening' ] || exit 1\nsed 's/^/p/' '${home}/listening'`);
+  // Reports each `pid [port [command]]` line of <home>/listening as a lane port listener.
+  stub(
+    "lsof",
+    `[ -s '${home}/listening' ] || exit 1
+awk '{ print "p" $1; if ($3 != "") print "c" $3; print "f3"; if ($2 != "") print "n127.0.0.1:" $2 }' '${home}/listening'`,
+  );
   return { stubs, log };
 };
 
@@ -715,6 +731,156 @@ describe("ProjectLifecycleService", () => {
       );
       expect(log).toContain(`xcrun simctl delete ${SIMULATOR}`);
       expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("removes lane containers before stopping listeners and spares Docker's forwarders", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      NodeFS.writeFileSync(`${t.home}/lane-id`, lane.id);
+      const sleeper = () => {
+        const child = NodeChildProcess.spawn("/bin/sleep", ["60"], { stdio: "ignore" });
+        return child.pid!;
+      };
+      const server = sleeper();
+      const forwarder = sleeper();
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const pid of [server, forwarder]) if (alive(pid)) process.kill(pid, "SIGKILL");
+        }),
+      );
+      const base = lane.portBase!;
+      // Some container on the computer publishes the forwarder's port; the server listens
+      // beside it, and so does this server, which is never a lease.
+      NodeFS.writeFileSync(
+        `${t.home}/published`,
+        `127.0.0.1:${base + 3}->80/tcp, [::]:${base + 3}->80/tcp\n5432/tcp\n`,
+      );
+      NodeFS.writeFileSync(
+        `${t.home}/listening`,
+        `${server} ${base + 1} node\n${forwarder} ${base + 3} sleep\n${process.pid} ${base + 5} node\n`,
+      );
+
+      const view = yield* t.service.laneView(lane.id);
+      expect(view.leases.filter((lease) => lease.kind === "process")).toEqual([
+        { kind: "process", ref: String(server), label: "Listening on a lane port" },
+      ]);
+      for (const pid of [forwarder, process.pid]) {
+        const refused = yield* t.service
+          .releaseLease(lane.id, "process", String(pid))
+          .pipe(Effect.flip);
+        expect(refused.reason).toBe("not-found");
+      }
+
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      const log = calls(t.log);
+      // The server was still up when its lane's container went.
+      expect(log).toContain(`listener ${server} alive`);
+      expect(log.indexOf("docker rm -f c0ffee")).toBeLessThan(
+        log.indexOf("docker volume rm -f db-data"),
+      );
+      expect(alive(server)).toBe(false);
+      expect(alive(forwarder)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("spares a runtime's forwarder by name when Docker does not answer", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      NodeFS.writeFileSync(`${t.home}/docker-down`, "");
+      const sleeper = () => {
+        const child = NodeChildProcess.spawn("/bin/sleep", ["60"], { stdio: "ignore" });
+        return child.pid!;
+      };
+      const server = sleeper();
+      const backend = sleeper();
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const pid of [server, backend]) if (alive(pid)) process.kill(pid, "SIGKILL");
+        }),
+      );
+      const base = lane.portBase!;
+      NodeFS.writeFileSync(
+        `${t.home}/listening`,
+        `${server} ${base} node\n${backend} ${base + 2} com.docker.backend\n`,
+      );
+
+      const view = yield* t.service.laneView(lane.id);
+      expect(view.leases.map((lease) => lease.ref)).toEqual([String(server)]);
+      // Once seen forwarding a lane port, it cannot be handed to the lane by mistake.
+      const refused = yield* t.service
+        .adoptLease(lane.id, "process", String(backend), "docker")
+        .pipe(Effect.flip);
+      expect(refused.reason).toBe("unsupported");
+      expect(refused.message).toContain(`loom.lane=${lane.id}`);
+
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      expect(alive(server)).toBe(false);
+      expect(alive(backend)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("never stops a runtime a ledger names, even once it stops listening", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      NodeFS.writeFileSync(`${t.home}/lane-id`, lane.id);
+      // ps reports the link's name on Linux and its path on macOS; both name Docker's backend.
+      const executable = `${t.home}/com.docker.backend`;
+      NodeFS.symlinkSync("/bin/sleep", executable);
+      const backend = NodeChildProcess.spawn(executable, ["60"], { stdio: "ignore" }).pid!;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (alive(backend)) process.kill(backend, "SIGKILL");
+        }),
+      );
+
+      const refused = yield* t.service
+        .adoptLease(lane.id, "process", String(backend), "docker")
+        .pipe(Effect.flip);
+      expect(refused.reason).toBe("unsupported");
+
+      // A ledger entry written before adoption refused runtimes. Docker has already closed the
+      // forwarder's lane port, so nothing about the lane's ports points at it.
+      const started = NodeChildProcess.execFileSync(
+        "ps",
+        ["-o", "lstart=", "-p", String(backend)],
+        {
+          env: { ...process.env, LC_ALL: "C" },
+          encoding: "utf8",
+        },
+      );
+      NodeFS.appendFileSync(
+        `${lane.laneDir}/leases.tsv`,
+        ledgerLine({
+          kind: "process",
+          ref: String(backend),
+          label: "docker",
+          stamp: normalizeStart(started),
+        }),
+      );
+      const view = yield* t.service.laneView(lane.id);
+      expect(view.leases).toContainEqual({
+        kind: "process",
+        ref: String(backend),
+        label: "docker",
+      });
+      const kept = yield* t.service
+        .releaseLease(lane.id, "process", String(backend))
+        .pipe(Effect.flip);
+      expect(kept.reason).toBe("unsupported");
+
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      expect(calls(t.log)).toContain("docker rm -f c0ffee");
+      expect(alive(backend)).toBe(true);
     }).pipe(Effect.scoped),
   );
 });

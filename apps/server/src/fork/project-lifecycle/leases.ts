@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Leases are found with stat and signalled by pid.
 import * as NodeFSP from "node:fs/promises";
 import type { LaneLease } from "@t3tools/contracts/fork";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ProcessRunner } from "../../processRunner.ts";
@@ -133,14 +134,93 @@ export const parseDocker = (kind: DockerResource["kind"], stdout: string) =>
     return [{ kind, ref, laneId, label }];
   });
 
-/** `lsof -F p` prints one `p<pid>` line per process. */
-export const parseLsofPids = (stdout: string) =>
-  new Set(
-    stdout
-      .split("\n")
-      .filter((line) => /^p\d+$/.test(line))
-      .map((line) => Number(line.slice(1))),
-  );
+export interface Listener {
+  readonly command: string;
+  readonly ports: ReadonlySet<number>;
+}
+
+/** `lsof -F pcn` prints `p<pid>` and `c<command>`, then `f<fd>` and `n<address>` per socket. */
+export const parseLsofListeners = (stdout: string) => {
+  const listeners = new Map<number, { command: string; ports: Set<number> }>();
+  let current: { command: string; ports: Set<number> } | undefined;
+  for (const line of stdout.split("\n")) {
+    const value = line.slice(1);
+    if (line.startsWith("p")) {
+      current = /^\d+$/.test(value) ? { command: "", ports: new Set() } : undefined;
+      if (current) listeners.set(Number(value), current);
+    } else if (current && line.startsWith("c")) current.command = value;
+    else if (current && line.startsWith("n")) {
+      const port = /:(\d+)$/.exec(value)?.[1];
+      if (port !== undefined) current.ports.add(Number(port));
+    }
+  }
+  return listeners;
+};
+
+/**
+ * Host ports from `docker ps --format '{{.Ports}}'`, for example
+ * `127.0.0.1:41003->80/tcp, [::]:41003->80/tcp` or `0.0.0.0:41003-41005->80-82/tcp`.
+ * Exposed but unpublished ports (`80/tcp`) have no host side and are skipped.
+ */
+export const parsePublishedPorts = (stdout: string) => {
+  const ports = new Set<number>();
+  for (const entry of stdout.split(/[,\n]/)) {
+    const match = /:(\d+)(?:-(\d+))?->/.exec(entry);
+    if (!match) continue;
+    const first = Number(match[1]);
+    const last = Math.min(Number(match[2] ?? first), 65535);
+    for (let port = first; port <= last; port++) ports.add(port);
+  }
+  return ports;
+};
+
+/**
+ * Host processes that forward published container ports: Docker Desktop, OrbStack, Colima and
+ * Lima, Podman, and dockerd with docker-proxy, rootlesskit, rootlessport or slirp4netns on
+ * Linux. Names only ever spare a process; nothing is signalled because of its name.
+ */
+const CONTAINER_RUNTIME =
+  /^(com\.docker\.|vpnkit|docker-proxy|dockerd|rootlesskit|rootlessport|slirp4netns|orbstack|limactl|gvproxy)/i;
+
+/** A command name or, as macOS `ps -o comm` prints it, an executable path. */
+export const isContainerRuntime = (command: string) =>
+  CONTAINER_RUNTIME.test(command.slice(command.lastIndexOf("/") + 1));
+
+/** Output of `ps -Ao pid=,comm=`: the pids of container runtime processes. */
+export const parseRuntimeProcesses = (stdout: string) => {
+  const pids = new Set<number>();
+  for (const line of stdout.split("\n")) {
+    const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+    if (match && isContainerRuntime(match[2]!.trim())) pids.add(Number(match[1]));
+  }
+  return pids;
+};
+
+/**
+ * A lane port listener that belongs to a container runtime rather than the lane: it holds a
+ * port a running container publishes, or it is a runtime's forwarder. Stopping it would cut off
+ * every container on the computer. `published` is null when Docker is missing or not running;
+ * then nothing proves a port unpublished, and the name is the only evidence left.
+ */
+export const runtimeOwned = (listener: Listener, published: ReadonlySet<number> | null) =>
+  isContainerRuntime(listener.command) ||
+  (published !== null && [...listener.ports].some((port) => published.has(port)));
+
+/** Lane port listeners split into those the lane may stop and those a container runtime owns. */
+export const partitionListeners = (
+  listeners: ReadonlyMap<number, Listener>,
+  published: ReadonlySet<number> | null,
+) => {
+  const lane = new Set<number>();
+  const runtime = new Set<number>();
+  for (const [pid, listener] of listeners)
+    (runtimeOwned(listener, published) ? runtime : lane).add(pid);
+  return { lane, runtime };
+};
+
+/** pid 0 and negative pids signal whole process groups, 1 is init, and this server stays up. */
+export const signallable = (pid: number) =>
+  Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid;
 
 export interface SlotHolder {
   readonly slot: number;
@@ -163,7 +243,21 @@ export const leaseOf = (entry: LedgerEntry | DockerResource): LaneLease => ({
   label: entry.label,
 });
 
-const DOCKER_FALLBACKS = ["/usr/local/bin/docker", "/opt/homebrew/bin/docker"];
+/** Where docker is looked for, in order. Docker Desktop and OrbStack do not always link to PATH. */
+export const dockerCandidates = (homeDir: string, pathEnv = process.env.PATH ?? "") => [
+  ...pathEnv
+    .split(":")
+    .filter(Boolean)
+    .map((dir) => `${dir}/docker`),
+  `${homeDir}/.docker/bin/docker`,
+  "/usr/local/bin/docker",
+  "/opt/homebrew/bin/docker",
+  "/Applications/Docker.app/Contents/Resources/bin/docker",
+  `${homeDir}/.orbstack/bin/docker`,
+];
+
+/** Docker can be installed while Loom runs, so a miss is only trusted this long. */
+export const DOCKER_MISS_RETRY_MS = 60_000;
 
 const isExecutable = (path: string) =>
   Effect.promise(() =>
@@ -172,6 +266,24 @@ const isExecutable = (path: string) =>
       () => false,
     ),
   );
+
+/** The first executable candidate. A hit is kept; a miss is looked up again after a minute. */
+export const makeDockerLocator = (candidates: () => ReadonlyArray<string>) => {
+  let found: string | null = null;
+  let missedAt: number | null = null;
+  return Effect.gen(function* () {
+    if (found !== null) return found;
+    const now = yield* Clock.currentTimeMillis;
+    if (missedAt !== null && now - missedAt < DOCKER_MISS_RETRY_MS) return null;
+    for (const candidate of candidates())
+      if (yield* isExecutable(candidate)) {
+        found = candidate;
+        return candidate;
+      }
+    missedAt = now;
+    return null;
+  });
+};
 
 /** Commands that look at and release leases. Every query degrades to "unknown" on failure. */
 export const makeLeaseOps = (options: {
@@ -201,25 +313,10 @@ export const makeLeaseOps = (options: {
         ),
       );
 
-    let docker: string | null | undefined = options.dockerPath;
-    const dockerPath = Effect.gen(function* () {
-      if (docker !== undefined) return docker;
-      const candidates = [
-        ...(process.env.PATH ?? "")
-          .split(":")
-          .filter(Boolean)
-          .map((dir) => `${dir}/docker`),
-        `${options.homeDir}/.docker/bin/docker`,
-        ...DOCKER_FALLBACKS,
-      ];
-      docker = null;
-      for (const candidate of candidates)
-        if (yield* isExecutable(candidate)) {
-          docker = candidate;
-          break;
-        }
-      return docker;
-    });
+    const dockerPath =
+      options.dockerPath === undefined
+        ? makeDockerLocator(() => dockerCandidates(options.homeDir))
+        : Effect.succeed(options.dockerPath);
 
     const processTable = stdoutOf("ps", ["-Ao", "pid=,ppid=,lstart="]).pipe(
       Effect.map((stdout) => (stdout === null ? null : parseProcessTable(stdout))),
@@ -256,9 +353,22 @@ export const makeLeaseOps = (options: {
       return [...parseDocker("container", containers), ...parseDocker("volume", volumes ?? "")];
     });
 
+    /** Host ports running containers publish, or null when Docker is missing or not running. */
+    const publishedPorts = Effect.gen(function* () {
+      const path = yield* dockerPath;
+      if (path === null) return null;
+      const stdout = yield* stdoutOf(path, ["ps", "--format", "{{.Ports}}"]);
+      return stdout === null ? null : parsePublishedPorts(stdout);
+    });
+
+    /** Container runtime processes found by name anywhere on the computer, or null on failure. */
+    const runtimeProcesses = stdoutOf("ps", ["-Ao", "pid=,comm="]).pipe(
+      Effect.map((stdout) => (stdout === null ? null : parseRuntimeProcesses(stdout))),
+    );
+
     const listeners = (first: number, last: number) =>
-      stdoutOf(options.lsofPath, ["-nP", `-iTCP:${first}-${last}`, "-sTCP:LISTEN", "-Fp"]).pipe(
-        Effect.map((stdout) => parseLsofPids(stdout ?? "")),
+      stdoutOf(options.lsofPath, ["-nP", `-iTCP:${first}-${last}`, "-sTCP:LISTEN", "-Fpcn"]).pipe(
+        Effect.map((stdout) => parseLsofListeners(stdout ?? "")),
       );
 
     const signal = (pid: number, name: NodeJS.Signals | 0) => {
@@ -271,11 +381,12 @@ export const makeLeaseOps = (options: {
     };
 
     /** SIGTERM, up to five seconds to exit, then SIGKILL. Returns pids still alive. */
-    const terminate = (pids: ReadonlySet<number>) =>
+    const terminate = (requested: ReadonlySet<number>) =>
       Effect.gen(function* () {
-        if (pids.size === 0) return [];
+        const pids = [...requested].filter(signallable);
+        if (pids.length === 0) return [];
         for (const pid of pids) signal(pid, "SIGTERM");
-        let alive = [...pids];
+        let alive = pids;
         for (let attempt = 0; attempt < 25 && alive.length > 0; attempt++) {
           yield* Effect.sleep("200 millis");
           alive = alive.filter((pid) => signal(pid, 0));
@@ -315,6 +426,8 @@ export const makeLeaseOps = (options: {
       processTable,
       simulators,
       dockerResources,
+      publishedPorts,
+      runtimeProcesses,
       listeners,
       terminate,
       removeDocker,
