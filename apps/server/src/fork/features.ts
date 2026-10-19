@@ -9,6 +9,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-ssh-management",
   "vault-run-access",
   "vault-profiles",
+  "vault-prompt-attachments",
   "vault-references",
   "vault-ssh-mediated",
   "vault-workload-checks",

@@ -1,3 +1,4 @@
+import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import * as Dialog from "../../components/ui/Dialog";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
@@ -778,6 +779,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </Pressable>
         ) : null}
 
+        {/* fork: vault-launch-ui */}
+        <VaultPromptAttachments
+          environmentId={props.environmentId}
+          projectId={props.selectedThread.projectId}
+          threadId={props.selectedThread.id}
+          prompt={props.draftMessage}
+          onChange={props.onChangeDraftMessage}
+          disabled={!props.canOperateThread}
+        />
         <ComposerSurface
           style={
             isExpanded

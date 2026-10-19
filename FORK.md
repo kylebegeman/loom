@@ -104,11 +104,15 @@ The shared plumbing packets register into, specified in
 
 ### Vault seams
 
-| File                                                                         | Marker       | Why                                                                          |
-| ---------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------- |
-| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`  | Bind private input transfers durably to an idempotent destination operation. |
-| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`  | Cover private transfer retries and cleanup failures.                         |
-| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core` | Mount Vault management in the selected computer's native settings.           |
+| File                                                                         | Marker            | Why                                                                          |
+| ---------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------- |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`       | Bind private input transfers durably to an idempotent destination operation. |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`       | Cover private transfer retries and cleanup failures.                         |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core`      | Mount Vault management in the selected computer's native settings.           |
+| `apps/web/src/components/chat/ChatComposer.tsx`                              | `vault-launch-ui` | Mount the Vault reference/profile attachment control in the prompt.          |
+| `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-launch-ui` | Review and attach Vault requirements to scheduled prompts.                   |
+| `apps/mobile/src/features/threads/ThreadComposer.tsx`                        | `vault-launch-ui` | Mount native Vault prompt attachment controls.                               |
+| `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`    | `vault-launch-ui` | Mount native Vault controls in the scheduled prompt editor.                  |
 
 L78's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L78-vault-core/),
 [user help](docs/fork/user/vault.md) and [operating guide](docs/fork/operations/vault.md).
