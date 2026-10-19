@@ -41,33 +41,39 @@ const runtime = Atom.runtime(
 );
 
 const cases = [
-  ["configure", AuthSettingsWriteScope],
-  ["share", AuthPreviewOperateScope],
-  ["open", AuthPreviewOperateScope],
-  ["extend", AuthPreviewOperateScope],
-  ["revoke", AuthPreviewOperateScope],
-  ["restore", AuthPreviewOperateScope],
-  ["revokeAll", AuthPreviewOperateScope],
-  ["signOutBrowsers", AuthPreviewOperateScope],
+  ["configure", "configure", AuthSettingsWriteScope],
+  ["share", "share", AuthPreviewOperateScope],
+  ["open", "open", AuthPreviewOperateScope],
+  ["extend", "extend", AuthPreviewOperateScope],
+  ["revoke", "revoke", AuthPreviewOperateScope],
+  ["restore", "restore", AuthPreviewOperateScope],
+  ["revokeAll", "revokeAll", AuthPreviewOperateScope],
+  ["signOutBrowsers", "signOutBrowsers", AuthPreviewOperateScope],
+  ["updatePage", "pagesUpdate", AuthPreviewOperateScope],
 ] as const;
 
-it.effect.each(cases)("preview links %s requires %s on the serving computer", ([method, scope]) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const registry = AtomRegistry.make();
-      registry.mount(sessions(host));
-      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
-      const command = createPreviewLinksAtoms(runtime)[method];
-      const policy = createCommandPermissions(runtime, PREVIEW_LINKS_WS_METHODS[method]);
-      registry.mount(command.permissionAtom(host));
-      expect(policy.requiredScopes()).toEqual([scope]);
+it.effect.each(cases)(
+  "preview links %s (%s) requires %s on the serving computer",
+  ([atom, method, scope]) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = AtomRegistry.make();
+        registry.mount(sessions(host));
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const command = createPreviewLinksAtoms(runtime)[atom];
+        const policy = createCommandPermissions(runtime, PREVIEW_LINKS_WS_METHODS[method]);
+        registry.mount(command.permissionAtom(host));
+        expect(policy.requiredScopes()).toEqual([scope]);
 
-      registry.set(sessions(host), AsyncResult.success(grant([AuthOrchestrationReadScope])));
-      expect(registry.get(command.permissionAtom(host))).toBe(false);
+        registry.set(sessions(host), AsyncResult.success(grant([AuthOrchestrationReadScope])));
+        expect(registry.get(command.permissionAtom(host))).toBe(false);
 
-      registry.set(sessions(host), AsyncResult.success(grant([AuthOrchestrationReadScope, scope])));
-      expect(registry.get(command.permissionAtom(host))).toBe(true);
-      yield* policy.authorize(registry, host);
-    }),
-  ),
+        registry.set(
+          sessions(host),
+          AsyncResult.success(grant([AuthOrchestrationReadScope, scope])),
+        );
+        expect(registry.get(command.permissionAtom(host))).toBe(true);
+        yield* policy.authorize(registry, host);
+      }),
+    ),
 );

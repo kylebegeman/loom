@@ -3,7 +3,6 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { PreviewLink, PreviewLinksSettings, PreviewLinksSetup } from "@t3tools/contracts/fork";
 import {
   connectionReachesLoopback,
-  formatPreviewDuration,
   previewComputers,
   previewLinkActions,
   previewLinkTiming,
@@ -90,6 +89,14 @@ describe("previewComputers", () => {
       computer("a", "Dorothy"),
     ]);
     expect(result.map((entry) => entry.label)).toEqual(["Dorothy", "Zelda"]);
+  });
+
+  it("notes which computers relay the pages they published", () => {
+    const result = previewComputers([
+      computer("a", "Dorothy", { features: ["preview-links", "preview-pages"] }),
+      computer("b", "Zelda"),
+    ]);
+    expect(result.map((entry) => entry.pages)).toEqual([true, false]);
   });
 });
 
@@ -178,12 +185,6 @@ describe("previewLinkTiming", () => {
     expect(
       previewLinkTiming(link({ state: "expired", endedAt: null, expiresAt: at(-26 * HOUR) }), NOW),
     ).toBe("Expired 1d 2h ago");
-  });
-
-  it("formats whole units", () => {
-    expect(formatPreviewDuration(12 * HOUR)).toBe("12h");
-    expect(formatPreviewDuration(45 * MINUTE)).toBe("45m");
-    expect(formatPreviewDuration(48 * HOUR)).toBe("2d");
   });
 });
 

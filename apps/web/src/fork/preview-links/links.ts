@@ -1,3 +1,4 @@
+import { formatPreviewDuration } from "@t3tools/client-runtime/fork";
 import {
   PreviewLinkSuffix,
   PreviewMachineName,
@@ -96,31 +97,15 @@ export function visibleLinks(
 }
 
 const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
-
-/** Whole units, rounded down: `3h 12m`, `45m`, `2d 4h`. */
-export function formatDuration(ms: number): string {
-  if (ms < MINUTE_MS) return "under a minute";
-  if (ms < HOUR_MS) return `${Math.floor(ms / MINUTE_MS)}m`;
-  if (ms < DAY_MS) {
-    const hours = Math.floor(ms / HOUR_MS);
-    const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS);
-    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
-  }
-  const days = Math.floor(ms / DAY_MS);
-  const hours = Math.floor((ms % DAY_MS) / HOUR_MS);
-  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
-}
 
 export function linkTiming(link: PreviewLink, now: number): string {
   if (link.state === "open") {
     const left = Date.parse(link.expiresAt) - now;
-    return left <= 0 ? "Ending now" : `Ends in ${formatDuration(left)}`;
+    return left <= 0 ? "Ending now" : `Ends in ${formatPreviewDuration(left)}`;
   }
   const verb = link.state === "expired" ? "Expired" : "Ended";
   const ago = Math.max(0, now - endedAt(link));
-  return ago < MINUTE_MS ? `${verb} just now` : `${verb} ${formatDuration(ago)} ago`;
+  return ago < MINUTE_MS ? `${verb} just now` : `${verb} ${formatPreviewDuration(ago)} ago`;
 }
 
 export function linkSummary(link: PreviewLink, now: number): string {

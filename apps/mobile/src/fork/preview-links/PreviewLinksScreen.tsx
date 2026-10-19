@@ -11,7 +11,7 @@ import {
   type PreviewLinksSettings,
 } from "@t3tools/contracts/fork";
 import { BRAND_NAME } from "@t3tools/shared/brand";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -39,6 +39,7 @@ import {
   type PreviewLinkAction,
   type PreviewLinkPermissions,
 } from "./previewLinksLogic";
+import { ComputerPreviewPages } from "./PreviewPagesSection";
 import { previewLinks } from "./state";
 
 /** Times are shown in whole minutes, so a coarse tick keeps them honest without busy renders. */
@@ -85,7 +86,10 @@ export function PreviewLinksRouteScreen() {
           </Text>
         ) : (
           computers.map((computer) => (
-            <ComputerPreviewLinks key={computer.environmentId} computer={computer} now={now} />
+            <Fragment key={computer.environmentId}>
+              <ComputerPreviewLinks computer={computer} now={now} />
+              {computer.pages ? <ComputerPreviewPages computer={computer} now={now} /> : null}
+            </Fragment>
           ))
         )}
       </ScreenScrollView>

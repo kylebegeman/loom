@@ -1,8 +1,15 @@
-import { PREVIEW_LINKS_WS_METHODS as P } from "@t3tools/contracts/fork";
+import {
+  PREVIEW_LINKS_WS_METHODS as P,
+  type PreviewPage,
+  type PreviewPageAction,
+  type PreviewPageKind,
+} from "@t3tools/contracts/fork";
+import * as Effect from "effect/Effect";
 import type { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../state/runtime.ts";
 
@@ -10,6 +17,11 @@ import {
 export function createPreviewLinksAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  // Pages live in the Library and the computer only relays, so there is nothing to subscribe to.
+  const pages = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:preview-pages",
+    tag: P.pagesList,
+  });
   return {
     snapshot: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "loom:preview-links",
@@ -44,5 +56,127 @@ export function createPreviewLinksAtoms<R, E>(
       label: "loom:preview-links-sign-out",
       tag: P.signOutBrowsers,
     }),
+    pages,
+    updatePage: createEnvironmentRpcCommand(runtime, {
+      label: "loom:preview-pages-update",
+      tag: P.pagesUpdate,
+      // A refused change usually means the page moved on elsewhere (it expired, or another
+      // client ended it), so the list refetches after failures too.
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(pages({ environmentId, input: {} }))),
+    }),
   };
+}
+
+// Web and mobile describe links and pages with the same words.
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Whole units, rounded down: `3h 12m`, `45m`, `2d 4h`. */
+export function formatPreviewDuration(ms: number): string {
+  if (ms < MINUTE_MS) return "under a minute";
+  if (ms < HOUR_MS) return `${Math.floor(ms / MINUTE_MS)}m`;
+  if (ms < DAY_MS) {
+    const hours = Math.floor(ms / HOUR_MS);
+    const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS);
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  }
+  const days = Math.floor(ms / DAY_MS);
+  const hours = Math.floor((ms % DAY_MS) / HOUR_MS);
+  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
+}
+
+/** One quiet line in place of the list when the computer has no Library that serves pages. */
+export const PREVIEW_PAGES_UNAVAILABLE_TEXT = "Your Library does not publish pages yet.";
+export const PREVIEW_PAGES_EMPTY_TEXT =
+  "No pages yet. An agent can publish a page it rendered, or a Dossier, from its thread.";
+
+export const PREVIEW_PAGE_KIND_LABELS: Record<PreviewPageKind, string> = {
+  html: "HTML",
+  dossier: "Dossier",
+};
+
+/** An expired page closed when its lifetime ran out; the Library leaves `endedAt` unset then. */
+const pageClosedAt = (page: PreviewPage) =>
+  Date.parse(page.endedAt ?? page.expiresAt ?? page.createdAt);
+
+/** The Library purges a closed page once its restore window passes, so after that it is gone. */
+export function canRestorePreviewPage(page: PreviewPage, now: number): boolean {
+  return (
+    page.state !== "open" && page.restorableUntil !== null && Date.parse(page.restorableUntil) > now
+  );
+}
+
+/**
+ * Open pages newest first, then closed pages that can still be restored, most recently closed
+ * first. A list fetched a while ago can hold pages whose restore window has since passed.
+ */
+export function visiblePreviewPages(
+  pages: ReadonlyArray<PreviewPage>,
+  now: number,
+): ReadonlyArray<PreviewPage> {
+  const open = pages
+    .filter((page) => page.state === "open")
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  const closed = pages
+    .filter((page) => canRestorePreviewPage(page, now))
+    .sort((left, right) => pageClosedAt(right) - pageClosedAt(left));
+  return [...open, ...closed];
+}
+
+export function previewPageTiming(page: PreviewPage, now: number): string {
+  if (page.state === "open") {
+    if (page.kept || page.expiresAt === null) return "Kept";
+    const left = Date.parse(page.expiresAt) - now;
+    return left <= 0 ? "Expiring now" : `Expires in ${formatPreviewDuration(left)}`;
+  }
+  const verb = page.state === "expired" ? "Expired" : "Ended";
+  const ago = Math.max(0, now - pageClosedAt(page));
+  const closed = ago < MINUTE_MS ? `${verb} just now` : `${verb} ${formatPreviewDuration(ago)} ago`;
+  if (!canRestorePreviewPage(page, now) || page.restorableUntil === null) return closed;
+  return `${closed} · Restorable for ${formatPreviewDuration(Date.parse(page.restorableUntil) - now)}`;
+}
+
+export function previewPageSummary(page: PreviewPage, now: number): string {
+  return `${PREVIEW_PAGE_KIND_LABELS[page.kind]} · ${previewPageTiming(page, now)}`;
+}
+
+/** What a client can do with a page: open it, or change it through the computer. */
+export type PreviewPageControl = "open" | PreviewPageAction;
+
+export const PREVIEW_PAGE_CONTROL_LABELS: Record<PreviewPageControl, string> = {
+  open: "Open",
+  keep: "Keep",
+  release: "Stop keeping",
+  end: "End",
+  restore: "Restore",
+};
+
+export interface PreviewPageControlAvailability {
+  readonly control: PreviewPageControl;
+  readonly enabled: boolean;
+}
+
+/**
+ * The address comes from the Library through the computer, and web opens it from the app's own
+ * origin, so a `javascript:` or app-scheme URL must never reach the browser.
+ */
+const isHttpsUrl = (url: string) => /^https:\/\/[^/?#]/i.test(url);
+
+/** Opening needs no permission: the page asks the browser to sign in to the Library itself. */
+export function previewPageControls(
+  page: PreviewPage,
+  canUpdate: boolean,
+  now: number,
+): ReadonlyArray<PreviewPageControlAvailability> {
+  if (page.state === "open") {
+    return [
+      { control: "open", enabled: isHttpsUrl(page.url) },
+      { control: page.kept ? "release" : "keep", enabled: canUpdate },
+      { control: "end", enabled: canUpdate },
+    ];
+  }
+  return [{ control: "restore", enabled: canUpdate && canRestorePreviewPage(page, now) }];
 }

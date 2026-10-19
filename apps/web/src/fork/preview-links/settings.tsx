@@ -4,6 +4,7 @@ import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
+  PREVIEW_PAGES_FEATURE,
   type PreviewLinkLifetime,
   type PreviewLinksSnapshot,
 } from "@t3tools/contracts/fork";
@@ -33,6 +34,7 @@ import {
   tunnelStatus,
   type SettingsDraft,
 } from "./links";
+import { EnvironmentPreviewPages } from "./pages";
 import { Alert, Muted, failureOf, useAction } from "./parts";
 import { FEATURE, openPreviewLinksSheet, previewLinks, runCommand } from "./state";
 
@@ -121,7 +123,7 @@ function EnvironmentPreviewLinks({
     void action.act("Unable to sign out preview browsers", async () => {
       if (
         !(await ensureLocalApi().dialogs.confirm(
-          `Sign out every browser that opened a preview link on ${label}? They can get back in by opening a link from Loom again.`,
+          `Sign out every browser that opened a preview link on ${label}? They can get back in by opening a link from Loom or signing in to your Library again.`,
         ))
       ) {
         return;
@@ -154,7 +156,7 @@ function EnvironmentPreviewLinks({
       </SettingsRow>
       <SettingsRow
         title="Share ports as links"
-        description="Open this computer's dev servers from any device through your own domain. Each link opens only in a browser that entered from Loom."
+        description="Open this computer's dev servers from any device through your own domain. Each link opens only in a browser that entered from Loom or signed in to your Library."
         control={
           <Switch
             aria-label="Share ports as links"
@@ -345,10 +347,15 @@ export function PreviewLinksSettingsSection() {
   if (!supportsLoomFeature(config?.environment.capabilities, FEATURE))
     return <p>This environment's server does not have preview links.</p>;
   return (
-    <EnvironmentPreviewLinksLoader
-      key={environment.environmentId}
-      environmentId={environment.environmentId}
-      label={config?.environment.label ?? "this computer"}
-    />
+    <div key={environment.environmentId} className="flex flex-col gap-3">
+      <EnvironmentPreviewLinksLoader
+        environmentId={environment.environmentId}
+        label={config?.environment.label ?? "this computer"}
+      />
+      {/* An older server answers no page requests, so its section would only ever fail. */}
+      {supportsLoomFeature(config?.environment.capabilities, PREVIEW_PAGES_FEATURE) && (
+        <EnvironmentPreviewPages environmentId={environment.environmentId} />
+      )}
+    </div>
   );
 }

@@ -282,7 +282,8 @@ export function PreviewLinksHost() {
         <SheetHeader>
           <SheetTitle>Preview links</SheetTitle>
           <SheetDescription>
-            Ports shared from your computers. A link opens only in a browser that entered from Loom.
+            Ports shared from your computers. A link opens only in a browser that entered from Loom
+            or signed in to your Library.
           </SheetDescription>
         </SheetHeader>
         {/* The popup unmounts while closed, so link lists subscribe only while it is open. */}

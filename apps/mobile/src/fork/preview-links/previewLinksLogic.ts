@@ -1,7 +1,8 @@
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { formatPreviewDuration, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import {
   PREVIEW_LINKS_FEATURE,
+  PREVIEW_PAGES_FEATURE,
   isCurrentPreviewHost,
   type PreviewLink,
   type PreviewLinkLifetime,
@@ -23,6 +24,8 @@ export interface PreviewComputerSource {
 export interface PreviewComputer {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  /** Whether its server relays the pages it published to its Library. */
+  readonly pages: boolean;
 }
 
 /** Connected computers whose server can share previews, in a stable order. */
@@ -39,7 +42,11 @@ export function previewComputers(
           PREVIEW_LINKS_FEATURE,
         ),
     )
-    .map(({ environmentId, label }) => ({ environmentId, label }))
+    .map(({ environmentId, label, serverConfig }) => ({
+      environmentId,
+      label,
+      pages: supportsLoomFeature(serverConfig?.environment.capabilities, PREVIEW_PAGES_FEATURE),
+    }))
     .sort(
       (left, right) =>
         left.label.localeCompare(right.label) ||
@@ -108,22 +115,6 @@ function endedAt(link: PreviewLink): number {
 }
 
 const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
-
-/** Whole units, rounded down: `3h 12m`, `45m`, `2d 4h`. */
-export function formatPreviewDuration(ms: number): string {
-  if (ms < MINUTE_MS) return "under a minute";
-  if (ms < HOUR_MS) return `${Math.floor(ms / MINUTE_MS)}m`;
-  if (ms < DAY_MS) {
-    const hours = Math.floor(ms / HOUR_MS);
-    const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS);
-    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
-  }
-  const days = Math.floor(ms / DAY_MS);
-  const hours = Math.floor((ms % DAY_MS) / HOUR_MS);
-  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
-}
 
 export function previewLinkTiming(link: PreviewLink, now: number): string {
   if (link.state === "open") {
@@ -154,7 +145,10 @@ export interface PreviewLinkActionAvailability {
   readonly enabled: boolean;
 }
 
-/** Copy needs no permission: the canonical link only opens for someone who entered from Loom. */
+/**
+ * Copy needs no permission: the canonical link only opens for someone who entered from Loom or
+ * signed in to the Library.
+ */
 export function previewLinkActions(
   link: PreviewLink,
   permissions: PreviewLinkPermissions,
