@@ -11,6 +11,7 @@ import {
 import { SidebarUpdateCapsule } from "~/components/sidebar/SidebarUpdateCapsule";
 import { UpdateEverythingDialog } from "~/components/sidebar/UpdateEverythingDialog";
 import { useUpdateEverything } from "~/components/sidebar/useUpdateEverything";
+import { useEnvironmentProviders } from "~/state/environments";
 import { useUpdateEverythingRun } from "~/components/sidebar/updateEverythingRun";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
 import { toastManager } from "~/components/ui/toast";
@@ -24,6 +25,7 @@ export function FleetUpdatesSection() {
       ? getDesktopUpdateDownloadedVersion(state)
       : null;
   const updates = useUpdateEverything(localVersion, "fleet");
+  const providersByEnvironment = useEnvironmentProviders();
   const activeRun = useUpdateEverythingRun();
   const run = activeRun?.scope !== "local" ? activeRun : null;
   const [confirming, setConfirming] = useState(false);
@@ -68,11 +70,8 @@ export function FleetUpdatesSection() {
         </p>
       ) : (
         updates.machines.map((machine) => {
-          const environment = updates.environments.find(
-            (entry) => entry.environmentId === machine.environmentId,
-          );
           const providers = collectProviderUpdateCandidates(
-            environment?.serverConfig?.providers ?? [],
+            providersByEnvironment.get(machine.environmentId) ?? [],
           );
           const blockedReason = updates.skipped.find(
             (entry) => entry.environmentId === machine.environmentId,

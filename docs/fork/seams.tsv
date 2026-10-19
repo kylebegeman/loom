@@ -20,6 +20,8 @@ packages/client-runtime/src/rpc/client.ts	ext-core	3
 packages/client-runtime/src/rpc/protocol.ts	ext-core	2
 packages/contracts/src/environment.ts	ext-core	2
 apps/server/package.json	-	"diff": "8.0.3"
+apps/web/package.json	-	"jsdom": "^30.0.1"
+apps/web/package.json	-	"react-test-renderer": "19.3.0"
 packages/client-runtime/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork/model-check-limits"
@@ -96,7 +98,7 @@ apps/server/src/orchestration-v2/CheckpointRollbackService.ts	mini-native-retent
 apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts	mini-native-retention	1
 apps/server/src/mcp/toolkits/worktree/registration.test.ts	mini-native-retention	1
 apps/web/src/components/settings/StorageSettings.tsx	mini-native-retention	5
-apps/web/src/components/settings/StorageSettings.test.tsx	project-lifecycle	1
+apps/web/src/components/settings/StorageSettings.browser.test.tsx	project-lifecycle	1
 packages/contracts/src/settings.ts	mini-native-retention	1
 packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
@@ -130,7 +132,7 @@ apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	1
+apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	2
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	2
 apps/server/src/storageCleanup.test.ts	project-lifecycle	13
 packages/contracts/src/settings.test.ts	project-lifecycle	1
@@ -181,7 +183,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-checkout-management	2
 apps/web/src/components/settings/StorageSettings.tsx	project-checkout-management	5
 apps/web/src/components/Sidebar.tsx	project-navigation	2
-apps/mobile/src/features/home/HomeScreen.tsx	project-navigation	24
+apps/mobile/src/features/home/HomeScreen.tsx	project-navigation	21
 apps/mobile/src/features/home/ThreadListFilters.tsx	project-navigation	1
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	project-navigation	16
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-navigation	3
@@ -227,8 +229,8 @@ apps/web/src/components/settings/settingsSearch.ts	project-home	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	1
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	2
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	18
-apps/web/src/components/ThreadNotificationCoordinator.test.tsx	respectful-notifications	3
-apps/web/src/components/ThreadNotificationCoordinator.badge.test.tsx	respectful-notifications	9
+apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	3
+apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	respectful-notifications	9
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	4
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
@@ -249,11 +251,11 @@ apps/mobile/src/App.tsx	project-navigation	2
 apps/mobile/src/Stack.tsx	library	3
 apps/mobile/src/Stack.tsx	project-navigation	4
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	fleet-connections	3
-apps/mobile/src/features/files/AttachmentFileScreen.tsx	library	6
+apps/mobile/src/features/files/AttachmentFileScreen.tsx	library	5
 apps/mobile/src/features/home/HomeRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/home/HomeRouteScreen.tsx	library	11
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	3
-apps/mobile/src/features/home/HomeScreen.tsx	library	11
+apps/mobile/src/features/home/HomeScreen.tsx	library	8
 apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	3
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
@@ -274,6 +276,7 @@ apps/server/src/orchestration-v2/ProjectionStore.test.ts	detached-session-recove
 apps/server/src/orchestration-v2/ProjectionStore.ts	detached-session-recovery	9
 apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	mini-native-retention	2
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	workspace-handoff	1
+apps/server/src/orchestration-v2/ThreadLaunchService.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecycle	5
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	10
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	3
@@ -336,4 +339,6 @@ apps/mobile/src/lib/openExternalUrl.ts	preview-links	2
 apps/mobile/src/native/useOpenPullRequest.ts	preview-links	2
 apps/mobile/src/features/threads/HtmlRenderWebView.tsx	preview-links	4
 apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2
-apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	3
+apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	2
+apps/mobile/src/reactCompilerCoverage.test.ts	react-compiler	2
+vite.config.ts	ext-lint	1

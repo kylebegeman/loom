@@ -35,6 +35,7 @@ import {
   useThreadVisibleTurnItems,
 } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentProviders } from "~/state/environments";
 import { useKnownTerminalSessions } from "~/state/terminalSessions";
 import { vcsEnvironment } from "~/state/vcs";
 import type { InspectorGitState, InspectorInputs, InspectorProvider } from "./model";
@@ -148,7 +149,7 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
     [terminalSessions],
   );
 
-  const providers = serverConfig?.providers;
+  const providers = useEnvironmentProviders().get(threadRef.environmentId);
   const modelSelection = thread?.modelSelection ?? null;
   const providerInstanceId = runtime?.providerInstanceId ?? modelSelection?.instanceId ?? null;
   const provider = useMemo((): InspectorProvider | null => {

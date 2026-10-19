@@ -44,7 +44,7 @@ vi.mock("../../features/cloud/managedRelayState", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.deregister }));
 vi.mock("../../lib/copyTextWithHaptic", () => ({ copyTextWithHaptic: vi.fn() }));
-vi.mock("../../native/StackHeader", () => ({
+vi.mock("../../native/NativeHeaderToolbar", () => ({
   NativeHeaderToolbar: Object.assign(
     ({ children }: { children: ReactNode }) => <div>{children}</div>,
     {

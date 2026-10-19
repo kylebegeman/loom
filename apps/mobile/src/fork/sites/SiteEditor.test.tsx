@@ -115,12 +115,16 @@ vi.mock("react-native-screens", () => ({
   ScreenStackHeaderConfig: ({
     headerRightBarButtonItems,
   }: {
-    headerRightBarButtonItems: { title: string; disabled: boolean; onPress: () => void }[];
+    headerRightBarButtonItems: {
+      accessibilityLabel: string;
+      disabled: boolean;
+      onPress: () => void;
+    }[];
   }) => (
     <>
       {headerRightBarButtonItems.map((item) => (
-        <button key={item.title} disabled={item.disabled} onClick={item.onPress}>
-          {item.title}
+        <button key={item.accessibilityLabel} disabled={item.disabled} onClick={item.onPress}>
+          {item.accessibilityLabel}
         </button>
       ))}
     </>
@@ -185,6 +189,10 @@ function click(label: string) {
   expect(button, label).toBeDefined();
   act(() => button!.click());
 }
+// iOS closes from the header's xmark item, named by its accessibility label.
+function closeLabel(platform: string) {
+  return platform === "android" ? "Back" : platform === "web" ? "Done" : "Close Edit service";
+}
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
@@ -215,7 +223,7 @@ it.each(["ios", "android", "web"])(
     click("Save changes");
     expect(container.textContent).toContain("Saving…");
     click(platform === "web" ? "Escape" : "Swipe or system back");
-    click(platform === "android" ? "Back" : "Done");
+    click(closeLabel(platform));
     click("Cancel");
     expect(close).not.toHaveBeenCalled();
     await act(async () => reject(new Error("The connection was interrupted.")));
@@ -233,7 +241,7 @@ it.each(["ios", "android", "web"])(
     expect(harness.save.mock.calls[1]?.[0]).toMatchObject({ input: { name: "Edited API" } });
     expect(saved).toHaveBeenCalledWith("api");
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    click(platform === "android" ? "Back" : "Done");
+    click(closeLabel(platform));
     expect(close).toHaveBeenCalledOnce();
   },
 );

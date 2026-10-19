@@ -49,11 +49,15 @@ const environments = ["local", "remote"].map((id) => ({
 }));
 vi.mock("~/env", () => ({ isElectron: true }));
 vi.mock("~/state/environments", () => ({ useEnvironments: () => ({ environments }) }));
+// One value per environment in the newline-joined id key.
+const perEnvironment = vi.hoisted(
+  () => (value: unknown) => (key: string) => (key === "" ? [] : key.split("\n").map(() => value)),
+);
 vi.mock("~/state/server", () => ({
-  serverEnvironment: { updateStateAtom: () => Atom.make({ status: "idle" }) },
+  environmentUpdateStatesAtom: (key: string) => Atom.make(perEnvironment({ status: "idle" })(key)),
 }));
 vi.mock("~/state/session", () => ({
-  environmentSession: { sessionStateAtom: () => Atom.make(null) },
+  environmentSessionStatesAtom: (key: string) => Atom.make(perEnvironment(null)(key)),
 }));
 vi.mock("~/fork/connections/runtimeRelease", () => ({
   useRuntimeReleaseAssets: () => AsyncResult.success([]),

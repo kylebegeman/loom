@@ -350,7 +350,8 @@ export const archiveScratchCheckout = Effect.fn("ScratchCheckout.archive")(funct
       const verification = path.join(stage, "verify.git");
       yield* fs.makeDirectory(verification);
       yield* gitRead(verification, ["init", "--bare"]);
-      yield* gitRead(verification, ["bundle", "verify", bundle]);
+      // Git started by the server opens a bare repository only when it is named explicitly.
+      yield* gitRead(verification, ["--git-dir=.", "bundle", "verify", bundle]);
       yield* fs.remove(verification, { recursive: true });
       bundleDigest = yield* fileDigest(bundle);
       if (

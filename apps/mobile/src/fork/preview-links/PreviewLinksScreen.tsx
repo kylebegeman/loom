@@ -127,17 +127,15 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
     pendingRef.current = true;
     setPending(linkId);
     setFailure(null);
-    try {
-      await action();
-    } catch (cause) {
+    // The React Compiler cannot lower `finally`, so the reset follows the settled promise.
+    await action().catch((cause: unknown) => {
       setFailure({
         linkId,
         message: cause instanceof Error && cause.message.trim() ? cause.message : fallback,
       });
-    } finally {
-      pendingRef.current = false;
-      setPending(null);
-    }
+    });
+    pendingRef.current = false;
+    setPending(null);
   }
 
   function perform(link: PreviewLink, action: PreviewLinkAction, lifetime?: PreviewLinkLifetime) {
