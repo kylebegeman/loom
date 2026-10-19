@@ -253,9 +253,11 @@ it.effect(
       );
       yield* f.grant(f.key.destination);
       const unconfigured = yield* VaultLaunch.VaultLaunch.pipe(
-        Effect.provide(VaultLaunch.layer),
-        Effect.provide(f.project),
-        Effect.provide(f.context),
+        Effect.provide(
+          VaultLaunch.layer.pipe(
+            Layer.provide(Layer.merge(f.project, Layer.succeedContext(f.context))),
+          ),
+        ),
         Effect.provideService(BrokerIdentity.BrokerIdentity, f.identity),
         Effect.provideService(HostProcess.Environment, {}),
       );

@@ -111,14 +111,17 @@ it.effect(
           return Effect.succeed({ items: [], nextCursor: n.toString(16).padStart(32, "0") });
         });
       const r = yield* VaultReferences.VaultReferences.pipe(
-        Effect.provide(VaultReferences.layer),
         Effect.provide(
-          Layer.mergeAll(
-            Layer.mock(VaultCore.VaultCore)({ list }),
-            Layer.mock(VaultAccess.VaultAccess)({ listForThread: list }),
-            Layer.succeed(ServerEnvironmentIdentity, {
-              getEnvironmentId: Effect.succeed(EnvironmentId.make("sparse")),
-            }),
+          VaultReferences.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.mock(VaultCore.VaultCore)({ list }),
+                Layer.mock(VaultAccess.VaultAccess)({ listForThread: list }),
+                Layer.succeed(ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(EnvironmentId.make("sparse")),
+                }),
+              ),
+            ),
           ),
         ),
       );

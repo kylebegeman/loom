@@ -68,7 +68,9 @@ and 390px responsive web are shared surfaces; standalone Electron/Android and a 
 firing are not independently verified. No live provider model or personal credential was used.
 
 Scoped server/web/mobile/contracts/provider-core typechecks, changed fork-source lint and
-mobile native static checks pass. Upstream mobile ThreadComposer retains its pre-existing
+mobile native static checks pass. The server check exits 0 after composing the launch/reference
+test-fixture layers explicitly; it has no errors or warnings. Affected fixture and guard
+regressions also pass. Upstream mobile ThreadComposer retains its pre-existing
 React hook/compiler warnings outside the added import/control seams. Seam rows/marker counts,
 packet links and whitespace are checked. No repo-wide check was run.
 

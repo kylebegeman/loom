@@ -77,9 +77,11 @@ export const launchFixture = (transport: Layer.Layer<SshTransport.SshTransport>)
         ),
     });
     const launch = yield* VaultLaunch.VaultLaunch.pipe(
-      Effect.provide(VaultLaunch.layer),
-      Effect.provide(project),
-      Effect.provide(f.context),
+      Effect.provide(
+        VaultLaunch.layer.pipe(
+          Layer.provide(Layer.merge(project, Layer.succeedContext(f.context))),
+        ),
+      ),
       Effect.provideService(BrokerIdentity.BrokerIdentity, identity),
       Effect.provideService(HostProcess.Environment, {
         LOOM_VAULT_EXECUTION_BROKER_DIR: "/private/broker",
