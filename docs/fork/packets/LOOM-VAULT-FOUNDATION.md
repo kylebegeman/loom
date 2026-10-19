@@ -11,8 +11,8 @@ L73/L75 now provide metadata search, stable environment/item references and proj
 SSH/Git profiles through existing shared `ext-vault` services and client state. Profiles
 hold no values. First use durably pins a profile revision and key versions for the active run;
 current policy/key/host/archive checks still gate execution. OpenBao paths and retention limits
-are documented in [L75 technical design](./L75-vault-profiles/TECHNICAL.md). Composer/task launch
-selectors, portable declarations, additional kinds and run-pin cleanup remain selected.
+are documented in [L75 technical design](./L75-vault-profiles/TECHNICAL.md). Explicit composer/scheduled-prompt links now require blocking server preflight. Portable
+declarations, additional kinds and run-pin cleanup remain selected.
 
 ## Implemented record boundary
 
@@ -26,8 +26,8 @@ input store, which remains owner-only plaintext until the value reaches OpenBao.
 Human management uses environment access:read/access:write. Authenticated threads now need
 per-item grants for metadata, private ingress and lifecycle operations, under T3's permission
 ceiling. The shared VaultAccess service provides online policy, bounded safe decision history,
-previews and server-context readiness. There is no raw-value MCP tool. Enrolled brokers,
-workload leases, full audit and platform-account integration are not present.
+previews and server-context readiness. There is no raw-value MCP tool. Reviewed hosts and process-local workload checks are
+implemented below; full delivery leases, immutable audit and platform-account integration remain unfinished.
 
 ## Implemented policy boundary
 

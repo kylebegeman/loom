@@ -17,6 +17,10 @@ Implemented against parent `6e3301e02f`; these current source links define the l
 - [`apps/web/src/fork/vault/ProfileSettingsSection.tsx`](../../../../apps/web/src/fork/vault/ProfileSettingsSection.tsx)
 - [`apps/mobile/src/fork/vault/ProfileSettingsSection.tsx`](../../../../apps/mobile/src/fork/vault/ProfileSettingsSection.tsx)
 
+- [`packages/contracts/src/fork/vault-prompt.ts`](../../../../packages/contracts/src/fork/vault-prompt.ts): explicit launch-link contract.
+- [`apps/server/src/fork/vault/VaultPromptContext.ts`](../../../../apps/server/src/fork/vault/VaultPromptContext.ts): scoped launch guard and safe failures.
+- [`apps/server/src/fork/vault/VaultPromptSteering.test.ts`](../../../../apps/server/src/fork/vault/VaultPromptSteering.test.ts): active-provider delivery boundary.
+
 ## Shared design and prior art
 
 - [Shared foundation](../LOOM-VAULT-FOUNDATION.md): shared boundaries and backend selection.

@@ -12,7 +12,7 @@ The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for ex
 
 ## Remaining
 
-1. Integrate typed composer attachments and safe transcript summaries with remove/replace.
+1. Composer/scheduled prompt links, safe transcript labels and remove/replace are implemented. Extend typed inline-context integration only if it improves the current explicit link model.
 2. Add CLI completion and role/account discovery as connector metadata becomes available.
 3. Extend to more consumers and explicit multi-environment discovery without mixing authority.
 

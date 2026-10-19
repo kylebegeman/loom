@@ -12,7 +12,7 @@ The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for ex
 
 ## Remaining
 
-1. Add reviewed profile selection and preflight to interactive and scheduled task launch.
+1. Reviewed profile selection and provider preflight now cover interactive/scheduled runs and steering. Reconcile scheduler dispatch status with eventual blocked-run status.
 2. Separate portable requirement declarations from local bindings; support credential/account kinds as adapters arrive.
 3. Design Library sharing and retained run-selection inspection/cleanup without publishing secret bindings.
 

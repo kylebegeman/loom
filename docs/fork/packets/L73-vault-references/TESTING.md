@@ -36,8 +36,8 @@ no rebuild was needed. The isolated environment remains available for iteration.
 
 Electron shell, Android, relay/tunnel paths, screen readers, live provider models and scheduler
 launch are not independently verified by these checks. Services and shared web/native state
-cover their common paths; this is not evidence of full platform acceptance. Composer/task
-selection, other credential kinds, portable declarations and production recovery remain open.
+cover their common paths; this is not evidence of full platform acceptance. Other credential kinds, portable declarations and production recovery remain open. Explicit
+composer/scheduled prompt selection is verified below.
 
 ## Merge safety
 
@@ -49,3 +49,39 @@ before a clean landing rehearsal. This is a baseline integration limitation, not
 claim. No worktree merge was attempted; Kyle's upstream-integration work owns its resolution.
 
 The prior baseline nightly `v0.1.1-nightly.20261017.3238` merges cleanly in a read-only preview.
+
+## Launch attachment milestone
+
+The combined focused coverage is **49 tests across 7 files**: the 30 ProviderTurnStart cases
+(including two blocked-launch seam regressions), 4 prompt-link cases, 3 real-service guard cases,
+1 steering seam case, 4 profile cases, 6 launch cases and the existing control regression.
+The new cases prove no-provider-open on invalid/unavailable requirements, inspect-denied and
+archived references, exact run pinning, reviewed-version conflicts on later scheduled firings,
+revocation and unchanged ordinary text. Removal preserves blank lines in user code.
+
+Web and native iOS verified attachment discovery, denied-profile review, referenced-key
+selection/removal and safe draft labels. A real isolated-server submission with no inspect
+grant failed before provider open and displayed the safe blocked-run explanation in both
+clients. The web scheduled editor attached a host-reviewed profile, saved it on a paused test
+task and retained the exact profile/version on reopening. No task was enabled or fired. Desktop
+and 390px responsive web are shared surfaces; standalone Electron/Android and a live scheduler
+firing are not independently verified. No live provider model or personal credential was used.
+
+Scoped server/web/mobile/contracts/provider-core typechecks, changed fork-source lint and
+mobile native static checks pass. Upstream mobile ThreadComposer retains its pre-existing
+React hook/compiler warnings outside the added import/control seams. Seam rows/marker counts,
+packet links and whitespace are checked. No repo-wide check was run.
+
+The final launch commits are previewed separately against the newest upstream nightly and
+compared with their pre-slice parent. Any baseline conflict remains an upstream-sync task.
+The scheduler's dispatch-success status is not end-to-end run completion; outcome reconciliation
+is the next proposed work section. This does not imply full packet completion.
+
+Launch implementation commits: `e13465b96b` (shared guard) and `975120228e` (client controls).
+The final source preview against `v0.1.1-nightly.20261018.3335` reports 57 conflicting files,
+including the pre-slice `310570a13f` set of 56 plus the marked
+`vault-launch-ui` insertion in `ScheduledTasksSettings.tsx`. Upstream moved the scheduled editor
+form, so that control must be placed in its moved prompt section during synchronization. The prior baseline
+`v0.1.1-nightly.20261017.3238` still previews cleanly. The existing upstream-sync limitation
+remains; no merge or deployment was attempted. The paused QA schedule was deleted after
+persistence checks. iOS also displayed the saved reviewed profile in its scheduled editor.

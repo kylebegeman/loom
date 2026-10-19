@@ -274,6 +274,28 @@ own access or change profiles. The CLI exposes `loom vault references-search`,
 `references-describe`, `profiles`, `profiles-apply`, `profile-resolve` and `profile-run` through
 the existing authenticated tool path. Agent-only resolve/run commands require a running thread.
 
-Composer attachments and automatic profile selection when launching tasks are still pending.
+Explicit launch attachments are described below. Automatic profile selection without an attachment is still pending.
 The current profile supports SSH commands and Git ref listing/fetch, with existing output and
 time limits. It does not configure ordinary terminal SSH/Git commands or deliver raw values.
+
+## Attach Vault requirements before an agent run
+
+Use **Vault attachments** above the web/desktop composer or in the mobile composer. The same
+control is available in the scheduled-task prompt editor. Review a profile and attach its
+current version, or choose a Vault reference. The prompt contains readable links with no
+credential values. Remove/replace them through the control, or delete their lines in the
+prompt. Keep attachment links on their own lines; inline or quoted examples are not requirements.
+
+A profile requires a full-access/default agent run. Every required SSH/Git binding must have
+an active key, verified host trust and a matching use grant. A reference alone requires active
+metadata and inspect access; it grants no credential use. Host-only review for a new scheduled
+thread does not prove its grants. Grant the project deliberately when future scheduled threads
+need access. Editing a profile requires reviewing and attaching its new version before a later
+run can start. Existing runs retain their pinned configuration; current grants still apply.
+
+Invalid, missing, changed or denied requirements produce **Vault launch blocked** in the thread
+before the provider opens. Repair the binding/grant or edit the prompt, then retry. Steering
+also checks explicit attachments and cannot switch an existing run's pinned profile. Scheduled
+agent runs follow the same checks. A schedule's dispatch status is not proof that its provider
+run completed; inspect the thread for a blocked-run result. Command-only jobs and upstream
+servers without attachment support do not perform these Vault checks.

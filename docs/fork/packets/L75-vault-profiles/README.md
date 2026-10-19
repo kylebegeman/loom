@@ -1,6 +1,6 @@
 # L75: Project environment profiles
 
-Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management milestone implemented locally. Full packet scope retained.
+Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management and explicit launch attachments implemented locally. Full packet scope retained.
 
 Bind a complete set of development accounts, credentials and endpoints to a named project environment.
 
@@ -20,7 +20,8 @@ preview, choose/clear a default, archive, restore and repair bindings. MCP/CLI r
 execute named bindings. The first resolution durably pins the profile revision and key
 versions for the authenticated run; current grants, keys and archive state remain authoritative.
 
-Task/composer launch selectors, portable requirement declarations, other credential kinds,
+Interactive/scheduled launch selectors and server preflight are implemented for SSH/Git.
+Portable requirement declarations, other credential kinds,
 account provisioning, Library sharing and run-pin retention automation remain selected.
 No production rollout or personal-vault migration occurred.
 
@@ -40,8 +41,8 @@ Uses reference and grant interfaces; connectors supply validation when installed
 
 ## Packet seams
 
-No new upstream seams. The implementation uses existing fork registries and the shared
-`ext-vault` boundary. [SEAMS.md](./SEAMS.md) records scope and merge verification.
+Management uses existing fork registries. Launch integration adds marked provider guard and
+web/native control seams, recorded in FORK.md and seams.tsv. [SEAMS.md](./SEAMS.md) records scope and merge verification.
 
 ## Documents
 

@@ -6,7 +6,8 @@ Attach named Vault items without copying their values into prompts or settings.
 
 ## Current milestone and full scope
 
-The local milestone is described in [README.md](./README.md). The complete selected outcome
+Explicit prompt attachments and blocking provider preflight are now part of the local milestone.
+Links contain references only and do not grant access. The local milestone is described in [README.md](./README.md). The complete selected outcome
 below remains the acceptance target; pending consumers are not implied by local management.
 
 ## How it works

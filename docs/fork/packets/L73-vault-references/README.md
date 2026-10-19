@@ -1,6 +1,6 @@
 # L73: Searchable credential references everywhere
 
-Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management milestone implemented locally. Full packet scope retained.
+Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management and explicit launch attachments implemented locally. Full packet scope retained.
 
 Attach named Vault items without copying their values into prompts or settings.
 
@@ -20,8 +20,8 @@ mobile computer settings, palette navigation, MCP and CLI. The project profile e
 the picker to bind, replace and unbind SSH keys. Agent search/describe requires inspect grants;
 forbidden and unknown IDs both describe as null. No credential values are returned.
 
-Composer attachments, CLI completion, role/account search, cross-environment discovery and
-other consumers remain selected. This milestone does not make references usable everywhere.
+Composer and scheduled-prompt attachments now use safe standalone links. CLI completion,
+role/account search, cross-environment discovery and other consumers remain selected.
 
 ## Surfaces
 
@@ -39,8 +39,8 @@ Uses metadata search, reference resolution and access summaries from the shared 
 
 ## Packet seams
 
-No new upstream seams. The implementation uses existing fork registries and the shared
-`ext-vault` boundary. [SEAMS.md](./SEAMS.md) records scope and merge verification.
+Management uses existing fork registries. Launch integration adds marked provider guard and
+web/native control seams, recorded in FORK.md and seams.tsv. [SEAMS.md](./SEAMS.md) records scope and merge verification.
 
 ## Documents
 

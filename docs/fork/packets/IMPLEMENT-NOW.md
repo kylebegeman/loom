@@ -37,10 +37,11 @@ and limits, then propose the next bounded section.
 L73/L75 now add searchable metadata references and environment/project-local SSH/Git profiles,
 with web/desktop/native management and MCP/CLI named execution. First use durably pins run
 selection and key versions; current grants, host trust, item state and profile archive remain
-live checks. Full scopes remain In progress. Composer/task launch selectors, portable
-requirements and other credential kinds stay selected. The suggested next section is reviewed
-profile selection and reference attachments at interactive and scheduled agent launch, with
-missing-binding preflight and safe transcript summaries. Real credential registration,
+live checks. Full scopes remain In progress. Portable requirements and other credential kinds stay selected. Explicit standalone Vault attachments now cover interactive/scheduled prompts and common
+provider launch/steering preflight. Required profile versions and current grants are checked;
+ordinary prompts skip Vault. Safe labels remain in transcripts. The suggested next section is
+scheduled-run outcome reconciliation and recovery so a Vault-blocked run also appears on the
+task itself, with a clear re-review/retry path. Real credential registration,
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
