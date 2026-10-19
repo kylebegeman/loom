@@ -38,7 +38,8 @@ Web, [`apps/web/src/fork/preview-links/`](../../../../apps/web/src/fork/preview-
 Mobile, [`apps/mobile/src/fork/preview-links/`](../../../../apps/mobile/src/fork/preview-links/):
 
 - [`PreviewLinksScreen.tsx`](../../../../apps/mobile/src/fork/preview-links/PreviewLinksScreen.tsx),
-  [`openPreviewLink.ts`](../../../../apps/mobile/src/fork/preview-links/openPreviewLink.ts),
+  [`externalUrl.ts`](../../../../apps/mobile/src/fork/preview-links/externalUrl.ts),
+  [`entryUrl.ts`](../../../../apps/mobile/src/fork/preview-links/entryUrl.ts),
   [`previewLinksLogic.ts`](../../../../apps/mobile/src/fork/preview-links/previewLinksLogic.ts).
 
 ## Upstream T3 Code

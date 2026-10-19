@@ -17,8 +17,9 @@ your router, and the computer is never reachable from the network directly.
 
 ## Setting up a computer
 
-You need a domain on Cloudflare. Each computer that shares links needs its own domain,
-because one wildcard record sends every address to one tunnel.
+You need a domain on Cloudflare. For now one domain serves links from one computer, because
+its wildcard record sends every address to that computer's tunnel. Sharing from more
+computers on the same domain is planned; you will not need another domain for it.
 
 1. In the Cloudflare dashboard, create a tunnel of the Cloudflared type (a remotely managed
    tunnel). Copy its connector token, the long value in the install command Cloudflare

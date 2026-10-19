@@ -68,7 +68,7 @@ Eleven upstream files, all `fork: preview-links`. See [SEAMS.md](./SEAMS.md).
   `openPreviewSession.ts`, `openTerminalLinkInPreview.ts`, `PreviewView.tsx`.
 - Web port card: `PreviewLocalServerCard.tsx`.
 - Mobile: `Stack.tsx`, `settings-sheet-targets.ts`, `SettingsRouteScreen.tsx`,
-  `ThreadFeed.tsx`.
+  `openExternalUrl.ts`.
 
 ## Prerequisites on the machine
 

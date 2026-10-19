@@ -71,7 +71,8 @@ runs at share time and on every request.
   settings section.
 - Preview panel navigation, the port card, chat and terminal links, and the panel's "Open in
   browser".
-- Mobile: links tapped in a thread's messages.
+- Mobile: any preview link opened from the app, in messages, pull requests, files or rendered
+  pages.
 - Agents: `loom_preview_links_list`, `loom_preview_link_share`, `loom_preview_link_revoke`.
 - Ways out: End, End all links, Sign out preview browsers, turning previews off, removing the
   connector token. Ended links stay visible and restorable for 7 days.
@@ -99,11 +100,9 @@ unreachable loopback still shows an error, now pointing at Settings > Previews.
 - Entry codes and a host-only cookie instead of bearer URLs, so links in transcripts are not
   credentials. See [TECHNICAL.md](./TECHNICAL.md#security-reasoning).
 - Settings, links and secrets stay on the computer; nothing is stored in the Library.
+- One domain is enough for every computer. In this slice the wildcard record routes the
+  domain to one computer's tunnel. A later slice routes other computers' links on the same
+  domain: the Library adds an exact DNS record per link to that computer's tunnel, which
+  outranks the wildcard. The computer name keeps addresses distinct across computers.
 - Slices 2 to 6 (hosted HTML and Dossier documents, interactive pages with replies,
   containers) are future work. They need Library schema changes and Kyle's approval.
-
-## Open questions
-
-- One wildcard record routes a domain to one tunnel, so two computers cannot share a domain.
-  The computer name keeps addresses distinct but does not route. Is one domain per computer
-  acceptable, or should a later slice route by name?

@@ -44,19 +44,6 @@ export function previewComputers(
     );
 }
 
-/**
- * Computers to ask for an entry link to a URL from a message. The thread's own computer most
- * likely serves it, so it goes first; the rest follow in display order.
- */
-export function previewOpenCandidates(
-  computers: ReadonlyArray<PreviewComputer>,
-  preferred: EnvironmentId | null,
-): ReadonlyArray<EnvironmentId> {
-  const ids = computers.map((computer) => computer.environmentId);
-  if (preferred === null || !ids.includes(preferred)) return ids;
-  return [preferred, ...ids.filter((id) => id !== preferred)];
-}
-
 export interface PreviewSetupStatus {
   readonly label: string;
   readonly detail: string | null;

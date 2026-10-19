@@ -328,4 +328,4 @@ apps/web/src/components/preview/PreviewLocalServerCard.tsx	preview-links	3
 apps/mobile/src/Stack.tsx	preview-links	2
 apps/mobile/src/features/settings/components/settings-sheet-targets.ts	preview-links	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	preview-links	1
-apps/mobile/src/features/threads/ThreadFeed.tsx	preview-links	2
+apps/mobile/src/lib/openExternalUrl.ts	preview-links	2

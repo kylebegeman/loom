@@ -6,7 +6,6 @@ import {
   previewComputers,
   previewLinkActions,
   previewLinkTiming,
-  previewOpenCandidates,
   previewSetupStatus,
   visiblePreviewLinks,
   type PreviewComputerSource,
@@ -87,19 +86,6 @@ describe("previewComputers", () => {
       computer("a", "Dorothy"),
     ]);
     expect(result.map((entry) => entry.label)).toEqual(["Dorothy", "Zelda"]);
-  });
-});
-
-describe("previewOpenCandidates", () => {
-  const computers = previewComputers([computer("a", "A"), computer("b", "B"), computer("c", "C")]);
-
-  it("asks the thread's computer first", () => {
-    expect(previewOpenCandidates(computers, EnvironmentId.make("c"))).toEqual(["c", "a", "b"]);
-  });
-
-  it("keeps display order when the thread's computer cannot share previews", () => {
-    expect(previewOpenCandidates(computers, EnvironmentId.make("gone"))).toEqual(["a", "b", "c"]);
-    expect(previewOpenCandidates(computers, null)).toEqual(["a", "b", "c"]);
   });
 });
 

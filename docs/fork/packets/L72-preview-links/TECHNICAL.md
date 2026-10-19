@@ -146,9 +146,12 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
   to the shell on desktop.
 - Gating: `capabilities.loomFeatures` includes `"preview-links"`
   (`advertised.ts`, `capability.ts`), plus each command's `permissionAtom`.
-- Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `openPreviewLink.ts`,
-  `previewLinksLogic.ts`). Thread links that look like preview links are opened through
-  `open` on each connected computer in turn, then in the system browser.
+- Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `externalUrl.ts`,
+  `entryUrl.ts`, `previewLinksLogic.ts`). Every external open goes through
+  `tryOpenExternalUrl`, which swaps a preview link for an entry link from the first connected
+  computer whose `open` accepts it. Entry links pass through unchanged, and a link no computer
+  serves opens as is. The lookup loads lazily so `openExternalUrl.ts` keeps no connection
+  dependencies.
 
 ## Agent-facing tools
 

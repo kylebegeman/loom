@@ -23,12 +23,12 @@ Every marker is `fork: preview-links`. Lines are the counts `docs/fork/seams.tsv
 | `apps/mobile/src/Stack.tsx`                                              | 2     | Import and the `PreviewLinks` settings screen (`linking: "previews"`, title "Previews").                                                                                       |
 | `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` | 1     | The `"PreviewLinks"` target.                                                                                                                                                   |
 | `apps/mobile/src/features/settings/SettingsRouteScreen.tsx`              | 1     | The "Previews" row after Maintenance.                                                                                                                                          |
-| `apps/mobile/src/features/threads/ThreadFeed.tsx`                        | 2     | Import and an early return that opens preview link URLs through `open`.                                                                                                        |
+| `apps/mobile/src/lib/openExternalUrl.ts`                                 | 2     | Import and one line in `tryOpenExternalUrl` that swaps a preview link for a fresh entry link before it leaves the app.                                                         |
 
 Why seams and not extension points: web preview navigation has no extension point, and each
 navigation path had to resolve a URL before loading it. The seams are one call to
 `navigablePreviewUrlFor` plus a null check, so the logic stays in
-`apps/web/src/fork/preview-links/navigation.ts`. Mobile has no settings or message-link
+`apps/web/src/fork/preview-links/navigation.ts`. Mobile has no settings or external-link
 extension point.
 
 ## Registrations (fork-owned files only)

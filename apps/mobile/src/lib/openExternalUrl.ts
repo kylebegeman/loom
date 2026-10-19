@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { Linking } from "react-native";
+import { previewLinkOpenUrl } from "../fork/preview-links/externalUrl"; // fork: preview-links
 
 const ExternalUrlTarget = Schema.Literals([
   "file-preview",
@@ -42,6 +43,7 @@ function externalUrlMetadata(url: string): { readonly scheme: string; readonly h
 
 export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget): Promise<boolean> {
   try {
+    url = await previewLinkOpenUrl(url); // fork: preview-links
     await Linking.openURL(url);
     return true;
   } catch (cause) {

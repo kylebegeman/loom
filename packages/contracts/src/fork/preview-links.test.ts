@@ -8,6 +8,9 @@ import {
   PreviewLinkSuffix,
 } from "./preview-links.ts";
 
+const decodeSettings = Schema.decodeSync(PreviewLinksSettings);
+const isSuffix = Schema.is(PreviewLinkSuffix);
+
 describe("parsePreviewLinkHost", () => {
   it("splits a link host under its suffix", () => {
     expect(parsePreviewLinkHost("5173-k3f9x2-dorothy.bagels.top", "bagels.top")).toEqual({
@@ -42,7 +45,7 @@ describe("looksLikePreviewLinkUrl", () => {
 
 describe("PreviewLinksSettings", () => {
   it("defaults the gateway port for settings saved without one", () => {
-    const decoded = Schema.decodeSync(PreviewLinksSettings)({
+    const decoded = decodeSettings({
       enabled: true,
       suffix: "bagels.top",
       machine: "dorothy",
@@ -59,6 +62,6 @@ describe("PreviewLinksSettings", () => {
     [".bagels.top", false],
     ["bagels..top", false],
   ])("checks the suffix %s", (suffix, valid) => {
-    expect(Schema.is(PreviewLinkSuffix)(suffix)).toBe(valid);
+    expect(isSuffix(suffix)).toBe(valid);
   });
 });
