@@ -1654,26 +1654,31 @@ export function AddProjectDestinationScreen(props: {
       const title = preparation?.title ?? inferProjectTitleFromPath(resolved.path); // fork: project-home
       // fork: project-home - Save the preparation receipt before any clone starts.
       if (preparation) {
-        try {
-          if (!sourceEnvironmentId || !sourceProjectId)
-            throw new Error("The preparation source is unavailable.");
-          await receiptState.save({
-            sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
-            sourceProjectId: ProjectId.make(sourceProjectId),
-            destinationEnvironmentId: environment.environmentId,
-            projectId,
-            title,
-            createdAt: preparation.createdAt,
-            remoteUrl: preparation.source.remoteUrl,
-            repositoryKey: preparation.source.repositoryKey,
-            destinationPath: resolved.path,
-          });
-        } catch (cause) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "The preparation receipt could not be saved. No clone was started.",
-          );
+        // No throw inside try: the React Compiler skips a component that has one.
+        const saveError =
+          sourceEnvironmentId && sourceProjectId
+            ? await receiptState
+                .save({
+                  sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
+                  sourceProjectId: ProjectId.make(sourceProjectId),
+                  destinationEnvironmentId: environment.environmentId,
+                  projectId,
+                  title,
+                  createdAt: preparation.createdAt,
+                  remoteUrl: preparation.source.remoteUrl,
+                  repositoryKey: preparation.source.repositoryKey,
+                  destinationPath: resolved.path,
+                })
+                .then(
+                  () => null,
+                  (cause: unknown) =>
+                    cause instanceof Error
+                      ? cause.message
+                      : "The preparation receipt could not be saved. No clone was started.",
+                )
+            : "The preparation source is unavailable.";
+        if (saveError !== null) {
+          setError(saveError);
           setIsSubmitting(false);
           return;
         }

@@ -218,7 +218,7 @@ export function EnclosureTab({
       if (alive.current) setWorking(false);
     }
   };
-  const useCase = async () => {
+  const applyCase = async () => {
     if (working || !casePath.trim()) return;
     setWorking(true);
     setError(null);
@@ -510,7 +510,7 @@ export function EnclosureTab({
             variant="outline"
             size="xs"
             disabled={disabled || !canExport || !canEdit || !casePath.trim() || snapshot?.readOnly}
-            onClick={() => void useCase()}
+            onClick={() => void applyCase()}
           >
             Use case and centre board
           </Button>

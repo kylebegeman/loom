@@ -1,13 +1,13 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import type { ServerConfig } from "@t3tools/contracts";
+import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 
 export type ProjectThreadActivity = ReturnType<typeof resolveProjectThreadActivity>;
 
 export function resolveProjectThreadActivity(
   thread: EnvironmentThreadShell,
-  config: ServerConfig | undefined,
+  config: EnvironmentServerConfig | undefined,
   now: string,
 ) {
   if (config?.environment.capabilities.threadSnooze && effectiveSnoozed(thread, { now })) {

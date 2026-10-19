@@ -374,10 +374,9 @@ describe("KeybindingsSettings.logic", () => {
       { command: "terminal.toggle", shortcut },
     ];
 
-    expect(buildKeybindingRows(keybindings, "")).toEqual([
-      expect.objectContaining({ command: "terminal.toggle", conflicts: [] }),
-    ]);
-    expect(buildKeybindingRows(keybindings, "inspector")).toEqual([]);
+    const rows = buildKeybindingRows(keybindings);
+    expect(rows).toEqual([expect.objectContaining({ command: "terminal.toggle", conflicts: [] })]);
+    expect(filterKeybindingRows(rows, "inspector")).toEqual([]);
     const options = buildKeybindingCommandOptions(keybindings);
     expect(options).not.toContain("loom.thread-inspector.toggle");
     expect(options).not.toContain("loom.thread-inspector.card");

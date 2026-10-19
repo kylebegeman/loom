@@ -11,7 +11,7 @@ import {
   readyAgentCount,
   recentConversationForComputer,
 } from "~/components/computers/presentation";
-import type { EnvironmentPresentation } from "~/state/environments";
+import { type EnvironmentPresentation, useEnvironmentProviders } from "~/state/environments";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironmentScope } from "~/state/session";
 import { useScratchProject } from "~/hooks/useScratchProject";
@@ -26,6 +26,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 export function ComputerWorkActions({ environment }: { environment: EnvironmentPresentation }) {
   const projects = useProjects();
   const threads = useThreadShells();
+  const providersByEnvironment = useEnvironmentProviders();
   const setEnabled = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
   const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const { handleNewThread } = useHandleNewThread();
@@ -52,7 +53,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
       project.environmentId === environment.environmentId &&
       project.id === recentConversation?.projectId,
   );
-  const agentsReady = readyAgentCount(environment.serverConfig?.providers ?? []);
+  const agentsReady = readyAgentCount(providersByEnvironment.get(environment.environmentId) ?? []);
   const choiceCount = machineProjects.length + (scratchRoot === null ? 0 : 1);
   const addProject = () =>
     openCommandPalette({ open: "add-project", environmentId: environment.environmentId });

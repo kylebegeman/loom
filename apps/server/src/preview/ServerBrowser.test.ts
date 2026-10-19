@@ -1829,14 +1829,16 @@ it.live(
           _tag: "PreviewAutomationControlInterruptedError",
           reason: "interrupted",
         });
+        // Tab setup evaluates its own probes; only the agent's expression must not repeat.
+        const isAction = ([method, input]: readonly [string, unknown?]) =>
+          method === "Runtime.evaluate" &&
+          (input as { expression?: string } | undefined)?.expression === "performOnce()";
         expect(
           desktopConnections[0]!.context.sessions
             .flatMap((session) => session.send.mock.calls)
-            .filter(([method]) => method === "Runtime.evaluate"),
+            .filter(isAction),
         ).toEqual([]);
-        expect(
-          original.sessions[0]!.send.mock.calls.filter(([method]) => method === "Runtime.evaluate"),
-        ).toHaveLength(1);
+        expect(original.sessions[0]!.send.mock.calls.filter(isAction)).toHaveLength(1);
       }),
     ).pipe(Effect.provide(layer)),
 );
