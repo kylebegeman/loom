@@ -1,8 +1,8 @@
 # L72 testing
 
-The server files were rerun on 2026-10-19 after the DPoP renewal grace: the 54 tests in
-`apps/server/src/fork/preview-links/` pass and the server typechecks. The contract and client
-files were reported passing on 2026-10-18; that round changed only server code.
+Every file below was rerun on 2026-10-19 after the restore and tunnel message fixes: the 56
+server tests and the 107 contract and client tests pass, and the server, web, mobile and
+contracts packages typecheck.
 
 ## Automated tests
 
@@ -98,22 +98,46 @@ links on bagels.top:
 - The iPad app paired over the tailnet: an agent's `localhost:5797` chat link opens Safari on
   its bagels.top link. With nothing on the port the page says so; it answered 502 before, and
   Cloudflare showed its own error page instead.
+- The iPad app: a `localhost:41020` link in an html_render page and a `localhost:5812` link in
+  the Files markdown preview each open Safari, signed in, on a new bagels.top link.
+- Removing the connector token stops `cloudflared`, the status reads "Needs a tunnel token"
+  and links answer Cloudflare's 530. A fake token reads "Tunnel: Error: Provided Tunnel token
+  is not valid."; before the fix it showed `cloudflared`'s closing help hint. Restoring the
+  real token with the server stopped brings the tunnel back.
+- Renaming the computer ends open links: the old address answers 404 as another computer's
+  and the renamed one 410. The sheet still offered Restore on the old links; now they leave
+  the list and return with Restore when the name changes back. A domain change takes the same
+  host check and is covered by a unit test only.
+- Agents, in a scratch project on the dev server: sharing a lane port returns a link with its
+  lane; a server started in the thread's terminal drawer is shared with no lane and answers
+  "Open this link from Loom" through Cloudflare; port 5850 is refused with "Port 5850 is not
+  one of this thread's lane ports, and no server from this thread's terminals is listening on
+  it." Settling the thread released its lane: the lane link ended and stays restorable, the
+  processes the lane recorded stopped, and the terminal link stayed open.
+
+Traps for the next pass:
+
+- An agent shell in a live-install lane carries that lane's `LOOM_LANE_*` variables and
+  `TMPDIR` into anything it starts, the dev server included. Clear them before running the
+  dev server's `lane-run` by hand, or the live install records the process as its own.
+- A lane-enabled dev server and the live install hand out lane ports from the same
+  41000-48999 range without knowing about each other, so a dev lane can get a live lane's
+  ports, and a live lane's release stops listeners on them. Two stuck live lanes stopped them
+  every 30 seconds until the L19 fix in `cde8064f74`. Check a port with `lsof` before testing
+  on it.
 
 ## Still to check
 
-These need Kyle's permission for a real browser or device.
+These need T3 Connect, another computer, a phone on cellular or an upstream server.
 
-- Removing the connector token stops `cloudflared`, and a wrong token shows the tunnel error.
-  The "Unregistered tunnel connection" log line has not been seen.
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.
 - Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer.
-- Mobile on cellular: Settings > Previews actions, and tapping an agent's link in a thread,
-  in an html_render page, in an MCP app and in the Files markdown preview. Only the chat link
-  has been tapped, on the simulator over the tailnet.
-- An agent sharing a lane port and a terminal server, being refused another port, and its
-  lane link ending when the lane is released.
-- Restore refused after a domain or computer name change.
+- Mobile on cellular: Settings > Previews actions and link taps. Over the tailnet the chat,
+  html_render and Files links have been tapped.
+- A link in an MCP app. It goes through the same opener as the html_render and Files links,
+  but no MCP server with an app UI was available to test.
+- The "Unregistered tunnel connection" log line has not been seen.
 - Upstream T3 server: no preview actions; the unreachable loopback error names Settings >
   Loom > Previews.
 
