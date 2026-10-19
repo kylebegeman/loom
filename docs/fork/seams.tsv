@@ -347,3 +347,6 @@ apps/web/src/components/chat/ChatComposer.tsx	vault-launch-ui	2
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-launch-ui	2
 apps/mobile/src/features/threads/ThreadComposer.tsx	vault-launch-ui	2
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-launch-ui	2
+apps/server/src/scheduledTasks/ScheduledTaskService.ts	vault-scheduled-outcomes	6
+apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-scheduled-outcomes	2
+apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-scheduled-outcomes	2

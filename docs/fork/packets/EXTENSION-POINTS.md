@@ -3083,7 +3083,7 @@ specific run, and checks all current use grants, keys and host trust. Item attac
 current inspect access and active metadata; they grant no credential use. Failure settles the
 run through the existing failed-run event path with a safe repair message. Full-access/default
 requirements remain in the shared profile service. Scheduled agent runs, queued messages,
-MCP/CLI launches and every provider pass through the same guard. No scheduler wire/storage
+MCP/CLI launches and every provider pass through the same guard. No upstream scheduler wire/storage
 change or automatic personal-credential fallback is introduced. Provider steering reuses the same guard and cannot change a pinned profile mid-run.
 Command-only jobs and upstream servers do not gain this preflight guarantee.
 
@@ -3092,6 +3092,24 @@ attachment control in the web/native composer and scheduled-task prompt editor. 
 reviews profiles and edits only the existing prompt, preserving normal draft, retry, queue and
 schedule persistence. There are no new event fields, database migrations or dependencies.
 Unlike `ext-turn-input`, this guard must never time out and silently skip a required check.
+
+`vault-scheduled-outcomes` owns the scheduler integration for explicit Vault-attached runs.
+The marked scheduler construction initializes the fork service and its idempotent SQLite
+migration before ForkLayer. The same migration set is registered in the normal fork ledger.
+Track the exact generated message before dispatch, including rendered webhook prompts; bind
+ownership to task creation/firing timestamps and project identity. Project the matching V2 run
+into the existing task list/manual result, keeping queued runs running and terminal failures
+failed. Use the scheduler's existing source/notification path to publish changes. Raw task
+rows, run counts, cadence and webhook delivery logs retain dispatch semantics. Upstream event
+and task schemas are unchanged. Web/native recovery reuses task editing and explicit retry;
+webhook repair requires a new request. Keep one metadata-only ownership row per task and delete
+stale ownership. Earlier untracked firings retain dispatch status; no automatic replay occurs.
+
+Portable requirements use the versioned contracts in `vault-profiles.ts`. They export only
+user-reviewed labels and requirement names/kinds; never bindings, grants, environment identity,
+repositories or pins. Import into an unbound local profile through existing preview/save, or
+use the create-only administrator import mutation. Agents cannot change bindings or expand
+their project scope. Library publication and project-file distribution remain separate design.
 
 No immutable audit ledger, platform membership, workload delivery lease or provider
 probe exists. General readiness with credential-use requirements reports an unsupported execution probe.

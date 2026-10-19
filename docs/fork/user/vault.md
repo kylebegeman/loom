@@ -296,6 +296,26 @@ run can start. Existing runs retain their pinned configuration; current grants s
 Invalid, missing, changed or denied requirements produce **Vault launch blocked** in the thread
 before the provider opens. Repair the binding/grant or edit the prompt, then retry. Steering
 also checks explicit attachments and cannot switch an existing run's pinned profile. Scheduled
-agent runs follow the same checks. A schedule's dispatch status is not proof that its provider
-run completed; inspect the thread for a blocked-run result. Command-only jobs and upstream
-servers without attachment support do not perform these Vault checks.
+agent runs follow the same checks. Newly fired tasks with Vault attachments show their latest
+provider run as running, failed or completed. A blocked run remains failed even when the prompt
+was dispatched successfully. Review the task's attachments, repair access and explicitly retry;
+on mobile, tap the task to edit it, save, then choose **Run now**. Webhooks require a new request
+after repair. Runs fired before this tracking was available retain their dispatch status.
+Command-only jobs and upstream servers without attachment support do not perform these Vault checks.
+
+## Share requirements without sharing local bindings
+
+In **Vault project profiles**, export or copy a profile's requirements. The declaration includes
+its label and SSH/Git requirement names and kinds. Review those labels before sharing. Keys,
+repositories, grants, defaults and run selections stay on the source computer.
+
+On the destination computer, choose a project and **Import portable requirements**. Paste the
+version 1 declaration, review the fresh profile and choose local keys/repositories. You may save
+it unbound for later repair. Importing does not replace an existing profile, change its default
+or grant access. Cancel editing to discard the import; archive a saved profile when finished.
+
+For automation, `loom vault profile-requirements` exports through the authenticated connection.
+A human administrator can use `profiles-apply` with `change.type: "import"`, a fresh `id` and
+`declaration`, plus the current registry revision and operation ID. Agents may export their own
+project's requirements but cannot import or edit bindings. Other credential kinds and automatic
+Library/project-file distribution are not available yet.

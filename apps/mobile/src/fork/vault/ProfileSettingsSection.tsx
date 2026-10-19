@@ -1,3 +1,4 @@
+import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import {
@@ -371,6 +372,10 @@ function ProfileManager({
           })
         }
       />
+      <VaultRequirementImport
+        disabled={locked || !!editing || !snapshot.data || snapshot.data.profiles.length >= 32}
+        onImport={edit}
+      />
       {snapshot.error ? <Text accessibilityRole="alert">{message(snapshot.error)}</Text> : null}
       {error && !editing ? <Text accessibilityRole="alert">{error}</Text> : null}
       {snapshot.isPending ? <Text>Loading profiles…</Text> : null}
@@ -394,6 +399,7 @@ function ProfileManager({
           <Text>
             Version {p.version} · {p.bindings.map((b) => b.name).join(", ")}
           </Text>
+          <VaultRequirementExport profile={p} />
           <Button
             label={`Edit ${p.label}`}
             disabled={locked || !!editing || p.state === "archived"}

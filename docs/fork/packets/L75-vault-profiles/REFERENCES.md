@@ -30,3 +30,7 @@ Implemented against parent `6e3301e02f`; these current source links define the l
 External engines and specs in the foundation are evaluation references. No external code or
 assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
 this packet adds no application dependency.
+
+- [Scheduled outcome service](../../../../apps/server/src/fork/vault/VaultScheduledOutcomes.ts)
+- [Outcome ownership migration](../../../../apps/server/src/fork/vault/scheduled-migrations.ts)
+- [Portable requirement contract](../../../../packages/contracts/src/fork/vault-profiles.ts)

@@ -6,14 +6,14 @@ All new implementation lives in fork-owned contracts, services, client-runtime a
 components. Existing core, RPC, settings, palette, CLI and MCP extension points register it.
 The common provider instruction extension is reused without additional upstream changes.
 The initial management milestone added no upstream seams. Launch integration now adds the
-marked files listed below; no SQL migration or production dependency is added.
+marked files listed below. Scheduled outcomes add a fork-owned SQLite migration; no production dependency is added.
 
 The shared boundary is documented in [EXTENSION-POINTS.md](../EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
 Other packets consume shared references/profiles, never this packet's UI internals.
 
 ## Remaining integration
 
-Portable requirements and additional consumers still require explicit integration design. They must not put credential values into turn events or bypass current
+Library publication, project-file discovery and additional consumers still require explicit integration design. They must not put credential values into turn events or bypass current
 environment authority. Full packet acceptance remains open.
 
 ## Merge verification
@@ -33,3 +33,12 @@ available upstream nightly before handoff. The result and tag are recorded in TE
 
 FORK.md and seams.tsv enumerate these markers. The blocking guard is independent of the
 optional `ext-turn-input` contributor proposal because a required check cannot be skipped.
+
+## Scheduled outcome seams
+
+- `apps/server/src/scheduledTasks/ScheduledTaskService.ts`: `vault-scheduled-outcomes`, construct the fork service, track exact message ownership before dispatch, project task list/manual results and publish outcome changes through the existing scheduler.
+- `apps/web/src/components/settings/ScheduledTasksSettings.tsx`: `vault-scheduled-outcomes`, import and review/retry recovery control.
+- `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`: `vault-scheduled-outcomes`, import and capability-gated status/recovery guidance.
+
+The SQLite ownership table and migration ledger are fork-owned. Portable declaration tools,
+contracts and both transfer components use existing profile registrations and add no seams.

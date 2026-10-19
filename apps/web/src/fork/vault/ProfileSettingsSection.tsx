@@ -1,3 +1,4 @@
+import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -224,6 +225,10 @@ function ProfileManager({
           Create profile
         </Button>
       </div>
+      <VaultRequirementImport
+        disabled={locked || !!editing || !snapshot || snapshot.profiles.length >= 32}
+        onImport={edit}
+      />
       {error || failure(result) ? (
         <p role="alert" className="text-sm">
           {error ?? failure(result)}
@@ -255,6 +260,7 @@ function ProfileManager({
           <p className="text-sm">
             Version {p.version} · {p.bindings.map((b) => b.name).join(", ")}
           </p>
+          <VaultRequirementExport profile={p} />
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"

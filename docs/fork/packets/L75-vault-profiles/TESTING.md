@@ -76,8 +76,8 @@ packet links and whitespace are checked. No repo-wide check was run.
 
 The final launch commits are previewed separately against the newest upstream nightly and
 compared with their pre-slice parent. Any baseline conflict remains an upstream-sync task.
-The scheduler's dispatch-success status is not end-to-end run completion; outcome reconciliation
-is the next proposed work section. This does not imply full packet completion.
+The attachment milestone initially retained dispatch status. Scheduled outcome reconciliation
+and recovery are verified below. This does not imply full packet completion.
 
 Launch implementation commits: `e13465b96b` (shared guard) and `975120228e` (client controls).
 The final source preview against `v0.1.1-nightly.20261018.3335` reports 57 conflicting files,
@@ -87,3 +87,35 @@ form, so that control must be placed in its moved prompt section during synchron
 `v0.1.1-nightly.20261017.3238` still previews cleanly. The existing upstream-sync limitation
 remains; no merge or deployment was attempted. The paused QA schedule was deleted after
 persistence checks. iOS also displayed the saved reviewed profile in its scheduled editor.
+
+## Portable requirements and scheduled recovery milestone
+
+The focused set passes 49 tests in 8 files: 3 outcome ownership/reconciliation cases, 3 existing
+scheduler recovery cases, 31 webhook cases, 3 schedule cases, 1 migration-ledger case, 5 profile
+cases, 1 authenticated MCP case and 2 portable protocol cases. These verify exact message/run
+ownership; queued, failed, cancelled, interrupted, rolled-back and completed states; restart;
+foreign-project and deleted/recreated task denial; change notifications and ownership cleanup;
+ordinary prompt/failed dispatch preservation; declaration format/size/unknown-field rejection;
+exported binding omission; create-only import conflicts; and local binding repair/resolution.
+
+Scoped contracts, server, web, mobile and client-runtime typechecks pass. Changed-source lint,
+mobile native static checks, whitespace, seam counts and packet references pass. No repo-wide
+suite, live provider, production deployment or credential registration was used.
+
+The isolated web pass exported a real synthetic bound profile with no IDs/repositories,
+rejected an import carrying itemId, reviewed/saved/reopened a fresh unbound Git profile and
+exported it again. A paused scheduled task was fired manually twice with a wrong-environment
+reference. Both V2 runs failed with zero provider sessions, while the task list/subscription
+reported failed and exposed review/retry. Editing saved its revised prompt, and retry preserved
+the pause state and counted exactly two dispatches. Desktop-width and 390px recovery layouts
+were inspected with no horizontal overflow. Native iOS verified the shared failed result and
+saved task editor. After restarting Metro with a clean cache, native copy succeeded and a
+portable SSH declaration opened as an unbound profile, reviewed as missing and saved. A concurrent
+web archive correctly caused a stale-write conflict first; refreshing/reviewing succeeded. The refreshed task screen showed the explicit native review/save/Run now guidance. Native Run now also retried a second paused QA task, counted two dispatches and opened zero provider sessions. Both QA tasks were deleted; both imported test profiles were archived.
+
+No live successful model completion, native Android, standalone Electron, relay/tunnel transport,
+real webhook request or automatic wall-clock firing was exercised in the client pass. Service
+and existing scheduler tests cover terminal completion, schedule/webhook dispatch and cleanup.
+Raw scheduled_tasks rows and webhook delivery logs intentionally remain dispatch records; task
+list/subscribe and Run now show the derived provider outcome. Earlier untracked runs retain
+legacy dispatch status. Full packet acceptance remains open.

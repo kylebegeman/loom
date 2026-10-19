@@ -9,12 +9,14 @@ The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for ex
 - Web/native create/edit/clone, key picker, unbind, review and incomplete configuration repair.
 - Authenticated MCP/CLI project listing, durable run resolution and named hosted SSH/Git execution.
 - Current policy/key/host checks, project/provider/run attestation and archive guard at signing.
+- Exact scheduled-message outcome projection with web/native review and explicit retry.
+- Versioned portable requirement import/export, empty local bindings and project-scoped CLI/MCP.
 
 ## Remaining
 
-1. Reviewed profile selection and provider preflight now cover interactive/scheduled runs and steering. Reconcile scheduler dispatch status with eventual blocked-run status.
-2. Separate portable requirement declarations from local bindings; support credential/account kinds as adapters arrive.
-3. Design Library sharing and retained run-selection inspection/cleanup without publishing secret bindings.
+1. Add credential/account kinds as their delivery/connector adapters arrive; current declarations support SSH/Git.
+2. Design Library publication and project-file discovery for portable declarations without secret bindings.
+3. Add retained run-selection inspection and cleanup with explicit recovery/retention policy.
 
 ## Completion gate
 

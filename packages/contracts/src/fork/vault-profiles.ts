@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { ProjectId, ThreadId, NonNegativeInt, PositiveInt } from "../baseSchemas.ts";
@@ -13,9 +14,23 @@ import {
 } from "./vault-ssh.ts";
 import { VaultWorkloadError } from "./vault-workloads.ts";
 export const VaultBindingName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_-]{0,63}$/));
-export const VaultProfileBinding = Schema.Struct({
+export const VaultProfileRequirement = Schema.Struct({
   name: VaultBindingName,
   kind: Schema.Literals(["ssh", "git"]),
+});
+export const VaultProfileRequirements = Schema.Struct({
+  format: Schema.Literal("loom-vault-requirements"),
+  version: Schema.Literal(1),
+  label: VaultItemSummary.fields.label,
+  requirements: Schema.Array(VaultProfileRequirement).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(16),
+    Schema.makeFilter((items) => new Set(items.map((item) => item.name)).size === items.length),
+  ),
+});
+export type VaultProfileRequirements = typeof VaultProfileRequirements.Type;
+export const VaultProfileBinding = Schema.Struct({
+  ...VaultProfileRequirement.fields,
   itemId: Schema.NullOr(VaultItemId),
   repository: Schema.NullOr(VaultGitCommand.fields.repository),
 });
@@ -53,6 +68,11 @@ export const VaultProfileMutation = Schema.Struct({
   expectedRevision: NonNegativeInt,
   change: Schema.Union([
     Schema.Struct({ type: Schema.Literal("save"), profile: VaultProfileDefinition }),
+    Schema.Struct({
+      type: Schema.Literal("import"),
+      id: VaultItemId,
+      declaration: VaultProfileRequirements,
+    }),
     Schema.Struct({
       type: Schema.Literal("state"),
       id: VaultItemId,
@@ -159,3 +179,31 @@ export const VaultProfileRpcGroup = RpcGroup.make(
     error,
   }),
 );
+
+export const vaultProfileRequirements = (
+  profile: VaultProfileDefinition,
+): VaultProfileRequirements => ({
+  format: "loom-vault-requirements",
+  version: 1,
+  label: profile.label,
+  requirements: profile.bindings.map(({ name, kind }) => ({ name, kind })),
+});
+export const vaultProfileFromRequirements = (
+  declaration: VaultProfileRequirements,
+  id: string,
+): VaultProfileDefinition => ({
+  id,
+  label: declaration.label,
+  bindings: declaration.requirements.map(({ name, kind }) => ({
+    name,
+    kind,
+    itemId: null,
+    repository: null,
+  })),
+});
+const parseRequirements = Schema.decodeUnknownOption(
+  Schema.fromJsonString(VaultProfileRequirements),
+  { onExcessProperty: "error" },
+);
+export const readVaultProfileRequirements = (text: string): VaultProfileRequirements | null =>
+  text.length > 16384 ? null : Option.getOrNull(parseRequirements(text));

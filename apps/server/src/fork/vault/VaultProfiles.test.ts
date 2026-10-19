@@ -1,3 +1,4 @@
+import { vaultProfileRequirements } from "@t3tools/contracts/fork";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProjectId, RunId } from "@t3tools/contracts";
@@ -276,5 +277,43 @@ it.effect(
         .pipe(Effect.asVoid);
       expect((yield* f.launch.profile(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
+  "imports requirements as a fresh unbound profile without overwriting bindings or selecting a default",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.apply({ type: "save", profile: f.definition });
+      const id = yield* f.id;
+      const declaration = vaultProfileRequirements(f.definition);
+      const imported = yield* f.apply({ type: "import", id, declaration });
+      expect(imported.activeProfileId).toBeNull();
+      expect(imported.profiles.find((p) => p.id === id)?.bindings).toEqual([
+        { name: "server", kind: "ssh", itemId: null, repository: null },
+      ]);
+      expect(
+        (yield* f.apply({ type: "import", id: f.definition.id, declaration }).pipe(Effect.flip))
+          .reason,
+      ).toBe("conflict");
+      expect((yield* f.profiles.list(f.projectId)).profiles[0]?.bindings[0]?.itemId).toBe(f.itemId);
+      const importedProfile = imported.profiles.find((p) => p.id === id)!;
+      expect(
+        (yield* f.profiles.preview({
+          projectId: f.projectId,
+          profile: importedProfile,
+          threadId: f.threadId,
+        })).bindings[0]?.state,
+      ).toBe("missing");
+      yield* f.apply({
+        type: "save",
+        profile: {
+          ...importedProfile,
+          bindings: [{ ...importedProfile.bindings[0]!, itemId: f.itemId }],
+        },
+      });
+      yield* f.grant(f.key.destination);
+      expect((yield* f.profiles.resolve(f.threadId, id)).bindings[0]?.itemId).toBe(f.itemId);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

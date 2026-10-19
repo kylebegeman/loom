@@ -1,3 +1,4 @@
+import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
 import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
@@ -625,6 +626,13 @@ function ScheduledTaskRow({
             <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
           ) : null}
           {task.lastRunError ? <span className="text-destructive">{task.lastRunError}</span> : null}
+          {/* fork: vault-scheduled-outcomes */}
+          <VaultScheduledRecovery
+            task={task}
+            onReview={onEdit}
+            onRetry={() => void act("run")}
+            disabled={busy || !canOperate}
+          />
         </div>
       }
       control={

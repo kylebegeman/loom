@@ -89,6 +89,23 @@ it.effect(
           Effect.provideService(McpInvocationContext, scope),
         );
       expect(list[0]?.result).toMatchObject({ projectId });
+      const exported = yield* toolkit
+        .handle("loom_vault_profile_requirements", {
+          profileId,
+          projectId: ProjectId.make("other-project"),
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provide(f.context),
+          Effect.provideService(McpInvocationContext, scope),
+        );
+      expect(exported[0]?.result).toEqual({
+        format: "loom-vault-requirements",
+        version: 1,
+        label: "Agent profile",
+        requirements: [{ name: "host", kind: "ssh" }],
+      });
+      expect(JSON.stringify(exported)).not.toContain(f.itemId);
       const run = (caller = scope) =>
         toolkit
           .handle("loom_vault_profile_run", {

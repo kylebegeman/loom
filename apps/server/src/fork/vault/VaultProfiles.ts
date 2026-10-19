@@ -1,3 +1,4 @@
+import { vaultProfileFromRequirements } from "@t3tools/contracts/fork";
 import type { ProjectId, ThreadId, RunId } from "@t3tools/contracts";
 import {
   VaultError,
@@ -347,7 +348,16 @@ const make = Effect.gen(function* () {
       if (loaded.revision !== input.expectedRevision) return yield* fail("conflict");
       const profiles = [...loaded.value.profiles];
       let activeProfileId = loaded.value.activeProfileId;
-      const change = input.change;
+      const requested = input.change;
+      if (requested.type === "import" && profiles.some((p) => p.id === requested.id))
+        return yield* fail("conflict");
+      const change =
+        input.change.type === "import"
+          ? {
+              type: "save" as const,
+              profile: vaultProfileFromRequirements(input.change.declaration, input.change.id),
+            }
+          : input.change;
       if (change.type === "activate") {
         if (change.id && !profiles.some((p) => p.id === change.id && p.state === "active"))
           return yield* fail("not-found");

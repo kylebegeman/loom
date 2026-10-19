@@ -7,6 +7,7 @@ const actions = {
   "references-search": "loom_vault_references_search",
   "references-describe": "loom_vault_references_describe",
   profiles: "loom_vault_profiles",
+  "profile-requirements": "loom_vault_profile_requirements",
   "profiles-apply": "loom_vault_profiles_apply",
   "profile-resolve": "loom_vault_profile_resolve",
   "profile-run": "loom_vault_profile_run",

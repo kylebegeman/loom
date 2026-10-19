@@ -1,3 +1,4 @@
+import { VaultScheduledMigrations } from "../vault/scheduled-migrations.ts";
 import { LibraryAssetMigrations } from "../project-library/assets/migrations.ts";
 import { ProjectLibraryMigrations } from "../project-library/migrations.ts";
 import { ModelPreviewMigrations } from "../model-preview-3d/migrations.ts";
@@ -28,6 +29,7 @@ export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
   AppleBuildToolingMigrations,
   DeviceQaMigrations,
   CodeGraphMigrations,
+  VaultScheduledMigrations,
 ];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;

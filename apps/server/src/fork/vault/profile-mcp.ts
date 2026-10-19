@@ -1,3 +1,4 @@
+import { VaultProfileRequirements, vaultProfileRequirements } from "@t3tools/contracts/fork";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
@@ -54,6 +55,17 @@ export const VaultProfileToolkit = Toolkit.make(
       projectId: Schema.optional(VaultProfileMutation.fields.projectId),
     }),
     success: VaultProfileSnapshot,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_profile_requirements", {
+    description:
+      "Export a project's profile as a portable declaration containing only its label and requirement names/kinds. No keys, references, repositories, grants or default selection are exported. Threads are restricted to their own project; administrators supply projectId. Import using profiles-apply with change type:import, a fresh id and declaration, then bind locally and review.",
+    parameters: Schema.Struct({
+      profileId: VaultItemId,
+      projectId: Schema.optional(VaultProfileMutation.fields.projectId),
+    }),
+    success: VaultProfileRequirements,
     failure,
     dependencies,
   }).annotate(Tool.Readonly, true),
@@ -135,6 +147,25 @@ export const vaultProfileHandlers = McpToolAccess.toLayer(
                     ? p.list(input.projectId)
                     : Effect.fail(new VaultError({ reason: "invalid-input" })),
               ),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_profile_requirements: McpToolAccess.reads((input) =>
+        caller.pipe(
+          Effect.flatMap((scope) =>
+            onHost(
+              Effect.gen(function* () {
+                const profiles = yield* VaultProfiles.VaultProfiles;
+                const snapshot = scope.thread
+                  ? yield* profiles.listForThread(scope.thread.threadId)
+                  : input.projectId
+                    ? yield* profiles.list(input.projectId)
+                    : yield* new VaultError({ reason: "invalid-input" });
+                const profile = snapshot.profiles.find((p) => p.id === input.profileId);
+                if (!profile) return yield* new VaultError({ reason: "not-found" });
+                return vaultProfileRequirements(profile);
+              }),
             ),
           ),
         ),

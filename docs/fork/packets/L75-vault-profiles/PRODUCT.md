@@ -61,6 +61,6 @@ subject to design review; the following choices are not resolved by selection:
 
 - Which profile metadata should be shared through Library, and which stays strictly environment-local?
 - SSH/Git resolution pins the profile and key versions on first use in a run. A key version change requires a new run. Version-following policy for future credential kinds remains open.
-- Define durable pin retention/cleanup and portable requirements before adding cross-environment or task-launch selection.
+- Portable declarations contain names/kinds only and start unbound on import. Durable pin inspection/retention, Library publication and project-file discovery remain open.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

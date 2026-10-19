@@ -21,7 +21,8 @@ execute named bindings. The first resolution durably pins the profile revision a
 versions for the authenticated run; current grants, keys and archive state remain authoritative.
 
 Interactive/scheduled launch selectors and server preflight are implemented for SSH/Git.
-Portable requirement declarations, other credential kinds,
+Portable declarations import/export without local bindings. Scheduled task status follows its
+latest Vault-attached provider run and offers review/retry. Other credential kinds,
 account provisioning, Library sharing and run-pin retention automation remain selected.
 No production rollout or personal-vault migration occurred.
 

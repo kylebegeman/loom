@@ -56,7 +56,7 @@ runs can call them; command-only jobs do not acquire a profile automatically.
 
 ## Remaining selected design
 
-Portable declarations, other credential kinds, Library sharing,
+Other credential kinds, Library sharing,
 platform accounts and retained-pin cleanup need their own reviewed contracts. Reuse existing
 fork seams, keep secrets out of upstream events, and keep management separate from use rights.
 
@@ -78,7 +78,52 @@ run before delivery; current checks at SSH/Git use remain authoritative. Steerin
 the same guard and cannot switch a pinned profile. Metadata labels never confer authority.
 
 Scheduled agent prompts use the same guard. New scheduled threads need project grants;
-host-only preview does not prove those grants. The current schedule status records dispatch
-acceptance, not provider completion; inspect the thread's run timeline for a preflight failure.
-End-to-end schedule-to-run completion status remains a tracked scheduler integration gap.
-This is not an SSH reachability/broker-presence probe and does not configure ordinary terminals.
+host-only preview does not prove those grants. This is not an SSH reachability/broker-presence
+probe and does not configure ordinary terminals.
+
+## Scheduled outcomes and recovery
+
+The scheduler records the exact generated message ID before dispatching a prompt with explicit
+Vault requirements, including rendered webhook prompts. A fork-owned SQLite ownership row is
+bound to task ID, task creation timestamp, firing timestamp and owning project. It contains no
+prompt, requirement values, keys or tokens. There is one row per task; new firings replace the
+previous ownership and reconciliation removes deleted/recreated task rows.
+
+Task list/subscribe and Run now project the matching V2 message/run outcome into the existing
+status contract. Queued/preparing/waiting runs remain running; failed, interrupted, cancelled,
+rolled-back or missing/deleted runs report failure; completed runs report success. A completed
+foreign-project run cannot establish success. Raw scheduler rows, run count, next cadence and
+webhook delivery logs retain their existing dispatch semantics. A background source on the
+existing scheduler emits a refresh only when outcome metadata changes. It does not replay work,
+change grants, automatically retry or wait for provider completion in the dispatch handler.
+
+The migration set is registered with the fork ledger and bootstrapped idempotently by scheduler
+construction, which precedes ForkLayer. Read-only projection joins survive server restart without
+OpenBao availability; the upstream event and task schemas are unchanged. Old firings without an
+ownership row retain their original dispatch status. Only the latest firing is shown, rather
+than a new run-history product. Normal scheduler concurrency/cadence remains unchanged.
+
+Web recovery opens the existing task editor and offers an explicit retry; native shows review
+and Run now guidance. Webhook recovery requires a new request, so a delivery is never silently
+replayed. Editing/removing requirements does not retroactively change an earlier run's outcome.
+
+## Portable requirements and local bindings
+
+`VaultProfileRequirements` is a version 1 `loom-vault-requirements` declaration containing a
+label and 1 to 16 unique SSH/Git requirement names/kinds. Export omits profile/environment/item
+IDs, key versions, repositories, grants, defaults and run pins. Labels are user-authored metadata;
+review them before sharing. The bounded text importer rejects unknown fields, unsupported kinds,
+unsupported versions and duplicate names.
+
+Clients import into a new unsaved local editor with all item/repository bindings null, then use
+the existing preview/save flow. Existing local profiles and defaults remain intact. The service
+also accepts a create-only import mutation through the authorized profile API/MCP, with the same
+CAS, idempotency and administrator checks as other profile mutations. Reusing a profile ID
+conflicts rather than clearing its bindings. Local binding repair uses the existing profile edit
+flow and current grants at resolution. No portable declaration grants use rights or selects a
+run automatically.
+
+`loom_vault_profile_requirements` and `loom vault profile-requirements` export declarations.
+Agents remain restricted to their own project and cannot import/change bindings. Human full-access
+administrators may import through profiles-apply. Existing saved profile storage stays compatible;
+Library publication, project-file discovery and additional connector kinds remain separate work.
