@@ -35,7 +35,7 @@ const resolveEnvironmentPortTarget = (
 ): PreviewUrlResolution => {
   if (!isPrivateNetworkHost(environmentUrl.hostname)) {
     throw new Error(
-      "This computer's ports are not reachable from here. Set up preview links in Settings > Previews to open them.", // fork: preview-links
+      "This computer's ports are not reachable from here. Set up preview links in Settings > Loom > Previews to open them.", // fork: preview-links
     );
   }
   const protocol = target.protocol ?? "http";

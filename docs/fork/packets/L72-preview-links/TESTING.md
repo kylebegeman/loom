@@ -18,20 +18,23 @@ Server, `apps/server/src/fork/preview-links/`:
 
 Contracts and clients:
 
-| File                                                                 | Covers                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/contracts/src/fork/preview-links.test.ts`                  | Splitting a host under its suffix, recognizing link hosts without the suffix, defaulting the gateway port.                                                                                                               |
-| `packages/client-runtime/src/fork/preview-links.permissions.test.ts` | Each command's `permissionAtom` requires its scope on the serving computer.                                                                                                                                              |
-| `apps/web/src/fork/preview-links/navigation.test.ts`                 | Every navigation branch: reachable loopback, share and open, private network fallback, Settings > Previews errors, owner lookup across computers, server-drawn browsers, ended links, stale entries landing on the root. |
-| `apps/web/src/fork/preview-links/links.test.ts`                      | Link ordering, countdowns, settings normalization and the first invalid field.                                                                                                                                           |
-| `apps/web/src/browser/browserTargetResolver.test.ts`                 | The updated unreachable error and leaving loopback unmapped for advertising environments.                                                                                                                                |
-| `apps/mobile/src/fork/preview-links/previewLinksLogic.test.ts`       | Which computers are listed and asked first, setup status, link ordering and timing, actions per state and permission.                                                                                                    |
+| File                                                                 | Covers                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/preview-links.test.ts`                  | Splitting a host under its suffix, recognizing link hosts without the suffix, defaulting the gateway port.                                                                                                                              |
+| `packages/client-runtime/src/fork/preview-links.permissions.test.ts` | Each command's `permissionAtom` requires its scope on the serving computer.                                                                                                                                                             |
+| `packages/client-runtime/src/fork/preview-link-navigation.test.ts`   | Every navigation branch: reachable loopback, share and open, private network fallback, setup errors naming the client's settings, owner lookup across computers, server-drawn browsers, ended links, stale entries landing on the root. |
+| `apps/web/src/fork/preview-links/navigation.test.ts`                 | System browser opens from a thread: an unreachable loopback port and a preview link open through an entry, a reachable one and other addresses open unchanged, and a failed share closes its window.                                    |
+| `apps/web/src/fork/preview-links/links.test.ts`                      | Link ordering, countdowns, settings normalization and the first invalid field.                                                                                                                                                          |
+| `apps/web/src/browser/browserTargetResolver.test.ts`                 | The updated unreachable error and leaving loopback unmapped for advertising environments.                                                                                                                                               |
+| `apps/mobile/src/fork/preview-links/previewLinksLogic.test.ts`       | Which computers are listed and asked first, setup status, link ordering and timing, actions per state and permission, which connections reach a computer's loopback, and mapping a port to its private network address.                 |
 
 ## Commands
 
 ```sh
 vp test run apps/server/src/fork/preview-links
-vp test run packages/contracts/src/fork/preview-links.test.ts packages/client-runtime/src/fork/preview-links.permissions.test.ts
+vp test run packages/contracts/src/fork/preview-links.test.ts
+vp test run packages/client-runtime/src/fork/preview-links.permissions.test.ts \
+  packages/client-runtime/src/fork/preview-link-navigation.test.ts
 vp test run apps/web/src/fork/preview-links apps/web/src/browser/browserTargetResolver.test.ts
 vp test run apps/mobile/src/fork/preview-links
 vp run --filter t3 typecheck
@@ -77,26 +80,38 @@ Connector: Homebrew `cloudflared` 2026.9.1 from `PATH`.
   `state.json`.
 - **Sign out preview browsers** refuses every cookie, and a fresh entry works afterwards.
 
+## Real-client pass
+
+On 2026-10-19, web through T3's Browser panel against a worktree dev server on Dorothy, with
+links on bagels.top:
+
+- A link opened from Loom lands with the code gone from the address bar; a private window
+  shows "Open this link from Loom".
+- Vite hot reload works through the tunnel. Ending the link drops the socket at once and a
+  reload shows the ended page; Restore brings the same address back on the old cookie.
+- Port card **Copy preview link** and **Open in browser**, both palette items, the links
+  sheet and Settings > Loom > Previews.
+- From a client paired over the tailnet, a terminal link and a chat link to `localhost:5797`
+  open its bagels.top link. From a localhost client the same chat link opens `localhost`.
+- Safari on an iPad simulator paired over the tailnet: **Copy preview link** puts the link on
+  the pasteboard. Before the fix the write ran after the share and Safari refused it.
+
 ## Still to check
 
 These need Kyle's permission for a real browser or device.
 
 - Removing the connector token stops `cloudflared`, and a wrong token shows the tunnel error.
   The "Unregistered tunnel connection" log line has not been seen.
-- In a real browser: the address bar loses the code, a private window shows "Open this link
-  from Loom", and Vite hot reload works through the tunnel and stops when the link ends.
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.
-- Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer: chat
-  links, terminal links, the preview panel, port card **Copy preview link** and **Open in
-  browser**, the links sheet, the palette items and Settings > Previews. Check Safari's
-  clipboard after the asynchronous share.
-- Mobile on cellular: Settings > Previews actions, and tapping an agent's link in a thread.
+- Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer.
+- Mobile on cellular: Settings > Previews actions, and tapping an agent's link in a thread,
+  in an html_render page, in an MCP app and in the Files markdown preview.
 - An agent sharing a lane port and a terminal server, being refused another port, and its
   lane link ending when the lane is released.
 - Restore refused after a domain or computer name change.
 - Upstream T3 server: no preview actions; the unreachable loopback error names Settings >
-  Previews.
+  Loom > Previews.
 
 ## Merge safety
 

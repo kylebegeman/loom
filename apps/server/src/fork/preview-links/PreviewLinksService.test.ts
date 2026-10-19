@@ -366,7 +366,9 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       });
       const error = yield* Effect.flip(service.share({ port: 5173 }, owner));
       expect(error.reason).toBe("not-configured");
-      expect(error.message).toBe("Preview links are off. Turn them on in Settings > Previews.");
+      expect(error.message).toBe(
+        "Preview links are off. Turn them on in Settings > Loom > Previews in the desktop or web app.",
+      );
     }),
   );
 
@@ -783,7 +785,9 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.service.revoke(link.id, owner);
       expect(view.route(link.host)).toEqual({ _tag: "Ended" });
       const ended = yield* Effect.flip(harness.service.open({ link: link.url }, session));
-      expect(ended.message).toBe("This link ended. Restore it in Settings > Previews.");
+      expect(ended.message).toBe(
+        "This link ended. Restore it in Settings > Loom > Previews, or Settings > Previews on mobile.",
+      );
 
       const restored = yield* harness.service.restore({ linkId: link.id, lifetime: "24h" });
       expect(restored).toMatchObject({

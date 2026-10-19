@@ -2,11 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
 import type { PreviewLink, PreviewLinksSetup } from "@t3tools/contracts/fork";
 import {
+  connectionReachesLoopback,
   formatPreviewDuration,
   previewComputers,
   previewLinkActions,
   previewLinkTiming,
   previewSetupStatus,
+  privateNetworkPortUrl,
   visiblePreviewLinks,
   type PreviewComputerSource,
 } from "./previewLinksLogic";
@@ -195,5 +197,39 @@ describe("previewLinkActions", () => {
     });
     expect(previewLinkActions(lapsed, all, NOW)[0]).toEqual({ action: "restore", enabled: false });
     expect(previewLinkActions(restorable, { ...all, restore: false }, NOW)[0]?.enabled).toBe(false);
+  });
+});
+
+describe("connectionReachesLoopback", () => {
+  it("is true only for a simulator talking to its own Mac", () => {
+    expect(connectionReachesLoopback("http://localhost:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://127.0.0.1:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://[::1]:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://192.168.1.25:3773")).toBe(false);
+    expect(connectionReachesLoopback("https://dorothy.tail1dab34.ts.net:6949")).toBe(false);
+    expect(connectionReachesLoopback("https://relay.example.com/env/abc")).toBe(false);
+  });
+
+  it("leaves the URL alone until there is a connection to judge", () => {
+    expect(connectionReachesLoopback(null)).toBe(true);
+    expect(connectionReachesLoopback("not a url")).toBe(true);
+  });
+});
+
+describe("privateNetworkPortUrl", () => {
+  const port = new URL("http://localhost:5173/app?x=1#top");
+
+  it("moves the port onto the computer's private network address", () => {
+    expect(privateNetworkPortUrl("http://192.168.1.25:3773", port)).toBe(
+      "http://192.168.1.25:5173/app?x=1#top",
+    );
+    expect(privateNetworkPortUrl("http://[fd7a:115c:a1e0::1]:3773", port)).toBe(
+      "http://[fd7a:115c:a1e0::1]:5173/app?x=1#top",
+    );
+  });
+
+  it("does not apply to a public address or a missing connection", () => {
+    expect(privateNetworkPortUrl("https://relay.example.com/env/abc", port)).toBeNull();
+    expect(privateNetworkPortUrl(null, port)).toBeNull();
   });
 });

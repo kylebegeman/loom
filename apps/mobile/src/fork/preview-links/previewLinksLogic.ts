@@ -6,6 +6,7 @@ import {
   type PreviewLinkLifetime,
   type PreviewLinksSetup,
 } from "@t3tools/contracts/fork";
+import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
 
 export interface PreviewComputerSource {
   readonly environmentId: EnvironmentId;
@@ -167,3 +168,29 @@ export const PREVIEW_LIFETIME_LABELS: Record<PreviewLinkLifetime, string> = {
   "12h": "12 hours",
   "24h": "24 hours",
 };
+
+const parseBaseUrl = (httpBaseUrl: string): URL | null => {
+  try {
+    return new URL(httpBaseUrl);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A phone reaches a computer's loopback only as a simulator talking to its own Mac. Until there
+ * is a connection to judge, the URL is left for the open itself to report.
+ */
+export function connectionReachesLoopback(httpBaseUrl: string | null): boolean {
+  const base = httpBaseUrl === null ? null : parseBaseUrl(httpBaseUrl);
+  return base === null || isLocalLoopbackHost(base.hostname);
+}
+
+/** The port on the computer's private network address, which a phone on that network reaches. */
+export function privateNetworkPortUrl(httpBaseUrl: string | null, url: URL): string | null {
+  const base = httpBaseUrl === null ? null : parseBaseUrl(httpBaseUrl);
+  if (base === null || !isPrivateNetworkHost(base.hostname)) return null;
+  const mapped = new URL(url.href);
+  mapped.hostname = base.hostname;
+  return mapped.href;
+}

@@ -16,7 +16,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { mobileHtmlRenderTheme } from "../../lib/htmlRenderTheme";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { openThreadUrlExternally } from "../../fork/preview-links/navigation"; // fork: preview-links
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
@@ -82,6 +82,7 @@ export function HtmlRenderWebView(props: {
   readonly title: string;
   readonly nested: boolean;
   readonly onLoadError?: () => void;
+  readonly environmentId?: EnvironmentId; // fork: preview-links
 }) {
   const theme = useHtmlRenderTheme();
   const [initialTheme] = useState(theme);
@@ -147,7 +148,8 @@ export function HtmlRenderWebView(props: {
         }
         onOpenWindow={(event) => {
           const url = event.nativeEvent.targetUrl;
-          if (/^https?:/i.test(url)) void tryOpenExternalUrl(url, "html-render");
+          if (/^https?:/i.test(url))
+            void openThreadUrlExternally(props.environmentId, url, "html-render"); // fork: preview-links
         }}
         onLoadEnd={() => {
           setLoaded(true);
@@ -229,6 +231,7 @@ export function ThreadHtmlRender(props: {
             title={title}
             nested
             onLoadError={handleLoadError}
+            environmentId={props.environmentId} // fork: preview-links
           />
         ) : failed || asset._tag === "Failure" ? (
           <Pressable

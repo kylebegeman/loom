@@ -1,3 +1,4 @@
+import type { PreviewNavigationDeps } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import {
@@ -7,7 +8,6 @@ import {
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readPreparedConnection } from "~/state/session";
 import { readEnvironmentLabel, readPreviewLinkEnvironments } from "./capability";
-import type { PreviewNavigationDeps } from "./navigation";
 import { previewLinks, runCommand } from "./state";
 
 function reachesLoopback(environmentId: EnvironmentId): boolean {
@@ -40,7 +40,10 @@ export const appPreviewNavigationDeps: PreviewNavigationDeps = {
   previewLinkEnvironments: readPreviewLinkEnvironments,
   reachesLoopback,
   privateNetworkUrl,
+  // As before links existed: a typed address stays as typed, and discovered ports arrive mapped.
+  keepsTypedLoopbackOnPrivateNetwork: true,
   environmentLabel: readEnvironmentLabel,
+  settingsPath: "Settings > Loom > Previews",
   share: (environmentId, input) => runCommand(previewLinks.share, { environmentId, input }),
   open: (environmentId, input) => runCommand(previewLinks.open, { environmentId, input }),
   reportFailure: (description) => {

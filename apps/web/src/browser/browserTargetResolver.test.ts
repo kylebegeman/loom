@@ -142,7 +142,7 @@ describe("browser target resolver", () => {
         kind: "environment-port",
         port: 5173,
       }),
-    ).toThrow(/Settings > Previews/); // fork: preview-links
+    ).toThrow(/Settings > Loom > Previews/); // fork: preview-links
     expect(
       resolveBrowserNavigationTarget(EnvironmentId.make("environment-1"), {
         kind: "url",

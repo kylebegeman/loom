@@ -39,7 +39,7 @@ export function openPreviewLinksSheet() {
   for (const callback of sheetListeners) callback();
 }
 
-/** Lets code outside the router open Settings > Previews through the mounted host. */
+/** Lets code outside the router open Settings > Loom > Previews through the mounted host. */
 export function onOpenPreviewLinksSettings(callback: () => void) {
   settingsListeners.add(callback);
   return () => {

@@ -42,8 +42,10 @@ Web and desktop: supported. Mobile: Settings > Previews lists each computer's se
 and links with open, copy, extend, end and restore; setup itself is web or desktop only.
 Remote: links exist for remote and tunneled clients, which cannot reach the computer's
 loopback. A client that can reach it, or a server-drawn browser on the same computer, loads
-`localhost` directly. Upstream T3 servers do not advertise `preview-links`, so clients keep
-the old behavior and the settings section says the server does not have preview links.
+`localhost` directly. Upstream T3 servers do not advertise `preview-links`, so clients
+offer no links: an unreachable loopback port shows an error (or, from a phone on a private
+network, opens on the computer's address), and the settings section says the server does
+not have preview links.
 
 ## Extension points used
 
@@ -61,13 +63,16 @@ No right panel and no keybinding. No extension point was created.
 
 ## Packet seams
 
-Eleven upstream files, all `fork: preview-links`. See [SEAMS.md](./SEAMS.md).
+Nineteen upstream files, all `fork: preview-links`. See [SEAMS.md](./SEAMS.md).
 
 - Web preview navigation: `browserTargetResolver.ts` and its test, `openFileInPreview.ts`,
   `openPreviewSession.ts`, `openTerminalLinkInPreview.ts`, `PreviewView.tsx`.
+- Web system browser opens: `localApi.ts`, `useOpenLink.ts`, `ChatMarkdown.tsx`,
+  `ThreadTerminalDrawer.tsx`.
 - Web port card: `PreviewLocalServerCard.tsx`.
 - Mobile: `Stack.tsx`, `settings-sheet-targets.ts`, `SettingsRouteScreen.tsx`,
-  `openExternalUrl.ts`.
+  `openExternalUrl.ts`, and the thread link opens in `useOpenPullRequest.ts`,
+  `HtmlRenderWebView.tsx`, `McpAppWebView.tsx` and `FileMarkdownPreview.tsx`.
 
 ## Prerequisites on the machine
 

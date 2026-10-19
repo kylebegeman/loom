@@ -134,7 +134,8 @@ const isSettings = Schema.is(PreviewLinksSettings);
 const fail = (reason: PreviewLinksErrorReason, message: string) =>
   new PreviewLinksError({ reason, message });
 
-const ENDED_MESSAGE = "This link ended. Restore it in Settings > Previews.";
+const ENDED_MESSAGE =
+  "This link ended. Restore it in Settings > Loom > Previews, or Settings > Previews on mobile.";
 const NOT_FOUND_MESSAGE = "That preview link was not found.";
 
 /** The Loom session asking to open a link, as the RPC layer verified it. */
@@ -544,12 +545,18 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const requireReady = Effect.suspend(() => {
     if (!settings.enabled) {
       return Effect.fail(
-        fail("not-configured", "Preview links are off. Turn them on in Settings > Previews."),
+        fail(
+          "not-configured",
+          "Preview links are off. Turn them on in Settings > Loom > Previews in the desktop or web app.",
+        ),
       );
     }
     if (settings.suffix === null) {
       return Effect.fail(
-        fail("not-configured", "Preview links need a domain. Add one in Settings > Previews."),
+        fail(
+          "not-configured",
+          "Preview links need a domain. Add one in Settings > Loom > Previews in the desktop or web app.",
+        ),
       );
     }
     return Effect.succeed(settings.suffix);

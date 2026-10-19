@@ -30,9 +30,9 @@ computers on the same domain is planned; you will not need another domain for it
    you change it there, change it here too.
 3. Cloudflare does not create DNS records for wildcard routes. In the domain's DNS, add a
    CNAME record named `*` pointing at `<tunnel ID>.cfargotunnel.com`, with the proxy on.
-4. In Loom, open **Settings > Previews** for that computer. Turn on **Share ports as links**,
-   enter the domain in **Link domain**, check **Computer name**, paste the token into
-   **Connector token**, and choose **Save**.
+4. In Loom, open **Settings > Loom > Previews** for that computer. Turn on
+   **Share ports as links**, enter the domain in **Link domain**, check **Computer name**,
+   paste the token into **Connector token**, and choose **Save**.
 
 Use the domain itself, such as `example.com`, not a subdomain. Cloudflare's free certificate
 covers only names one level below it, which is where link addresses live.
@@ -50,8 +50,8 @@ Setup is in the web and desktop apps. The mobile app shows each computer's statu
 
 When you open a local address such as `localhost:5173` from a device that cannot reach that
 computer, Loom shares the port and opens the link for you. This covers the preview panel and
-its **Open in browser**, plus links in chat and the terminal when **Open links in** is set to
-**T3 Code**.
+its **Open in system browser**, and links in chat and the terminal wherever **Open links in**
+sends them. On mobile it covers links in a thread.
 
 In the preview panel, each running server has two buttons:
 
@@ -77,10 +77,10 @@ browser in to the link and drops you on the page.
 ## Lifetimes and restoring
 
 A link stays open for 1 hour, 12 hours or 24 hours. **Default lifetime** in
-**Settings > Previews** sets it for new links; 12 hours unless you change it.
+**Settings > Loom > Previews** sets it for new links; 12 hours unless you change it.
 
-Manage links from **Manage links** in Settings > Previews, the **Preview links** command in
-the command palette, or Settings > Previews on mobile:
+Manage links from **Manage links** in Settings > Loom > Previews, the **Preview links** command
+in the command palette, or Settings > Previews on mobile:
 
 - **Open** signs a browser in and opens the link.
 - **Copy link** copies its address.
@@ -99,8 +99,9 @@ changes. Those links cannot be restored.
 A browser stays signed in to a link for up to 12 hours. After that, open the link from Loom
 again.
 
-**Sign out preview browsers** in Settings > Previews signs out every browser that opened any
-link on that computer. Links stay open; each browser has to open them from Loom again.
+**Sign out preview browsers** in Settings > Loom > Previews signs out every browser that
+opened any link on that computer. Links stay open; each browser has to open them from Loom
+again.
 Removing a device's access to Loom also signs out the browsers it opened links in, and they
 stay out after the computer restarts. The same happens when a device's Loom sign-in runs out,
 even while that device is offline. Pages already open in those browsers lose their connection
@@ -117,8 +118,8 @@ after pasting it into a new browser, a private window or another device. It also
 a browser's sign-in has run out or after you signed browsers out.
 
 Open the link from Loom instead: click it in a thread, use **Open** on the link, or use
-**Open in browser** from the preview panel. Loom hands the browser a one-time sign-in that
-works for a minute.
+**Open in browser** on a running server in the preview panel. Loom hands the browser a
+one-time sign-in that works for a minute.
 
 **Open the preview again from Loom** means that one-time sign-in was already used or ran
 out. Open the link from Loom again.

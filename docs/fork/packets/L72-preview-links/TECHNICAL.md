@@ -181,12 +181,19 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
 
 - Shared atoms: `packages/client-runtime/src/fork/preview-links.ts` (snapshot subscription
   and one command per mutation, with `permissionAtom`s).
-- Web navigation: `navigablePreviewUrlFor` in `apps/web/src/fork/preview-links/navigation.ts`
-  is the one call the upstream seams make. A loopback URL on an environment this client
-  cannot reach is shared and opened as an entry; a preview link URL becomes a fresh entry on
-  the first connected computer that owns it (thread's computer first); a server-drawn browser
-  on the owning computer loads `localhost` directly. Without the feature it falls back to the
-  private network address, then to an error naming Settings > Previews.
+- Navigation: `resolvePreviewNavigationWith` in
+  `packages/client-runtime/src/fork/preview-link-navigation.ts`, given each client's
+  `PreviewNavigationDeps` (`navigationDeps.ts` on web, `navigation.ts` on mobile). On web,
+  seams that load a URL in the preview call `navigablePreviewUrlFor`; seams that open the
+  system browser call `openEnvironmentUrlExternally`, `openPreviewInSystemBrowser` or
+  `takeUnreachableLoopbackClick`. A loopback URL on an environment this client cannot reach
+  is shared and opened as an entry; a preview link URL becomes a fresh entry on the first
+  connected computer that owns it (thread's computer first); a server-drawn browser on the
+  owning computer loads `localhost` directly. When links are not set up or this connection
+  cannot share, a private network connection gets the computer's private network address.
+  A computer without the feature, reached over a private network, keeps the URL as typed on
+  web (`keepsTypedLoopbackOnPrivateNetwork`) and gets that address on mobile. Anything else
+  is an error; the unreachable and not-set-up errors name the client's `settingsPath`.
 - Web UI: `settings.tsx` (section `preview-links`, title "Previews"), `LinksSheet.tsx`
   (mounted as `preview-links-host` in `ForkRoot`), `PortCardActions.tsx`, `palette.tsx`.
   `systemBrowser.ts` opens the window before awaiting on the web and hands the finished URL
@@ -206,7 +213,12 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
   `tryOpenExternalUrl`, which swaps a preview link for an entry link from the first connected
   computer whose `open` accepts it. Entry links pass through unchanged, and a link no computer
   serves opens as is. The lookup loads lazily so `openExternalUrl.ts` keeps no connection
-  dependencies.
+  dependencies. A thread's other links (chat, html_render pages, MCP apps and the Files
+  markdown preview) go through `openThreadUrlExternally`: a loopback port
+  the phone cannot reach (anything but a simulator on its own Mac) is shared first. Where
+  that cannot happen, a private network connection opens the port on the computer's address
+  (before this, the phone opened its own localhost). Failures show an alert that names
+  Settings > Loom > Previews in the desktop or web app.
 
 ## Agent-facing tools
 

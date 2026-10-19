@@ -30,7 +30,7 @@ this link from Loom". A browser stays signed in to that one link for up to 12 ho
 ## What the user can do
 
 - Turn on preview links, set the domain, computer name, default lifetime and gateway port, and
-  paste the tunnel's connector token (Settings > Previews, web and desktop).
+  paste the tunnel's connector token (Settings > Loom > Previews, web and desktop).
 - Share a port from the preview panel: a loopback address the client cannot reach becomes a
   link and opens in the panel. A running server's card has **Copy preview link** and **Open
   in browser**.
@@ -66,7 +66,8 @@ runs at share time and on every request.
 
 ## Entry points
 
-- Settings > Previews (web, desktop, mobile). Mobile shows setup status read-only.
+- Settings > Loom > Previews (web and desktop) and Settings > Previews (mobile). Mobile shows
+  setup status read-only.
 - Command palette: "Preview links" opens the links sheet, "Preview link settings" opens the
   settings section.
 - Preview panel navigation, the port card, chat and terminal links, and the panel's "Open in
@@ -90,8 +91,8 @@ runs at share time and on every request.
 Supported on web, desktop and mobile. Links matter only where the client cannot reach the
 computer's loopback: remote, relay and T3 Connect clients, the desktop app connected to
 another computer, and the system browser on another device. A server-drawn preview on the
-same computer keeps loading `localhost`. On an upstream T3 server nothing changes: an
-unreachable loopback still shows an error, now pointing at Settings > Previews.
+same computer keeps loading `localhost`. An upstream T3 server offers no links: an
+unreachable loopback still shows an error, now pointing at Settings > Loom > Previews.
 
 ## Decisions
 
