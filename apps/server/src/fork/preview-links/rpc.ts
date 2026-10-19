@@ -23,10 +23,7 @@ export const makePreviewLinksRpcHandlers = (auth: ForkRpcAuth, session: Authenti
       [PL.share]: (input: PreviewLinkShareInput) =>
         auth.effect(PL.share, service.share(input, owner)),
       [PL.open]: (input: PreviewLinkOpenInput) =>
-        auth.effect(
-          PL.open,
-          service.open(input, { sessionId: session.sessionId, subject: session.subject }),
-        ),
+        auth.effect(PL.open, service.open(input, session)),
       [PL.extend]: (input: PreviewLinkLifetimeInput) =>
         auth.effect(PL.extend, service.extend(input)),
       [PL.revoke]: (input: { linkId: string }) =>

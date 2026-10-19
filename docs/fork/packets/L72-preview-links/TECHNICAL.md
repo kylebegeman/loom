@@ -48,25 +48,46 @@ never returned. `ready` means enabled with a domain; sharing does not wait for t
 `ProjectLifecycle.layer` instance the lane watcher observes.
 
 - `PreviewLinksService.ts`: state behind one semaphore, publishing a snapshot after every
-  change. An expiry fiber sleeps to the next deadline (at most 24 hours per sleep) and sweeps.
+  change. An expiry fiber sleeps to the next link deadline or access key expiry (at most 24
+  hours per sleep) and sweeps. A key that runs out there has its running requests and
+  upgrades closed, because the session store sends no change when a disconnected client's
+  session expires.
 - `policy.ts`: host format, share segments (rejection sampling over bytes below 252), path
   sanitizing, the port denylist, cookie signing and the sweep.
 - `gateway.ts`: the HTTP and upgrade proxy. `pages.ts`: its static pages.
 - `tunnel.ts`: the `cloudflared` supervisor.
-- `rpc.ts` (owner actor; `open` bound to the caller's session id and subject) and `mcp.ts`.
+- `rpc.ts` (owner actor; `open` bound to the caller's session) and `mcp.ts`.
 
 ### Entry and cookie flow
 
 1. `open` requires `ready`, finds the open link by id or host, and mints a 128-bit base64url
-   code bound to the host, a sanitized path and the caller's session. Codes live 60 seconds,
+   code bound to the host, a sanitized path and the caller's access key. Codes live 60 seconds,
    at most 256 are kept (oldest evicted), and they are memory only.
 2. The client loads `https://<host>/__loom/enter?code=...`. The gateway spends the code on
    any presentation, even a mismatched one, then answers `303` to the path with
    `Set-Cookie`, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. A spent or
    expired code gets the "Open the preview again from Loom" page (401).
 3. The cookie is `__Host-loom_pv`, `Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Lax`,
-   no `Domain`. Its value is `base64url(JSON {v, sub, sid, host, exp}).base64url(HMAC-SHA256)`,
-   at most 4,096 characters, verified with `timingSafeEqual` against the request's host.
+   no `Domain`. Its value is
+   `base64url(JSON {v: 2, sub, key, host, iat, exp}).base64url(HMAC-SHA256)`, with `iat` in
+   milliseconds, at most 4,096 characters, verified with `timingSafeEqual` against the
+   request's host.
+
+### Access keys
+
+A cookie stands for an access key, not a session. For most sessions the key is the session id.
+A DPoP session (mobile and web over T3 Connect) lasts an hour and is replaced by one with a
+new id, so its key is `dpop:<subject>` and a browser stays in across the roll. Session rows do
+not carry the proof key's thumbprint, so the subject is the finest grouping available without
+a schema change, and every T3 Connect device shares the subject `cloud-connect`.
+
+- A key is live while any of its sessions is unexpired, using the sessions the store lists at
+  start and the changes it sends after.
+- Removing a session revokes its key for every cookie and entry code minted up to that moment.
+  A later entry works again while another session of the key is live.
+- The store also reports a session removed when its socket closes after the session ran out,
+  which a DPoP session does every hour. A removal of a session already past its expiry counts
+  as expiry, so the rest of its key stays in.
 
 ### Gateway
 
@@ -78,12 +99,13 @@ Requests and upgrades pass one decision, in order:
    well-formed host on this computer with no open link (expired, ended or never issued): 410
    "This preview has ended".
 2. `/__loom/enter` redeems a code (plain requests only). Any other `/__loom/` path: 404.
-3. Exactly one `__Host-loom_pv` cookie that verifies for this host, is unexpired and whose
-   Loom session is still live: listed by the session store at start or signed in since, not
-   expired and not removed. Otherwise 401 "Open this link from Loom".
-4. Origin. An upgrade needs `Origin` exactly `https://<host>`. Any other request with an
-   `Origin` that differs gets 403 unless it is a `GET` or `HEAD` with `Sec-Fetch-Mode:
-navigate`.
+3. Exactly one `__Host-loom_pv` cookie that verifies for this host and is unexpired, whose
+   access key is live and was not revoked after the cookie was minted. Otherwise 401 "Open
+   this link from Loom".
+4. Origin. An upgrade needs `Origin` exactly `https://<host>`. Any other request passes when
+   `Origin` is absent, is `https://<host>`, or is `null` with `Sec-Fetch-Site: same-origin` (a
+   `no-referrer` page's own form post). Otherwise it gets 403 unless it is a `GET` or `HEAD`
+   with `Sec-Fetch-Mode: navigate`.
 5. The port is not denied, else 403.
 
 Forwarding drops hop-by-hop headers and any named in `Connection`, sets `Host` to
@@ -95,9 +117,14 @@ length and the shared keep-alive upstream would read it as more requests. Respon
 `Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
 `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
 no-store` plus `X-Robots-Tag: noindex, nofollow` on everything. A refused port answers 502
-"Nothing is answering on port N yet". Upgrades are piped with `net.connect`. Running requests
-and upgrades are tracked by host and session, so ending a link, signing out or removing a
-client closes them, event streams included. A view that throws costs one 500 response.
+"Nothing is answering on port N yet", upgrades included. An upgrade goes upstream with
+`http.request` on a socket of its own, and nothing the browser sends is relayed until the
+upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back and both
+sides are piped. Any other answer is sent with the response rewrites and `Connection: close`,
+then both sockets close, because `cloudflared` pools gateway connections across visitors and
+a connection left open to the upstream would skip every check. Running requests and upgrades
+are tracked by host and access key, so ending a link, signing out, removing a client or its
+key expiring closes them, event streams included. A view that throws costs one 500 response.
 Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
 to listen on port N." and retry on the next save.
 
@@ -124,8 +151,8 @@ ends a lane link only after it has seen that lane present and then gone.
 
 ## Storage
 
-- `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links }`, written with
-  `writeFileStringAtomically`. Missing gives the defaults (off, no domain, machine from the
+- `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links, revokedKeys }`,
+  written with `writeFileStringAtomically`. Missing gives the defaults (off, no domain, machine from the
   host name, 12 hours, port 3779). Unreadable logs a warning and gives the defaults.
 - Links are bounded: the sweep expires open links at `expiresAt` (dating the end there, so
   downtime does not stretch the restore window) and drops ended links past
@@ -133,9 +160,12 @@ ends a lane link only after it has seen that lane present and then gone.
 - `ServerSecretStore`: `loom-preview-links-cookie-key` (32 random bytes, created on first
   start; a temporary key with a warning if the store fails) and
   `loom-preview-links-tunnel-token`. Neither is logged or returned.
-- In memory only: entry codes, live Loom session ids (rebuilt from the session store's
-  active sessions at every start, so removals survive a restart), ids of sessions removed
-  while running (12 hours) and running requests and upgrades.
+- `revokedKeys` holds when each access key last lost a session to removal, kept for 12 hours,
+  the longest a cookie lives. It is saved because a DPoP subject's other sessions are listed
+  again after a restart and would make the key live for cookies minted before the removal.
+- In memory only: entry codes, each Loom session's access key and expiry (rebuilt from the
+  session store's active sessions at every start), sessions removed while running (12 hours)
+  and running requests and upgrades.
 
 A sidecar file instead of fork tables: the data is small, per computer, and read whole.
 
@@ -200,7 +230,11 @@ never call `open`, so no transcript carries a working credential.
   refuses requests from another origin unless they are `GET` or `HEAD` navigations, and
   requires an exact origin for WebSockets, which neither CORS nor `SameSite` protects
   (cross-site WebSocket hijacking). `GET` and `HEAD` navigations stay allowed so links open
-  from anywhere.
+  from anywhere. A `no-referrer` page sends `Origin: null` on its own form posts, so `null`
+  counts as this origin when `Sec-Fetch-Site` is `same-origin`. The browser sets that header
+  and gives it only when every redirect stayed on this host, so a sibling link (`same-site`)
+  or a sandboxed frame (`cross-site`) cannot pass. A WebSocket always carries its page's real
+  origin, so a `null` one is refused.
 - **Why Cache-Control.** Responses are a signed-in user's dev data, and they pass through
   Cloudflare's edge. A dev server that sends cacheable headers could otherwise let the edge
   or another cache serve the page to a browser with no cookie, skipping the gateway.
@@ -235,9 +269,16 @@ entry per running request or upgrade, removed when it closes.
 
 - A session revoked with `t3 auth session revoke` while the server runs keeps preview access
   until the server restarts or its cookies expire (at most 12 hours), because the CLI writes
-  the session store from another process and the running server gets no change event.
+  the session store from another process and the running server gets no change event. The
+  same holds for a session revoked while the server is down. For a DPoP session the restart
+  does not help while another session of its subject is still listed.
 - If the session store cannot be listed at start, every preview cookie is refused until its
   Loom client reconnects.
+- Removing one T3 Connect device signs out the browsers opened from every T3 Connect device,
+  because they share one access key. A T3 Connect device that just stops connecting keeps its
+  browsers in while another one stays signed in, up to the cookie's 12 hours.
+- Restarting the desktop app replaces its Loom session, and the store reports that as a
+  removal, so browsers opened from the desktop app have to enter again.
 - Idle keep-alive connections are not cut when a link ends; running requests on them are.
   Each request is re-authorized, so the next request on them fails.
 - `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.

@@ -17,7 +17,9 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -38,6 +40,7 @@ import {
   PREVIEW_TUNNEL_TOKEN_SECRET,
   makePreviewLinksService,
   type PreviewLinkActor,
+  type PreviewLinksSession,
 } from "./PreviewLinksService.ts";
 import {
   PreviewGatewayListenError,
@@ -54,7 +57,12 @@ const threadA = ThreadId.make("thread-a");
 const threadB = ThreadId.make("thread-b");
 const agentA: PreviewLinkActor = { _tag: "Agent", threadId: threadA };
 const agentB: PreviewLinkActor = { _tag: "Agent", threadId: threadB };
-const session = { sessionId: "session-1", subject: "owner" };
+const cookieSession = (sessionId: string): PreviewLinksSession => ({
+  sessionId,
+  subject: "owner",
+  method: "browser-session-cookie",
+});
+const session = cookieSession("session-1");
 
 const ready: PreviewLinksSettings = {
   enabled: true,
@@ -64,7 +72,7 @@ const ready: PreviewLinksSettings = {
   gatewayPort: 3779,
 };
 
-type Connection = { readonly host: string; readonly sid: string };
+type Connection = { readonly host: string; readonly key: string };
 
 const laneRow = (id: string, portBase: number): LaneRow => ({
   id,
@@ -121,11 +129,16 @@ const lifecycleStatus = (
   buildSlots: { count: 1, holders: [] },
 });
 
-const clientSession = (sessionId: string, expiresAtMs: number): AuthClientSession => ({
+/** A browser session, or a DPoP one (mobile and T3 Connect) when given its subject. */
+const clientSession = (
+  sessionId: string,
+  expiresAtMs: number,
+  dpopSubject?: string,
+): AuthClientSession => ({
   sessionId: AuthSessionId.make(sessionId),
-  subject: "owner",
+  subject: dpopSubject ?? "owner",
   scopes: [],
-  method: "browser-session-cookie",
+  method: dpopSubject === undefined ? "browser-session-cookie" : "dpop-access-token",
   client: { deviceType: "desktop" },
   issuedAt: DateTime.makeUnsafe(0),
   expiresAt: DateTime.makeUnsafe(expiresAtMs),
@@ -152,8 +165,12 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     readonly failGatewayPort?: number;
     readonly lanes?: ReadonlyMap<ThreadId, LaneRow>;
     readonly servers?: ReadonlyArray<DiscoveredLocalServer>;
-    /** Sessions the store lists at start, each valid for 30 days. */
-    readonly activeSessions?: ReadonlyArray<string>;
+    /** Sessions the store lists at start. One given by id is valid for 30 days. */
+    readonly activeSessions?: ReadonlyArray<string | AuthClientSession>;
+    /** A session revoked after the service subscribes to changes but before the list is read. */
+    readonly removedWhileListing?: string;
+    /** Runs after each secret is stored, before the write returns. */
+    readonly afterSecretSet?: Effect.Effect<void>;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -162,8 +179,14 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
   const secretValues = options.secrets ?? new Map<string, Uint8Array>();
-  const sessionChanges = yield* PubSub.unbounded<SessionCredentialChange>({ replay: 16 });
+  // Like the real store, a change reaches only those already subscribed.
+  const sessionChanges = yield* PubSub.unbounded<SessionCredentialChange>();
   const sessionsExpireAt = (yield* Clock.currentTimeMillis) + 30 * DAY;
+  const removeSession = (sessionId: string) =>
+    PubSub.publish(sessionChanges, {
+      type: "clientRemoved",
+      sessionId: AuthSessionId.make(sessionId),
+    });
   const lifecycleChanges = yield* SubscriptionRef.make(lifecycleStatus(true, []));
 
   const gateway = {
@@ -218,7 +241,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
           ServerSecretStore,
           ServerSecretStore.of({
             get: (name) => Effect.sync(() => Option.fromNullishOr(secretValues.get(name))),
-            set: (name, value) => Effect.sync(() => void secretValues.set(name, value)),
+            set: (name, value) =>
+              Effect.sync(() => void secretValues.set(name, value)).pipe(
+                Effect.andThen(options.afterSecretSet ?? Effect.void),
+              ),
             create: (name, value) => Effect.sync(() => void secretValues.set(name, value)),
             getOrCreateRandom: (name, bytes) =>
               Effect.sync(() => {
@@ -235,11 +261,14 @@ const makeHarness = Effect.fn("makeHarness")(function* (
           cookieName: "t3_session",
           legacyCookieName: undefined,
           listActive: () =>
-            Effect.succeed(
-              (options.activeSessions ?? ["session-1", "session-2"]).map((id) =>
-                clientSession(id, sessionsExpireAt),
-              ),
-            ),
+            Effect.gen(function* () {
+              if (options.removedWhileListing !== undefined) {
+                yield* removeSession(options.removedWhileListing);
+              }
+              return (options.activeSessions ?? ["session-1", "session-2"]).map((each) =>
+                typeof each === "string" ? clientSession(each, sessionsExpireAt) : each,
+              );
+            }),
           streamChanges: Stream.fromPubSub(sessionChanges),
         }),
         Layer.mock(PortDiscovery)({
@@ -273,12 +302,6 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     return gateway.view;
   });
 
-  const removeSession = (sessionId: string) =>
-    PubSub.publish(sessionChanges, {
-      type: "clientRemoved",
-      sessionId: AuthSessionId.make(sessionId),
-    });
-
   return {
     service,
     gateway,
@@ -287,10 +310,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     waitFor,
     view,
     removeSession,
-    upsertSession: (sessionId: string, expiresAtMs: number) =>
+    upsertSession: (sessionId: string, expiresAtMs: number, dpopSubject?: string) =>
       PubSub.publish(sessionChanges, {
         type: "clientUpserted",
-        clientSession: clientSession(sessionId, expiresAtMs),
+        clientSession: clientSession(sessionId, expiresAtMs, dpopSubject),
       }),
     /**
      * Session changes are handled in order, so once a later removal drops its connections every
@@ -433,7 +456,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(redeemed).toMatchObject({ maxAgeSeconds: 43200, path: "/app?tab=1#top" });
       expect(view.redeem(link.host, codeOf(deep.url))).toBeNull();
       expect(view.authorize(link.host, redeemed?.cookieValue ?? "")).toEqual({
-        sid: "session-1",
+        key: "session-1",
         sub: "owner",
       });
 
@@ -457,7 +480,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const view = yield* harness.view;
       const enter = (sessionId: string) =>
         harness.service
-          .open({ link: link.id }, { sessionId, subject: "owner" })
+          .open({ link: link.id }, cookieSession(sessionId))
           .pipe(
             Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))?.cookieValue ?? ""),
           );
@@ -467,18 +490,45 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
 
       yield* harness.removeSession("session-1");
       const dropped = yield* Queue.take(harness.gateway.destroyed);
-      expect(dropped({ host: link.host, sid: "session-1" })).toBe(true);
-      expect(dropped({ host: link.host, sid: "session-2" })).toBe(false);
+      expect(dropped({ host: link.host, key: "session-1" })).toBe(true);
+      expect(dropped({ host: link.host, key: "session-2" })).toBe(false);
       expect(view.authorize(link.host, first)).toBeNull();
       expect(view.authorize(link.host, second)).not.toBeNull();
 
       const keyBefore = harness.secretValues.get(PREVIEW_COOKIE_KEY_SECRET);
       yield* harness.service.signOutBrowsers;
       expect(harness.secretValues.get(PREVIEW_COOKIE_KEY_SECRET)).not.toEqual(keyBefore);
-      expect((yield* Queue.take(harness.gateway.destroyed))({ host: "any", sid: "any" })).toBe(
+      expect((yield* Queue.take(harness.gateway.destroyed))({ host: "any", key: "any" })).toBe(
         true,
       );
       expect(view.authorize(link.host, second)).toBeNull();
+    }),
+  );
+
+  it.effect("applies a saved sign-out even when its caller is interrupted", () =>
+    Effect.gen(function* () {
+      const saved = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeHarness({
+        afterSecretSet: Deferred.succeed(saved, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      const entry = yield* harness.service.open({ link: link.id }, session);
+      const cookie = view.redeem(link.host, codeOf(entry.url))?.cookieValue ?? "";
+
+      const signingOut = yield* Effect.forkChild(harness.service.signOutBrowsers);
+      yield* Deferred.await(saved);
+      // Started at once, so the interrupt lands while the sign-out still waits on the write.
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(signingOut), {
+        startImmediately: true,
+      });
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(interrupting);
+      expect(view.authorize(link.host, cookie)).toBeNull();
     }),
   );
 
@@ -493,7 +543,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const firstView = yield* first.view;
       const enter = (sessionId: string) =>
         first.service
-          .open({ link: link.id }, { sessionId, subject: "owner" })
+          .open({ link: link.id }, cookieSession(sessionId))
           .pipe(
             Effect.map(
               (entry) => firstView.redeem(link.host, codeOf(entry.url))?.cookieValue ?? "",
@@ -508,7 +558,24 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const reopened = yield* makeHarness({ baseDir, secrets, activeSessions: ["session-2"] });
       const view = yield* reopened.view;
       expect(view.authorize(link.host, removed)).toBeNull();
-      expect(view.authorize(link.host, kept)).toEqual({ sid: "session-2", sub: "owner" });
+      expect(view.authorize(link.host, kept)).toEqual({ key: "session-2", sub: "owner" });
+    }),
+  );
+
+  it.effect("keeps out a session removed while the list of sessions was being read", () =>
+    Effect.gen(function* () {
+      // The list was read before the revoke committed, so it still holds session-1.
+      const harness = yield* makeHarness({ removedWhileListing: "session-1" });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      yield* harness.sessionChangesHandled;
+      const enter = (sessionId: string) =>
+        harness.service
+          .open({ link: link.id }, cookieSession(sessionId))
+          .pipe(Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))));
+      expect(yield* enter("session-1")).toBeNull();
+      expect(yield* enter("session-2")).not.toBeNull();
     }),
   );
 
@@ -520,9 +587,11 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const view = yield* harness.view;
       const enter = (sessionId: string) =>
         harness.service
-          .open({ link: link.id }, { sessionId, subject: "owner" })
+          .open({ link: link.id }, cookieSession(sessionId))
           .pipe(Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))?.cookieValue));
       expect(yield* enter("session-3")).toBeUndefined();
+      // The expiry timer settles into its sleep toward the link's 12 hours first.
+      yield* TestClock.adjust("1 second");
 
       const start = yield* Clock.currentTimeMillis;
       yield* harness.upsertSession("session-3", start + HOUR);
@@ -530,11 +599,15 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.sessionChangesHandled;
       const third = (yield* enter("session-3")) ?? "";
       const fourth = (yield* enter("session-4")) ?? "";
-      expect(view.authorize(link.host, third)).toEqual({ sid: "session-3", sub: "owner" });
+      expect(view.authorize(link.host, third)).toEqual({ key: "session-3", sub: "owner" });
 
-      // The cookie is good for 12 hours, but not past the session it stands for.
+      // The cookie is good for 12 hours, but not past the session it stands for. A session that
+      // runs out with its client away sends no change, so its expiry alone ends what is running.
       yield* TestClock.adjust("1 hour");
       expect(view.authorize(link.host, third)).toBeNull();
+      const expired = yield* Queue.take(harness.gateway.destroyed);
+      expect(expired({ host: link.host, key: "session-3" })).toBe(true);
+      expect(expired({ host: link.host, key: "session-4" })).toBe(false);
 
       yield* harness.removeSession("session-4");
       yield* Queue.take(harness.gateway.destroyed);
@@ -542,6 +615,86 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.upsertSession("session-4", start + DAY);
       yield* harness.sessionChangesHandled;
       expect(view.authorize(link.host, fourth)).toBeNull();
+    }),
+  );
+
+  it.effect("keeps a T3 Connect browser in across hourly sessions until one is removed", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ activeSessions: [] });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      const enter = (sessionId: string) =>
+        harness.service
+          .open(
+            { link: link.id },
+            { sessionId, subject: "cloud-connect", method: "dpop-access-token" },
+          )
+          .pipe(
+            Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))?.cookieValue ?? ""),
+          );
+      const family = { key: "dpop:cloud-connect", sub: "cloud-connect" };
+      const start = yield* Clock.currentTimeMillis;
+      yield* harness.upsertSession("relay-a", start + HOUR, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      const cookie = yield* enter("relay-a");
+
+      yield* TestClock.adjust("50 minutes");
+      yield* harness.upsertSession("relay-b", start + 110 * 60 * 1000, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      yield* TestClock.adjust("20 minutes");
+      // The store reports relay-a removed once its socket closes after it ran out.
+      yield* harness.removeSession("relay-a");
+      yield* harness.sessionChangesHandled;
+      expect(Option.isNone(yield* Queue.poll(harness.gateway.destroyed))).toBe(true);
+      expect(view.authorize(link.host, cookie)).toEqual(family);
+
+      yield* harness.removeSession("relay-b");
+      const dropped = yield* Queue.take(harness.gateway.destroyed);
+      expect(dropped({ host: link.host, key: "dpop:cloud-connect" })).toBe(true);
+      expect(view.authorize(link.host, cookie)).toBeNull();
+
+      // A later session of the subject does not bring old cookies back, only fresh entries.
+      yield* TestClock.adjust("1 second");
+      yield* harness.upsertSession("relay-c", start + 3 * HOUR, "cloud-connect");
+      yield* harness.sessionChangesHandled;
+      expect(view.authorize(link.host, cookie)).toBeNull();
+      expect(view.authorize(link.host, yield* enter("relay-c"))).toEqual(family);
+    }),
+  );
+
+  it.effect("keeps a T3 Connect browser out after a restart while the subject stays in", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      // An odd millisecond, so the saved revocation has to keep milliseconds.
+      yield* TestClock.adjust("1234 millis");
+      const start = yield* Clock.currentTimeMillis;
+      const relay = (sessionId: string) => clientSession(sessionId, start + HOUR, "cloud-connect");
+      const first = yield* makeHarness({
+        baseDir,
+        secrets,
+        activeSessions: [relay("relay-a"), relay("relay-b")],
+      });
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.share({ port: 5173 }, owner);
+      const firstView = yield* first.view;
+      const entry = yield* first.service.open({ link: link.id }, relay("relay-a"));
+      const cookie = firstView.redeem(link.host, codeOf(entry.url))?.cookieValue ?? "";
+      yield* first.removeSession("relay-a");
+      yield* Queue.take(first.gateway.destroyed);
+      // The next change is handled only once the revocation is saved.
+      yield* first.sessionChangesHandled;
+
+      const reopened = yield* makeHarness({ baseDir, secrets, activeSessions: [relay("relay-b")] });
+      const view = yield* reopened.view;
+      expect(view.authorize(link.host, cookie)).toBeNull();
+      yield* TestClock.adjust("1 second");
+      const fresh = yield* reopened.service.open({ link: link.id }, relay("relay-b"));
+      expect(
+        view.authorize(link.host, view.redeem(link.host, codeOf(fresh.url))?.cookieValue ?? ""),
+      ).toEqual({ key: "dpop:cloud-connect", sub: "cloud-connect" });
     }),
   );
 

@@ -32,7 +32,8 @@ export interface PreviewGatewayEntry {
 }
 
 export interface PreviewGatewaySession {
-  readonly sid: string;
+  /** See `previewAccessKey`. */
+  readonly key: string;
   readonly sub: string;
 }
 
@@ -40,7 +41,7 @@ export interface PreviewGatewayHandle {
   readonly port: number;
   /** Ends running requests and upgrades, such as event streams and HMR sockets, that lost access. */
   readonly destroyConnections: (
-    match: (connection: { readonly host: string; readonly sid: string }) => boolean,
+    match: (connection: { readonly host: string; readonly key: string }) => boolean,
   ) => void;
 }
 

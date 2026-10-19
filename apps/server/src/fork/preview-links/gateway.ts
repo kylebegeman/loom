@@ -220,12 +220,28 @@ const rejectUpgrade = (socket: NodeStream.Duplex, status: number) => {
   );
 };
 
-const requestHead = (method: string, url: string, headers: Headers) => {
-  let head = `${method} ${url} HTTP/1.1\r\n`;
+const statusLine = (status: number, message: string | undefined) =>
+  `HTTP/1.1 ${status} ${message || NodeHttp.STATUS_CODES[status] || ""}\r\n`;
+
+const responseHead = (status: number, message: string | undefined, headers: Headers) => {
+  let head = statusLine(status, message);
   for (const [name, values] of Object.entries(headers)) {
     for (const value of typeof values === "string" ? [values] : values) {
       head += `${name}: ${value}\r\n`;
     }
+  }
+  return `${head}\r\n`;
+};
+
+/** The upstream's 101 as it sent it, keeping header case for fussy clients, minus Loom cookies. */
+const switchingProtocolsHead = (response: NodeHttp.IncomingMessage) => {
+  let head = statusLine(101, response.statusMessage);
+  const raw = response.rawHeaders;
+  for (let index = 0; index + 1 < raw.length; index += 2) {
+    const name = raw[index] ?? "";
+    const value = raw[index + 1] ?? "";
+    const values = name.toLowerCase() === "set-cookie" ? rewriteSetCookie([value]) : [value];
+    for (const kept of values) head += `${name}: ${kept}\r\n`;
   }
   return `${head}\r\n`;
 };
@@ -266,6 +282,19 @@ const isSafeNavigation = (request: NodeHttp.IncomingMessage) =>
   (request.method === "GET" || request.method === "HEAD") &&
   request.headers["sec-fetch-mode"] === "navigate";
 
+/**
+ * A page served with `Referrer-Policy: no-referrer` sends `Origin: null` on its own form posts.
+ * The browser sets Sec-Fetch-Site, and only to same-origin when every redirect stayed on this
+ * host, so a sibling host (same-site) or a sandboxed frame (cross-site) cannot pass.
+ */
+const isSameOrigin = (request: NodeHttp.IncomingMessage, publicOrigin: string) => {
+  const origin = request.headers.origin;
+  return (
+    origin === publicOrigin ||
+    (origin === "null" && request.headers["sec-fetch-site"] === "same-origin")
+  );
+};
+
 /** Shared by plain requests and upgrades, so both pass exactly the same checks. */
 const decide = (
   view: PreviewGatewayView,
@@ -290,8 +319,14 @@ const decide = (
   const publicOrigin = `https://${host}`;
   const origin = request.headers.origin;
   if (upgrade) {
+    // A WebSocket always carries its page's real origin, whatever the referrer policy, so here
+    // `null` only ever means an opaque origin such as a sandboxed frame.
     if (origin !== publicOrigin) return reject(403, crossSitePage);
-  } else if (origin !== undefined && origin !== publicOrigin && !isSafeNavigation(request)) {
+  } else if (
+    origin !== undefined &&
+    !isSameOrigin(request, publicOrigin) &&
+    !isSafeNavigation(request)
+  ) {
     return reject(403, crossSitePage);
   }
 
@@ -302,7 +337,7 @@ const decide = (
 /** A proxied request or upgrade that is still running, so losing access can end it at once. */
 interface LiveConnection {
   readonly host: string;
-  readonly sid: string;
+  readonly key: string;
   /** Ends both the browser's side and the upstream's. */
   readonly destroy: () => void;
 }
@@ -354,7 +389,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     });
     const connection: LiveConnection = {
       host,
-      sid: session.sid,
+      key: session.key,
       destroy: () => {
         upstream.destroy();
         response.destroy();
@@ -387,6 +422,12 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     request.pipe(upstream);
   };
 
+  /**
+   * Relays nothing from the browser until the upstream answers 101. An upstream without a
+   * WebSocket handler answers like any request and keeps the connection open, and piping early
+   * would let every later request on the browser's connection, which cloudflared pools for
+   * other visitors, skip `decide`.
+   */
   const proxyUpgrade = (
     request: NodeHttp.IncomingMessage,
     client: NodeStream.Duplex,
@@ -398,36 +439,66 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     const headers = forwardRequestHeaders(request.headersDistinct, host, port);
     headers.connection = "Upgrade";
     headers.upgrade = request.headersDistinct.upgrade ?? ["websocket"];
-    const upstream = NodeNet.connect({ autoSelectFamily: true, host: "localhost", port });
-    const connection: LiveConnection = {
-      host,
-      sid: session.sid,
-      destroy: () => {
-        client.destroy();
-        upstream.destroy();
-      },
+    // No body is sent before the switch, so the upstream must not wait for one.
+    delete headers["content-length"];
+    // A socket of its own, never pooled, so one that answered without switching serves nothing
+    // else. Without an agent nothing closes it after a plain answer, so it is ended here.
+    const upstreamSocket = NodeNet.connect({ autoSelectFamily: true, host: "localhost", port });
+    upstreamSocket.on("error", () => upstreamSocket.destroy());
+    const upstream = NodeHttp.request({
+      createConnection: () => upstreamSocket,
+      headers,
+      method: request.method ?? "GET",
+      path: request.url ?? "/",
+    });
+    let switched: NodeStream.Duplex | null = null;
+    let answered = false;
+    const destroy = () => {
+      client.destroy();
+      upstream.destroy();
+      upstreamSocket.destroy();
+      switched?.destroy();
     };
+    const connection: LiveConnection = { host, key: session.key, destroy };
     connections.add(connection);
-    let connected = false;
-    upstream.once("connect", () => {
-      connected = true;
-      upstream.write(requestHead(request.method ?? "GET", request.url ?? "/", headers));
-      if (head.length > 0) upstream.write(head);
-      upstream.pipe(client);
-      client.pipe(upstream);
+
+    upstream.on("upgrade", (response, socket, upstreamHead) => {
+      answered = true;
+      switched = socket;
+      socket.on("error", () => socket.destroy());
+      socket.on("close", () => client.destroy());
+      if (client.destroyed) return socket.destroy();
+      client.write(switchingProtocolsHead(response));
+      if (upstreamHead.length > 0) client.write(upstreamHead);
+      if (head.length > 0) socket.write(head);
+      socket.pipe(client);
+      client.pipe(socket);
+    });
+    upstream.on("response", (response) => {
+      answered = true;
+      if (client.destroyed) return destroy();
+      const replyHeaders = forwardResponseHeaders(response.headersDistinct, host, port);
+      replyHeaders.connection = "close";
+      client.write(responseHead(response.statusCode ?? 502, response.statusMessage, replyHeaders));
+      // Whatever the browser sent after its upgrade request, `head` included, is never read.
+      NodeStream.pipeline(response, client, destroy);
     });
     upstream.on("error", () => {
-      if (!connected) rejectUpgrade(client, 502);
-    });
-    upstream.on("close", () => {
-      connections.delete(connection);
-      if (connected) client.destroy();
+      if (answered) destroy();
+      else rejectUpgrade(client, 502);
     });
     client.on("error", () => client.destroy());
+    // The browser's socket is half-open and unread, so giving up before the answer shows only here.
+    client.on("end", () => {
+      if (!answered) destroy();
+    });
     client.on("close", () => {
       connections.delete(connection);
       upstream.destroy();
+      upstreamSocket.destroy();
+      switched?.destroy();
     });
+    upstream.end();
   };
 
   const server = guardHttpResponseWriteErrors(NodeHttp.createServer());
@@ -480,7 +551,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
 
   const destroyConnections: PreviewGatewayHandle["destroyConnections"] = (match) => {
     for (const connection of connections) {
-      if (!match({ host: connection.host, sid: connection.sid })) continue;
+      if (!match({ host: connection.host, key: connection.key })) continue;
       connections.delete(connection);
       connection.destroy();
     }

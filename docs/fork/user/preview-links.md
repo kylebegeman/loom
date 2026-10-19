@@ -102,8 +102,12 @@ again.
 **Sign out preview browsers** in Settings > Previews signs out every browser that opened any
 link on that computer. Links stay open; each browser has to open them from Loom again.
 Removing a device's access to Loom also signs out the browsers it opened links in, and they
-stay out after the computer restarts. The same happens when a device's Loom sign-in runs out.
-To be certain every browser is out, use **Sign out preview browsers**.
+stay out after the computer restarts. The same happens when a device's Loom sign-in runs out,
+even while that device is offline. Pages already open in those browsers lose their connection
+too. Devices that reach this computer through T3 Connect count as one device here: removing
+any of them signs out the browsers opened from all of them. Restarting the desktop app signs
+out the browsers it opened links in. To be certain every browser is out, use **Sign out
+preview browsers**.
 
 ## "Open this link from Loom"
 

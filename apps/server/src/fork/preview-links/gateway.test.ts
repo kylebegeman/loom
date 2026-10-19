@@ -13,6 +13,8 @@ const ENDED_HOST = "5174-ended1-dorothy.bagels.top";
 const DENIED_HOST = "5175-denied-dorothy.bagels.top";
 const GOOD_COOKIE = "signed.value";
 const ORIGIN = `https://${LINK_HOST}`;
+const NO_SOCKET_PATH = "/no-socket-here";
+const NO_SOCKET_BODY = "no socket here";
 
 const boundPort = (server: NodeNet.Server) => {
   const address = server.address();
@@ -34,9 +36,12 @@ const upstreamServer = Effect.acquireRelease(
     port: number;
     /** Settles when the upstream side of `/events` closes. */
     eventStreamClosed: Promise<void>;
+    /** Settles when the connection that carried a `NO_SOCKET_PATH` request closes. */
+    noSocketClosed: Promise<void>;
   }>((resume) => {
     const requests: Array<RecordedRequest> = [];
     const eventStreamClosed = Promise.withResolvers<void>();
+    const noSocketClosed = Promise.withResolvers<void>();
     const server = NodeHttp.createServer((request, response) => {
       if (request.url === "/events") {
         response.on("close", () => eventStreamClosed.resolve());
@@ -75,10 +80,19 @@ const upstreamServer = Effect.acquireRelease(
           headers: request.headers,
           body,
         });
+        // Like any server without a WebSocket handler: a plain keep-alive answer to an upgrade.
+        if (request.url === NO_SOCKET_PATH) {
+          request.socket.on("close", () => noSocketClosed.resolve());
+          response.writeHead(404, { "content-type": "text/plain" });
+          response.end(NO_SOCKET_BODY);
+          return;
+        }
         response.writeHead(200, { "content-type": "text/plain" });
         response.end(`echo:${body}`);
       });
     });
+    // Never times out an idle connection, so only the gateway can close one.
+    server.keepAliveTimeout = 0;
     server.listen(0, "127.0.0.1", () =>
       resume(
         Effect.succeed({
@@ -86,6 +100,7 @@ const upstreamServer = Effect.acquireRelease(
           requests,
           port: boundPort(server),
           eventStreamClosed: eventStreamClosed.promise,
+          noSocketClosed: noSocketClosed.promise,
         }),
       ),
     );
@@ -172,7 +187,7 @@ const makeView = (ports: { link: number; denied: number }) => {
     },
     authorize: (host, value) =>
       value === GOOD_COOKIE && (host === LINK_HOST || host === DENIED_HOST)
-        ? { sid: "session-1", sub: "user-1" }
+        ? { key: "session-1", sub: "user-1" }
         : null,
     portAllowed: (port) => port !== ports.denied,
   };
@@ -244,8 +259,8 @@ const rawExchange = (gatewayPort: number, request: string, until: string) =>
       }),
   );
 
-const upgradeRequest = (headers: Record<string, string>, early = "") =>
-  `GET /hmr?token=1 HTTP/1.1\r\n${Object.entries({
+const upgradeRequest = (headers: Record<string, string>, early = "", path = "/hmr?token=1") =>
+  `GET ${path} HTTP/1.1\r\n${Object.entries({
     Host: LINK_HOST,
     Connection: "Upgrade",
     Upgrade: "websocket",
@@ -377,6 +392,31 @@ describe("preview gateway", () => {
     }),
   );
 
+  it.live("accepts a no-referrer page's own form post but not a sibling's", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const nullOriginPost = (fetchSite: string) =>
+        send(gateway.port, {
+          host: LINK_HOST,
+          method: "POST",
+          path: "/login",
+          headers: {
+            ...signedIn,
+            origin: "null",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": fetchSite,
+          },
+          body: ["user=me"],
+        });
+      expect((yield* nullOriginPost("same-origin")).status).toBe(200);
+      // A redirect through a sibling host also nulls Origin, but leaves the request same-site.
+      expect((yield* nullOriginPost("same-site")).status).toBe(403);
+      expect(upstream.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+        "POST /login",
+      ]);
+    }),
+  );
+
   it.live("rewrites request headers and keeps the app's own cookies", () =>
     Effect.gen(function* () {
       const { gateway, upstream } = yield* setup;
@@ -485,7 +525,7 @@ describe("preview gateway", () => {
       const closed = new Promise<boolean>((resolve) =>
         response.once("close", () => resolve(response.complete)),
       );
-      gateway.destroyConnections(({ host, sid }) => host === LINK_HOST && sid === "session-1");
+      gateway.destroyConnections(({ host, key }) => host === LINK_HOST && key === "session-1");
       expect(yield* Effect.promise(() => closed)).toBe(false);
       yield* Effect.promise(() => upstream.eventStreamClosed);
     }),
@@ -500,6 +540,14 @@ describe("preview gateway", () => {
       expect(reply.status).toBe(502);
       expect(reply.body).toContain(`Nothing is answering on port ${closed} yet`);
       expect(reply.headers["cache-control"]).toBe("private, no-store");
+
+      const upgrade = yield* rawExchange(
+        gateway.port,
+        upgradeRequest({ Origin: ORIGIN, Cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}` }),
+        "\r\n\r\n",
+      );
+      expect(upgrade.received.startsWith("HTTP/1.1 502")).toBe(true);
+      upgrade.socket.destroy();
     }),
   );
 
@@ -542,7 +590,7 @@ describe("preview gateway", () => {
       expect(echoed).toBe("ping");
 
       const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
-      gateway.destroyConnections(({ host, sid }) => host === LINK_HOST && sid === "session-1");
+      gateway.destroyConnections(({ host, key }) => host === LINK_HOST && key === "session-1");
       yield* Effect.promise(() => closed);
       expect(socket.destroyed).toBe(true);
     }),
@@ -570,7 +618,54 @@ describe("preview gateway", () => {
       );
       expect(missing.received.startsWith("HTTP/1.1 403")).toBe(true);
       missing.socket.destroy();
+
+      // Only an opaque origin sends a WebSocket `Origin: null`, so the form-post rule stays out.
+      const opaque = yield* rawExchange(
+        gateway.port,
+        upgradeRequest({ Origin: "null", "Sec-Fetch-Site": "same-origin", Cookie: signedInCookie }),
+        "\r\n\r\n",
+      );
+      expect(opaque.received.startsWith("HTTP/1.1 403")).toBe(true);
+      opaque.socket.destroy();
       expect(target.heads).toHaveLength(0);
+    }),
+  );
+
+  it.live("closes an upgrade the upstream answers without switching", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const bypass = (path: string) =>
+        `GET ${path} HTTP/1.1\r\nHost: ${LINK_HOST}\r\nCookie: ${PREVIEW_COOKIE_NAME}=stolen\r\n\r\n`;
+      const received = yield* Effect.promise(
+        () =>
+          new Promise<string>((resolve) => {
+            const socket = NodeNet.connect({ host: "127.0.0.1", port: gateway.port });
+            let text = "";
+            // A write that races the gateway's close may be reset; what reached the upstream counts.
+            socket.on("error", () => {});
+            socket.on("data", (chunk: Buffer) => {
+              const answered = text.includes(NO_SOCKET_BODY);
+              text += chunk.toString("latin1");
+              if (!answered && text.includes(NO_SOCKET_BODY)) socket.write(bypass("/after-reply"));
+            });
+            socket.on("close", () => resolve(text));
+            socket.write(
+              upgradeRequest(
+                { Origin: ORIGIN, Cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}` },
+                bypass("/pipelined"),
+                NO_SOCKET_PATH,
+              ),
+            );
+          }),
+      );
+      expect(received.match(/HTTP\/1\.1 /g)).toHaveLength(1);
+      expect(received.startsWith("HTTP/1.1 404 Not Found\r\n")).toBe(true);
+      expect(received).toContain("connection: close\r\n");
+      expect(received).toContain("cache-control: private, no-store\r\n");
+      expect(received.endsWith(NO_SOCKET_BODY)).toBe(true);
+      expect(upstream.requests.map((request) => request.url)).toEqual([NO_SOCKET_PATH]);
+      // Left open, a later reset from the upstream would have no listener and end the process.
+      yield* Effect.promise(() => upstream.noSocketClosed);
     }),
   );
 

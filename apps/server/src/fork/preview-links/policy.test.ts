@@ -85,19 +85,20 @@ describe("sanitizeEntryPath", () => {
 });
 
 describe("preview cookies", () => {
-  const claims = { sub: "owner", sid: "session-1", host, exp: 1_000 };
+  const claims = { sub: "owner", key: "session-1", host, iat: 500, exp: 1_000 };
   const value = signPreviewCookie(claims, key);
 
   it("verifies its own signature for the same host before expiry", () => {
     expect(verifyPreviewCookie(value, key, host, 999_000)).toEqual({
-      sid: "session-1",
+      key: "session-1",
       sub: "owner",
+      issuedAtMs: 500,
     });
   });
 
   it("rejects tampering, another host, another key and expiry", () => {
     const [payload, signature] = value.split(".");
-    const forged = Buffer.from(JSON.stringify({ ...claims, v: 1, sub: "someone-else" })).toString(
+    const forged = Buffer.from(JSON.stringify({ ...claims, v: 2, sub: "someone-else" })).toString(
       "base64url",
     );
     expect(verifyPreviewCookie(`${forged}.${signature}`, key, host, 0)).toBeNull();

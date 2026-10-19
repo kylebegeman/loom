@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - cookie HMACs and entry codes run synchronously on the gateway's request path.
 import * as NodeCrypto from "node:crypto";
+import type { ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIME_MS,
   PREVIEW_LINK_RESTORE_WINDOW_MS,
@@ -118,11 +119,27 @@ export function previewReferenceUrl(reference: string): URL | null {
   }
 }
 
+/**
+ * What a preview cookie's access stands on. Usually the Loom session that opened the link. A DPoP
+ * client, such as the mobile app or remote web over T3 Connect, replaces its one-hour session
+ * with a new one, so its cookies follow every DPoP session of the same subject instead.
+ */
+export function previewAccessKey(session: {
+  readonly sessionId: string;
+  readonly subject: string;
+  readonly method: ServerAuthSessionMethod;
+}): string {
+  return session.method === "dpop-access-token" ? `dpop:${session.subject}` : session.sessionId;
+}
+
 interface PreviewCookieClaims {
-  readonly v: 1;
+  readonly v: 2;
   readonly sub: string;
-  readonly sid: string;
+  /** See `previewAccessKey`. */
+  readonly key: string;
   readonly host: string;
+  /** Unix milliseconds, so a removal can keep out every cookie minted up to that moment. */
+  readonly iat: number;
   /** Unix seconds. */
   readonly exp: number;
 }
@@ -132,7 +149,14 @@ const hmac = (key: Uint8Array, payload: string) =>
 
 export function signPreviewCookie(claims: Omit<PreviewCookieClaims, "v">, key: Uint8Array): string {
   const payload = Buffer.from(
-    JSON.stringify({ v: 1, sub: claims.sub, sid: claims.sid, host: claims.host, exp: claims.exp }),
+    JSON.stringify({
+      v: 2,
+      sub: claims.sub,
+      key: claims.key,
+      host: claims.host,
+      iat: claims.iat,
+      exp: claims.exp,
+    }),
   ).toString("base64url");
   return `${payload}.${hmac(key, payload).toString("base64url")}`;
 }
@@ -142,7 +166,7 @@ export function verifyPreviewCookie(
   key: Uint8Array,
   host: string,
   nowMs: number,
-): { readonly sid: string; readonly sub: string } | null {
+): { readonly key: string; readonly sub: string; readonly issuedAtMs: number } | null {
   if (value.length === 0 || value.length > COOKIE_VALUE_MAX_LENGTH) return null;
   const dot = value.indexOf(".");
   if (dot <= 0 || dot !== value.lastIndexOf(".")) return null;
@@ -158,10 +182,11 @@ export function verifyPreviewCookie(
     return null;
   }
   if (typeof claims !== "object" || claims === null) return null;
-  const { v, sub, sid, host: claimedHost, exp } = claims as Record<string, unknown>;
-  if (v !== 1 || typeof sub !== "string" || typeof sid !== "string") return null;
+  const { v, sub, key: accessKey, host: claimedHost, iat, exp } = claims as Record<string, unknown>;
+  if (v !== 2 || typeof sub !== "string" || typeof accessKey !== "string") return null;
+  if (typeof iat !== "number") return null;
   if (claimedHost !== host || typeof exp !== "number" || exp * 1000 <= nowMs) return null;
-  return { sid, sub };
+  return { key: accessKey, sub, issuedAtMs: iat };
 }
 
 const ms = (iso: string | null) => (iso === null ? null : Date.parse(iso));
