@@ -1028,6 +1028,53 @@ describe("collectLimitNotices", () => {
     });
     expect(collectLimitNotices(one)[0]).toBe("Laptop · Claude Max: Could not read limits.");
   });
+
+  it("names source accounts left off the page unless another report shows them", () => {
+    const unread = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
+    const read = { checkedAt, windows: [window] };
+    const presentations = new Map([
+      [
+        EnvironmentId.make("env-a"),
+        {
+          ...laptop,
+          serverConfig: {
+            providers: [
+              provider({
+                instanceId: ProviderInstanceId.make("claude"),
+                driver: claude,
+                auth: { status: "authenticated", email: "shown@example.com" },
+                usageLimits: read,
+              }),
+            ],
+            usageLimitSources: [
+              {
+                ...hub,
+                accounts: [
+                  { id: "a.json", driver: claude, email: "gap@example.com", usageLimits: unread },
+                  { id: "claude-b.json", driver: claude, usageLimits: unread },
+                  { id: "c.json", driver: claude, email: "shown@example.com", usageLimits: unread },
+                  { id: "d.json", driver: claude, email: "fine@example.com", usageLimits: read },
+                  {
+                    id: "e.json",
+                    driver: claude,
+                    email: "api@example.com",
+                    usageLimits: { ...unread, unavailable: { reason: "unsupported" as const } },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    ]);
+    expect(collectLimitAccounts(presentations).map((account) => account.email)).toEqual([
+      "shown@example.com",
+      "fine@example.com",
+    ]);
+    expect(collectLimitNotices(presentations)).toEqual([
+      "hub · gap@example.com, claude-b: Could not read limits.",
+    ]);
+  });
 });
 
 describe("/usage-limits", () => {

@@ -96,7 +96,7 @@ export interface HubAuthFile {
 const RESET_CREDITS_MAX_AGE_MS = 10 * 60_000;
 const FUTURE_SKEW_MS = 60_000;
 const UNCERTAIN_MESSAGE =
-  "Switchboard has no current reading for this account. Loom does not poll the provider in its place.";
+  "Switchboard has no current reading. Loom does not poll the provider in its place.";
 
 const isoAt = (value: string | number | null | undefined): string | undefined => {
   if (value === null || value === undefined) return undefined;

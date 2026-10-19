@@ -147,6 +147,16 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
   };
 }
 
+const presentationKeyResolver = (presentations: LimitPresentations) =>
+  accountKeyResolver(
+    [...presentations.values()].flatMap((presentation) => [
+      ...(presentation.serverConfig?.providers ?? [])
+        .filter((provider) => provider.enabled)
+        .map(nativeReport),
+      ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
+    ]),
+  );
+
 export interface LimitAccount {
   readonly key: string;
   readonly driver: ServerProvider["driver"];
@@ -225,14 +235,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       },
     });
   };
-  const resolveKey = accountKeyResolver(
-    [...presentations.values()].flatMap((presentation) => [
-      ...(presentation.serverConfig?.providers ?? [])
-        .filter((provider) => provider.enabled)
-        .map(nativeReport),
-      ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
-    ]),
-  );
+  const resolveKey = presentationKeyResolver(presentations);
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
@@ -291,6 +294,24 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
   const notices: string[] = [];
+  // A source account without a reading is left off the page, so it is named
+  // here unless another login or source shows the same account.
+  const resolveKey = presentationKeyResolver(presentations);
+  const shown = new Set<string>();
+  for (const presentation of presentations.values()) {
+    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
+      const key = resolveKey(nativeReport(provider));
+      if (key && provider.usageLimits && limitsNotice(provider.usageLimits) === null) {
+        shown.add(key);
+      }
+    }
+    for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
+      for (const account of source.accounts) {
+        const key = resolveKey(account);
+        if (key && limitsNotice(account.usageLimits) === null) shown.add(key);
+      }
+    }
+  }
   for (const presentation of presentations.values()) {
     const environmentLabel = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
@@ -302,8 +323,25 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
     for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
       if (source.error) {
         notices.push(`${label(environmentLabel, source.label)}: ${source.error}`);
-      } else if (source.accounts.length === 0) {
+        continue;
+      }
+      if (source.accounts.length === 0) {
         notices.push(`${label(environmentLabel, source.label)}: No accounts reported.`);
+        continue;
+      }
+      const unread = new Map<string, Set<string>>();
+      for (const account of source.accounts) {
+        if (account.usageLimits.unavailable?.reason === "unsupported") continue;
+        const notice = limitsNotice(account.usageLimits);
+        const key = resolveKey(account);
+        if (notice === null || (key !== null && shown.has(key))) continue;
+        const name = account.email ?? account.id.replace(/\.json$/i, "");
+        unread.set(notice, (unread.get(notice) ?? new Set()).add(name));
+      }
+      for (const [notice, names] of unread) {
+        notices.push(
+          `${label(environmentLabel, `${source.label} · ${[...names].join(", ")}`)}: ${notice}`,
+        );
       }
     }
   }
