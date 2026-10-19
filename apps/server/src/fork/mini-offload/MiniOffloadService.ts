@@ -8,6 +8,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeZlib from "node:zlib";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   MiniOffloadError,
@@ -38,10 +39,33 @@ import * as WorkerSource from "./MiniWorkerSource.ts";
 import { atomicJson, disk, readJson } from "./storage.ts";
 
 const jsonBytes = (value: object) => Buffer.byteLength(JSON.stringify(value)) + 1;
-const MAX_BYTES = 64 * 1024 * 1024;
+// Matches the LoomOS worker's receive limit. Patches travel inside JSON, so they stay smaller.
+const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
+const MAX_PATCH_BYTES = 64 * 1024 * 1024;
 class ArchiveTooLarge extends Error {}
-const Stored = Schema.Struct({ receipt: MiniReceipt, worker: MiniWorker });
+// Receipts saved before compression have no encoding and replay their plain tar unchanged.
+const Stored = Schema.Struct({
+  receipt: MiniReceipt,
+  worker: MiniWorker,
+  archiveEncoding: Schema.optional(Schema.Literal("gzip")),
+});
 type Stored = typeof Stored.Type;
+const archiveName = (stored: Pick<Stored, "archiveEncoding">) =>
+  stored.archiveEncoding === "gzip" ? "source.tar.gz" : "source.tar";
+const receiveSpec = ({ receipt, archiveEncoding }: Stored) => ({
+  schema_version: 1,
+  request_id: receipt.request.requestId,
+  source_revision: receipt.sourceRevision,
+  label: receipt.request.label,
+  argv: receipt.request.argv,
+  memory_mib: receipt.request.memoryMiB,
+  cpu_percent: receipt.request.cpuPercent,
+  timeout_seconds: receipt.request.timeoutSeconds,
+  archive_bytes: receipt.archiveBytes,
+  archive_sha256: receipt.archiveSha256,
+  ...(archiveEncoding ? { archive_encoding: archiveEncoding } : {}),
+  ...(receipt.request.outputs?.length ? { outputs: receipt.request.outputs } : {}),
+});
 const Received = Schema.Struct({
   request_id: Schema.String,
   source_revision: Schema.String,
@@ -99,8 +123,14 @@ const sha256File = async (path: string) => {
   for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 };
-// Bound bytes before writing, rather than filling the host disk before checking size.
-const archiveRepository = (cwd: string, revision: string, archive: string) =>
+// Bound the uncompressed tar before writing, rather than filling the host disk before checking size.
+// The worker bounds both the compressed transfer and the member sizes it unpacks.
+export const archiveRepository = (
+  cwd: string,
+  revision: string,
+  archive: string,
+  maxBytes = MAX_ARCHIVE_BYTES,
+) =>
   Effect.suspend(() => {
     let completion: Promise<void> | undefined;
     return Effect.tryPromise({
@@ -124,7 +154,7 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
           const limit = new NodeStream.Transform({
             transform(chunk: Buffer, _encoding, callback) {
               bytes += chunk.length;
-              callback(bytes > MAX_BYTES ? new ArchiveTooLarge() : null, chunk);
+              callback(bytes > maxBytes ? new ArchiveTooLarge() : null, chunk);
             },
           });
           const abort = () => {
@@ -140,7 +170,9 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
           });
           try {
             await Promise.all([
-              NodeStreamPromises.pipeline(child.stdout, limit, output, { signal }),
+              NodeStreamPromises.pipeline(child.stdout, limit, NodeZlib.createGzip(), output, {
+                signal,
+              }),
               exited,
             ]);
           } catch (cause) {
@@ -164,7 +196,7 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
       Effect.ensuring(Effect.promise(() => completion?.catch(() => {}) ?? Promise.resolve())),
     );
   }).pipe(
-    Effect.timeout("60 seconds"),
+    Effect.timeout("5 minutes"),
     Effect.mapError((cause) =>
       cause._tag === "MiniOffloadError"
         ? cause
@@ -299,29 +331,16 @@ const make = Effect.gen(function* () {
   const send = Effect.fn("MiniOffload.send")(function* (stored: Stored) {
     const receipt = stored.receipt;
     const request = receipt.request;
-    const archive = NodePath.join(pathFor(request.requestId), "source.tar");
+    const archive = NodePath.join(pathFor(request.requestId), archiveName(stored));
     const valid = yield* disk(
       async () =>
         (await NodeFSP.stat(archive)).size === receipt.archiveBytes &&
         (await sha256File(archive)) === receipt.archiveSha256,
     );
     if (!valid) return yield* fail("storage");
-    const spec = {
-      schema_version: 1,
-      request_id: request.requestId,
-      source_revision: receipt.sourceRevision,
-      label: request.label,
-      argv: request.argv,
-      memory_mib: request.memoryMiB,
-      cpu_percent: request.cpuPercent,
-      timeout_seconds: request.timeoutSeconds,
-      archive_bytes: receipt.archiveBytes,
-      archive_sha256: receipt.archiveSha256,
-      ...(request.outputs?.length ? { outputs: request.outputs } : {}),
-    };
     const response = yield* decode(
       Received,
-      yield* ssh.request(stored.worker, "receive", spec, archive),
+      yield* ssh.request(stored.worker, "receive", receiveSpec(stored), archive),
     );
     if (
       response.request_id !== request.requestId ||
@@ -334,6 +353,8 @@ const make = Effect.gen(function* () {
       receipt: { ...receipt, state: "submitted", job: response.job },
     };
     yield* save(next);
+    // The worker keeps its own copy, and a submitted receipt never sends the archive again.
+    yield* disk(() => NodeFSP.rm(archive, { force: true })).pipe(Effect.ignore);
     return next.receipt;
   });
   const rpc = (stored: Stored, action: "show" | "cancel" | "logs" | "patch" | "artifacts") => {
@@ -490,7 +511,10 @@ const make = Effect.gen(function* () {
                   if (dirty && !request.committedOnly) return yield* fail("dirty");
                   const directory = pathFor(request.requestId);
                   yield* disk(() => NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 }));
-                  const archive = NodePath.join(directory, "source.tar");
+                  const archive = NodePath.join(
+                    directory,
+                    archiveName({ archiveEncoding: "gzip" }),
+                  );
                   yield* archiveRepository(cwd, revision, archive);
                   const bytes = yield* disk(async () => {
                     await NodeFSP.chmod(archive, 0o600);
@@ -502,11 +526,12 @@ const make = Effect.gen(function* () {
                       await file.close();
                     }
                   });
-                  if (bytes > MAX_BYTES) return yield* fail("too_large");
+                  if (bytes > MAX_ARCHIVE_BYTES) return yield* fail("too_large");
                   if (bytes <= 0) return yield* fail("storage");
                   const checksum = yield* disk(() => sha256File(archive));
                   const initial: Stored = {
                     worker,
+                    archiveEncoding: "gzip",
                     receipt: {
                       request,
                       workerName: worker.name,
@@ -519,20 +544,7 @@ const make = Effect.gen(function* () {
                       job: null,
                     },
                   };
-                  const headerBytes = jsonBytes({
-                    schema_version: 1,
-                    request_id: request.requestId,
-                    source_revision: revision,
-                    label: request.label,
-                    argv: request.argv,
-                    memory_mib: request.memoryMiB,
-                    cpu_percent: request.cpuPercent,
-                    timeout_seconds: request.timeoutSeconds,
-                    archive_bytes: bytes,
-                    archive_sha256: checksum,
-                    ...(request.outputs?.length ? { outputs: request.outputs } : {}),
-                  });
-                  if (headerBytes > 65536) return yield* fail("response");
+                  if (jsonBytes(receiveSpec(initial)) > 65536) return yield* fail("response");
                   yield* save(initial);
                   return initial;
                 }),
@@ -651,7 +663,7 @@ const make = Effect.gen(function* () {
         if (
           response.job_id !== stored.receipt.job?.id ||
           response.source_revision !== stored.receipt.sourceRevision ||
-          bytes.length > MAX_BYTES ||
+          bytes.length > MAX_PATCH_BYTES ||
           bytes.toString("base64") !== response.patch_base64 ||
           NodeCrypto.createHash("sha256").update(bytes).digest("hex") !== response.sha256
         )

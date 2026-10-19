@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeZlib from "node:zlib";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
@@ -79,7 +80,14 @@ const setup = Effect.gen(function* () {
   );
   const base = NodePath.join(home, "state");
   const state = NodePath.join(base, "userdata");
-  const calls: { worker: MiniWorker; operation: string; header: object; archive?: string }[] = [];
+  const calls: {
+    worker: MiniWorker;
+    operation: string;
+    header: object;
+    archive?: string;
+    // The host removes a sent archive once the worker accepts it, so keep what was sent.
+    sent?: { contents: Buffer; mode: number };
+  }[] = [];
   let mode: "normal" | "lost" | "wrong" | "badPatch" = "normal";
   let artifactOverrides: Record<string, unknown> = {};
   let caps: object = {
@@ -100,7 +108,20 @@ const setup = Effect.gen(function* () {
   const transport: Ssh.MiniSshTransport["Service"] = {
     request: (destination, operation, header, archive) =>
       Effect.gen(function* () {
-        calls.push({ worker: destination, operation, header, ...(archive ? { archive } : {}) });
+        calls.push({
+          worker: destination,
+          operation,
+          header,
+          ...(archive
+            ? {
+                archive,
+                sent: {
+                  contents: NodeFS.readFileSync(archive),
+                  mode: NodeFS.statSync(archive).mode & 0o777,
+                },
+              }
+            : {}),
+        });
         if (operation === "receive") {
           // The receipt must exist before any bytes could be accepted by a destination.
           const saved = JSON.parse(
@@ -345,10 +366,11 @@ describe("native Mini offloading", () => {
       expect(calls).toHaveLength(1);
     }),
   );
-  it.effect("bounds archive generation and removes an oversized partial snapshot", () =>
+  it.effect("bounds the uncompressed snapshot and removes an oversized partial archive", () =>
     Effect.gen(function* () {
-      const { service, calls, cwd, git, state } = yield* setup;
-      NodeFS.writeFileSync(NodePath.join(cwd, "large.bin"), Buffer.alloc(64 * 1024 * 1024));
+      const { cwd, git, state } = yield* setup;
+      // Zeros compress to almost nothing, so only an uncompressed bound catches them.
+      NodeFS.writeFileSync(NodePath.join(cwd, "large.bin"), Buffer.alloc(4 * 1024 * 1024));
       git("add", ".");
       git(
         "-c",
@@ -360,11 +382,12 @@ describe("native Mini offloading", () => {
         "-m",
         "Large",
       );
-      expect((yield* Effect.flip(service.submit(request))).reason).toBe("too_large");
-      const directory = NodePath.join(state, "fork", "mini-offload", request.requestId);
-      expect(NodeFS.existsSync(NodePath.join(directory, "source.tar"))).toBe(false);
-      expect(NodeFS.existsSync(NodePath.join(directory, "receipt.json"))).toBe(false);
-      expect(calls).toHaveLength(0);
+      const archive = NodePath.join(state, "oversized.tar.gz");
+      const error = yield* Effect.flip(
+        Mini.archiveRepository(cwd, git("rev-parse", "HEAD"), archive, 1024 * 1024),
+      );
+      expect(error.reason).toBe("too_large");
+      expect(NodeFS.existsSync(archive)).toBe(false);
     }),
   );
   it.effect("saves a private receipt before transfer and deduplicates repeated submissions", () =>
@@ -379,7 +402,38 @@ describe("native Mini offloading", () => {
           NodePath.join(state, "fork", "mini-offload", request.requestId, "receipt.json"),
         ).mode & 0o777,
       ).toBe(0o600);
-      expect(NodeFS.statSync(calls[0]!.archive!).mode & 0o777).toBe(0o600);
+      expect(calls[0]?.sent?.mode).toBe(0o600);
+      expect(calls[0]?.header).toMatchObject({ archive_encoding: "gzip" });
+      expect(
+        NodeChildProcess.execFileSync("tar", ["-tzf", "-"], {
+          input: calls[0]!.sent!.contents,
+          encoding: "utf8",
+        }),
+      ).toContain("source.txt");
+      expect(NodeFS.existsSync(calls[0]!.archive!)).toBe(false);
+    }),
+  );
+  it.effect("replays a receipt saved before compression as its original plain tar", () =>
+    Effect.gen(function* () {
+      const { service, makeService, calls, mode, state } = yield* setup;
+      mode("lost");
+      yield* Effect.flip(service.submit(request));
+      const directory = NodePath.join(state, "fork", "mini-offload", request.requestId);
+      const plain = NodeZlib.gunzipSync(calls[0]!.sent!.contents);
+      const saved = JSON.parse(
+        NodeFS.readFileSync(NodePath.join(directory, "receipt.json"), "utf8"),
+      );
+      delete saved.archiveEncoding;
+      saved.receipt.archiveBytes = plain.length;
+      saved.receipt.archiveSha256 = NodeCrypto.createHash("sha256").update(plain).digest("hex");
+      NodeFS.rmSync(NodePath.join(directory, "source.tar.gz"));
+      NodeFS.writeFileSync(NodePath.join(directory, "source.tar"), plain, { mode: 0o600 });
+      NodeFS.writeFileSync(NodePath.join(directory, "receipt.json"), JSON.stringify(saved));
+      mode("normal");
+      yield* (yield* makeService).recover(ref);
+      expect(calls[1]?.header).not.toHaveProperty("archive_encoding");
+      expect(calls[1]?.header).toMatchObject({ archive_bytes: plain.length });
+      expect(calls[1]?.sent?.contents).toEqual(plain);
     }),
   );
   it.effect(
@@ -389,7 +443,7 @@ describe("native Mini offloading", () => {
         const { service, makeService, calls, mode, cwd, git } = yield* setup;
         mode("lost");
         expect((yield* Effect.flip(service.submit(request))).reason).toBe("transfer");
-        const original = NodeFS.readFileSync(calls[0]!.archive!);
+        const original = calls[0]!.sent!.contents;
         NodeFS.writeFileSync(NodePath.join(cwd, "source.txt"), "new head\n");
         git("add", ".");
         git(
@@ -409,7 +463,7 @@ describe("native Mini offloading", () => {
         expect(receipt.job?.id).toBe(job.id);
         expect(calls[1]?.worker.target).toBe(worker.target);
         expect(calls[1]?.header).toEqual(calls[0]?.header);
-        expect(NodeFS.readFileSync(calls[1]!.archive!)).toEqual(original);
+        expect(calls[1]?.sent?.contents).toEqual(original);
       }),
   );
   it.effect("refuses specification changes or another thread reusing a receipt", () =>
@@ -436,7 +490,10 @@ describe("native Mini offloading", () => {
         true,
       );
       expect(
-        NodeChildProcess.execFileSync("tar", ["-tf", calls[0]!.archive!], { encoding: "utf8" }),
+        NodeChildProcess.execFileSync("tar", ["-tzf", "-"], {
+          input: calls[0]!.sent!.contents,
+          encoding: "utf8",
+        }),
       ).not.toContain("untracked.txt");
     }),
   );

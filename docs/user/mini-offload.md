@@ -42,8 +42,10 @@ must be enabled on the worker. Disabling a worker prevents new submissions;
 existing jobs remain inspectable, cancellable and recoverable. A destination's
 connection cannot change under its existing ID.
 
-The snapshot contains the committed revision only, up to 64 MiB. Commit local
-changes first, or explicitly choose the committed revision with local edits.
+The snapshot contains the committed revision only, up to 1 GiB before
+compression. Loom sends it compressed, which needs LoomOS 0.1.13 or later on the
+worker. Commit local changes first, or explicitly choose the committed revision
+with local edits.
 Ignored files,
 Git history, submodule contents and external Git LFS objects are not included.
 Tracked files follow Git archive/export attributes. This runs trusted commands
