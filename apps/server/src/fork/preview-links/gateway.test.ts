@@ -70,6 +70,11 @@ const upstreamServer = Effect.acquireRelease(
         response.end();
         return;
       }
+      if (request.url === "/html") {
+        response.writeHead(200, { "content-type": "Text/HTML; charset=utf-8" });
+        response.end("<p>Write to dev@example.com</p>");
+        return;
+      }
       const chunks: Array<Buffer> = [];
       request.on("data", (chunk: Buffer) => chunks.push(chunk));
       request.on("end", () => {
@@ -295,7 +300,7 @@ describe("preview gateway", () => {
       expect(ended.headers["content-security-policy"]).toBe(
         "default-src 'none'; style-src 'unsafe-inline'",
       );
-      expect(ended.headers["cache-control"]).toBe("private, no-store");
+      expect(ended.headers["cache-control"]).toBe("private, no-store, no-transform");
       expect(ended.headers["x-robots-tag"]).toBe("noindex, nofollow");
     }),
   );
@@ -477,6 +482,19 @@ describe("preview gateway", () => {
     }),
   );
 
+  it.live("keeps the edge from rewriting pages without blocking compression elsewhere", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setup;
+      const page = yield* send(gateway.port, { host: LINK_HOST, path: "/html", headers: signedIn });
+      expect(page.body).toBe("<p>Write to dev@example.com</p>");
+      expect(page.headers["cache-control"]).toBe("private, no-store, no-transform");
+
+      const text = yield* send(gateway.port, { host: LINK_HOST, path: "/text", headers: signedIn });
+      expect(text.headers["content-type"]).toBe("text/plain");
+      expect(text.headers["cache-control"]).toBe("private, no-store");
+    }),
+  );
+
   it.live("re-frames a chunked body so it cannot pose as another request", () =>
     Effect.gen(function* () {
       const { gateway, upstream } = yield* setup;
@@ -539,7 +557,7 @@ describe("preview gateway", () => {
       const reply = yield* send(gateway.port, { host: LINK_HOST, headers: signedIn });
       expect(reply.status).toBe(502);
       expect(reply.body).toContain(`Nothing is answering on port ${closed} yet`);
-      expect(reply.headers["cache-control"]).toBe("private, no-store");
+      expect(reply.headers["cache-control"]).toBe("private, no-store, no-transform");
 
       const upgrade = yield* rawExchange(
         gateway.port,

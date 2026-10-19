@@ -121,7 +121,8 @@ length and the shared keep-alive upstream would read it as more requests. Respon
 `Location` rewritten from a local origin on that port to the link, `Set-Cookie` without
 `Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
 `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
-no-store` plus `X-Robots-Tag: noindex, nofollow` on everything. A refused port answers 502
+no-store` plus `X-Robots-Tag: noindex, nofollow` on everything, with `no-transform` added
+to HTML. A refused port answers 502
 "Nothing is answering on port N yet", and an upgrade to one gets a bare 502. An upgrade goes
 upstream with `http.request` on a socket of its own, and nothing the browser sends is relayed
 until the upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back
@@ -247,7 +248,10 @@ never call `open`, so no transcript carries a working credential.
   or another cache serve the page to a browser with no cookie, skipping the gateway.
   `private, no-store` on every response prevents that. `CDN-Cache-Control`,
   `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` are dropped because Cloudflare
-  obeys them over `Cache-Control`. `X-Robots-Tag` keeps crawlers out.
+  obeys them over `Cache-Control`. `X-Robots-Tag` keeps crawlers out. Cloudflare also
+  rewrites HTML by default, injecting its Web Analytics beacon and hiding email addresses, so
+  HTML responses and the gateway's own pages add `no-transform`. Other responses leave it off
+  because it also stops edge compression, which large dev bundles need on a phone.
 - **Why loopback and a denylist.** The gateway binds `127.0.0.1` so the tunnel is the only way
   in. Debugger ports mean code execution and database ports mean data, so they are never
   shared, and the check repeats on every request so a later settings change cannot leave an

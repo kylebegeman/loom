@@ -57,8 +57,17 @@ const CDN_CACHE_HEADERS = new Set([
   "surrogate-control",
 ]);
 
+// Cloudflare rewrites HTML on its way out, injecting its analytics beacon and hiding email
+// addresses, so a preview would differ from the same page on localhost. `no-transform` stops
+// that but also stops edge compression, so only HTML carries it.
+const HTML_CACHE_CONTROL = `${PRIVATE_HEADERS["cache-control"]}, no-transform`;
+
+const isHtml = (contentType: ReadonlyArray<string> | undefined) =>
+  contentType !== undefined && /^[ \t]*text\/html[ \t]*(?:;|$)/i.test(contentType[0] ?? "");
+
 const PAGE_HEADERS = {
   ...PRIVATE_HEADERS,
+  "cache-control": HTML_CACHE_CONTROL,
   "content-type": "text/html; charset=utf-8",
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
   "x-content-type-options": "nosniff",
@@ -183,6 +192,7 @@ const forwardResponseHeaders = (
     }
   }
   for (const [name, value] of Object.entries(PRIVATE_HEADERS)) headers[name] = [value];
+  if (isHtml(incoming["content-type"])) headers["cache-control"] = [HTML_CACHE_CONTROL];
   return headers;
 };
 
