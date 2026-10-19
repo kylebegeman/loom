@@ -122,8 +122,9 @@ length and the shared keep-alive upstream would read it as more requests. Respon
 `Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
 `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
 no-store` plus `X-Robots-Tag: noindex, nofollow` on everything, with `no-transform` added
-to HTML. A refused port answers 502
-"Nothing is answering on port N yet", and an upgrade to one gets a bare 502. An upgrade goes
+to HTML. A refused port answers 503 "Nothing is answering on port N yet", and an upgrade to
+one gets a bare 503. Not 502: Cloudflare replaces an origin's 502 or 504 with its own error
+page, so the explanation would never arrive. An upgrade goes
 upstream with `http.request` on a socket of its own, and nothing the browser sends is relayed
 until the upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back
 and both sides are piped. Any other answer is sent with the response rewrites and

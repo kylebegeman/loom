@@ -49,6 +49,10 @@ const PRIVATE_HEADERS = {
   "x-robots-tag": "noindex, nofollow",
 } as const;
 
+// Cloudflare swaps an origin's 502 or 504 for its own error page, so a closed port answers 503
+// and its explanation reaches the browser.
+const NOTHING_LISTENING_STATUS = 503;
+
 // Cloudflare and other CDNs obey these over Cache-Control, so an app could still have the edge
 // store a private response.
 const CDN_CACHE_HEADERS = new Set([
@@ -422,7 +426,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     });
     upstream.on("error", () => {
       if (response.headersSent || response.destroyed) response.destroy();
-      else sendPage(response, 502, nothingListeningPage(port));
+      else sendPage(response, NOTHING_LISTENING_STATUS, nothingListeningPage(port));
     });
     request.on("error", () => upstream.destroy());
     response.on("close", () => {
@@ -495,7 +499,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     });
     upstream.on("error", () => {
       if (answered) destroy();
-      else rejectUpgrade(client, 502);
+      else rejectUpgrade(client, NOTHING_LISTENING_STATUS);
     });
     client.on("error", () => client.destroy());
     // The browser's socket is half-open and unread, so giving up before the answer shows only here.

@@ -95,6 +95,9 @@ links on bagels.top:
   open its bagels.top link. From a localhost client the same chat link opens `localhost`.
 - Safari on an iPad simulator paired over the tailnet: **Copy preview link** puts the link on
   the pasteboard. Before the fix the write ran after the share and Safari refused it.
+- The iPad app paired over the tailnet: an agent's `localhost:5797` chat link opens Safari on
+  its bagels.top link. With nothing on the port the page says so; it answered 502 before, and
+  Cloudflare showed its own error page instead.
 
 ## Still to check
 
@@ -106,7 +109,8 @@ These need Kyle's permission for a real browser or device.
   hour with its hot reload socket open, and removing that device signs it out.
 - Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer.
 - Mobile on cellular: Settings > Previews actions, and tapping an agent's link in a thread,
-  in an html_render page, in an MCP app and in the Files markdown preview.
+  in an html_render page, in an MCP app and in the Files markdown preview. Only the chat link
+  has been tapped, on the simulator over the tailnet.
 - An agent sharing a lane port and a terminal server, being refused another port, and its
   lane link ending when the lane is released.
 - Restore refused after a domain or computer name change.

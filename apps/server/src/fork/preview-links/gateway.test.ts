@@ -555,7 +555,7 @@ describe("preview gateway", () => {
       const view = makeView({ link: closed, denied: 1 });
       const gateway = yield* startPreviewGateway({ port: 0, view });
       const reply = yield* send(gateway.port, { host: LINK_HOST, headers: signedIn });
-      expect(reply.status).toBe(502);
+      expect(reply.status).toBe(503);
       expect(reply.body).toContain(`Nothing is answering on port ${closed} yet`);
       expect(reply.headers["cache-control"]).toBe("private, no-store, no-transform");
 
@@ -564,7 +564,7 @@ describe("preview gateway", () => {
         upgradeRequest({ Origin: ORIGIN, Cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}` }),
         "\r\n\r\n",
       );
-      expect(upgrade.received.startsWith("HTTP/1.1 502")).toBe(true);
+      expect(upgrade.received.startsWith("HTTP/1.1 503")).toBe(true);
       upgrade.socket.destroy();
     }),
   );
