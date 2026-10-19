@@ -2,10 +2,16 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { ThreadId } from "../baseSchemas.ts";
+import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const PREVIEW_LINKS_FEATURE = "preview-links";
+/** The Library signs cold-browser sign-in tickets and records each computer's preview hosts. */
+export const PREVIEW_TICKETS_FEATURE = "preview-tickets";
+/** Published pages: on a Library, storing and serving them; on a computer, the RPCs below. */
+export const PREVIEW_PAGES_FEATURE = "preview-pages";
+/** Folder and container links behind ordinary port links. */
+export const PREVIEW_BACKINGS_FEATURE = "preview-backings";
 
 export const PREVIEW_LINKS_WS_METHODS = {
   watch: "loom.preview-links.watch",
@@ -17,6 +23,8 @@ export const PREVIEW_LINKS_WS_METHODS = {
   restore: "loom.preview-links.restore",
   revokeAll: "loom.preview-links.revokeAll",
   signOutBrowsers: "loom.preview-links.signOutBrowsers",
+  pagesList: "loom.preview-pages.list",
+  pagesUpdate: "loom.preview-pages.update",
 } as const;
 
 export const PREVIEW_LINK_LIFETIMES = ["1h", "12h", "24h"] as const;
@@ -64,6 +72,27 @@ export type PreviewLinksSettings = typeof PreviewLinksSettings.Type;
 export const PreviewLinkState = Schema.Literals(["open", "revoked", "expired"]);
 export type PreviewLinkState = typeof PreviewLinkState.Type;
 
+/**
+ * What answers on a link's port when Loom started it. Old clients ignore the field, so folder and
+ * container links stay ordinary port links on the wire.
+ */
+export const PreviewLinkBacking = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("folder"),
+    /** Relative to the thread's workspace root. */
+    path: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("container"),
+    image: Schema.String,
+    containerId: Schema.String,
+    containerPort: PreviewLinkPort,
+    /** The container is removed then, and the link ends with it. */
+    stopsAt: Schema.String,
+  }),
+]);
+export type PreviewLinkBacking = typeof PreviewLinkBacking.Type;
+
 export const PreviewLink = Schema.Struct({
   id: Schema.String,
   kind: Schema.Literal("port"),
@@ -81,6 +110,7 @@ export const PreviewLink = Schema.Struct({
   expiresAt: Schema.String,
   endedAt: Schema.NullOr(Schema.String),
   restorableUntil: Schema.NullOr(Schema.String),
+  backing: Schema.optionalKey(PreviewLinkBacking),
 });
 export type PreviewLink = typeof PreviewLink.Type;
 
@@ -168,6 +198,168 @@ export class PreviewLinksError extends Schema.TaggedError<PreviewLinksError>()(
   "PreviewLinksError",
   {
     reason: PreviewLinksErrorReason,
+    message: Schema.String,
+  },
+) {}
+
+/** An agent serves a built folder from the thread's workspace on one of its lane ports. */
+export const PreviewFolderShareInput = Schema.Struct({
+  /** Relative to the thread's workspace root; must be a directory inside it. */
+  path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
+  lifetime: Schema.optionalKey(PreviewLinkLifetime),
+});
+export type PreviewFolderShareInput = typeof PreviewFolderShareInput.Type;
+
+export const PREVIEW_CONTAINER_DEFAULT_MINUTES = 120;
+export const PREVIEW_CONTAINER_MAX_MINUTES = 240;
+
+/** An agent runs an image on one of the thread's lane ports, removed when its time is up. */
+export const PreviewContainerShareInput = Schema.Struct({
+  image: Schema.String.check(
+    Schema.isMaxLength(256),
+    Schema.isPattern(/^[a-z0-9][a-z0-9._/:@-]*$/i),
+  ),
+  /** The port the container listens on inside. */
+  containerPort: PreviewLinkPort,
+  env: Schema.optionalKey(
+    Schema.Record(
+      Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/)),
+      Schema.String.check(Schema.isMaxLength(4096)),
+    ),
+  ),
+  /** Arguments after the image, passed as-is to `docker run`. */
+  command: Schema.optionalKey(
+    Schema.Array(Schema.String.check(Schema.isMaxLength(4096))).check(Schema.isMaxLength(32)),
+  ),
+  minutes: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: PREVIEW_CONTAINER_MAX_MINUTES })),
+  ),
+});
+export type PreviewContainerShareInput = typeof PreviewContainerShareInput.Type;
+
+// Library sign-in for cold browsers.
+
+export const LibraryPreviewRegisterRequest = Schema.Struct({
+  /** Null when previews are off, so the Library stops signing tickets for this computer. */
+  previews: Schema.NullOr(
+    Schema.Struct({ machine: PreviewMachineName, suffix: PreviewLinkSuffix }),
+  ),
+});
+export type LibraryPreviewRegisterRequest = typeof LibraryPreviewRegisterRequest.Type;
+
+/** What a computer needs to send cold browsers to the Library and check what comes back. */
+export const LibraryPreviewAccess = Schema.Struct({
+  /** The Library's public origin and ticket issuer, such as `https://loom.begam.in`. */
+  origin: Schema.String.check(Schema.isMaxLength(2048)),
+  ticketPath: Schema.String.check(Schema.isMaxLength(256)),
+  keyId: Schema.String.check(Schema.isMaxLength(64)),
+  /** Raw Ed25519 public key, base64url. */
+  publicKey: Schema.String.check(Schema.isMaxLength(64)),
+  /** Set when the Library serves published pages, such as `https://pages.bagels.top`. */
+  pagesOrigin: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+});
+export type LibraryPreviewAccess = typeof LibraryPreviewAccess.Type;
+
+// Published pages, stored and served by the Library.
+
+export const PREVIEW_PAGE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+export const PREVIEW_PAGE_RESTORE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const PREVIEW_PAGE_MAX_BYTES = 8 * 1024 * 1024;
+export const PREVIEW_PAGE_TITLE_MAX = 200;
+export const PREVIEW_PAGE_REPLY_MAX = 20_000;
+
+export const PreviewPageKind = Schema.Literals(["html", "dossier"]);
+export type PreviewPageKind = typeof PreviewPageKind.Type;
+
+export const PreviewPageState = Schema.Literals(["open", "ended", "expired"]);
+export type PreviewPageState = typeof PreviewPageState.Type;
+
+export const PreviewPageTitle = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(PREVIEW_PAGE_TITLE_MAX),
+);
+
+export const PreviewPage = Schema.Struct({
+  id: Schema.String,
+  /** `https://pages.<domain>/p/<id>`; opens only for the Library's owner. */
+  url: Schema.String,
+  title: PreviewPageTitle,
+  kind: PreviewPageKind,
+  /** The publishing computer's own ids, so replies reach the right thread. */
+  projectId: ProjectId,
+  threadId: ThreadId,
+  state: PreviewPageState,
+  /** Kept pages never expire. */
+  kept: Schema.Boolean,
+  sizeBytes: NonNegativeInt,
+  createdAt: IsoDateTime,
+  expiresAt: Schema.NullOr(IsoDateTime),
+  endedAt: Schema.NullOr(IsoDateTime),
+  restorableUntil: Schema.NullOr(IsoDateTime),
+});
+export type PreviewPage = typeof PreviewPage.Type;
+
+export const PreviewPageAction = Schema.Literals(["keep", "release", "end", "restore"]);
+export type PreviewPageAction = typeof PreviewPageAction.Type;
+
+export const LibraryPagePublishRequest = Schema.Struct({
+  /** Republishing an existing page replaces its content and keeps its address. */
+  pageId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  projectId: ProjectId,
+  threadId: ThreadId,
+  title: PreviewPageTitle,
+  kind: PreviewPageKind,
+  html: Schema.String.check(Schema.isMaxLength(PREVIEW_PAGE_MAX_BYTES)),
+});
+export type LibraryPagePublishRequest = typeof LibraryPagePublishRequest.Type;
+
+export const PreviewPageUpdateInput = Schema.Struct({
+  pageId: Schema.String.check(Schema.isMaxLength(64)),
+  action: PreviewPageAction,
+});
+export type PreviewPageUpdateInput = typeof PreviewPageUpdateInput.Type;
+
+export const PreviewPagesList = Schema.Struct({
+  /** False when this computer has no Library, or its Library does not serve pages. */
+  available: Schema.Boolean,
+  pages: Schema.Array(PreviewPage),
+});
+export type PreviewPagesList = typeof PreviewPagesList.Type;
+
+/** A reply typed under a published page, on its way back to the page's thread. */
+export const LibraryPageReply = Schema.Struct({
+  replyId: Schema.String.check(Schema.isMaxLength(64)),
+  pageId: Schema.String.check(Schema.isMaxLength(64)),
+  pageTitle: PreviewPageTitle,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  /** Untrusted: whatever the browser sent. It enters the thread only as message text. */
+  text: Schema.String.check(Schema.isMaxLength(PREVIEW_PAGE_REPLY_MAX)),
+  createdAt: IsoDateTime,
+});
+export type LibraryPageReply = typeof LibraryPageReply.Type;
+
+export const LIBRARY_REPLY_WAIT_MAX_MS = 25_000;
+
+export const LibraryPageRepliesNextRequest = Schema.Struct({
+  waitMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: LIBRARY_REPLY_WAIT_MAX_MS })),
+});
+export type LibraryPageRepliesNextRequest = typeof LibraryPageRepliesNextRequest.Type;
+
+export const LibraryPageReplies = Schema.Struct({ replies: Schema.Array(LibraryPageReply) });
+export type LibraryPageReplies = typeof LibraryPageReplies.Type;
+
+export const LibraryPageReplyAckRequest = Schema.Struct({
+  replyId: Schema.String.check(Schema.isMaxLength(64)),
+  outcome: Schema.Literals(["delivered", "rejected"]),
+  detail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+});
+export type LibraryPageReplyAckRequest = typeof LibraryPageReplyAckRequest.Type;
+
+export class PreviewPagesError extends Schema.TaggedError<PreviewPagesError>()(
+  "PreviewPagesError",
+  {
+    reason: Schema.Literals(["unavailable", "not-found", "invalid", "too-large", "blocked", "io"]),
     message: Schema.String,
   },
 ) {}
