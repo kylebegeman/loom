@@ -2,28 +2,58 @@
 
 ## Overview
 
+Links, on the computer that serves them:
+
 ```
 browser --https--> Cloudflare edge --tunnel--> cloudflared (child of the server)
-                                                   |
-                                                   | http://127.0.0.1:<gateway port>
-                                                   v
-                                     gateway (node:http, loopback only)
-                                     route by Host, entry code, cookie, Origin, port
-                                                   |
-                                                   | http://localhost:<port>
-                                                   v
-                                               dev server
+   ^                                               |
+   |                                               | http://127.0.0.1:<gateway port>
+   |                                               v
+   |                                 gateway (node:http, loopback only)
+   |                                 route by Host; entry code or ticket; cookie, Origin, port
+   |                                               |
+   |                                               | http://localhost:<port>
+   |                                               v
+   |                          dev server, folder server or container (lane port)
+   |
+   | no cookie: 401 page with "Sign in with Loom" and a nonce cookie
+   v
+Library  GET /api/loom/preview/ticket  --no session--> Library sign-in, then back
+         303 https://<host>/__loom/ticket?ticket=...&path=...
 ```
 
-`PreviewLinksService` owns settings, links, entry codes, the cookie key and the lifetimes of
-the gateway and the tunnel. Clients call it over RPC as the owner; agents call it over MCP as
-their own thread. Nothing here touches orchestration or the database.
+Pages, in the Library:
+
+```
+computer (PreviewPagesService, LibraryPublisher)
+   | POST /api/loom/library/pages/publish | update, GET /api/loom/library/pages
+   | POST .../replies/next (long poll) and .../replies/ack
+   v
+Library (PageLibraryService, fork_preview_pages, fork_preview_page_replies)
+   ^
+   | pages host: its own node:http listener on LOOM_PAGES_PORT, https://pages.<domain>
+   |   /__loom/ticket   trades a Library ticket for the pages cookie
+   |   /p/<id>          shell: title, sandboxed frame, reply box
+   |   /raw/<id>        the published HTML, sandboxed without its own origin
+   |   /p/<id>/replies  POST a reply
+browser
+```
+
+`PreviewLinksService` owns link settings, links, entry codes, the cookie key, the Library
+registration, folder servers, containers and the lifetimes of the gateway and the tunnel.
+Clients call it over RPC as the owner; agents call it over MCP as their own thread. On the
+Library, `PreviewAccessService` holds the ticket key and the registered hosts, and
+`PageLibraryService` holds pages and replies. `PreviewPagesService` on the computer reads the
+page source and relays replies into threads. Links never touch orchestration; a reply enters
+a thread through `ThreadManagementService.sendToThread`, like any other queued message.
 
 ## Contracts
 
-`packages/contracts/src/fork/preview-links.ts`, feature `"preview-links"`. Every method fails
-with `PreviewLinksError` (reasons `not-configured`, `port-denied`, `port-not-in-lane`,
-`not-found`, `not-restorable`, `invalid`, `storage`, `tunnel`) or
+`packages/contracts/src/fork/preview-links.ts`, features `preview-links`, `preview-tickets`,
+`preview-pages` and `preview-backings`. Link methods fail with `PreviewLinksError` (reasons
+`not-configured`, `port-denied`, `port-not-in-lane`, `not-found`, `not-restorable`,
+`invalid`, `storage`, `tunnel`), page methods with `PreviewPagesError` (`unavailable`,
+`not-found`, `invalid`, `too-large`, `blocked`, `io`), and both with
 `EnvironmentAuthorizationError`.
 
 | Tag                                  | Input                                            | Success                | Scope                |
@@ -37,25 +67,50 @@ with `PreviewLinksError` (reasons `not-configured`, `port-denied`, `port-not-in-
 | `loom.preview-links.restore`         | link id, optional lifetime                       | `PreviewLink`          | `preview:operate`    |
 | `loom.preview-links.revokeAll`       | none                                             | void                   | `preview:operate`    |
 | `loom.preview-links.signOutBrowsers` | none                                             | void                   | `preview:operate`    |
+| `loom.preview-pages.list`            | none                                             | `PreviewPagesList`     | `orchestration:read` |
+| `loom.preview-pages.update`          | page id, keep, release, end or restore           | `PreviewPage`          | `preview:operate`    |
 
 `watch` streams; it is in `ForkSubscriptionRpcTag`. The snapshot carries setup (settings,
 `tokenStored`, `ready`, tunnel and gateway states with messages) and the links. The token is
-never returned. `ready` means enabled with a domain; sharing does not wait for the tunnel.
+never returned. `ready` means enabled with a domain; sharing does not wait for the tunnel. A
+link's optional `backing` names its folder, or its image, container and stop time; old
+clients ignore it and see a port link. Folder and container shares have no RPC, only MCP
+tools. `pages.list` is a plain request, not a subscription: pages live in the Library, so
+there is nothing on the computer to watch. It answers `available: false` instead of failing
+when the computer has no Library that serves pages.
 
-## Server
+The Library's own HTTP routes, each under `/api/loom/` and documented in its handler:
+
+| Route                                    | Caller                                     | Handler                                                                                         |
+| ---------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `POST library/previews/register`         | a computer's publisher session             | [`preview-access/http.ts`](../../../../apps/server/src/fork/preview-access/http.ts)             |
+| `GET preview/ticket`                     | any browser; signed-out ones sign in first | [`preview-access/http.ts`](../../../../apps/server/src/fork/preview-access/http.ts)             |
+| `POST library/pages/publish`, `update`   | a computer's publisher session             | [`preview-pages/libraryHttp.ts`](../../../../apps/server/src/fork/preview-pages/libraryHttp.ts) |
+| `GET library/pages`                      | a computer's publisher session             | same                                                                                            |
+| `POST library/pages/replies/next`, `ack` | a computer's publisher session             | same                                                                                            |
+
+The schemas are `LibraryPreviewRegisterRequest`, `LibraryPreviewAccess`,
+`LibraryPagePublishRequest`, `LibraryPageReplies` and `LibraryPageReplyAckRequest` in the same
+contracts file.
+
+## Computer side
 
 `apps/server/src/fork/preview-links/`, built in `ForkLayer` with the same
-`ProjectLifecycle.layer` instance the lane watcher observes.
+`ProjectLifecycle.layer` instance the lane watcher observes and the shared
+`LibraryPublisher` layer.
 
 - `PreviewLinksService.ts`: state behind one semaphore, publishing a snapshot after every
-  change. An expiry fiber sleeps to the next link deadline or access key expiry (at most 24
-  hours per sleep) and sweeps. A key that runs out there has its running requests and
-  upgrades closed, because the session store sends no change when a disconnected client's
-  session expires.
+  change. An expiry fiber sleeps to the next link deadline, access key expiry or Library
+  key lapse (at most 24 hours per sleep) and sweeps. A key that runs out there has its
+  running requests and upgrades closed, because the session store sends no change when a
+  disconnected client's session expires.
 - `policy.ts`: host format, share segments (rejection sampling over bytes below 252), path
-  sanitizing, the port denylist, cookie signing and the sweep.
+  sanitizing, the port denylist, cookie signing, the Library sign-in link and the sweep.
+- `ticket.ts`: Ed25519 ticket signing and verification and the nonce cookie, shared with the
+  Library and its pages host.
 - `gateway.ts`: the HTTP and upgrade proxy. `pages.ts`: its static pages.
 - `tunnel.ts`: the `cloudflared` supervisor.
+- `backings.ts`: the folder server and the `docker` calls.
 - `rpc.ts` (owner actor; `open` bound to the caller's session) and `mcp.ts`.
 
 ### Entry and cookie flow
@@ -73,19 +128,62 @@ never returned. `ready` means enabled with a domain; sharing does not wait for t
    milliseconds, at most 4,096 characters, verified with `timingSafeEqual` against the
    request's host.
 
+### Library sign-in
+
+When `publisher.enabled`, the computer registers `{machine, suffix}` with its Library at
+start, after every settings change and every 30 minutes, or `null` when previews are off,
+which deletes its row. The answer, `LibraryPreviewAccess`, names the Library's issuer origin,
+ticket path, key id and Ed25519 public key; the computer keeps it in memory and accepts it
+only when `parseLibraryPreviewAccess` finds an https origin it can check tickets against. A
+failed refresh keeps the last answer, so a Library blip signs nobody out. `not-found` means
+an older Library, or a server that is its own Library, and turns sign-in off.
+
+1. A request without a valid cookie that is a document navigation (`GET` with
+   `Sec-Fetch-Mode: navigate`, or `text/html` in `Accept` without fetch metadata) gets the
+   401 "Sign in to see this preview" page. It links to
+   `<library origin>/api/loom/preview/ticket?host&nonce&path` and sets a fresh 32-byte nonce
+   in `__Host-loom_pv_n` (10 minutes). Anything else gets the plain "Open this link from
+   Loom" page, because a script's fetch setting a nonce would race the page's own. Without a
+   Library answer, navigations get that page too.
+2. The Library sends a browser without a session through `/api/loom/identity/login` and back
+   (`returnTo` over 2,048 characters falls back to `/`). A session must have
+   `orchestration:operate` and not be an MCP client, else 403. The host must be the
+   Library's pages host or match a registered `fork_preview_hosts` row by machine and
+   suffix, else 400. Only then does it sign a ticket and answer `303` to
+   `https://<host>/__loom/ticket?ticket&path`.
+3. The ticket is a compact JWS: `alg` `EdDSA`, `typ` `loom-preview-ticket+jwt`, `kid` the
+   first 16 characters of the base64url SHA-256 of the public key. Claims: `iss` the
+   Library's origin, `aud` `https://<host>`, `sub` the Library user, `nonce`, `iat`, `exp`
+   (60 seconds) and a `jti`. Verification allows 30 seconds of clock skew and refuses
+   tickets over 2,048 characters.
+4. The host checks the signature, issuer, audience and that the nonce matches its nonce
+   cookie, then spends the `jti` until 31 seconds past `exp` (the skew plus one) and the
+   nonce for 10 minutes, in a memory map of at most 1,024 entries; a full map refuses new
+   tickets. It answers `303` to the path with the preview cookie under the access key
+   `library:<sub>`, clears the nonce cookie and sends `Referrer-Policy: no-referrer`. A
+   refused ticket gets a fresh sign-in link, or the open-from-Loom page once no Library is
+   known.
+
+The ticket key is the secret `loom-preview-ticket-ed25519`, separate from every other
+signing key. An unreadable stored key turns sign-in off until the secret is removed rather
+than minting a new one under it. The issuer is the origin of `LOOM_IDENTITY_REDIRECT_URI`,
+port included because Pocket ID accepts a callback on any https port.
+
 ### Access keys
 
 A cookie stands for an access key, not a session. For most sessions the key is the session id.
 A DPoP session (mobile and web over T3 Connect) lasts an hour and is replaced by one with a
 new id, so its key is `dpop:<subject>` and a browser stays in across the roll. Session rows do
 not carry the proof key's thumbprint, so the subject is the finest grouping available without
-a schema change, and every T3 Connect device shares the subject `cloud-connect`.
+a schema change, and every T3 Connect device shares the subject `cloud-connect`. A Library
+sign-in's key is `library:<sub>`. It is live until the last cookie minted for it runs out,
+survives restarts in the sidecar and ends with **Sign out preview browsers**.
 
-- A key is live while any of its sessions still counts, using the sessions the store lists at
-  start and the changes it sends after. A session counts until it expires, and a DPoP session
-  for 5 minutes more: its client asks for the next session only once the server closes its
-  socket at expiry, so without the grace its browsers would lose their sockets and streams and
-  get 401 for the seconds every hourly reconnect takes.
+- A session key is live while any of its sessions still counts, using the sessions the store
+  lists at start and the changes it sends after. A session counts until it expires, and a
+  DPoP session for 5 minutes more: its client asks for the next session only once the server
+  closes its socket at expiry, so without the grace its browsers would lose their sockets and
+  streams and get 401 for the seconds every hourly reconnect takes.
 - Removing a session revokes its key for every cookie and entry code minted up to that moment.
   A later entry works again while another session of the key is live.
 - The store also reports a session removed when its socket closes after the session ran out,
@@ -103,10 +201,11 @@ Requests and upgrades pass one decision, in order:
 1. Host not a link label under this computer's suffix and machine name: 404 "Not found". A
    well-formed host on this computer with no open link (expired, ended or never issued): 410
    "This preview has ended".
-2. `/__loom/enter` redeems a code (plain requests only). Any other `/__loom/` path: 404.
+2. `/__loom/enter` redeems a code and `/__loom/ticket` a Library ticket (plain requests
+   only). Any other `/__loom/` path: 404.
 3. Exactly one `__Host-loom_pv` cookie that verifies for this host and is unexpired, whose
-   access key is live and was not revoked after the cookie was minted. Otherwise 401 "Open
-   this link from Loom".
+   access key is live and was not revoked after the cookie was minted. Otherwise 401, with
+   the sign-in page for a navigation when a Library is known.
 4. Origin. An upgrade needs `Origin` exactly `https://<host>`. Any other request passes when
    `Origin` is absent, is `https://<host>`, or is `null` with `Sec-Fetch-Site: same-origin` (a
    `no-referrer` page's own form post). Otherwise it gets 403 unless it is a `GET` or `HEAD`
@@ -124,15 +223,14 @@ length and the shared keep-alive upstream would read it as more requests. Respon
 no-store` plus `X-Robots-Tag: noindex, nofollow` on everything, with `no-transform` added
 to HTML. A refused port answers 503 "Nothing is answering on port N yet", and an upgrade to
 one gets a bare 503. Not 502: Cloudflare replaces an origin's 502 or 504 with its own error
-page, so the explanation would never arrive. An upgrade goes
-upstream with `http.request` on a socket of its own, and nothing the browser sends is relayed
-until the upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back
-and both sides are piped. Any other answer is sent with the response rewrites and
-`Connection: close`, then both sockets close, because `cloudflared` pools gateway connections
-across visitors and a connection left open to the upstream would skip every check. Running
-requests and upgrades are tracked by host and access key, so ending a link, signing out,
-removing a client or its key expiring closes them, event streams included. A view that throws
-costs one 500 response.
+page, so the explanation would never arrive. An upgrade goes upstream with `http.request` on
+a socket of its own, and nothing the browser sends is relayed until the upstream answers
+`101`. Then that `101`, without `__Host-loom*` cookies, goes back and both sides are piped.
+Any other answer is sent with the response rewrites and `Connection: close`, then both
+sockets close, because `cloudflared` pools gateway connections across visitors and a
+connection left open to the upstream would skip every check. Running requests and upgrades
+are tracked by host and access key, so ending a link, signing out, removing a client or its
+key expiring closes them, event streams included. A view that throws costs one 500 response.
 Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
 to listen on port N." and retry on the next save.
 
@@ -157,31 +255,188 @@ server on that port whose terminal belongs to the caller's thread. Else `port-no
 `revoke` by an agent on another thread's or the owner's link is `not-found`. The lane watcher
 ends a lane link only after it has seen that lane present and then gone.
 
+Folder and container shares need the thread's lane, and fail with "Folder and container links
+need lanes on" without one. They claim the first lane port that is not denied, not held by a
+container still starting, not used by another open link and free on both `127.0.0.1` and
+`::1` (a 500 ms connect probe, then a bind).
+
+### Folder and container backings
+
+A folder must resolve, after `realpath`, to a directory inside the thread's worktree or
+workspace root. The same folder shared again from the same thread returns its open link. The
+folder server is an in-process `node:http` server on `127.0.0.1` only:
+
+- `GET` and `HEAD` only, and `Host` must be `localhost:<port>` or `127.0.0.1:<port>`, so a
+  DNS-rebound page cannot read the folder.
+- The path is decoded before it is split, so `..%2F` is caught. Any dot segment but
+  `.well-known` is 404, and the `realpath` of what it names must stay inside the folder's.
+- A directory without a trailing slash redirects; a directory serves its `index.html` or 404,
+  never a listing. There is no fallback to `index.html` for client-side routes.
+- Files open with `O_NOFOLLOW | O_NONBLOCK`, so a symlink swapped in after the check or a FIFO
+  named `index.html` cannot hold the server. `Content-Length` is fixed at `fstat`, and a
+  short read destroys the connection rather than sending a truncated body.
+- Every answer carries `nosniff` and `no-store`; types come from a table by extension.
+
+A container runs as one argv, never through a shell:
+
+```
+docker run -d --pull missing --label loom.lane=<lane id> --label loom.preview-link=<link id>
+  -p 127.0.0.1:<lane port>:<container port> [-e NAME=value ...] <image> [command ...]
+```
+
+`docker` is found with the lane leases' locator, so Docker Desktop and OrbStack both work.
+The run, pull included, has 10 minutes; queries 30 seconds. While it runs the port is held
+so no other share or restore takes it, and a cancelled or failed start removes the container
+by its link label. The `loom.lane` label lets lane release remove it with the lane's other
+containers. A container link lives 2 hours by default and 4 at most; its `expiresAt` is the
+container's stop time, and it cannot be extended or restored.
+
+One reconcile runs at startup and after every committed change. It restarts the folder
+server of every open folder link (ending a link whose folder is gone or whose port answers
+to something else), stops servers whose link ended, removes containers whose link ended and
+ends links whose container stopped. Containers are also checked every minute. Restoring a
+folder link needs its folder and its own port free, and leaves it without a lane.
+
+## Library side
+
+The same server code runs on every computer; the Library parts answer only where
+`LOOM_LIBRARY_AUTHORITY` is set, and every other server answers 404, which computers read as
+"this Library does not offer it".
+
+### Registration and tickets
+
+`PreviewAccessService` and
+[`preview-access/http.ts`](../../../../apps/server/src/fork/preview-access/http.ts).
+Registration needs a session with `loom:library:publish` whose subject is a computer
+(`loom-host:`), else 403, and a body under 4 KiB. It upserts or deletes that computer's
+`fork_preview_hosts` row and answers the ticket key, plus `pagesOrigin` when pages are on.
+The ticket route is described above; it signs only for hosts a computer registered or for
+its own pages host.
+
+### Pages
+
+`PageLibraryService` needs `LOOM_LIBRARY_AUTHORITY` and `LOOM_PAGES_ORIGIN`, an https origin
+without a port; otherwise it logs a warning and answers `unavailable`. Pages belong to the
+publishing computer's subject:
+
+- A page id is 16 random bytes in base64url. The HTML, at most 8 MiB of UTF-8, is stored in
+  the row, not in object storage, so purging the row deletes it.
+- A computer may hold 500 open pages ("End some before publishing more"); lists stop at 500.
+  Republishing with `pageId` replaces the HTML in place only from the same thread; another
+  computer's page, or one past its restore window, reads as `not-found`.
+- `keep` clears the expiry; `release` sets it 30 days from now; `end` closes it; `restore`
+  reopens a closed page within 7 days for a fresh 30 days, when there is room.
+- An hourly sweep deletes pages past their restore window with their replies, and settled
+  replies older than 7 days.
+
+The Library's computer-facing routes accept only a computer's own publisher session; an MCP
+client or a session without `loom:library:publish` gets 403, and a Library without pages answers
+404 before reading the body. Bodies are capped (publish at twice 8 MiB plus 64 KiB for JSON
+escaping, the rest at 16 KiB), and page errors map to 409 with their reason and message.
+
+### Pages host
+
+[`preview-pages/host.ts`](../../../../apps/server/src/fork/preview-pages/host.ts) is a second
+`node:http` listener on `LOOM_PAGES_PORT` (default 3774) at the server's host. It starts only
+when pages are on and the Library has a fixed issuer origin; a taken or invalid port logs a
+warning and costs only the pages. Because it is its own listener, no app, `/api` or `/ws`
+route answers there.
+
+- Any `Host` but the pages host gets 421. Routes: `/__loom/ticket` (GET only; HEAD is
+  refused so a ticket is never spent without a page to show), `/p/<id>` (the shell),
+  `/raw/<id>` (the page) and `POST /p/<id>/replies`. Everything else is 404, and upgrades are
+  destroyed.
+- Sign-in is the same ticket flow with audience `https://pages.<domain>`, verified against
+  the Library's own key. The cookie is `__Host-loom_pv` for the pages host with key
+  `library:<sub>`, signed with its own secret `loom-preview-pages-cookie-key`. Signed out, a
+  navigation to a page gets the sign-in page and a nonce; anything else gets a bare 401.
+- Every answer is private: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex,
+nofollow`, `nosniff` and `Referrer-Policy: no-referrer`. Status pages add
+  `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'` and
+  `X-Frame-Options: DENY`.
+- The shell's policy allows only its own nonce'd script and style, frames and fetches from
+  this host and `data:` images, with `base-uri`, `form-action` and `frame-ancestors` all
+  `'none'`. The raw page carries
+  `sandbox allow-scripts allow-forms allow-popups allow-downloads` and
+  `frame-ancestors <pages origin>`, and the shell's iframe has the same sandbox with
+  `referrerpolicy="no-referrer"`. Never `allow-same-origin`, so a page's scripts run at an
+  opaque origin and cannot read the cookie, call the reply route or reach the shell; never
+  `allow-modals`.
+- The shell talks to the page only by `postMessage`: a Dossier reports its height (clamped to
+  80 to 100,000 px) and can prefill the reply box with its decisions, and an html page gets
+  its theme in the frame's fragment and on color-scheme changes. `ui/open-link` opens only
+  http(s) addresses on a user gesture. Only a click on Send posts a reply.
+
+### Replies
+
+A reply needs a pages session and `Origin` exactly the pages origin, so the sandboxed page,
+whose origin is `null`, cannot post one itself; the shell's fetch sets
+`referrerPolicy: strict-origin` because its own `no-referrer` would send `Origin: null` too.
+The body must be JSON under 64 KiB, declared or streamed (413 and a closed connection
+otherwise). The reply id (8 to 64 URL-safe characters, one per draft) makes a retried send a
+no-op, text is 1 to 20,000 characters, and a computer may have 1,000 waiting (429 in the
+browser). The shell maps 400, 404, 429 and others to its own messages.
+
+`PreviewPagesService` on the computer long-polls `replies/next` (up to 25 seconds; one wake
+signal per computer subject). The Library leases each batch of up to 20 for 2 minutes. Each
+reply is sent with `sendToThread`, mode `queue`, created by the system, with the command id
+`preview-reply:<replyId>` and message id `preview-reply-message:<replyId>`, so a redelivery
+cannot queue it twice. The text is
+`A reply came in on your published page "<title>":` followed by the reply. The computer acks
+a reply as delivered, or as rejected when the thread is archived, gone, a subagent or refuses
+the command. Any other failure leaves it unacked, and the Library offers it again after the
+lease. An unavailable or blocked Library pauses the relay 30 minutes; an unreachable one backs
+off from 5 seconds to 5 minutes, and a round that settled nothing waits at least a second.
+
+### Computer page sources
+
+`loom_page_publish` takes exactly one source. An `attachmentId` must be an `html_render`
+attachment whose id carries this thread's segment and the html extension, and whose
+`realpath` stays inside the attachments directory. A `path` must be an `.html` or `.htm` file
+whose `realpath` stays inside the thread's worktree or workspace root. Both are read through
+the descriptor that was opened, bounded at 8 MiB, and must be valid UTF-8. A thread can list
+and change only its own pages; the owner, over RPC, any of the computer's.
+
 ## Storage
 
-- `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links, revokedKeys }`,
-  written with `writeFileStringAtomically`. Missing gives the defaults (off, no domain,
-  machine from the host name, 12 hours, port 3779). Unreadable logs a warning and gives the
-  defaults.
+- `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links, revokedKeys,
+libraryKeys, folderRoots }`, written with `writeFileStringAtomically`. Missing gives the
+  defaults (off, no domain, machine from the host name, 12 hours, port 3779). Unreadable
+  logs a warning and gives the defaults. `libraryKeys` and `folderRoots` are optional, so an
+  older file still reads.
 - Links are bounded: the sweep expires open links at `expiresAt` (dating the end there, so
   downtime does not stretch the restore window) and drops ended links past
   `restorableUntil`.
-- `ServerSecretStore`: `loom-preview-links-cookie-key` (32 random bytes, created on first
-  start; a temporary key with a warning if the store fails) and
-  `loom-preview-links-tunnel-token`. Neither is logged or returned.
 - `revokedKeys` holds when each access key last lost a session to removal, kept for 12 hours,
   the longest a cookie lives. It is saved because a DPoP subject's other sessions are listed
   again after a restart and would make the key live for cookies minted before the removal.
-- In memory only: entry codes, each Loom session's access key and when it stops counting
+- `libraryKeys` holds each Library sign-in's access key and when its last cookie runs out,
+  because no session store knows those keys. `folderRoots` holds each folder link's resolved
+  folder, so the reconcile can serve it again after a restart.
+- `ServerSecretStore` on the computer: `loom-preview-links-cookie-key` (32 random bytes,
+  created on first start; a temporary key with a warning if the store fails) and
+  `loom-preview-links-tunnel-token`. Neither is logged or returned.
+- In memory only: entry codes, the Library's ticket key and origin (fetched again at start),
+  spent tickets and nonces, each Loom session's access key and when it stops counting
   (rebuilt from the session store's active sessions at every start), sessions removed while
-  running (12 hours) and running requests and upgrades.
+  running (12 hours), running requests and upgrades, and folder servers.
+- Library tables, in the fork migration sets every server runs: `fork_preview_hosts` (one row
+  per computer subject: its environment, machine and suffix), `fork_preview_pages` (the
+  page, its HTML, owner thread and lifecycle) and `fork_preview_page_replies` (each reply
+  with its lease and outcome). Library secrets: `loom-preview-ticket-ed25519` and
+  `loom-preview-pages-cookie-key`.
 
-A sidecar file instead of fork tables: the data is small, per computer, and read whole.
+Link state is a sidecar file instead of fork tables: the data is small, per computer, and read
+whole. Pages and replies are tables because they live in the Library, outlive the computer
+and are queried per subject.
 
 ## Clients
 
-- Shared atoms: `packages/client-runtime/src/fork/preview-links.ts` (snapshot subscription
-  and one command per mutation, with `permissionAtom`s).
+- Shared atoms: `packages/client-runtime/src/fork/preview-links.ts` (snapshot subscription,
+  the pages list as a query, and one command per mutation, with `permissionAtom`s), plus the
+  shared presentation: `previewLinkBackingLabel`, `visiblePreviewPages`, `previewPageTiming`
+  and `previewPageControls`. Open is offered only for an https page address, because the
+  address comes from the Library through the computer and web opens it from the app's origin.
 - Navigation: `resolvePreviewNavigationWith` in
   `packages/client-runtime/src/fork/preview-link-navigation.ts`, given each client's
   `PreviewNavigationDeps` (`navigationDeps.ts` on web, `navigation.ts` on mobile). On web,
@@ -195,10 +450,12 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
   A computer without the feature, reached over a private network, keeps the URL as typed on
   web (`keepsTypedLoopbackOnPrivateNetwork`) and gets that address on mobile. Anything else
   is an error; the unreachable and not-set-up errors name the client's `settingsPath`.
-- Web UI: `settings.tsx` (section `preview-links`, title "Previews"), `LinksSheet.tsx`
-  (mounted as `preview-links-host` in `ForkRoot`), `PortCardActions.tsx`, `palette.tsx`.
+- Web UI: `settings.tsx` (section `preview-links`, title "Previews", with `pages.tsx` below it
+  when the server advertises `preview-pages`), `LinksSheet.tsx` (mounted as
+  `preview-links-host` in `ForkRoot`), `PortCardActions.tsx`, `palette.tsx`.
   `systemBrowser.ts` opens the window before awaiting on the web and hands the finished URL
-  to the shell on desktop.
+  to the shell on desktop. Container rows have no Extend, and ended container links leave
+  the list.
 - Web system browser: a link page opens nowhere outside Loom without an entry, so every way
   out swaps it for a fresh one (`needsPreviewLinkEntry` in contracts skips `/__loom/` pages).
   `localApi.ts` `shell.openExternal` calls `openPreviewLinkExternally`, covering Alt-click,
@@ -207,30 +464,35 @@ A sidecar file instead of fork tables: the data is small, per computer, and read
   preview's "Open in browser" uses `openPreviewInSystemBrowser`, which also turns a loopback
   address into a link. `McpAppFrame`'s `openLink` calls `window.open` directly and is not
   covered.
-- Gating: `capabilities.loomFeatures` includes `"preview-links"`
-  (`advertised.ts`, `capability.ts`), plus each command's `permissionAtom`.
-- Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `externalUrl.ts`,
-  `entryUrl.ts`, `previewLinksLogic.ts`). Every external open goes through
+- Gating: `capabilities.loomFeatures` includes `"preview-links"`, and `"preview-pages"` for
+  the pages list (`advertised.ts`, `capability.ts`), plus each command's `permissionAtom`.
+- Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `PreviewPagesSection.tsx`,
+  `externalUrl.ts`, `entryUrl.ts`, `previewLinksLogic.ts`). Every external open goes through
   `tryOpenExternalUrl`, which swaps a preview link for an entry link from the first connected
   computer whose `open` accepts it. Entry links pass through unchanged, and a link no computer
   serves opens as is. The lookup loads lazily so `openExternalUrl.ts` keeps no connection
   dependencies. A thread's other links (chat, html_render pages, MCP apps and the Files
-  markdown preview) go through `openThreadUrlExternally`: a loopback port
-  the phone cannot reach (anything but a simulator on its own Mac) is shared first. Where
-  that cannot happen, a private network connection opens the port on the computer's address
-  (before this, the phone opened its own localhost). Failures show an alert that names
-  Settings > Loom > Previews in the desktop or web app.
+  markdown preview) go through `openThreadUrlExternally`: a loopback port the phone cannot
+  reach (anything but a simulator on its own Mac) is shared first. Where that cannot happen,
+  a private network connection opens the port on the computer's address. Failures show an
+  alert that names Settings > Loom > Previews in the desktop or web app. Container links offer
+  neither Extend nor Restore.
 
 ## Agent-facing tools
 
-| Tool                       | Access          | Does                                                           |
-| -------------------------- | --------------- | -------------------------------------------------------------- |
-| `loom_preview_links_list`  | `readsAsCaller` | `ready`, tunnel state and the caller thread's links.           |
-| `loom_preview_link_share`  | `actsAsCaller`  | Share as the caller's thread; returns the canonical link only. |
-| `loom_preview_link_revoke` | `actsAsCaller`  | End one of the caller thread's links.                          |
+| Tool                           | Access          | Does                                                                    |
+| ------------------------------ | --------------- | ----------------------------------------------------------------------- |
+| `loom_preview_links_list`      | `readsAsCaller` | `ready`, tunnel state and the caller thread's links.                    |
+| `loom_preview_link_share`      | `actsAsCaller`  | Share a port as the caller's thread; returns the canonical link only.   |
+| `loom_preview_folder_share`    | `actsAsCaller`  | Serve a built workspace folder on a lane port.                          |
+| `loom_preview_container_share` | `actsAsCaller`  | Run an image on a lane port for 5 to 240 minutes (120 by default).      |
+| `loom_preview_link_revoke`     | `actsAsCaller`  | End one of the caller thread's links.                                   |
+| `loom_page_publish`            | `actsAsCaller`  | Publish an html_render result or workspace HTML file, or republish one. |
+| `loom_pages_list`              | `readsAsCaller` | The caller thread's pages, or `available: false`.                       |
+| `loom_page_update`             | `actsAsCaller`  | Keep, release, end or restore one of the caller thread's pages.         |
 
-All three require a thread scope. They are not gated on the preview MCP capability. Agents
-never call `open`, so no transcript carries a working credential.
+All require a thread scope. They are not gated on the preview MCP capability. Agents never
+call `open` and never see a ticket, so no transcript carries a working credential.
 
 ## Security reasoning
 
@@ -239,6 +501,14 @@ never call `open`, so no transcript carries a working credential.
   authenticated Loom session with `preview:operate`, works once within 60 seconds, is bound
   to one host and path, and is spent even on a failed attempt. The 303 removes it from the
   address bar, and `no-referrer` and `no-store` keep it out of referrers and caches.
+- **Why tickets are bound to a host and a nonce.** A ticket is a credential in a URL, so it
+  lives a minute, works once and names one host in its audience, which stops a ticket for
+  one link from working on another or on the pages host. The nonce sits in a host-only
+  cookie set on the page that showed the sign-in link, so a ticket only works in the browser
+  that asked for it: an attacker cannot hand a victim a ticket for the attacker's session.
+  The `jti` stays spent past `exp` by the skew allowance plus a second, so a ticket cannot
+  verify again after its spent entry is dropped. Ed25519 lets computers verify without
+  holding anything that can sign.
 - **Why host-only cookies.** The `__Host-` prefix forces `Secure`, `Path=/` and no `Domain`,
   so no sibling host can set or scope a cookie for the whole domain. Each link is its own
   origin, and the signed host claim stops a cookie copied to another link from working.
@@ -256,6 +526,11 @@ never call `open`, so no transcript carries a working credential.
   and gives it only when every redirect stayed on this host, so a sibling link (`same-site`)
   or a sandboxed frame (`cross-site`) cannot pass. A WebSocket always carries its page's real
   origin, so a `null` one is refused.
+- **Why a separate pages host.** A published page is HTML an agent wrote, possibly from
+  untrusted input. On the Library's own origin it would run with the reader's Library
+  session. Its own host on its own listener means no Library route exists there to reach,
+  the sandbox without `allow-same-origin` keeps its scripts off the pages cookie and the
+  reply route, and the exact Origin check on replies refuses anything but the shell.
 - **Why Cache-Control.** Responses are a signed-in user's dev data, and they pass through
   Cloudflare's edge. A dev server that sends cacheable headers could otherwise let the edge
   or another cache serve the page to a browser with no cookie, skipping the gateway.
@@ -265,10 +540,10 @@ never call `open`, so no transcript carries a working credential.
   rewrites HTML by default, injecting its Web Analytics beacon and hiding email addresses, so
   HTML responses and the gateway's own pages add `no-transform`. Other responses leave it off
   because it also stops edge compression, which large dev bundles need on a phone.
-- **Why loopback and a denylist.** The gateway binds `127.0.0.1` so the tunnel is the only way
-  in. Debugger ports mean code execution and database ports mean data, so they are never
-  shared, and the check repeats on every request so a later settings change cannot leave an
-  open path to a newly reserved port.
+- **Why loopback and a denylist.** The gateway, folder servers and container ports bind
+  `127.0.0.1` so the tunnel is the only way in. Debugger ports mean code execution and
+  database ports mean data, so they are never shared, and the check repeats on every request
+  so a later settings change cannot leave an open path to a newly reserved port.
 - **Why the header rewrites.** Dev servers such as Vite refuse unknown hosts and check
   `Origin` for CSRF and WebSockets. Rewriting to `localhost:<port>` keeps them working
   without asking users to allow the public host.
@@ -277,8 +552,11 @@ never call `open`, so no transcript carries a working credential.
 
 The snapshot is small and bounded by the sweep; it is pushed only on change. The web sheet
 re-renders once a minute (`useNowMinute`), and mobile every 30 seconds while the screen is
-open. The gateway streams bodies with `pipe` and keeps no per-request state beyond one set
-entry per running request or upgrade, removed when it closes.
+open. The gateway and folder server stream bodies and keep no per-request state beyond one
+set entry per running request or upgrade, removed when it closes. The pages list is fetched
+when the section mounts and after each change, never polled. The reply relay holds one long
+poll per computer, and the Library wakes it with one signal per subject instead of polling
+the table. Containers are checked once a minute, not per request.
 
 ## Alternatives considered
 
@@ -286,8 +564,14 @@ entry per running request or upgrade, removed when it closes.
 - Bearer URLs or basic auth: links in transcripts would be credentials.
 - A cookie on the whole domain: every previewed app could read or overwrite it.
 - Effect's HTTP server: cannot route by host before parsing or pipe raw upgrades.
-- Library storage for links: links are per computer and short-lived. Slices 2 to 6 are where
-  the Library comes in.
+- Library storage for links: links are per computer and short-lived. The Library holds only
+  which hosts each computer serves.
+- Serving pages from the computer through the tunnel: a page would die with the computer,
+  and replies would have nowhere to wait.
+- Pages on the Library's origin, or a path under it: a page's scripts would run beside the
+  reader's Library session.
+- Serving folders with the dev server or a container image: an in-process server is
+  smaller, starts at once and can enforce containment itself.
 
 ## Known gaps
 
@@ -296,11 +580,11 @@ entry per running request or upgrade, removed when it closes.
   the session store from another process and the running server gets no change event. The
   same holds for a session revoked while the server is down. For a DPoP session the restart
   does not help while another session of its subject is still listed.
-- If the session store cannot be listed at start, every preview cookie is refused until its
-  Loom client reconnects. A DPoP session removed before this server knew it (the list failed,
-  or it was removed between subscribing to changes and reading the list) revokes nothing,
-  because a removal carries only the session id. Its browsers stay in while another session of
-  its subject is live.
+- If the session store cannot be listed at start, every preview cookie from a Loom session is
+  refused until its Loom client reconnects. A DPoP session removed before this server knew it
+  (the list failed, or it was removed between subscribing to changes and reading the list)
+  revokes nothing, because a removal carries only the session id. Its browsers stay in while
+  another session of its subject is live.
 - Removing one T3 Connect device signs out the browsers opened from every T3 Connect device,
   because they share one access key. A T3 Connect device that just stops connecting keeps its
   browsers in for 5 minutes after its last session runs out, and while another one stays
@@ -317,3 +601,28 @@ entry per running request or upgrade, removed when it closes.
   not upgraded.
 - The default gateway port 3779 collides when a dev server and the live install both enable
   previews on one computer.
+- `fork_preview_hosts` rows are not deleted when a computer unenrolls, so the Library keeps
+  signing tickets for its hosts.
+- Computers that enrolled with the shared enrollment token get 403 from registration, because
+  their session does not name the computer, so their browsers enter from Loom only.
+- A server that is its own Library has no Library sign-in: registration answers `not-found`.
+- The Library's identity login answers 503 without Pocket ID configured, so sign-in needs it.
+- When `LOOM_IDENTITY_REDIRECT_URI` is unset, the issuer a computer is told is taken from the
+  request's `Host` header. The pages host refuses to start without a fixed issuer.
+- Spent tickets and nonces are memory only, on computers and on the pages host, so a ticket
+  can be replayed once across a restart within its minute.
+- If the secret store fails, the pages host signs cookies with a random key for that run, so
+  every pages sign-in ends at the next restart.
+- A pages cookie lasts 12 hours and cannot be revoked short of rotating
+  `loom-preview-pages-cookie-key`. **Sign out preview browsers** does not reach it.
+- The 500-page cap counts only open pages; closed pages within their restore window add to
+  the Library's storage on top.
+- The pages list is not polled, so a page an agent publishes appears after the section
+  remounts or the user acts on a page.
+- Containers outlive a Loom shutdown until the next start's reconcile removes them.
+- A `docker run` cancelled mid-pull may still create its container after Loom removed it by
+  label; it carries the lane label and goes with its lane.
+- A restored folder link has no lane, so it no longer ends with the lane it was shared from.
+- The folder server has no `Range` requests, so media cannot seek, and hides every dotfile
+  but `.well-known`.
+- Containers survive lane release when Docker is not running at that moment.

@@ -254,7 +254,7 @@ fresh entry, and a thread's links open the same way from chat
 (`apps/mobile/src/native/useOpenPullRequest.ts`, 2), an html_render page
 (`apps/mobile/src/features/threads/HtmlRenderWebView.tsx`, 4), an MCP app
 (`apps/mobile/src/features/threads/McpAppWebView.tsx`, 2) and the Files markdown preview
-(`apps/mobile/src/features/files/FileMarkdownPreview.tsx`, 3). See the
+(`apps/mobile/src/features/files/FileMarkdownPreview.tsx`, 2). See the
 [L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
 [user help](docs/fork/user/preview-links.md).
 

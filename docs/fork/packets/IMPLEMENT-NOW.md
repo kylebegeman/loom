@@ -50,11 +50,11 @@ PRODUCT.md; the others can start now. Fixes found while writing them are on the 
 branches `feat/model-bed-picker` and `fix/preview-defects`; packets that touch the same code
 say what to do when those commits are or are not on the base.
 
-Kyle selected hosted previews on 2026-10-18, starting with port links:
+Kyle selected hosted previews on 2026-10-18 and approved the later slices on 2026-10-19:
 
-| Order | Packet                                    | Status                             | Decision                                                                                                      |
-| ----- | ----------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 11    | [L72 Preview links](./L72-preview-links/) | In progress (`feat/preview-links`) | Kyle selected slice 1, port links, on 2026-10-18. Slices 2 to 6 need Library schema changes and his approval. |
+| Order | Packet                                    | Status                                                          | Decision                                                                              |
+| ----- | ----------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; Library deploy and client checks pending | Slices 1 to 5 are built. Slice 6, guest links, is parked under the one-operator rule. |
 
 ## Candidates for the queue
 

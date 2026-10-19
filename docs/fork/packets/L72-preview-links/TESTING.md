@@ -1,39 +1,74 @@
 # L72 testing
 
-Every file below was rerun on 2026-10-19 after the restore and tunnel message fixes: the 56
-server tests and the 107 contract and client tests pass, and the server, web, mobile and
-contracts packages typecheck.
+At the slice 5 commit, the focused suites passed: 14 files and 147 tests across
+`apps/server/src/fork/preview-links`, `apps/server/src/fork/features.test.ts`,
+`packages/client-runtime/src/fork/preview-links.test.ts`, `apps/web/src/fork/preview-links`
+and `apps/mobile/src/fork/preview-links`. That count does not include the preview-access,
+preview-pages, Library publisher or lane suites below, whose results are not recorded here.
 
 ## Automated tests
 
-Server, `apps/server/src/fork/preview-links/`:
+Links, `apps/server/src/fork/preview-links/`:
 
-| File                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PreviewLinksService.test.ts` | Defaults and refusing to share while off; reuse of an open link and persistence across restarts; agent lane and terminal rules; agent revoke limits; denied, own and metrics ports; entry codes bound to host, clean path and 60 seconds; signed-out sessions and key rotation, including a sign-out whose caller is interrupted; sessions removed while being listed or before a restart; sessions admitted later waking the expiry timer; T3 Connect browsers staying in across an hourly session that renews only after it runs out, out once any session of the subject is removed, out 5 minutes after the last session runs out and back in with the next, and still out after a restart while another session is listed; expiry and purge; restore at the same address; domain change ends links and blocks restore; lane links ending only after the lane is seen and removed; starting and stopping only what changed; gateway listen failure and retry. |
-| `policy.test.ts`              | Denylist, machine names, share segments, path sanitizing (no host escape or header injection), cookie signing (tampering, other host, other key, expiry), sweep and next deadline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `gateway.test.ts`             | Against a real loopback upstream: 404 and 410, entry redemption and redirect, the open-from-Loom page, denied ports and cross-site requests, request and response header rewrites, the nothing-listening page, `Origin: null` form posts (own page only), chunked bodies re-framed, streaming responses cut when their link or key ends, upgrade piping and closing, cross-origin upgrade refusal, an upgrade answered without switching being closed, busy port message.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `tunnel.test.ts`              | With a fake connector script: progress, metrics port and connection without leaking the token; restart with backoff; an exit with no error output; installing a missing `cloudflared` and retrying a failed install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `mcp.test.ts`                 | Unique `loom_` names and object inputs; sharing as the caller and returning only the canonical link; listing only the caller's links; revoking only the caller's own; refusing act tools outside a live thread before the service runs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| File                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PreviewLinksService.test.ts` | Defaults and refusing to share while off; reuse of an open link and persistence across restarts; agent lane and terminal rules; agent revoke limits; denied, own and metrics ports; entry codes bound to host, clean path and 60 seconds; signed-out sessions and key rotation, including an interrupted caller; sessions removed while being listed or before a restart; sessions admitted later; T3 Connect browsers across hourly sessions, past the grace and after a restart; expiry, purge and restore at the same address, refused while the port has another open link; domain change ending links; lane links ending only after the lane is seen and removed; starting and stopping only what changed; gateway listen failure and retry. Library sign-in: a ticket signs a browser in once, a Library sign-in's requests end with its cookie, Library keys survive a restart until browsers are signed out, registration on and off riding out a Library blip, and the half-hourly refresh. Folders: the first free lane port once per folder, refusing folders outside the workspace, files and threads without lane ports, stopping the server on revoke or lane release, restoring only on a free port, serving again after a restart and ending a link whose folder went or whose port now answers something else. Containers: holding a starting container's port, running on a lane port and removing it at the end, ending when the container stops or its time is up, refusing without Docker and cleaning up after a failed start, and no extend or restore. |
+| `gateway.test.ts`             | Against a real loopback upstream: 404 and 410, entry redemption, the open-from-Loom page, a cold navigation linked to Library sign-in with a fresh nonce, no sign-in link without a Library, a ticket traded for the cookie with the nonce cleared, a refused ticket answered with a fresh sign-in link or sent back to Loom, denied ports and cross-site requests, `Origin: null` form posts (own page only), header rewrites both ways, `no-transform` on HTML only, chunked bodies re-framed, streams cut when their link or key ends, the nothing-listening page, upgrade piping and closing, cross-origin upgrades refused, an upgrade answered without switching closed, and a busy port.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `ticket.test.ts`              | A ticket round-trips for one host and nonce, and is refused for another host, nonce, issuer or key, when expired, from the future or tampered; only well-formed keys and nonces are accepted; one cookie read and duplicates refused.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `backings.test.ts`            | Content types; the `docker run` argv (detached, labelled for its lane and link, loopback only); requests kept inside the folder, its `realpath` included; `index.html` and never a listing; only `GET` and `HEAD` on loopback with safe headers; a taken port; starting a container and keeping its short id; explaining why Docker could not start one; reading and removing a container, a missing one counting as gone; removal by label when no id came back.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `policy.test.ts`              | Denylist, machine names, share segments, path sanitizing (no host escape or header injection), cookie signing (tampering, other host, other key, expiry), sweep and next deadline. Library sign-in: an https Library kept exactly as given, anything that could send browsers elsewhere refused, and the sign-in link carrying the host, nonce and a path that stays on it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `tunnel.test.ts`              | With a fake connector script: progress, metrics port and connection without leaking the token; restart with backoff; an exit with no error output; installing a missing `cloudflared` and retrying a failed install.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `mcp.test.ts`                 | Unique `loom_` names and object inputs; sharing ports, folders and containers as the caller and returning only the canonical link; listing and revoking only the caller's links; publishing from exactly one source; listing and changing only the caller's pages; act tools refused outside a live thread before the service runs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+Library sign-in, `apps/server/src/fork/preview-access/`:
+
+| File                           | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.test.ts`                 | Registration upserts and deletes a computer's hosts and returns the ticket key; the issuer from the request's origin without an identity callback, and the callback's port kept; not offered by a server that is not the Library authority; sessions that do not speak for a computer refused. Tickets: a signed-out browser sent through sign-in and back; a signed-in browser redirected only to a registered host; a bad nonce, an unregistered host and a session that cannot run work refused; a signed ticket verified by the preview host. |
+| `PreviewAccessService.test.ts` | The configured public origin named as the pages issuer; its own pages tickets verified; another nonce or host, and anything malformed, refused; nothing verified without a fixed issuer.                                                                                                                                                                                                                                                                                                                                                          |
+
+Pages and replies, `apps/server/src/fork/preview-pages/`:
+
+| File                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PageLibraryService.test.ts`  | Unavailable unless the Library is the authority with an https pages origin; publish and republish in place; keep, release, end and restore; expiry, and listing only while restorable; purging pages past restoring with their replies, and old acked replies; the open-page cap; reply validation, the waiting cap and a retried send ignored; leases, redelivery after a lapse and none after an ack; a waiting poll woken by a new reply.                                                                                                                                                                                                                                                                         |
+| `libraryHttp.test.ts`         | Only a computer's own publisher session; 404 before reading the body without pages; publish, list, update and settle replies for the calling computer; page errors as 409 with reason and message; bodies declared over the cap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `host.test.ts`                | 421 for any other host; a signed-out navigation linked to sign-in with a fresh nonce, other signed-out requests without one; a ticket traded for the pages cookie, spent once with its nonce, and refused for another nonce or host; the shell's nonce'd policy around the raw page; the raw page sandboxed without its own origin; ended pages explained and a Library that cannot answer survived; nothing else routed and upgrades closed; a reply taken from the signed-in reader on the pages origin, refused without a session, from another origin, in another shape or over 64 KiB declared or streamed; `PagesHostLive` on `LOOM_PAGES_PORT`, and the server staying up when that port is taken or invalid. |
+| `PreviewPagesService.test.ts` | Only this thread's html_render pages; workspace HTML files, refusing anything that resolves outside; the size limit and UTF-8; a computer or Library without pages reported as unavailable; a thread changing only its own pages and the owner any; replies delivered once as queued messages and settled; relaying on past a reply it cannot use; pacing a round that settled nothing; waiting out a refusing Library and backing off from an unreachable one.                                                                                                                                                                                                                                                      |
+
+Elsewhere on the server:
+
+| File                                                                                      | Covers                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/fork/project-library/LibraryPublisher.test.ts`                           | Registering preview hosts, and reading a Library without preview sign-in as `not-found`; publishing, listing and updating pages and leasing and acknowledging replies; a Library without pages as unavailable, keeping the reasons it refuses with; pages unavailable without a Library and blocked without a token. |
+| `apps/server/src/fork/project-library/attachments.test.ts`                                | Saved html_render pages collected from turn items and inherited items once each, sized from their files, and skipped when the file is gone.                                                                                                                                                                          |
+| `apps/server/src/fork/project-lifecycle/` (`ProjectLifecycleService`, `leases`, `policy`) | Lane release removes lane containers before stopping listeners and spares the container runtime's port forwarders, by name when Docker does not answer; Docker Desktop and OrbStack found outside `PATH`; a new lane given a block nothing listens on or publishes, skipping a busy port at either edge.             |
 
 Contracts and clients:
 
-| File                                                                 | Covers                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/contracts/src/fork/preview-links.test.ts`                  | Splitting a host under its suffix, recognizing link hosts without the suffix, defaulting the gateway port.                                                                                                                              |
-| `packages/client-runtime/src/fork/preview-links.permissions.test.ts` | Each command's `permissionAtom` requires its scope on the serving computer.                                                                                                                                                             |
-| `packages/client-runtime/src/fork/preview-link-navigation.test.ts`   | Every navigation branch: reachable loopback, share and open, private network fallback, setup errors naming the client's settings, owner lookup across computers, server-drawn browsers, ended links, stale entries landing on the root. |
-| `apps/web/src/fork/preview-links/navigation.test.ts`                 | System browser opens from a thread: an unreachable loopback port and a preview link open through an entry, a reachable one and other addresses open unchanged, and a failed share closes its window.                                    |
-| `apps/web/src/fork/preview-links/links.test.ts`                      | Link ordering, countdowns, settings normalization and the first invalid field.                                                                                                                                                          |
-| `apps/web/src/browser/browserTargetResolver.test.ts`                 | The updated unreachable error and leaving loopback unmapped for advertising environments.                                                                                                                                               |
-| `apps/mobile/src/fork/preview-links/previewLinksLogic.test.ts`       | Which computers are listed and asked first, setup status, link ordering and timing, actions per state and permission, which connections reach a computer's loopback, and mapping a port to its private network address.                 |
+| File                                                                 | Covers                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/preview-links.test.ts`                  | Splitting a host under its suffix, recognizing link hosts without the suffix, which URLs need an entry, defaulting the gateway port.                                                                                                                                       |
+| `packages/client-runtime/src/fork/preview-links.test.ts`             | Durations; which pages are listed and restorable; page timing and controls, never opening an address that is not https; the backing line for folders and containers, and nothing for a plain port.                                                                         |
+| `packages/client-runtime/src/fork/preview-links.permissions.test.ts` | Each command's `permissionAtom`, page updates included, requires its scope on the serving computer.                                                                                                                                                                        |
+| `packages/client-runtime/src/fork/preview-link-navigation.test.ts`   | Every navigation branch: reachable loopback, share and open, private network fallback, setup errors naming the client's settings, owner lookup across computers, server-drawn browsers, ended links, stale entries landing on the root.                                    |
+| `apps/web/src/fork/preview-links/navigation.test.ts`                 | System browser opens from a thread: an unreachable loopback port and a preview link open through an entry, a reachable one and other addresses open unchanged, and a failed share closes its window.                                                                       |
+| `apps/web/src/fork/preview-links/clipboard.test.ts`                  | The clipboard write starts during the click, falls back to text where a pending write is refused, and writes nothing on failure.                                                                                                                                           |
+| `apps/web/src/fork/preview-links/links.test.ts`                      | Link ordering, ended container links dropped, countdowns, settings normalization and the first invalid field.                                                                                                                                                              |
+| `apps/web/src/browser/browserTargetResolver.test.ts`                 | The updated unreachable error and leaving loopback unmapped for advertising environments.                                                                                                                                                                                  |
+| `apps/mobile/src/fork/preview-links/previewLinksLogic.test.ts`       | Which computers are listed and which relay pages, setup status, link ordering and timing, actions per state and permission (none to extend or restore a container link), which connections reach a computer's loopback, and mapping a port to its private network address. |
+| `apps/mobile/src/fork/preview-links/externalUrl.test.ts`             | A preview link swapped for an entry from the computer that serves it, or opened as is when none does.                                                                                                                                                                      |
 
 ## Commands
 
 ```sh
-vp test run apps/server/src/fork/preview-links
+vp test run apps/server/src/fork/preview-links apps/server/src/fork/features.test.ts
+vp test run apps/server/src/fork/preview-access apps/server/src/fork/preview-pages
+vp test run apps/server/src/fork/project-library/LibraryPublisher.test.ts \
+  apps/server/src/fork/project-library/attachments.test.ts apps/server/src/fork/project-lifecycle
 vp test run packages/contracts/src/fork/preview-links.test.ts
-vp test run packages/client-runtime/src/fork/preview-links.permissions.test.ts \
+vp test run packages/client-runtime/src/fork/preview-links.test.ts \
+  packages/client-runtime/src/fork/preview-links.permissions.test.ts \
   packages/client-runtime/src/fork/preview-link-navigation.test.ts
 vp test run apps/web/src/fork/preview-links apps/web/src/browser/browserTargetResolver.test.ts
 vp test run apps/mobile/src/fork/preview-links
@@ -46,78 +81,28 @@ bash -c 'source scripts/fork/loom.sh && check_seams'
 `scripts/fork/loom.sh check` does not typecheck `apps/mobile` (`TYPECHECK_DIRS`), so run its
 typecheck by hand.
 
-## Live smoke
+## Slice 1 live checks
 
-Run on 2026-10-19 against a worktree `.t3` (never the live install), gateway port 3779, and
-the `loom-previews-dorothy` tunnel on bagels.top, with curl and Node clients on Dorothy going
-out through Cloudflare. Loom sessions were bearer tokens issued with `t3 auth session issue`.
-Connector: Homebrew `cloudflared` 2026.9.1 from `PATH`.
+Port links were checked on 2026-10-19 through a real tunnel on `bagels.top`, against a
+worktree `.t3` and never the live install, with `cloudflared` 2026.9.1 from `PATH`:
 
-- Setup reaches ready, tunnel connected, gateway listening, with one `cloudflared` as a child
-  of the server, and again after a server restart.
-- Without a cookie: "Open this link from Loom", with `Cache-Control: private, no-store`,
-  `X-Robots-Tag: noindex, nofollow` and `cf-cache-status: DYNAMIC`.
-- Entry sets `__Host-loom_pv` (Secure, HttpOnly, SameSite=Lax, 12 hours) and redirects to the
-  path and fragment without the code. A reused entry gets 401, and one link's cookie is
-  refused on another.
-- Proxied requests reach the app as `localhost:<port>` without the preview cookie; `Location`
-  and `Set-Cookie` are rewritten, and the app's own cookies pass through.
-- Origin: foreign and sibling-link POST navigations 403, a foreign GET navigation 200, an
-  own-origin CORS POST 200, `Origin: null` 200 same-origin and 403 same-site.
-- WebSockets: own origin with a cookie opens and pipes both ways; a foreign origin gets 403
-  and no cookie 401. An upstream that does not upgrade is refused, the raw socket at the
-  gateway gets 404 and is closed, and the plain upstream saw none of the private requests.
-- Hosts: an unknown share on this computer 410, another computer 404, a bare label 404.
-- Refused ports: 22, 80, 3779, the server and web ports, 5432, 9229 and the connector's
-  metrics port.
-- Revoke closes a running WebSocket and event stream, then the cookie gets 410. Restore is
-  refused while the port has another open link, then reopens the same address and the old
-  cookie works again. Extending to 1 hour sticks across a restart.
-- A session revoked with the CLI while the server runs keeps its cookie (known gap) and loses
-  it after a restart. The live session's cookie and the link survive the restart.
-- Removing a session through the running server (`POST /api/auth/clients/revoke`) refuses its
-  browser at once, leaves another session's browser in, and saves the revocation in
-  `state.json`.
-- **Sign out preview browsers** refuses every cookie, and a fresh entry works afterwards.
-
-## Real-client pass
-
-On 2026-10-19, web through T3's Browser panel against a worktree dev server on Dorothy, with
-links on bagels.top:
-
-- A link opened from Loom lands with the code gone from the address bar; a private window
-  shows "Open this link from Loom".
-- Vite hot reload works through the tunnel. Ending the link drops the socket at once and a
-  reload shows the ended page; Restore brings the same address back on the old cookie.
-- Port card **Copy preview link** and **Open in browser**, both palette items, the links
-  sheet and Settings > Loom > Previews.
-- From a client paired over the tailnet, a terminal link and a chat link to `localhost:5797`
-  open its bagels.top link. From a localhost client the same chat link opens `localhost`.
-- Safari on an iPad simulator paired over the tailnet: **Copy preview link** puts the link on
-  the pasteboard. Before the fix the write ran after the share and Safari refused it.
-- The iPad app paired over the tailnet: an agent's `localhost:5797` chat link opens Safari on
-  its bagels.top link. With nothing on the port the page says so; it answered 502 before, and
-  Cloudflare showed its own error page instead.
-- The iPad app: a `localhost:41020` link in an html_render page and a `localhost:5812` link in
-  the Files markdown preview each open Safari, signed in, on a new bagels.top link.
-- Removing the connector token stops `cloudflared`, the status reads "Needs a tunnel token"
-  and links answer Cloudflare's 530. A fake token reads "Tunnel: Error: Provided Tunnel token
-  is not valid."; before the fix it showed `cloudflared`'s closing help hint. Restoring the
-  real token with the server stopped brings the tunnel back.
-- Renaming the computer ends open links: the old address answers 404 as another computer's
-  and the renamed one 410. The sheet still offered Restore on the old links; now they leave
-  the list and return with Restore when the name changes back. A domain change takes the same
-  host check and is covered by a unit test only.
-- Agents, in a scratch project on the dev server: sharing a lane port returns a link with its
-  lane; a server started in the thread's terminal drawer is shared with no lane and answers
-  "Open this link from Loom" through Cloudflare; port 5850 is refused with "Port 5850 is not
-  one of this thread's lane ports, and no server from this thread's terminals is listening on
-  it." Settling the thread released its lane: the lane link ended and stays restorable, the
-  processes the lane recorded stopped, and the terminal link stayed open.
-- An upstream server (`t3` 0.1.1-nightly.20261019.3360, its own data directory) paired with
-  the iPad app over the tailnet: Settings > Previews lists only the Loom computer, an
-  upstream agent's `localhost:5813` chat link opens Safari on the computer's tailnet address
-  as before, and upstream's trace shows no preview link calls.
+- Setup reaches ready with one `cloudflared` as a child of the server, and again after a
+  restart. Without a cookie the link shows "Open this link from Loom", uncached at the edge.
+- Entry sets the host-only cookie and drops the code from the address; a reused entry and
+  another link's cookie are refused. Origin, WebSocket, host and denied-port checks answer as
+  [TECHNICAL.md](./TECHNICAL.md#gateway) says.
+- Ending a link closes its WebSocket and event stream; restore brings the same address back
+  on the old cookie; **Sign out preview browsers** refuses every cookie.
+- The web Browser panel through a tailnet-paired remote client: links open from Loom, Vite
+  hot reload works through the tunnel, and chat and terminal links to an unreachable
+  `localhost` open their link. The port card, palette, links sheet and settings all work.
+- Safari on an iPad simulator: **Copy preview link** reaches the pasteboard.
+- The iPad app: an agent's `localhost` chat link, an html_render link and a Files markdown
+  link each open Safari, signed in, on a link.
+- Agents in a scratch project: lane and terminal ports share, other ports are refused with
+  both rules named, and settling the thread ended the lane link.
+- An upstream server paired with the same app offers no links and opens a loopback chat link
+  on the computer's private address as before.
 
 Traps for the next pass:
 
@@ -126,29 +111,35 @@ Traps for the next pass:
   dev server's `lane-run` by hand, or the live install records the process as its own.
 - Lane ports come from one 41000-48999 range for every Loom server on the computer, and a
   lane's release stops whatever listens on its block. Servers claim blocks in
-  `~/.loom/lane-ports` (see the L19 technical notes), so a lane-enabled dev server no longer
-  gets a live lane's ports. A server built before the claims still allocates blind, and a
-  port outside any lane is not protected: check it with `lsof` before testing on it.
+  `~/.loom/lane-ports` (see the L19 technical notes), and new lanes skip blocks with a busy
+  port, but a port outside any lane is not protected: check it with `lsof` before testing on
+  it.
+
+## Pages host smoke
+
+A local run of the pages host checked:
+
+- Any other `Host` gets 421.
+- A cold navigation to a page gets 401 with the nonce cookie and the Library sign-in link.
+- `/raw/<id>` and a reply `POST` without a cookie get 401.
+- `/api` on the pages host is 404.
+- The Library's pages API answers 401 without auth.
 
 ## Still to check
 
-These need T3 Connect, another computer, a phone on cellular or an MCP app.
-
+- A real-client pass for Library sign-in, pages, replies, and folder and container links.
+- The LP-22 Library deploy, then pages at `pages.bagels.top` from another device and a reply
+  sent while the computer is off.
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.
 - Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer.
-- Mobile on cellular: Settings > Previews actions and link taps. Over the tailnet the chat,
-  html_render and Files links have been tapped.
+- Mobile on cellular: Settings > Previews actions, pages and link taps.
 - A link in an MCP app. It goes through the same opener as the html_render and Files links,
   but no MCP server with an app UI was available to test.
 - The "Unregistered tunnel connection" log line has not been seen.
-- An upstream server reached through a public address, such as T3 Connect: a loopback link
-  shows the unreachable error naming Settings > Loom > Previews. Over a private network it
-  maps to the computer's address instead, as checked above.
 
 ## Merge safety
 
-On 2026-10-19 at the closed-port commit: `check_seams` passes, and a merge with
-`v0.1.1-nightly.20261019.3360` conflicts in the branch base's 59 files plus three thread-link
-seams upstream has since rewritten. See [SEAMS.md](./SEAMS.md#merge-check) for how each
-resolves.
+All nineteen seams come from slice 1, and the upstream integration of nightly 20261019.3348
+resolved its three thread-link conflicts. Slices 2 to 5 touched only fork-owned files. Before
+the next integration, run the check in [SEAMS.md](./SEAMS.md#merge-check).
