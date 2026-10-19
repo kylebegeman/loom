@@ -23,6 +23,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
@@ -39,6 +40,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import { forkParked } from "../../serverActivation.ts";
+import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { ProjectLifecycleService } from "../project-lifecycle/ProjectLifecycleService.ts";
 import { startPreviewGateway } from "./gateway.ts";
 import {
@@ -51,6 +53,7 @@ import {
   isPreviewReady,
   isoAt,
   nextPreviewDeadline,
+  parseLibraryPreviewAccess,
   previewAccessKey,
   previewEntryUrl,
   previewExpiry,
@@ -64,7 +67,14 @@ import {
   signPreviewCookie,
   sweepPreviewLinks,
   verifyPreviewCookie,
+  type PreviewTicketIssuer,
 } from "./policy.ts";
+import {
+  PREVIEW_NONCE_MAX_AGE_SECONDS,
+  isPreviewNonce,
+  previewTicketAudience,
+  verifyPreviewTicket,
+} from "./ticket.ts";
 import { runPreviewTunnel } from "./tunnel.ts";
 import type {
   PreviewGatewayHandle,
@@ -127,6 +137,9 @@ const Sidecar = Schema.Struct({
   revokedKeys: Schema.optionalKey(
     Schema.Array(Schema.Struct({ key: Schema.String, revokedAt: Schema.String })),
   ),
+  libraryKeys: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ key: Schema.String, until: Schema.String })),
+  ),
 });
 const sidecarJson = Schema.fromJsonString(Sidecar);
 const isSettings = Schema.is(PreviewLinksSettings);
@@ -152,6 +165,20 @@ const PREVIEW_COOKIE_MAX_AGE_MS = PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000;
  * seconds the reconnect takes.
  */
 const DPOP_RENEWAL_GRACE_MS = 5 * 60 * 1000;
+
+/** Access keys of browsers that signed in through the Library rather than a Loom session. */
+const LIBRARY_KEY_PREFIX = "library:";
+// The Library's key or origin may change, and a computer offline at startup should still learn it.
+const LIBRARY_ACCESS_REFRESH_INTERVAL = Duration.minutes(30);
+/** How long saving settings waits on the Library before leaving the rest to the background. */
+const LIBRARY_ACCESS_SAVE_WAIT = Duration.seconds(5);
+/** Tickets and nonces kept as spent. Full means a flood of fresh tickets, so new ones fail. */
+const MAX_SPENT_TICKETS = 1024;
+// A ticket still verifies this long past its expiry, so it has to stay spent until then. The
+// check compares whole seconds, which adds up to one more.
+const TICKET_STILL_VALID_MS = 31 * 1000;
+// No browser still holds the nonce cookie after its max age, so it cannot come back after that.
+const NONCE_SPENT_MS = PREVIEW_NONCE_MAX_AGE_SECONDS * 1000;
 
 interface EntryCode {
   readonly host: string;
@@ -198,6 +225,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const sessions = yield* SessionStore;
   const discovery = yield* PortDiscovery;
   const lifecycle = yield* ProjectLifecycleService;
+  const publisher = yield* LibraryPublisher;
   const clock = yield* Clock.Clock;
   const hostname = yield* HostProcess.Hostname;
   const rootScope = yield* Effect.scope;
@@ -213,13 +241,14 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     defaultLifetime: "12h",
     gatewayPort: DEFAULT_PREVIEW_GATEWAY_PORT,
   };
-  const fresh = { settings: defaults, links: [], revokedKeys: [] };
+  const fresh = { settings: defaults, links: [], revokedKeys: [], libraryKeys: [] };
   const saved = yield* fs.readFileString(sidecarPath).pipe(
     Effect.flatMap(Schema.decodeEffect(sidecarJson)),
     Effect.map((sidecar) => ({
       settings: sidecar.settings,
       links: sidecar.links,
       revokedKeys: sidecar.revokedKeys ?? [],
+      libraryKeys: sidecar.libraryKeys ?? [],
     })),
     Effect.catchIf(
       (cause) => "reason" in cause && cause.reason._tag === "NotFound",
@@ -278,6 +307,21 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     const atMs = Date.parse(revokedAt);
     if (atMs > now() - PREVIEW_COOKIE_MAX_AGE_MS) revokedKeys.set(key, atMs);
   }
+  /**
+   * Access keys of browsers that signed in through the Library, each until its latest cookie runs
+   * out. No Loom session stands behind them, so this is all that ends what they have running.
+   * Saved, so a restart does not sign them out.
+   */
+  const libraryKeys = new Map<string, number>();
+  for (const { key, until } of saved.libraryKeys) {
+    const untilMs = Math.min(Date.parse(until), now() + PREVIEW_COOKIE_MAX_AGE_MS);
+    if (key.startsWith(LIBRARY_KEY_PREFIX) && untilMs > now()) libraryKeys.set(key, untilMs);
+  }
+  let libraryKeysDirty = false;
+  /** Ticket ids and nonces already traded for a cookie, each until it could no longer verify. */
+  const spentTickets = new Map<string, number>();
+  /** The Library that signs cold browsers in, or null while none has said it will. */
+  let libraryIssuer: PreviewTicketIssuer | null = null;
 
   const rebuildIndex = () => {
     openByHost = new Map(
@@ -290,7 +334,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     );
   };
 
-  const isLive = (key: string, nowMs: number) => (liveKeys.get(key) ?? 0) > nowMs;
+  const isLive = (key: string, nowMs: number) =>
+    (liveKeys.get(key) ?? 0) > nowMs || (libraryKeys.get(key) ?? 0) > nowMs;
 
   const purgeEntryCodes = (nowMs: number) => {
     for (const [code, entry] of entryCodes) {
@@ -346,6 +391,52 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       return { key: cookie.key, sub: cookie.sub };
     },
     portAllowed: (port) => !isPreviewPortDenied(port, ownPorts()),
+    libraryAccess: () =>
+      libraryIssuer === null
+        ? null
+        : { origin: libraryIssuer.origin, ticketPath: libraryIssuer.ticketPath },
+    redeemTicket: (host, ticket, nonce, path) => {
+      const issuer = libraryIssuer;
+      if (issuer === null || !isPreviewNonce(nonce)) return null;
+      const nowMs = now();
+      const verified = verifyPreviewTicket(ticket, {
+        publicKey: issuer.publicKey,
+        keyId: issuer.keyId,
+        issuer: issuer.issuer,
+        audience: previewTicketAudience(host),
+        nonce,
+        nowMs,
+      });
+      if (verified === null) return null;
+      for (const [spent, untilMs] of spentTickets) {
+        if (untilMs <= nowMs) spentTickets.delete(spent);
+      }
+      const ticketId = `jti:${verified.ticketId}`;
+      const nonceId = `nonce:${nonce}`;
+      if (
+        spentTickets.has(ticketId) ||
+        spentTickets.has(nonceId) ||
+        spentTickets.size >= MAX_SPENT_TICKETS
+      ) {
+        return null;
+      }
+      spentTickets.set(ticketId, verified.expiresAtMs + TICKET_STILL_VALID_MS);
+      spentTickets.set(nonceId, nowMs + NONCE_SPENT_MS);
+      const key = `${LIBRARY_KEY_PREFIX}${verified.subject}`;
+      const exp = Math.floor(nowMs / 1000) + PREVIEW_COOKIE_MAX_AGE_SECONDS;
+      libraryKeys.set(key, Math.max(libraryKeys.get(key) ?? 0, exp * 1000));
+      libraryKeysDirty = true;
+      // Saves the key and moves the timer to its expiry.
+      timerWake.openUnsafe();
+      return {
+        cookieValue: signPreviewCookie(
+          { sub: verified.subject, key, host, iat: nowMs, exp },
+          cookieKey,
+        ),
+        maxAgeSeconds: PREVIEW_COOKIE_MAX_AGE_SECONDS,
+        path: sanitizeEntryPath(path),
+      };
+    },
   };
 
   const tunnelSetup = (): PreviewLinksSetup["tunnel"] => {
@@ -401,10 +492,14 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     readonly settings: PreviewLinksSettings;
     readonly links: ReadonlyArray<PreviewLink>;
   }) =>
-    Schema.encodeEffect(sidecarJson)({
-      version: 1,
-      ...next,
-      revokedKeys: [...revokedKeys].map(([key, atMs]) => ({ key, revokedAt: isoAt(atMs) })),
+    Effect.suspend(() => {
+      libraryKeysDirty = false;
+      return Schema.encodeEffect(sidecarJson)({
+        version: 1,
+        ...next,
+        revokedKeys: [...revokedKeys].map(([key, atMs]) => ({ key, revokedAt: isoAt(atMs) })),
+        libraryKeys: [...libraryKeys].map(([key, untilMs]) => ({ key, until: isoAt(untilMs) })),
+      });
     }).pipe(
       Effect.flatMap((contents) =>
         writeFileStringAtomically({ filePath: sidecarPath, contents: `${contents}\n` }),
@@ -602,7 +697,60 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const replaceLink = (updated: PreviewLink) =>
     links.map((link) => (link.id === updated.id ? updated : link));
 
-  const configure = Effect.fn("PreviewLinksService.configure")(
+  const libraryLock = yield* Semaphore.make(1);
+  /** Whether the Library may still hold this computer's hosts from a registration this run. */
+  let libraryRegistered = false;
+  /**
+   * Tells the Library which hosts to sign cold browsers in for, or that previews are off. A
+   * Library that cannot be reached keeps its last answer, so a blip signs nobody out.
+   */
+  const refreshLibraryAccess = libraryLock.withPermit(
+    Effect.suspend(() => {
+      if (!publisher.enabled) return Effect.void;
+      const suffix = isPreviewReady(settings) ? settings.suffix : null;
+      if (suffix === null) {
+        libraryIssuer = null;
+        if (!libraryRegistered) return Effect.void;
+        return publisher.registerPreviews(null).pipe(
+          Effect.matchEffect({
+            onSuccess: () => Effect.sync(() => void (libraryRegistered = false)),
+            onFailure: (error) =>
+              error.reason === "not-found"
+                ? Effect.sync(() => void (libraryRegistered = false))
+                : Effect.logWarning("Could not tell the Library that previews are off", {
+                    reason: error.reason,
+                  }),
+          }),
+        );
+      }
+      libraryRegistered = true;
+      return publisher.registerPreviews({ machine: settings.machine, suffix }).pipe(
+        Effect.matchEffect({
+          onSuccess: (access) => {
+            libraryIssuer = parseLibraryPreviewAccess(access);
+            return libraryIssuer === null
+              ? Effect.logWarning("Ignoring the Library's preview sign-in, which is not usable", {
+                  origin: access.origin,
+                })
+              : Effect.void;
+          },
+          onFailure: (error) => {
+            // An older Library has no preview sign-in, so browsers keep entering from Loom.
+            if (error.reason === "not-found") {
+              libraryIssuer = null;
+              libraryRegistered = false;
+              return Effect.void;
+            }
+            return Effect.logWarning("Could not refresh preview sign-in with the Library", {
+              reason: error.reason,
+            });
+          },
+        }),
+      );
+    }),
+  );
+
+  const saveSettings = Effect.fn("PreviewLinksService.configure")(
     function* (input: PreviewLinksConfigureInput) {
       if (!isSettings(input.settings)) {
         return yield* fail("invalid", "Those preview link settings are not valid.");
@@ -635,6 +783,19 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     Effect.uninterruptible,
     lock.withPermit,
   );
+
+  // Waits briefly, so a browser can sign in as soon as the save returns; a slow Library still
+  // finishes in the background.
+  const configure = (input: PreviewLinksConfigureInput) =>
+    saveSettings(input).pipe(
+      Effect.tap(() =>
+        Effect.forkIn(refreshLibraryAccess, rootScope).pipe(
+          Effect.flatMap((fiber) =>
+            Fiber.await(fiber).pipe(Effect.timeoutOption(LIBRARY_ACCESS_SAVE_WAIT)),
+          ),
+        ),
+      ),
+    );
 
   const share = Effect.fn("PreviewLinksService.share")(function* (
     input: PreviewLinkShareInput,
@@ -802,7 +963,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
             .pipe(Effect.mapError(() => fail("storage", "Could not sign out browsers.")));
           cookieKey = key;
           entryCodes.clear();
+          libraryKeys.clear();
           dropConnections(() => true);
+          yield* persist({ settings, links }).pipe(Effect.ignore);
         }),
       ),
     )
@@ -824,6 +987,11 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     }
     const ended = new Set([...liveKeys.keys()].filter((key) => !next.has(key)));
     if (alsoEnd !== undefined) ended.add(alsoEnd);
+    for (const [key, untilMs] of libraryKeys) {
+      if (untilMs > nowMs) continue;
+      libraryKeys.delete(key);
+      ended.add(key);
+    }
     liveKeys = next;
     if (ended.size > 0) dropConnections((connection) => ended.has(connection.key));
   };
@@ -865,6 +1033,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const nextDeadline = () => {
     let next = nextPreviewDeadline(links);
     for (const until of liveKeys.values()) if (next === null || until < next) next = until;
+    for (const until of libraryKeys.values()) if (next === null || until < next) next = until;
     return next;
   };
 
@@ -873,7 +1042,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       const nowMs = now();
       refreshSessions(nowMs);
       const result = sweepPreviewLinks(links, nowMs);
-      return result.changed ? commitBackground(result.links) : Effect.void;
+      if (result.changed) return commitBackground(result.links);
+      return libraryKeysDirty ? persist({ settings, links }).pipe(Effect.ignore) : Effect.void;
     }),
   );
 
@@ -882,12 +1052,16 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       for (;;) {
         yield* timerWake.close;
         const deadline = nextDeadline();
-        if (deadline === null) {
-          yield* timerWake.await;
-        } else {
-          const wait = Math.min(deadline - now(), MAX_TIMER_WAIT_MS);
-          if (wait > 0) {
-            yield* Effect.raceFirst(Effect.sleep(Duration.millis(wait)), timerWake.await);
+        // A sign-in that landed while the last sweep was saving opened the latch before this close
+        // cleared it, so the flag is the only record that it still needs saving.
+        if (!libraryKeysDirty) {
+          if (deadline === null) {
+            yield* timerWake.await;
+          } else {
+            const wait = Math.min(deadline - now(), MAX_TIMER_WAIT_MS);
+            if (wait > 0) {
+              yield* Effect.raceFirst(Effect.sleep(Duration.millis(wait)), timerWake.await);
+            }
           }
         }
         yield* sweep;
@@ -950,6 +1124,16 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   if (swept.changed) yield* persist({ settings, links }).pipe(Effect.ignore);
   yield* reconcileRuntime;
+  if (publisher.enabled) {
+    yield* forkParked(
+      Effect.gen(function* () {
+        for (;;) {
+          yield* refreshLibraryAccess;
+          yield* Effect.sleep(LIBRARY_ACCESS_REFRESH_INTERVAL);
+        }
+      }),
+    );
+  }
 
   return PreviewLinksService.of({
     changes: SubscriptionRef.changes(state),

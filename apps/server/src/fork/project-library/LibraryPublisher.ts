@@ -14,6 +14,8 @@ import {
   LibraryInfo,
   LibraryIngestHistoryRequest,
   LibraryIngestHistoryResult,
+  LibraryPreviewAccess,
+  LibraryPreviewRegisterRequest,
   LibraryRegisterCopyRequest,
   LibraryRecordActivityRequest,
   LibraryRecordActivityResult,
@@ -73,6 +75,13 @@ export class LibraryPublisher extends Context.Service<
       input: LibraryProposeBriefRequest,
       threadId: ThreadId,
     ) => Effect.Effect<LibraryBriefProposal, LibraryError>;
+    /**
+     * Tells the Library which preview hosts this computer serves, or null to stop its sign-in.
+     * Fails with `not-found` when the Library does not offer preview sign-in.
+     */
+    readonly registerPreviews: (
+      previews: LibraryPreviewRegisterRequest["previews"],
+    ) => Effect.Effect<LibraryPreviewAccess, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -92,6 +101,8 @@ const encodeProjectRead = Schema.encodeEffect(
 const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
 const encodeProposal = Schema.encodeEffect(Schema.fromJsonString(LibraryConversationBriefProposal));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryBriefProposal);
+const encodePreviews = Schema.encodeEffect(Schema.fromJsonString(LibraryPreviewRegisterRequest));
+const decodePreviewAccess = Schema.decodeUnknownEffect(LibraryPreviewAccess);
 const decodeReason = Schema.decodeUnknownEffect(
   Schema.Struct({ reason: LibraryError.fields.reason }),
 );
@@ -143,6 +154,7 @@ const make = Effect.gen(function* () {
       recordActivity: () => blocked,
       project: () => blocked,
       proposeBrief: () => blocked,
+      registerPreviews: () => blocked,
     });
   };
   if (
@@ -201,6 +213,9 @@ const make = Effect.gen(function* () {
           environmentId: sourceEnvironmentId,
           threadId,
         }),
+      // Preview sign-in is answered by the Library's HTTP route, which a computer reaches over the
+      // network; a Library that is its own computer has nothing to register with in-process.
+      registerPreviews: () => Effect.fail(new LibraryError({ reason: "not-found" })),
     });
   }
   const credentialResult = Option.isNone(credentialFile)
@@ -260,6 +275,8 @@ const make = Effect.gen(function* () {
     request: HttpClientRequest.HttpClientRequest,
     /** Keep the reason the Library gave for refusing, such as a full proposal queue. */
     keepReason = false,
+    /** A route newer than the Library answers 404, which callers treat as unsupported. */
+    notFound = false,
   ) {
     if (
       Option.isNone(token) ||
@@ -277,6 +294,8 @@ const make = Effect.gen(function* () {
       const refused = yield* response.json.pipe(Effect.flatMap(decodeReason), Effect.option);
       if (Option.isSome(refused)) return yield* new LibraryError({ reason: refused.value.reason });
     }
+    if (notFound && response.status === 404)
+      return yield* new LibraryError({ reason: "not-found" });
     if (response.status < 200 || response.status >= 300)
       return yield* new LibraryError({
         reason: response.status === 401 || response.status === 403 ? "blocked" : "io",
@@ -467,6 +486,24 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
   });
+  const registerPreviews = Effect.fnUntraced(function* (
+    previews: LibraryPreviewRegisterRequest["previews"],
+  ) {
+    const body = yield* encodePreviews({ previews }).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/previews/register")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+      false,
+      true,
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodePreviewAccess),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+    );
+  });
   return LibraryPublisher.of({
     enabled: true,
     info,
@@ -476,6 +513,7 @@ const make = Effect.gen(function* () {
     recordActivity,
     project,
     proposeBrief,
+    registerPreviews,
   });
 });
 export const layer = Layer.effect(LibraryPublisher, make);

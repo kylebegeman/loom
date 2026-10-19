@@ -95,6 +95,7 @@ const fixture = Effect.gen(function* () {
     ingest: () => Effect.die("unused"),
     project: () => Effect.die("unused"),
     proposeBrief: () => Effect.die("unused"),
+    registerPreviews: () => Effect.die("unused"),
   });
   const publication = yield* Publication.makeCopyHealthPublication({
     environmentId: source,

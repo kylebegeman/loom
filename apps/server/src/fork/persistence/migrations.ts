@@ -5,6 +5,7 @@ import { ProjectLifecycleMigrations } from "../project-lifecycle/migrations.ts";
 import { AppleBuildToolingMigrations } from "../apple-build-tooling/migrations.ts";
 import { DeviceQaMigrations } from "../device-qa/migrations.ts";
 import { CodeGraphMigrations } from "../code-graph/migrations.ts";
+import { PreviewAccessMigrations } from "../preview-access/migrations.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/sql/Migrator";
@@ -28,6 +29,7 @@ export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
   AppleBuildToolingMigrations,
   DeviceQaMigrations,
   CodeGraphMigrations,
+  PreviewAccessMigrations,
 ];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;

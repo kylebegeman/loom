@@ -8,7 +8,10 @@ import {
   type DiscoveredLocalServer,
 } from "@t3tools/contracts";
 import {
+  LibraryError,
   ProjectLifecycleError,
+  type LibraryPreviewAccess,
+  type LibraryPreviewRegisterRequest,
   type PreviewLinksSettings,
   type PreviewLinksSnapshot,
   type ProjectLifecycleLane,
@@ -23,6 +26,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -32,6 +36,7 @@ import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { SessionStore, type SessionCredentialChange } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
+import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { ProjectLifecycleService } from "../project-lifecycle/ProjectLifecycleService.ts";
 import type { LaneRow } from "../project-lifecycle/store.ts";
 import { isoAt } from "./policy.ts";
@@ -42,6 +47,14 @@ import {
   type PreviewLinkActor,
   type PreviewLinksSession,
 } from "./PreviewLinksService.ts";
+import {
+  generatePreviewTicketKeyPair,
+  previewTicketAudience,
+  previewTicketKeyId,
+  previewTicketPrivateKey,
+  randomPreviewNonce,
+  signPreviewTicket,
+} from "./ticket.ts";
 import {
   PreviewGatewayListenError,
   type PreviewGatewayView,
@@ -156,6 +169,60 @@ const terminalServer = (port: number, threadId: ThreadId): DiscoveredLocalServer
   terminal: { threadId, terminalId: "default" },
 });
 
+const LIBRARY_ORIGIN = "https://library.example.test";
+
+type RegisteredPreviews = LibraryPreviewRegisterRequest["previews"];
+
+/** A Library that signs tickets with its own key and answers registrations as told. */
+const makeLibrary = Effect.gen(function* () {
+  const keys = generatePreviewTicketKeyPair();
+  const privateKey = previewTicketPrivateKey(keys.privateKey);
+  if (privateKey === null) return yield* Effect.die("The ticket key did not load.");
+  const access: LibraryPreviewAccess = {
+    origin: LIBRARY_ORIGIN,
+    ticketPath: "/api/loom/preview/ticket",
+    keyId: previewTicketKeyId(keys.publicKey),
+    publicKey: keys.publicKey,
+  };
+  const calls = yield* Queue.unbounded<RegisteredPreviews>();
+  let answer: Effect.Effect<LibraryPreviewAccess, LibraryError> = Effect.succeed(access);
+  return {
+    access,
+    calls,
+    answer: (next: Effect.Effect<LibraryPreviewAccess, LibraryError>) => {
+      answer = next;
+    },
+    registerPreviews: (previews: RegisteredPreviews) =>
+      Queue.offer(calls, previews).pipe(Effect.andThen(Effect.suspend(() => answer))),
+    ticket: (host: string, nonce: string, nowMs: number) =>
+      signPreviewTicket({
+        privateKey,
+        keyId: access.keyId,
+        issuer: LIBRARY_ORIGIN,
+        audience: previewTicketAudience(host),
+        subject: "pocket-kyle",
+        nonce,
+        nowMs,
+      }),
+  };
+});
+
+/**
+ * Takes every registration so far and checks each asked for `previews`. Startup may register
+ * once more alongside the first save, so the count is not fixed.
+ */
+const expectRegistrations = (
+  library: { readonly calls: Queue.Queue<RegisteredPreviews> },
+  previews: RegisteredPreviews,
+) =>
+  Queue.clear(library.calls).pipe(
+    Effect.map((calls) =>
+      expect([...new Set(calls.map((each) => JSON.stringify(each)))]).toEqual([
+        JSON.stringify(previews),
+      ]),
+    ),
+  );
+
 const makeHarness = Effect.fn("makeHarness")(function* (
   options: {
     readonly baseDir?: string;
@@ -171,9 +238,14 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     readonly removedWhileListing?: string;
     /** Runs after each secret is stored, before the write returns. */
     readonly afterSecretSet?: Effect.Effect<void>;
+    /** Without one, no Library is configured. */
+    readonly library?: {
+      readonly registerPreviews: LibraryPublisher["Service"]["registerPreviews"];
+    };
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const baseDir = options.baseDir ?? (yield* fs.makeTempDirectoryScoped());
   const baseConfig = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
@@ -296,6 +368,11 @@ const makeHarness = Effect.fn("makeHarness")(function* (
               : Effect.succeed(lane);
           },
         }),
+        Layer.mock(LibraryPublisher)(
+          options.library === undefined
+            ? { enabled: false }
+            : { enabled: true, registerPreviews: options.library.registerPreviews },
+        ),
         Layer.succeed(HostProcess.Hostname, "Dorothy.local"),
       ),
     ),
@@ -317,6 +394,12 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     secretValues,
     waitFor,
     view,
+    savedState: fs
+      .readFileString(path.join(baseConfig.stateDir, "fork", "preview-links", "state.json"))
+      .pipe(
+        Effect.map((text): { readonly libraryKeys?: ReadonlyArray<unknown> } => JSON.parse(text)),
+        Effect.orDie,
+      ),
     removeSession,
     upsertSession: (sessionId: string, expiresAtMs: number, dpopSubject?: string) =>
       PubSub.publish(sessionChanges, {
@@ -895,6 +978,158 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.service.configure({ settings: { ...ready, gatewayPort: 4100 } });
       yield* harness.view;
       expect(harness.gateway.starts).toEqual([4100]);
+    }),
+  );
+
+  it.effect("signs a browser in with a Library ticket, once", () =>
+    Effect.gen(function* () {
+      const library = yield* makeLibrary;
+      const harness = yield* makeHarness({ library });
+      yield* harness.service.configure({ settings: ready });
+      yield* expectRegistrations(library, { machine: "dorothy", suffix: "bagels.top" });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      expect(view.libraryAccess()).toEqual({
+        origin: LIBRARY_ORIGIN,
+        ticketPath: library.access.ticketPath,
+      });
+      const nowMs = yield* Clock.currentTimeMillis;
+      const nonce = randomPreviewNonce();
+      const ticket = library.ticket(link.host, nonce, nowMs);
+      // Refused without being spent: another host, another browser's nonce, or no nonce.
+      expect(view.redeemTicket("5174-aaaaaa-dorothy.bagels.top", ticket, nonce, "/")).toBeNull();
+      expect(view.redeemTicket(link.host, ticket, randomPreviewNonce(), "/")).toBeNull();
+      expect(view.redeemTicket(link.host, ticket, "", "/")).toBeNull();
+
+      const entry = view.redeemTicket(link.host, ticket, nonce, "/deep?x=1");
+      expect(entry).toMatchObject({ maxAgeSeconds: 12 * 60 * 60, path: "/deep?x=1" });
+      expect(view.authorize(link.host, entry?.cookieValue ?? "")).toEqual({
+        key: "library:pocket-kyle",
+        sub: "pocket-kyle",
+      });
+      expect(view.redeemTicket(link.host, ticket, nonce, "/")).toBeNull();
+      const again = library.ticket(link.host, nonce, nowMs);
+      expect(view.redeemTicket(link.host, again, nonce, "/")).toBeNull();
+
+      const stranger = yield* makeLibrary;
+      const strangerNonce = randomPreviewNonce();
+      expect(
+        view.redeemTicket(
+          link.host,
+          stranger.ticket(link.host, strangerNonce, nowMs),
+          strangerNonce,
+          "/",
+        ),
+      ).toBeNull();
+
+      const lateNonce = randomPreviewNonce();
+      const late = library.ticket(link.host, lateNonce, nowMs);
+      // A minute to live plus 30 seconds of allowed clock skew.
+      yield* TestClock.adjust("91 seconds");
+      expect(view.redeemTicket(link.host, late, lateNonce, "/")).toBeNull();
+      const freshNonce = randomPreviewNonce();
+      const fresh = library.ticket(link.host, freshNonce, yield* Clock.currentTimeMillis);
+      expect(view.redeemTicket(link.host, fresh, freshNonce, "//evil.example")?.path).toBe("/");
+    }),
+  );
+
+  it.effect("ends what a Library sign-in has running once its cookie runs out", () =>
+    Effect.gen(function* () {
+      const library = yield* makeLibrary;
+      const harness = yield* makeHarness({ library });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173, lifetime: "24h" }, owner);
+      const view = yield* harness.view;
+      const nonce = randomPreviewNonce();
+      const ticket = library.ticket(link.host, nonce, yield* Clock.currentTimeMillis);
+      const cookie = view.redeemTicket(link.host, ticket, nonce, "/")?.cookieValue ?? "";
+      yield* Queue.clear(harness.gateway.destroyed);
+
+      yield* TestClock.adjust("12 hours");
+      const dropped = yield* Queue.take(harness.gateway.destroyed);
+      expect(dropped({ host: link.host, key: "library:pocket-kyle" })).toBe(true);
+      expect(dropped({ host: link.host, key: "session-1" })).toBe(false);
+      expect(view.authorize(link.host, cookie)).toBeNull();
+    }),
+  );
+
+  it.effect("keeps Library sign-ins across a restart until browsers are signed out", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const library = yield* makeLibrary;
+      const first = yield* makeHarness({ baseDir, secrets, library });
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.share({ port: 5173 }, owner);
+      const firstView = yield* first.view;
+      const nonce = randomPreviewNonce();
+      const ticket = library.ticket(link.host, nonce, yield* Clock.currentTimeMillis);
+      const cookie = firstView.redeemTicket(link.host, ticket, nonce, "/")?.cookieValue ?? "";
+      // Any save also writes the sign-ins.
+      yield* first.service.configure({ settings: ready });
+
+      const reopened = yield* makeHarness({ baseDir, secrets, library });
+      const view = yield* reopened.view;
+      expect(view.authorize(link.host, cookie)).toEqual({
+        key: "library:pocket-kyle",
+        sub: "pocket-kyle",
+      });
+
+      yield* reopened.service.signOutBrowsers;
+      const dropped = yield* Queue.take(reopened.gateway.destroyed);
+      expect(dropped({ host: link.host, key: "library:pocket-kyle" })).toBe(true);
+      expect(view.authorize(link.host, cookie)).toBeNull();
+      expect((yield* reopened.savedState).libraryKeys).toEqual([]);
+    }),
+  );
+
+  it.effect("tells the Library when previews turn on and off, and rides out a Library blip", () =>
+    Effect.gen(function* () {
+      const library = yield* makeLibrary;
+      const harness = yield* makeHarness({ library });
+      const previews = { machine: "dorothy", suffix: "bagels.top" };
+      const signIn = { origin: LIBRARY_ORIGIN, ticketPath: library.access.ticketPath };
+      yield* harness.service.configure({ settings: ready });
+      yield* expectRegistrations(library, previews);
+      const view = yield* harness.view;
+      expect(view.libraryAccess()).toEqual(signIn);
+
+      library.answer(Effect.fail(new LibraryError({ reason: "io" })));
+      yield* harness.service.configure({ settings: { ...ready, defaultLifetime: "1h" } });
+      yield* expectRegistrations(library, previews);
+      expect(view.libraryAccess()).toEqual(signIn);
+
+      library.answer(Effect.succeed(library.access));
+      yield* harness.service.configure({ settings: { ...ready, enabled: false } });
+      yield* expectRegistrations(library, null);
+      expect(view.libraryAccess()).toBeNull();
+
+      yield* harness.service.configure({ settings: ready });
+      yield* expectRegistrations(library, previews);
+      expect(view.libraryAccess()).toEqual(signIn);
+
+      // An older Library has no preview sign-in, so there is nothing to turn off afterwards.
+      library.answer(Effect.fail(new LibraryError({ reason: "not-found" })));
+      yield* harness.service.configure({ settings: { ...ready, defaultLifetime: "1h" } });
+      yield* expectRegistrations(library, previews);
+      expect(view.libraryAccess()).toBeNull();
+      yield* harness.service.configure({ settings: { ...ready, enabled: false } });
+      expect(yield* Queue.clear(library.calls)).toEqual([]);
+    }),
+  );
+
+  it.effect("asks the Library again every half hour", () =>
+    Effect.gen(function* () {
+      const library = yield* makeLibrary;
+      const harness = yield* makeHarness({ library });
+      yield* harness.service.configure({ settings: ready });
+      yield* Queue.clear(library.calls);
+      yield* TestClock.adjust("30 minutes");
+      expect(yield* Queue.take(library.calls)).toEqual({
+        machine: "dorothy",
+        suffix: "bagels.top",
+      });
     }),
   );
 });

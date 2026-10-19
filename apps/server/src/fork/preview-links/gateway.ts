@@ -13,7 +13,18 @@ import {
   nothingListeningPage,
   openFromLoomPage,
   portDeniedPage,
+  signInPage,
+  ticketFailedPage,
 } from "./pages.ts";
+import { previewSignInUrl } from "./policy.ts";
+import {
+  formatNonceClearCookie,
+  formatNonceSetCookie,
+  PREVIEW_NONCE_COOKIE_NAME,
+  PREVIEW_TICKET_PATH,
+  randomPreviewNonce,
+  readRequestCookie,
+} from "./ticket.ts";
 import {
   formatPreviewSetCookie,
   normalizeRequestHost,
@@ -24,6 +35,7 @@ import {
   type PreviewGatewayHandle,
   type PreviewGatewaySession,
   type PreviewGatewayView,
+  type PreviewLibraryAccess,
   type StartPreviewGateway,
 } from "./types.ts";
 
@@ -275,6 +287,13 @@ const listenErrorMessage = (port: number, error: NodeJS.ErrnoException) => {
 type Decision =
   | { readonly _tag: "Reject"; readonly status: number; readonly page: string | null }
   | { readonly _tag: "Enter"; readonly host: string }
+  | { readonly _tag: "Ticket"; readonly host: string }
+  /** A 401 that offers a sign-in through the Library. */
+  | {
+      readonly _tag: "SignIn";
+      readonly host: string;
+      readonly access: PreviewLibraryAccess;
+    }
   | {
       readonly _tag: "Proxy";
       readonly host: string;
@@ -295,6 +314,17 @@ const reject = (status: number, page: string | null = null): Decision => ({
 const isSafeNavigation = (request: NodeHttp.IncomingMessage) =>
   (request.method === "GET" || request.method === "HEAD") &&
   request.headers["sec-fetch-mode"] === "navigate";
+
+/**
+ * Only a page load may get a sign-in link, because answering it sets a nonce cookie, and a
+ * script's fetch or an image that sets cookies would race the page's own nonce.
+ */
+const isDocumentNavigation = (request: NodeHttp.IncomingMessage) => {
+  if (request.method !== "GET") return false;
+  const mode = request.headers["sec-fetch-mode"];
+  if (mode !== undefined) return mode === "navigate";
+  return /\btext\/html\b/i.test(request.headers.accept ?? "");
+};
 
 /**
  * A page served with `Referrer-Policy: no-referrer` sends `Origin: null` on its own form posts.
@@ -324,11 +354,15 @@ const decide = (
   if (!url.startsWith("/")) return reject(400);
   const pathname = url.split(/[?#]/, 1)[0] ?? "";
   if (pathname === PREVIEW_ENTRY_PATH) return upgrade ? reject(404) : { _tag: "Enter", host };
+  if (pathname === PREVIEW_TICKET_PATH) return upgrade ? reject(404) : { _tag: "Ticket", host };
   if (pathname.startsWith(PREVIEW_RESERVED_PATH)) return reject(404);
 
   const cookie = readGatewayCookie(request.headersDistinct.cookie);
   const session = cookie === null ? null : view.authorize(host, cookie);
-  if (session === null) return reject(401, openFromLoomPage);
+  if (session === null) {
+    const access = !upgrade && isDocumentNavigation(request) ? view.libraryAccess() : null;
+    return access === null ? reject(401, openFromLoomPage) : { _tag: "SignIn", host, access };
+  }
 
   const publicOrigin = `https://${host}`;
   const origin = request.headers.origin;
@@ -373,6 +407,60 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
       ...PRIVATE_HEADERS,
       location: entry.path,
       "set-cookie": formatPreviewSetCookie(entry.cookieValue, entry.maxAgeSeconds),
+      "referrer-policy": "no-referrer",
+      "content-length": 0,
+    });
+    response.end();
+  };
+
+  /** Each answer gets a fresh nonce, so a sign-in link only works in the browser it was shown to. */
+  const sendSignInPage = (
+    response: NodeHttp.ServerResponse,
+    status: number,
+    host: string,
+    returnPath: string,
+    access: PreviewLibraryAccess | null,
+    page: (href: string | null) => string,
+  ) => {
+    if (access === null) return sendPage(response, status, page(null));
+    const nonce = randomPreviewNonce();
+    sendPage(response, status, page(previewSignInUrl(access, host, nonce, returnPath)), {
+      "set-cookie": formatNonceSetCookie(nonce),
+      // The page's address would otherwise reach the Library with every sign-in.
+      "referrer-policy": "no-referrer",
+    });
+  };
+
+  const redeemTicket = (
+    request: NodeHttp.IncomingMessage,
+    response: NodeHttp.ServerResponse,
+    host: string,
+  ) => {
+    const query = new URL(request.url ?? "/", "http://gateway.invalid").searchParams;
+    const ticket = query.get("ticket");
+    const nonce = readRequestCookie(request.headersDistinct.cookie, PREVIEW_NONCE_COOKIE_NAME);
+    const entry =
+      ticket === null || nonce === null
+        ? null
+        : view.redeemTicket(host, ticket, nonce, query.get("path") ?? "/");
+    if (entry === null) {
+      return sendSignInPage(
+        response,
+        ticket === null ? 400 : 401,
+        host,
+        query.get("path") ?? "/",
+        view.libraryAccess(),
+        ticketFailedPage,
+      );
+    }
+    response.writeHead(303, {
+      ...PRIVATE_HEADERS,
+      location: entry.path,
+      "set-cookie": [
+        formatPreviewSetCookie(entry.cookieValue, entry.maxAgeSeconds),
+        formatNonceClearCookie(),
+      ],
+      // The ticket is in this address, so it must not travel on as a referrer.
       "referrer-policy": "no-referrer",
       "content-length": 0,
     });
@@ -527,6 +615,17 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
             : sendPage(response, decision.status, decision.page);
         case "Enter":
           return enter(request, response, decision.host);
+        case "Ticket":
+          return redeemTicket(request, response, decision.host);
+        case "SignIn":
+          return sendSignInPage(
+            response,
+            401,
+            decision.host,
+            request.url ?? "/",
+            decision.access,
+            (href) => (href === null ? openFromLoomPage : signInPage(href)),
+          );
         case "Proxy":
           return proxyRequest(request, response, decision.host, decision.port, decision.session);
       }
@@ -546,7 +645,10 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
           case "Reject":
             return rejectUpgrade(client, decision.status);
           case "Enter":
+          case "Ticket":
             return rejectUpgrade(client, 404);
+          case "SignIn":
+            return rejectUpgrade(client, 401);
           case "Proxy":
             return proxyUpgrade(
               request,

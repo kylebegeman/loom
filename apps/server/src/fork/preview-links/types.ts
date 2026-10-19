@@ -15,6 +15,25 @@ export interface PreviewGatewayView {
   readonly authorize: (host: string, cookieValue: string) => PreviewGatewaySession | null;
   /** Re-checked per request because the denylist follows the server's own listeners. */
   readonly portAllowed: (port: number) => boolean;
+  /** Where a browser without a cookie can sign in, or null while no Library has said. */
+  readonly libraryAccess: () => PreviewLibraryAccess | null;
+  /**
+   * Trades a Library ticket for a cookie. `nonce` is the browser's nonce cookie; the ticket and
+   * the nonce each work once.
+   */
+  readonly redeemTicket: (
+    host: string,
+    ticket: string,
+    nonce: string,
+    path: string,
+  ) => PreviewGatewayEntry | null;
+}
+
+export interface PreviewLibraryAccess {
+  /** Such as `https://loom.begam.in`, with no trailing slash. */
+  readonly origin: string;
+  /** Starts with a single `/`, with no query or fragment. */
+  readonly ticketPath: string;
 }
 
 export type PreviewGatewayRoute =

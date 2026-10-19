@@ -4,12 +4,14 @@ import type { ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIME_MS,
   PREVIEW_LINK_RESTORE_WINDOW_MS,
+  type LibraryPreviewAccess,
   type PreviewLink,
   type PreviewLinksSettings,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
-import { PREVIEW_ENTRY_PATH, PREVIEW_RESERVED_PATH } from "./types.ts";
+import { previewTicketPublicKey } from "./ticket.ts";
+import { PREVIEW_ENTRY_PATH, PREVIEW_RESERVED_PATH, type PreviewLibraryAccess } from "./types.ts";
 
 /** SSH, databases, debuggers and Loom's own default ports. Ports below 1024 are denied too. */
 export const DENIED_PREVIEW_PORTS: ReadonlySet<number> = new Set([
@@ -180,6 +182,65 @@ export function verifyPreviewCookie(
   if (typeof iat !== "number") return null;
   if (claimedHost !== host || typeof exp !== "number" || exp * 1000 <= nowMs) return null;
   return { key: accessKey, sub, issuedAtMs: iat };
+}
+
+/** A Library this computer sends cold browsers to, and the key its tickets must carry. */
+export interface PreviewTicketIssuer extends PreviewLibraryAccess {
+  /** Exactly as the Library writes it in a ticket's `iss`. */
+  readonly issuer: string;
+  readonly keyId: string;
+  readonly publicKey: NodeCrypto.KeyObject;
+}
+
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+// Pasted into a link after the origin, so it may not start a new authority, query or fragment.
+const TICKET_PATH_PATTERN = /^\/(?!\/)[A-Za-z0-9._~%!$&'()*+,;=:@/-]*$/;
+/**
+ * The Library sends a browser that is not signed in there to its login with this request as the
+ * way back, and quietly drops a way back longer than 2048 characters.
+ */
+const MAX_SIGN_IN_TARGET_LENGTH = 1800;
+
+/** Null unless the Library's answer is safe to link browsers to and names a usable key. */
+export function parseLibraryPreviewAccess(
+  access: LibraryPreviewAccess,
+): PreviewTicketIssuer | null {
+  const publicKey = previewTicketPublicKey(access.publicKey);
+  if (publicKey === null || access.keyId.length === 0) return null;
+  if (!TICKET_PATH_PATTERN.test(access.ticketPath)) return null;
+  let url: URL;
+  try {
+    url = new URL(access.origin);
+  } catch {
+    return null;
+  }
+  if (url.username !== "" || url.password !== "") return null;
+  if (
+    url.protocol !== "https:" &&
+    !(url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))
+  ) {
+    return null;
+  }
+  return {
+    issuer: access.origin,
+    origin: url.origin,
+    ticketPath: access.ticketPath,
+    keyId: access.keyId,
+    publicKey,
+  };
+}
+
+/** The Library address that signs this browser in and sends it back to `requestPath`. */
+export function previewSignInUrl(
+  access: PreviewLibraryAccess,
+  host: string,
+  nonce: string,
+  requestPath: string,
+): string {
+  const target = (path: string) =>
+    `${access.ticketPath}?${new URLSearchParams({ host, nonce, path }).toString()}`;
+  const deep = target(sanitizeEntryPath(requestPath));
+  return `${access.origin}${deep.length <= MAX_SIGN_IN_TARGET_LENGTH ? deep : target("/")}`;
 }
 
 const ms = (iso: string | null) => (iso === null ? null : Date.parse(iso));

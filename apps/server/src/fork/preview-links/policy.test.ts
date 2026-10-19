@@ -5,13 +5,16 @@ import {
   isoAt,
   isPreviewPortDenied,
   nextPreviewDeadline,
+  parseLibraryPreviewAccess,
   previewMachineSlug,
+  previewSignInUrl,
   randomShareSegment,
   sanitizeEntryPath,
   signPreviewCookie,
   sweepPreviewLinks,
   verifyPreviewCookie,
 } from "./policy.ts";
+import { generatePreviewTicketKeyPair } from "./ticket.ts";
 
 const key = new Uint8Array(32).fill(7);
 const host = "5173-abc123-dorothy.bagels.top";
@@ -148,5 +151,53 @@ describe("sweepPreviewLinks", () => {
     });
     expect(nextPreviewDeadline([agentLink, ended])).toBe(2 * HOUR);
     expect(nextPreviewDeadline([])).toBeNull();
+  });
+});
+
+describe("Library sign-in", () => {
+  const access = {
+    origin: "https://loom.example.test",
+    ticketPath: "/api/loom/preview/ticket",
+    keyId: "key",
+    publicKey: generatePreviewTicketKeyPair().publicKey,
+  };
+  const nonce = "n".repeat(43);
+
+  it("accepts an https Library and keeps its issuer exactly as given", () => {
+    expect(
+      parseLibraryPreviewAccess({ ...access, origin: "https://loom.example.test/" }),
+    ).toMatchObject({ issuer: "https://loom.example.test/", origin: "https://loom.example.test" });
+    expect(
+      parseLibraryPreviewAccess({ ...access, origin: "http://localhost:3773" }),
+    ).not.toBeNull();
+  });
+
+  it("refuses anything that could send browsers elsewhere or cannot check tickets", () => {
+    for (const bad of [
+      { origin: "http://loom.example.test" },
+      { origin: "https://user:pass@loom.example.test" },
+      { origin: "javascript:alert(1)" },
+      { origin: "not a url" },
+      { ticketPath: "//evil.example/ticket" },
+      { ticketPath: "/ticket?next=1" },
+      { ticketPath: "ticket" },
+      { publicKey: "short" },
+      { keyId: "" },
+    ]) {
+      expect(parseLibraryPreviewAccess({ ...access, ...bad })).toBeNull();
+    }
+  });
+
+  it("links to the Library with this host, the nonce and a path that stays on the host", () => {
+    const url = new URL(previewSignInUrl(access, host, nonce, "/app?tab=1"));
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://loom.example.test/api/loom/preview/ticket",
+    );
+    expect(Object.fromEntries(url.searchParams)).toEqual({ host, nonce, path: "/app?tab=1" });
+    expect(new URL(previewSignInUrl(access, host, nonce, "//evil")).searchParams.get("path")).toBe(
+      "/",
+    );
+    const long = new URL(previewSignInUrl(access, host, nonce, `/${"a".repeat(3000)}`));
+    expect(long.searchParams.get("path")).toBe("/");
   });
 });

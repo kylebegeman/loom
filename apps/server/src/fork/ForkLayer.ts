@@ -41,6 +41,8 @@ import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
 import * as CodeGraph from "./code-graph/CodeGraphService.ts";
 import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
 import * as PreviewLinks from "./preview-links/PreviewLinksService.ts";
+import * as PreviewAccess from "./preview-access/PreviewAccessService.ts";
+import { PreviewAccessHttpRoutes } from "./preview-access/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -154,7 +156,9 @@ const ForkServicesLive = Layer.mergeAll(
   // Agent links end with their lane, so this watches the one ProjectLifecycle instance too.
   PreviewLinks.layer.pipe(
     Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provide(layerLibraryPublisher),
   ),
+  PreviewAccess.layer,
   // The reactor runs suggestions for the service MCP and RPC also call.
   LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(
     Layer.provideMerge(
@@ -191,4 +195,5 @@ export const ForkRoutesLayer = Layer.mergeAll(
   LibraryHttpRoutes,
   ModelPreviewHttpRoutes,
   PcbPreviewHttpRoutes,
+  PreviewAccessHttpRoutes,
 );

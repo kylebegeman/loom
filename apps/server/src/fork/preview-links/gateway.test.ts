@@ -6,7 +6,13 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
 import { startPreviewGateway } from "./gateway.ts";
-import { PREVIEW_COOKIE_NAME, type PreviewGatewayEntry, type PreviewGatewayView } from "./types.ts";
+import { PREVIEW_NONCE_COOKIE_NAME } from "./ticket.ts";
+import {
+  PREVIEW_COOKIE_NAME,
+  type PreviewGatewayEntry,
+  type PreviewGatewayView,
+  type PreviewLibraryAccess,
+} from "./types.ts";
 
 const LINK_HOST = "5173-abc123-dorothy.bagels.top";
 const ENDED_HOST = "5174-ended1-dorothy.bagels.top";
@@ -171,7 +177,28 @@ const freePort = Effect.callback<number>((resume) => {
   });
 });
 
-const makeView = (ports: { link: number; denied: number }) => {
+const LIBRARY: PreviewLibraryAccess = {
+  origin: "https://library.example.test",
+  ticketPath: "/api/loom/preview/ticket",
+};
+const GOOD_TICKET = "good-ticket";
+const GOOD_NONCE = "n".repeat(43);
+const NONCE_COOKIE_PATTERN = new RegExp(
+  `^${PREVIEW_NONCE_COOKIE_NAME}=([A-Za-z0-9_-]{43}); Max-Age=600; Path=/; Secure; HttpOnly; SameSite=Lax$`,
+);
+
+interface TicketCall {
+  readonly host: string;
+  readonly ticket: string;
+  readonly nonce: string;
+  readonly path: string;
+}
+
+const makeView = (
+  ports: { link: number; denied: number },
+  library: PreviewLibraryAccess | null = null,
+  tickets: Array<TicketCall> = [],
+) => {
   const codes = new Map<string, PreviewGatewayEntry>([
     ["good-code", { cookieValue: GOOD_COOKIE, maxAgeSeconds: 43_200, path: "/app?tab=1" }],
   ]);
@@ -195,6 +222,13 @@ const makeView = (ports: { link: number; denied: number }) => {
         ? { key: "session-1", sub: "user-1" }
         : null,
     portAllowed: (port) => port !== ports.denied,
+    libraryAccess: () => library,
+    redeemTicket: (host, ticket, nonce, path) => {
+      tickets.push({ host, ticket, nonce, path });
+      return host === LINK_HOST && ticket === GOOD_TICKET && nonce === GOOD_NONCE
+        ? { cookieValue: GOOD_COOKIE, maxAgeSeconds: 43_200, path: "/deep?x=1" }
+        : null;
+    },
   };
   return view;
 };
@@ -286,6 +320,30 @@ const setup = Effect.gen(function* () {
   return { upstream, gateway };
 });
 
+const setupLibrary = (library: PreviewLibraryAccess | null) =>
+  Effect.gen(function* () {
+    const upstream = yield* upstreamServer;
+    const tickets: Array<TicketCall> = [];
+    const view = makeView({ link: upstream.port, denied: 1 }, library, tickets);
+    const gateway = yield* startPreviewGateway({ port: 0, view });
+    return { upstream, gateway, tickets };
+  });
+
+/** The sign-in link on a page, or null when it has none. */
+const signInLink = (body: string) => {
+  const href = /<a href="([^"]+)">Sign in with Loom<\/a>/.exec(body)?.[1];
+  return href === undefined ? null : new URL(href.replaceAll("&#38;", "&"));
+};
+
+const issuedNonce = (reply: Reply) => {
+  const cookies = reply.headers["set-cookie"] ?? [];
+  expect(cookies).toHaveLength(1);
+  return NONCE_COOKIE_PATTERN.exec(cookies[0] ?? "")?.[1] ?? null;
+};
+
+const navigation = { "sec-fetch-mode": "navigate" };
+const nonceCookie = { cookie: `${PREVIEW_NONCE_COOKIE_NAME}=${GOOD_NONCE}` };
+
 describe("preview gateway", () => {
   it.live("answers foreign hosts with 404 and ended links with 410", () =>
     Effect.gen(function* () {
@@ -353,6 +411,159 @@ describe("preview gateway", () => {
       });
       expect(caseFolded.status).toBe(401);
       expect(upstream.requests).toHaveLength(0);
+    }),
+  );
+
+  it.live("links a cold page navigation to Library sign-in with a fresh nonce", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setupLibrary(LIBRARY);
+      const cold = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/app?tab=1",
+        headers: navigation,
+      });
+      expect(cold.status).toBe(401);
+      expect(cold.body).toContain("Sign in to see this preview");
+      expect(cold.headers["referrer-policy"]).toBe("no-referrer");
+      expect(cold.headers["content-security-policy"]).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'",
+      );
+      const nonce = issuedNonce(cold);
+      expect(nonce).not.toBeNull();
+      const link = signInLink(cold.body);
+      expect(link?.origin).toBe(LIBRARY.origin);
+      expect(link?.pathname).toBe(LIBRARY.ticketPath);
+      expect(Object.fromEntries(link?.searchParams ?? [])).toEqual({
+        host: LINK_HOST,
+        nonce,
+        path: "/app?tab=1",
+      });
+
+      // Each page gets its own nonce, and a browser without Sec-Fetch headers still navigates.
+      const again = yield* send(gateway.port, {
+        host: LINK_HOST,
+        headers: { accept: "text/html,application/xhtml+xml" },
+      });
+      expect(again.status).toBe(401);
+      const second = issuedNonce(again);
+      expect(second).not.toBeNull();
+      expect(second).not.toBe(nonce);
+
+      // Scripts, images and form posts cannot follow a link, so they get no nonce to spend.
+      for (const request of [
+        { method: "GET", headers: { "sec-fetch-mode": "cors", accept: "text/html" } },
+        { method: "GET", headers: { accept: "*/*" } },
+        { method: "POST", headers: navigation },
+      ]) {
+        const reply = yield* send(gateway.port, { host: LINK_HOST, ...request });
+        expect(reply.status).toBe(401);
+        expect(reply.body).toContain("Open this link from Loom");
+        expect(reply.headers["set-cookie"]).toBeUndefined();
+      }
+      expect(upstream.requests).toHaveLength(0);
+    }),
+  );
+
+  it.live("offers no sign-in link while no Library has said where to sign in", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setupLibrary(null);
+      const cold = yield* send(gateway.port, { host: LINK_HOST, headers: navigation });
+      expect(cold.status).toBe(401);
+      expect(cold.body).toContain("Open this link from Loom");
+      expect(signInLink(cold.body)).toBeNull();
+      expect(cold.headers["set-cookie"]).toBeUndefined();
+    }),
+  );
+
+  it.live("trades a Library ticket for the preview cookie and clears the nonce", () =>
+    Effect.gen(function* () {
+      const { gateway, tickets } = yield* setupLibrary(LIBRARY);
+      const traded = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: `/__loom/ticket?ticket=${GOOD_TICKET}&path=%2Fdeep%3Fx%3D1`,
+        headers: { ...navigation, ...nonceCookie },
+      });
+      expect(traded.status).toBe(303);
+      expect(traded.headers.location).toBe("/deep?x=1");
+      expect(traded.headers["set-cookie"]).toEqual([
+        `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}; Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Lax`,
+        `${PREVIEW_NONCE_COOKIE_NAME}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,
+      ]);
+      expect(traded.headers["cache-control"]).toBe("private, no-store");
+      expect(traded.headers["referrer-policy"]).toBe("no-referrer");
+      expect(tickets).toEqual([
+        { host: LINK_HOST, ticket: GOOD_TICKET, nonce: GOOD_NONCE, path: "/deep?x=1" },
+      ]);
+    }),
+  );
+
+  it.live("answers a refused ticket with a fresh sign-in link", () =>
+    Effect.gen(function* () {
+      const { gateway, tickets } = yield* setupLibrary(LIBRARY);
+      const refused = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/__loom/ticket?ticket=spent&path=%2Fdeep",
+        headers: nonceCookie,
+      });
+      expect(refused.status).toBe(401);
+      expect(refused.body).toContain("This sign-in expired or was already used");
+      const nonce = issuedNonce(refused);
+      expect(nonce).not.toBe(GOOD_NONCE);
+      expect(Object.fromEntries(signInLink(refused.body)?.searchParams ?? [])).toEqual({
+        host: LINK_HOST,
+        nonce,
+        path: "/deep",
+      });
+
+      // Without its nonce cookie, or with two, a ticket never reaches the view.
+      for (const cookie of [
+        undefined,
+        `${PREVIEW_NONCE_COOKIE_NAME}=${GOOD_NONCE}; ${PREVIEW_NONCE_COOKIE_NAME}=${GOOD_NONCE}`,
+      ]) {
+        const reply = yield* send(gateway.port, {
+          host: LINK_HOST,
+          path: `/__loom/ticket?ticket=${GOOD_TICKET}`,
+          headers: cookie === undefined ? {} : { cookie },
+        });
+        expect(reply.status).toBe(401);
+      }
+      const missing = yield* send(gateway.port, { host: LINK_HOST, path: "/__loom/ticket" });
+      expect(missing.status).toBe(400);
+      expect(tickets.map((call) => call.ticket)).toEqual(["spent"]);
+
+      const ended = yield* send(gateway.port, {
+        host: ENDED_HOST,
+        path: `/__loom/ticket?ticket=${GOOD_TICKET}`,
+        headers: nonceCookie,
+      });
+      expect(ended.status).toBe(410);
+
+      const upgrade = yield* rawExchange(
+        gateway.port,
+        upgradeRequest(
+          { Origin: ORIGIN, Cookie: nonceCookie.cookie },
+          "",
+          "/__loom/ticket?ticket=x",
+        ),
+        "\r\n\r\n",
+      );
+      expect(upgrade.received.startsWith("HTTP/1.1 404")).toBe(true);
+      upgrade.socket.destroy();
+    }),
+  );
+
+  it.live("sends a refused ticket back to Loom once no Library is known", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setupLibrary(null);
+      const refused = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/__loom/ticket?ticket=spent",
+        headers: nonceCookie,
+      });
+      expect(refused.status).toBe(401);
+      expect(refused.body).toContain("Open the preview again from the Loom app.");
+      expect(signInLink(refused.body)).toBeNull();
+      expect(refused.headers["set-cookie"]).toBeUndefined();
     }),
   );
 

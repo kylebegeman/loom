@@ -110,6 +110,7 @@ const fixture = Effect.gen(function* () {
     enabled: true,
     project: () => Effect.die("unused"),
     proposeBrief: () => Effect.die("unused"),
+    registerPreviews: () => Effect.die("unused"),
     info: Ref.get(features).pipe(
       Effect.map((list) => ({
         environmentId: source,

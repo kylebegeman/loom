@@ -129,6 +129,7 @@ const fixture = Effect.gen(function* () {
     recordActivity: () => Effect.fail(new LibraryError({ reason: "blocked" })),
     project: () => Effect.die("unused"),
     proposeBrief: () => Effect.die("unused"),
+    registerPreviews: () => Effect.die("unused"),
     publishAttachments: () =>
       Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "assets"]);
@@ -222,6 +223,7 @@ describe("durable Library history replication", () => {
               publishAttachments: () => Effect.void,
               project: () => Effect.die("unused"),
               proposeBrief: () => Effect.die("unused"),
+              registerPreviews: () => Effect.die("unused"),
               ingest: (input) =>
                 Ref.update(f.requests, (rows) => [...rows, input]).pipe(
                   Effect.as({
@@ -459,6 +461,7 @@ describe("durable Library history replication", () => {
         publishAttachments: () => Effect.void,
         project: () => Effect.die("unused"),
         proposeBrief: () => Effect.die("unused"),
+        registerPreviews: () => Effect.die("unused"),
       });
       const disabled = yield* Replication.LibraryReplication.pipe(
         Effect.provide(Replication.layer),

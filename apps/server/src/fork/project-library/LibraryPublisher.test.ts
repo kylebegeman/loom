@@ -63,6 +63,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const requests = yield* Ref.make<string[]>([]);
   const corruptReply = yield* Ref.make(false);
   const remoteInput = yield* Ref.make<LibraryIngestHistoryRequest | null>(null);
+  const previewsSupported = yield* Ref.make(true);
+  const previewBodies = yield* Ref.make<unknown[]>([]);
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
       expect(request.headers.authorization).toBe("Bearer fixture-token");
@@ -70,7 +72,18 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
       yield* Ref.update(requests, (paths) => [...paths, pathname]);
       const bytes = request.body._tag === "Uint8Array" ? request.body.body : new Uint8Array();
       let response: unknown;
-      if (pathname.endsWith("/info"))
+      let status = 200;
+      if (pathname.endsWith("/previews/register")) {
+        yield* Ref.update(previewBodies, (bodies) => [
+          ...bodies,
+          JSON.parse(new TextDecoder().decode(bytes)),
+        ]);
+        if (yield* Ref.get(previewsSupported)) response = previewAccess;
+        else {
+          status = 404;
+          response = { reason: "not-found" };
+        }
+      } else if (pathname.endsWith("/info"))
         response = {
           ...(env.LOOM_TEST_CREDENTIAL === "external" ? { computers: [] } : {}),
           environmentId: source,
@@ -102,7 +115,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
         };
       return HttpClientResponse.fromWeb(
         request,
-        new Response(json(response), { headers: { "content-type": "application/json" } }),
+        new Response(json(response), { status, headers: { "content-type": "application/json" } }),
       );
     }),
   );
@@ -169,8 +182,24 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     Effect.provideService(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(source) }),
     Effect.provideService(HostProcess.HomeDirectory, enrolledHome),
   );
-  return { publisher, requests, corruptReply, remoteInput, sql, fs, config };
+  return {
+    publisher,
+    requests,
+    corruptReply,
+    remoteInput,
+    previewsSupported,
+    previewBodies,
+    sql,
+    fs,
+    config,
+  };
 });
+const previewAccess = {
+  origin: "https://library.example.test",
+  ticketPath: "/api/loom/preview/ticket",
+  keyId: "key-id",
+  publicKey: "A".repeat(43),
+};
 const configured = {
   LOOM_LIBRARY_URL: "https://library.example.test",
   LOOM_LIBRARY_TOKEN: "fixture-token",
@@ -299,6 +328,26 @@ describe("authenticated Library publishing", () => {
             }),
           );
       }),
+  );
+  it.effect(
+    "registers preview hosts and reads a Library without preview sign-in as not-found",
+    () =>
+      run(configured, (f) =>
+        Effect.gen(function* () {
+          expect(
+            yield* f.publisher.registerPreviews({ machine: "dorothy", suffix: "bagels.top" }),
+          ).toEqual(previewAccess);
+          yield* f.publisher.registerPreviews(null);
+          expect(yield* Ref.get(f.previewBodies)).toEqual([
+            { previews: { machine: "dorothy", suffix: "bagels.top" } },
+            { previews: null },
+          ]);
+          yield* Ref.set(f.previewsSupported, false);
+          expect((yield* f.publisher.registerPreviews(null).pipe(Effect.flip)).reason).toBe(
+            "not-found",
+          );
+        }),
+      ),
   );
   it.effect("rejects a credential file for a different Library environment", () =>
     run({ LOOM_TEST_CREDENTIAL: "wrong-library" }, (f) =>
