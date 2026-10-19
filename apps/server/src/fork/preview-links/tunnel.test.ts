@@ -176,6 +176,27 @@ describe("preview tunnel", () => {
     }),
   );
 
+  it.effect("reports a command-line error rather than the help pointer after it", () =>
+    Effect.gen(function* () {
+      const dir = yield* tempDir;
+      // cloudflared 2026.9 prints this, unleveled, for a token that does not decode.
+      const connector = writeConnector(
+        dir,
+        [
+          `echo "Provided Tunnel token is not valid."`,
+          `echo "See 'cloudflared tunnel run --help'."`,
+          "exit 255",
+        ].join("\n"),
+      );
+      const tunnel = yield* startTunnel(fakeRelayClient(available(connector), { resolves: 0 }));
+      expect((yield* tunnel.takeUntil("error")).at(-1)).toEqual({
+        state: "error",
+        message: "Provided Tunnel token is not valid.",
+        metricsPort: null,
+      });
+    }),
+  );
+
   it.effect("explains an exit with no error output", () =>
     Effect.gen(function* () {
       const dir = yield* tempDir;

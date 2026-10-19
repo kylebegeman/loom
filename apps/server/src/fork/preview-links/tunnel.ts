@@ -38,6 +38,8 @@ const CONNECTION_INDEX = /\bconnIndex=(\d+)/u;
 // cloudflared's default output is `<timestamp> <LVL> <message>`; lines without a level are
 // usually command-line errors printed before its logger starts.
 const LEVELED_LINE = /^(?:\S+\s+)?(DBG|INF|WRN|ERR|FTL|PNC)\s+(.*)$/u;
+// Follows a command-line error; the line before it says what went wrong.
+const HELP_POINTER_LINE = /^See 'cloudflared\b.*--help'\.?$/u;
 
 const CONNECTING_MESSAGE = "Connecting to Cloudflare";
 
@@ -52,7 +54,7 @@ const shorten = (text: string) =>
 /** The message an error-worthy line contributes, or null for routine output. */
 const errorText = (line: string): string | null => {
   const leveled = LEVELED_LINE.exec(line);
-  if (leveled === null) return shorten(line);
+  if (leveled === null) return HELP_POINTER_LINE.test(line) ? null : shorten(line);
   const [, level, message = ""] = leveled;
   return level === "ERR" || level === "FTL" || level === "PNC" ? shorten(message) : null;
 };
