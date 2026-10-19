@@ -1,3 +1,4 @@
+import { onOpenVaultProfiles } from "./profile-navigation";
 import { onOpenVaultSsh } from "./ssh-navigation";
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -22,6 +23,17 @@ export function VaultAccessHost() {
           to: "/settings/loom",
           search: { machine: environmentId, project: undefined, checkout: undefined },
           hash: "loom-vault",
+        });
+      }),
+    [navigate],
+  );
+  useEffect(
+    () =>
+      onOpenVaultProfiles(({ environmentId, section }) => {
+        void navigate({
+          to: "/settings/loom",
+          search: { machine: environmentId, project: undefined, checkout: undefined },
+          hash: `loom-vault-${section}`,
         });
       }),
     [navigate],

@@ -4,6 +4,12 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "references-search": "loom_vault_references_search",
+  "references-describe": "loom_vault_references_describe",
+  profiles: "loom_vault_profiles",
+  "profiles-apply": "loom_vault_profiles_apply",
+  "profile-resolve": "loom_vault_profile_resolve",
+  "profile-run": "loom_vault_profile_run",
   "ssh-exec": "loom_vault_ssh_exec",
   git: "loom_vault_git",
   "ssh-generate": "loom_vault_ssh_generate",

@@ -52,8 +52,14 @@ export class VaultSsh extends Context.Service<
       input: VaultSshProbe,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultSshProbeResult, Failure>;
-    readonly git: (input: VaultGitExecute) => Effect.Effect<VaultGitResult, Failure>;
-    readonly execute: (input: VaultSshExecute) => Effect.Effect<VaultSshResult, Failure>;
+    readonly git: (
+      input: VaultGitExecute,
+      guard?: Effect.Effect<void, Failure>,
+    ) => Effect.Effect<VaultGitResult, Failure>;
+    readonly execute: (
+      input: VaultSshExecute,
+      guard?: Effect.Effect<void, Failure>,
+    ) => Effect.Effect<VaultSshResult, Failure>;
   }
 >()("t3/fork/vault/VaultSsh") {}
 const StoredKey = Schema.Struct({
@@ -114,7 +120,8 @@ const make = Effect.gen(function* () {
       () => Ref.update(active, (count) => count - 1),
     );
   return VaultSsh.of({
-    git: Effect.fn("VaultSsh.git")(function* (input) {
+    git: Effect.fn("VaultSsh.git")(function* (input, guard = Effect.void) {
+      yield* guard;
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const digest = yield* crypto
         .digest("SHA-256", new TextEncoder().encode(vaultGitCommandMessage(input.command)))
@@ -131,6 +138,7 @@ const make = Effect.gen(function* () {
       )
         return yield* new VaultSshError({ reason: "invalid-operation" });
       const authorize = Effect.gen(function* () {
+        yield* guard;
         yield* workloads.revalidate(session);
         const current = yield* core.inspect(session.itemId);
         if (
@@ -256,7 +264,8 @@ const make = Effect.gen(function* () {
       );
       return yield* info({ item, key });
     }),
-    execute: Effect.fn("VaultSsh.execute")(function* (input) {
+    execute: Effect.fn("VaultSsh.execute")(function* (input, guard = Effect.void) {
+      yield* guard;
       if (
         !isExecute(input) ||
         new TextEncoder().encode(vaultSshCommandMessage(input.command)).length > 8192
@@ -278,6 +287,7 @@ const make = Effect.gen(function* () {
         return yield* new VaultSshError({ reason: "invalid-operation" });
       if (!record.key.target.hostKey) return yield* new VaultSshError({ reason: "untrusted-host" });
       const authorize = Effect.gen(function* () {
+        yield* guard;
         yield* workloads.revalidate(session);
         const current = yield* core.inspect(session.itemId);
         if (

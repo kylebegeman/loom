@@ -264,7 +264,32 @@ it.live.skipIf(!configured)(
         action: "ls-remote" as const,
         timeoutMs: 30000,
       };
-      const refs = (yield* launch.git(input, f.threadId)).stdout;
+      const projectId = f.state.thread.projectId,
+        profileId = yield* f.id;
+      yield* f.profiles.apply(
+        {
+          projectId,
+          operationId: yield* f.id,
+          expectedRevision: 0,
+          change: {
+            type: "save",
+            profile: {
+              id: profileId,
+              label: "Synthetic Git profile",
+              bindings: [{ name: "source", kind: "git", itemId: f.itemId, repository }],
+            },
+          },
+        },
+        "fixture-admin",
+      );
+      const refs = (yield* launch.profile(
+        {
+          profileId,
+          binding: "source",
+          operation: { kind: "git", action: "ls-remote", timeoutMs: 30000 },
+        },
+        f.threadId,
+      )).stdout;
       expect(refs).toContain("refs/heads/main");
       for (let i = 0; i < 2; i++)
         expect((yield* launch.git({ ...input, action: "fetch" }, f.threadId)).exitCode).toBe(0);

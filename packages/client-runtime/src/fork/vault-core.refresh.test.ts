@@ -1,7 +1,9 @@
+import { createVaultReferenceAtoms } from "./vault-profiles.ts";
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import { AuthAccessWriteScope, EnvironmentId, type AuthSessionState } from "@t3tools/contracts";
 import {
+  VAULT_REFERENCE_WS_METHODS as R,
   VAULT_CORE_WS_METHODS as V,
   VAULT_SSH_WS_METHODS as S,
   type VaultItemSummary,
@@ -44,6 +46,19 @@ it.effect("refreshes mounted core lists and SSH details across factories after m
       let item: VaultItemSummary | null = null;
       const session = {
         client: {
+          [R.search]: () =>
+            Effect.sync(() => ({
+              items: item
+                ? [{ environmentId, item, reference: `loom-vault:${environmentId}:${item.id}` }]
+                : [],
+              nextCursor: null,
+            })),
+          [R.describe]: () =>
+            Effect.sync(() =>
+              item
+                ? { environmentId, item, reference: `loom-vault:${environmentId}:${item.id}` }
+                : null,
+            ),
           [V.list]: ({ includeArchived }: { includeArchived: boolean }) =>
             Effect.sync(() => ({
               items: item && (includeArchived || item.state === "active") ? [item] : [],
@@ -104,6 +119,20 @@ it.effect("refreshes mounted core lists and SSH details across factories after m
         environmentId,
         input: { includeArchived: true, cursor: null },
       });
+      const references = createVaultReferenceAtoms(runtime),
+        search = references.search({
+          environmentId,
+          input: { query: "", kind: null, includeArchived: true, cursor: null },
+        }),
+        description = references.describe({ environmentId, input: { id: "a".repeat(32) } });
+      registry.mount(search);
+      registry.mount(description);
+      expect(
+        (yield* AtomRegistry.getResult(registry, search, { suspendOnWaiting: true })).items,
+      ).toEqual([]);
+      expect(
+        yield* AtomRegistry.getResult(registry, description, { suspendOnWaiting: true }),
+      ).toBeNull();
       registry.mount(active);
       registry.mount(archived);
       expect(
@@ -127,6 +156,14 @@ it.effect("refreshes mounted core lists and SSH details across factories after m
       );
       expect(saved._tag).toBe("Success");
       expect(
+        (yield* AtomRegistry.getResult(registry, search, { suspendOnWaiting: true })).items[0]?.item
+          .label,
+      ).toBe("Created after picker mounted");
+      expect(
+        (yield* AtomRegistry.getResult(registry, description, { suspendOnWaiting: true }))?.item
+          .version,
+      ).toBe(1);
+      expect(
         (yield* AtomRegistry.getResult(registry, archived, { suspendOnWaiting: true })).items,
       ).toHaveLength(1);
       yield* Effect.promise(() =>
@@ -146,6 +183,10 @@ it.effect("refreshes mounted core lists and SSH details across factories after m
       expect(
         (yield* AtomRegistry.getResult(registry, archived, { suspendOnWaiting: true })).items[0]
           ?.state,
+      ).toBe("archived");
+      expect(
+        (yield* AtomRegistry.getResult(registry, description, { suspendOnWaiting: true }))?.item
+          .state,
       ).toBe("archived");
       const ssh = createVaultSshAtoms(runtime);
       const detail = ssh.info({ environmentId, input: { id: "a".repeat(32) } });

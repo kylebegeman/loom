@@ -1,3 +1,4 @@
+import { vaultProfilePaletteSource } from "../vault/profile-palette";
 import { vaultSshPaletteSource } from "../vault/ssh-palette";
 import { vaultAccessPaletteSource } from "../vault/access-palette";
 import { workspaceHandoffPaletteSource } from "../workspace-handoff/palette";
@@ -59,6 +60,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  vaultProfilePaletteSource,
   vaultSshPaletteSource,
   vaultAccessPaletteSource,
   miniOffloadPaletteSource,

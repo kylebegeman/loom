@@ -1,3 +1,4 @@
+import { makeVaultProfileRpcHandlers, makeVaultReferenceRpcHandlers } from "./vault/profile-rpc.ts";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Layer from "effect/Layer";
@@ -23,6 +24,10 @@ import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import {
+  VaultProfileRpcGroup,
+  VaultReferenceRpcGroup,
+  VAULT_PROFILE_WS_METHODS,
+  VAULT_REFERENCE_WS_METHODS,
   FORK_WS_METHODS,
   ForkRpcGroup,
   VaultSshRpcGroup,
@@ -37,7 +42,11 @@ import { makeForkRpcAuth } from "./rpcAuthorization.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
-const otherForkRpcGroup = ForkRpcGroup.omit(...Object.values(VAULT_SSH_WS_METHODS));
+const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(VAULT_SSH_WS_METHODS),
+  ...Object.values(VAULT_PROFILE_WS_METHODS),
+  ...Object.values(VAULT_REFERENCE_WS_METHODS),
+);
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
 export const makeForkRpcLayer = (
@@ -45,8 +54,16 @@ export const makeForkRpcLayer = (
 ): Layer.Layer<
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof otherForkRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultSshRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultProfileRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
 > =>
-  Layer.merge(
+  Layer.mergeAll(
+    VaultProfileRpcGroup.toLayer(
+      withForkRuntime(makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
+    VaultReferenceRpcGroup.toLayer(
+      withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
+    ),
     VaultSshRpcGroup.toLayer(
       withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),

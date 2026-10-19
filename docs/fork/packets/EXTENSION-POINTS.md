@@ -3045,6 +3045,22 @@ run/mode, item version and use grants remain required. Git signs its own `git-ex
 uses the thread checkout, and requires its exact repository destination. Workloads are not
 OS-isolated and ordinary terminal commands receive no secret environment or socket.
 
+Shared `vault-references.ts`/`VaultReferences` add environment-scoped metadata search and
+stable reference text. Agent search/describe require inspect grants; unknown/forbidden IDs
+both describe as null. Search scans at most four 25-record pages and preserves sparse cursors.
+Client-runtime queries share the item-change signal; web/native pickers are reusable consumers.
+
+Shared `vault-profiles.ts`/`VaultProfiles` add project-local CAS registries, named required
+SSH/Git bindings, active defaults and archive/restore. Profiles contain references only.
+The first active-run resolution persists a CAS-created profile/key-version pin in OpenBao;
+later edits/default switches apply to later runs. Every use rechecks current authority and
+key versions, and profile archive is checked at transport/signing. Management requires
+access:write; agents list only their own project and cannot change bindings. `VaultLaunch.profile`
+uses existing signed workload cleanup. Registry/pin paths live under the environment's
+`profiles/<project-hash>/` namespace and need explicit operator policy rights. Pins have no
+automatic retention cleanup yet. Web/desktop/mobile, palette, MCP and CLI register through
+existing fork-owned seams. Composer/task launch selection and other credential kinds remain open.
+
 `packages/provider-core/src/fork/vaultInstructions.ts` supplies static, capability-aware
 instructions to the existing common provider prompt channel. The two marked `ext-vault` lines
 in `packages/provider-core/src/server/orchestrationInstructions.ts` import/prepend that string.

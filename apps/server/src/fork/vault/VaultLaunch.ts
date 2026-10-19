@@ -1,9 +1,12 @@
+import * as VaultProfiles from "./VaultProfiles.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultWorkloadError,
   VaultSshError,
   VaultSshRun,
+  VaultProfileRun,
+  type VaultProfileRunResult,
   VaultGitRun,
   type VaultSshResult,
   type VaultGitResult,
@@ -34,6 +37,10 @@ type Failure = VaultError | VaultSshError | VaultWorkloadError;
 export class VaultLaunch extends Context.Service<
   VaultLaunch,
   {
+    readonly profile: (
+      input: VaultProfileRun,
+      threadId: ThreadId,
+    ) => Effect.Effect<typeof VaultProfileRunResult.Type, Failure>;
     readonly ssh: (
       input: VaultSshRun,
       threadId: ThreadId,
@@ -47,6 +54,7 @@ export class VaultLaunch extends Context.Service<
 const denied = () => new VaultError({ reason: "denied" });
 const isSsh = Schema.is(VaultSshRun),
   isGit = Schema.is(VaultGitRun);
+const isProfileRun = Schema.is(VaultProfileRun);
 const make = Effect.gen(function* () {
   const identities = yield* BrokerIdentity.BrokerIdentity,
     keys = yield* BrokerCrypto.BrokerCrypto;
@@ -57,6 +65,7 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment,
     path = yield* Path.Path,
     crypto = yield* Crypto.Crypto;
+  const profiles = yield* VaultProfiles.VaultProfiles;
   const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR;
   const run = <A>(
     threadId: ThreadId,
@@ -124,8 +133,12 @@ const make = Effect.gen(function* () {
         });
       }),
     );
-  return VaultLaunch.of({
-    ssh: Effect.fn("VaultLaunch.ssh")(function* (input, threadId) {
+  const operations = {
+    ssh: Effect.fn("VaultLaunch.ssh")(function* (
+      input: VaultSshRun,
+      threadId: ThreadId,
+      guard: Effect.Effect<void, Failure> = Effect.void,
+    ) {
       if (!isSsh(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
       return yield* run(
@@ -134,10 +147,14 @@ const make = Effect.gen(function* () {
         info.destination,
         "ssh-exec",
         vaultSshCommandMessage(input.command),
-        (proof) => ssh.execute({ proof, command: input.command }),
+        (proof) => ssh.execute({ proof, command: input.command }, guard),
       );
     }),
-    git: Effect.fn("VaultLaunch.git")(function* (input, threadId) {
+    git: Effect.fn("VaultLaunch.git")(function* (
+      input: VaultGitRun,
+      threadId: ThreadId,
+      guard: Effect.Effect<void, Failure> = Effect.void,
+    ) {
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
       const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
@@ -160,8 +177,43 @@ const make = Effect.gen(function* () {
         vaultGitDestination(info.target, input.repository),
         "git-exec",
         vaultGitCommandMessage(command),
-        (proof) => ssh.git({ proof, command }),
+        (proof) => ssh.git({ proof, command }, guard),
       );
+    }),
+  };
+  return VaultLaunch.of({
+    ...operations,
+    profile: Effect.fn("VaultLaunch.profile")(function* (input, threadId) {
+      if (!isProfileRun(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const resolved = yield* profiles.resolve(threadId, input.profileId);
+      const binding = resolved.bindings.find((b) => b.name === input.binding);
+      if (!binding || binding.kind !== input.operation.kind)
+        return yield* new VaultSshError({ reason: "invalid-operation" });
+      const guard = profiles.assertActive(resolved.projectId, resolved.profileId);
+      return yield* input.operation.kind === "ssh"
+        ? operations.ssh(
+            {
+              id: binding.itemId,
+              command: {
+                expectedVersion: binding.version,
+                argv: input.operation.argv,
+                timeoutMs: input.operation.timeoutMs,
+              },
+            },
+            threadId,
+            guard,
+          )
+        : operations.git(
+            {
+              id: binding.itemId,
+              expectedVersion: binding.version,
+              repository: binding.repository!,
+              action: input.operation.action,
+              timeoutMs: input.operation.timeoutMs,
+            },
+            threadId,
+            guard,
+          );
     }),
   });
 });

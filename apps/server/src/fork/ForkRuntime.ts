@@ -1,3 +1,5 @@
+import type { VaultProfiles } from "./vault/VaultProfiles.ts";
+import type { VaultReferences } from "./vault/VaultReferences.ts";
 import type { VaultLaunch } from "./vault/VaultLaunch.ts";
 import type { VaultSsh } from "./vault/VaultSsh.ts";
 import type { VaultWorkloads } from "./vault/VaultWorkloads.ts";
@@ -32,6 +34,8 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | VaultProfiles
+  | VaultReferences
   | VaultLaunch
   | VaultSsh
   | VaultWorkloads

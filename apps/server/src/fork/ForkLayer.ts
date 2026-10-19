@@ -1,3 +1,5 @@
+import * as VaultProfiles from "./vault/VaultProfiles.ts";
+import * as VaultReferences from "./vault/VaultReferences.ts";
 import * as VaultLaunch from "./vault/VaultLaunch.ts";
 import * as BrokerIdentity from "./vault/BrokerIdentity.ts";
 import * as VaultSsh from "./vault/VaultSsh.ts";
@@ -87,6 +89,15 @@ const layerVaultSsh = VaultSsh.layer.pipe(
   ),
 );
 
+const layerVaultProfiles = VaultProfiles.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultStore, layerVaultAccess, layerVaultSsh, ProjectStore.layer),
+  ),
+);
+const layerVaultReferences = VaultReferences.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess)),
+);
+
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
@@ -105,9 +116,12 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  layerVaultProfiles,
+  layerVaultReferences,
   VaultLaunch.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        layerVaultProfiles,
         layerVaultSsh,
         layerVaultWorkloads,
         BrokerCrypto.layer,

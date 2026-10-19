@@ -1,3 +1,4 @@
+import * as VaultProfiles from "./VaultProfiles.ts";
 import { EnvironmentId, ThreadId, IsoDateTime } from "@t3tools/contracts";
 import {
   vaultBrokerClaimMessage,
@@ -89,7 +90,7 @@ export const sshFixture = (
         ),
       ),
     );
-    const context = yield* Layer.build(layer),
+    const context = yield* Layer.build(VaultProfiles.layer.pipe(Layer.provideMerge(layer))),
       ssh = Context.get(context, VaultSsh.VaultSsh),
       core = Context.get(context, VaultCore.VaultCore),
       access = Context.get(context, VaultAccess.VaultAccess),
@@ -216,6 +217,7 @@ export const sshFixture = (
       };
     });
     return {
+      profiles: Context.get(context, VaultProfiles.VaultProfiles),
       context,
       ssh,
       core,
