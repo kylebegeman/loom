@@ -17,6 +17,7 @@ import {
 } from "~/browser/browserDefaults";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
+import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
 interface OpenPreviewSessionInput<E> {
@@ -43,11 +44,14 @@ export async function openPreviewSession<E>(
     return AsyncResult.failure(Cause.fail(defaults));
   }
   const runtime = input.runtime ?? previewRuntimeFor(input.threadRef.environmentId);
+  // fork: preview-links: a loopback port this client cannot reach loads through a preview link.
+  const url = input.url && (await navigablePreviewUrlFor(input.threadRef, input.url, runtime)); // fork: preview-links
+  if (url === null) return AsyncResult.failure(Cause.interrupt()); // fork: preview-links
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
-      ...(input.url === undefined ? {} : { url: input.url }),
+      ...(url === undefined ? {} : { url }), // fork: preview-links
       viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
       profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
       ...(runtime === undefined || runtime === "desktop" ? {} : { runtime }),

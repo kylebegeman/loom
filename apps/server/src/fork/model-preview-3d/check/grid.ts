@@ -37,19 +37,20 @@ export const buildGrid = (mesh: IndexedMesh, maxReferences = 2 ** 25): Grid => {
       ranges = new Uint32Array(total * 6);
     let refs = 0;
     for (let t = 0; t < total; t++) {
-      const points = [
-        vertex(mesh, mesh.triangles[t * 3]!),
-        vertex(mesh, mesh.triangles[t * 3 + 1]!),
-        vertex(mesh, mesh.triangles[t * 3 + 2]!),
-      ];
+      const a = mesh.triangles[t * 3]! * 3,
+        b = mesh.triangles[t * 3 + 1]! * 3,
+        c = mesh.triangles[t * 3 + 2]! * 3;
       for (let axis = 0; axis < 3; axis++) {
+        const x = mesh.vertices[a + axis]!,
+          y = mesh.vertices[b + axis]!,
+          z = mesh.vertices[c + axis]!;
         ranges[t * 6 + axis] = clamp(
-          Math.floor((Math.min(...points.map((p) => p[axis]!)) - min[axis]!) / h),
+          Math.floor((Math.min(x, y, z) - min[axis]!) / h),
           0,
           dimensions[axis]! - 1,
         );
         ranges[t * 6 + axis + 3] = clamp(
-          Math.floor((Math.max(...points.map((p) => p[axis]!)) - min[axis]!) / h),
+          Math.floor((Math.max(x, y, z) - min[axis]!) / h),
           0,
           dimensions[axis]! - 1,
         );

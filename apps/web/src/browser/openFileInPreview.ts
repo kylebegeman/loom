@@ -17,6 +17,7 @@ import { AsyncResult } from "effect/reactivity";
 
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
+import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
 import {
   applyPreviewServerSnapshot,
   readThreadPreviewState,
@@ -68,6 +69,8 @@ export async function openUrlInPreview<E>(input: {
     return AsyncResult.failure(Cause.fail(defaults));
   }
   const runtime = previewRuntimeFor(input.threadRef.environmentId);
+  const url = await navigablePreviewUrlFor(input.threadRef, input.url, runtime); // fork: preview-links
+  if (url === null) return AsyncResult.failure(Cause.interrupt()); // fork: preview-links
   const previousActiveTabId = readThreadPreviewState(input.threadRef).activeTabId;
   // The server's "opened" event switches the preview tab but not the panel's
   // selection, so a changed selection means the user picked a tab themselves.
@@ -79,7 +82,7 @@ export async function openUrlInPreview<E>(input: {
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
-      url: input.url,
+      url, // fork: preview-links
       viewport: browserDefaultOpenViewport(defaults),
       profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
       ...(runtime === undefined ? {} : { runtime }),

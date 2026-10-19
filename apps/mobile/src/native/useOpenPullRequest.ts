@@ -5,7 +5,7 @@ import { Platform } from "react-native";
 import { resetAndroidWorkspace } from "../lib/android-workspace-navigation";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useThreadShell } from "../state/entities";
-import { tryOpenExternalUrl } from "../lib/openExternalUrl";
+import { openThreadUrlExternally } from "../fork/preview-links/navigation"; // fork: preview-links
 
 type PullRequestContext = { readonly environmentId: string; readonly projectId: string };
 
@@ -17,7 +17,7 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
   return useCallback(
     async (url: string, context: PullRequestContext | null) => {
       const params = nativePullRequestDestination(url, context);
-      if (!params) return tryOpenExternalUrl(url, "pull-request");
+      if (!params) return openThreadUrlExternally(context?.environmentId, url, "pull-request"); // fork: preview-links
       if (Platform.OS === "android")
         resetAndroidWorkspace(navigation, { name: "PullRequest", params });
       else if (replace) navigation.dispatch(StackActions.replace("PullRequest", params));

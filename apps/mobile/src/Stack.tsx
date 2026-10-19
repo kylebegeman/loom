@@ -1,4 +1,5 @@
 import { SitesRouteScreen } from "./fork/sites/SitesScreen";
+import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen"; // fork: preview-links
 // fork: library
 import {
   LibraryRouteScreen,
@@ -237,6 +238,12 @@ const SettingsContentStack = createV5SheetStackNavigator({
     unstable_navigationItemStyle: undefined,
   },
   screens: {
+    // fork: preview-links
+    PreviewLinks: createNativeStackScreen({
+      screen: PreviewLinksRouteScreen,
+      linking: "previews",
+      options: { title: "Previews" },
+    }),
     Settings: createNativeStackScreen({
       screen: SettingsRouteScreen,
       linking: "",

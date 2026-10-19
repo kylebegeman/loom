@@ -1,0 +1,319 @@
+# L72 technical design
+
+## Overview
+
+```
+browser --https--> Cloudflare edge --tunnel--> cloudflared (child of the server)
+                                                   |
+                                                   | http://127.0.0.1:<gateway port>
+                                                   v
+                                     gateway (node:http, loopback only)
+                                     route by Host, entry code, cookie, Origin, port
+                                                   |
+                                                   | http://localhost:<port>
+                                                   v
+                                               dev server
+```
+
+`PreviewLinksService` owns settings, links, entry codes, the cookie key and the lifetimes of
+the gateway and the tunnel. Clients call it over RPC as the owner; agents call it over MCP as
+their own thread. Nothing here touches orchestration or the database.
+
+## Contracts
+
+`packages/contracts/src/fork/preview-links.ts`, feature `"preview-links"`. Every method fails
+with `PreviewLinksError` (reasons `not-configured`, `port-denied`, `port-not-in-lane`,
+`not-found`, `not-restorable`, `invalid`, `storage`, `tunnel`) or
+`EnvironmentAuthorizationError`.
+
+| Tag                                  | Input                                            | Success                | Scope                |
+| ------------------------------------ | ------------------------------------------------ | ---------------------- | -------------------- |
+| `loom.preview-links.watch`           | none                                             | `PreviewLinksSnapshot` | `orchestration:read` |
+| `loom.preview-links.configure`       | settings, optional token (null removes it)       | `PreviewLinksSetup`    | `settings:write`     |
+| `loom.preview-links.share`           | port, optional lifetime                          | `PreviewLink`          | `preview:operate`    |
+| `loom.preview-links.open`            | link id or any URL on a link host, optional path | `PreviewLinkEntry`     | `preview:operate`    |
+| `loom.preview-links.extend`          | link id, optional lifetime                       | `PreviewLink`          | `preview:operate`    |
+| `loom.preview-links.revoke`          | link id                                          | `PreviewLink`          | `preview:operate`    |
+| `loom.preview-links.restore`         | link id, optional lifetime                       | `PreviewLink`          | `preview:operate`    |
+| `loom.preview-links.revokeAll`       | none                                             | void                   | `preview:operate`    |
+| `loom.preview-links.signOutBrowsers` | none                                             | void                   | `preview:operate`    |
+
+`watch` streams; it is in `ForkSubscriptionRpcTag`. The snapshot carries setup (settings,
+`tokenStored`, `ready`, tunnel and gateway states with messages) and the links. The token is
+never returned. `ready` means enabled with a domain; sharing does not wait for the tunnel.
+
+## Server
+
+`apps/server/src/fork/preview-links/`, built in `ForkLayer` with the same
+`ProjectLifecycle.layer` instance the lane watcher observes.
+
+- `PreviewLinksService.ts`: state behind one semaphore, publishing a snapshot after every
+  change. An expiry fiber sleeps to the next link deadline or access key expiry (at most 24
+  hours per sleep) and sweeps. A key that runs out there has its running requests and
+  upgrades closed, because the session store sends no change when a disconnected client's
+  session expires.
+- `policy.ts`: host format, share segments (rejection sampling over bytes below 252), path
+  sanitizing, the port denylist, cookie signing and the sweep.
+- `gateway.ts`: the HTTP and upgrade proxy. `pages.ts`: its static pages.
+- `tunnel.ts`: the `cloudflared` supervisor.
+- `rpc.ts` (owner actor; `open` bound to the caller's session) and `mcp.ts`.
+
+### Entry and cookie flow
+
+1. `open` requires `ready`, finds the open link by id or host, and mints a 128-bit base64url
+   code bound to the host, a sanitized path and the caller's access key. Codes live 60 seconds,
+   at most 256 are kept (oldest evicted), and they are memory only.
+2. The client loads `https://<host>/__loom/enter?code=...`. The gateway spends the code on
+   any presentation, even a mismatched one, then answers `303` to the path with
+   `Set-Cookie`, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. A spent or
+   expired code gets the "Open the preview again from Loom" page (401).
+3. The cookie is `__Host-loom_pv`, `Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Lax`,
+   no `Domain`. Its value is
+   `base64url(JSON {v: 2, sub, key, host, iat, exp}).base64url(HMAC-SHA256)`, with `iat` in
+   milliseconds, at most 4,096 characters, verified with `timingSafeEqual` against the
+   request's host.
+
+### Access keys
+
+A cookie stands for an access key, not a session. For most sessions the key is the session id.
+A DPoP session (mobile and web over T3 Connect) lasts an hour and is replaced by one with a
+new id, so its key is `dpop:<subject>` and a browser stays in across the roll. Session rows do
+not carry the proof key's thumbprint, so the subject is the finest grouping available without
+a schema change, and every T3 Connect device shares the subject `cloud-connect`.
+
+- A key is live while any of its sessions still counts, using the sessions the store lists at
+  start and the changes it sends after. A session counts until it expires, and a DPoP session
+  for 5 minutes more: its client asks for the next session only once the server closes its
+  socket at expiry, so without the grace its browsers would lose their sockets and streams and
+  get 401 for the seconds every hourly reconnect takes.
+- Removing a session revokes its key for every cookie and entry code minted up to that moment.
+  A later entry works again while another session of the key is live.
+- The store also reports a session removed when its socket closes after the session ran out,
+  which a DPoP session does every hour. A removal of a session already past its expiry counts
+  as expiry: the session keeps its grace and the rest of its key stays in. A removal of a
+  session this server does not know revokes nothing. Its key is either the session id, which
+  cannot be admitted again, or a DPoP subject the removal does not name.
+
+### Gateway
+
+A raw `node:http` server bound to `127.0.0.1:<gatewayPort>` (default 3779), because it routes
+by host before parsing and pipes raw upgrade sockets, which Effect's HTTP server cannot.
+Requests and upgrades pass one decision, in order:
+
+1. Host not a link label under this computer's suffix and machine name: 404 "Not found". A
+   well-formed host on this computer with no open link (expired, ended or never issued): 410
+   "This preview has ended".
+2. `/__loom/enter` redeems a code (plain requests only). Any other `/__loom/` path: 404.
+3. Exactly one `__Host-loom_pv` cookie that verifies for this host and is unexpired, whose
+   access key is live and was not revoked after the cookie was minted. Otherwise 401 "Open
+   this link from Loom".
+4. Origin. An upgrade needs `Origin` exactly `https://<host>`. Any other request passes when
+   `Origin` is absent, is `https://<host>`, or is `null` with `Sec-Fetch-Site: same-origin` (a
+   `no-referrer` page's own form post). Otherwise it gets 403 unless it is a `GET` or `HEAD`
+   with `Sec-Fetch-Mode: navigate`.
+5. The port is not denied, else 403.
+
+Forwarding drops hop-by-hop headers and any named in `Connection`, sets `Host` to
+`localhost:<port>`, rewrites `Origin` and same-origin `Referer` to `http://localhost:<port>`,
+and strips every `__Host-loom*` cookie. A chunked request body is sent upstream chunked
+again, because Node writes a `GET`, `HEAD`, `DELETE` or `OPTIONS` body raw when it has no
+length and the shared keep-alive upstream would read it as more requests. Responses get
+`Location` rewritten from a local origin on that port to the link, `Set-Cookie` without
+`Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
+`Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
+no-store` plus `X-Robots-Tag: noindex, nofollow` on everything, with `no-transform` added
+to HTML. A refused port answers 503 "Nothing is answering on port N yet", and an upgrade to
+one gets a bare 503. Not 502: Cloudflare replaces an origin's 502 or 504 with its own error
+page, so the explanation would never arrive. An upgrade goes
+upstream with `http.request` on a socket of its own, and nothing the browser sends is relayed
+until the upstream answers `101`. Then that `101`, without `__Host-loom*` cookies, goes back
+and both sides are piped. Any other answer is sent with the response rewrites and
+`Connection: close`, then both sockets close, because `cloudflared` pools gateway connections
+across visitors and a connection left open to the upstream would skip every check. Running
+requests and upgrades are tracked by host and access key, so ending a link, signing out,
+removing a client or its key expiring closes them, event streams included. A view that throws
+costs one 500 response.
+Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
+to listen on port N." and retry on the next save.
+
+### Tunnel supervision
+
+`runPreviewTunnel` resolves `cloudflared` through `@t3tools/shared/relayClient`, installing it
+when missing, and runs `cloudflared tunnel --no-autoupdate --loglevel info --output default
+--metrics 127.0.0.1:0 run` with `TUNNEL_TOKEN` in the environment and no shell. It reads log
+lines for the metrics port (added to the denylist) and counts "Registered" and
+"Unregistered tunnel connection" lines; connected means at least one registration. `ERR`,
+`FTL` and `PNC` lines become the status message, with the token redacted. A connector that
+exits restarts after 1 second, doubling to 60 seconds, and starts over after 30 seconds of
+uptime. States: `off` and `needs-token` ("Add the tunnel token from Cloudflare to connect.")
+from setup, then `starting`, `connected` and `error` from the supervisor.
+
+### Agent policy
+
+`share` for an agent first calls `ProjectLifecycleService.ensureForThread`. A port in
+`portBase` to `portBase + PORT_BLOCK - 1` (20 ports) records the lane id. Any lane failure,
+including lanes being off, means no lane ports. Otherwise `PortDiscovery.scan()` must show a
+server on that port whose terminal belongs to the caller's thread. Else `port-not-in-lane`.
+`revoke` by an agent on another thread's or the owner's link is `not-found`. The lane watcher
+ends a lane link only after it has seen that lane present and then gone.
+
+## Storage
+
+- `<stateDir>/fork/preview-links/state.json`: `{ version: 1, settings, links, revokedKeys }`,
+  written with `writeFileStringAtomically`. Missing gives the defaults (off, no domain,
+  machine from the host name, 12 hours, port 3779). Unreadable logs a warning and gives the
+  defaults.
+- Links are bounded: the sweep expires open links at `expiresAt` (dating the end there, so
+  downtime does not stretch the restore window) and drops ended links past
+  `restorableUntil`.
+- `ServerSecretStore`: `loom-preview-links-cookie-key` (32 random bytes, created on first
+  start; a temporary key with a warning if the store fails) and
+  `loom-preview-links-tunnel-token`. Neither is logged or returned.
+- `revokedKeys` holds when each access key last lost a session to removal, kept for 12 hours,
+  the longest a cookie lives. It is saved because a DPoP subject's other sessions are listed
+  again after a restart and would make the key live for cookies minted before the removal.
+- In memory only: entry codes, each Loom session's access key and when it stops counting
+  (rebuilt from the session store's active sessions at every start), sessions removed while
+  running (12 hours) and running requests and upgrades.
+
+A sidecar file instead of fork tables: the data is small, per computer, and read whole.
+
+## Clients
+
+- Shared atoms: `packages/client-runtime/src/fork/preview-links.ts` (snapshot subscription
+  and one command per mutation, with `permissionAtom`s).
+- Navigation: `resolvePreviewNavigationWith` in
+  `packages/client-runtime/src/fork/preview-link-navigation.ts`, given each client's
+  `PreviewNavigationDeps` (`navigationDeps.ts` on web, `navigation.ts` on mobile). On web,
+  seams that load a URL in the preview call `navigablePreviewUrlFor`; seams that open the
+  system browser call `openEnvironmentUrlExternally`, `openPreviewInSystemBrowser` or
+  `takeUnreachableLoopbackClick`. A loopback URL on an environment this client cannot reach
+  is shared and opened as an entry; a preview link URL becomes a fresh entry on the first
+  connected computer that owns it (thread's computer first); a server-drawn browser on the
+  owning computer loads `localhost` directly. When links are not set up or this connection
+  cannot share, a private network connection gets the computer's private network address.
+  A computer without the feature, reached over a private network, keeps the URL as typed on
+  web (`keepsTypedLoopbackOnPrivateNetwork`) and gets that address on mobile. Anything else
+  is an error; the unreachable and not-set-up errors name the client's `settingsPath`.
+- Web UI: `settings.tsx` (section `preview-links`, title "Previews"), `LinksSheet.tsx`
+  (mounted as `preview-links-host` in `ForkRoot`), `PortCardActions.tsx`, `palette.tsx`.
+  `systemBrowser.ts` opens the window before awaiting on the web and hands the finished URL
+  to the shell on desktop.
+- Web system browser: a link page opens nowhere outside Loom without an entry, so every way
+  out swaps it for a fresh one (`needsPreviewLinkEntry` in contracts skips `/__loom/` pages).
+  `localApi.ts` `shell.openExternal` calls `openPreviewLinkExternally`, covering Alt-click,
+  context menus, `useOpenLink` and the terminal and preview fallbacks. Plain anchor clicks that
+  React leaves to the browser are caught by a window click listener in `PreviewLinksHost`. The
+  preview's "Open in browser" uses `openPreviewInSystemBrowser`, which also turns a loopback
+  address into a link. `McpAppFrame`'s `openLink` calls `window.open` directly and is not
+  covered.
+- Gating: `capabilities.loomFeatures` includes `"preview-links"`
+  (`advertised.ts`, `capability.ts`), plus each command's `permissionAtom`.
+- Mobile: `apps/mobile/src/fork/preview-links/` (Previews screen, `externalUrl.ts`,
+  `entryUrl.ts`, `previewLinksLogic.ts`). Every external open goes through
+  `tryOpenExternalUrl`, which swaps a preview link for an entry link from the first connected
+  computer whose `open` accepts it. Entry links pass through unchanged, and a link no computer
+  serves opens as is. The lookup loads lazily so `openExternalUrl.ts` keeps no connection
+  dependencies. A thread's other links (chat, html_render pages, MCP apps and the Files
+  markdown preview) go through `openThreadUrlExternally`: a loopback port
+  the phone cannot reach (anything but a simulator on its own Mac) is shared first. Where
+  that cannot happen, a private network connection opens the port on the computer's address
+  (before this, the phone opened its own localhost). Failures show an alert that names
+  Settings > Loom > Previews in the desktop or web app.
+
+## Agent-facing tools
+
+| Tool                       | Access          | Does                                                           |
+| -------------------------- | --------------- | -------------------------------------------------------------- |
+| `loom_preview_links_list`  | `readsAsCaller` | `ready`, tunnel state and the caller thread's links.           |
+| `loom_preview_link_share`  | `actsAsCaller`  | Share as the caller's thread; returns the canonical link only. |
+| `loom_preview_link_revoke` | `actsAsCaller`  | End one of the caller thread's links.                          |
+
+All three require a thread scope. They are not gated on the preview MCP capability. Agents
+never call `open`, so no transcript carries a working credential.
+
+## Security reasoning
+
+- **Why entry codes.** The canonical URL ends up in chats, transcripts, logs and clipboards.
+  A bearer URL would let anyone who saw it in. An entry code is minted only for an
+  authenticated Loom session with `preview:operate`, works once within 60 seconds, is bound
+  to one host and path, and is spent even on a failed attempt. The 303 removes it from the
+  address bar, and `no-referrer` and `no-store` keep it out of referrers and caches.
+- **Why host-only cookies.** The `__Host-` prefix forces `Secure`, `Path=/` and no `Domain`,
+  so no sibling host can set or scope a cookie for the whole domain. Each link is its own
+  origin, and the signed host claim stops a cookie copied to another link from working.
+  `HttpOnly` hides it from the previewed app, and the gateway strips `__Host-loom*` both
+  ways so the app can neither read nor overwrite it. `SameSite=Lax` carries it on top-level
+  navigation from Loom while leaving cross-site subresources without it.
+- **Why Origin checks.** All links share one registrable domain, so they are same-site with
+  each other and `SameSite` does not separate them. One previewed app could post to another
+  link the browser is signed in to, and a form `POST` counts as a navigation. The gateway
+  refuses requests from another origin unless they are `GET` or `HEAD` navigations, and
+  requires an exact origin for WebSockets, which neither CORS nor `SameSite` protects
+  (cross-site WebSocket hijacking). `GET` and `HEAD` navigations stay allowed so links open
+  from anywhere. A `no-referrer` page sends `Origin: null` on its own form posts, so `null`
+  counts as this origin when `Sec-Fetch-Site` is `same-origin`. The browser sets that header
+  and gives it only when every redirect stayed on this host, so a sibling link (`same-site`)
+  or a sandboxed frame (`cross-site`) cannot pass. A WebSocket always carries its page's real
+  origin, so a `null` one is refused.
+- **Why Cache-Control.** Responses are a signed-in user's dev data, and they pass through
+  Cloudflare's edge. A dev server that sends cacheable headers could otherwise let the edge
+  or another cache serve the page to a browser with no cookie, skipping the gateway.
+  `private, no-store` on every response prevents that. `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` are dropped because Cloudflare
+  obeys them over `Cache-Control`. `X-Robots-Tag` keeps crawlers out. Cloudflare also
+  rewrites HTML by default, injecting its Web Analytics beacon and hiding email addresses, so
+  HTML responses and the gateway's own pages add `no-transform`. Other responses leave it off
+  because it also stops edge compression, which large dev bundles need on a phone.
+- **Why loopback and a denylist.** The gateway binds `127.0.0.1` so the tunnel is the only way
+  in. Debugger ports mean code execution and database ports mean data, so they are never
+  shared, and the check repeats on every request so a later settings change cannot leave an
+  open path to a newly reserved port.
+- **Why the header rewrites.** Dev servers such as Vite refuse unknown hosts and check
+  `Origin` for CSRF and WebSockets. Rewriting to `localhost:<port>` keeps them working
+  without asking users to allow the public host.
+
+## Performance
+
+The snapshot is small and bounded by the sweep; it is pushed only on change. The web sheet
+re-renders once a minute (`useNowMinute`), and mobile every 30 seconds while the screen is
+open. The gateway streams bodies with `pipe` and keeps no per-request state beyond one set
+entry per running request or upgrade, removed when it closes.
+
+## Alternatives considered
+
+- Cloudflare quick tunnels: random hostnames per run, no stable address to restore.
+- Bearer URLs or basic auth: links in transcripts would be credentials.
+- A cookie on the whole domain: every previewed app could read or overwrite it.
+- Effect's HTTP server: cannot route by host before parsing or pipe raw upgrades.
+- Library storage for links: links are per computer and short-lived. Slices 2 to 6 are where
+  the Library comes in.
+
+## Known gaps
+
+- A session revoked with `t3 auth session revoke` while the server runs keeps preview access
+  until the server restarts or its cookies expire (at most 12 hours), because the CLI writes
+  the session store from another process and the running server gets no change event. The
+  same holds for a session revoked while the server is down. For a DPoP session the restart
+  does not help while another session of its subject is still listed.
+- If the session store cannot be listed at start, every preview cookie is refused until its
+  Loom client reconnects. A DPoP session removed before this server knew it (the list failed,
+  or it was removed between subscribing to changes and reading the list) revokes nothing,
+  because a removal carries only the session id. Its browsers stay in while another session of
+  its subject is live.
+- Removing one T3 Connect device signs out the browsers opened from every T3 Connect device,
+  because they share one access key. A T3 Connect device that just stops connecting keeps its
+  browsers in for 5 minutes after its last session runs out, and while another one stays
+  signed in, up to the cookie's 12 hours.
+- Restarting the desktop app replaces its session on its own computer, and the store reports
+  that as a removal, so browsers it opened that computer's links in have to enter again.
+- Idle keep-alive connections are not cut when a link ends; running requests on them are.
+  Each request is re-authorized, so the next request on them fails.
+- `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.
+- Lanes released while the server was down are not ended at startup.
+- Readiness comes only from log lines. "Registered tunnel connection" is confirmed with a
+  `cloudflared` 2026.9.1 found on `PATH`; "Unregistered tunnel connection" has not been seen,
+  and neither line is checked against the 2026.10.0 that Loom installs. An outdated binary is
+  not upgraded.
+- The default gateway port 3779 collides when a dev server and the live install both enable
+  previews on one computer.

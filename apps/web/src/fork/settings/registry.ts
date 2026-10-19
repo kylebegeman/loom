@@ -7,6 +7,7 @@ import { AppleBuildToolingSettingsSection } from "../apple-build-tooling/setting
 import { DeviceQaSettingsSection } from "../device-qa/settings";
 import { PanelPickerSettingsSection } from "../panel-picker/settings";
 import { CodeGraphSettingsSection } from "../code-graph/settings";
+import { PreviewLinksSettingsSection } from "../preview-links/settings";
 export interface ForkSettingsSection {
   readonly id: string;
   readonly title: string;
@@ -25,4 +26,5 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
   { id: "device-qa", title: "Device QA", Component: DeviceQaSettingsSection },
   { id: "panel-picker", title: "Panel picker", Component: PanelPickerSettingsSection },
   { id: "code-graph", title: "Code graph", Component: CodeGraphSettingsSection },
+  { id: "preview-links", title: "Previews", Component: PreviewLinksSettingsSection },
 ];

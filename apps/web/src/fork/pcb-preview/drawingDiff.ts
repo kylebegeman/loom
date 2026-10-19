@@ -21,29 +21,45 @@ export function diffRegions(
   for (let y = 0; y < a.height; y++)
     for (let x = 0; x < a.width; x++) {
       const i = (y * a.width + x) * 4;
-      if ([0, 1, 2, 3].some((c) => Math.abs(a.data[i + c]! - b.data[i + c]!) > threshold))
+      if (
+        Math.abs(a.data[i]! - b.data[i]!) > threshold ||
+        Math.abs(a.data[i + 1]! - b.data[i + 1]!) > threshold ||
+        Math.abs(a.data[i + 2]! - b.data[i + 2]!) > threshold ||
+        Math.abs(a.data[i + 3]! - b.data[i + 3]!) > threshold
+      )
         counts[Math.floor(y / cell) * w + Math.floor(x / cell)]!++;
     }
-  const marked = new Set<number>();
+  const marked = new Uint8Array(counts.length),
+    seeds = new Uint32Array(counts.length);
+  let seedCount = 0;
   for (let i = 0; i < counts.length; i++)
     if (counts[i]! >= minPixels) {
       const x = i % w,
         y = Math.floor(i / w);
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++)
-          if (x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h)
-            marked.add((y + dy) * w + x + dx);
+          if (x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h) {
+            const n = (y + dy) * w + x + dx;
+            if (!marked[n]) {
+              marked[n] = 1;
+              seeds[seedCount++] = n;
+            }
+          }
     }
   const regions: PcbChangeRegion[] = [];
-  while (marked.size) {
-    const first = marked.values().next().value!;
-    marked.delete(first);
-    const queue = [first];
+  const queue = new Uint32Array(seedCount);
+  // Discovery order determines which equal-area regions survive truncation.
+  for (let seed = 0; seed < seedCount; seed++) {
+    const first = seeds[seed]!;
+    if (!marked[first]) continue;
+    marked[first] = 0;
+    queue[0] = first;
+    let queueLength = 1;
     let x0 = w,
       y0 = h,
       x1 = 0,
       y1 = 0;
-    for (let q = 0; q < queue.length; q++) {
+    for (let q = 0; q < queueLength; q++) {
       const i = queue[q]!,
         x = i % w,
         y = Math.floor(i / w);
@@ -55,7 +71,10 @@ export function diffRegions(
         for (let dx = -1; dx <= 1; dx++)
           if (x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h) {
             const n = (y + dy) * w + x + dx;
-            if (marked.delete(n)) queue.push(n);
+            if (marked[n]) {
+              marked[n] = 0;
+              queue[queueLength++] = n;
+            }
           }
     }
     regions.push({

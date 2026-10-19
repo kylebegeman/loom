@@ -177,8 +177,12 @@ export const toNode = (node: IndexedNode): CodeGraphNode => ({
 const bare = (label: string) => label.replace(/\(\)$/, "").toLowerCase();
 
 const isSubsequence = (needle: string, haystack: string) => {
+  if (needle.length > haystack.length) return false;
   let at = 0;
-  for (const char of haystack) if (char === needle[at]) at += 1;
+  for (const char of haystack) {
+    if (char === needle[at]) at += 1;
+    if (at === needle.length) return true;
+  }
   return at === needle.length;
 };
 
@@ -192,6 +196,17 @@ const searchScore = (node: IndexedNode, query: string) => {
   return null;
 };
 
+interface SearchMatch {
+  readonly node: IndexedNode;
+  readonly score: number;
+}
+
+const compareSearchMatch = (node: IndexedNode, score: number, other: SearchMatch) =>
+  score - other.score ||
+  node.label.length - other.node.label.length ||
+  node.file.localeCompare(other.node.file) ||
+  (node.line ?? 0) - (other.node.line ?? 0);
+
 /** Symbols and files by name: exact, prefix, substring, file path, then subsequence. */
 export const search = (
   index: CodeGraphIndex,
@@ -200,21 +215,44 @@ export const search = (
 ): CodeGraphSearchResult => {
   const query = bare(rawQuery.trim());
   if (query === "") return { nodes: [], truncated: false };
-  const scored = index.nodes.flatMap((node) => {
-    if (node.external) return [];
+  const bounded =
+    Number.isFinite(limit) &&
+    limit >= 0 &&
+    limit <= MAX_SEARCH_RESULTS &&
+    limit < index.nodes.length;
+  const capacity = Math.floor(limit);
+  const scored: SearchMatch[] = [];
+  let matches = 0;
+  for (const node of index.nodes) {
+    if (node.external) continue;
     const score = searchScore(node, query);
-    return score === null ? [] : [{ node, score }];
-  });
-  scored.sort(
-    (a, b) =>
-      a.score - b.score ||
-      a.node.label.length - b.node.label.length ||
-      a.node.file.localeCompare(b.node.file) ||
-      (a.node.line ?? 0) - (b.node.line ?? 0),
-  );
+    if (score === null) continue;
+    matches += 1;
+    if (!bounded) {
+      scored.push({ node, score });
+      continue;
+    }
+    if (capacity === 0) continue;
+    // Keep only the requested winners; broad queries can match the entire graph.
+    if (
+      scored.length === capacity &&
+      compareSearchMatch(node, score, scored[scored.length - 1]!) >= 0
+    )
+      continue;
+    let low = 0;
+    let high = scored.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (compareSearchMatch(node, score, scored[middle]!) < 0) high = middle;
+      else low = middle + 1;
+    }
+    scored.splice(low, 0, { node, score });
+    if (scored.length > capacity) scored.pop();
+  }
+  if (!bounded) scored.sort((a, b) => compareSearchMatch(a.node, a.score, b));
   return {
     nodes: scored.slice(0, limit).map((entry) => toNode(entry.node)),
-    truncated: scored.length > limit,
+    truncated: matches > limit,
   };
 };
 
@@ -422,8 +460,16 @@ export const impact = (
 
 const STRUCTURAL_RELATIONS: ReadonlySet<string> = new Set(["contains", "method"]);
 
+const compareHub = (node: IndexedNode, degree: number, other: CodeGraphSummary["hubs"][number]) =>
+  other.degree - degree || node.label.localeCompare(other.node.label);
+
+// Indexes and summary contracts are readonly; a rebuild replaces the entire index.
+const summaries = new WeakMap<CodeGraphIndex, CodeGraphSummary>();
+
 /** Counts, the largest communities with their main files, and the most connected symbols. */
 export const summary = (index: CodeGraphIndex): CodeGraphSummary => {
+  const cached = summaries.get(index);
+  if (cached) return cached;
   const relations = new Map<string, number>();
   for (const edges of index.out) {
     for (const edge of edges) relations.set(edge.relation, (relations.get(edge.relation) ?? 0) + 1);
@@ -440,15 +486,28 @@ export const summary = (index: CodeGraphIndex): CodeGraphSummary => {
     communities.set(node.community, files);
   }
 
-  const hubs = index.nodes.flatMap((node, i) => {
-    if (node.external || node.kind === "file") return [];
-    const degree = [...index.out[i]!, ...index.in[i]!].filter(
-      (edge) => !STRUCTURAL_RELATIONS.has(edge.relation),
-    ).length;
-    return degree > 0 ? [{ node: toNode(node), degree }] : [];
-  });
+  const hubs: Array<CodeGraphSummary["hubs"][number]> = [];
+  for (let i = 0; i < index.nodes.length; i += 1) {
+    const node = index.nodes[i]!;
+    if (node.external || node.kind === "file") continue;
+    let degree = 0;
+    for (const edge of index.out[i]!) if (!STRUCTURAL_RELATIONS.has(edge.relation)) degree += 1;
+    for (const edge of index.in[i]!) if (!STRUCTURAL_RELATIONS.has(edge.relation)) degree += 1;
+    if (degree === 0) continue;
+    if (hubs.length === SUMMARY_HUBS && compareHub(node, degree, hubs[hubs.length - 1]!) >= 0)
+      continue;
+    let low = 0;
+    let high = hubs.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (compareHub(node, degree, hubs[middle]!) < 0) high = middle;
+      else low = middle + 1;
+    }
+    hubs.splice(low, 0, { node: toNode(node), degree });
+    if (hubs.length > SUMMARY_HUBS) hubs.pop();
+  }
 
-  return {
+  const result = {
     nodeCount,
     edgeCount: index.edgeCount,
     fileCount: index.byFile.size,
@@ -466,8 +525,8 @@ export const summary = (index: CodeGraphIndex): CodeGraphSummary => {
       }))
       .sort((a, b) => b.size - a.size || a.community - b.community)
       .slice(0, SUMMARY_COMMUNITIES),
-    hubs: hubs
-      .sort((a, b) => b.degree - a.degree || a.node.label.localeCompare(b.node.label))
-      .slice(0, SUMMARY_HUBS),
+    hubs,
   };
+  summaries.set(index, result);
+  return result;
 };

@@ -5,7 +5,7 @@ import { getBrowseDirectoryPath } from "@t3tools/client-runtime/state/projects";
 import { useState } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { openThreadUrlExternally } from "../../fork/preview-links/navigation"; // fork: preview-links
 import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -179,7 +179,7 @@ export function FileMarkdownPreview(props: {
     openMedia(href, true);
   };
   const onLinkPress = (href: string) => {
-    if (!openMedia(href)) void tryOpenExternalUrl(href, "markdown-link");
+    if (!openMedia(href)) void openThreadUrlExternally(props.environmentId, href, "markdown-link"); // fork: preview-links
   };
 
   return (

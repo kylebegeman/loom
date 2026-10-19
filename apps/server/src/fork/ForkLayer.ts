@@ -40,6 +40,7 @@ import * as DeviceQa from "./device-qa/DeviceQaService.ts";
 import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
 import * as CodeGraph from "./code-graph/CodeGraphService.ts";
 import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
+import * as PreviewLinks from "./preview-links/PreviewLinksService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -149,6 +150,10 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provideMerge(
       CodeGraph.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
     ),
+  ),
+  // Agent links end with their lane, so this watches the one ProjectLifecycle instance too.
+  PreviewLinks.layer.pipe(
+    Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
   ),
   // The reactor runs suggestions for the service MCP and RPC also call.
   LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(

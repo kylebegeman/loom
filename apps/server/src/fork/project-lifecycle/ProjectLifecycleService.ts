@@ -84,7 +84,14 @@ import {
   shimsDir,
   slotsDir,
 } from "./shell.ts";
-import { SPACE_FOLDERS, imageBackendAvailable, makeSpaceOps, type LanePaths } from "./space.ts";
+import {
+  SPACE_FOLDERS,
+  imageBackendAvailable,
+  makeSpaceOps,
+  type LanePaths,
+  type SpaceOps,
+} from "./space.ts";
+import { makePortClaims, portClaimsDir } from "./portClaims.ts";
 import { makeStore, type LaneRow } from "./store.ts";
 
 const WATCHDOG_INTERVAL = "30 seconds";
@@ -111,6 +118,16 @@ interface LaneLive {
   message: string | null;
   failed: boolean;
   leases: ReadonlyArray<LaneLease>;
+  /**
+   * A release attempt already stopped the listeners on the lane's ports. Listeners are matched
+   * by port alone, so whatever listens there during a retry started after the lane was let go.
+   */
+  portsReleased: boolean;
+}
+
+interface SpaceBackends {
+  readonly image: SpaceOps;
+  readonly folder: SpaceOps;
 }
 
 export interface ProjectLifecycleOptions {
@@ -120,6 +137,8 @@ export interface ProjectLifecycleOptions {
   readonly xcrunPath?: string;
   readonly lsofPath?: string;
   readonly dockerPath?: string;
+  /** Tests wrap the space backends, for example to keep an unmount busy. */
+  readonly wrapSpaces?: (spaces: SpaceBackends) => SpaceBackends;
   /** Free and total bytes on the volume holding `path`. Tests pin it; by default statfs. */
   readonly hostSpace?: (path: string) => Promise<{ readonly free: number; readonly total: number }>;
 }
@@ -214,7 +233,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const platform = yield* HostProcess.Platform;
     const runner = yield* ProcessRunner.ProcessRunner;
     const store = yield* makeStore;
-    const spaces = yield* makeSpaceOps;
+    const madeSpaces = yield* makeSpaceOps;
+    const spaces = options.wrapSpaces?.(madeSpaces) ?? madeSpaces;
     const leaseOps = yield* makeLeaseOps({
       homeDir: options.homeDir,
       xcrunPath: options.xcrunPath ?? "xcrun",
@@ -249,19 +269,57 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     const lanes = new Map<string, LaneRow>();
     for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
-    const nextPortBase = () =>
-      allocatePortBase(
-        new Set(
-          [...lanes.values()].flatMap((lane) => (lane.portBase === null ? [] : [lane.portBase])),
+    const claims = makePortClaims(portClaimsDir(options.homeDir), config.stateDir);
+    const ownBases = (except?: string) =>
+      [...lanes.values()].flatMap((lane) =>
+        lane.portBase === null || lane.id === except ? [] : [lane.portBase],
+      );
+    /** A free block claimed for the lane, skipping this server's lanes and other servers' claims. */
+    const claimPortBase = (laneId: string) =>
+      node("claim lane ports", async () => {
+        const taken = await claims.heldByOthers();
+        for (const base of ownBases(laneId)) taken.add(base);
+        for (;;) {
+          const base = allocatePortBase(taken);
+          if (base === null || (await claims.claim(base, laneId))) return base;
+          taken.add(base);
+        }
+      }).pipe(
+        // Without the shared claims, ports are still unique among this server's lanes.
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not claim lane ports", { cause }).pipe(
+            Effect.as(allocatePortBase(new Set(ownBases(laneId)))),
+          ),
         ),
       );
-    // Lanes made before ports existed get a block on first load.
+    yield* node("prune lane port claims", () =>
+      claims.prune(
+        new Map(
+          [...lanes.values()].flatMap((lane) =>
+            lane.portBase === null ? [] : [[lane.portBase, lane.id] as const],
+          ),
+        ),
+      ),
+    ).pipe(Effect.ignore({ log: true }));
+    // Lanes made before ports existed, or whose block another server claimed first, move.
     for (const lane of lanes.values()) {
-      if (lane.portBase !== null) continue;
-      const portBase = nextPortBase();
-      if (portBase === null) break;
+      const current = lane.portBase;
+      if (current !== null) {
+        const held = yield* node("claim lane ports", () => claims.claim(current, lane.id)).pipe(
+          Effect.orElseSucceed(() => true),
+        );
+        if (held) continue;
+      }
+      const portBase = yield* claimPortBase(lane.id);
+      if (portBase === null) continue;
       yield* store.setPortBase(lane.id, portBase).pipe(Effect.orDie);
-      lanes.set(lane.id, { ...lane, portBase });
+      const moved = { ...lane, portBase };
+      lanes.set(lane.id, moved);
+      if (current !== null)
+        yield* writeAtomically(
+          `${lane.laneDir}/LANE.md`,
+          laneMarkdown(moved, rootOf(yield* getSettings)),
+        ).pipe(Effect.ignore({ log: true }));
     }
     const live = new Map<string, LaneLive>();
     const liveOf = (id: string) => {
@@ -277,6 +335,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           message: null,
           failed: false,
           leases: [],
+          portsReleased: false,
         };
         live.set(id, entry);
       }
@@ -609,12 +668,16 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       const ledger = yield* readLedger(lane);
       const table = yield* leaseOps.processTable;
       const ports = portsOf(lane);
+      const state = liveOf(lane.id);
       const listening =
-        ports === null ? [] : [...(yield* leaseOps.listeners(ports.first, ports.last))];
+        ports === null || state.portsReleased
+          ? []
+          : [...(yield* leaseOps.listeners(ports.first, ports.last))];
       const recorded = ledger
         .filter((entry) => table !== null && liveProcess(table, entry))
         .map((entry) => Number(entry.ref));
       const problems = [...(yield* stopProcesses([...recorded, ...listening]))];
+      if (table !== null) state.portsReleased = true;
       const docker = (yield* leaseOps.dockerResources) ?? [];
       // Containers go first; a volume in use cannot be removed.
       for (const kind of ["container", "volume"] as const)
@@ -737,7 +800,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         capBytes,
         device: null,
         createdAt: DateTime.formatIso(yield* DateTime.now),
-        portBase: nextPortBase(),
+        portBase: yield* claimPortBase(id),
       };
       yield* node("create lane", () => NodeFSP.mkdir(lane.laneDir, { recursive: true }));
       if (rootIsNew && platform === "darwin")
@@ -935,6 +998,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* store.deleteLane(lane.id).pipe(Effect.orDie);
       lanes.delete(lane.id);
       live.delete(lane.id);
+      const { portBase } = lane;
+      if (portBase !== null)
+        yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
+          Effect.ignore({ log: true }),
+        );
       yield* writeShellFiles;
       return true;
     });
@@ -1058,6 +1126,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
             Effect.gen(function* () {
               const holders = holdersOf(lane, view);
               if (holders.length === 0) return yield* removeLane(lane).pipe(Effect.asVoid);
+              liveOf(lane.id).portsReleased = false;
               let entry = yield* measure(lane);
               if (!entry.mounted && lane.backend === "image") {
                 yield* attach(lane);

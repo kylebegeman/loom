@@ -1,4 +1,5 @@
 export type SettingsSheetTarget =
+  | "PreviewLinks" // fork: preview-links
   | "SettingsEnvironments"
   | "SettingsNotifications"
   | "SettingsThreads"

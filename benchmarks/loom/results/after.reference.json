@@ -1,0 +1,528 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "capturedAt": "2026-10-17T21:10:46.201Z",
+    "revision": "d22797d75485d6747c344c07e2821eec95b4e022",
+    "dirtyFiles": [],
+    "node": "v24.21.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5 Pro",
+    "logicalCpus": 18,
+    "memoryBytes": 68719476736,
+    "loadAtStart": [19.20068359375, 19.177734375, 22.21533203125],
+    "freeMemoryAtStartBytes": 136757248,
+    "sourceDigests": {
+      "apps/server/src/fork/code-graph/CodeGraphIndex.ts": "138d80e999c1d383ac7a5cbcb9ec44192db126ef026b59d70f90efb59003b1b4",
+      "apps/server/src/fork/model-preview-3d/check/grid.ts": "5f33633d02803db15d619c0ad02e5ba9d560eb722d58b0581223091b97e07e32",
+      "apps/server/src/fork/pcb-preview/semantics.ts": "a2aef1bbbff3adcb4315167feb0fcb5140a4c09aa9cc900b0e72f95ac298cd24",
+      "apps/server/src/fork/project-library/LibraryStore.ts": "17fe602cefd7b2a024782e7d4dddeaebf5fca0c9a1f1a1e0abf82ad2a1d50ccc",
+      "apps/web/src/fork/model-preview-3d/viewer/snap.ts": "8a783ca587e1d6572e9c7459cb30df0da8e15593159600489589a0ab82880c43",
+      "apps/web/src/fork/pcb-preview/drawingDiff.ts": "0d96e86c12ebf9ce0e836b571d5c8a43d616bf70d74809741a9a1f1778cd289a"
+    },
+    "harnessRevision": "d9e6dbea0370a6a38fb683cb742e3292b2b884f0"
+  },
+  "options": {
+    "sweeps": 5,
+    "samples": 21,
+    "minTimeMs": 250,
+    "filter": ""
+  },
+  "comparison": {
+    "method": "alternating-reference-current",
+    "referenceRevision": "d22797d75485d6747c344c07e2821eec95b4e022",
+    "benchmarkRevision": "d9e6dbea0370a6a38fb683cb742e3292b2b884f0",
+    "runOrder": [
+      {
+        "round": 1,
+        "source": "reference",
+        "startedAt": "2026-10-17T21:10:46.520Z",
+        "finishedAt": "2026-10-17T21:11:23.812Z",
+        "loadBefore": [19.20068359375, 19.177734375, 22.21533203125],
+        "loadAfter": [19.17529296875, 19.14697265625, 22.06103515625]
+      },
+      {
+        "round": 1,
+        "source": "current",
+        "startedAt": "2026-10-17T21:11:23.814Z",
+        "finishedAt": "2026-10-17T21:11:45.640Z",
+        "loadBefore": [19.17529296875, 19.14697265625, 22.06103515625],
+        "loadAfter": [19.20166015625, 19.1796875, 22.00634765625]
+      },
+      {
+        "round": 2,
+        "source": "current",
+        "startedAt": "2026-10-17T21:11:45.643Z",
+        "finishedAt": "2026-10-17T21:12:07.400Z",
+        "loadBefore": [19.20166015625, 19.1796875, 22.00634765625],
+        "loadAfter": [20.72216796875, 19.47216796875, 22.04150390625]
+      },
+      {
+        "round": 2,
+        "source": "reference",
+        "startedAt": "2026-10-17T21:12:07.403Z",
+        "finishedAt": "2026-10-17T21:12:40.650Z",
+        "loadBefore": [20.72216796875, 19.47216796875, 22.04150390625],
+        "loadAfter": [16.74462890625, 18.57568359375, 21.607421875]
+      },
+      {
+        "round": 3,
+        "source": "reference",
+        "startedAt": "2026-10-17T21:12:40.651Z",
+        "finishedAt": "2026-10-17T21:13:17.990Z",
+        "loadBefore": [16.74462890625, 18.57568359375, 21.607421875],
+        "loadAfter": [16.9775390625, 18.40625, 21.4208984375]
+      },
+      {
+        "round": 3,
+        "source": "current",
+        "startedAt": "2026-10-17T21:13:17.992Z",
+        "finishedAt": "2026-10-17T21:13:41.302Z",
+        "loadBefore": [16.9775390625, 18.40625, 21.4208984375],
+        "loadAfter": [17.107421875, 18.32421875, 21.30322265625]
+      },
+      {
+        "round": 4,
+        "source": "current",
+        "startedAt": "2026-10-17T21:13:41.308Z",
+        "finishedAt": "2026-10-17T21:14:00.807Z",
+        "loadBefore": [17.107421875, 18.32421875, 21.30322265625],
+        "loadAfter": [16.1455078125, 18.03955078125, 21.1318359375]
+      },
+      {
+        "round": 4,
+        "source": "reference",
+        "startedAt": "2026-10-17T21:14:00.810Z",
+        "finishedAt": "2026-10-17T21:14:36.229Z",
+        "loadBefore": [16.1455078125, 18.03955078125, 21.1318359375],
+        "loadAfter": [14.72119140625, 17.46728515625, 20.796875]
+      },
+      {
+        "round": 5,
+        "source": "reference",
+        "startedAt": "2026-10-17T21:14:36.231Z",
+        "finishedAt": "2026-10-17T21:15:10.232Z",
+        "loadBefore": [14.72119140625, 17.46728515625, 20.796875],
+        "loadAfter": [13.8359375, 16.94140625, 20.46923828125]
+      },
+      {
+        "round": 5,
+        "source": "current",
+        "startedAt": "2026-10-17T21:15:10.234Z",
+        "finishedAt": "2026-10-17T21:15:31.400Z",
+        "loadBefore": [13.8359375, 16.94140625, 20.46923828125],
+        "loadAfter": [12.4111328125, 16.41064453125, 20.19580078125]
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "id": "pcb.netlist.100",
+      "description": "Merge KiCad connectivity, library pin names and alternate pin functions into inspected components",
+      "workload": {
+        "components": 100,
+        "pins": 800,
+        "nets": 64
+      },
+      "fingerprint": "92cf6880ff9fc5496e84f01bd660914b77cff2391021f5171b19965f8b8e2c7b",
+      "medianMs": 1.9722919999999249,
+      "p95Ms": 4.29037500000004,
+      "sweepMediansMs": [
+        2.213792000000012, 1.680417000000034, 1.8333339999999225, 2.161000000000058,
+        1.9722919999999249
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "pcb.netlist.1000",
+      "description": "Merge KiCad connectivity, library pin names and alternate pin functions into inspected components",
+      "workload": {
+        "components": 1000,
+        "pins": 16000,
+        "nets": 64
+      },
+      "fingerprint": "f61ba7f06cc9e753132ec8e3bf5fbe2109df5561860f0d5306ec68e00f6d1aaa",
+      "medianMs": 116.40012500000012,
+      "p95Ms": 181.81070799999998,
+      "sweepMediansMs": [
+        150.2139159999997, 116.40012500000012, 126.30308400000013, 110.78420800000004,
+        112.70545800000036
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "pcb.drawing.256.sparse",
+      "description": "Detect changed PCB drawing regions, dilate and combine adjacent cells, and bound the output",
+      "workload": {
+        "width": 256,
+        "height": 256,
+        "pixels": 65536,
+        "mode": "sparse"
+      },
+      "fingerprint": "895baaeacf29b9c3f18c8bea1703423728741384122279800eed05747ffe9833",
+      "medianMs": 0.8432920000004742,
+      "p95Ms": 1.5717500000000655,
+      "sweepMediansMs": [
+        0.961250000000291, 0.8852919999999358, 0.7565830000003189, 0.8432920000004742,
+        0.7692500000002838
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "pcb.drawing.1024.identical",
+      "description": "Detect changed PCB drawing regions, dilate and combine adjacent cells, and bound the output",
+      "workload": {
+        "width": 1024,
+        "height": 1024,
+        "pixels": 1048576,
+        "mode": "identical"
+      },
+      "fingerprint": "bbb2d384349564e1259430f7ddad997a30bf1957df423f6d112f1bbda553a29b",
+      "medianMs": 12.564209000000119,
+      "p95Ms": 15.696208000000297,
+      "sweepMediansMs": [
+        15.274875000000065, 13.67620799999986, 11.093665999999757, 12.564209000000119,
+        11.824915999999575
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "pcb.drawing.1024.dense",
+      "description": "Detect changed PCB drawing regions, dilate and combine adjacent cells, and bound the output",
+      "workload": {
+        "width": 1024,
+        "height": 1024,
+        "pixels": 1048576,
+        "mode": "dense"
+      },
+      "fingerprint": "4b158a5a2d77bcbb9b2d226644d330c29d40df169602c2b03c8b8efdbad09a2b",
+      "medianMs": 36.2242499999993,
+      "p95Ms": 45.41362499999923,
+      "sweepMediansMs": [
+        42.319916999998895, 36.20770900000025, 36.80450000000019, 36.2242499999993,
+        35.12679200000002
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "model.snap.fan.256",
+      "description": "Build snapping adjacency for a closed CAD cylinder with high-valence cap centers.",
+      "workload": {
+        "triangles": 1024,
+        "spokes": 256,
+        "indexed": false
+      },
+      "fingerprint": "3533f33f772265f520211ccf0a2c22f2cdca345ab4f76e1b3943d2001502de35",
+      "medianMs": 0.47149999999965075,
+      "p95Ms": 0.6091670000005251,
+      "sweepMediansMs": [
+        0.48387499999989814, 0.49904200000037235, 0.47149999999965075, 0.4543340000000171,
+        0.4444999999996071
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "model.snap.fan.4096",
+      "description": "Build snapping adjacency for a closed CAD cylinder with high-valence cap centers.",
+      "workload": {
+        "triangles": 16384,
+        "spokes": 4096,
+        "indexed": false
+      },
+      "fingerprint": "a05f0f274ec99bc15508a8d063c87a744bb11fdaaf5508f8b5c27b92210ef1e6",
+      "medianMs": 63.29545800000051,
+      "p95Ms": 81.76379199999974,
+      "sweepMediansMs": [
+        69.78554199999962, 63.29545800000051, 62.29858299999978, 66.4507080000003,
+        61.410250000000815
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "model.snap.regular.32768",
+      "description": "Build snapping adjacency for a regular indexed surface with low vertex valence.",
+      "workload": {
+        "triangles": 32768,
+        "divisions": 128,
+        "indexed": true
+      },
+      "fingerprint": "bd9ada44699a622f241a2d99ec189ec74642d2dedcdfd1eea23b1ab2940d46eb",
+      "medianMs": 7.007832999999664,
+      "p95Ms": 8.25720899999942,
+      "sweepMediansMs": [
+        7.710125000001426, 7.007832999999664, 6.9169590000001335, 7.303916999999274,
+        6.909417000000758
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "model.grid.box.12288",
+      "description": "Build the print-check ray grid for a densely tessellated closed box.",
+      "workload": {
+        "triangles": 12288,
+        "divisions": 32,
+        "dimensionsMm": [20, 20, 20]
+      },
+      "fingerprint": "f8c0a3060d7979e293cb94af0f6b2ff4c431744bc0f2856fb087029f08719d96",
+      "medianMs": 5.409499999999753,
+      "p95Ms": 6.330167000000074,
+      "sweepMediansMs": [
+        5.409499999999753, 5.4490420000001905, 5.248458000000028, 5.628208000000086,
+        5.048375000000306
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "model.grid.box.49152",
+      "description": "Build the print-check ray grid for a densely tessellated closed box.",
+      "workload": {
+        "triangles": 49152,
+        "divisions": 64,
+        "dimensionsMm": [20, 20, 20]
+      },
+      "fingerprint": "f8c64fd7d0c51e95691fbf7723df5a3aaeffddaa5b6028d10e3d7e73a4ef0bbb",
+      "medianMs": 21.835416999998415,
+      "p95Ms": 28.362957999999708,
+      "sweepMediansMs": [
+        22.253375000000233, 21.516624999998385, 21.835416999998415, 23.73229199999878,
+        19.84833299999991
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "model.grid.plate.49152",
+      "description": "Build the print-check ray grid for a densely tessellated closed box.",
+      "workload": {
+        "triangles": 49152,
+        "divisions": 64,
+        "dimensionsMm": [100, 100, 0.6]
+      },
+      "fingerprint": "3ce795a79508f02305f92e8a39ddfb8ec24a44fd4045bb36dd3af04c7a871e1f",
+      "medianMs": 20.95891599999959,
+      "p95Ms": 28.96150000000125,
+      "sweepMediansMs": [
+        23.356458000000202, 20.95891599999959, 20.95745799999895, 21.786834000000454,
+        20.943916000000172
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.search.broad.10k",
+      "description": "Code map search with many matching files and duplicate symbols in a medium graph",
+      "workload": {
+        "nodes": 10000,
+        "edges": 40000,
+        "query": "record",
+        "limit": 50
+      },
+      "fingerprint": "2e366008e0ae71c1aaee1252fd733f002960b455c3c5cfe755dbd42959f30837",
+      "medianMs": 4.902083000000857,
+      "p95Ms": 6.585500000001048,
+      "sweepMediansMs": [
+        5.248874999999316, 4.102415999999721, 4.902083000000857, 5.087000000001353,
+        4.029040999999779
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.search.broad.100k",
+      "description": "Code map search with many matching files and duplicate symbols in a large graph",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000,
+        "query": "record",
+        "limit": 50
+      },
+      "fingerprint": "6dee7f799ac8c85f3f6803d4864f8c0a045504ad78c34d8fa270b660b7d9f83d",
+      "medianMs": 109.01345899999978,
+      "p95Ms": 148.43516699999964,
+      "sweepMediansMs": [
+        122.68108399999983, 86.25616699999955, 109.01345899999978, 116.15129100000013,
+        79.26062499999898
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "graph.search.exact.100k",
+      "description": "Exact symbol lookup with duplicate names across a large project",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000,
+        "query": "loadRecord487()",
+        "limit": 50
+      },
+      "fingerprint": "bc13ac3dc91470ec2203161ed3da4fca73d7293309ec2e9d37ea48d6fdc7e8c2",
+      "medianMs": 15.816375000000335,
+      "p95Ms": 18.130084000000352,
+      "sweepMediansMs": [
+        16.71675000000323, 15.816375000000335, 16.850083999999697, 15.700249999999869,
+        15.171167000000423
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.search.miss.100k",
+      "description": "Code map search that cannot match any symbol or file in a large graph",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000,
+        "query": "no-such-code-map-symbol",
+        "limit": 50
+      },
+      "fingerprint": "c5fc998f632f24cbdc0a24d705456bab2bea2f3ab0b4aff57da765f12d67f894",
+      "medianMs": 12.83887500000128,
+      "p95Ms": 15.374416999999085,
+      "sweepMediansMs": [
+        12.83887500000128, 12.346750000000611, 13.31879200000185, 13.041833000002953,
+        12.743666999998823
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.parse.100k",
+      "description": "Validate and index a large Graphify graph before serving Code map queries",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000
+      },
+      "fingerprint": "f73e70bc87023a5e8eb80f2f9b539e46b4e2184b226e73f478c964831ecdd83e",
+      "medianMs": 148.19566699999996,
+      "p95Ms": 240.77100000000064,
+      "sweepMediansMs": [
+        148.19566699999996, 142.41941600000064, 161.3742080000011, 137.4363340000018,
+        153.9533330000013
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.summary.cold.100k",
+      "description": "Compute the Code map overview for an index without a cached summary",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000,
+        "communities": 40
+      },
+      "fingerprint": "178739e7651507b293bb2f40edff508196f3712252cb65255158ad99bffe398a",
+      "medianMs": 61.76633299999958,
+      "p95Ms": 99.66812500000015,
+      "sweepMediansMs": [
+        62.72049999999945, 57.646458999999595, 69.96008399999846, 50.05149999999776,
+        61.76633299999958
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "graph.summary.100k",
+      "description": "Open the Code map overview repeatedly for one unchanged large graph",
+      "workload": {
+        "nodes": 100000,
+        "edges": 400000,
+        "communities": 40
+      },
+      "fingerprint": "178739e7651507b293bb2f40edff508196f3712252cb65255158ad99bffe398a",
+      "medianMs": 60.23658299999806,
+      "p95Ms": 99.5310419999987,
+      "sweepMediansMs": [
+        65.74279200000092, 54.20204100000046, 68.02350000000297, 53.62945799999943,
+        60.23658299999806
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    },
+    {
+      "id": "library.history.rewrite.100",
+      "description": "Rewrite browsing history and the full-text index through LibraryStore transactions; two alternating archives with deduplicated compressed blobs",
+      "workload": {
+        "historyItems": 100,
+        "archiveWrites": 2,
+        "pageItems": 40,
+        "compressedBlobs": 2
+      },
+      "fingerprint": "e07c4ec6eca4d3e170ceca5289cd3981034b60ff00c2359e54f29575c88d4c4f",
+      "medianMs": 3.480999999999767,
+      "p95Ms": 5.2948750000032305,
+      "sweepMediansMs": [
+        3.439417000001413, 3.0246250000018335, 3.480999999999767, 3.5054999999993015,
+        3.5762920000015583
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "library.history.rewrite.1000",
+      "description": "Rewrite browsing history and the full-text index through LibraryStore transactions; two alternating archives with deduplicated compressed blobs",
+      "workload": {
+        "historyItems": 1000,
+        "archiveWrites": 2,
+        "pageItems": 40,
+        "compressedBlobs": 2
+      },
+      "fingerprint": "77de656c3f073418af0034bdd5e99276e8d92d983a97bab0bc7d5bff29edced9",
+      "medianMs": 29.906499999997322,
+      "p95Ms": 35.56533300000228,
+      "sweepMediansMs": [
+        29.906499999997322, 28.695999999999913, 31.782875000000786, 29.114041000000725,
+        30.2288750000007
+      ],
+      "reductionPct": null,
+      "target": false,
+      "passed": null
+    },
+    {
+      "id": "library.history.rewrite.8000",
+      "description": "Rewrite browsing history and the full-text index through LibraryStore transactions; two alternating archives with deduplicated compressed blobs",
+      "workload": {
+        "historyItems": 8000,
+        "archiveWrites": 2,
+        "pageItems": 40,
+        "compressedBlobs": 2
+      },
+      "fingerprint": "a5977750a192a41d27eb7ca37662b45bf749b74f7062fb9d4abae9602f0acf46",
+      "medianMs": 227.26279100000102,
+      "p95Ms": 293.075417,
+      "sweepMediansMs": [
+        216.77770800000508, 227.26279100000102, 255.86737499999435, 252.77337499999703,
+        213.35558400000082
+      ],
+      "reductionPct": null,
+      "target": true,
+      "passed": null
+    }
+  ]
+}

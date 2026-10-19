@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import type { MiniWorker } from "@t3tools/contracts/fork";
 import { MiniOffloadError } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
@@ -19,6 +20,15 @@ export class MiniSshTransport extends Context.Service<
     ) => Effect.Effect<unknown, MiniOffloadError>;
   }
 >()("t3/fork/mini-offload/MiniSshTransport") {}
+
+const MIB = 1024 * 1024;
+/** A snapshot upload may cross a slow remote link, so it gets at least 1 MiB/s beyond the base deadline. */
+const deadline = (operation: "receive" | "rpc", header: object) =>
+  Duration.seconds(
+    operation === "receive" && "archive_bytes" in header && typeof header.archive_bytes === "number"
+      ? 120 + Math.ceil(header.archive_bytes / MIB)
+      : 120,
+  );
 
 /** Nothing from the job is interpolated into the SSH command. Host configuration is administrator owned. */
 const sshArguments = (worker: MiniWorker, operation: "receive" | "rpc") => [
@@ -54,11 +64,11 @@ const request: MiniSshTransport["Service"]["request"] = (worker, operation, head
       operation === "rpc" &&
       "action" in header &&
       (header.action === "patch" || header.action === "artifacts")
-        ? 90 * 1024 * 1024
+        ? 90 * MIB
         : operation === "rpc" && "action" in header && header.action === "logs"
           ? // JSON escapes can expand a 1 MiB log tail to 6 MiB.
-            7 * 1024 * 1024
-          : 2 * 1024 * 1024;
+            7 * MIB
+          : 2 * MIB;
     let bytes = 0;
     let done = false;
     let source: NodeFS.ReadStream | undefined;
@@ -100,7 +110,7 @@ const request: MiniSshTransport["Service"]["request"] = (worker, operation, head
       if (child.exitCode === null) child.kill("SIGKILL");
     });
   }).pipe(
-    Effect.timeout("120 seconds"),
+    Effect.timeout(deadline(operation, header)),
     Effect.mapError((cause) =>
       cause._tag === "MiniOffloadError"
         ? cause

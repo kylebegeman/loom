@@ -298,7 +298,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
         <Link to="/settings/connections" className="text-primary underline underline-offset-2">
           Computers
         </Link>
-        . Command jobs send a committed snapshot, up to 64 MiB.
+        . Command jobs send a committed snapshot, up to 1 GiB.
       </p>
       {failure && <Alert>{failure}</Alert>}
       {pendingTransfer && (
