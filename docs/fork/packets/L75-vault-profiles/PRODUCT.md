@@ -4,6 +4,11 @@
 
 Bind a complete set of development accounts, credentials and endpoints to a named project environment.
 
+## Current milestone and full scope
+
+The local milestone is described in [README.md](./README.md). The complete selected outcome
+below remains the acceptance target; pending consumers are not implied by local management.
+
 ## How it works
 
 Projects declare named requirements such as GitHub access, a staging API key and test-account roles. Environment-local profiles map requirements to Vault references and non-secret endpoints. Resolve one reviewed profile revision per run so mid-run edits do not silently switch identities.
@@ -54,6 +59,7 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Which profile metadata should be shared through Library, and which stays strictly environment-local?
-- Should runs pin a credential version or follow rotation through a stable binding? Define this by credential kind.
+- SSH/Git resolution pins the profile and key versions on first use in a run. A key version change requires a new run. Version-following policy for future credential kinds remains open.
+- Define durable pin retention/cleanup and portable requirements before adding cross-environment or task-launch selection.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

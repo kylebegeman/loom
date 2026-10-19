@@ -1,8 +1,9 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment, L84 automatic hosted run access, L81 mediated SSH/Git and client key/trust management, and L80/L77/L72 grants, inspector and server-readiness milestones
-are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment,
+L84 hosted run access, L81 mediated SSH/Git and key/trust management, L80/L77/L72 grants,
+inspection and server readiness, and L73/L75 reference search and project profiles are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
@@ -24,7 +25,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84 and L81 are in progress; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84, L81, L73 and L75 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 

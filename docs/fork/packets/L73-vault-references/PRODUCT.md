@@ -4,6 +4,11 @@
 
 Attach named Vault items without copying their values into prompts or settings.
 
+## Current milestone and full scope
+
+The local milestone is described in [README.md](./README.md). The complete selected outcome
+below remains the acceptance target; pending consumers are not implied by local management.
+
 ## How it works
 
 Use opaque stable IDs and a shared metadata picker. Search authorized labels, account roles and environments with bounded queries. Renames preserve bindings; a new secret version does not change the reference. Resolving a reference still checks the destination principal at execution.

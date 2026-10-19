@@ -1,6 +1,6 @@
 # L73: Searchable credential references everywhere
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management milestone implemented locally. Full packet scope retained.
 
 Attach named Vault items without copying their values into prompts or settings.
 
@@ -13,6 +13,16 @@ backend choices and design gates are in [Loom Vault](../LOOM-VAULT.md) and the
 [proposed foundation](../LOOM-VAULT-FOUNDATION.md). This packet does not authorize deployment,
 credential imports or changes to the personal vault.
 
+## Delivered milestone
+
+Environment-scoped search and stable reference copying work in web/desktop Settings, native
+mobile computer settings, palette navigation, MCP and CLI. The project profile editor reuses
+the picker to bind, replace and unbind SSH keys. Agent search/describe requires inspect grants;
+forbidden and unknown IDs both describe as null. No credential values are returned.
+
+Composer attachments, CLI completion, role/account search, cross-environment discovery and
+other consumers remain selected. This milestone does not make references usable everywhere.
+
 ## Surfaces
 
 Web, desktop, mobile and remote management are required. CLI/MCP availability and any
@@ -21,8 +31,7 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+`ext-vault` has an implemented encrypted-record boundary. Broader identity and delivery portions remain in progress; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
 
@@ -30,8 +39,8 @@ Uses metadata search, reference resolution and access summaries from the shared 
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+No new upstream seams. The implementation uses existing fork registries and the shared
+`ext-vault` boundary. [SEAMS.md](./SEAMS.md) records scope and merge verification.
 
 ## Documents
 

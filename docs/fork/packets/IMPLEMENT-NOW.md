@@ -32,7 +32,15 @@ pass with exact repository grants, wrong-pin/revocation/timeout denial and clean
 terminal routing, clone/push and production registration remain unfinished.
 Kyle requested that every work-cycle overview suggest a concrete next section for his approval
 until the selected work is complete. Finish the current section, report its exact verification
-and limits, then propose the next bounded section. The next suggested section is Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings. Real credential registration/
+and limits, then propose the next bounded section.
+
+L73/L75 now add searchable metadata references and environment/project-local SSH/Git profiles,
+with web/desktop/native management and MCP/CLI named execution. First use durably pins run
+selection and key versions; current grants, host trust, item state and profile archive remain
+live checks. Full scopes remain In progress. Composer/task launch selectors, portable
+requirements and other credential kinds stay selected. The suggested next section is reviewed
+profile selection and reference attachments at interactive and scheduled agent launch, with
+missing-binding preflight and safe transcript summaries. Real credential registration,
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

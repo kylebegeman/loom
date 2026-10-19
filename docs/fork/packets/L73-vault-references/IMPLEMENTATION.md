@@ -1,28 +1,23 @@
-# L73 implementation plan
+# L73 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. Kyle authorized all sixteen packets; this local milestone is working.
+The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for exact evidence.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+- Typed environment-scoped metadata search/describe and stable reference text.
+- Bounded sparse pagination, inspect-granted agent results and indistinguishable missing/forbidden descriptions.
+- Shared refreshing queries, web/native search and copy, profile picker reuse and palette entry.
+- MCP/CLI service adapters with no raw-value delivery.
 
-## Steps
+## Remaining
 
-1. Define reference and summary contracts with rename and retired-item semantics.
-2. Implement authorized metadata search and reusable client-runtime selection state.
-3. Register the picker across settings, palette and composer; add CLI discovery using the same service.
+1. Integrate typed composer attachments and safe transcript summaries with remove/replace.
+2. Add CLI completion and role/account discovery as connector metadata becomes available.
+3. Extend to more consumers and explicit multi-environment discovery without mixing authority.
 
-## Integration and completion
+## Completion gate
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Do not mark Done until all selected consumers, reverse actions, connection modes and supported
+surfaces work. Production rollout, live credential registration and personal migration are
+separate actions. Post-merge full rehearsal belongs to Kyle's authorized landing workflow.

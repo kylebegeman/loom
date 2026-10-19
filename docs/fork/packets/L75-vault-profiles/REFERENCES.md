@@ -8,10 +8,14 @@ an old Loom implementation or inherited P/F selection.
 
 ## Current source
 
-Verified against `2f385ee835`; refresh line citations before implementation.
+Implemented against parent `6e3301e02f`; these current source links define the local milestone.
 
-- [`apps/server/src/fork/ForkLayer.ts:1`](../../../../apps/server/src/fork/ForkLayer.ts#L1): Existing project and Library service composition boundary.
-- [`packages/contracts/src/fork/clientRpcPermissions.ts:22`](../../../../packages/contracts/src/fork/clientRpcPermissions.ts#L22): Fork RPC mutation permission registration.
+- [`packages/contracts/src/fork/vault-profiles.ts`](../../../../packages/contracts/src/fork/vault-profiles.ts)
+- [`apps/server/src/fork/vault/VaultProfiles.ts`](../../../../apps/server/src/fork/vault/VaultProfiles.ts)
+- [`packages/client-runtime/src/fork/vault-profiles.ts`](../../../../packages/client-runtime/src/fork/vault-profiles.ts)
+- [`apps/server/src/fork/vault/VaultLaunch.ts`](../../../../apps/server/src/fork/vault/VaultLaunch.ts)
+- [`apps/web/src/fork/vault/ProfileSettingsSection.tsx`](../../../../apps/web/src/fork/vault/ProfileSettingsSection.tsx)
+- [`apps/mobile/src/fork/vault/ProfileSettingsSection.tsx`](../../../../apps/mobile/src/fork/vault/ProfileSettingsSection.tsx)
 
 ## Shared design and prior art
 

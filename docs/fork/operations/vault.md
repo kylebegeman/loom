@@ -27,7 +27,8 @@ rotating a token. Configuration changes require restarting the owning Loom envir
 The minimal engine policy needs read on `<mount>/config`, read/create/update on
 `<mount>/data/environments/<namespace>/items/*`, read/create/update on
 `<mount>/data/environments/<namespace>/access-policy`, read/create/update on
-`<mount>/data/environments/<namespace>/brokers`, and list on
+`<mount>/data/environments/<namespace>/brokers`, read/create/update on
+`<mount>/data/environments/<namespace>/profiles/*`, and list on
 `<mount>/metadata/environments/<namespace>/items`. The namespace is the lowercase hexadecimal
 SHA-256 of the persisted Loom server environment ID, not a client-chosen project ID. Keep
 policies scoped to that environment; creating another environment ID deliberately creates a
@@ -208,3 +209,18 @@ This provides on-demand access through the connection established at provider la
 does not install terminal agent sockets, configure ordinary shell Git, clone/push, GitHub
 accounts or reboot startup. There is no offline cache or process isolation from the same OS
 user. No production registration or rollout is implied by the disposable proof.
+
+## Project profiles and retained run selections
+
+The `vault-profiles` capability stores each project's registry and run selections below
+`environments/<environment-sha256>/profiles/<project-sha256>/`. Provision read/create/update
+for that environment's profiles subtree in the service policy. Loom does not modify the live
+policy or escalate the token. No SQL migration or new application dependency is needed.
+
+Registry CAS revisions protect concurrent management edits. A run selection contains safe
+labels, names, item references, versions and exact destinations, never credential values.
+The first successful resolution creates it; service restart preserves it. Later defaults and
+profile edits apply to later runs. Archive and policy/key/host checks remain live. These records
+currently have no automatic cleanup; account for their metadata growth in retention and
+backups. Do not prune active-run selections or restore stale backups into a running environment.
+A reviewed retention/recovery workflow remains selected work.

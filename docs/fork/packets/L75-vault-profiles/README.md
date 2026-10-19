@@ -1,6 +1,6 @@
 # L75: Project environment profiles
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: Selected for implementation by Kyle on 2026-10-17. In progress; reference/profile management milestone implemented locally. Full packet scope retained.
 
 Bind a complete set of development accounts, credentials and endpoints to a named project environment.
 
@@ -13,6 +13,17 @@ backend choices and design gates are in [Loom Vault](../LOOM-VAULT.md) and the
 [proposed foundation](../LOOM-VAULT-FOUNDATION.md). This packet does not authorize deployment,
 credential imports or changes to the personal vault.
 
+## Delivered milestone
+
+Web/desktop and native mobile manage project-local SSH/Git profiles: create, edit, clone,
+preview, choose/clear a default, archive, restore and repair bindings. MCP/CLI resolve and
+execute named bindings. The first resolution durably pins the profile revision and key
+versions for the authenticated run; current grants, keys and archive state remain authoritative.
+
+Task/composer launch selectors, portable requirement declarations, other credential kinds,
+account provisioning, Library sharing and run-pin retention automation remain selected.
+No production rollout or personal-vault migration occurred.
+
 ## Surfaces
 
 Web, desktop, mobile and remote management are required. CLI/MCP availability and any
@@ -21,8 +32,7 @@ OS-specific execution constraints are defined in the product and technical docum
 ## Extension points used
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+`ext-vault` has an implemented encrypted-record boundary. Broader identity and delivery portions remain in progress; inspect the exact specification before consuming them.
 
 ## Dependencies and future opportunities
 
@@ -30,8 +40,8 @@ Uses reference and grant interfaces; connectors supply validation when installed
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+No new upstream seams. The implementation uses existing fork registries and the shared
+`ext-vault` boundary. [SEAMS.md](./SEAMS.md) records scope and merge verification.
 
 ## Documents
 

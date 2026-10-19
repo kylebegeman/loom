@@ -5,6 +5,15 @@ implemented in `ext-vault`. Broker, platform identity and delivery portions belo
 target and must not be mistaken for implemented guarantees. This work creates no live infrastructure. Product intent and decision
 owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
 
+## Implemented reference and profile boundary
+
+L73/L75 now provide metadata search, stable environment/item references and project-local
+SSH/Git profiles through existing shared `ext-vault` services and client state. Profiles
+hold no values. First use durably pins a profile revision and key versions for the active run;
+current policy/key/host/archive checks still gate execution. OpenBao paths and retention limits
+are documented in [L75 technical design](./L75-vault-profiles/TECHNICAL.md). Composer/task launch
+selectors, portable declarations, additional kinds and run-pin cleanup remain selected.
+
 ## Implemented record boundary
 
 `packages/contracts/src/fork/vault-core.ts` and `apps/server/src/fork/vault/` implement

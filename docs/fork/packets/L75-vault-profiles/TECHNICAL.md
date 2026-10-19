@@ -1,52 +1,61 @@
 # L75 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
-Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
-permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+## Implemented contract
 
-## Overview
+The shared `vault-profiles.ts` contract defines named SSH/Git requirements and the
+`loom.vault-profiles.list/apply/preview` RPCs. Administrator management requires environment
+access:read/access:write. The service validates project ownership, mutation shape, expected
+revision, unique names and bounded profile counts. Profiles store references and Git paths,
+never credential values. Worktrees use the authenticated thread's owning project.
 
-Projects declare named requirements such as GitHub access, a staging API key and test-account roles. Environment-local profiles map requirements to Vault references and non-secret endpoints. Resolve one reviewed profile revision per run so mid-run edits do not silently switch identities.
+Registry changes use CAS, actor-bound mutation fingerprints and the latest 32 operation
+receipts. An exact replay returns the current snapshot; changed actor/payload or stale edits
+conflict. Limits are 32 profiles per project and 16 required bindings per profile. Archived
+profiles must be restored before editing; archive clears the default, restore does not select it.
+Incomplete bindings may be saved. A preview with no target thread reports host checks only,
+never proof of authorization. Selecting a default grants no access.
 
-## Contracts and authorization
+## Run selection and execution
 
-`requirements`, `list`, `preview`, `save`, `activate` and `remove` operate on project and environment IDs. Save uses an expected revision. Preview reports unresolved or denied bindings; it does not grant access or acquire accounts.
+`VaultProfiles.resolve` derives project/provider/run identity from the authenticated active
+full-access/default thread. First successful resolution writes a CAS-created OpenBao run pin
+containing profile revision, label, names, item IDs, key versions and exact destinations.
+Resolution of all bindings must succeed. A concurrent first resolution uses the persisted
+winner. Changing the profile in the same run conflicts; later registry edits/default changes
+do not switch an existing pin. A new run may resolve a new profile or key version.
 
-Use packet-owned `loom.vault-profiles.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
-unavailable and operation-failed outcomes as appropriate, including environment authorization
-errors. Register protected methods in the fork permission map and use environment RPC commands.
-Metadata visibility, item management and credential use are distinct rights.
+Every resolve rechecks current profile archive state, live run/provider/project, key version,
+host trust and exact use grants. `VaultLaunch.profile` executes a named binding through the
+existing signed workload SSH/Git path, preserving its cleanup and output bounds. Archive is
+checked again before transport/signing. Revocation prevents new authorized use but cannot
+recall an issued signature or roll back a remote command. Same-user processes are not isolated.
 
-## Server and storage
+## Storage and failure behavior
 
-Implement services in fork-owned paths and keep HTTP/RPC/MCP handlers thin. All credential
-access goes through the shared backend/broker adapter; the feature never reads a personal
-password manager as a fallback.
+The environment namespace is SHA-256 of the server environment ID. A project namespace is
+SHA-256 of its project ID. Registry and pins use:
 
-Persist requirement declarations and revisioned mappings, never secret payloads. Portable project requirements may be versioned; environment-specific bindings stay outside the repository. Decide how safe profile labels participate in Library replication.
+- `environments/<environment>/profiles/<project>/registry`
+- `environments/<environment>/profiles/<project>/runs/<SHA-256 of encoded thread/run identity>`
 
-## Clients and agent-facing tools
+Run pins contain references only and persist across service restart. They currently have no
+automatic expiration or deletion. Operators must retain the profiles paths with backups;
+retention and inspection tooling remain selected lifecycle work. No offline resolution/cache,
+SQL migration, platform replication or service token change is performed automatically.
+Backend denial/unavailability fails closed. Operators must provision the documented policy.
 
-Place shared client state in client-runtime and surface it through web, desktop and mobile.
-Gate on advertised Vault capability/version; disable unsupported operations without disabling
-ordinary T3 behavior. Agent tools use `loom_vault_profiles_*` names if exposed and
-return safe summaries or operation handles. An agent cannot approve its own access, export raw
-values by default or widen the caller's existing T3 permissions.
+## Clients and adapters
 
-## Performance and failure handling
+Shared client-runtime atoms refresh mounted profile lists across factories after successful
+changes. Web/desktop Settings and mobile computer settings support complete management for
+this milestone, including repair and read-only states. Palette actions navigate to the selected
+environment. MCP derives the calling thread's project and forbids agents from editing bindings;
+human full-access clients can manage explicit projects. CLI uses the same authenticated tools.
+Common provider instructions mention profiles only when the tools are exposed. Scheduled agent
+runs can call them; command-only jobs do not acquire a profile automatically.
 
-Use bounded pages and operation-scoped updates. Never subscribe to secret payloads, poll every
-item continuously or repaint an idle UI. Reconnect by operation ID and persisted revision;
-mutation retries use stable idempotency keys. External effects run after durable acceptance and
-reconcile partial completion. Evidence tests await receipts or Deferreds, not sleeps.
+## Remaining selected design
 
-## Alternatives and integration review
-
-Inspect project configuration and provider launch input. Add a fork-owned launch preparation hook rather than new credential fields in durable upstream conversation events.
-
-Prefer existing registries over new upstream seams. A direct provider-specific secret path
-would duplicate policy and is not the recommended design. Where the shared interface is absent,
-report unavailable or implement the approved minimal extension independently; do not import
-another packet's UI/service internals.
+Portable declarations, composer/task launch selectors, other credential kinds, Library sharing,
+platform accounts and retained-pin cleanup need their own reviewed contracts. Reuse existing
+fork seams, keep secrets out of upstream events, and keep management separate from use rights.

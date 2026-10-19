@@ -1,28 +1,23 @@
-# L75 implementation plan
+# L75 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. Kyle authorized all sixteen packets; this local milestone is working.
+The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for exact evidence.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+- CAS and idempotent environment/project-local profile registry, active default and archive/restore.
+- Web/native create/edit/clone, key picker, unbind, review and incomplete configuration repair.
+- Authenticated MCP/CLI project listing, durable run resolution and named hosted SSH/Git execution.
+- Current policy/key/host checks, project/provider/run attestation and archive guard at signing.
 
-## Steps
+## Remaining
 
-1. Model requirements separately from machine-specific bindings and immutable run resolution.
-2. Implement preview, revision checks and activation without mutating running jobs.
-3. Expose profile selection in project settings and task launch, with equivalent CLI and mobile controls.
+1. Add reviewed profile selection and preflight to interactive and scheduled task launch.
+2. Separate portable requirement declarations from local bindings; support credential/account kinds as adapters arrive.
+3. Design Library sharing and retained run-selection inspection/cleanup without publishing secret bindings.
 
-## Integration and completion
+## Completion gate
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Do not mark Done until all selected consumers, reverse actions, connection modes and supported
+surfaces work. Production rollout, live credential registration and personal migration are
+separate actions. Post-merge full rehearsal belongs to Kyle's authorized landing workflow.

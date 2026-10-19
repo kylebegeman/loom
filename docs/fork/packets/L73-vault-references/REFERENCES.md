@@ -8,10 +8,13 @@ an old Loom implementation or inherited P/F selection.
 
 ## Current source
 
-Verified against `2f385ee835`; refresh line citations before implementation.
+Implemented against parent `6e3301e02f`; these current source links define the local milestone.
 
-- [`apps/server/src/settingsSecrets.ts:35`](../../../../apps/server/src/settingsSecrets.ts#L35): Current secret-field mapping and redacted settings values.
-- [`apps/server/src/secrets/SecretRequests.ts:52`](../../../../apps/server/src/secrets/SecretRequests.ts#L52): Existing private input flow returns references instead of secret values.
+- [`packages/contracts/src/fork/vault-references.ts`](../../../../packages/contracts/src/fork/vault-references.ts)
+- [`apps/server/src/fork/vault/VaultReferences.ts`](../../../../apps/server/src/fork/vault/VaultReferences.ts)
+- [`packages/client-runtime/src/fork/vault-profiles.ts`](../../../../packages/client-runtime/src/fork/vault-profiles.ts)
+- [`apps/web/src/fork/vault/ReferencePicker.tsx`](../../../../apps/web/src/fork/vault/ReferencePicker.tsx)
+- [`apps/mobile/src/fork/vault/ProfileSettingsSection.tsx`](../../../../apps/mobile/src/fork/vault/ProfileSettingsSection.tsx)
 
 ## Shared design and prior art
 

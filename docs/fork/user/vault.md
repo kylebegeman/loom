@@ -246,3 +246,34 @@ the CLI process exit status. SSH failures fail the CLI. Do not place credentials
 print sensitive remote values. Timeout, cancellation or a lost response can leave remote
 effects, and a fresh retry can repeat them. Revocation blocks new authorization/signatures;
 it cannot undo an already authenticated command. Release the workload session when finished.
+
+## Find references and configure a project profile
+
+In web or desktop **Settings → Loom**, use **Vault references** to search names or item IDs
+and copy a stable reference. On mobile, open **Settings → Computers → Manage computer** and
+use **Vault references**. References contain no credential values and grant no access. Use
+**More references** when a sparse search page has no matches but more records remain.
+
+Open **Vault project profiles**, choose the destination computer and project, and create a
+profile with named SSH or Git requirements. Choose an SSH key for each requirement and, for
+Git, its exact repository path. Review with a project thread to check its current use grants;
+**Host checks only** does not prove that a thread can use the key. You may save an incomplete
+profile for later repair. Edit to replace/unbind keys or remove requirements; clone to start
+another profile without copying secret values.
+
+Set a profile as the default for new run resolutions, or clear the default. A run keeps the
+profile revision and key versions it first resolves. Later edits/default changes apply to
+later runs. A changed key version requires a new run. Current grants, host trust and item state
+still apply. Archiving blocks further profile use and clears its default; restoring does not
+select it again. Profile selection grants no access and never changes your personal SSH agent.
+
+Agents use `loom_vault_profiles`, `loom_vault_profile_resolve` and `loom_vault_profile_run` for
+their own project. A named SSH/Git operation automatically uses the configured server broker
+and closes its operation session. Administrators manage bindings; agents cannot approve their
+own access or change profiles. The CLI exposes `loom vault references-search`,
+`references-describe`, `profiles`, `profiles-apply`, `profile-resolve` and `profile-run` through
+the existing authenticated tool path. Agent-only resolve/run commands require a running thread.
+
+Composer attachments and automatic profile selection when launching tasks are still pending.
+The current profile supports SSH commands and Git ref listing/fetch, with existing output and
+time limits. It does not configure ordinary terminal SSH/Git commands or deliver raw values.
