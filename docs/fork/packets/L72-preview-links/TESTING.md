@@ -119,6 +119,7 @@ These need Kyle's permission for a real browser or device.
 
 ## Merge safety
 
-On 2026-10-19 at the access-key commit: `check_seams` passes, and a merge with
-`v0.1.1-nightly.20261018.3335` touches the same 54 files as the branch's base, none added.
-See [SEAMS.md](./SEAMS.md#merge-check).
+On 2026-10-19 at the closed-port commit: `check_seams` passes, and a merge with
+`v0.1.1-nightly.20261019.3360` conflicts in the branch base's 59 files plus three thread-link
+seams upstream has since rewritten. See [SEAMS.md](./SEAMS.md#merge-check) for how each
+resolves.

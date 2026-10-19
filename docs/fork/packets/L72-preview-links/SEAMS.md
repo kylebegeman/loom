@@ -67,8 +67,25 @@ Server and clients:
 
 ## Merge check
 
-Last run 2026-10-18 against `v0.1.1-nightly.20261018.3335`: the packet adds no conflicting
-files to the ones `main` already has with that tag. Run it again before landing:
+Last run 2026-10-19 against `v0.1.1-nightly.20261019.3360`: `main` already conflicts with
+that tag in 59 files, and the packet adds three. Each is a thread-link seam upstream has
+since rewritten, and each conflict holds only marker lines and the upstream lines around
+them:
+
+- `apps/web/src/browser/useOpenLink.ts`: upstream dropped `useCallback`. Keep upstream's body
+  and put the marker line `if (targetThreadRef) return openEnvironmentUrlExternally(...)`
+  before `await api.shell.openExternal(url)`.
+- `apps/mobile/src/features/files/FileMarkdownPreview.tsx`: upstream compiles the screen with
+  the React Compiler. Take upstream's plain functions and its `FONT_FAMILIES` import, keep
+  the marker import, and make `onLinkPress` call
+  `openThreadUrlExternally(props.environmentId, href, "markdown-link")`. The hook dependency
+  marker goes away, so its row in `docs/fork/seams.tsv` drops from 3 to 2.
+- `apps/mobile/src/native/useOpenPullRequest.ts`: upstream moved the fallback into
+  `useNavigateToPullRequest(url, context)`, which a thread's pull request sheet also uses.
+  The marker line moves there as
+  `if (!params) return openThreadUrlExternally(context?.environmentId, url, "pull-request")`.
+
+Run it again before landing:
 
 ```sh
 git fetch -q upstream --tags
@@ -76,10 +93,11 @@ tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
 git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
-Conflicts must fall only on the lines above. `check_seams` passes with the rows in
+Compare the list with the same command run on `$(git merge-base main HEAD)`. Conflicts the
+packet adds must fall only on the lines above. `check_seams` passes with the rows in
 `docs/fork/seams.tsv`.
 
 ## FORK.md rows
 
-One paragraph in "Packet seams" (FORK.md uses prose there), listing the twelve files with
+One paragraph in "Packet seams" (FORK.md uses prose there), listing the nineteen files with
 their marker counts and linking here and to the user guide. No "Extension point seams" rows.

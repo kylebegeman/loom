@@ -233,14 +233,23 @@ client cannot reach becomes a link and a link becomes a fresh single-use entry:
 `apps/web/src/browser/openFileInPreview.ts` (4),
 `apps/web/src/components/preview/openPreviewSession.ts` (5),
 `apps/web/src/components/preview/openTerminalLinkInPreview.ts` (5) and
-`apps/web/src/components/preview/PreviewView.tsx` (8).
+`apps/web/src/components/preview/PreviewView.tsx` (9).
 `apps/web/src/components/preview/PreviewLocalServerCard.tsx` (3) adds the copy and open
 buttons to each server, and `apps/web/src/localApi.ts` (3) opens a link in the system browser
-through a fresh entry. On mobile, `apps/mobile/src/Stack.tsx` (2),
+through a fresh entry. A thread's links that leave for the system browser open a port this
+client cannot reach through a link: `apps/web/src/browser/useOpenLink.ts` (2),
+`apps/web/src/components/ChatMarkdown.tsx` (4) and
+`apps/web/src/components/ThreadTerminalDrawer.tsx` (2). On mobile,
+`apps/mobile/src/Stack.tsx` (2),
 `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` (1) and
-`apps/mobile/src/features/settings/SettingsRouteScreen.tsx` (1) add the Previews screen, and
+`apps/mobile/src/features/settings/SettingsRouteScreen.tsx` (1) add the Previews screen,
 `apps/mobile/src/lib/openExternalUrl.ts` (2) opens preview links leaving the app through a
-fresh entry. See the [L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
+fresh entry, and a thread's links open the same way from chat
+(`apps/mobile/src/native/useOpenPullRequest.ts`, 2), an html_render page
+(`apps/mobile/src/features/threads/HtmlRenderWebView.tsx`, 4), an MCP app
+(`apps/mobile/src/features/threads/McpAppWebView.tsx`, 2) and the Files markdown preview
+(`apps/mobile/src/features/files/FileMarkdownPreview.tsx`, 3). See the
+[L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
 [user help](docs/fork/user/preview-links.md).
 
 ## Identifiers kept on purpose
