@@ -73,8 +73,8 @@ repository and a typed operation. An exact `https://github.com/owner/repo` use g
 An API test does not prove GH CLI installation or Git transport access. Unknown write outcomes
 require inspection before retrying; Loom does not silently replay writes.
 
-This milestone runs on the server, including when controlled remotely from a phone. It does
-not export credentials into an ordinary terminal or sign into a personal account. Project profiles can explicitly bind connections and repositories
+This milestone runs on the server, including when controlled remotely from a phone. Explicit
+wrapped commands receive scoped child credentials; surrounding shell logins stay separate. Project profiles can explicitly bind connections and repositories
 with reviewed defaults for new resolutions. Local disconnection
 blocks future use; remote revocation and already issued credentials have separate lifetimes.
 Human administrators retain the Vault core's explicit reveal/export powers. Full-access agents
@@ -83,3 +83,12 @@ and other same-user processes are not isolated by an OS security boundary.
 GitHub project profiles now provide named selection, portable requirements, explicit launch
 preflight and execution. See [L75 product](../L75-vault-profiles/PRODUCT.md) for the complete
 binding, reverse-action and configuration-preview behavior.
+
+## Explicit GitHub terminal use and live checks
+
+Connection management now offers cancellable API/GH CLI/Git HTTPS readiness, optionally for a
+selected thread, and a reference-only terminal command to copy. Use the explicit Vault wrapper
+for supported gh and Git HTTPS commands without a personal key-manager prompt. It acts on the
+execution computer's checkout and preserves output/exit status. A host-only success does not
+authorize a thread; stale results, run/grant denials and provider failures remain distinct.
+Existing shell logins, SSH remotes and independently launched runners are not migrated.

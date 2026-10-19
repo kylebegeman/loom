@@ -53,8 +53,15 @@ for each run, participate in launch preflight and execute by name. Version 2 por
 carry requirement names/kinds without local bindings; SSH/Git-only exports retain version 1.
 Configuration/grant checks deliberately do not claim live GitHub API or CLI readiness.
 
-The next proposed section is explicit terminal gh/Git HTTPS credential routing, plus provider-aware
-readiness, to close the split between mediated tools and normal developer commands. Real credential registration,
+Explicit command-scoped terminal gh/Git HTTPS routing and provider-specific readiness are now
+implemented locally. The wrapper preserves output/exit status, uses the selected connection and
+repository, and rechecks current active-run authority. Web/mobile can check API, GH CLI and Git
+HTTPS separately, select a thread and see denied or stale results. Persistent shell activation,
+automatic credential migration and independent runner readiness remain selected work.
+
+The next proposed section is managed broker startup and unattended recovery for macOS/Linux
+(including Pi hosts): explicit install/start/stop/status, restart recovery and truthful unlock/
+online diagnostics. Prepare and test locally; live service installation, credential registration,
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

@@ -29,6 +29,7 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [VG.save]: AuthAccessWriteScope,
   [VG.test]: AuthAccessWriteScope,
+  [VG.readiness]: AuthAccessWriteScope,
   [VG.change]: AuthAccessWriteScope,
   [VP.apply]: AuthAccessWriteScope,
   [VP.retirePin]: AuthAccessWriteScope,

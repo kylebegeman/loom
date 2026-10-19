@@ -41,3 +41,7 @@ this packet adds no application dependency.
 - [Signed runner](../../../../apps/server/src/fork/vault/WorkloadRunner.ts) and
   [shared HTTP client](../../../../apps/server/src/fork/vault/BrokerHttpClient.ts).
 - [Broker identity milestone](../L79-vault-brokers/README.md).
+
+- [Command-scoped terminal adapter](../../../../apps/server/src/fork/vault/GitHubTerminal.ts)
+- [Supported command parser](../../../../apps/server/src/fork/vault/GitHubCommand.ts)
+- [Terminal CLI boundary](../../../../apps/server/src/fork/vault/terminal-cli.ts)

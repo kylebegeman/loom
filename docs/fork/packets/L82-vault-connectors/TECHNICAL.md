@@ -58,11 +58,36 @@ call the same service. Common provider instructions expose the capability only t
 tool availability. No adapter-specific model changes are required; command-only scheduled jobs
 do not acquire it. Agent runs on any exposed provider can call the tool under the same policy.
 
-Existing GitHubHostSetup, GitHubCredentials, terminal gh/Git HTTPS, personal login and SSH
+Existing GitHubHostSetup, GitHubCredentials, persistent shell login, personal login and SSH
 remote behavior remain outside this path. Project profiles bind the explicit connection/repository,
 with portable declarations, current configuration/grant checks, version-pinned launch and named GH
 execution. Profile archive and originating run identity are rechecked through token acquisition
 and before spawn using the service guard. Profile use still inherits exact item use permission.
-Future terminal routing must choose opt-in migration without overriding unmigrated credentials.
+Command-scoped routing below is opt-in; persistent migration must remain a separately reviewed action.
 OAuth/device flows, Enterprise, reusable connector registration, additional providers, provider
 revocation management and broader operations remain full selected scope.
+
+## GitHub terminal routing and readiness
+
+Explicit `loom vault github-exec` / `loom_vault_github_exec` requests now run supported gh or
+Git HTTPS argv on the Loom server with the chosen connection/version/repository. They require
+an authenticated active full-access/default thread and its exact repository use grant. The
+server infers the thread checkout, rechecks authority after token acquisition and before spawn,
+scopes credentials/configuration to the child and releases the provider session afterward.
+The CLI forwards stdout/stderr and the child exit status. Arbitrary shells, account login,
+extensions, alternate repositories and executable transport overrides are rejected.
+
+The `vault-github-terminal` capability also enables explicit, cancellable GitHub readiness in
+web/desktop/native connection management, RPC and authenticated MCP/CLI. Checks separate API,
+GH CLI and Git HTTPS reads. Selecting a thread adds current run/grant checks and identifies its
+provider; host-only checks leave run access unchecked. Denied runs skip external probes. Results
+expire after 60 seconds and clients visibly mark them stale. These are server-context results,
+not proof of an independently configured provider terminal, external runner or future write.
+
+Git uses an exact host/path credential helper, disables personal config sources and prompts,
+and rejects repository configuration that can redirect authentication or launch custom
+transports/filters. `origin` is a command-local shorthand for the selected HTTPS repository;
+fetching it without refspecs updates `refs/remotes/origin/*`. Stored remotes are not migrated.
+Both streams are bounded to 64 KiB combined and scrub the delivered token; execution times out
+after 120 seconds. Process-group/config cleanup runs on completion, failure and cancellation.
+Issued tokens and same-user/full-access processes remain outside an OS isolation guarantee.

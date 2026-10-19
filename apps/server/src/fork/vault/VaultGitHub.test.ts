@@ -1,3 +1,4 @@
+import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -14,6 +15,8 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { VaultGitHubToolkit, vaultGitHubHandlers } from "./github-mcp.ts";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as VaultCore from "./VaultCore.ts";
@@ -33,6 +36,7 @@ const fixture = Effect.gen(function* () {
     atSession = () => {},
     calls = 0,
     releases = 0;
+  let beforeProbe: Effect.Effect<void> = Effect.void;
   const transport = Layer.succeed(GitHubTransport.GitHubTransport, {
     release: () =>
       Effect.sync(() => {
@@ -44,8 +48,12 @@ const fixture = Effect.gen(function* () {
         return { account, token: Redacted.make("synthetic-operation-token"), expiresAt: null };
       }),
     probe: () =>
-      Effect.suspend(() =>
-        deny ? Effect.fail(new VaultGitHubError({ reason: "repository-denied" })) : Effect.void,
+      beforeProbe.pipe(
+        Effect.andThen(
+          Effect.suspend(() =>
+            deny ? Effect.fail(new VaultGitHubError({ reason: "repository-denied" })) : Effect.void,
+          ),
+        ),
       ),
   });
   const cli = Layer.succeed(GitHubCli.GitHubCli, {
@@ -59,10 +67,25 @@ const fixture = Effect.gen(function* () {
         ),
       ),
   });
+  let terminalCalls = 0,
+    terminalFailure = false;
+  const terminal = Layer.succeed(GitHubTerminal.GitHubTerminal, {
+    execute: (input) =>
+      input.authorize.pipe(
+        Effect.andThen(
+          Effect.suspend(() => {
+            terminalCalls++;
+            return terminalFailure
+              ? Effect.fail(new VaultGitHubError({ reason: "cli-unavailable" }))
+              : Effect.succeed({ exitCode: 0, stdout: "Scoped terminal result", stderr: "" });
+          }),
+        ),
+      ),
+  });
   const service = yield* VaultGitHub.VaultGitHub.pipe(
     Effect.provide(
       VaultGitHub.layer.pipe(
-        Layer.provide(Layer.mergeAll(Layer.succeedContext(f.context), transport, cli)),
+        Layer.provide(Layer.mergeAll(Layer.succeedContext(f.context), transport, cli, terminal)),
       ),
     ),
   );
@@ -79,6 +102,13 @@ const fixture = Effect.gen(function* () {
     ...f,
     service,
     input,
+    onProbe: (effect: Effect.Effect<void>) => {
+      beforeProbe = effect;
+    },
+    terminalCalls: () => terminalCalls,
+    terminalFailure: () => {
+      terminalFailure = true;
+    },
     setAccount: (value: string) => {
       account = value;
     },
@@ -246,7 +276,7 @@ it.effect(
           .handle("loom_vault_github_connections", { cursor: null })
           .pipe(
             Effect.flatMap(Stream.runCollect),
-            Effect.provide(f.context),
+            Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
       expect((yield* list(scope).pipe(Effect.flip))._tag).toBe("VaultError");
@@ -256,7 +286,7 @@ it.effect(
           .handle("loom_vault_github_info", { id: f.input.id })
           .pipe(
             Effect.flatMap(Stream.runCollect),
-            Effect.provide(f.context),
+            Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
       expect((yield* inspect().pipe(Effect.flip))._tag).toBe("VaultError");
@@ -271,7 +301,7 @@ it.effect(
           })
           .pipe(
             Effect.flatMap(Stream.runCollect),
-            Effect.provide(f.context),
+            Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
       expect((yield* run(admin).pipe(Effect.flip))._tag).toBe("VaultError");
@@ -286,6 +316,36 @@ it.effect(
           Effect.flip,
         ))._tag,
       ).toBe("VaultError");
+      const terminalInput = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        command: { tool: "gh" as const, argv: ["pr", "list"] },
+      };
+      const exec = (caller: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_github_exec", terminalInput)
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(context),
+            Effect.provideService(McpInvocationContext, caller),
+          );
+      expect((yield* exec(admin).pipe(Effect.flip))._tag).toBe("VaultError");
+      yield* allowTerminal(f);
+      expect((yield* exec(scope))[0]?.result).toMatchObject({ stdout: "Scoped terminal result" });
+      const readiness = toolkit
+        .handle("loom_vault_github_readiness", {
+          id: f.input.id,
+          expectedVersion: 1,
+          repository: "owner/repo",
+          threadId: null,
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provide(context),
+          Effect.provideService(McpInvocationContext, scope),
+        );
+      expect((yield* readiness.pipe(Effect.flip))._tag).toBe("VaultError");
       expect(f.calls()).toBe(0);
     }).pipe(Effect.scoped, Effect.provide(deps)),
 );
@@ -328,4 +388,136 @@ it.effect(
         "unrelated-connector-format",
       );
     }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+const allowTerminal = (f: Effect.Success<typeof fixture>) =>
+  Effect.gen(function* () {
+    const snapshot = yield* f.access.snapshot;
+    return yield* f.access.apply(
+      {
+        operationId: yield* f.id,
+        expectedRevision: snapshot.revision,
+        change: {
+          type: "save",
+          grant: {
+            id: yield* f.id,
+            label: "Terminal GitHub",
+            principal: { kind: "thread", id: f.threadId },
+            itemIds: [f.input.id],
+            actions: ["use"],
+            projectId: null,
+            destination: vaultGitHubDestination("owner/repo"),
+            notBefore: 0,
+            expiresAt: null,
+            parentId: null,
+          },
+        },
+      },
+      "admin",
+    );
+  });
+it.effect(
+  "terminal execution requires current repository authority and releases sessions after run changes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const input = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        command: { tool: "git" as const, argv: ["fetch", "origin"] },
+      };
+      expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      expect(f.terminalCalls()).toBe(0);
+      const grant = yield* allowTerminal(f);
+      expect((yield* f.service.terminal(input, f.threadId)).stdout).toBe("Scoped terminal result");
+      expect(f.terminalCalls()).toBe(1);
+      const snapshot = yield* f.access.snapshot;
+      yield* f.access.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: snapshot.revision,
+          change: { type: "state", id: grant.definition.id, state: "revoked" },
+        },
+        "admin",
+      );
+      expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      yield* allowTerminal(f);
+      const released = f.releases();
+      f.onSession(() => {
+        f.state.thread = {
+          ...f.state.thread,
+          providerInstanceId: ProviderInstanceId.make("changed"),
+        };
+      });
+      expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      expect(f.terminalCalls()).toBe(1);
+      expect(f.releases()).toBe(released + 1);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+it.effect(
+  "readiness distinguishes host tools, denied thread grants and independently failed executables",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const input = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        threadId: null,
+      };
+      const host = yield* f.service.readiness(input, Effect.void);
+      expect(host.grant).toBe("unchecked");
+      expect(host.context).toBe("loom-server");
+      expect(host.checks.map((c) => c.state)).toEqual(["ready", "ready", "ready"]);
+      expect(Date.parse(host.expiresAt) - Date.parse(host.checkedAt)).toBe(60000);
+      const calls = f.terminalCalls();
+      const denied = yield* f.service.readiness({ ...input, threadId: f.threadId }, Effect.void);
+      expect(denied.grant).toBe("denied");
+      expect(denied.checks.every((c) => c.state === "skipped")).toBe(true);
+      expect(f.terminalCalls()).toBe(calls);
+      yield* allowTerminal(f);
+      f.terminalFailure();
+      const failed = yield* f.service.readiness({ ...input, threadId: f.threadId }, Effect.void);
+      expect(failed.grant).toBe("ready");
+      expect(failed.providerInstanceId).toBe(f.state.thread.providerInstanceId);
+      expect(failed.checks).toMatchObject([
+        { kind: "api", state: "ready" },
+        { kind: "gh", state: "failed", reason: "cli-unavailable" },
+        { kind: "git-https", state: "failed", reason: "cli-unavailable" },
+      ]);
+      expect(
+        (yield* f.service
+          .readiness(input, Effect.fail(new VaultError({ reason: "denied" })))
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect("cancelling an in-flight readiness probe releases its acquired provider session", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.service.save(f.input, "admin", Effect.void);
+    const entered = yield* Deferred.make<void>();
+    f.onProbe(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)));
+    const released = f.releases();
+    const fiber = yield* f.service
+      .readiness(
+        { id: f.input.id, expectedVersion: 1, repository: "owner/repo", threadId: null },
+        Effect.void,
+      )
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(entered);
+    yield* Fiber.interrupt(fiber);
+    expect(f.releases()).toBe(released + 1);
+    expect(f.terminalCalls()).toBe(0);
+  }).pipe(Effect.scoped, Effect.provide(deps)),
 );

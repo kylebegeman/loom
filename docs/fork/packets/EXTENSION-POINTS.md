@@ -3043,7 +3043,7 @@ the same handlers. The operator enrolls the Loom server broker and configures it
 `LOOM_VAULT_EXECUTION_BROKER_DIR`; no thread can enroll/approve itself. Current online presence,
 run/mode, item version and use grants remain required. Git signs its own `git-exec` payload,
 uses the thread checkout, and requires its exact repository destination. Workloads are not
-OS-isolated and ordinary terminal commands receive no secret environment or socket.
+OS-isolated and unprefixed terminal commands receive no secret environment or socket.
 
 Shared `vault-references.ts`/`VaultReferences` add environment-scoped metadata search and
 stable reference text. Agent search/describe require inspect grants; unknown/forbidden IDs
@@ -3077,6 +3077,16 @@ vault-github capability gates clients. App tokens are repository-limited and rel
 effort; local disconnection never claims provider revocation. Existing upstream GitHub credential
 precedence is untouched. New credential kinds should extend shared profiles/delivery contracts
 rather than import packet UI or bypass current run authority.
+
+The `vault-github-terminal` capability adds explicit supported gh/Git HTTPS argv and cancellable
+readiness through the same connection service. Terminal execution is agent-thread only; live
+readiness requires access:write for client callers and an agent's own authenticated thread for
+MCP. Neither can authorize from cached readiness. CLI output/exit codes preserve command
+semantics. A private exact-repository Git helper and current run checks govern scoped children;
+ordinary shells and independent runners receive no persistent credentials. MCP-native providers
+can call the tool directly; terminal fallback requires its authenticated MCP environment, which
+ACP supplies. The interface does not claim that every native harness propagates that environment.
+No new upstream seam or shared runtime is needed.
 
 `packages/provider-core/src/fork/vaultInstructions.ts` supplies static, capability-aware
 instructions to the existing common provider prompt channel. The two marked `ext-vault` lines

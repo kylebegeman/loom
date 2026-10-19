@@ -3,6 +3,10 @@ import {
   VaultError,
   VaultGitHubError,
   VaultGitHubRun,
+  VaultGitHubTerminalRun,
+  VaultGitHubTerminalResult,
+  VaultGitHubReadinessInput,
+  VaultGitHubReadiness,
   VaultGitHubResult,
   VaultGitHubInfo,
   VaultGitHubTarget,
@@ -23,6 +27,22 @@ import * as VaultAccess from "./VaultAccess.ts";
 const failure = Schema.Union([VaultError, VaultGitHubError, OrchestratorMcpFailure]),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultGitHubToolkit = Toolkit.make(
+  Tool.make("loom_vault_github_exec", {
+    description:
+      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Active full-access/default thread only with exact use grant. gh supports repo view and PR/issue operations; git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
+    parameters: VaultGitHubTerminalRun,
+    success: VaultGitHubTerminalResult,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_vault_github_readiness", {
+    description:
+      "Read-only GitHub API, GH CLI and Git HTTPS probes in the Loom server context. Agent callers check their own current run and use grant; administrators may name a thread or use null for host-only checks. No prompt credentials or persistent terminal login. Results expire after 60 seconds.",
+    parameters: VaultGitHubReadinessInput,
+    success: VaultGitHubReadiness,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_vault_github", {
     description:
       "Run a documented GH operation on the Loom server with a dedicated Vault GitHub connection and operation-scoped token. Requires this authenticated full-access/default active run, current item version, repository allowlist and exact use grant for https://github.com/owner/repo. Supported actions: repo-view, pr-list, issue-list, pr-view/issue-view/pr-checks with number; pr-comment/issue-comment with number/body; issue-create with title/body. No raw gh argv, tokens, ambient GitHub login or SSH agents. Writes may have completed after a timeout; inspect before retrying. Does not configure the provider terminal or Git HTTPS.",
@@ -85,6 +105,39 @@ export const vaultGitHubHandlers = McpToolAccess.toLayer(
       ),
     );
     return {
+      loom_vault_github_exec: McpToolAccess.writesEnvironment((input) =>
+        caller.pipe(
+          Effect.flatMap((scope) =>
+            scope.thread
+              ? onHost(
+                  Effect.flatMap(VaultGitHub.VaultGitHub, (service) =>
+                    service.terminal(input, scope.thread!.threadId),
+                  ),
+                )
+              : Effect.fail(new VaultError({ reason: "denied" })),
+          ),
+        ),
+      ),
+      loom_vault_github_readiness: McpToolAccess.writesEnvironment((input, check) =>
+        Effect.gen(function* () {
+          const scope = yield* caller,
+            context = yield* Effect.context<Effect.Services<typeof check>>();
+          if (scope.thread && input.threadId !== scope.thread.threadId)
+            return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(VaultGitHub.VaultGitHub, (service) =>
+              service.readiness(
+                input,
+                check.pipe(
+                  Effect.provide(context),
+                  Effect.asVoid,
+                  Effect.mapError(() => new VaultError({ reason: "denied" })),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
       loom_vault_github: McpToolAccess.writesEnvironment((input) =>
         caller.pipe(
           Effect.flatMap((scope) =>

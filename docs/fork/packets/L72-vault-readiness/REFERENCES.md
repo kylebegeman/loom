@@ -31,3 +31,7 @@ this packet adds no application dependency.
 - [Behavior tests](../../../../apps/server/src/fork/vault/VaultAccess.test.ts)
 - [User guide](../../user/vault.md)
 - [Operating guide](../../operations/vault.md)
+
+- [Command-scoped terminal adapter](../../../../apps/server/src/fork/vault/GitHubTerminal.ts)
+- [Supported command parser](../../../../apps/server/src/fork/vault/GitHubCommand.ts)
+- [Terminal CLI boundary](../../../../apps/server/src/fork/vault/terminal-cli.ts)

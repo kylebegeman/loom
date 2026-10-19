@@ -1,3 +1,4 @@
+import { GitHubReadiness } from "./GitHubReadiness";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
@@ -86,8 +87,8 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
       </p>
       <p className="text-sm">
         Connections are limited to named github.com repositories and still need an exact use grant
-        for the active run. API testing does not prove Git HTTPS or GH CLI availability. This
-        connector supplies only the documented mediated GH operations.
+        for the active run. API testing does not prove Git HTTPS or GH CLI availability. Use the
+        explicit Vault terminal command for supported gh and Git HTTPS operations.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -221,6 +222,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         <Connection
           key={`${info.item.id}:${info.item.version}`}
           info={info}
+          environmentId={environmentId}
           disabled={locked || !!draft}
           onEdit={() => edit(info)}
           onTest={(repository) =>
@@ -278,12 +280,14 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
   );
 }
 function Connection({
+  environmentId,
   info,
   disabled,
   onEdit,
   onTest,
   onChange,
 }: {
+  environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   disabled: boolean;
   onEdit: () => void;
@@ -345,6 +349,12 @@ function Connection({
           {info.item.state === "archived" ? "Restore" : "Disconnect"}
         </Button>
       </div>
+      <GitHubReadiness
+        environmentId={environmentId}
+        info={info}
+        repository={repo}
+        disabled={disabled}
+      />
       {confirm ? (
         <>
           <p>Disconnect this connection locally? Provider-side revocation is separate.</p>

@@ -19,7 +19,7 @@ through the provider's existing authenticated tools. The operator enrolls the se
 once. Git ref listing/fetch uses the thread checkout and its exact repository destination grant.
 Standalone checks retain explicit key/session files. Same-user processes can read owner-only
 machine identity files; OS isolation and general delivery remain unfinished. Authorization-check
-results still cannot authorize a later operation. Ordinary terminal Git/SSH remains separate.
+results still cannot authorize a later operation. Unprefixed terminal Git/SSH remains separate; explicit GitHub routing is described below.
 
 ## How it works
 
@@ -74,3 +74,12 @@ subject to design review; the following choices are not resolved by selection:
 - How are externally launched CLI processes authenticated without treating a project path as identity?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
+
+## Explicit GitHub terminal use and live checks
+
+Connection management now offers cancellable API/GH CLI/Git HTTPS readiness, optionally for a
+selected thread, and a reference-only terminal command to copy. Use the explicit Vault wrapper
+for supported gh and Git HTTPS commands without a personal key-manager prompt. It acts on the
+execution computer's checkout and preserves output/exit status. A host-only success does not
+authorize a thread; stale results, run/grant denials and provider failures remain distinct.
+Existing shell logins, SSH remotes and independently launched runners are not migrated.

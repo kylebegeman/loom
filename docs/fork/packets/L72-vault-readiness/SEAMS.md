@@ -15,3 +15,7 @@ The isolated fixture-home validation fix was committed separately. It is tracked
 The committed milestone merge-tree preview against local nightly
 `v0.1.1-nightly.20261017.3238` passed with no conflicts. No fetch or post-merge full rehearsal
 was run from this feature worktree.
+
+GitHub terminal routing/readiness extends fork-owned contracts, adapters, services, CLI/MCP,
+protected RPC registrations and web/native settings. It adds no upstream seams, dependencies,
+SQL migrations or production infrastructure changes.

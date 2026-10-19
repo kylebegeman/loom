@@ -16,7 +16,7 @@ on the Loom server with current run/version/grant checks and temporary CLI confi
 App tokens are limited to the selected repository for use and released on scope exit where
 GitHub permits it. A failed release can leave the token valid until expiry.
 
-This does not configure ordinary terminal gh, Git HTTPS, upstream GitHub auth precedence or
+Explicit scoped commands are available below; this does not configure persistent shell login, upstream GitHub auth precedence or
 SSH remotes. Project profiles now bind connections/repositories, pin their versions and
 execute named GitHub operations through the same service. Version 2 declarations share requirements
 without local bindings. OAuth/device onboarding, Enterprise hosts, additional
@@ -45,3 +45,7 @@ registry, deployment and infrastructure connectors without requiring them for th
 - [IMPLEMENTATION.md](./IMPLEMENTATION.md)
 - [TESTING.md](./TESTING.md)
 - [REFERENCES.md](./REFERENCES.md)
+
+The [GitHub terminal/readiness milestone](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness)
+adds explicit scoped gh/Git HTTPS execution and cancellable API/tool checks. Full packet scope
+remains In progress; see [user guidance](../../user/vault.md#route-a-terminal-command-through-vault).

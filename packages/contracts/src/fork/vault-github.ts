@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
+import { ThreadId } from "../baseSchemas.ts";
 import { PositiveInt, IsoDateTime } from "../baseSchemas.ts";
 import { VaultError, VaultItemId, VaultItemSummary, VaultItemChange } from "./vault-core.ts";
 export const VaultGitHubRepository = Schema.String.check(
@@ -82,6 +83,45 @@ export const VaultGitHubRun = Schema.Struct({
   operation: VaultGitHubOperation,
 });
 export type VaultGitHubRun = typeof VaultGitHubRun.Type;
+export const VaultGitHubTerminalCommand = Schema.Struct({
+  tool: Schema.Literals(["gh", "git"]),
+  argv: Schema.Array(
+    Schema.String.check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(8000),
+      Schema.makeFilter((value) => !value.includes(String.fromCharCode(0))),
+    ),
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+});
+export type VaultGitHubTerminalCommand = typeof VaultGitHubTerminalCommand.Type;
+export const VaultGitHubTerminalRun = Schema.Struct({
+  ...VaultGitHubTarget.fields,
+  command: VaultGitHubTerminalCommand,
+});
+export type VaultGitHubTerminalRun = typeof VaultGitHubTerminalRun.Type;
+export const VaultGitHubReadinessInput = Schema.Struct({
+  ...VaultGitHubTarget.fields,
+  threadId: Schema.NullOr(ThreadId),
+});
+export type VaultGitHubReadinessInput = typeof VaultGitHubReadinessInput.Type;
+export const VaultGitHubReadiness = Schema.Struct({
+  account: Schema.String,
+  repository: VaultGitHubRepository,
+  expectedVersion: PositiveInt,
+  checkedAt: IsoDateTime,
+  expiresAt: IsoDateTime,
+  context: Schema.Literal("loom-server"),
+  providerInstanceId: Schema.NullOr(Schema.String),
+  grant: Schema.Literals(["unchecked", "ready", "denied"]),
+  checks: Schema.Array(
+    Schema.Struct({
+      kind: Schema.Literals(["api", "gh", "git-https"]),
+      state: Schema.Literals(["ready", "failed", "skipped"]),
+      reason: Schema.NullOr(Schema.String),
+    }),
+  ),
+});
+export type VaultGitHubReadiness = typeof VaultGitHubReadiness.Type;
 export const VaultGitHubResult = Schema.Struct({
   account: Schema.String,
   repository: VaultGitHubRepository,
@@ -89,6 +129,11 @@ export const VaultGitHubResult = Schema.Struct({
   stdout: Schema.String,
 });
 export type VaultGitHubResult = typeof VaultGitHubResult.Type;
+export const VaultGitHubTerminalResult = Schema.Struct({
+  ...VaultGitHubResult.fields,
+  stderr: Schema.String,
+});
+export type VaultGitHubTerminalResult = typeof VaultGitHubTerminalResult.Type;
 export const vaultGitHubDestination = (repository: string) =>
   `https://github.com/${repository.toLowerCase()}`;
 export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("VaultGitHubError", {
@@ -102,10 +147,16 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
     "failed",
     "timeout",
     "unsupported",
+    "invalid-command",
+    "unsafe-git-config",
   ]),
 }) {
   override get message() {
     return {
+      "invalid-command":
+        "Use a supported noninteractive gh or Git HTTPS command for the selected repository.",
+      "unsafe-git-config":
+        "This repository has Git configuration that can override credential routing. Remove custom authentication, URL rewrites or executable transport settings before retrying.",
       "invalid-credential":
         "Use valid dedicated GitHub credentials. App keys must be RSA PEM private keys.",
       unauthorized: "GitHub refused these credentials. Replace or renew the connection in Vault.",
@@ -114,13 +165,13 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
       unavailable: "GitHub could not be reached. Check the connection before retrying.",
       "invalid-response": "GitHub returned an unsupported response.",
       "cli-unavailable":
-        "Install GitHub CLI on the Loom server before using mediated GH operations.",
+        "Install the required gh or git executable on the Loom server before retrying.",
       failed:
         "The GH operation failed. Its remote outcome may be unknown; inspect GitHub before retrying a write.",
       timeout:
         "The GH operation timed out. Its remote outcome may be unknown; inspect GitHub before retrying a write.",
       unsupported:
-        "This connector supports github.com and the documented mediated GH operations only.",
+        "This connector supports github.com and documented GH/Git HTTPS commands on macOS and Linux.",
     }[this.reason];
   }
 }
@@ -130,9 +181,15 @@ export const VAULT_GITHUB_WS_METHODS = {
   save: "loom.vault-connectors.githubSave",
   test: "loom.vault-connectors.githubTest",
   change: "loom.vault-connectors.githubChange",
+  readiness: "loom.vault-connectors.githubReadiness",
 } as const;
 const error = Schema.Union([VaultError, VaultGitHubError, EnvironmentAuthorizationError]);
 export const VaultGitHubRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_GITHUB_WS_METHODS.readiness, {
+    payload: VaultGitHubReadinessInput,
+    success: VaultGitHubReadiness,
+    error,
+  }),
   Rpc.make(VAULT_GITHUB_WS_METHODS.list, {
     payload: Schema.Struct({ cursor: Schema.NullOr(VaultItemId) }),
     success: Schema.Struct({

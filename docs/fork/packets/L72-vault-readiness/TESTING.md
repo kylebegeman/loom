@@ -58,3 +58,13 @@ Changed Markdown links, whitespace and the seam manifest were checked. No new up
 were added by these three features. The committed merge-tree preview against the newest locally available nightly,
 `v0.1.1-nightly.20261017.3238`, exited 0 with no conflicts. No fetch or full production
 integration rehearsal was run.
+
+## GitHub terminal/readiness verification
+
+The shared milestone passes 47 focused tests in eight files, scoped consumer typechecks,
+changed-source lint and mobile native static checks. Web/iOS verified synthetic credential
+failure, thread-specific denial and reference-only command copying; web also verified narrow
+layout and expiry. Service cancellation releases the acquired provider session. Full evidence,
+commands, merge baseline and live-provider/runner limits are in
+[L82 testing](../L82-vault-connectors/TESTING.md#github-terminal-and-live-readiness-milestone).
+The complete selected packet remains In progress.

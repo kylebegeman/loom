@@ -1,3 +1,4 @@
+import { GitHubReadiness } from "./GitHubReadiness";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
@@ -107,8 +108,8 @@ function Manager({
       </Text>
       <Text>
         Use is limited to named github.com repositories and exact active-run grants. API testing
-        does not prove Git HTTPS or GH CLI installation. Only the documented mediated GH operations
-        are supported.
+        does not prove Git HTTPS or GH CLI installation. Use the explicit Vault terminal command for
+        supported gh and Git HTTPS operations.
       </Text>
       <Button
         label="Refresh GitHub connections"
@@ -128,6 +129,7 @@ function Manager({
         <Connection
           key={`${info.item.id}:${info.item.version}`}
           info={info}
+          environmentId={environmentId}
           disabled={locked || !!draft}
           onEdit={() => edit(info)}
           onTest={(repository) =>
@@ -279,12 +281,14 @@ function Manager({
   );
 }
 function Connection({
+  environmentId,
   info,
   disabled,
   onEdit,
   onTest,
   onChange,
 }: {
+  environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   disabled: boolean;
   onEdit: () => void;
@@ -326,6 +330,12 @@ function Connection({
         label={`${info.item.state === "archived" ? "Restore" : "Disconnect"} ${info.item.label}`}
         disabled={disabled}
         onPress={() => (info.item.state === "archived" ? onChange("restore") : setConfirm(true))}
+      />
+      <GitHubReadiness
+        environmentId={environmentId}
+        info={info}
+        repository={repo}
+        disabled={disabled}
       />
       {confirm ? (
         <>

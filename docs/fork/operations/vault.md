@@ -245,7 +245,7 @@ Execution creates private temporary HOME/config directories and explicitly suppl
 token, with bounded concurrency/output/time. Personal GH configuration and SSH agent sockets
 are excluded. Same-user/full-access processes are not OS-isolated. Local archive prevents new
 use; remote provider revocation and OpenBao version history are separate operator decisions.
-Ordinary terminal GH/Git HTTPS and existing host-setup precedence are not changed.
+Existing host-setup precedence and persistent terminal logins are not changed. Explicit command-scoped routing is available through the Vault wrapper.
 Project profiles now support explicit GitHub connection/repository bindings with pinned versions,
 configuration/grant preflight and named mediated execution; GitHub-only operations need no SSH
 broker. A live API/CLI probe remains separate from configuration preflight.
@@ -253,3 +253,31 @@ The vault-profile-github capability gates choices/imports on older servers. Vers
 requirements carry no local connection/repository IDs; version 1 remains SSH/Git-only. Servers
 with stored GitHub profile kinds cannot be downgraded safely without a reviewed restore plan. No real App registration, provider write, personal migration or production rollout is
 part of the synthetic acceptance checks.
+
+## Operate GitHub terminal routing
+
+The `vault-github-terminal` capability advertises explicit gh/Git HTTPS commands and live
+readiness. Install `gh` and `git` in the macOS/Linux Loom server's executable PATH. The child
+gets a private HOME/config directory and selected credentials in its environment, with an
+exact github.com repository credential helper for Git. Global/system Git configuration,
+personal tokens, key managers and SSH sockets are excluded. Repository authentication,
+HTTP, URL rewrite, include, filter and executable-transport settings are conservatively rejected;
+review these settings explicitly rather than bypassing the check. TLS verification stays on,
+redirects are disabled and repository hooks/automatic signing/maintenance are suppressed.
+
+Commands infer cwd from the authenticated thread checkout or project root. `origin` is expanded
+to the selected HTTPS URL for this invocation. Fetch without an explicit refspec also updates
+`refs/remotes/origin/*`; persisted remote configuration is untouched. CLI output is raw scrubbed
+stdout/stderr with the child's exit status. Combined output is capped at 64 KiB, command time
+at 120 seconds, and connection-use concurrency at four. Cleanup removes the private directory,
+terminates the owned process group and attempts App-token release. No local secret payload is
+written into the helper, repository or prompt. Same-user/full-access processes can still read
+credential-bearing children; this is scoped delivery, not OS isolation.
+
+The wrapper requires the existing authenticated MCP endpoint/authorization environment. ACP
+supplies that fallback; other provider harnesses may use the native MCP tool or explicitly
+configure their terminal connection. Do not export administrator authorization to an agent to
+work around a denial. Shared instructions advertise tools conditionally for every adapter,
+including Pi. A server-context readiness result cannot certify that a harness propagates its
+MCP environment to terminal children, a detached runner, a future grant or every provider write.
+Persistent terminal activation and provider adapter environment setup remain separate work.

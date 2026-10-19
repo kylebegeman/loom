@@ -1,3 +1,4 @@
+import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
 import * as GitHubCli from "./GitHubCli.ts";
@@ -106,6 +107,7 @@ export const sshFixture = (
     const github = VaultGitHub.layer.pipe(
       Layer.provideMerge(layer),
       Layer.provideMerge(githubAdapters),
+      Layer.provideMerge(GitHubTerminal.layer),
     );
     const context = yield* Layer.build(VaultProfiles.layer.pipe(Layer.provideMerge(github))),
       ssh = Context.get(context, VaultSsh.VaultSsh),

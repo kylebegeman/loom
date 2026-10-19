@@ -1,3 +1,4 @@
+import { githubExecCommand } from "./terminal-cli.ts";
 import { brokerCommand } from "./broker-cli.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI process boundary reads its authenticated connection environment.
 import * as NodeProcess from "node:process";
@@ -7,6 +8,7 @@ const actions = {
   "references-search": "loom_vault_references_search",
   "references-describe": "loom_vault_references_describe",
   github: "loom_vault_github",
+  "github-readiness": "loom_vault_github_readiness",
   "github-info": "loom_vault_github_info",
   "github-connections": "loom_vault_github_connections",
   "github-test": "loom_vault_github_test",
@@ -46,6 +48,7 @@ export const vaultCommand = Command.make("vault").pipe(
   ),
   Command.withSubcommands([
     brokerCommand,
+    githubExecCommand,
     ...Object.entries(actions).map(([action, tool]) =>
       Command.make(action, {
         argumentsJson: Argument.String("arguments-json").pipe(

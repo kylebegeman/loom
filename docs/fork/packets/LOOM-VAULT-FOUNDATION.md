@@ -15,6 +15,14 @@ include manual terminal-run retirement with durable tombstones and retained Open
 and are documented in [L75 technical design](./L75-vault-profiles/TECHNICAL.md). Explicit composer/scheduled-prompt links now require blocking server preflight. Portable
 declarations, additional kinds and run-pin cleanup remain selected.
 
+## Implemented GitHub command boundary
+
+Explicit terminal gh/Git HTTPS requests reuse authenticated active-run access and the selected
+connection/version/repository. The CLI preserves streams and exit status; no surrounding-shell
+login or SSH migration occurs. API/GH/Git HTTPS readiness is cancellable, expires after 60 seconds
+and reports server context plus optional provider/run access. Independent runner and native
+provider-terminal setup remain outside these probe guarantees. See [connector design](./L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
+
 ## Implemented record boundary
 
 `packages/contracts/src/fork/vault-core.ts` and `apps/server/src/fork/vault/` implement

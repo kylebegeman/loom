@@ -48,6 +48,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [VP.preview]: AuthAccessReadScope,
   [VG.save]: AuthAccessWriteScope,
   [VG.test]: AuthAccessWriteScope,
+  [VG.readiness]: AuthAccessWriteScope,
   [VG.change]: AuthAccessWriteScope,
   [VG.info]: AuthAccessReadScope,
   [VG.list]: AuthAccessReadScope,

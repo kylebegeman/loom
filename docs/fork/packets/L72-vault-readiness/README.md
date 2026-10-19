@@ -59,3 +59,7 @@ were required for this chunk. See [SEAMS.md](./SEAMS.md) for the shared boundary
 - [IMPLEMENTATION.md](./IMPLEMENTATION.md)
 - [TESTING.md](./TESTING.md)
 - [REFERENCES.md](./REFERENCES.md)
+
+The [GitHub terminal/readiness milestone](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness)
+adds explicit scoped gh/Git HTTPS execution and cancellable API/tool checks. Full packet scope
+remains In progress; see [user guidance](../../user/vault.md#route-a-terminal-command-through-vault).

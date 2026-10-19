@@ -94,3 +94,42 @@ After fetching tags, parent `c1a61e657a` has **61 baseline conflicts** against
 the committed preview has the same 61-file conflict set, with no added conflicting files.
 No working-tree merge,
 push, PR or deployment is authorized by these checks.
+
+## GitHub terminal and live-readiness milestone
+
+The focused acceptance set passes **47 tests in 8 files**: terminal argv validation, scoped child
+execution/real Git credential-helper behavior, GitHub connection service and authenticated MCP,
+profile regressions, API/typed GH adapters, terminal CLI protocol/output/exit status and destination
+permission revocation. Cancellation waits on a Deferred before interrupting and verifies provider
+session release. Unsupported commands/destinations, repository credential rewrites, oversized
+output, revoked grants, changed runs/providers, missing executables and malformed MCP results
+are covered. Successful provider/command execution uses synthetic external adapters/executables;
+no live GitHub write or working credential is involved.
+
+```sh
+node_modules/.bin/vp test run apps/server/src/fork/vault/GitHubTerminal.test.ts apps/server/src/fork/vault/GitHubCommand.test.ts apps/server/src/fork/vault/VaultGitHub.test.ts apps/server/src/fork/vault/VaultGitHubProfiles.test.ts apps/server/src/fork/vault/GitHubCli.test.ts apps/server/src/fork/vault/GitHubTransport.test.ts apps/server/src/fork/vault/terminal-cli.test.ts packages/client-runtime/src/fork/vault-github.permissions.test.ts
+```
+
+Scoped contracts, client-runtime, provider-core, server, web, mobile and desktop typechecks pass,
+as do changed-source lint and native static checks. The actual CLI help entry loads. A separate real CLI subprocess against a local synthetic MCP
+server returns exact stdout/stderr with exit codes 0 and 7; no runtime error banner pollutes the
+child streams. This regression is also covered through the runtime error-reporting contract. No dependency,
+SQL migration, upstream source seam or repo-wide check was added. Existing static suggestions
+outside this change are not type errors.
+
+Web and iOS verified live-readiness controls using a synthetic connection in disposable OpenBao:
+host-only authentication failure, thread selection, inactive/ungranted-run denial, separate
+skipped probes, repair guidance and copying the reference-only terminal command. Web also
+verified 390px layout without readiness-section overflow and visible expiry after 60 seconds.
+Readiness cancellation is verified at the service/transport boundary; a slow-provider UI cancel
+interaction was not independently forced. Native fingerprint matched; no rebuild was required.
+Development watch restarts temporarily reset clients; checks were repeated with a stable backend.
+
+Live GitHub API success, network clone/fetch/push, writes, independent runner environments,
+automatic native-harness terminal MCP setup, Android, standalone Electron and relay/tunnel
+transports are not independently verified. These checks do not authorize personal credential
+migration, live account registration, persistent shell changes or deployment. Full selected packet
+scopes remain In progress.
+
+The parent `1210796c71` baseline has 68 conflicting files against
+`v0.1.1-nightly.20261019.3373`. The committed preview has the identical 68-file conflict set with no added conflicts.

@@ -145,3 +145,13 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## GitHub command-scoped delivery
+
+The existing authenticated MCP boundary now supports explicit gh and Git HTTPS argv, including
+fetch/push/clone, in the active thread checkout. A private child environment and exact-repository
+Git helper carry credentials; the CLI preserves streams/exit status. Current run/version/grant
+checks, process cleanup and token release remain authoritative, independently of readiness.
+This does not install a persistent shell environment, migrate SSH remotes or certify every
+provider's terminal MCP environment. The shared contract and limits are in
+[L82 technical design](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).

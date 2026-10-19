@@ -15,8 +15,10 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 The approved section uses the authenticated MCP channel already attached to provider/task
 launches. Hosted SSH and Git ref listing/fetch acquire and release their sessions automatically.
-Ordinary terminal agent sockets, clone/push, GitHub account adapters and general SDK/CLI delivery
-remain selected. Next suggested section for Kyle's approval: Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings.
+Explicit GitHub command-scoped gh and Git HTTPS ls-remote/fetch/push/clone are now implemented
+through the same authenticated agent boundary. Ordinary SSH agent sockets, persistent shell
+activation and general SDK delivery remain selected. Project references/profiles are implemented
+local milestones; their remaining complete scopes stay selected.
 A check cannot authorize a later operation from a cached response. No live credential or
 deployment change was made.
 

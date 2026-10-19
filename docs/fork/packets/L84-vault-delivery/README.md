@@ -21,7 +21,7 @@ create, sign and release a workload automatically for SSH commands or Git ref li
 The operator must configure an enrolled broker for the server first. No workload key/session
 file transfer is required for these operations. Git uses the current thread checkout and an
 exact repository grant. See [use from an agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run).
-Ordinary terminal SSH/Git routing, clone/push, general CLI exec, SDK delivery modes and
+Ordinary terminal SSH agent routing, general shell exec, SDK delivery modes and
 per-workload OS isolation remain pending.
 
 ## Scope
@@ -59,3 +59,7 @@ A small shared-provider instruction seam adds Vault guidance; no dependency is a
 - [IMPLEMENTATION.md](./IMPLEMENTATION.md)
 - [TESTING.md](./TESTING.md)
 - [REFERENCES.md](./REFERENCES.md)
+
+The [GitHub terminal/readiness milestone](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness)
+adds explicit scoped gh/Git HTTPS execution and cancellable API/tool checks. Full packet scope
+remains In progress; see [user guidance](../../user/vault.md#route-a-terminal-command-through-vault).

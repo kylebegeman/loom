@@ -1,3 +1,4 @@
+import * as GitHubTerminal from "./vault/GitHubTerminal.ts";
 import * as VaultGitHub from "./vault/VaultGitHub.ts";
 import * as GitHubTransport from "./vault/GitHubTransport.ts";
 import * as GitHubCli from "./vault/GitHubCli.ts";
@@ -100,6 +101,8 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       layerVaultAccess,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       GitHubCli.layer,
+      GitHubTerminal.layer,
+      ProjectStore.layer,
     ),
   ),
 );

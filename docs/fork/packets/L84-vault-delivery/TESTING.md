@@ -66,3 +66,13 @@ The new shared instruction seam is recorded in FORK.md and the seam manifest; al
 source changes are fork-owned. Source commit `fe77b4fb01` previews cleanly against the newest local
 nightly `v0.1.1-nightly.20261017.3238`. The isolated dev server starts successfully. No fetch, landing, push or production
 rollout is performed. Full post-landing rehearsal remains a separate integration check.
+
+## GitHub terminal/readiness verification
+
+The shared milestone passes 47 focused tests in eight files, scoped consumer typechecks,
+changed-source lint and mobile native static checks. Web/iOS verified synthetic credential
+failure, thread-specific denial and reference-only command copying; web also verified narrow
+layout and expiry. Service cancellation releases the acquired provider session. Full evidence,
+commands, merge baseline and live-provider/runner limits are in
+[L82 testing](../L82-vault-connectors/TESTING.md#github-terminal-and-live-readiness-milestone).
+The complete selected packet remains In progress.

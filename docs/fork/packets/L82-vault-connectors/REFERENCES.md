@@ -30,3 +30,7 @@ copied. Disposable provider/CLI test fixtures do not establish live GitHub accep
 
 - [GitHub profile integration](../../../../apps/server/src/fork/vault/VaultGitHubProfiles.test.ts)
 - [Shared profile design](../L75-vault-profiles/TECHNICAL.md#github-profile-binding-and-mediated-execution)
+
+- [Command-scoped terminal adapter](../../../../apps/server/src/fork/vault/GitHubTerminal.ts)
+- [Supported command parser](../../../../apps/server/src/fork/vault/GitHubCommand.ts)
+- [Terminal CLI boundary](../../../../apps/server/src/fork/vault/terminal-cli.ts)

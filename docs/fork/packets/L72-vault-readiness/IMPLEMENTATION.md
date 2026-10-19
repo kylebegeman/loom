@@ -17,10 +17,13 @@ GitHub authentication, host trust, provider tools or unattended launch readiness
 ## Remaining
 
 Implement enrolled broker/runner context probes, profile requirement discovery, harmless
-SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
-preflight with project launches and schedules. Durable long-running check operations are not
+SSH and additional provider checks plus broader network/host-trust classification. Explicit
+GitHub API/GH CLI/Git HTTPS checks and profile launch/schedule guards are implemented local
+milestones. Keep configuration preflight separate from external live checks. Durable long-running check operations are not
 needed by the current bounded server check, but remain required for future external probes.
 
 Use the complete PRODUCT target and shared extension contract when extending this milestone.
 Keep thin transports and one execution evaluator. Checks and integrated evidence are in
 [TESTING.md](./TESTING.md). No production rollout is implied by passing local verification.
+
+GitHub readiness is delivered through the existing connector boundary; see its [technical contract](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).

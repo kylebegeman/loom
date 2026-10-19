@@ -72,3 +72,12 @@ separation and self-hosting option are product requirements. The delivered decis
 - Should scheduled tasks require preflight by default or only when their profile requests it?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
+
+## Explicit GitHub terminal use and live checks
+
+Connection management now offers cancellable API/GH CLI/Git HTTPS readiness, optionally for a
+selected thread, and a reference-only terminal command to copy. Use the explicit Vault wrapper
+for supported gh and Git HTTPS commands without a personal key-manager prompt. It acts on the
+execution computer's checkout and preserves output/exit status. A host-only success does not
+authorize a thread; stale results, run/grant denials and provider failures remain distinct.
+Existing shell logins, SSH remotes and independently launched runners are not migrated.

@@ -3,7 +3,7 @@
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
 2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment,
 L84 hosted run access, L81 mediated SSH/Git and key/trust management, L80/L77/L72 grants,
-inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L82 dedicated GitHub/mediated GH access with named project bindings are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L82 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.

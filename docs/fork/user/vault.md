@@ -383,3 +383,52 @@ An agent can call `loom_vault_profile_run` with the binding name and, for exampl
 supplies the pinned item/version/repository. This runs through isolated server-side GH and
 inherits its limits and inspect-before-retry rule for uncertain writes. It does not configure
 ordinary terminal gh/Git HTTPS or your personal credentials.
+
+## Route a terminal command through Vault
+
+In **Vault GitHub connections**, choose the repository and copy the terminal command. Run it
+from an authenticated Loom agent terminal. It names only a connection reference and version;
+never paste a credential into the command. The command runs on the Loom server in the active
+thread's checkout, including when you control it from another computer or phone.
+
+For example, replace the reference below with your saved connection, then choose the normal
+command arguments. The wrapper forwards output and the child's exit status:
+
+```sh
+loom vault github-exec '{"id":"<connection-id>","expectedVersion":1,"repository":"owner/repo","command":{"tool":"gh","argv":["pr","list","--state","all"]}}'
+loom vault github-exec '{"id":"<connection-id>","expectedVersion":1,"repository":"owner/repo","command":{"tool":"git","argv":["fetch","origin"]}}'
+```
+
+Supported GH families are `repo view`, PR list/view/checks/diff/create/comment/close/reopen/
+merge/ready/review, and issue list/view/create/comment/close/reopen. Use numeric PR/issue
+references and explicit flags for noninteractive writes. Git supports `ls-remote`, `fetch`,
+`push` and `clone`, with the selected HTTPS URL or `origin`. For clone, use the selected URL
+and optionally a new directory name under the checkout. `origin` means the selected Vault
+repository for this command; fetching it without refspecs updates its remote-tracking branches.
+Stored remotes and the surrounding shell's account stay unchanged. Account-login commands,
+interactive flags, extensions, other destinations and custom executable transport flags fail
+with guidance. A repository with custom credential, HTTP, URL-rewrite or executable settings
+must have those settings reviewed and removed before routed execution.
+
+Each invocation needs a current connection version and exact repository use grant for the
+active full-access/default thread. The CLI uses its authenticated MCP connection through
+`LOOM_MCP_ENDPOINT`/`LOOM_MCP_AUTHORIZATION`, or the existing ACP MCP environment. Native agent
+MCP callers can use `loom_vault_github_exec` directly when terminal connection variables are
+not supplied by their harness. Never transfer that authorization through chat. There is no
+persistent shell activation, personal-login fallback or automatic SSH remote conversion.
+After a timeout, cancellation or an uncertain write outcome, inspect GitHub before retrying.
+
+## Check GitHub execution readiness
+
+Choose **Check GitHub readiness** in the same connection section on web/desktop or mobile.
+The default checks the selected identity's API access, GH CLI repository read and Git HTTPS
+ref read on the Loom server. Select a thread to check its current run and repository use grant;
+a denied/inactive thread skips provider probes. A result names the server execution context,
+separates each check, and expires after 60 seconds. Cancel a pending check or run it again after
+repairing credentials, tool installation, permissions or network access.
+
+Host-only results leave run access unchecked. Checks do not prove every write permission,
+an independently configured provider terminal, SSH readiness or another runner's environment.
+Agents can call `loom_vault_github_readiness` for their own thread; administrators can use
+`loom vault github-readiness` with the connection/version/repository and `threadId:null` or a
+selected thread. A successful check grants no later access; execution checks authority again.

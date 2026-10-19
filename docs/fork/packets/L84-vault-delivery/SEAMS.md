@@ -23,3 +23,7 @@ guidance and prepends it through the existing provider instruction constant. Bot
 `fork: ext-vault` lines are registered in FORK.md and `docs/fork/seams.tsv`; no provider adapter
 is edited. This shared instruction boundary is recorded in EXTENSION-POINTS.md. Ordinary
 terminal environment attachment and additional delivery modes still need integration review.
+
+GitHub terminal routing/readiness extends fork-owned contracts, adapters, services, CLI/MCP,
+protected RPC registrations and web/native settings. It adds no upstream seams, dependencies,
+SQL migrations or production infrastructure changes.

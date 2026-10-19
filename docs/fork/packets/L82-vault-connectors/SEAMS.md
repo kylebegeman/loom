@@ -26,3 +26,7 @@ A baseline conflict is not a clean merge claim; no working-tree merge or deploym
 GitHub profile binding reuses L75 shared profile/launch contracts and fork-only client components.
 The optional execution guard rechecks profile authority without importing profile internals into
 the connector. No upstream file or manifest changes are introduced by this section.
+
+GitHub terminal routing/readiness extends fork-owned contracts, adapters, services, CLI/MCP,
+protected RPC registrations and web/native settings. It adds no upstream seams, dependencies,
+SQL migrations or production infrastructure changes.

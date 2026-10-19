@@ -81,3 +81,12 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## GitHub execution checks
+
+The connector now owns bounded, cancellable API/GH CLI/Git HTTPS probes, an optional active
+thread/run/use-grant check, provider identification and 60-second freshness. Host-only checks
+leave run access unchecked; denied runs skip external probes. This does not change the earlier
+general readiness endpoint's conservative broker/delivery conclusions or certify a separate
+runner/provider-terminal environment. The shared execution/cleanup contract is in
+[L82 technical design](../L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
