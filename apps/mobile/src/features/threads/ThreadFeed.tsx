@@ -229,6 +229,7 @@ import { waitForThreadShellReady } from "./threadForkNavigation";
 import { resolveUserMessageIntentBadge } from "./userMessageIntentBadge";
 import { fileChipMenu, resolveFileChipTarget, type FileChipAction } from "./fileChipMenu";
 import { useFileChipShare } from "./useFileChipShare";
+import { openPreviewLinkFromMessage } from "../../fork/preview-links/openPreviewLink"; // fork: preview-links
 import {
   MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
@@ -1837,6 +1838,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }
 
       if (presentation.kind !== "file" && presentation.href) {
+        if (openPreviewLinkFromMessage(presentation.href, props.environmentId)) return; // fork: preview-links
         if (/^https?:\/\//i.test(presentation.href) && isPdfFile({ name: presentation.href })) {
           setExpandedFile(
             (current) => current ?? { kind: "pdf", uri: presentation.href!, name: "Document.pdf" },

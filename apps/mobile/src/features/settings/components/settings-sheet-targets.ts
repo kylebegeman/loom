@@ -20,6 +20,7 @@ export type SettingsSheetTarget =
   | "SettingsClientStorage"
   | "SettingsDiagnostics"
   | "SettingsOpenSourceLicenses"
-  | "SettingsUsage";
+  | "SettingsUsage"
+  | "PreviewLinks"; // fork: preview-links
 
 export type SettingsLegalDocumentTarget = "SettingsLegal";

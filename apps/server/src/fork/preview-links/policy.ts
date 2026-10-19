@@ -1,0 +1,228 @@
+// @effect-diagnostics nodeBuiltinImport:off - cookie HMACs and entry codes run synchronously on the gateway's request path.
+import * as NodeCrypto from "node:crypto";
+import {
+  PREVIEW_LINK_LIFETIME_MS,
+  PREVIEW_LINK_RESTORE_WINDOW_MS,
+  parsePreviewLinkHost,
+  type PreviewLink,
+  type PreviewLinksSettings,
+} from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
+import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
+import { PREVIEW_ENTRY_PATH, PREVIEW_RESERVED_PATH } from "./types.ts";
+
+/** SSH, databases, debuggers and Loom's own default ports. Ports below 1024 are denied too. */
+export const DENIED_PREVIEW_PORTS: ReadonlySet<number> = new Set([
+  22, 3306, 3773, 3779, 5432, 6379, 8317, 9222, 9229, 27017,
+]);
+
+export const PREVIEW_ENTRY_CODE_TTL_MS = 60_000;
+export const PREVIEW_COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
+const COOKIE_VALUE_MAX_LENGTH = 4096;
+const SHARE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+const SHARE_LENGTH = 6;
+
+/** `ownPorts` are listeners this server knows it runs: its own port, the dev web port, the gateway and cloudflared metrics. */
+export function isPreviewPortDenied(
+  port: number,
+  ownPorts: Iterable<number | null | undefined>,
+): boolean {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) return true;
+  if (DENIED_PREVIEW_PORTS.has(port)) return true;
+  for (const own of ownPorts) if (own === port) return true;
+  return false;
+}
+
+export function isLanePort(port: number, portBase: number | null): boolean {
+  return portBase !== null && port >= portBase && port < portBase + PORT_BLOCK;
+}
+
+/** `Dorothy.local` becomes `dorothy`. Falls back to `loom` when nothing usable is left. */
+export function previewMachineSlug(hostname: string): string {
+  const first = hostname.trim().toLowerCase().split(".")[0] ?? "";
+  const slug = first.replace(/[^a-z0-9]/g, "").slice(0, 40);
+  return slug.length > 0 ? slug : "loom";
+}
+
+export function isPreviewReady(settings: PreviewLinksSettings): boolean {
+  return settings.enabled && settings.suffix !== null;
+}
+
+export function randomShareSegment(): string {
+  let share = "";
+  while (share.length < SHARE_LENGTH) {
+    for (const byte of NodeCrypto.randomBytes(SHARE_LENGTH * 2)) {
+      // 252 is the largest multiple of 36 below 256, so every character is equally likely.
+      if (byte < 252 && share.length < SHARE_LENGTH) share += SHARE_ALPHABET[byte % 36];
+    }
+  }
+  return share;
+}
+
+export function formatPreviewHost(input: {
+  readonly port: number;
+  readonly share: string;
+  readonly machine: string;
+  readonly suffix: string;
+}): string {
+  return `${input.port}-${input.share}-${input.machine}.${input.suffix}`;
+}
+
+/** True when `host` is one of this computer's preview hosts under the current settings. */
+export function isCurrentPreviewHost(host: string, settings: PreviewLinksSettings): boolean {
+  if (settings.suffix === null) return false;
+  return parsePreviewLinkHost(host, settings.suffix)?.machine === settings.machine;
+}
+
+export function randomPreviewLinkId(): string {
+  return NodeCrypto.randomUUID();
+}
+
+export function randomCookieKey(): Uint8Array {
+  return new Uint8Array(NodeCrypto.randomBytes(32));
+}
+
+export function randomEntryCode(): string {
+  return NodeCrypto.randomBytes(16).toString("base64url");
+}
+
+export function previewEntryUrl(host: string, code: string): string {
+  return `https://${host}${PREVIEW_ENTRY_PATH}?code=${encodeURIComponent(code)}`;
+}
+
+/**
+ * The landing path after entry. It becomes a `Location` header, so anything that could leave
+ * the host or break the header falls back to `/`; other non-ASCII characters are escaped.
+ */
+export function sanitizeEntryPath(path: string | undefined): string {
+  if (path === undefined || path.length === 0 || path.length > 4096) return "/";
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return "/";
+  // Landing on the gateway's own paths would replay the entry or show its pages instead of the app.
+  if (path.startsWith(PREVIEW_RESERVED_PATH)) return "/";
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(path)) return "/";
+  try {
+    return path.replace(/[^!-~]/gu, (character) => encodeURIComponent(character));
+  } catch {
+    return "/";
+  }
+}
+
+/** The host of a link URL such as an agent's canonical link, or null for anything else. */
+export function previewReferenceUrl(reference: string): URL | null {
+  if (!/^https?:\/\//i.test(reference)) return null;
+  try {
+    return new URL(reference);
+  } catch {
+    return null;
+  }
+}
+
+interface PreviewCookieClaims {
+  readonly v: 1;
+  readonly sub: string;
+  readonly sid: string;
+  readonly host: string;
+  /** Unix seconds. */
+  readonly exp: number;
+}
+
+const hmac = (key: Uint8Array, payload: string) =>
+  NodeCrypto.createHmac("sha256", key).update(payload).digest();
+
+export function signPreviewCookie(claims: Omit<PreviewCookieClaims, "v">, key: Uint8Array): string {
+  const payload = Buffer.from(
+    JSON.stringify({ v: 1, sub: claims.sub, sid: claims.sid, host: claims.host, exp: claims.exp }),
+  ).toString("base64url");
+  return `${payload}.${hmac(key, payload).toString("base64url")}`;
+}
+
+export function verifyPreviewCookie(
+  value: string,
+  key: Uint8Array,
+  host: string,
+  nowMs: number,
+): { readonly sid: string; readonly sub: string } | null {
+  if (value.length === 0 || value.length > COOKIE_VALUE_MAX_LENGTH) return null;
+  const dot = value.indexOf(".");
+  if (dot <= 0 || dot !== value.lastIndexOf(".")) return null;
+  const payload = value.slice(0, dot);
+  const signature = Buffer.from(value.slice(dot + 1), "base64url");
+  const expected = hmac(key, payload);
+  if (signature.length !== expected.length || !NodeCrypto.timingSafeEqual(signature, expected))
+    return null;
+  let claims: unknown;
+  try {
+    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof claims !== "object" || claims === null) return null;
+  const { v, sub, sid, host: claimedHost, exp } = claims as Record<string, unknown>;
+  if (v !== 1 || typeof sub !== "string" || typeof sid !== "string") return null;
+  if (claimedHost !== host || typeof exp !== "number" || exp * 1000 <= nowMs) return null;
+  return { sid, sub };
+}
+
+const ms = (iso: string | null) => (iso === null ? null : Date.parse(iso));
+
+export const isoAt = (epochMs: number): string => DateTime.formatIso(DateTime.makeUnsafe(epochMs));
+
+/** The next time a link expires or an ended link is purged, or null when nothing is pending. */
+export function nextPreviewDeadline(links: ReadonlyArray<PreviewLink>): number | null {
+  let next: number | null = null;
+  for (const link of links) {
+    const at = link.state === "open" ? ms(link.expiresAt) : ms(link.restorableUntil);
+    if (at !== null && Number.isFinite(at) && (next === null || at < next)) next = at;
+  }
+  return next;
+}
+
+export function endPreviewLink(
+  link: PreviewLink,
+  state: "revoked" | "expired",
+  endedAtMs: number,
+): PreviewLink {
+  return {
+    ...link,
+    state,
+    endedAt: isoAt(endedAtMs),
+    restorableUntil: isoAt(endedAtMs + PREVIEW_LINK_RESTORE_WINDOW_MS),
+  };
+}
+
+/**
+ * Expires open links past their lifetime, dating the end at `expiresAt` so a server that was
+ * down does not stretch the restore window, and drops ended links that can no longer be restored.
+ */
+export function sweepPreviewLinks(
+  links: ReadonlyArray<PreviewLink>,
+  nowMs: number,
+): { readonly links: ReadonlyArray<PreviewLink>; readonly changed: boolean } {
+  let changed = false;
+  const next: PreviewLink[] = [];
+  for (const link of links) {
+    if (link.state === "open") {
+      const expiresAt = Date.parse(link.expiresAt);
+      if (expiresAt <= nowMs) {
+        changed = true;
+        const ended = endPreviewLink(link, "expired", expiresAt);
+        if (Date.parse(ended.restorableUntil ?? "") > nowMs) next.push(ended);
+        continue;
+      }
+      next.push(link);
+      continue;
+    }
+    const until = ms(link.restorableUntil);
+    if (until === null || !(until > nowMs)) {
+      changed = true;
+      continue;
+    }
+    next.push(link);
+  }
+  return { links: changed ? next : links, changed };
+}
+
+export function previewExpiry(nowMs: number, lifetime: PreviewLink["lifetime"]): string {
+  return isoAt(nowMs + PREVIEW_LINK_LIFETIME_MS[lifetime]);
+}

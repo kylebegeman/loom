@@ -14,6 +14,7 @@ import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
 import { makeAppleBuildToolingRpcHandlers } from "./apple-build-tooling/rpc.ts";
 import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
+import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import { FORK_WS_METHODS, ForkRpcGroup } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -61,6 +62,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
         ...(yield* withForkRuntime(makeAppleBuildToolingRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeDeviceQaRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeCodeGraphRpcHandlers(auth))),
+        ...(yield* withForkRuntime(makePreviewLinksRpcHandlers(auth, session))),
       });
     }),
   );

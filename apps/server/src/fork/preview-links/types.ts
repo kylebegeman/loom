@@ -45,10 +45,12 @@ export interface PreviewGatewayHandle {
 
 export class PreviewGatewayListenError {
   readonly _tag = "PreviewGatewayListenError";
-  constructor(
-    readonly port: number,
-    readonly message: string,
-  ) {}
+  readonly port: number;
+  readonly message: string;
+  constructor(port: number, message: string) {
+    this.port = port;
+    this.message = message;
+  }
 }
 
 export type StartPreviewGateway = (options: {

@@ -10,6 +10,7 @@ import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
+import { environmentAdvertisesPreviewLinks } from "~/fork/preview-links/advertised"; // fork: preview-links
 import { readPreparedConnection } from "~/state/session";
 
 export {
@@ -34,7 +35,7 @@ const resolveEnvironmentPortTarget = (
 ): PreviewUrlResolution => {
   if (!isPrivateNetworkHost(environmentUrl.hostname)) {
     throw new Error(
-      "This environment port needs the planned authenticated preview gateway; its server address is not directly private-network reachable.",
+      "This computer's ports are not reachable from here. Set up preview links in Settings > Previews to open them.", // fork: preview-links
     );
   }
   const protocol = target.protocol ?? "http";
@@ -85,7 +86,8 @@ export function resolveBrowserNavigationTarget(
  * address (WSL NAT mode binds the distro IP), but a dev server bound to
  * loopback only answers on `localhost` there.
  */
-const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
+// fork: preview-links
+export const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));
 
@@ -96,6 +98,8 @@ export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl:
     if (!isLoopbackHost(parsed.hostname)) return normalizedUrl;
     const target = readPreparedConnection(environmentId)?.target;
     if (target && reachesEnvironmentLoopback(target)) return normalizedUrl;
+    // fork: preview-links: the preview navigation helper shares the port instead of guessing a LAN address.
+    if (environmentAdvertisesPreviewLinks(environmentId)) return normalizedUrl; // fork: preview-links
     return resolveEnvironmentPortTarget(
       environmentId,
       {

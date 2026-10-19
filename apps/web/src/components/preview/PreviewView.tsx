@@ -37,6 +37,7 @@ import {
   useThreadPreviewState,
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
+import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
   useEnvironment,
@@ -254,12 +255,16 @@ export function PreviewView({
   const navigateToResolvedUrl = async (resolvedUrl: string) => {
     if (isServerTab && serverSurfaceRef.current) {
       if (serverInputDisabled) return false;
-      serverSurfaceRef.current.navigate(resolvedUrl);
+      const target = await navigablePreviewUrlFor(threadRef, resolvedUrl, "server"); // fork: preview-links
+      if (target === null) return false; // fork: preview-links
+      serverSurfaceRef.current?.navigate(target); // fork: preview-links
       rememberPreviewUrl(threadRef, resolvedUrl);
       return true;
     }
     if (runtimeTabId && previewBridge) {
-      await previewBridge.navigate(runtimeTabId, resolvedUrl);
+      const target = await navigablePreviewUrlFor(threadRef, resolvedUrl, "desktop"); // fork: preview-links
+      if (target === null) return false; // fork: preview-links
+      await previewBridge.navigate(runtimeTabId, target); // fork: preview-links
       rememberPreviewUrl(threadRef, resolvedUrl);
       return true;
     }
@@ -410,7 +415,10 @@ export function PreviewView({
 
   const handleOpenInBrowser = () => {
     if (!localApi || !url) return;
-    void localApi.shell.openExternal(url).catch(() => undefined);
+    // fork: preview-links: a loopback or link address needs a fresh entry to open outside Loom.
+    void navigablePreviewUrlFor(threadRef, url, undefined) // fork: preview-links
+      .then((target) => (target === null ? undefined : localApi.shell.openExternal(target))) // fork: preview-links
+      .catch(() => undefined); // fork: preview-links
   };
 
   const moveTarget = alternatePreviewRuntime(

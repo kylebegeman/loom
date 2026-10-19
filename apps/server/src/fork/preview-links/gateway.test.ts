@@ -1,0 +1,508 @@
+// @effect-diagnostics nodeBuiltinImport:off - The gateway is tested against real loopback sockets.
+import * as NodeHttp from "node:http";
+import * as NodeNet from "node:net";
+
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+
+import { startPreviewGateway } from "./gateway.ts";
+import { PREVIEW_COOKIE_NAME, type PreviewGatewayEntry, type PreviewGatewayView } from "./types.ts";
+
+const LINK_HOST = "5173-abc123-dorothy.bagels.top";
+const ENDED_HOST = "5174-ended1-dorothy.bagels.top";
+const DENIED_HOST = "5175-denied-dorothy.bagels.top";
+const GOOD_COOKIE = "signed.value";
+const ORIGIN = `https://${LINK_HOST}`;
+
+const boundPort = (server: NodeNet.Server) => {
+  const address = server.address();
+  return typeof address === "object" && address !== null ? address.port : 0;
+};
+
+interface RecordedRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: NodeHttp.IncomingHttpHeaders;
+  readonly body: string;
+}
+
+/** A dev server stand-in that records what reached it. */
+const upstreamServer = Effect.acquireRelease(
+  Effect.callback<{ server: NodeHttp.Server; requests: Array<RecordedRequest>; port: number }>(
+    (resume) => {
+      const requests: Array<RecordedRequest> = [];
+      const server = NodeHttp.createServer((request, response) => {
+        if (request.url === "/redirect") {
+          response.writeHead(302, {
+            location: `http://localhost:${boundPort(server)}/next?step=2`,
+            "cache-control": "public, max-age=600",
+            "set-cookie": [
+              "app=1; Domain=localhost; Path=/",
+              `${PREVIEW_COOKIE_NAME}=forged; Path=/; Secure`,
+              "other=2; path=/; domain=.localhost; HttpOnly",
+            ],
+          });
+          response.end();
+          return;
+        }
+        if (request.url === "/elsewhere") {
+          response.writeHead(302, { location: "http://127.0.0.1:1/away" });
+          response.end();
+          return;
+        }
+        const chunks: Array<Buffer> = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          requests.push({
+            method: request.method ?? "",
+            url: request.url ?? "",
+            headers: request.headers,
+            body,
+          });
+          response.writeHead(200, { "content-type": "text/plain" });
+          response.end(`echo:${body}`);
+        });
+      });
+      server.listen(0, "127.0.0.1", () =>
+        resume(Effect.succeed({ server, requests, port: boundPort(server) })),
+      );
+    },
+  ),
+  ({ server }) =>
+    Effect.callback<void>((resume) => {
+      server.closeAllConnections();
+      server.close(() => resume(Effect.void));
+    }),
+);
+
+/** A raw upgrade target: answers 101, then echoes every byte it receives. */
+const upgradeServer = Effect.acquireRelease(
+  Effect.callback<{
+    server: NodeNet.Server;
+    sockets: Set<NodeNet.Socket>;
+    heads: Array<string>;
+    port: number;
+  }>((resume) => {
+    const heads: Array<string> = [];
+    const sockets = new Set<NodeNet.Socket>();
+    const server = NodeNet.createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      socket.on("error", () => socket.destroy());
+      let buffered = Buffer.alloc(0);
+      let upgraded = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (upgraded) {
+          socket.write(chunk);
+          return;
+        }
+        buffered = Buffer.concat([buffered, chunk]);
+        const end = buffered.indexOf("\r\n\r\n");
+        if (end === -1) return;
+        upgraded = true;
+        heads.push(buffered.subarray(0, end).toString("latin1"));
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+            "Sec-WebSocket-Protocol: vite-hmr\r\n\r\n",
+        );
+        const rest = buffered.subarray(end + 4);
+        if (rest.length > 0) socket.write(rest);
+      });
+    });
+    server.listen(0, "127.0.0.1", () =>
+      resume(Effect.succeed({ server, sockets, heads, port: boundPort(server) })),
+    );
+  }),
+  ({ server, sockets }) =>
+    Effect.callback<void>((resume) => {
+      for (const socket of sockets) socket.destroy();
+      server.close(() => resume(Effect.void));
+    }),
+);
+
+/** A port nothing listens on: bound once, then released. */
+const freePort = Effect.callback<number>((resume) => {
+  const server = NodeNet.createServer();
+  server.listen(0, "127.0.0.1", () => {
+    const port = boundPort(server);
+    server.close(() => resume(Effect.succeed(port)));
+  });
+});
+
+const makeView = (ports: { link: number; denied: number }) => {
+  const codes = new Map<string, PreviewGatewayEntry>([
+    ["good-code", { cookieValue: GOOD_COOKIE, maxAgeSeconds: 43_200, path: "/app?tab=1" }],
+  ]);
+  const view: PreviewGatewayView = {
+    route: (host) =>
+      host === LINK_HOST
+        ? { _tag: "Link", linkId: "link-1", port: ports.link }
+        : host === DENIED_HOST
+          ? { _tag: "Link", linkId: "link-2", port: ports.denied }
+          : host === ENDED_HOST
+            ? { _tag: "Ended" }
+            : { _tag: "Foreign" },
+    redeem: (host, code) => {
+      const entry = codes.get(code);
+      if (entry === undefined || host !== LINK_HOST) return null;
+      codes.delete(code);
+      return entry;
+    },
+    authorize: (host, value) =>
+      value === GOOD_COOKIE && (host === LINK_HOST || host === DENIED_HOST)
+        ? { sid: "session-1", sub: "user-1" }
+        : null,
+    portAllowed: (port) => port !== ports.denied,
+  };
+  return view;
+};
+
+interface Reply {
+  readonly status: number;
+  readonly headers: NodeHttp.IncomingHttpHeaders;
+  readonly body: string;
+}
+
+const send = (
+  gatewayPort: number,
+  options: {
+    readonly host: string;
+    readonly path?: string;
+    readonly method?: string;
+    readonly headers?: Record<string, string | Array<string>>;
+    readonly body?: ReadonlyArray<string>;
+  },
+) =>
+  Effect.promise(
+    () =>
+      new Promise<Reply>((resolve, reject) => {
+        const request = NodeHttp.request(
+          {
+            agent: false,
+            host: "127.0.0.1",
+            port: gatewayPort,
+            method: options.method ?? "GET",
+            path: options.path ?? "/",
+            headers: { host: options.host, ...options.headers },
+          },
+          (response) => {
+            const chunks: Array<Buffer> = [];
+            response.on("data", (chunk: Buffer) => chunks.push(chunk));
+            response.on("end", () =>
+              resolve({
+                status: response.statusCode ?? 0,
+                headers: response.headers,
+                body: Buffer.concat(chunks).toString("utf8"),
+              }),
+            );
+          },
+        );
+        request.on("error", reject);
+        for (const chunk of options.body ?? []) request.write(chunk);
+        request.end();
+      }),
+  );
+
+const signedIn = { cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}` };
+
+/** Opens a raw socket, writes `request`, and resolves once the reply contains `until`. */
+const rawExchange = (gatewayPort: number, request: string, until: string) =>
+  Effect.promise(
+    () =>
+      new Promise<{ socket: NodeNet.Socket; received: string }>((resolve, reject) => {
+        const socket = NodeNet.connect({ host: "127.0.0.1", port: gatewayPort });
+        let received = "";
+        socket.on("error", reject);
+        socket.on("data", (chunk: Buffer) => {
+          received += chunk.toString("latin1");
+          if (received.includes(until)) resolve({ socket, received });
+        });
+        socket.on("close", () => resolve({ socket, received }));
+        socket.write(request);
+      }),
+  );
+
+const upgradeRequest = (headers: Record<string, string>, early = "") =>
+  `GET /hmr?token=1 HTTP/1.1\r\n${Object.entries({
+    Host: LINK_HOST,
+    Connection: "Upgrade",
+    Upgrade: "websocket",
+    "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+    "Sec-WebSocket-Version": "13",
+    "Sec-WebSocket-Protocol": "vite-hmr",
+    "Sec-WebSocket-Extensions": "permessage-deflate",
+    ...headers,
+  })
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("")}\r\n${early}`;
+
+const setup = Effect.gen(function* () {
+  const upstream = yield* upstreamServer;
+  const denied = yield* freePort;
+  const view = makeView({ link: upstream.port, denied });
+  const gateway = yield* startPreviewGateway({ port: 0, view });
+  return { upstream, gateway };
+});
+
+describe("preview gateway", () => {
+  it.live("answers foreign hosts with 404 and ended links with 410", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setup;
+      const foreign = yield* send(gateway.port, { host: "example.com" });
+      expect(foreign.status).toBe(404);
+      expect(foreign.body).toBe("Not found");
+
+      const ended = yield* send(gateway.port, { host: ENDED_HOST, path: "/__loom/enter?code=x" });
+      expect(ended.status).toBe(410);
+      expect(ended.body).toContain("This preview has ended");
+      expect(ended.headers["content-security-policy"]).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'",
+      );
+      expect(ended.headers["cache-control"]).toBe("private, no-store");
+      expect(ended.headers["x-robots-tag"]).toBe("noindex, nofollow");
+    }),
+  );
+
+  it.live("redeems an entry code once, sets the cookie and redirects", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setup;
+      const entered = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/__loom/enter?code=good-code",
+      });
+      expect(entered.status).toBe(303);
+      expect(entered.headers.location).toBe("/app?tab=1");
+      expect(entered.headers["set-cookie"]).toEqual([
+        `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}; Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Lax`,
+      ]);
+      expect(entered.headers["cache-control"]).toBe("private, no-store");
+
+      const reused = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/__loom/enter?code=good-code",
+      });
+      expect(reused.status).toBe(401);
+      expect(reused.headers["set-cookie"]).toBeUndefined();
+      expect(reused.body).toContain("Open the preview again from Loom");
+
+      const reserved = yield* send(gateway.port, { host: LINK_HOST, path: "/__loom/other" });
+      expect(reserved.status).toBe(404);
+    }),
+  );
+
+  it.live("asks a browser without a valid cookie to open the link from Loom", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const cold = yield* send(gateway.port, { host: LINK_HOST, path: "/" });
+      expect(cold.status).toBe(401);
+      expect(cold.body).toContain("Open this link from Loom");
+
+      const duplicate = yield* send(gateway.port, {
+        host: LINK_HOST,
+        headers: {
+          cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}; ${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}`,
+        },
+      });
+      expect(duplicate.status).toBe(401);
+
+      const caseFolded = yield* send(gateway.port, {
+        host: LINK_HOST,
+        headers: { cookie: `__host-loom_pv=${GOOD_COOKIE}` },
+      });
+      expect(caseFolded.status).toBe(401);
+      expect(upstream.requests).toHaveLength(0);
+    }),
+  );
+
+  it.live("refuses denied ports and cross-site requests", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const denied = yield* send(gateway.port, { host: DENIED_HOST, headers: signedIn });
+      expect(denied.status).toBe(403);
+      expect(denied.body).toContain("can&#39;t be previewed");
+
+      const crossSite = yield* send(gateway.port, {
+        host: LINK_HOST,
+        method: "POST",
+        headers: { ...signedIn, origin: "https://evil.example", "sec-fetch-mode": "cors" },
+        body: ["x"],
+      });
+      expect(crossSite.status).toBe(403);
+
+      const navigation = yield* send(gateway.port, {
+        host: LINK_HOST,
+        method: "POST",
+        path: "/form",
+        headers: { ...signedIn, origin: "https://evil.example", "sec-fetch-mode": "navigate" },
+        body: ["x"],
+      });
+      expect(navigation.status).toBe(200);
+      expect(upstream.requests.map((request) => request.url)).toEqual(["/form"]);
+    }),
+  );
+
+  it.live("rewrites request headers and keeps the app's own cookies", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const reply = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/api/items?q=1",
+        method: "POST",
+        headers: {
+          cookie: `theme=dark; ${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}; __Host-loom_other=1; sid=abc`,
+          origin: ORIGIN,
+          referer: `${ORIGIN}/app?tab=1`,
+          authorization: "Bearer app-token",
+          "x-custom": "kept",
+        },
+        body: ["first,", "second"],
+      });
+      expect(reply.status).toBe(200);
+      expect(reply.body).toBe("echo:first,second");
+      expect(reply.headers["cache-control"]).toBe("private, no-store");
+      expect(reply.headers["x-robots-tag"]).toBe("noindex, nofollow");
+
+      const [request] = upstream.requests;
+      expect(request?.method).toBe("POST");
+      expect(request?.url).toBe("/api/items?q=1");
+      expect(request?.body).toBe("first,second");
+      expect(request?.headers.host).toBe(`localhost:${upstream.port}`);
+      expect(request?.headers.origin).toBe(`http://localhost:${upstream.port}`);
+      expect(request?.headers.referer).toBe(`http://localhost:${upstream.port}/app?tab=1`);
+      expect(request?.headers.cookie).toBe("theme=dark; sid=abc");
+      expect(request?.headers.authorization).toBe("Bearer app-token");
+      expect(request?.headers["x-custom"]).toBe("kept");
+    }),
+  );
+
+  it.live("rewrites Location and Set-Cookie on responses", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setup;
+      const reply = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/redirect",
+        headers: signedIn,
+      });
+      expect(reply.status).toBe(302);
+      expect(reply.headers.location).toBe(`${ORIGIN}/next?step=2`);
+      expect(reply.headers["set-cookie"]).toEqual(["app=1; Path=/", "other=2; path=/; HttpOnly"]);
+      expect(reply.headers["cache-control"]).toBe("private, no-store");
+      expect(reply.headers["x-robots-tag"]).toBe("noindex, nofollow");
+
+      const elsewhere = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/elsewhere",
+        headers: signedIn,
+      });
+      expect(elsewhere.headers.location).toBe("http://127.0.0.1:1/away");
+    }),
+  );
+
+  it.live("explains that nothing is listening when the port is closed", () =>
+    Effect.gen(function* () {
+      const closed = yield* freePort;
+      const view = makeView({ link: closed, denied: 1 });
+      const gateway = yield* startPreviewGateway({ port: 0, view });
+      const reply = yield* send(gateway.port, { host: LINK_HOST, headers: signedIn });
+      expect(reply.status).toBe(502);
+      expect(reply.body).toContain(`Nothing is answering on port ${closed} yet`);
+      expect(reply.headers["cache-control"]).toBe("private, no-store");
+    }),
+  );
+
+  it.live("pipes an upgrade both ways and ends it on request", () =>
+    Effect.gen(function* () {
+      const target = yield* upgradeServer;
+      const view = makeView({ link: target.port, denied: 1 });
+      const gateway = yield* startPreviewGateway({ port: 0, view });
+
+      const { socket, received } = yield* rawExchange(
+        gateway.port,
+        upgradeRequest(
+          { Origin: ORIGIN, Cookie: `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}` },
+          "early",
+        ),
+        "early",
+      );
+      expect(received.startsWith("HTTP/1.1 101")).toBe(true);
+      expect(received).toContain("Sec-WebSocket-Protocol: vite-hmr");
+
+      const head = target.heads[0] ?? "";
+      expect(head.startsWith("GET /hmr?token=1 HTTP/1.1\r\n")).toBe(true);
+      expect(head).toContain(`host: localhost:${target.port}`);
+      expect(head).toContain(`origin: http://localhost:${target.port}`);
+      expect(head).toContain("sec-websocket-protocol: vite-hmr");
+      expect(head).toContain("sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==");
+      expect(head).toContain("sec-websocket-version: 13");
+      expect(head).toContain("sec-websocket-extensions: permessage-deflate");
+      expect(head).toContain("connection: Upgrade");
+      expect(head).toContain("upgrade: websocket");
+      expect(head).not.toContain(PREVIEW_COOKIE_NAME);
+
+      const echoed = yield* Effect.promise(
+        () =>
+          new Promise<string>((resolve) => {
+            socket.once("data", (chunk: Buffer) => resolve(chunk.toString("latin1")));
+            socket.write("ping");
+          }),
+      );
+      expect(echoed).toBe("ping");
+
+      const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      gateway.destroyUpgrades(({ host, sid }) => host === LINK_HOST && sid === "session-1");
+      yield* Effect.promise(() => closed);
+      expect(socket.destroyed).toBe(true);
+    }),
+  );
+
+  it.live("refuses an upgrade from another origin", () =>
+    Effect.gen(function* () {
+      const target = yield* upgradeServer;
+      const view = makeView({ link: target.port, denied: 1 });
+      const gateway = yield* startPreviewGateway({ port: 0, view });
+      const signedInCookie = `${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}`;
+
+      const foreign = yield* rawExchange(
+        gateway.port,
+        upgradeRequest({ Origin: "https://evil.example", Cookie: signedInCookie }),
+        "\r\n\r\n",
+      );
+      expect(foreign.received.startsWith("HTTP/1.1 403")).toBe(true);
+      foreign.socket.destroy();
+
+      const missing = yield* rawExchange(
+        gateway.port,
+        upgradeRequest({ Cookie: signedInCookie }),
+        "\r\n\r\n",
+      );
+      expect(missing.received.startsWith("HTTP/1.1 403")).toBe(true);
+      missing.socket.destroy();
+      expect(target.heads).toHaveLength(0);
+    }),
+  );
+
+  it.live("fails with a plain message when the port is busy", () =>
+    Effect.gen(function* () {
+      const busy = yield* Effect.acquireRelease(
+        Effect.callback<NodeNet.Server>((resume) => {
+          const server = NodeNet.createServer();
+          server.listen(0, "127.0.0.1", () => resume(Effect.succeed(server)));
+        }),
+        (server) =>
+          Effect.callback<void>((resume) => {
+            server.close(() => resume(Effect.void));
+          }),
+      );
+      const port = boundPort(busy);
+      const error = yield* Effect.flip(
+        startPreviewGateway({ port, view: makeView({ link: 1, denied: 1 }) }),
+      );
+      expect(error).toMatchObject({
+        _tag: "PreviewGatewayListenError",
+        port,
+        message: `Port ${port} is already in use on this computer.`,
+      });
+    }),
+  );
+});

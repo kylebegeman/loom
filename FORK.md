@@ -226,6 +226,22 @@ service launcher does not read the switch: an operating system's `t3 service ins
 rewrites the launcher state, which clears any update accepted earlier. The setting lives in
 `apps/server/src/fork/runtime-owner/selfUpdateSwitch.ts`.
 
+L72 shares dev server ports as preview links (`fork: preview-links`). The web preview
+resolves a URL through `navigablePreviewUrlFor` before loading it, so a loopback port the
+client cannot reach becomes a link and a link becomes a fresh single-use entry:
+`apps/web/src/browser/browserTargetResolver.ts` (5 marker lines) and its test (15),
+`apps/web/src/browser/openFileInPreview.ts` (4),
+`apps/web/src/components/preview/openPreviewSession.ts` (5),
+`apps/web/src/components/preview/openTerminalLinkInPreview.ts` (5) and
+`apps/web/src/components/preview/PreviewView.tsx` (11).
+`apps/web/src/components/preview/PreviewLocalServerCard.tsx` (3) adds the copy and open
+buttons to each server. On mobile, `apps/mobile/src/Stack.tsx` (2),
+`apps/mobile/src/features/settings/components/settings-sheet-targets.ts` (1) and
+`apps/mobile/src/features/settings/SettingsRouteScreen.tsx` (1) add the Previews screen, and
+`apps/mobile/src/features/threads/ThreadFeed.tsx` (2) opens a thread's preview links through
+Loom. See the [L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
+[user help](docs/fork/user/preview-links.md).
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:
