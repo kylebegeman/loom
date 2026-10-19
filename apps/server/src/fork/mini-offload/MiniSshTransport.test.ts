@@ -66,12 +66,12 @@ describe("Mini SSH transport", () => {
       expect(child.stdin.destroyed).toBe(true);
     }).pipe(Effect.provide(Ssh.layer)),
   );
-  it.effect("gives a snapshot upload a deadline that grows with its size", () =>
+  it.effect("waits for a slow snapshot upload as long as the worker accepts one", () =>
     Effect.gen(function* () {
       const ssh = yield* Ssh.MiniSshTransport;
       const upload = childWith("", false);
       const receive = yield* ssh
-        .request(worker, "receive", { archive_bytes: 600 * 1024 * 1024 })
+        .request(worker, "receive", { archive_bytes: 900 * 1024 * 1024 })
         .pipe(Effect.asVoid, Effect.flip, Effect.forkChild);
       yield* Effect.yieldNow;
       const query = childWith("", false);
@@ -82,7 +82,9 @@ describe("Mini SSH transport", () => {
       expect((yield* Fiber.join(rpc)).reason).toBe("transfer");
       expect(query.kill).toHaveBeenCalledWith("SIGKILL");
       expect(upload.kill).not.toHaveBeenCalled();
-      yield* TestClock.adjust("600 seconds");
+      yield* TestClock.adjust("1680 seconds");
+      expect(upload.kill).not.toHaveBeenCalled();
+      yield* TestClock.adjust("120 seconds");
       expect((yield* Fiber.join(receive)).reason).toBe("transfer");
       expect(upload.kill).toHaveBeenCalledWith("SIGKILL");
     }).pipe(Effect.provide(Ssh.layer)),

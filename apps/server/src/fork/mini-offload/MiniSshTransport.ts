@@ -22,13 +22,10 @@ export class MiniSshTransport extends Context.Service<
 >()("t3/fork/mini-offload/MiniSshTransport") {}
 
 const MIB = 1024 * 1024;
-/** A snapshot upload may cross a slow remote link, so it gets at least 1 MiB/s beyond the base deadline. */
-const deadline = (operation: "receive" | "rpc", header: object) =>
-  Duration.seconds(
-    operation === "receive" && "archive_bytes" in header && typeof header.archive_bytes === "number"
-      ? 120 + Math.ceil(header.archive_bytes / MIB)
-      : 120,
-  );
+const RPC_DEADLINE = Duration.seconds(120);
+// LoomOS gives a snapshot upload 1800 s, so wait a little longer to hear whether it accepted the job.
+// ServerAlive still ends a dead connection within a minute.
+const RECEIVE_DEADLINE = Duration.seconds(1800 + 120);
 
 /** Nothing from the job is interpolated into the SSH command. Host configuration is administrator owned. */
 const sshArguments = (worker: MiniWorker, operation: "receive" | "rpc") => [
@@ -110,7 +107,7 @@ const request: MiniSshTransport["Service"]["request"] = (worker, operation, head
       if (child.exitCode === null) child.kill("SIGKILL");
     });
   }).pipe(
-    Effect.timeout(deadline(operation, header)),
+    Effect.timeout(operation === "receive" ? RECEIVE_DEADLINE : RPC_DEADLINE),
     Effect.mapError((cause) =>
       cause._tag === "MiniOffloadError"
         ? cause

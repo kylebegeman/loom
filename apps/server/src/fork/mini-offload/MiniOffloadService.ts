@@ -123,8 +123,8 @@ const sha256File = async (path: string) => {
   for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 };
-// Bound the uncompressed tar before writing, rather than filling the host disk before checking size.
-// The worker bounds both the compressed transfer and the member sizes it unpacks.
+// Bound bytes before writing, rather than filling the host disk before checking size. Like the
+// worker, bound both the uncompressed tar and the compressed transfer, which can be larger.
 export const archiveRepository = (
   cwd: string,
   revision: string,
@@ -150,13 +150,17 @@ export const archiveRepository = (
             { cwd, stdio: ["ignore", "pipe", "pipe"] },
           );
           const output = NodeFS.createWriteStream(archive, { flags: "w", mode: 0o600 });
-          let bytes = 0;
-          const limit = new NodeStream.Transform({
-            transform(chunk: Buffer, _encoding, callback) {
-              bytes += chunk.length;
-              callback(bytes > maxBytes ? new ArchiveTooLarge() : null, chunk);
-            },
-          });
+          let oversized = false;
+          const limit = () => {
+            let bytes = 0;
+            return new NodeStream.Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                bytes += chunk.length;
+                if (bytes > maxBytes) oversized = true;
+                callback(oversized ? new ArchiveTooLarge() : null, chunk);
+              },
+            });
+          };
           const abort = () => {
             child.kill("SIGKILL");
           };
@@ -170,9 +174,14 @@ export const archiveRepository = (
           });
           try {
             await Promise.all([
-              NodeStreamPromises.pipeline(child.stdout, limit, NodeZlib.createGzip(), output, {
-                signal,
-              }),
+              NodeStreamPromises.pipeline(
+                child.stdout,
+                limit(),
+                NodeZlib.createGzip(),
+                limit(),
+                output,
+                { signal },
+              ),
               exited,
             ]);
           } catch (cause) {
@@ -181,7 +190,8 @@ export const archiveRepository = (
             // Wait for the file descriptor to close before unlinking on every platform.
             await Promise.allSettled([exited, NodeStreamPromises.finished(output)]);
             await NodeFSP.rm(archive, { force: true });
-            throw cause;
+            // Git can report the closed pipe before the limit error reaches the pipeline.
+            throw oversized ? new ArchiveTooLarge() : cause;
           } finally {
             signal.removeEventListener("abort", abort);
           }
@@ -253,7 +263,7 @@ const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const ssh = yield* Ssh.MiniSshTransport;
   const source = yield* WorkerSource.MiniWorkerSource;
-  // Protect specification creation and registry changes. Each request has a separate transfer lock.
+  // Order worker lookups with registry changes. Each request has a separate transfer lock.
   const registryLock = yield* Semaphore.make(1);
   const requestLocks = new Map<string, { lock: Semaphore.Semaphore; count: number }>();
   const root = NodePath.join(config.stateDir, "fork", "mini-offload");
@@ -490,64 +500,73 @@ const make = Effect.gen(function* () {
                 // Submitted requests return their receipt; pending requests replay the immutable archive.
                 return stored.receipt.state === "submitted" ? stored.receipt : yield* send(stored);
               }
-              const stored = yield* registryLock.withPermit(
-                Effect.gen(function* () {
-                  const worker = (yield* source.list).find(
-                    (row) => row.id === request.workerId && row.enabled,
-                  );
-                  if (!worker) return yield* fail("worker");
-                  const cwd = yield* workspace(request.threadId);
-                  const top = yield* git(cwd, ["rev-parse", "--show-toplevel"]);
-                  if (
-                    yield* disk(
-                      async () => (await NodeFSP.realpath(cwd)) !== (await NodeFSP.realpath(top)),
-                    )
-                  )
-                    return yield* fail("workspace");
-                  const revision = yield* git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
-                  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision))
-                    return yield* fail("workspace");
-                  const dirty = (yield* git(cwd, ["status", "--porcelain"])) !== "";
-                  if (dirty && !request.committedOnly) return yield* fail("dirty");
-                  const directory = pathFor(request.requestId);
-                  yield* disk(() => NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 }));
-                  const archive = NodePath.join(
-                    directory,
-                    archiveName({ archiveEncoding: "gzip" }),
-                  );
-                  yield* archiveRepository(cwd, revision, archive);
-                  const bytes = yield* disk(async () => {
-                    await NodeFSP.chmod(archive, 0o600);
-                    const file = await NodeFSP.open(archive, "r");
-                    try {
-                      await file.sync();
-                      return (await file.stat()).size;
-                    } finally {
-                      await file.close();
-                    }
-                  });
-                  if (bytes > MAX_ARCHIVE_BYTES) return yield* fail("too_large");
-                  if (bytes <= 0) return yield* fail("storage");
-                  const checksum = yield* disk(() => sha256File(archive));
-                  const initial: Stored = {
-                    worker,
-                    archiveEncoding: "gzip",
-                    receipt: {
-                      request,
-                      workerName: worker.name,
-                      sourceRevision: revision,
-                      archiveSha256: checksum,
-                      archiveBytes: bytes,
-                      localEditsExcluded: dirty,
-                      createdAt: DateTime.formatIso(yield* DateTime.now),
-                      state: "transfer_pending",
-                      job: null,
-                    },
-                  };
-                  if (jsonBytes(receiveSpec(initial)) > 65536) return yield* fail("response");
-                  yield* save(initial);
-                  return initial;
-                }),
+              // Archiving can take minutes, so it must not hold up other submissions or registry changes.
+              const worker = yield* registryLock
+                .withPermit(source.list)
+                .pipe(
+                  Effect.map((rows) =>
+                    rows.find((row) => row.id === request.workerId && row.enabled),
+                  ),
+                );
+              if (!worker) return yield* fail("worker");
+              const cwd = yield* workspace(request.threadId);
+              const top = yield* git(cwd, ["rev-parse", "--show-toplevel"]);
+              if (
+                yield* disk(
+                  async () => (await NodeFSP.realpath(cwd)) !== (await NodeFSP.realpath(top)),
+                )
+              )
+                return yield* fail("workspace");
+              const revision = yield* git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
+              if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision))
+                return yield* fail("workspace");
+              const dirty = (yield* git(cwd, ["status", "--porcelain"])) !== "";
+              if (dirty && !request.committedOnly) return yield* fail("dirty");
+              const directory = pathFor(request.requestId);
+              yield* disk(() => NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 }));
+              const archive = NodePath.join(directory, archiveName({ archiveEncoding: "gzip" }));
+              const stored = yield* Effect.gen(function* () {
+                yield* archiveRepository(cwd, revision, archive);
+                const bytes = yield* disk(async () => {
+                  await NodeFSP.chmod(archive, 0o600);
+                  const file = await NodeFSP.open(archive, "r");
+                  try {
+                    await file.sync();
+                    return (await file.stat()).size;
+                  } finally {
+                    await file.close();
+                  }
+                });
+                if (bytes > MAX_ARCHIVE_BYTES) return yield* fail("too_large");
+                if (bytes <= 0) return yield* fail("storage");
+                const checksum = yield* disk(() => sha256File(archive));
+                const initial: Stored = {
+                  worker,
+                  archiveEncoding: "gzip",
+                  receipt: {
+                    request,
+                    workerName: worker.name,
+                    sourceRevision: revision,
+                    archiveSha256: checksum,
+                    archiveBytes: bytes,
+                    localEditsExcluded: dirty,
+                    createdAt: DateTime.formatIso(yield* DateTime.now),
+                    state: "transfer_pending",
+                    job: null,
+                  },
+                };
+                if (jsonBytes(receiveSpec(initial)) > 65536) return yield* fail("response");
+                // Settle the write before any cleanup decides whether the receipt exists.
+                yield* Effect.uninterruptible(save(initial));
+                return initial;
+              }).pipe(
+                // Without a receipt nothing would send or remove the archive. With one, recovery needs it.
+                Effect.onError(() =>
+                  disk(async () => {
+                    if ((await readJson(NodePath.join(directory, "receipt.json"))) === null)
+                      await NodeFSP.rm(archive, { force: true });
+                  }).pipe(Effect.ignore),
+                ),
               );
               return yield* send(stored);
             }),

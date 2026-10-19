@@ -366,11 +366,15 @@ describe("native Mini offloading", () => {
       expect(calls).toHaveLength(1);
     }),
   );
-  it.effect("bounds the uncompressed snapshot and removes an oversized partial archive", () =>
+  it.effect.each([
+    // Zeros compress to almost nothing, so only an uncompressed bound catches them.
+    { kind: "compressible", contents: Buffer.alloc(4 * 1024 * 1024) },
+    // Git can report the closed pipe before the limit error reaches the pipeline.
+    { kind: "incompressible", contents: NodeCrypto.randomBytes(4 * 1024 * 1024) },
+  ])("reports an oversized $kind snapshot and removes its partial archive", ({ contents }) =>
     Effect.gen(function* () {
       const { cwd, git, state } = yield* setup;
-      // Zeros compress to almost nothing, so only an uncompressed bound catches them.
-      NodeFS.writeFileSync(NodePath.join(cwd, "large.bin"), Buffer.alloc(4 * 1024 * 1024));
+      NodeFS.writeFileSync(NodePath.join(cwd, "large.bin"), contents);
       git("add", ".");
       git(
         "-c",
@@ -388,6 +392,17 @@ describe("native Mini offloading", () => {
       );
       expect(error.reason).toBe("too_large");
       expect(NodeFS.existsSync(archive)).toBe(false);
+    }),
+  );
+  it.effect("removes the archive when a submission fails before saving its receipt", () =>
+    Effect.gen(function* () {
+      const { service, calls, state } = yield* setup;
+      // Control characters pass argv validation but expand sixfold in the JSON header.
+      const argv = ["sh", ...Array.from({ length: 4 }, () => "\x01".repeat(8000))];
+      expect((yield* Effect.flip(service.submit({ ...request, argv }))).reason).toBe("response");
+      expect(calls).toHaveLength(0);
+      const directory = NodePath.join(state, "fork", "mini-offload", request.requestId);
+      expect(NodeFS.readdirSync(directory)).toEqual([]);
     }),
   );
   it.effect("saves a private receipt before transfer and deduplicates repeated submissions", () =>
