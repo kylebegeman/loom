@@ -87,7 +87,7 @@ the command palette, or Settings > Previews on mobile:
 - **Extend** keeps it open for the time you pick, counted from now.
 - **End** closes it at once, including open connections such as live reload.
 - **Restore** reopens an ended or expired link at the same address. You can restore a link
-  for 7 days after it ends.
+  for 7 days after it ends. If its port already has another open link, end that one first.
 
 **End all links** closes every open link on that computer.
 
@@ -101,8 +101,9 @@ again.
 
 **Sign out preview browsers** in Settings > Previews signs out every browser that opened any
 link on that computer. Links stay open; each browser has to open them from Loom again.
-Removing a device's access to Loom also signs out the browsers it opened links in; to be
-certain every browser is out, use **Sign out preview browsers**.
+Removing a device's access to Loom also signs out the browsers it opened links in, and they
+stay out after the computer restarts. The same happens when a device's Loom sign-in runs out.
+To be certain every browser is out, use **Sign out preview browsers**.
 
 ## "Open this link from Loom"
 

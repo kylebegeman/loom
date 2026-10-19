@@ -49,6 +49,14 @@ const PRIVATE_HEADERS = {
   "x-robots-tag": "noindex, nofollow",
 } as const;
 
+// Cloudflare and other CDNs obey these over Cache-Control, so an app could still have the edge
+// store a private response.
+const CDN_CACHE_HEADERS = new Set([
+  "cdn-cache-control",
+  "cloudflare-cdn-cache-control",
+  "surrogate-control",
+]);
+
 const PAGE_HEADERS = {
   ...PRIVATE_HEADERS,
   "content-type": "text/html; charset=utf-8",
@@ -164,6 +172,7 @@ const forwardResponseHeaders = (
   const headers: Headers = {};
   for (const [name, values] of Object.entries(incoming)) {
     if (values === undefined || HOP_BY_HOP_HEADERS.has(name) || named.has(name)) continue;
+    if (CDN_CACHE_HEADERS.has(name)) continue;
     if (name === "location") {
       headers.location = values.map((value) => rewriteLocation(value, host, port));
     } else if (name === "set-cookie") {
@@ -249,6 +258,14 @@ const reject = (status: number, page: string | null = null): Decision => ({
   page,
 });
 
+/**
+ * Links may be followed from anywhere. A form POST navigates too, and one from a sibling preview
+ * host is same-site, so SameSite=Lax still sends the cookie and only Origin can refuse it.
+ */
+const isSafeNavigation = (request: NodeHttp.IncomingMessage) =>
+  (request.method === "GET" || request.method === "HEAD") &&
+  request.headers["sec-fetch-mode"] === "navigate";
+
 /** Shared by plain requests and upgrades, so both pass exactly the same checks. */
 const decide = (
   view: PreviewGatewayView,
@@ -274,11 +291,7 @@ const decide = (
   const origin = request.headers.origin;
   if (upgrade) {
     if (origin !== publicOrigin) return reject(403, crossSitePage);
-  } else if (
-    origin !== undefined &&
-    origin !== publicOrigin &&
-    request.headers["sec-fetch-mode"] !== "navigate"
-  ) {
+  } else if (origin !== undefined && origin !== publicOrigin && !isSafeNavigation(request)) {
     return reject(403, crossSitePage);
   }
 
@@ -286,15 +299,16 @@ const decide = (
   return { _tag: "Proxy", host, port: route.port, session };
 };
 
-interface UpgradedConnection {
+/** A proxied request or upgrade that is still running, so losing access can end it at once. */
+interface LiveConnection {
   readonly host: string;
   readonly sid: string;
-  readonly client: NodeStream.Duplex;
-  readonly upstream: NodeNet.Socket;
+  /** Ends both the browser's side and the upstream's. */
+  readonly destroy: () => void;
 }
 
 const makeGatewayServer = (view: PreviewGatewayView) => {
-  const upgrades = new Set<UpgradedConnection>();
+  const connections = new Set<LiveConnection>();
   // Dev servers such as Vite may bind only ::1 or only 127.0.0.1, so "localhost" tries both.
   const agent = new NodeHttp.Agent({ autoSelectFamily: true, keepAlive: true });
 
@@ -321,15 +335,32 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     response: NodeHttp.ServerResponse,
     host: string,
     port: number,
+    session: PreviewGatewaySession,
   ) => {
+    const headers = forwardRequestHeaders(request.headersDistinct, host, port);
+    // Node writes a GET, HEAD, DELETE or OPTIONS body raw when it has no length, so the shared
+    // keep-alive upstream would read a chunked body as more requests. Re-chunking frames it.
+    if (request.headers["transfer-encoding"] !== undefined) {
+      delete headers["content-length"];
+      headers["transfer-encoding"] = "chunked";
+    }
     const upstream = NodeHttp.request({
       agent,
-      headers: forwardRequestHeaders(request.headersDistinct, host, port),
+      headers,
       host: "localhost",
       method: request.method ?? "GET",
       path: request.url ?? "/",
       port,
     });
+    const connection: LiveConnection = {
+      host,
+      sid: session.sid,
+      destroy: () => {
+        upstream.destroy();
+        response.destroy();
+      },
+    };
+    connections.add(connection);
     upstream.on("response", (upstreamResponse) => {
       try {
         response.writeHead(
@@ -345,11 +376,12 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
       NodeStream.pipeline(upstreamResponse, response, () => {});
     });
     upstream.on("error", () => {
-      if (response.headersSent) response.destroy();
+      if (response.headersSent || response.destroyed) response.destroy();
       else sendPage(response, 502, nothingListeningPage(port));
     });
     request.on("error", () => upstream.destroy());
     response.on("close", () => {
+      connections.delete(connection);
       if (!response.writableFinished) upstream.destroy();
     });
     request.pipe(upstream);
@@ -367,8 +399,15 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     headers.connection = "Upgrade";
     headers.upgrade = request.headersDistinct.upgrade ?? ["websocket"];
     const upstream = NodeNet.connect({ autoSelectFamily: true, host: "localhost", port });
-    const connection: UpgradedConnection = { client, host, sid: session.sid, upstream };
-    upgrades.add(connection);
+    const connection: LiveConnection = {
+      host,
+      sid: session.sid,
+      destroy: () => {
+        client.destroy();
+        upstream.destroy();
+      },
+    };
+    connections.add(connection);
     let connected = false;
     upstream.once("connect", () => {
       connected = true;
@@ -381,12 +420,12 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
       if (!connected) rejectUpgrade(client, 502);
     });
     upstream.on("close", () => {
-      upgrades.delete(connection);
+      connections.delete(connection);
       if (connected) client.destroy();
     });
     client.on("error", () => client.destroy());
     client.on("close", () => {
-      upgrades.delete(connection);
+      connections.delete(connection);
       upstream.destroy();
     });
   };
@@ -404,7 +443,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
         case "Enter":
           return enter(request, response, decision.host);
         case "Proxy":
-          return proxyRequest(request, response, decision.host, decision.port);
+          return proxyRequest(request, response, decision.host, decision.port, decision.session);
       }
     } catch {
       // A throwing view must cost one request, never the process.
@@ -439,23 +478,22 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
     },
   );
 
-  const destroyUpgrades: PreviewGatewayHandle["destroyUpgrades"] = (match) => {
-    for (const connection of upgrades) {
+  const destroyConnections: PreviewGatewayHandle["destroyConnections"] = (match) => {
+    for (const connection of connections) {
       if (!match({ host: connection.host, sid: connection.sid })) continue;
-      upgrades.delete(connection);
-      connection.client.destroy();
-      connection.upstream.destroy();
+      connections.delete(connection);
+      connection.destroy();
     }
   };
 
   const close = Effect.callback<void>((resume) => {
-    destroyUpgrades(() => true);
+    destroyConnections(() => true);
     server.closeAllConnections();
     agent.destroy();
     server.close(() => resume(Effect.void));
   });
 
-  return { server, agent, destroyUpgrades, close };
+  return { server, agent, destroyConnections, close };
 };
 
 /**
@@ -484,7 +522,7 @@ export const startPreviewGateway: StartPreviewGateway = ({ port, view }) =>
       const address = gateway.server.address();
       return {
         port: typeof address === "object" && address !== null ? address.port : port,
-        destroyUpgrades: gateway.destroyUpgrades,
+        destroyConnections: gateway.destroyConnections,
       };
     }),
   );

@@ -28,47 +28,68 @@ interface RecordedRequest {
 
 /** A dev server stand-in that records what reached it. */
 const upstreamServer = Effect.acquireRelease(
-  Effect.callback<{ server: NodeHttp.Server; requests: Array<RecordedRequest>; port: number }>(
-    (resume) => {
-      const requests: Array<RecordedRequest> = [];
-      const server = NodeHttp.createServer((request, response) => {
-        if (request.url === "/redirect") {
-          response.writeHead(302, {
-            location: `http://localhost:${boundPort(server)}/next?step=2`,
-            "cache-control": "public, max-age=600",
-            "set-cookie": [
-              "app=1; Domain=localhost; Path=/",
-              `${PREVIEW_COOKIE_NAME}=forged; Path=/; Secure`,
-              "other=2; path=/; domain=.localhost; HttpOnly",
-            ],
-          });
-          response.end();
-          return;
-        }
-        if (request.url === "/elsewhere") {
-          response.writeHead(302, { location: "http://127.0.0.1:1/away" });
-          response.end();
-          return;
-        }
-        const chunks: Array<Buffer> = [];
-        request.on("data", (chunk: Buffer) => chunks.push(chunk));
-        request.on("end", () => {
-          const body = Buffer.concat(chunks).toString("utf8");
-          requests.push({
-            method: request.method ?? "",
-            url: request.url ?? "",
-            headers: request.headers,
-            body,
-          });
-          response.writeHead(200, { "content-type": "text/plain" });
-          response.end(`echo:${body}`);
+  Effect.callback<{
+    server: NodeHttp.Server;
+    requests: Array<RecordedRequest>;
+    port: number;
+    /** Settles when the upstream side of `/events` closes. */
+    eventStreamClosed: Promise<void>;
+  }>((resume) => {
+    const requests: Array<RecordedRequest> = [];
+    const eventStreamClosed = Promise.withResolvers<void>();
+    const server = NodeHttp.createServer((request, response) => {
+      if (request.url === "/events") {
+        response.on("close", () => eventStreamClosed.resolve());
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write("data: ready\n\n");
+        return;
+      }
+      if (request.url === "/redirect") {
+        response.writeHead(302, {
+          location: `http://localhost:${boundPort(server)}/next?step=2`,
+          "cache-control": "public, max-age=600",
+          "cdn-cache-control": "max-age=600",
+          "cloudflare-cdn-cache-control": "max-age=600",
+          "surrogate-control": "max-age=600",
+          "set-cookie": [
+            "app=1; Domain=localhost; Path=/",
+            `${PREVIEW_COOKIE_NAME}=forged; Path=/; Secure`,
+            "other=2; path=/; domain=.localhost; HttpOnly",
+          ],
         });
+        response.end();
+        return;
+      }
+      if (request.url === "/elsewhere") {
+        response.writeHead(302, { location: "http://127.0.0.1:1/away" });
+        response.end();
+        return;
+      }
+      const chunks: Array<Buffer> = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        requests.push({
+          method: request.method ?? "",
+          url: request.url ?? "",
+          headers: request.headers,
+          body,
+        });
+        response.writeHead(200, { "content-type": "text/plain" });
+        response.end(`echo:${body}`);
       });
-      server.listen(0, "127.0.0.1", () =>
-        resume(Effect.succeed({ server, requests, port: boundPort(server) })),
-      );
-    },
-  ),
+    });
+    server.listen(0, "127.0.0.1", () =>
+      resume(
+        Effect.succeed({
+          server,
+          requests,
+          port: boundPort(server),
+          eventStreamClosed: eventStreamClosed.promise,
+        }),
+      ),
+    );
+  }),
   ({ server }) =>
     Effect.callback<void>((resume) => {
       server.closeAllConnections();
@@ -330,15 +351,29 @@ describe("preview gateway", () => {
       });
       expect(crossSite.status).toBe(403);
 
-      const navigation = yield* send(gateway.port, {
+      // A sibling preview host is same-site, so its form POST arrives with the cookie.
+      const siblingForm = yield* send(gateway.port, {
         host: LINK_HOST,
         method: "POST",
         path: "/form",
-        headers: { ...signedIn, origin: "https://evil.example", "sec-fetch-mode": "navigate" },
+        headers: {
+          ...signedIn,
+          origin: "https://5174-zzzzzz-dorothy.bagels.top",
+          "sec-fetch-mode": "navigate",
+        },
         body: ["x"],
       });
+      expect(siblingForm.status).toBe(403);
+
+      const navigation = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/page",
+        headers: { ...signedIn, origin: "https://evil.example", "sec-fetch-mode": "navigate" },
+      });
       expect(navigation.status).toBe(200);
-      expect(upstream.requests.map((request) => request.url)).toEqual(["/form"]);
+      expect(upstream.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+        "GET /page",
+      ]);
     }),
   );
 
@@ -389,6 +424,9 @@ describe("preview gateway", () => {
       expect(reply.headers["set-cookie"]).toEqual(["app=1; Path=/", "other=2; path=/; HttpOnly"]);
       expect(reply.headers["cache-control"]).toBe("private, no-store");
       expect(reply.headers["x-robots-tag"]).toBe("noindex, nofollow");
+      expect(reply.headers["cdn-cache-control"]).toBeUndefined();
+      expect(reply.headers["cloudflare-cdn-cache-control"]).toBeUndefined();
+      expect(reply.headers["surrogate-control"]).toBeUndefined();
 
       const elsewhere = yield* send(gateway.port, {
         host: LINK_HOST,
@@ -396,6 +434,60 @@ describe("preview gateway", () => {
         headers: signedIn,
       });
       expect(elsewhere.headers.location).toBe("http://127.0.0.1:1/away");
+    }),
+  );
+
+  it.live("re-frames a chunked body so it cannot pose as another request", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const body = "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\n";
+      const { socket } = yield* rawExchange(
+        gateway.port,
+        `DELETE /items/1 HTTP/1.1\r\nHost: ${LINK_HOST}\r\n` +
+          `Cookie: ${PREVIEW_COOKIE_NAME}=${GOOD_COOKIE}\r\nTransfer-Encoding: chunked\r\n\r\n` +
+          `${Buffer.byteLength(body).toString(16)}\r\n${body}\r\n0\r\n\r\n`,
+        `echo:${body}`,
+      );
+      socket.destroy();
+      expect(upstream.requests).toEqual([
+        expect.objectContaining({ method: "DELETE", url: "/items/1", body }),
+      ]);
+      expect(upstream.requests[0]?.headers["transfer-encoding"]).toBe("chunked");
+    }),
+  );
+
+  it.live("cuts a streaming response when its connections are dropped", () =>
+    Effect.gen(function* () {
+      const { gateway, upstream } = yield* setup;
+      const response = yield* Effect.promise(
+        () =>
+          new Promise<NodeHttp.IncomingMessage>((resolve, reject) => {
+            const request = NodeHttp.request(
+              {
+                agent: false,
+                host: "127.0.0.1",
+                port: gateway.port,
+                path: "/events",
+                headers: { host: LINK_HOST, ...signedIn },
+              },
+              (reply) => {
+                // A cut stream errors with "aborted"; unhandled, that would fail the run.
+                reply.on("error", () => {});
+                reply.once("data", () => resolve(reply));
+              },
+            );
+            request.on("error", reject);
+            request.end();
+          }),
+      );
+      expect(response.headers["content-type"]).toBe("text/event-stream");
+
+      const closed = new Promise<boolean>((resolve) =>
+        response.once("close", () => resolve(response.complete)),
+      );
+      gateway.destroyConnections(({ host, sid }) => host === LINK_HOST && sid === "session-1");
+      expect(yield* Effect.promise(() => closed)).toBe(false);
+      yield* Effect.promise(() => upstream.eventStreamClosed);
     }),
   );
 
@@ -450,7 +542,7 @@ describe("preview gateway", () => {
       expect(echoed).toBe("ping");
 
       const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
-      gateway.destroyUpgrades(({ host, sid }) => host === LINK_HOST && sid === "session-1");
+      gateway.destroyConnections(({ host, sid }) => host === LINK_HOST && sid === "session-1");
       yield* Effect.promise(() => closed);
       expect(socket.destroyed).toBe(true);
     }),

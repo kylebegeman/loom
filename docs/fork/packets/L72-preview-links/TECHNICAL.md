@@ -79,19 +79,25 @@ Requests and upgrades pass one decision, in order:
    "This preview has ended".
 2. `/__loom/enter` redeems a code (plain requests only). Any other `/__loom/` path: 404.
 3. Exactly one `__Host-loom_pv` cookie that verifies for this host, is unexpired and whose
-   session is not signed out. Otherwise 401 "Open this link from Loom".
+   Loom session is still live: listed by the session store at start or signed in since, not
+   expired and not removed. Otherwise 401 "Open this link from Loom".
 4. Origin. An upgrade needs `Origin` exactly `https://<host>`. Any other request with an
-   `Origin` that differs gets 403 unless `Sec-Fetch-Mode` is `navigate`.
+   `Origin` that differs gets 403 unless it is a `GET` or `HEAD` with `Sec-Fetch-Mode:
+navigate`.
 5. The port is not denied, else 403.
 
 Forwarding drops hop-by-hop headers and any named in `Connection`, sets `Host` to
 `localhost:<port>`, rewrites `Origin` and same-origin `Referer` to `http://localhost:<port>`,
-and strips every `__Host-loom*` cookie. Responses get `Location` rewritten from a local
-origin on that port to the link, `Set-Cookie` without `Domain` and without any
-`__Host-loom*` cookie, and `Cache-Control: private, no-store` plus `X-Robots-Tag: noindex,
-nofollow` on everything. A refused port answers 502 "Nothing is answering on port N yet".
-Upgrades are piped with `net.connect` and tracked by host and session, so ending a link,
-signing out or removing a client closes them. A view that throws costs one 500 response.
+and strips every `__Host-loom*` cookie. A chunked request body is sent upstream chunked
+again, because Node writes a `GET`, `HEAD`, `DELETE` or `OPTIONS` body raw when it has no
+length and the shared keep-alive upstream would read it as more requests. Responses get
+`Location` rewritten from a local origin on that port to the link, `Set-Cookie` without
+`Domain` and without any `__Host-loom*` cookie, `CDN-Cache-Control`,
+`Cloudflare-CDN-Cache-Control` and `Surrogate-Control` dropped, and `Cache-Control: private,
+no-store` plus `X-Robots-Tag: noindex, nofollow` on everything. A refused port answers 502
+"Nothing is answering on port N yet". Upgrades are piped with `net.connect`. Running requests
+and upgrades are tracked by host and session, so ending a link, signing out or removing a
+client closes them, event streams included. A view that throws costs one 500 response.
 Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
 to listen on port N." and retry on the next save.
 
@@ -127,7 +133,9 @@ ends a lane link only after it has seen that lane present and then gone.
 - `ServerSecretStore`: `loom-preview-links-cookie-key` (32 random bytes, created on first
   start; a temporary key with a warning if the store fails) and
   `loom-preview-links-tunnel-token`. Neither is logged or returned.
-- In memory only: entry codes, signed-out session ids (12 hours) and live upgrades.
+- In memory only: entry codes, live Loom session ids (rebuilt from the session store's
+  active sessions at every start, so removals survive a restart), ids of sessions removed
+  while running (12 hours) and running requests and upgrades.
 
 A sidecar file instead of fork tables: the data is small, per computer, and read whole.
 
@@ -188,14 +196,17 @@ never call `open`, so no transcript carries a working credential.
   navigation from Loom while leaving cross-site subresources without it.
 - **Why Origin checks.** All links share one registrable domain, so they are same-site with
   each other and `SameSite` does not separate them. One previewed app could post to another
-  link the browser is signed in to. The gateway refuses non-navigation requests from another
-  origin, and requires an exact origin for WebSockets, which neither CORS nor `SameSite`
-  protects (cross-site WebSocket hijacking). Navigations stay allowed so links open from
-  anywhere.
+  link the browser is signed in to, and a form `POST` counts as a navigation. The gateway
+  refuses requests from another origin unless they are `GET` or `HEAD` navigations, and
+  requires an exact origin for WebSockets, which neither CORS nor `SameSite` protects
+  (cross-site WebSocket hijacking). `GET` and `HEAD` navigations stay allowed so links open
+  from anywhere.
 - **Why Cache-Control.** Responses are a signed-in user's dev data, and they pass through
   Cloudflare's edge. A dev server that sends cacheable headers could otherwise let the edge
   or another cache serve the page to a browser with no cookie, skipping the gateway.
-  `private, no-store` on every response prevents that; `X-Robots-Tag` keeps crawlers out.
+  `private, no-store` on every response prevents that. `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control` and `Surrogate-Control` are dropped because Cloudflare
+  obeys them over `Cache-Control`. `X-Robots-Tag` keeps crawlers out.
 - **Why loopback and a denylist.** The gateway binds `127.0.0.1` so the tunnel is the only way
   in. Debugger ports mean code execution and database ports mean data, so they are never
   shared, and the check repeats on every request so a later settings change cannot leave an
@@ -208,8 +219,8 @@ never call `open`, so no transcript carries a working credential.
 
 The snapshot is small and bounded by the sweep; it is pushed only on change. The web sheet
 re-renders once a minute (`useNowMinute`), and mobile every 30 seconds while the screen is
-open. The gateway streams bodies with `pipe` and keeps no per-request state beyond live
-upgrades.
+open. The gateway streams bodies with `pipe` and keeps no per-request state beyond one set
+entry per running request or upgrade, removed when it closes.
 
 ## Alternatives considered
 
@@ -222,10 +233,13 @@ upgrades.
 
 ## Known gaps
 
-- Signed-out sessions are memory only, so a restart re-admits a removed client's browsers
-  until their cookies expire (at most 12 hours).
-- Keep-alive connections are not cut when a link ends. Each request is re-authorized, so the
-  next request on them fails.
+- A session revoked with `t3 auth session revoke` while the server runs keeps preview access
+  until the server restarts or its cookies expire (at most 12 hours), because the CLI writes
+  the session store from another process and the running server gets no change event.
+- If the session store cannot be listed at start, every preview cookie is refused until its
+  Loom client reconnects.
+- Idle keep-alive connections are not cut when a link ends; running requests on them are.
+  Each request is re-authorized, so the next request on them fails.
 - `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.
 - Lanes released while the server was down are not ended at startup.
 - Readiness comes only from log lines. The "Unregistered tunnel connection" wording is not

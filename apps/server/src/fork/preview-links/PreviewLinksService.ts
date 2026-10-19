@@ -230,8 +230,13 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   let gateway: GatewayRuntime | null = null;
   let tunnel: TunnelRuntime | null = null;
   const entryCodes = new Map<string, EntryCode>();
-  /** Browser sessions signed out of Loom, kept until any cookie they hold has expired. */
-  const signedOutSessions = new Map<string, number>();
+  /**
+   * Loom sessions a preview cookie may stand for, with their expiry. Seeded from the session
+   * store at start, so a device removed while this server was down never gets back in.
+   */
+  const liveSessions = new Map<string, number>();
+  /** Sessions removed while running, kept until any cookie they hold has expired. */
+  const removedSessions = new Map<string, number>();
 
   const rebuildIndex = () => {
     openByHost = new Map(
@@ -244,8 +249,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     );
   };
 
-  const isSignedOut = (sid: string, nowMs: number) => {
-    const until = signedOutSessions.get(sid);
+  const isLive = (sid: string, nowMs: number) => {
+    const until = liveSessions.get(sid);
     return until !== undefined && until > nowMs;
   };
 
@@ -278,7 +283,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       if (entry === undefined) return null;
       // Any presentation spends the code, so one seen on the wrong host cannot be replayed.
       entryCodes.delete(code);
-      if (entry.host !== host || isSignedOut(entry.sid, nowMs)) return null;
+      if (entry.host !== host || !isLive(entry.sid, nowMs)) return null;
       return {
         cookieValue: signPreviewCookie(
           {
@@ -296,7 +301,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     authorize: (host, cookieValue) => {
       const nowMs = now();
       const session = verifyPreviewCookie(cookieValue, cookieKey, host, nowMs);
-      return session === null || isSignedOut(session.sid, nowMs) ? null : session;
+      return session === null || !isLive(session.sid, nowMs) ? null : session;
     },
     portAllowed: (port) => !isPreviewPortDenied(port, ownPorts()),
   };
@@ -366,9 +371,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       Effect.mapError(() => fail("storage", "Could not save preview link settings.")),
     );
 
-  const dropUpgrades = (
+  const dropConnections = (
     match: (connection: { readonly host: string; readonly sid: string }) => boolean,
-  ) => gateway?.handle?.destroyUpgrades(match);
+  ) => gateway?.handle?.destroyConnections(match);
 
   /** Swaps in new state; callers persist first when the change must survive a restart. */
   const apply = (next: {
@@ -383,22 +388,25 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       const closed = new Set([...before].filter((host) => !openByHost.has(host)));
       if (closed.size > 0) {
         purgeEntryCodes(now());
-        dropUpgrades((connection) => closed.has(connection.host));
+        dropConnections((connection) => closed.has(connection.host));
       }
       timerWake.openUnsafe();
       return publish;
     });
 
+  // Uninterruptible: a change saved to disk but never applied would be live only after a restart.
   const commit = (next: {
     readonly settings: PreviewLinksSettings;
     readonly links: ReadonlyArray<PreviewLink>;
-  }) => persist(next).pipe(Effect.andThen(apply(next)));
+  }) => Effect.uninterruptible(persist(next).pipe(Effect.andThen(apply(next))));
 
   /** For changes the server makes on its own: the link ends now even if saving fails. */
   const commitBackground = (nextLinks: ReadonlyArray<PreviewLink>) =>
-    persist({ settings, links: nextLinks }).pipe(
-      Effect.ignore,
-      Effect.andThen(apply({ links: nextLinks })),
+    Effect.uninterruptible(
+      persist({ settings, links: nextLinks }).pipe(
+        Effect.ignore,
+        Effect.andThen(apply({ links: nextLinks })),
+      ),
     );
 
   const stopGateway = Effect.suspend(() => {
@@ -694,6 +702,13 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       return yield* fail("not-restorable", "This link ended too long ago to restore.");
     }
     yield* requirePortAllowed(link.port);
+    // Share reuses a port's open link, so a second one would leave two addresses for one port.
+    if (links.some((each) => each.state === "open" && each.port === link.port)) {
+      return yield* fail(
+        "not-restorable",
+        `Port ${link.port} already has an open link. End it first, then restore this one.`,
+      );
+    }
     const lifetime = input.lifetime ?? link.lifetime;
     const restored: PreviewLink = {
       ...link,
@@ -733,7 +748,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           .pipe(Effect.mapError(() => fail("storage", "Could not sign out browsers.")));
         cookieKey = key;
         entryCodes.clear();
-        dropUpgrades(() => true);
+        dropConnections(() => true);
       }),
     )
     .pipe(Effect.withSpan("PreviewLinksService.signOutBrowsers"));
@@ -787,21 +802,45 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     }),
   );
 
+  // An upsert read just before a revoke committed can arrive after its removal; the removal wins.
+  const admitSession = (sid: string, expiresAtMs: number) => {
+    if (!removedSessions.has(sid)) liveSessions.set(sid, expiresAtMs);
+  };
+
+  const removeSession = (sid: string, nowMs: number) => {
+    liveSessions.delete(sid);
+    removedSessions.set(sid, nowMs + PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000);
+    for (const [code, entry] of entryCodes) if (entry.sid === sid) entryCodes.delete(code);
+    dropConnections((connection) => connection.sid === sid);
+  };
+
+  // Starting at once subscribes before the seed below reads the store, so a removal in between
+  // still lands.
   yield* Effect.forkScoped(
     Stream.runForEach(sessions.streamChanges, (change) =>
       Effect.sync(() => {
-        if (change.type !== "clientRemoved") return;
-        const sid = change.sessionId;
         const nowMs = now();
-        for (const [id, until] of signedOutSessions) {
-          if (until <= nowMs) signedOutSessions.delete(id);
+        for (const [id, until] of removedSessions) if (until <= nowMs) removedSessions.delete(id);
+        for (const [id, until] of liveSessions) if (until <= nowMs) liveSessions.delete(id);
+        if (change.type === "clientRemoved") {
+          removeSession(change.sessionId, nowMs);
+        } else {
+          const { sessionId, expiresAt } = change.clientSession;
+          admitSession(sessionId, expiresAt.epochMilliseconds);
         }
-        signedOutSessions.set(sid, nowMs + PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000);
-        for (const [code, entry] of entryCodes) if (entry.sid === sid) entryCodes.delete(code);
-        dropUpgrades((connection) => connection.sid === sid);
       }),
     ),
+    { startImmediately: true },
   );
+  const activeSessions = yield* sessions.listActive().pipe(
+    Effect.catch((cause) =>
+      // Fails closed: a browser's cookie works again once its Loom client reconnects.
+      Effect.logWarning("Could not list Loom sessions for preview links", { cause }).pipe(
+        Effect.as([]),
+      ),
+    ),
+  );
+  for (const each of activeSessions) admitSession(each.sessionId, each.expiresAt.epochMilliseconds);
 
   if (swept.changed) yield* persist({ settings, links }).pipe(Effect.ignore);
   yield* reconcileRuntime;

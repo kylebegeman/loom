@@ -11,7 +11,7 @@ export interface PreviewGatewayView {
   readonly route: (host: string) => PreviewGatewayRoute;
   /** Consumes a single-use entry code minted for this host. */
   readonly redeem: (host: string, code: string) => PreviewGatewayEntry | null;
-  /** Checks a `__Host-loom_pv` value: signature, expiry, host and that its browser is still signed in. */
+  /** Checks a `__Host-loom_pv` value: signature, expiry, host and that its Loom session is still live. */
   readonly authorize: (host: string, cookieValue: string) => PreviewGatewaySession | null;
   /** Re-checked per request because the denylist follows the server's own listeners. */
   readonly portAllowed: (port: number) => boolean;
@@ -38,8 +38,8 @@ export interface PreviewGatewaySession {
 
 export interface PreviewGatewayHandle {
   readonly port: number;
-  /** Ends upgraded connections, such as HMR sockets, that lost access. */
-  readonly destroyUpgrades: (
+  /** Ends running requests and upgrades, such as event streams and HMR sockets, that lost access. */
+  readonly destroyConnections: (
     match: (connection: { readonly host: string; readonly sid: string }) => boolean,
   ) => void;
 }
