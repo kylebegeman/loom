@@ -7,6 +7,7 @@ import {
   AuthSessionId,
   AuthEnvironmentMaintainScope,
   AuthSettingsWriteScope,
+  AuthPreviewOperateScope,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
@@ -20,6 +21,8 @@ import {
   MODEL_PREVIEW_3D_WS_METHODS as M,
   PCB_PREVIEW_WS_METHODS as P,
   PROJECT_CHECKOUT_WS_METHODS as C,
+  PREVIEW_LINKS_WS_METHODS as PL,
+  FORK_CLIENT_GUARDED_RPC_SCOPES,
 } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 
@@ -357,5 +360,36 @@ it.effect("Library refresh subscriptions require read access before observing ch
       ),
     ).toEqual([1]);
     expect(subscribed).toBe(true);
+  }),
+);
+
+it.effect("reads published pages with read access and changes them only with preview access", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("preview-pages-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    const read = auth([AuthOrchestrationReadScope]);
+    expect(yield* read.effect(PL.pagesList, Effect.succeed("pages"))).toBe("pages");
+    let changed = false;
+    const change = Effect.sync(() => {
+      changed = true;
+      return "kept";
+    });
+    const denied = yield* read.effect(PL.pagesUpdate, change).pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthPreviewOperateScope);
+    expect(changed).toBe(false);
+    expect(
+      yield* auth([AuthOrchestrationReadScope, AuthPreviewOperateScope]).effect(
+        PL.pagesUpdate,
+        change,
+      ),
+    ).toBe("kept");
+    // Clients read the list through a query atom, and query atoms refuse guarded tags.
+    expect(FORK_CLIENT_GUARDED_RPC_SCOPES).not.toHaveProperty(PL.pagesList);
+    expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PL.pagesUpdate]).toBe(AuthPreviewOperateScope);
   }),
 );

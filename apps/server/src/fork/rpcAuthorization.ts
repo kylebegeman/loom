@@ -271,6 +271,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [PL.restore]: AuthPreviewOperateScope,
   [PL.revokeAll]: AuthPreviewOperateScope,
   [PL.signOutBrowsers]: AuthPreviewOperateScope,
+  [PL.pagesList]: AuthOrchestrationReadScope,
+  [PL.pagesUpdate]: AuthPreviewOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

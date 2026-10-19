@@ -1,7 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId } from "@t3tools/contracts";
-import { LibraryIngestHistoryRequest, type LibraryProject } from "@t3tools/contracts/fork";
+import { ChatAttachmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  LibraryIngestHistoryRequest,
+  type LibraryPageReply,
+  type LibraryProject,
+  type PreviewPage,
+  type PreviewPagesError,
+} from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -65,6 +71,13 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const remoteInput = yield* Ref.make<LibraryIngestHistoryRequest | null>(null);
   const previewsSupported = yield* Ref.make(true);
   const previewBodies = yield* Ref.make<unknown[]>([]);
+  /** Replaces every page route's answer while set. */
+  const pageAnswer = yield* Ref.make<{ readonly status: number; readonly body: unknown } | null>(
+    null,
+  );
+  const pageRequests = yield* Ref.make<
+    Array<{ readonly method: string; readonly path: string; readonly body: unknown }>
+  >([]);
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
       expect(request.headers.authorization).toBe("Bearer fixture-token");
@@ -73,7 +86,32 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
       const bytes = request.body._tag === "Uint8Array" ? request.body.body : new Uint8Array();
       let response: unknown;
       let status = 200;
-      if (pathname.endsWith("/previews/register")) {
+      if (pathname.startsWith("/api/loom/library/pages")) {
+        const text = new TextDecoder().decode(bytes);
+        yield* Ref.update(pageRequests, (sent) => [
+          ...sent,
+          { method: request.method, path: pathname, body: text === "" ? null : JSON.parse(text) },
+        ]);
+        const answer = yield* Ref.get(pageAnswer);
+        // A string answer stands for a web page, such as an older Library's app fallback.
+        if (answer !== null && typeof answer.body === "string")
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(answer.body, {
+              status: answer.status,
+              headers: { "content-type": "text/html; charset=utf-8" },
+            }),
+          );
+        if (answer !== null) {
+          status = answer.status;
+          response = answer.body;
+        } else if (pathname.endsWith("/replies/ack")) {
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }));
+        } else if (pathname.endsWith("/replies/next")) response = { replies: [pageReply] };
+        else if (pathname.endsWith("/update")) response = { ...page, kept: true, expiresAt: null };
+        else if (pathname.endsWith("/publish")) response = page;
+        else response = { pages: [page] };
+      } else if (pathname.endsWith("/previews/register")) {
         yield* Ref.update(previewBodies, (bodies) => [
           ...bodies,
           JSON.parse(new TextDecoder().decode(bytes)),
@@ -189,6 +227,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     remoteInput,
     previewsSupported,
     previewBodies,
+    pageAnswer,
+    pageRequests,
     sql,
     fs,
     config,
@@ -204,6 +244,31 @@ const configured = {
   LOOM_LIBRARY_URL: "https://library.example.test",
   LOOM_LIBRARY_TOKEN: "fixture-token",
 };
+const page: PreviewPage = {
+  id: "page-1",
+  url: "https://pages.bagels.top/p/page-1",
+  title: "Release plan",
+  kind: "html",
+  projectId: ProjectId.make("project"),
+  threadId: ThreadId.make("thread"),
+  state: "open",
+  kept: false,
+  sizeBytes: 9,
+  createdAt: "2026-10-19T00:00:00.000Z",
+  expiresAt: "2026-11-18T00:00:00.000Z",
+  endedAt: null,
+  restorableUntil: null,
+};
+const pageReply: LibraryPageReply = {
+  replyId: "reply-0001",
+  pageId: page.id,
+  pageTitle: page.title,
+  projectId: page.projectId,
+  threadId: page.threadId,
+  text: "Ship it",
+  createdAt: "2026-10-19T01:00:00.000Z",
+};
+const pageReason = (error: PreviewPagesError) => ({ reason: error.reason, message: error.message });
 
 describe("authenticated Library publishing", () => {
   it.effect(
@@ -348,6 +413,94 @@ describe("authenticated Library publishing", () => {
           );
         }),
       ),
+  );
+  it.effect("publishes, lists and updates pages and leases and acknowledges their replies", () =>
+    run(configured, (f) =>
+      Effect.gen(function* () {
+        const publish = {
+          projectId: page.projectId,
+          threadId: page.threadId,
+          title: page.title,
+          kind: "html" as const,
+          html: "<p>hi</p>",
+        };
+        expect(yield* f.publisher.publishPage(publish)).toEqual(page);
+        expect(yield* f.publisher.listPages()).toEqual([page]);
+        expect(yield* f.publisher.updatePage({ pageId: page.id, action: "keep" })).toMatchObject({
+          kept: true,
+          expiresAt: null,
+        });
+        expect(yield* f.publisher.nextReplies(25_000)).toEqual([pageReply]);
+        yield* f.publisher.ackReply({ replyId: pageReply.replyId, outcome: "delivered" });
+        expect(yield* Ref.get(f.pageRequests)).toEqual([
+          { method: "POST", path: "/api/loom/library/pages/publish", body: publish },
+          { method: "GET", path: "/api/loom/library/pages", body: null },
+          {
+            method: "POST",
+            path: "/api/loom/library/pages/update",
+            body: { pageId: page.id, action: "keep" },
+          },
+          {
+            method: "POST",
+            path: "/api/loom/library/pages/replies/next",
+            body: { waitMs: 25_000 },
+          },
+          {
+            method: "POST",
+            path: "/api/loom/library/pages/replies/ack",
+            body: { replyId: pageReply.replyId, outcome: "delivered" },
+          },
+        ]);
+      }),
+    ),
+  );
+  it.effect(
+    "reads a Library without pages as unavailable and keeps the reasons it refuses with",
+    () =>
+      run(configured, (f) =>
+        Effect.gen(function* () {
+          const refusal = (status: number, body: unknown) =>
+            Ref.set(f.pageAnswer, { status, body }).pipe(
+              Effect.andThen(f.publisher.listPages().pipe(Effect.flip)),
+              Effect.map(pageReason),
+            );
+          expect((yield* refusal(404, { error: "Not found" })).reason).toBe("unavailable");
+          // An older Library serves its web app for a GET route it does not have.
+          expect((yield* refusal(200, "<!doctype html><title>Loom</title>")).reason).toBe(
+            "unavailable",
+          );
+          expect((yield* refusal(409, { reason: "too-large" })).reason).toBe("too-large");
+          expect((yield* refusal(413, { reason: "too-large" })).reason).toBe("too-large");
+          expect(
+            yield* refusal(409, {
+              reason: "blocked",
+              message: "This Library holds 500 open pages.",
+            }),
+          ).toEqual({ reason: "blocked", message: "This Library holds 500 open pages." });
+          // A refusal without a reason it can name is not one the computer can act on.
+          expect((yield* refusal(409, { reason: "full" })).reason).toBe("io");
+          expect((yield* refusal(401, {})).reason).toBe("blocked");
+          expect((yield* refusal(403, {})).reason).toBe("blocked");
+          expect((yield* refusal(502, {})).reason).toBe("io");
+          expect((yield* refusal(200, { pages: [{ id: "page-1" }] })).reason).toBe("io");
+        }),
+      ),
+  );
+  it.effect("keeps pages unavailable without a Library and blocked without a token", () =>
+    Effect.gen(function* () {
+      yield* run({}, (f) =>
+        Effect.gen(function* () {
+          expect((yield* f.publisher.listPages().pipe(Effect.flip)).reason).toBe("unavailable");
+          expect((yield* f.publisher.nextReplies(0).pipe(Effect.flip)).reason).toBe("unavailable");
+        }),
+      );
+      yield* run({ LOOM_LIBRARY_URL: configured.LOOM_LIBRARY_URL }, (f) =>
+        Effect.gen(function* () {
+          expect((yield* f.publisher.listPages().pipe(Effect.flip)).reason).toBe("blocked");
+          expect(yield* Ref.get(f.requests)).toEqual([]);
+        }),
+      );
+    }),
   );
   it.effect("rejects a credential file for a different Library environment", () =>
     run({ LOOM_TEST_CREDENTIAL: "wrong-library" }, (f) =>

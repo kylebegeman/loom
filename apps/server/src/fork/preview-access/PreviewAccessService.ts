@@ -28,6 +28,8 @@ import {
   previewTicketPrivateKey,
   previewTicketPublicKey,
   signPreviewTicket,
+  verifyPreviewTicket,
+  type VerifiedPreviewTicket,
 } from "../preview-links/ticket.ts";
 import { makeStore } from "./store.ts";
 
@@ -48,6 +50,8 @@ const encodeKeyPair = Schema.encodeEffect(StoredKeyPair);
 type TicketKey = {
   readonly privateKey: NonNullable<ReturnType<typeof previewTicketPrivateKey>>;
   readonly publicKey: string;
+  /** `publicKey` as a key object, for tickets that come back to this Library's own pages host. */
+  readonly verifier: NonNullable<ReturnType<typeof previewTicketPublicKey>>;
   readonly keyId: string;
 };
 
@@ -67,6 +71,15 @@ export interface PreviewTicketInput {
   readonly requestOrigin: string | null;
 }
 
+/** A ticket that came back to a host this Library serves itself. */
+export interface PreviewVerifyTicketInput {
+  readonly token: string;
+  /** Already normalized; the ticket's audience must name exactly this host. */
+  readonly host: string;
+  /** From the browser's nonce cookie. */
+  readonly nonce: string;
+}
+
 export type PreviewTicketOutcome =
   /** The browser has no Library session yet; send it through sign-in and back. */
   | { readonly _tag: "SignIn"; readonly location: string }
@@ -84,6 +97,16 @@ export class PreviewAccessService extends Context.Service<
     readonly ticket: (
       input: PreviewTicketInput,
     ) => Effect.Effect<PreviewTicketOutcome, LibraryError>;
+    /**
+     * The `iss` every ticket for the pages host carries, or null when this server is not the
+     * authority or has no configured public origin. Without one the ticket route signs with the
+     * request's origin, which a host cannot predict, so pages sign-in is off.
+     */
+    readonly issuerOrigin: string | null;
+    /** Checks a ticket this Library signed. Null on any mismatch, never a failure for bad input. */
+    readonly verifyTicket: (
+      input: PreviewVerifyTicketInput,
+    ) => Effect.Effect<VerifiedPreviewTicket | null, LibraryError>;
   }
 >()("t3/fork/preview-access/PreviewAccessService") {}
 
@@ -109,6 +132,7 @@ const make = Effect.gen(function* () {
   const configuredOrigin = Option.isSome(identityRedirect)
     ? (httpsUrl(identityRedirect.value.trim())?.origin ?? null)
     : null;
+  const issuerOrigin = authority ? configuredOrigin : null;
   // Tickets land on `https://<host>/__loom/ticket`, which has no room for a port.
   const pagesCandidate = Option.isSome(pagesSetting) ? httpsUrl(pagesSetting.value.trim()) : null;
   const pagesUrl = pagesCandidate?.port === "" ? pagesCandidate : null;
@@ -133,12 +157,14 @@ const make = Effect.gen(function* () {
   const keyLock = yield* Semaphore.make(1);
   const toTicketKey = (stored: { readonly privateKey: string; readonly publicKey: string }) => {
     const privateKey = previewTicketPrivateKey(stored.privateKey);
+    const verifier = previewTicketPublicKey(stored.publicKey);
     // Replacing an unreadable key would silently break every computer's cached public key.
-    if (privateKey === null || previewTicketPublicKey(stored.publicKey) === null)
+    if (privateKey === null || verifier === null)
       return Effect.fail(io("The stored preview ticket key is unreadable."));
     return Effect.succeed<TicketKey>({
       privateKey,
       publicKey: stored.publicKey,
+      verifier,
       keyId: previewTicketKeyId(stored.publicKey),
     });
   };
@@ -269,7 +295,22 @@ const make = Effect.gen(function* () {
     } as const;
   });
 
-  return PreviewAccessService.of({ register, ticket });
+  const verifyTicket: PreviewAccessService["Service"]["verifyTicket"] = Effect.fn(
+    "PreviewAccessService.verifyTicket",
+  )(function* (input: PreviewVerifyTicketInput) {
+    if (issuerOrigin === null || !isPreviewNonce(input.nonce)) return null;
+    const key = yield* ticketKey;
+    return verifyPreviewTicket(input.token, {
+      publicKey: key.verifier,
+      keyId: key.keyId,
+      issuer: issuerOrigin,
+      audience: previewTicketAudience(input.host),
+      nonce: input.nonce,
+      nowMs: yield* Clock.currentTimeMillis,
+    });
+  });
+
+  return PreviewAccessService.of({ register, ticket, issuerOrigin, verifyTicket });
 });
 
 export const layer = Layer.effect(PreviewAccessService, make);

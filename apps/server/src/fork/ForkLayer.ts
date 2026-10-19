@@ -43,6 +43,10 @@ import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
 import * as PreviewLinks from "./preview-links/PreviewLinksService.ts";
 import * as PreviewAccess from "./preview-access/PreviewAccessService.ts";
 import { PreviewAccessHttpRoutes } from "./preview-access/http.ts";
+import * as PageLibrary from "./preview-pages/PageLibraryService.ts";
+import { PagesHostLive } from "./preview-pages/host.ts";
+import { PageLibraryHttpRoutes } from "./preview-pages/libraryHttp.ts";
+import * as PreviewPages from "./preview-pages/PreviewPagesService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -158,7 +162,10 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
     Layer.provide(layerLibraryPublisher),
   ),
-  PreviewAccess.layer,
+  // The pages host serves the pages the Library routes store and checks tickets with the same
+  // key the Library signs them with, so it shares both instances.
+  PagesHostLive.pipe(Layer.provideMerge(Layer.merge(PageLibrary.layer, PreviewAccess.layer))),
+  PreviewPages.layer.pipe(Layer.provide(ProjectStore.layer), Layer.provide(layerLibraryPublisher)),
   // The reactor runs suggestions for the service MCP and RPC also call.
   LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(
     Layer.provideMerge(
@@ -196,4 +203,5 @@ export const ForkRoutesLayer = Layer.mergeAll(
   ModelPreviewHttpRoutes,
   PcbPreviewHttpRoutes,
   PreviewAccessHttpRoutes,
+  PageLibraryHttpRoutes,
 );

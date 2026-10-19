@@ -390,6 +390,17 @@ export const PreviewLinksRpcGroup = RpcGroup.make(
   rpc(PREVIEW_LINKS_WS_METHODS.restore, PreviewLinkLifetimeInput, PreviewLink),
   rpc(PREVIEW_LINKS_WS_METHODS.revokeAll, Schema.Struct({}), Schema.Void),
   rpc(PREVIEW_LINKS_WS_METHODS.signOutBrowsers, Schema.Struct({}), Schema.Void),
+  // Pages live in the Library, so they fail with their own reasons instead of a link's.
+  Rpc.make(PREVIEW_LINKS_WS_METHODS.pagesList, {
+    payload: Schema.Struct({}),
+    success: PreviewPagesList,
+    error: Schema.Union([PreviewPagesError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(PREVIEW_LINKS_WS_METHODS.pagesUpdate, {
+    payload: PreviewPageUpdateInput,
+    success: PreviewPage,
+    error: Schema.Union([PreviewPagesError, EnvironmentAuthorizationError]),
+  }),
 );
 
 const LINK_LABEL = /^(\d{1,5})-([a-z0-9]{6})-([a-z0-9]{1,40})$/;

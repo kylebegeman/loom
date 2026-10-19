@@ -319,7 +319,7 @@ const isSafeNavigation = (request: NodeHttp.IncomingMessage) =>
  * Only a page load may get a sign-in link, because answering it sets a nonce cookie, and a
  * script's fetch or an image that sets cookies would race the page's own nonce.
  */
-const isDocumentNavigation = (request: NodeHttp.IncomingMessage) => {
+export const isDocumentNavigation = (request: NodeHttp.IncomingMessage) => {
   if (request.method !== "GET") return false;
   const mode = request.headers["sec-fetch-mode"];
   if (mode !== undefined) return mode === "navigate";

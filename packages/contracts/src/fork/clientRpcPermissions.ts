@@ -152,4 +152,6 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PL.restore]: AuthPreviewOperateScope,
   [PL.revokeAll]: AuthPreviewOperateScope,
   [PL.signOutBrowsers]: AuthPreviewOperateScope,
+  // pagesList stays unguarded: clients read it with a query atom, which excludes guarded tags.
+  [PL.pagesUpdate]: AuthPreviewOperateScope,
 } as const;

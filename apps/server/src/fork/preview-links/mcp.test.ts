@@ -2,8 +2,11 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import {
   PreviewLinksError,
+  PreviewPagesError,
   type PreviewLink,
   type PreviewLinksSnapshot,
+  type PreviewPage,
+  type PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -16,6 +19,10 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
+import {
+  PreviewPagesService,
+  type PreviewPagePublishInput,
+} from "../preview-pages/PreviewPagesService.ts";
 import { PreviewLinksService, type PreviewLinkActor } from "./PreviewLinksService.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "./mcp.ts";
 
@@ -101,6 +108,65 @@ const makeService = () => {
   return { service, calls, links };
 };
 
+const pageFor = (id: string, threadId: ThreadId): PreviewPage => ({
+  id,
+  url: `https://pages.bagels.top/p/${id}`,
+  title: id,
+  kind: "html",
+  projectId: liveThreadShell(threadId).projectId,
+  threadId,
+  state: "open",
+  kept: false,
+  sizeBytes: 12,
+  createdAt: "2026-10-18T00:00:00.000Z",
+  expiresAt: "2026-11-17T00:00:00.000Z",
+  endedAt: null,
+  restorableUntil: null,
+});
+
+/** Mirrors the real service's thread limits, so the tests see what the tools pass it. */
+const makePages = () => {
+  const pages = [pageFor("mine", caller), pageFor("theirs", other)];
+  const calls = {
+    publish: [] as Array<PreviewPagePublishInput>,
+    list: [] as Array<{ readonly threadId: ThreadId } | undefined>,
+    update: [] as Array<{ input: PreviewPageUpdateInput; scope?: { readonly threadId: ThreadId } }>,
+  };
+  const service: PreviewPagesService["Service"] = {
+    publish: (input) =>
+      Effect.sync(() => {
+        calls.publish.push(input);
+        return { ...pageFor("published", input.threadId), title: input.title };
+      }),
+    list: (filter) =>
+      Effect.sync(() => {
+        calls.list.push(filter);
+        return {
+          available: true,
+          pages: pages.filter((page) => filter === undefined || page.threadId === filter.threadId),
+        };
+      }),
+    update: (input, scope) =>
+      Effect.suspend(() => {
+        calls.update.push(scope === undefined ? { input } : { input, scope });
+        const page = pages.find(
+          (candidate) =>
+            candidate.id === input.pageId &&
+            (scope === undefined || candidate.threadId === scope.threadId),
+        );
+        return page === undefined
+          ? Effect.fail(
+              new PreviewPagesError({
+                reason: "not-found",
+                message: "That page was not found in this thread.",
+              }),
+            )
+          : Effect.succeed({ ...page, kept: input.action === "keep" });
+      }),
+  };
+  return { service, calls };
+};
+
 const decodeToolJson = Schema.decodeUnknownEffect(McpSchema.ToolJson);
 
 const threadScope: McpInvocationScope = {
@@ -116,7 +182,10 @@ const threadScope: McpInvocationScope = {
   client: undefined,
 };
 
-const harness = (service: PreviewLinksService["Service"]) =>
+const harness = (
+  service: PreviewLinksService["Service"],
+  pages: PreviewPagesService["Service"] = makePages().service,
+) =>
   Effect.gen(function* () {
     const toolkit = yield* PreviewLinksToolkit.pipe(
       Effect.provide(
@@ -124,7 +193,9 @@ const harness = (service: PreviewLinksService["Service"]) =>
           Layer.provide(
             Layer.succeed(
               ForkRuntime,
-              Context.make(PreviewLinksService, service) as Context.Context<ForkServices>,
+              Context.make(PreviewLinksService, service).pipe(
+                Context.add(PreviewPagesService, pages),
+              ) as Context.Context<ForkServices>,
             ),
           ),
         ),
@@ -152,7 +223,9 @@ it.effect("declares object input schemas under unique loom_ names", () =>
   Effect.gen(function* () {
     const names = Object.keys(PreviewLinksToolkit.tools);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.every((name) => name.startsWith("loom_preview_link"))).toBe(true);
+    expect(
+      names.every((name) => name.startsWith("loom_preview_link") || name.startsWith("loom_page")),
+    ).toBe(true);
     for (const tool of Object.values(PreviewLinksToolkit.tools)) {
       const schema = yield* decodeToolJson(Tool.getJsonSchema(tool));
       expect(schema.type).toBe("object");
@@ -227,5 +300,74 @@ it.effect("refuses the act tools to clients outside a live thread before the ser
     expect(readOnlyThread).toMatchObject({ code: "capability_denied" });
     expect(calls.share).toEqual([]);
     expect(calls.revoke).toEqual([]);
+  }),
+);
+
+it.effect("publishes from exactly one source as the calling thread", () =>
+  Effect.gen(function* () {
+    const { service } = makeService();
+    const pages = makePages();
+    const invoke = yield* harness(service, pages.service);
+    for (const input of [
+      { title: "Plan" },
+      { title: "Plan", attachmentId: "preview-caller-page-html", path: "plan.html" },
+    ]) {
+      const refused = yield* invoke("loom_page_publish", input).pipe(Effect.flip);
+      expect(refused).toMatchObject({ _tag: "PreviewPagesError", reason: "invalid" });
+    }
+    expect(pages.calls.publish).toEqual([]);
+
+    const page = yield* invoke("loom_page_publish", {
+      title: "Dossier",
+      kind: "dossier",
+      path: "docs/dossier.html",
+      pageId: "mine",
+    });
+    yield* invoke("loom_page_publish", {
+      title: "Render",
+      attachmentId: "preview-caller-page-html",
+    });
+    expect(page).toMatchObject({ threadId: caller, url: "https://pages.bagels.top/p/published" });
+    expect(pages.calls.publish).toEqual([
+      {
+        threadId: caller,
+        source: { path: "docs/dossier.html" },
+        title: "Dossier",
+        kind: "dossier",
+        pageId: "mine",
+      },
+      { threadId: caller, source: { attachmentId: "preview-caller-page-html" }, title: "Render" },
+    ]);
+  }),
+);
+
+it.effect("lists and changes only the calling thread's pages", () =>
+  Effect.gen(function* () {
+    const { service } = makeService();
+    const pages = makePages();
+    const invoke = yield* harness(service, pages.service);
+    expect(yield* invoke("loom_pages_list", {})).toEqual({
+      available: true,
+      pages: [pageFor("mine", caller)],
+    });
+    const refused = yield* invoke("loom_page_update", { pageId: "theirs", action: "end" }).pipe(
+      Effect.flip,
+    );
+    expect(refused).toMatchObject({ _tag: "PreviewPagesError", reason: "not-found" });
+    const kept = yield* invoke("loom_page_update", { pageId: "mine", action: "keep" });
+    expect(kept).toMatchObject({ id: "mine", kept: true });
+    expect(pages.calls.list).toEqual([{ threadId: caller }]);
+    expect(pages.calls.update.map((call) => call.scope)).toEqual([
+      { threadId: caller },
+      { threadId: caller },
+    ]);
+
+    const readOnly = yield* invoke(
+      "loom_page_update",
+      { pageId: "mine", action: "end" },
+      { ...threadScope, client: { sessionId: "reader", label: "Read only", access: "read-only" } },
+    ).pipe(Effect.flip);
+    expect(readOnly).toMatchObject({ code: "capability_denied" });
+    expect(pages.calls.update).toHaveLength(2);
   }),
 );
