@@ -137,7 +137,7 @@ function ServerTabFileNotShown(props: {
             )
           : null
       }
-      onOpen={() => void localApi?.shell.openExternal(props.url).catch(() => undefined)}
+      onOpen={() => void openPreviewInSystemBrowser(props.threadRef, props.url)} // fork: preview-links
     />
   );
 }

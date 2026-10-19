@@ -222,22 +222,73 @@ export const navigablePreviewUrlFor = (
   runtime: PreviewRuntime | undefined,
 ) => navigablePreviewUrl({ url, environmentId: threadRef.environmentId, runtime });
 
+const isUnreachableLoopback = (
+  deps: PreviewNavigationDeps,
+  environmentId: EnvironmentId,
+  url: URL,
+) => isLoopbackHost(url.hostname) && !deps.reachesLoopback(environmentId);
+
 /**
- * For the preview's "Open in browser". A loopback or link address may need a fresh entry
- * first, so it opens through a window taken while the click still counts as a user gesture.
+ * Opens an address from the environment's computer in the system browser. A preview link, or a
+ * loopback port this client cannot reach, first needs an entry, so it opens through a window
+ * taken while the click still counts as a user gesture. Anything else opens as it always did.
+ * Rejects only when the browser could not be opened; a failed entry was already shown.
  */
-export async function openPreviewInSystemBrowser(
-  threadRef: ScopedThreadRef,
+export function openEnvironmentUrlExternallyWith(
+  deps: PreviewNavigationDeps,
+  environmentId: EnvironmentId | undefined,
   url: string,
 ): Promise<void> {
   const parsed = parseUrl(url);
-  const resolves =
-    parsed !== null && (looksLikePreviewLinkUrl(parsed.href) || isLoopbackHost(parsed.hostname));
+  if (
+    environmentId !== undefined &&
+    parsed !== null &&
+    (looksLikePreviewLinkUrl(parsed.href) || isUnreachableLoopback(deps, environmentId, parsed))
+  ) {
+    return openInSystemBrowser(() =>
+      navigablePreviewUrlWith(deps, { url, environmentId, runtime: undefined }),
+    );
+  }
+  return ensureLocalApi().shell.openExternal(url);
+}
+
+/** For upstream seams that open a thread's address in the system browser. */
+export const openEnvironmentUrlExternally = (
+  environmentId: EnvironmentId | undefined,
+  url: string,
+) => openEnvironmentUrlExternallyWith(appPreviewNavigationDeps, environmentId, url);
+
+async function openShowingFailure(environmentId: EnvironmentId, url: string): Promise<void> {
   try {
-    await (resolves
-      ? openInSystemBrowser(() => navigablePreviewUrlFor(threadRef, url, undefined))
-      : ensureLocalApi().shell.openExternal(url));
+    await openEnvironmentUrlExternally(environmentId, url);
   } catch (error) {
     appPreviewNavigationDeps.reportFailure(failureMessage(error));
   }
+}
+
+/** For the preview's "Open in browser", which has nowhere else to show a failure. */
+export const openPreviewInSystemBrowser = (threadRef: ScopedThreadRef, url: string) =>
+  openShowingFailure(threadRef.environmentId, url);
+
+/**
+ * For a chat link the browser would open natively, which would load a loopback port this client
+ * cannot reach. True when it took the click to open a preview link instead.
+ */
+export function takeUnreachableLoopbackClick(
+  event: { preventDefault(): void; stopPropagation(): void },
+  environmentId: EnvironmentId | undefined,
+  url: string,
+): boolean {
+  const parsed = parseUrl(url);
+  if (
+    environmentId === undefined ||
+    parsed === null ||
+    !isUnreachableLoopback(appPreviewNavigationDeps, environmentId, parsed)
+  ) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  void openShowingFailure(environmentId, url);
+  return true;
 }
