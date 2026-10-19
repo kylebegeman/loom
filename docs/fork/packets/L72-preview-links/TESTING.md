@@ -114,6 +114,10 @@ links on bagels.top:
   one of this thread's lane ports, and no server from this thread's terminals is listening on
   it." Settling the thread released its lane: the lane link ended and stays restorable, the
   processes the lane recorded stopped, and the terminal link stayed open.
+- An upstream server (`t3` 0.1.1-nightly.20261019.3360, its own data directory) paired with
+  the iPad app over the tailnet: Settings > Previews lists only the Loom computer, an
+  upstream agent's `localhost:5813` chat link opens Safari on the computer's tailnet address
+  as before, and upstream's trace shows no preview link calls.
 
 Traps for the next pass:
 
@@ -128,7 +132,7 @@ Traps for the next pass:
 
 ## Still to check
 
-These need T3 Connect, another computer, a phone on cellular or an upstream server.
+These need T3 Connect, another computer, a phone on cellular or an MCP app.
 
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.
@@ -138,8 +142,9 @@ These need T3 Connect, another computer, a phone on cellular or an upstream serv
 - A link in an MCP app. It goes through the same opener as the html_render and Files links,
   but no MCP server with an app UI was available to test.
 - The "Unregistered tunnel connection" log line has not been seen.
-- Upstream T3 server: no preview actions; the unreachable loopback error names Settings >
-  Loom > Previews.
+- An upstream server reached through a public address, such as T3 Connect: a loopback link
+  shows the unreachable error naming Settings > Loom > Previews. Over a private network it
+  maps to the computer's address instead, as checked above.
 
 ## Merge safety
 
