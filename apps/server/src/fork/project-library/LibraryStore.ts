@@ -172,6 +172,8 @@ const BLOB_PREFIX = "loom:gzip:";
 type PackedRow = { readonly payload_json: string; readonly bytes: Uint8Array | null };
 const VERSION_DIGEST_PREFIX = "loom:sha256:";
 const HISTORY_PAGE_BYTES = 2 * 1024 * 1024;
+// Three bindings per row keep each insert below SQLite's conservative 999-variable limit.
+const HISTORY_INSERT_BATCH_ROWS = 256;
 const ArchiveJson = Schema.fromJsonString(
   Schema.Struct({
     summary: Schema.Unknown,
@@ -255,18 +257,36 @@ const make = Effect.gen(function* () {
     );
     const header = yield* encodeJson({ ...archive, projection });
     yield* sql`INSERT INTO fork_library_history_headers(library_id,payload_json,field,total_items) VALUES (${id},${header},${field},${items.length}) ON CONFLICT(library_id) DO UPDATE SET payload_json=excluded.payload_json,field=excluded.field,total_items=excluded.total_items`;
-    yield* sql`DELETE FROM fork_library_history_items WHERE library_id=${id}`;
+    yield* sql`DELETE FROM fork_library_history_items WHERE library_id=${id} AND position>=${items.length}`;
+    const batch: { library_id: string; position: number; payload_json: string }[] = [];
+    let batchBytes = 0;
     for (const [position, item] of items.entries()) {
       const full = yield* encodeJson(item);
+      const fullBytes = Buffer.byteLength(full);
       // Large displayed text is shortened only in the browsing index, never in retained history.
       const encoded =
-        Buffer.byteLength(full) <= HISTORY_PAGE_BYTES
-          ? full
-          : yield* encodeJson(shortenDisplayText(item));
-      if (Buffer.byteLength(encoded) > HISTORY_PAGE_BYTES)
+        fullBytes <= HISTORY_PAGE_BYTES ? full : yield* encodeJson(shortenDisplayText(item));
+      const encodedBytes = encoded === full ? fullBytes : Buffer.byteLength(encoded);
+      if (encodedBytes > HISTORY_PAGE_BYTES)
         return yield* new LibraryStoreError({ operation: "history-item-too-large", cause: null });
-      yield* sql`INSERT INTO fork_library_history_items(library_id,position,payload_json) VALUES (${id},${position},${encoded})`;
+      if (
+        batch.length > 0 &&
+        (batch.length === HISTORY_INSERT_BATCH_ROWS ||
+          batchBytes + encodedBytes > HISTORY_PAGE_BYTES)
+      ) {
+        yield* sql`INSERT INTO fork_library_history_items ${sql.insert(batch)}
+          ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
+          WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;
+        batch.length = 0;
+        batchBytes = 0;
+      }
+      batch.push({ library_id: id, position, payload_json: encoded });
+      batchBytes += encodedBytes;
     }
+    if (batch.length > 0)
+      yield* sql`INSERT INTO fork_library_history_items ${sql.insert(batch)}
+          ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
+          WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;
   });
   return LibraryStore.of({
     transaction: (effect) =>

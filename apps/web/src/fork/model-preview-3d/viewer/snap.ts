@@ -94,21 +94,30 @@ export function buildTopology(positions: Float32Array, index: Uint32Array | null
     const t = Math.floor(e / 3),
       a = corners[e]!,
       b = corners[t * 3 + (((e % 3) + 1) % 3)]!;
+    if (a === b) continue;
+    // A cap's shared center can touch thousands of triangles; inspect the smaller endpoint fan.
+    const scanA = vertexStart[a + 1]! - vertexStart[a]! <= vertexStart[b + 1]! - vertexStart[b]!,
+      scan = scanA ? a : b,
+      seek = scanA ? b : a;
     let match = -1,
       matches = 0;
-    for (let i = vertexStart[a]!; i < vertexStart[a + 1]!; i++) {
+    for (let i = vertexStart[scan]!; i < vertexStart[scan + 1]!; i++) {
       const other = vertexTriangles[i]!;
       if (other === t) continue;
-      if (
-        corners[other * 3] === b ||
-        corners[other * 3 + 1] === b ||
-        corners[other * 3 + 2] === b
-      ) {
+      const x = corners[other * 3]!,
+        y = corners[other * 3 + 1]!,
+        z = corners[other * 3 + 2]!;
+      if (x === seek || y === seek || z === seek) {
         match = other;
-        matches++;
+        // Repeated corners contribute once per original a occurrence, whichever fan we inspect.
+        matches += scanA
+          ? 1
+          : (Number(x === a) + Number(y === a) + Number(z === a)) /
+            (Number(x === b) + Number(y === b) + Number(z === b));
+        if (matches > 1) break;
       }
     }
-    if (matches !== 1 || a === b) continue;
+    if (matches !== 1) continue;
     across[e] = match;
     const similarity =
       normals[t * 3]! * normals[match * 3]! +

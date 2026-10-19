@@ -190,6 +190,8 @@ it("discovers existing fork paths, including future surfaces and Loom routes", (
     "apps/web/src/routes/settings.loom.models.tsx",
     "scripts/fork",
     "deploy/omarchy",
+    "benchmarks/loom",
+    "apps/server/scripts/benchmark-library.ts",
   ];
   const f = lintFixture([...paths, "apps/web/src/routes/settings.general.tsx", "apps/mobile/src"]);
   const result = runLint(f, "fork_lint_paths");
@@ -250,6 +252,7 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
     ["omarchy-pack"],
     ["exec", "vp", "build"],
     ["run", "-s", "typecheck"],
+    ["exec", "tsc-rs", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["restore-lockfile"],
   ]);
 });
