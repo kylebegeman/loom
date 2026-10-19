@@ -124,11 +124,11 @@ Traps for the next pass:
 - An agent shell in a live-install lane carries that lane's `LOOM_LANE_*` variables and
   `TMPDIR` into anything it starts, the dev server included. Clear them before running the
   dev server's `lane-run` by hand, or the live install records the process as its own.
-- A lane-enabled dev server and the live install hand out lane ports from the same
-  41000-48999 range without knowing about each other, so a dev lane can get a live lane's
-  ports, and a live lane's release stops listeners on them. Two stuck live lanes stopped them
-  every 30 seconds until the L19 fix in `cde8064f74`. Check a port with `lsof` before testing
-  on it.
+- Lane ports come from one 41000-48999 range for every Loom server on the computer, and a
+  lane's release stops whatever listens on its block. Servers claim blocks in
+  `~/.loom/lane-ports` (see the L19 technical notes), so a lane-enabled dev server no longer
+  gets a live lane's ports. A server built before the claims still allocates blind, and a
+  port outside any lane is not protected: check it with `lsof` before testing on it.
 
 ## Still to check
 

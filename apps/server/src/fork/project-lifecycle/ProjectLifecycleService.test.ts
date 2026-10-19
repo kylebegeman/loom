@@ -282,6 +282,50 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("claims lane ports against every other server on the computer", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const claimsDir = `${t.home}/.loom/lane-ports`;
+      const claimOf = (base: number) =>
+        JSON.parse(NodeFS.readFileSync(`${claimsDir}/${base}`, "utf8")) as {
+          owner: string;
+          laneId: string;
+        };
+      const otherState = `${t.home}/other/userdata`;
+      NodeFS.mkdirSync(otherState, { recursive: true });
+      NodeFS.mkdirSync(claimsDir, { recursive: true });
+      // A running server holds the first block; a deleted worktree's server left the second.
+      const other = `${JSON.stringify({ owner: otherState, laneId: "theirs" })}\n`;
+      NodeFS.writeFileSync(`${claimsDir}/41000`, other);
+      NodeFS.writeFileSync(
+        `${claimsDir}/41020`,
+        JSON.stringify({ owner: `${t.home}/gone/userdata`, laneId: "old" }),
+      );
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).toBe(41020);
+      expect(claimOf(41020).laneId).toBe(lane.id);
+      const owner = claimOf(41020).owner;
+      expect(owner).not.toBe(otherState);
+
+      // A block another server claimed first moves this server's lane when it starts.
+      NodeFS.writeFileSync(`${claimsDir}/41020`, other);
+      yield* t.create;
+      const moved = (yield* t.store.listLanes()).find((row) => row.id === lane.id);
+      expect(moved?.portBase).toBe(41040);
+      expect(claimOf(41040)).toEqual({ owner, laneId: lane.id });
+      expect(NodeFS.readFileSync(`${lane.laneDir}/LANE.md`, "utf8")).toContain(
+        "Ports: 41040 to 41059",
+      );
+
+      // Removing the lane gives its block back and leaves other servers' claims alone.
+      const service = yield* t.create;
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      yield* service.tick();
+      expect(NodeFS.readdirSync(claimsDir).sort()).toEqual(["41000", "41020"]);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("steers a running agent once, then clears tmp once the lane is idle", () =>
     Effect.gen(function* () {
       const t = yield* setup;

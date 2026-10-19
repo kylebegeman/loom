@@ -91,6 +91,7 @@ import {
   type LanePaths,
   type SpaceOps,
 } from "./space.ts";
+import { makePortClaims, portClaimsDir } from "./portClaims.ts";
 import { makeStore, type LaneRow } from "./store.ts";
 
 const WATCHDOG_INTERVAL = "30 seconds";
@@ -268,19 +269,57 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     const lanes = new Map<string, LaneRow>();
     for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
-    const nextPortBase = () =>
-      allocatePortBase(
-        new Set(
-          [...lanes.values()].flatMap((lane) => (lane.portBase === null ? [] : [lane.portBase])),
+    const claims = makePortClaims(portClaimsDir(options.homeDir), config.stateDir);
+    const ownBases = (except?: string) =>
+      [...lanes.values()].flatMap((lane) =>
+        lane.portBase === null || lane.id === except ? [] : [lane.portBase],
+      );
+    /** A free block claimed for the lane, skipping this server's lanes and other servers' claims. */
+    const claimPortBase = (laneId: string) =>
+      node("claim lane ports", async () => {
+        const taken = await claims.heldByOthers();
+        for (const base of ownBases(laneId)) taken.add(base);
+        for (;;) {
+          const base = allocatePortBase(taken);
+          if (base === null || (await claims.claim(base, laneId))) return base;
+          taken.add(base);
+        }
+      }).pipe(
+        // Without the shared claims, ports are still unique among this server's lanes.
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not claim lane ports", { cause }).pipe(
+            Effect.as(allocatePortBase(new Set(ownBases(laneId)))),
+          ),
         ),
       );
-    // Lanes made before ports existed get a block on first load.
+    yield* node("prune lane port claims", () =>
+      claims.prune(
+        new Map(
+          [...lanes.values()].flatMap((lane) =>
+            lane.portBase === null ? [] : [[lane.portBase, lane.id] as const],
+          ),
+        ),
+      ),
+    ).pipe(Effect.ignore({ log: true }));
+    // Lanes made before ports existed, or whose block another server claimed first, move.
     for (const lane of lanes.values()) {
-      if (lane.portBase !== null) continue;
-      const portBase = nextPortBase();
-      if (portBase === null) break;
+      const current = lane.portBase;
+      if (current !== null) {
+        const held = yield* node("claim lane ports", () => claims.claim(current, lane.id)).pipe(
+          Effect.orElseSucceed(() => true),
+        );
+        if (held) continue;
+      }
+      const portBase = yield* claimPortBase(lane.id);
+      if (portBase === null) continue;
       yield* store.setPortBase(lane.id, portBase).pipe(Effect.orDie);
-      lanes.set(lane.id, { ...lane, portBase });
+      const moved = { ...lane, portBase };
+      lanes.set(lane.id, moved);
+      if (current !== null)
+        yield* writeAtomically(
+          `${lane.laneDir}/LANE.md`,
+          laneMarkdown(moved, rootOf(yield* getSettings)),
+        ).pipe(Effect.ignore({ log: true }));
     }
     const live = new Map<string, LaneLive>();
     const liveOf = (id: string) => {
@@ -761,7 +800,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         capBytes,
         device: null,
         createdAt: DateTime.formatIso(yield* DateTime.now),
-        portBase: nextPortBase(),
+        portBase: yield* claimPortBase(id),
       };
       yield* node("create lane", () => NodeFSP.mkdir(lane.laneDir, { recursive: true }));
       if (rootIsNew && platform === "darwin")
@@ -959,6 +998,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* store.deleteLane(lane.id).pipe(Effect.orDie);
       lanes.delete(lane.id);
       live.delete(lane.id);
+      const { portBase } = lane;
+      if (portBase !== null)
+        yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
+          Effect.ignore({ log: true }),
+        );
       yield* writeShellFiles;
       return true;
     });
