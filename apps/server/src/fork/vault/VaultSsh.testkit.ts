@@ -1,5 +1,5 @@
 import * as VaultProfiles from "./VaultProfiles.ts";
-import { EnvironmentId, ThreadId, IsoDateTime } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, IsoDateTime, type OrchestrationV2Run } from "@t3tools/contracts";
 import {
   vaultBrokerClaimMessage,
   vaultBrokerChallengeMessage,
@@ -22,7 +22,7 @@ import * as Option from "effect/Option";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
-import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
+import { liveThreadShell, idleThreadProjection } from "../../mcp/McpToolAccess.testkit.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
 import * as SshCrypto from "./SshCrypto.ts";
 import * as SshTransport from "./SshTransport.ts";
@@ -44,11 +44,16 @@ export const sshFixture = (
     const id = random.randomUUIDv4().pipe(Effect.map((value) => value.replaceAll("-", "")));
     const environmentId = EnvironmentId.make("ssh-fixture-" + (yield* id)),
       threadId = ThreadId.make("ssh-fixture-thread");
-    const state = { thread: liveThreadShell(threadId) };
+    const state = { thread: liveThreadShell(threadId), runs: [] as OrchestrationV2Run[] };
     const dependencies = Layer.mergeAll(
       Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
       Layer.mock(ThreadManagementService)({
         getThreadShell: (id) => Effect.sync(() => (id === state.thread.id ? state.thread : null)),
+        getThreadRecords: (_id, _fields, filter) =>
+          Effect.sync(() => ({
+            ...idleThreadProjection(state.thread),
+            runs: state.runs.filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
+          })),
       }),
       Layer.mock(ProjectStoreV2)({
         get: (projectId) =>

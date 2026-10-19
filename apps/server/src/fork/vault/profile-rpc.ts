@@ -2,6 +2,8 @@ import {
   VAULT_PROFILE_WS_METHODS as P,
   VAULT_REFERENCE_WS_METHODS as R,
   VaultError,
+  type VaultProfilePinList,
+  type VaultProfilePinRetire,
   type VaultProfileMutation,
   type VaultProfilePreviewInput,
   type VaultReferenceSearch,
@@ -15,6 +17,18 @@ export const makeVaultProfileRpcHandlers = (auth: ForkRpcAuth, actor: string) =>
   Effect.gen(function* () {
     const profiles = yield* VaultProfiles.VaultProfiles;
     return {
+      [P.pins]: (input: VaultProfilePinList) => auth.effect(P.pins, profiles.pins(input)),
+      [P.retirePin]: (input: VaultProfilePinRetire) =>
+        auth.effect(
+          P.retirePin,
+          profiles.retirePin(
+            input,
+            actor,
+            Effect.suspend(() => auth.effect(P.retirePin, Effect.void)).pipe(
+              Effect.mapError(() => new VaultError({ reason: "denied" })),
+            ),
+          ),
+        ),
       [P.list]: (input: { projectId: ProjectId }) =>
         auth.effect(P.list, profiles.list(input.projectId)),
       [P.preview]: (input: VaultProfilePreviewInput) =>

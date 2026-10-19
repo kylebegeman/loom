@@ -1,3 +1,4 @@
+import { VaultGitHubSettingsSection } from "./GitHubSettingsSection";
 import { VaultProfileSettingsSection } from "./ProfileSettingsSection";
 import { VaultSshSheet } from "./SshSheet";
 import { VaultBrokerSettingsSection } from "./BrokerSettingsSection";
@@ -66,6 +67,7 @@ export function VaultSettingsSection({
       </SettingsSection>
       <VaultBrokerSettingsSection environmentId={environmentId} connected={connected} />
       <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
+      <VaultGitHubSettingsSection environmentId={environmentId} connected={connected} />
       <VaultProfileSettingsSection environmentId={environmentId} connected={connected} />
     </>
   );

@@ -11,12 +11,13 @@ The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for ex
 - Current policy/key/host checks, project/provider/run attestation and archive guard at signing.
 - Exact scheduled-message outcome projection with web/native review and explicit retry.
 - Versioned portable requirement import/export, empty local bindings and project-scoped CLI/MCP.
+- Paged retained-selection inspection, manual terminal-run retirement and durable no-reselection tombstones.
 
 ## Remaining
 
 1. Add credential/account kinds as their delivery/connector adapters arrive; current declarations support SSH/Git.
 2. Design Library publication and project-file discovery for portable declarations without secret bindings.
-3. Add retained run-selection inspection and cleanup with explicit recovery/retention policy.
+3. Choose opt-in automatic retention and recovery policy, including backend version-history handling.
 
 ## Completion gate
 

@@ -1,3 +1,4 @@
+import { VaultGitHubSettingsSection } from "../vault/GitHubSettingsSection";
 import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
 import { VaultReferenceSettingsSection } from "../vault/ReferenceSettingsSection";
 import { VaultBrokerSettingsSection } from "../vault/BrokerSettingsSection";
@@ -18,6 +19,7 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "vault-github", title: "Vault GitHub connections", Component: VaultGitHubSettingsSection },
   { id: "vault-profiles", title: "Vault project profiles", Component: VaultProfileSettingsSection },
   { id: "vault-references", title: "Vault references", Component: VaultReferenceSettingsSection },
   { id: "vault-brokers", title: "Vault brokers", Component: VaultBrokerSettingsSection },

@@ -207,7 +207,7 @@ status follows transport success, so consumers must inspect that field.
 
 This provides on-demand access through the connection established at provider launch. It
 does not install terminal agent sockets, configure ordinary shell Git, clone/push, GitHub
-accounts or reboot startup. There is no offline cache or process isolation from the same OS
+account credentials for ordinary terminals or reboot startup. There is no offline cache or process isolation from the same OS
 user. No production registration or rollout is implied by the disposable proof.
 
 ## Project profiles and retained run selections
@@ -221,6 +221,30 @@ Registry CAS revisions protect concurrent management edits. A run selection cont
 labels, names, item references, versions and exact destinations, never credential values.
 The first successful resolution creates it; service restart preserves it. Later defaults and
 profile edits apply to later runs. Archive and policy/key/host checks remain live. These records
-currently have no automatic cleanup; account for their metadata growth in retention and
-backups. Do not prune active-run selections or restore stale backups into a running environment.
-A reviewed retention/recovery workflow remains selected work.
+have administrator inspection and manual retirement for confirmed terminal runs. Retirement
+writes a tombstone and prevents that run selecting again; OpenBao historical versions remain.
+There is no automatic cleanup or physical erasure. Account for metadata growth in backups and
+retain tombstones. Do not prune active-run selections or restore stale backups into a running
+environment. Automatic retention and backup/recovery policy remain selected work.
+
+## Dedicated GitHub connections
+
+The `vault-github` capability needs the existing core item read/create/update rights in OpenBao.
+There is no new SQL migration, backend mount or policy escalation. Install `gh` on the Loom
+server for mediated execution on macOS/Linux; API setup/testing alone needs no CLI. The server
+must reach `https://api.github.com`. No custom host, redirect or Enterprise endpoint is supported.
+
+Use a dedicated App installation or fine-grained user token with API permissions matching the
+intended operations and repository allowlist. The UI verifies API visibility, not permission for
+every possible write. Private App keys stay encrypted through core records. Temporary App JWTs
+and installation tokens are memory-only; use/test tokens are repository-limited. Scope cleanup
+attempts token release. Failed cleanup logs a fixed warning and the token can remain valid until
+expiry. Dedicated user tokens are never revoked by operation cleanup.
+
+Execution creates private temporary HOME/config directories and explicitly supplies the current
+token, with bounded concurrency/output/time. Personal GH configuration and SSH agent sockets
+are excluded. Same-user/full-access processes are not OS-isolated. Local archive prevents new
+use; remote provider revocation and OpenBao version history are separate operator decisions.
+Ordinary terminal GH/Git HTTPS, project binding and existing host-setup precedence are not
+changed. No real App registration, provider write, personal migration or production rollout is
+part of the synthetic acceptance checks.

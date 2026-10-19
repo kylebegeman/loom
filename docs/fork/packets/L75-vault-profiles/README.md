@@ -24,6 +24,8 @@ Interactive/scheduled launch selectors and server preflight are implemented for 
 Portable declarations import/export without local bindings. Scheduled task status follows its
 latest Vault-attached provider run and offers review/retry. Other credential kinds,
 account provisioning, Library sharing and run-pin retention automation remain selected.
+Administrators can inspect retained run selections and explicitly retire confirmed terminal runs.
+Retirement preserves a tombstone, denies reselection by that run and leaves OpenBao history intact.
 No production rollout or personal-vault migration occurred.
 
 ## Surfaces

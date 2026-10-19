@@ -64,3 +64,13 @@ subject to design review; the following choices are not resolved by selection:
 - Portable declarations contain names/kinds only and start unbound on import. Durable pin inspection/retention, Library publication and project-file discovery remain open.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
+
+## Delivered retained-selection milestone
+
+Administrators inspect each run's selected profile revision, exact binding/key versions,
+destination and time from project profiles on web/desktop and native mobile. Human CLI/MCP
+clients use the same service. Retirement is offered only for confirmed terminal runs and
+requires explicit irreversible confirmation. It clears the current binding snapshot, preserves
+a metadata tombstone and prevents the same run selecting again. New runs can select normally.
+Active/unavailable runs remain retained. OpenBao older versions remain; no physical erasure,
+automatic retention policy or provider revocation is implied. Cancel leaves the snapshot intact.

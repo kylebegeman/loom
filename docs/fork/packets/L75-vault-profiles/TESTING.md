@@ -125,3 +125,24 @@ Implementation: `d015748a84`. After fetching upstream tags, the final merge prev
 this section adds no conflicting files. Existing scheduler form/seam conflicts still need porting
 in the upstream-sync task. `v0.1.1-nightly.20261017.3238` still previews cleanly. No working-tree
 merge was attempted. No push, PR or deployment was performed.
+
+## Retained-selection milestone
+
+The current integrated set passes **46 tests in 11 files**, shared with the dedicated GitHub
+milestone in [L82 testing](../L82-vault-connectors/TESTING.md). Retention coverage proves exact
+selection inspection, active and unavailable run denial, terminal-only eligibility, current CAS,
+permission denial, actor-bound replay, metadata tombstones, no same-run reselection and fresh-run
+resolution. Authenticated MCP denies agent history inspection and permits human administrators.
+Destination-specific client permission tests observe grant loss. Scoped consumer typechecks,
+changed-source lint and mobile native static checks pass.
+
+Web verified pinned-binding expansion, cancel/confirm retirement, tombstone display and 390px
+layout with synthetic snapshots tied to existing isolated failed runs. OpenBao fixture seeding
+establishes UI states only; service tests establish the state-transition behavior. Retirement
+leaves older OpenBao versions and never claims erasure or provider revocation. Native iOS verified pinned metadata, the first web retirement, cancel/confirm retirement of the
+second synthetic selection and refreshed tombstones without binding details. No automatic
+retention is enabled.
+
+The latest baseline preview against `v0.1.1-nightly.20261019.3348` has 60 conflicting files at
+parent `78c8d44b17`. This section adds no upstream seams; its committed preview has the identical
+60-file conflict set with no new conflicting files. The existing upstream synchronization remains separate work.

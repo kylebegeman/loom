@@ -236,8 +236,9 @@
         All sixteen proposals are documented. Key custody and operating policies remain
         implementation decisions. All sixteen packets are selected to build; OpenBao is selected.
         Encrypted records, access policy, reviewed host enrollment, signed workload checks and
-        mediated SSH commands are implemented milestones; full delivery and the platform remain in
-        progress. No deployment is authorized.
+        mediated SSH/GH commands, profile launch/recovery and retained-selection retirement are
+        implemented milestones; full delivery and the platform remain in progress. No deployment is
+        authorized.
       </p>
       <nav aria-label="Document links">
         <a href="./LOOM-VAULT.md">Product index</a
@@ -441,7 +442,8 @@
             <strong>In progress:</strong> project SSH/Git profile management and durable run
             selection work locally. Explicit launch checks, scheduled outcome recovery and portable
             requirement import/export are implemented locally. Other credential kinds, Library
-            publication and retained-pin cleanup remain selected.
+            publication and automatic retention remain selected. Retained selections now support
+            inspection and explicit terminal-run retirement with durable tombstones.
           </p>
           <p>
             Bind a complete set of development accounts, credentials and endpoints to a named
@@ -789,6 +791,12 @@
           <p class="eyebrow">V11 · L82 · Large effort · High impact</p>
           <h3>Developer service accounts and authentication connectors</h3>
           <p>
+            <strong>In progress:</strong> dedicated github.com App/token connections, verified
+            repository API access and scoped headless GH operations work locally. Web and native
+            management keep personal credentials separate. Profile bindings, terminal Git HTTPS,
+            broader onboarding and provider revocation remain selected.
+          </p>
+          <p>
             Manage GitHub and other developer service identities as tested, renewable connections.
           </p>
           <details>
@@ -817,8 +825,8 @@
             <h4>Open decisions</h4>
             <ul>
               <li>
-                D8: Which GitHub identity mechanism best fits Kyle&#x27;s repositories and
-                service-account ownership?
+                D8: App/token mechanisms are implemented locally. Broader onboarding and
+                service-account ownership remain open.
               </li>
               <li>
                 Which additional services are initial commitments versus later connector

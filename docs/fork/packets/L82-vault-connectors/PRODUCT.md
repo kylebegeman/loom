@@ -53,7 +53,28 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- D8: Which GitHub identity mechanism best fits Kyle's repositories and service-account ownership?
+- D8: Local implementation starts with GitHub App installations and dedicated fine-grained tokens.
+  OAuth/device onboarding, Enterprise hosts and account ownership/onboarding policy remain open.
 - Which additional services are initial commitments versus later connector implementations?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
+
+## Delivered local scope
+
+Connect an App installation with App ID, installation ID and RSA PEM private key, or enter a
+dedicated fine-grained token privately. Declare 1 to 32 github.com repositories. Loom verifies
+identity and API access to each before saving. Review safe account/repository/version metadata,
+replace credentials, test API access, disconnect locally with confirmation or restore. Cancel
+and authentication-type switching clear private form values. No personal login fallback occurs.
+
+For authenticated full-access/default agent runs, mediated GH supports repository/PR/issue
+reads, PR checks, PR/issue comments and issue creation. Each call names the connection version,
+repository and a typed operation. An exact `https://github.com/owner/repo` use grant is required.
+An API test does not prove GH CLI installation or Git transport access. Unknown write outcomes
+require inspection before retrying; Loom does not silently replay writes.
+
+This milestone runs on the server, including when controlled remotely from a phone. It does
+not export credentials into an ordinary terminal or select project defaults. Local disconnection
+blocks future use; remote revocation and already issued credentials have separate lifetimes.
+Human administrators retain the Vault core's explicit reveal/export powers. Full-access agents
+and other same-user processes are not isolated by an OS security boundary.

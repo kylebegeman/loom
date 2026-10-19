@@ -3,7 +3,7 @@
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
 2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment,
 L84 hosted run access, L81 mediated SSH/Git and key/trust management, L80/L77/L72 grants,
-inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery and portable SSH/Git requirements are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git requirements, retained-selection retirement and L82 dedicated GitHub/mediated GH access are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
@@ -25,7 +25,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84, L81, L73 and L75 are in progress; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84, L81, L73, L75 and L82 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 
@@ -125,7 +125,7 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 | D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                |
 | D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                      |
 | D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Mediated Ed25519/host-bound slice resolved; general transports open |
-| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | Open                                                                |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | App/token implemented locally; broader onboarding/adapters open     |
 | D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                |
 
 Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.

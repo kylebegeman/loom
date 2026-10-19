@@ -1,3 +1,6 @@
+import * as VaultGitHub from "./vault/VaultGitHub.ts";
+import * as GitHubTransport from "./vault/GitHubTransport.ts";
+import * as GitHubCli from "./vault/GitHubCli.ts";
 import * as VaultPromptContext from "./vault/VaultPromptContext.ts";
 import * as VaultProfiles from "./vault/VaultProfiles.ts";
 import * as VaultReferences from "./vault/VaultReferences.ts";
@@ -117,6 +120,16 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultGitHub.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerVaultCore,
+        layerVaultAccess,
+        GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+        GitHubCli.layer,
+      ),
+    ),
+  ),
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),

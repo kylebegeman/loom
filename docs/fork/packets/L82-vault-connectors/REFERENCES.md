@@ -1,25 +1,29 @@
 # L82 references
 
-## Product selection
+Kyle selected this complete V11 idea for implementation on 2026-10-17 and subsequently selected
+OpenBao. The dedicated App/token milestone extends parent `78c8d44b17`.
 
-Kyle selected all sixteen Loom Vault ideas for implementation on 2026-10-17. This packet is
-**V11** in the [shared index](../LOOM-VAULT.md). It is new platform scope, not a claim of
-an old Loom implementation or inherited P/F selection.
+## Current implementation
 
-## Current source
+- [Shared GitHub contract](../../../../packages/contracts/src/fork/vault-github.ts)
+- [Connection service](../../../../apps/server/src/fork/vault/VaultGitHub.ts)
+- [GitHub API adapter](../../../../apps/server/src/fork/vault/GitHubTransport.ts)
+- [Isolated GH adapter](../../../../apps/server/src/fork/vault/GitHubCli.ts)
+- [Authenticated agent tools](../../../../apps/server/src/fork/vault/github-mcp.ts)
+- [Shared client commands](../../../../packages/client-runtime/src/fork/vault-github.ts)
+- [Web management](../../../../apps/web/src/fork/vault/GitHubSettingsSection.tsx)
+- [Native management](../../../../apps/mobile/src/fork/vault/GitHubSettingsSection.tsx)
 
-Verified against `2f385ee835`; refresh line citations before implementation.
+## Integration boundaries and prior art
 
-- [`apps/server/src/sourceControl/GitHubSetupFlow.ts:21`](../../../../apps/server/src/sourceControl/GitHubSetupFlow.ts#L21): Existing durable setup progress service.
-- [`apps/server/src/sourceControl/GitHubHostSetup.ts:330`](../../../../apps/server/src/sourceControl/GitHubHostSetup.ts#L330): Current host authorization and Git helper setup.
-- [`packages/source-control-github/src/server/GitHubCredentials.ts:133`](../../../../packages/source-control-github/src/server/GitHubCredentials.ts#L133): Current GitHub CLI token resolution boundary.
+- [Existing GitHub host setup](../../../../apps/server/src/sourceControl/GitHubHostSetup.ts)
+- [Existing GitHub credential resolution](../../../../packages/source-control-github/src/server/GitHubCredentials.ts)
+- [GitHub App JWT documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app)
+- [Installation token API](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app)
+- [Token release API](https://docs.github.com/en/rest/apps/installations#revoke-an-installation-access-token)
+- [Shared foundation](../LOOM-VAULT-FOUNDATION.md)
+- [Extension points](../EXTENSION-POINTS.md#loom-vault-foundation-ext-vault)
+- [Packet conventions](../CONVENTIONS.md)
 
-## Shared design and prior art
-
-- [Shared foundation](../LOOM-VAULT-FOUNDATION.md): shared boundaries and backend selection.
-- [Packet conventions](../CONVENTIONS.md): additive integration and focused verification.
-- [Loom Vault decisions](../LOOM-VAULT.md#design-decisions-before-building): unsettled product choices.
-
-External engines and specs in the foundation are evaluation references. No external code or
-assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
-this packet adds no application dependency.
+Uses existing jose, Effect and Node tooling. No external code or new production dependency is
+copied. Disposable provider/CLI test fixtures do not establish live GitHub acceptance.

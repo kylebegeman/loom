@@ -1,3 +1,9 @@
+import {
+  VaultProfilePinList,
+  VaultProfilePinPage,
+  VaultProfilePinRetire,
+  VaultProfilePin,
+} from "@t3tools/contracts/fork";
 import { VaultProfileRequirements, vaultProfileRequirements } from "@t3tools/contracts/fork";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
@@ -32,6 +38,22 @@ const failure = Schema.Union([
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultProfileToolkit = Toolkit.make(
+  Tool.make("loom_vault_profile_pins", {
+    description:
+      "Inspect retained run selections for a project. Human administrator clients only; contains binding metadata, no credentials. Bounded page, continue with cursor.",
+    parameters: VaultProfilePinList,
+    success: VaultProfilePinPage,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_profile_retire", {
+    description:
+      "Permanently retire a stopped run selection. Human full-access administrator only. Removes current binding snapshot and leaves a deny tombstone; cannot be undone or reused by that run. OpenBao version history remains. Does not revoke credentials.",
+    parameters: VaultProfilePinRetire,
+    success: VaultProfilePin,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_vault_references_search", {
     description:
       "Search safe Vault references by label or item ID in this environment. Threads see only inspect-granted items; values are never returned. Results scan bounded pages; continue with nextCursor even if a page has no matches. Set kind:null for any kind, includeArchived:false and cursor:null to start.",
@@ -114,6 +136,35 @@ export const vaultProfileHandlers = McpToolAccess.toLayer(
       ),
     );
     return {
+      loom_vault_profile_pins: McpToolAccess.reads((input) =>
+        caller.pipe(
+          Effect.flatMap((scope) =>
+            scope.thread
+              ? Effect.fail(new VaultError({ reason: "denied" }))
+              : onHost(Effect.flatMap(VaultProfiles.VaultProfiles, (p) => p.pins(input))),
+          ),
+        ),
+      ),
+      loom_vault_profile_retire: McpToolAccess.writesEnvironment((input, check) =>
+        Effect.gen(function* () {
+          const scope = yield* caller;
+          if (scope.thread) return yield* new VaultError({ reason: "denied" });
+          const context = yield* Effect.context<Effect.Services<typeof check>>();
+          return yield* onHost(
+            Effect.flatMap(VaultProfiles.VaultProfiles, (p) =>
+              p.retirePin(
+                input,
+                `client:${scope.client!.sessionId}`,
+                check.pipe(
+                  Effect.provide(context),
+                  Effect.asVoid,
+                  Effect.mapError(() => new VaultError({ reason: "denied" })),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
       loom_vault_references_search: McpToolAccess.reads((input) =>
         caller.pipe(
           Effect.flatMap((scope) =>

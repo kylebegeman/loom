@@ -1,3 +1,4 @@
+import { VAULT_GITHUB_WS_METHODS as VG } from "@t3tools/contracts/fork";
 import {
   VAULT_PROFILE_WS_METHODS as VP,
   VAULT_REFERENCE_WS_METHODS as VR,
@@ -45,7 +46,14 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 export const FORK_RPC_REQUIRED_SCOPES = {
   [VP.list]: AuthAccessReadScope,
   [VP.preview]: AuthAccessReadScope,
+  [VG.save]: AuthAccessWriteScope,
+  [VG.test]: AuthAccessWriteScope,
+  [VG.change]: AuthAccessWriteScope,
+  [VG.info]: AuthAccessReadScope,
+  [VG.list]: AuthAccessReadScope,
   [VP.apply]: AuthAccessWriteScope,
+  [VP.pins]: AuthAccessReadScope,
+  [VP.retirePin]: AuthAccessWriteScope,
   [VR.search]: AuthAccessReadScope,
   [VR.describe]: AuthAccessReadScope,
   [VS.info]: AuthAccessReadScope,

@@ -17,6 +17,20 @@ export function createVaultProfileAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    pins: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:profile-pins",
+      tag: P.pins,
+      refreshTrigger: ({ environmentId }) => changes(environmentId),
+    }),
+    retirePin: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:retire-pin",
+      tag: P.retirePin,
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          const signal = changes(environmentId);
+          registry.set(signal, registry.get(signal) + 1);
+        }),
+    }),
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:profiles",
       tag: P.list,

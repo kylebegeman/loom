@@ -1,3 +1,5 @@
+export * from "./vault-github-draft.ts";
+export * from "./vault-github.ts";
 export * from "./vault-profiles.ts";
 export * from "./vault-ssh.ts";
 export * from "./vault-brokers.ts";

@@ -42,3 +42,6 @@ optional `ext-turn-input` contributor proposal because a required check cannot b
 
 The SQLite ownership table and migration ledger are fork-owned. Portable declaration tools,
 contracts and both transfer components use existing profile registrations and add no seams.
+
+Retained-selection inspection and retirement reuse the existing fork profile/RPC/settings/CLI/MCP
+registrations. This milestone adds no upstream seams, dependencies or SQL migrations.

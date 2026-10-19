@@ -1,3 +1,4 @@
+import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -252,7 +253,7 @@ function ProfileManager({
       ) : null}
       {snapshot?.profiles.map((p) => (
         <div key={p.id} className="flex flex-col gap-2 rounded-md border p-3">
-          <p className="font-medium">
+          <p className="break-words font-medium">
             {p.label}
             {snapshot.activeProfileId === p.id ? " · Default for new runs" : ""}
             {p.state === "archived" ? " · Archived" : ""}
@@ -266,32 +267,36 @@ function ProfileManager({
               size="sm"
               variant="outline"
               disabled={locked || !!editing || p.state === "archived"}
+              aria-label={`Edit ${p.label}`}
               onClick={() => edit(p)}
             >
-              Edit {p.label}
+              Edit
             </Button>
             <Button
               size="sm"
               variant="outline"
               disabled={locked || !!editing || (snapshot?.profiles.length ?? 0) >= 32}
+              aria-label={`Clone ${p.label}`}
               onClick={() => edit({ ...p, id: newId(), label: `${p.label} copy` })}
             >
-              Clone {p.label}
+              Clone
             </Button>
             {p.state === "active" && snapshot.activeProfileId !== p.id ? (
               <Button
                 size="sm"
                 variant="outline"
                 disabled={locked || !!editing}
+                aria-label={`Use ${p.label} by default`}
                 onClick={() => void apply({ type: "activate", id: p.id })}
               >
-                Use {p.label} by default
+                Use by default
               </Button>
             ) : null}
             <Button
               size="sm"
               variant="outline"
               disabled={locked || !!editing}
+              aria-label={`${p.state === "active" ? "Archive" : "Restore"} ${p.label}`}
               onClick={() =>
                 void apply({
                   type: "state",
@@ -300,11 +305,16 @@ function ProfileManager({
                 })
               }
             >
-              {p.state === "active" ? "Archive" : "Restore"} {p.label}
+              {p.state === "active" ? "Archive" : "Restore"}
             </Button>
           </div>
         </div>
       ))}
+      <VaultProfileHistory
+        environmentId={environmentId}
+        projectId={projectId}
+        canWrite={canWrite}
+      />
       {editing ? (
         <section
           aria-label="Profile editor"
@@ -482,7 +492,7 @@ function ProfileManager({
           </p>
           {review ? (
             <div role="region" aria-label="Profile review" className="flex flex-col gap-2">
-              <p className="font-medium">Review {editing.label}</p>
+              <p className="break-words font-medium">Review {editing.label}</p>
               {review.bindings.map((b) => (
                 <p key={b.name} className="break-words text-sm">
                   {b.name}: {vaultProfileBindingMessage(b.state)}

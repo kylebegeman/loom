@@ -1,21 +1,24 @@
 # L82 seams
 
-## Extension points
+## Actual integration
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
-future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+All source changes live in existing fork-owned contracts, server, client-runtime, provider
+instruction and web/native settings directories. ForkLayer, ForkRuntime, RPC authorization,
+capabilities, settings registry, MCP toolkit and CLI dispatch reuse existing extension points.
+The separately inferred GitHub RPC group bounds server handler union inference.
 
-## Packet integration review
+No upstream-owned file, dependency manifest, lockfile or SQL migration is changed. No new
+FORK.md seam row or seams.tsv entry is needed. The provider instruction extension was already
+marked and is reused through its fork-owned string.
 
-Review GitHubCredentials, GitHubHostSetup and the existing setup flow. Preserve existing auth precedence for unmigrated projects; make Vault selection explicit rather than shadowing all ambient credentials.
+## Future review areas
 
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
+Ordinary Git HTTPS/helper routing and explicit project/default selection must review existing
+GitHubHostSetup/GitHubCredentials, retain ambient precedence for unmigrated projects and list
+any actual marked upstream integration before adding it. Other packets consume the shared
+contract/service boundary rather than these client components.
 
-## Actual seams and merge status
+## Merge verification
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+Read-only merge previews and baseline differences are recorded in [TESTING.md](./TESTING.md).
+A baseline conflict is not a clean merge claim; no working-tree merge or deployment is implied.

@@ -1,3 +1,4 @@
+import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
@@ -430,6 +431,12 @@ function ProfileManager({
           />
         </View>
       ))}
+      <VaultProfileHistory
+        environmentId={environmentId}
+        projectId={projectId}
+        canWrite={canWrite}
+        connected={connected}
+      />
       {editing ? (
         <Sheet
           title="Vault profile"

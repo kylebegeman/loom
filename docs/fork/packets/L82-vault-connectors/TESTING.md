@@ -1,46 +1,51 @@
 # L82 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L78; they do not establish this packet's acceptance.
+Status: **Local milestone verified; full packet acceptance remains open.** Synthetic fixtures only.
 
-## Automated behavior
+## Automated evidence
 
-- Git and API requests use the selected identity rather than ambient personal credentials.
-- Concurrent refresh cannot overwrite a newer credential version; retries reuse the operation receipt.
-- A completed callback without verified provider success does not mark the connection ready.
-- Disconnect removes Loom access even when provider revocation fails; the UI reports that distinction.
+The focused integrated set passes **46 tests in 11 files**, covering profile retention/MCP,
+GitHub service/transport/CLI, RPC authorization, client permissions/draft validation and web
+settings registration. GitHub coverage verifies encrypted-core metadata boundaries, exact
+repository grants, CAS/retry/lifecycle, changed run/account denial before delivery, authenticated
+provider binding, human-only management, unrelated connection-format protection and scoped
+provider-session release. No secret value is exposed by these metadata/error assertions.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
-
-## Manual and integrated acceptance
-
-Connect a development GitHub identity, read a private test repository, exercise a permitted push and PR operation, restart the runner, then revoke access at GitHub and inspect recovery.
-
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
-
-## Focused verification commands
-
-Once implementation files exist, assign concrete test filenames in this document and run:
+The API adapter uses a disposable PKCS#1 RSA key to prove bounded JWT claims, repository-limited
+installation requests, safe HTTP failures, token release and no dedicated-token revocation.
+The fake gh executable proves isolated HOME/config, no ambient personal token/SSH socket,
+output scrubbing/bounds, missing-CLI errors and temporary-directory cleanup. These are real
+adapter-boundary tests with synthetic provider responses, not live GitHub acceptance.
 
 ```sh
-vp test run apps/server/src/fork/vault-connectors/service.test.ts
-vp lint apps/server/src/fork/vault-connectors
-vp run --filter t3 typecheck
+node_modules/.bin/vp test run apps/server/src/fork/vault/GitHubTransport.test.ts apps/server/src/fork/vault/GitHubCli.test.ts apps/server/src/fork/vault/VaultGitHub.test.ts apps/server/src/fork/vault/VaultProfiles.test.ts apps/server/src/fork/vault/profile-mcp.test.ts apps/server/src/fork/rpcAuthorization.test.ts packages/client-runtime/src/fork/vault-github-draft.test.ts packages/client-runtime/src/fork/vault-github.permissions.test.ts packages/client-runtime/src/fork/vault-profiles.permissions.test.ts packages/client-runtime/src/fork/vault-profiles.test.ts apps/web/src/fork/settings/registry.test.ts
 ```
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+Scoped server, contracts, client-runtime, provider-core, web, mobile and desktop typechecks pass.
+Changed-source lint and mobile native static checks pass. No repo-wide suite was run.
 
-## Merge safety and results
+## Integrated client evidence and limits
 
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+Web/desktop bundle and native iOS used the existing isolated worktree state and disposable
+OpenBao. Web verified App form setup, safe invalid-RSA rejection through the actual server,
+authentication switching that clears private input, cancellation, synthetic connection metadata,
+local disconnect/restore and 390px responsive management. Native verified App/token form
+switching, empty-input validation inside the sheet, cancellation and the same synthetic
+connection's local disconnect/restore. Long web action labels were shortened while preserving
+full contextual accessible names; responsive layouts were visually rechecked.
+
+The synthetic connection was seeded directly into disposable OpenBao for lifecycle/UI checks.
+Its data is not an accepted GitHub credential. Successful provider authentication and GH
+operations were exercised through service/adapter tests, not a live provider account or a
+successful client onboarding call. No real token, App registration, provider write, PR or
+personal credential was used. Electron shell, Android, relay/tunnel and live model execution
+were not independently exercised. Ordinary terminal gh/Git HTTPS, project binding, OAuth/device
+flows, Enterprise and provider revocation management remain selected, unimplemented work.
+
+## Merge safety
+
+After fetching upstream tags, parent `78c8d44b17` has **60 conflicting files** against
+`v0.1.1-nightly.20261019.3348`. The committed section preview has the identical 60-file conflict set and no new conflicting
+files. This milestone changes no upstream-owned files. A baseline upstream-sync issue
+must be resolved in its own landing workflow; this is not a clean merge claim. No working-tree
+merge, push, PR or deployment was attempted.

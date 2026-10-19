@@ -1,5 +1,12 @@
+import {
+  VaultProfilePinList,
+  VaultProfilePinRetire,
+  type VaultProfilePin,
+  type VaultProfilePinPage,
+} from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import { vaultProfileFromRequirements } from "@t3tools/contracts/fork";
-import type { ProjectId, ThreadId, RunId } from "@t3tools/contracts";
+import { type ProjectId, ThreadId, RunId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultSshError,
@@ -33,6 +40,12 @@ type Failure = VaultError | VaultSshError | VaultWorkloadError;
 export class VaultProfiles extends Context.Service<
   VaultProfiles,
   {
+    readonly pins: (input: VaultProfilePinList) => Effect.Effect<VaultProfilePinPage, VaultError>;
+    readonly retirePin: (
+      input: VaultProfilePinRetire,
+      actor: string,
+      authorize?: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultProfilePin, VaultError>;
     readonly assertActive: (
       projectId: ProjectId,
       profileId: string,
@@ -73,7 +86,21 @@ const Pin = Schema.Struct({
   threadId: Schema.String,
   runId: Schema.String,
   resolution: VaultProfileResolution,
+  createdAt: Schema.optional(Schema.String),
 });
+const RetiredPin = Schema.Struct({
+  schemaVersion: Schema.Literal(2),
+  environmentId: Schema.String,
+  projectId: Schema.String,
+  threadId: Schema.String,
+  runId: Schema.String,
+  createdAt: Schema.NullOr(Schema.String),
+  retiredAt: Schema.String,
+  operationId: Schema.String,
+  actor: Schema.String,
+});
+const decodeRetiredPin = Schema.decodeUnknownOption(RetiredPin);
+const encodeRetiredPin = Schema.encodeEffect(RetiredPin);
 const isMutation = Schema.is(VaultProfileMutation),
   isDefinition = Schema.is(VaultProfileDefinition);
 const decodeRegistry = Schema.decodeUnknownOption(Registry),
@@ -88,6 +115,8 @@ const encodeRunKey = Schema.encodeEffect(
     Schema.Struct({ threadId: Schema.String, runId: Schema.NullOr(Schema.String) }),
   ),
 );
+const isPinList = Schema.is(VaultProfilePinList),
+  isPinRetire = Schema.is(VaultProfilePinRetire);
 const fail = (reason: VaultError["reason"]) => new VaultError({ reason });
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore,
@@ -236,6 +265,8 @@ const make = Effect.gen(function* () {
     const readPin = Effect.gen(function* () {
       const stored = yield* store.read(pinPath);
       if (!stored) return null;
+      const retired = decodeRetiredPin(Redacted.value(stored.value));
+      if (Option.isSome(retired)) return yield* fail("denied");
       const decoded = decodePin(Redacted.value(stored.value));
       if (
         Option.isNone(decoded) ||
@@ -285,6 +316,7 @@ const make = Effect.gen(function* () {
         schemaVersion: 1,
         environmentId,
         threadId,
+        createdAt: DateTime.formatIso(yield* DateTime.now),
         runId: thread.activeRunId!,
         resolution: candidate,
       }).pipe(Effect.mapError(() => fail("invalid-input")));
@@ -316,7 +348,117 @@ const make = Effect.gen(function* () {
     }
     return resolution;
   });
+  const pinRecord = Effect.fnUntraced(function* (projectId: ProjectId, id: string) {
+    const root = yield* project(projectId);
+    const stored = yield* store.read(`${root}/runs/${id}`);
+    if (!stored) return yield* fail("not-found");
+    const raw = Redacted.value(stored.value),
+      live = decodePin(raw),
+      retired = decodeRetiredPin(raw);
+    const value = Option.isSome(live) ? live.value : Option.isSome(retired) ? retired.value : null;
+    if (
+      !value ||
+      value.environmentId !== environmentId ||
+      (value.schemaVersion === 1 ? value.resolution.projectId : value.projectId) !== projectId
+    )
+      return yield* fail("invalid-response");
+    if (
+      (yield* hash(
+        yield* encodeRunKey({ threadId: value.threadId, runId: value.runId }).pipe(
+          Effect.mapError(() => fail("invalid-response")),
+        ),
+      )) !== id
+    )
+      return yield* fail("invalid-response");
+    return { root, stored, value };
+  });
+  const describePin = Effect.fnUntraced(function* (projectId: ProjectId, id: string) {
+    const record = yield* pinRecord(projectId, id),
+      value = record.value;
+    const shell = yield* threads
+      .getThreadShell(ThreadId.make(value.threadId))
+      .pipe(Effect.mapError(() => fail("unavailable")));
+    let runState = "unavailable";
+    if (shell && shell.projectId === projectId) {
+      const records = yield* threads
+        .getThreadRecords(shell.id, ["runs"], { runIds: [RunId.make(value.runId)] })
+        .pipe(Effect.mapError(() => fail("unavailable")));
+      if (records.thread.projectId !== projectId) return yield* fail("denied");
+      runState = records.runs[0]?.status ?? "unavailable";
+      if (shell.activeRunId === value.runId) runState = "active";
+    }
+    const summary: VaultProfilePin = {
+      id,
+      projectId,
+      threadId: ThreadId.make(value.threadId),
+      runId: RunId.make(value.runId),
+      version: record.stored.version,
+      createdAt: value.createdAt ?? null,
+      retiredAt: value.schemaVersion === 2 ? value.retiredAt : null,
+      runState,
+      canRetire:
+        value.schemaVersion === 1 &&
+        ["completed", "failed", "cancelled", "interrupted", "rolled_back"].includes(runState),
+      resolution: value.schemaVersion === 1 ? value.resolution : null,
+    };
+    return { record, summary };
+  });
   return VaultProfiles.of({
+    pins: Effect.fn("VaultProfiles.pins")(function* (input) {
+      if (!isPinList(input)) return yield* fail("invalid-input");
+      const root = yield* project(input.projectId);
+      const keys = [...(yield* store.keys(root + "/runs"))].sort();
+      if (keys.some((key) => !/^[a-f0-9]{64}$/.test(key))) return yield* fail("invalid-response");
+      const remaining = keys.filter((key) => input.cursor === null || key > input.cursor),
+        page = remaining.slice(0, 25);
+      return {
+        items: yield* Effect.forEach(page, (id) =>
+          describePin(input.projectId, id).pipe(Effect.map((p) => p.summary)),
+        ),
+        nextCursor: remaining.length > page.length ? page.at(-1)! : null,
+      };
+    }),
+    retirePin: Effect.fn("VaultProfiles.retirePin")(function* (
+      input,
+      actor,
+      authorize = Effect.void,
+    ) {
+      if (!isPinRetire(input) || !actor.trim() || actor.length > 256)
+        return yield* fail("invalid-input");
+      yield* authorize;
+      const { record, summary } = yield* describePin(input.projectId, input.id);
+      if (record.value.schemaVersion === 2) {
+        if (
+          record.value.operationId !== input.operationId ||
+          record.value.actor !== actor ||
+          summary.version !== input.expectedVersion + 1
+        )
+          return yield* fail("conflict");
+        return summary;
+      }
+      if (summary.version !== input.expectedVersion) return yield* fail("conflict");
+      if (!summary.canRetire) return yield* fail("denied");
+      const encoded = yield* encodeRetiredPin({
+        schemaVersion: 2,
+        environmentId,
+        projectId: input.projectId,
+        threadId: summary.threadId,
+        runId: summary.runId,
+        createdAt: summary.createdAt,
+        retiredAt: DateTime.formatIso(yield* DateTime.now),
+        operationId: input.operationId,
+        actor,
+      }).pipe(Effect.mapError(() => fail("invalid-input")));
+      yield* authorize;
+      if (!(yield* describePin(input.projectId, input.id)).summary.canRetire)
+        return yield* fail("denied");
+      yield* store.write(
+        `${record.root}/runs/${input.id}`,
+        Redacted.make(encoded),
+        record.stored.version,
+      );
+      return (yield* describePin(input.projectId, input.id)).summary;
+    }),
     assertActive: (projectId, profileId) =>
       load(projectId).pipe(
         Effect.flatMap((s) =>

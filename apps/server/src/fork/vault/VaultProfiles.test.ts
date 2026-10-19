@@ -1,7 +1,8 @@
+import * as DateTime from "effect/DateTime";
 import { vaultProfileRequirements } from "@t3tools/contracts/fork";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ProjectId, RunId } from "@t3tools/contracts";
+import { ProjectId, RunId, MessageId } from "@t3tools/contracts";
 import {
   VaultError,
   vaultGitDestination,
@@ -315,5 +316,81 @@ it.effect(
       });
       yield* f.grant(f.key.destination);
       expect((yield* f.profiles.resolve(f.threadId, id)).bindings[0]?.itemId).toBe(f.itemId);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
+  "inspects retained selections, refuses active cleanup and tombstones stopped runs without allowing identity reselection",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.grant(f.key.destination);
+      yield* f.apply({ type: "save", profile: f.definition });
+      const resolution = yield* f.profiles.resolve(f.threadId, f.definition.id);
+      const runId = f.state.thread.activeRunId!;
+      const input = { projectId: f.projectId, cursor: null };
+      const first = (yield* f.profiles.pins(input)).items[0]!;
+      expect(first.resolution).toEqual(resolution);
+      expect(first.runState).toBe("active");
+      const retire = {
+        projectId: f.projectId,
+        id: first.id,
+        expectedVersion: first.version,
+        operationId: yield* f.id,
+      };
+      expect((yield* f.profiles.retirePin(retire, "admin").pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      f.state.thread = { ...f.state.thread, activeRunId: null, status: "idle" };
+      expect((yield* f.profiles.pins(input)).items[0]?.canRetire).toBe(false);
+      expect((yield* f.profiles.retirePin(retire, "admin").pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      const now = yield* DateTime.now;
+      f.state.runs.push({
+        id: runId,
+        threadId: f.threadId,
+        ordinal: 1,
+        providerInstanceId: f.state.thread.providerInstanceId!,
+        modelSelection: f.state.thread.modelSelection,
+        providerThreadId: null,
+        userMessageId: MessageId.make("proof"),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status: "completed",
+        requestedAt: now,
+        startedAt: now,
+        completedAt: now,
+        checkpointId: null,
+        contextHandoffId: null,
+      });
+      expect((yield* f.profiles.pins(input)).items[0]?.canRetire).toBe(true);
+      expect(
+        (yield* f.profiles.retirePin({ ...retire, expectedVersion: 9 }, "admin").pipe(Effect.flip))
+          .reason,
+      ).toBe("conflict");
+      expect(
+        (yield* f.profiles
+          .retirePin(retire, "admin", Effect.fail(new VaultError({ reason: "denied" })))
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      const retired = yield* f.profiles.retirePin(retire, "admin");
+      expect(retired.resolution).toBeNull();
+      expect(retired.retiredAt).not.toBeNull();
+      expect(yield* f.profiles.retirePin(retire, "admin")).toEqual(retired);
+      expect((yield* f.profiles.retirePin(retire, "other").pipe(Effect.flip)).reason).toBe(
+        "conflict",
+      );
+      f.state.thread = { ...f.state.thread, activeRunId: runId, status: "running" };
+      expect(
+        (yield* f.profiles.resolve(f.threadId, f.definition.id).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      f.state.thread = { ...f.state.thread, activeRunId: RunId.make("new-after-retire") };
+      expect((yield* f.profiles.resolve(f.threadId, f.definition.id)).profileId).toBe(
+        f.definition.id,
+      );
+      expect(
+        (yield* f.profiles.pins({ projectId: ProjectId.make("other"), cursor: null })).items,
+      ).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

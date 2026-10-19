@@ -34,3 +34,7 @@ this packet adds no application dependency.
 - [Scheduled outcome service](../../../../apps/server/src/fork/vault/VaultScheduledOutcomes.ts)
 - [Outcome ownership migration](../../../../apps/server/src/fork/vault/scheduled-migrations.ts)
 - [Portable requirement contract](../../../../packages/contracts/src/fork/vault-profiles.ts)
+
+- [Web retained selections](../../../../apps/web/src/fork/vault/ProfileHistory.tsx)
+- [Native retained selections](../../../../apps/mobile/src/fork/vault/ProfileHistory.tsx)
+- [Retirement permission coverage](../../../../packages/client-runtime/src/fork/vault-profiles.permissions.test.ts)

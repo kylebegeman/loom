@@ -42,8 +42,16 @@ provider launch/steering preflight. Required profile versions and current grants
 ordinary prompts skip Vault. Safe labels remain in transcripts. Scheduled status now follows
 the exact latest Vault-attached provider run, with review and explicit retry. Portable SSH/Git
 requirements export without local bindings and import into a fresh reviewed profile.
-The next proposed sections are retained run-selection inspection/cleanup, then GitHub developer
-account connectors for headless GH authentication. Real credential registration,
+Retained selections now have paged administrator inspection and explicit terminal-run retirement.
+Retirement replaces the current snapshot with a durable no-reselection tombstone; OpenBao history
+remains. L82 adds dedicated github.com App/token management and scoped headless GH operations,
+with repository grants, isolated CLI configuration and short-lived App token release attempts.
+Both sections remain local milestones within the complete selected packet scopes.
+
+The next proposed section is GitHub requirements in project profiles and portable declarations,
+including environment-local connection binding, launch preflight and named mediated execution.
+After that, terminal gh/Git HTTPS routing and provider-aware readiness can close the remaining
+split between mediated tools and normal developer commands. Real credential registration,
 migration and production rollout remain separate actions.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,

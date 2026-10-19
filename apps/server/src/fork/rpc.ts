@@ -1,3 +1,5 @@
+import { makeVaultGitHubRpcHandlers } from "./vault/github-rpc.ts";
+import { VAULT_GITHUB_WS_METHODS, VaultGitHubRpcGroup } from "@t3tools/contracts/fork";
 import { makeVaultProfileRpcHandlers, makeVaultReferenceRpcHandlers } from "./vault/profile-rpc.ts";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
@@ -43,6 +45,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(VAULT_GITHUB_WS_METHODS),
   ...Object.values(VAULT_SSH_WS_METHODS),
   ...Object.values(VAULT_PROFILE_WS_METHODS),
   ...Object.values(VAULT_REFERENCE_WS_METHODS),
@@ -52,12 +55,16 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
 export const makeForkRpcLayer = (
   session: AuthenticatedSession,
 ): Layer.Layer<
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultGitHubRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof otherForkRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultSshRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultProfileRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
 > =>
   Layer.mergeAll(
+    VaultGitHubRpcGroup.toLayer(
+      withForkRuntime(makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
     VaultProfileRpcGroup.toLayer(
       withForkRuntime(makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),

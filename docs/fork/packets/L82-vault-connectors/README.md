@@ -1,37 +1,39 @@
 # L82: Developer service accounts and authentication connectors
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress**. Selected by Kyle on 2026-10-17. Dedicated GitHub management and
+mediated headless GH operations are implemented locally. Full packet scope retained.
 
 Manage GitHub and other developer service identities as tested, renewable connections.
 
 V11 | Major system | Complexity: Large | Impact: High
 
-## Scope
+## Delivered milestone
 
-The complete selected outcome is described in [PRODUCT.md](./PRODUCT.md). Shared guarantees,
-backend choices and design gates are in [Loom Vault](../LOOM-VAULT.md) and the
-[proposed foundation](../LOOM-VAULT-FOUNDATION.md). This packet does not authorize deployment,
-credential imports or changes to the personal vault.
+Web/desktop and native mobile manage github.com App installations and dedicated tokens with
+repository allowlists, identity/API validation, credential replacement, local disconnect and
+restore. Vault encrypts the private material through OpenBao. Agents use bounded GH operations
+on the Loom server with current run/version/grant checks and temporary CLI configuration.
+App tokens are limited to the selected repository for use and released on scope exit where
+GitHub permits it. A failed release can leave the token valid until expiry.
 
-## Surfaces
+This does not configure ordinary terminal gh, Git HTTPS, upstream GitHub auth precedence or
+SSH remotes. OAuth/device onboarding, Enterprise hosts, project/profile bindings, additional
+connectors and managed provider revocation remain selected. No personal credential migration,
+live account registration, push, PR or deployment is authorized by this milestone.
 
-Web, desktop, mobile and remote management are required. CLI/MCP availability and any
-OS-specific execution constraints are defined in the product and technical documents.
+## Surfaces and integration
 
-## Extension points used
-
-Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
-`ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+Web/desktop and native mobile management, remote environment RPC and authenticated MCP/CLI
+reuse existing fork-owned registries. `vault-github` gates clients on older servers. A running
+agent needs full-access/default mode and exact repository use permission; administrator
+management is a separate right. Shared constraints are in [Loom Vault](../LOOM-VAULT.md),
+the [foundation](../LOOM-VAULT-FOUNDATION.md) and [extension points](../EXTENSION-POINTS.md).
 
 ## Dependencies and future opportunities
 
-Uses shared storage, grants and delivery interfaces. Starts with GitHub; other connectors register independently and do not become compulsory dependencies. Unlocks registries, deployments and infrastructure providers.
-
-## Packet seams
-
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+Uses existing encrypted records, access grants and provider instruction channels. No new
+production dependency, upstream seam or SQL migration. The GitHub adapter can inform later
+registry, deployment and infrastructure connectors without requiring them for this milestone.
 
 ## Documents
 

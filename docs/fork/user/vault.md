@@ -319,3 +319,44 @@ A human administrator can use `profiles-apply` with `change.type: "import"`, a f
 `declaration`, plus the current registry revision and operation ID. Agents may export their own
 project's requirements but cannot import or edit bindings. Other credential kinds and automatic
 Library/project-file distribution are not available yet.
+
+## Inspect and retire old run selections
+
+Choose a project in **Vault project profiles**, then inspect **Retained run selections**.
+The list shows the selected profile revision, binding/key versions, destination and run.
+Older records may have no selection time. Only confirmed terminal runs can be retired;
+active or unavailable runs remain retained.
+
+Retirement requires confirmation and cannot be undone. It clears the current binding snapshot
+and keeps a tombstone so the same run cannot select different credentials later. Start a new
+run when new selection is needed. OpenBao version history, credentials and grants remain.
+This is not secure erasure or remote credential revocation. Human administrators can also use
+`loom vault profile-pins` and `profile-retire`; agents cannot retire their own selections.
+
+## Connect a dedicated GitHub identity
+
+Open **Settings → Loom → Vault GitHub connections** on web/desktop, or the same section under
+**Settings → Computers → Manage computer** on mobile. Use a GitHub App installation for
+short-lived tokens or a dedicated fine-grained token. Enter the private credential in the form,
+with 1 to 32 `owner/repository` names. App setup also needs the App and installation IDs plus
+its RSA PEM key; pasted escaped newlines are accepted. Loom checks the identity and API access
+to every listed repository before saving it in Vault.
+
+Review the account, allowed repositories and connection version. **Test GitHub API access**
+checks the selected repository. It does not prove that GH CLI is installed or that Git HTTPS
+works. Replace credentials to create a new version. Disconnect blocks future Loom use locally;
+restore reconnects locally. Revoke an App installation or token at GitHub separately. Issued
+credentials may remain valid until expiry even if cleanup was attempted.
+
+Agents use `loom_vault_github` with the connection ID/version, repository and a documented
+operation. An active full-access/default run and exact use grant for
+`https://github.com/owner/repo` are required. Available actions read repositories, PRs, issues
+and PR checks, add comments or create issues. Inspect `exitCode`; after a timeout or uncertain
+write, check GitHub before retrying. Administrators can use `github-connections`, `github-info`,
+`github-test` and `github-change` through the authenticated CLI. Agent execution requires a
+running thread. No command accepts raw GitHub tokens from chat.
+
+These mediated GH operations use temporary private configuration on the Loom server. They do
+not log into your personal account, configure ordinary terminal gh/Git HTTPS or change SSH
+remotes. GitHub Enterprise, OAuth/device onboarding, project/profile binding and other service
+connectors are not available in this milestone.

@@ -120,6 +120,18 @@ it.effect(
           );
       expect((yield* run())[0]?.result).toMatchObject({ stdout: "MCP profile" });
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+      const pins = (caller = scope) =>
+        toolkit
+          .handle("loom_vault_profile_pins", { projectId, cursor: null })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(f.context),
+            Effect.provideService(McpInvocationContext, caller),
+          );
+      expect((yield* pins().pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* pins(admin))[0]?.result).toMatchObject({
+        items: [{ threadId: f.threadId, canRetire: false }],
+      });
       expect(
         (yield* run({
           ...scope,

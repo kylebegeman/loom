@@ -2,7 +2,14 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { ProjectId, ThreadId, NonNegativeInt, PositiveInt } from "../baseSchemas.ts";
+import {
+  ProjectId,
+  ThreadId,
+  RunId,
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+} from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { VaultError, VaultItemId, VaultItemSummary } from "./vault-core.ts";
 import {
@@ -151,8 +158,40 @@ export const VaultProfileRun = Schema.Struct({
 });
 export type VaultProfileRun = typeof VaultProfileRun.Type;
 export const VaultProfileRunResult = Schema.Union([VaultSshResult, VaultGitResult]);
+export const VaultProfilePinList = Schema.Struct({
+  projectId: ProjectId,
+  cursor: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
+});
+export type VaultProfilePinList = typeof VaultProfilePinList.Type;
+export const VaultProfilePin = Schema.Struct({
+  id: Schema.String,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  runId: RunId,
+  version: PositiveInt,
+  createdAt: Schema.NullOr(IsoDateTime),
+  retiredAt: Schema.NullOr(IsoDateTime),
+  runState: Schema.String,
+  canRetire: Schema.Boolean,
+  resolution: Schema.NullOr(VaultProfileResolution),
+});
+export type VaultProfilePin = typeof VaultProfilePin.Type;
+export const VaultProfilePinPage = Schema.Struct({
+  items: Schema.Array(VaultProfilePin),
+  nextCursor: Schema.NullOr(Schema.String),
+});
+export type VaultProfilePinPage = typeof VaultProfilePinPage.Type;
+export const VaultProfilePinRetire = Schema.Struct({
+  projectId: ProjectId,
+  id: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  expectedVersion: PositiveInt,
+  operationId: VaultItemId,
+});
+export type VaultProfilePinRetire = typeof VaultProfilePinRetire.Type;
 export const VAULT_PROFILE_WS_METHODS = {
   list: "loom.vault-profiles.list",
+  pins: "loom.vault-profiles.pins",
+  retirePin: "loom.vault-profiles.retirePin",
   apply: "loom.vault-profiles.apply",
   preview: "loom.vault-profiles.preview",
 } as const;
@@ -163,6 +202,16 @@ const error = Schema.Union([
   EnvironmentAuthorizationError,
 ]);
 export const VaultProfileRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_PROFILE_WS_METHODS.pins, {
+    payload: VaultProfilePinList,
+    success: VaultProfilePinPage,
+    error,
+  }),
+  Rpc.make(VAULT_PROFILE_WS_METHODS.retirePin, {
+    payload: VaultProfilePinRetire,
+    success: VaultProfilePin,
+    error,
+  }),
   Rpc.make(VAULT_PROFILE_WS_METHODS.list, {
     payload: Schema.Struct({ projectId: ProjectId }),
     success: VaultProfileSnapshot,

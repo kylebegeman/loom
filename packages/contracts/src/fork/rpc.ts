@@ -1,3 +1,4 @@
+import { VaultGitHubRpcGroup } from "./vault-github.ts";
 import { VaultProfileRpcGroup } from "./vault-profiles.ts";
 import { VaultReferenceRpcGroup } from "./vault-references.ts";
 import { VaultSshRpcGroup } from "./vault-ssh.ts";
@@ -54,6 +55,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  VaultGitHubRpcGroup,
   VaultProfileRpcGroup,
   VaultReferenceRpcGroup,
   VaultSshRpcGroup,

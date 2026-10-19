@@ -1,52 +1,65 @@
 # L82 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
-Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
-permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+## Implemented boundaries
 
-## Overview
+`VaultGitHub` owns connection validation, metadata, local lifecycle and mediated use. RPC/MCP
+handlers remain thin. `GitHubTransport` owns github.com API/JWT adaptation; `GitHubCli` owns
+bounded process execution. Shared contracts and client-runtime commands use existing fork
+registries. The backend is Kyle's selected OpenBao, through `VaultCore` service-connection
+records. No personal key manager, ambient gh config or SSH agent is a credential fallback.
 
-Use service-supported OAuth, app installations, tokens or service accounts. Store identity metadata and refresh material through Vault; supply API and Git credentials through the selected broker adapter. Record supported operations and repository reach instead of interpreting sign-in as universal access.
+## Identity and storage
 
-## Contracts and authorization
+Schema version 1 stores provider, verified account, normalized repository allowlist and a
+redacted App key or token inside the encrypted item. Replacements validate the existing GitHub
+record, not just its generic item kind. Core CAS, actor-bound operations and lifecycle rules
+apply. Safe list/info return no credential material; an unrelated service-connection is skipped.
+Core administrator reveal/export remains available under its own explicit rights.
 
-Connect/start/status/cancel, test and disconnect operate on a connection ID. Human device-code approval remains human. Refresh is an idempotent service effect with provider-specific failure classification. A Git helper resolves the authorized connection without printing a token.
+App credentials use RSA PEM, including GitHub's PKCS#1 downloads. Keys normalize in memory to
+PKCS#8 for existing jose RS256 signing. The App JWT lasts under ten minutes with clock skew.
+Installation identity/app ID and repository ownership are checked before token creation.
+Saving probes every allowlisted repository. A use or API test issues an installation token
+limited to its one repository. Scope exit attempts DELETE /installation/token; fixed safe
+warnings report failure without exposing provider responses. Dedicated user tokens are never
+revoked by that cleanup. API bodies, redirects, response size and time are bounded/classified.
+No token refresh daemon or credential value is persisted in upstream events.
 
-Use packet-owned `loom.vault-connectors.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
-unavailable and operation-failed outcomes as appropriate, including environment authorization
-errors. Register protected methods in the fork permission map and use environment RPC commands.
-Metadata visibility, item management and credential use are distinct rights.
+## Use and management authority
 
-## Server and storage
+Human management requires environment access:read/access:write. Authenticated agent metadata
+inspection additionally requires item inspect rights. Connection listing, testing and lifecycle
+MCP operations are human-administrator only. Credential saving is private client RPC; no MCP
+save tool accepts raw credentials. Use is agent-thread only and requires an active full-access/
+default run, current item version/state, allowlisted repository and exact use destination
+`https://github.com/owner/repo`. Before process spawn, recheck run/provider/project identity and
+all current authority after token acquisition. Connection use is not an ambient terminal login.
 
-Implement services in fork-owned paths and keep HTTP/RPC/MCP handlers thin. All credential
-access goes through the shared backend/broker adapter; the feature never reads a personal
-password manager as a fallback.
+The subprocess has a private temporary HOME and GH_CONFIG_DIR, explicit GH_TOKEN/GH_HOST and
+an allowlisted environment. It inherits PATH for installed gh discovery but no ambient token,
+SSH_AUTH_SOCK, Git configuration or personal HOME. Ordinary same-user process inspection is
+outside this boundary; this is not full-access agent isolation.
 
-Store encrypted refresh/token versions, safe account metadata, provider host and capabilities. Persist bounded pending auth sessions with expiry; never log device codes, callback URLs with secrets or raw responses. Define disconnected versus provider-revoked states.
+## Operation and failure contract
 
-## Clients and agent-facing tools
+Typed actions are repo-view, pr-list, issue-list, pr-view, issue-view, pr-checks, pr-comment,
+issue-comment and issue-create. No arbitrary argv or shell expansion. Reads use bounded JSON
+fields and list limits; writes take bounded title/body text. Max CLI output is 16 KiB, timeout
+30 seconds and server concurrency four. stderr is discarded; the delivered token is scrubbed
+from stdout. Scoped child/config cleanup also runs on failure. Nonzero exit codes remain
+explicit results; callers must inspect exitCode. Timeout/failure after a write can mean the
+remote operation completed. Inspect before retrying; no exactly-once provider claim is made.
 
-Place shared client state in client-runtime and surface it through web, desktop and mobile.
-Gate on advertised Vault capability/version; disable unsupported operations without disabling
-ordinary T3 behavior. Agent tools use `loom_vault_connectors_*` names if exposed and
-return safe summaries or operation handles. An agent cannot approve its own access, export raw
-values by default or widen the caller's existing T3 permissions.
+## Surfaces and remaining integration
 
-## Performance and failure handling
+The `vault-github` capability gates web/desktop/native management. Shared protected commands
+check the destination environment's grants and refresh mounted metadata after changes. CLI/MCP
+call the same service. Common provider instructions expose the capability only through existing
+tool availability. No adapter-specific model changes are required; command-only scheduled jobs
+do not acquire it. Agent runs on any exposed provider can call the tool under the same policy.
 
-Use bounded pages and operation-scoped updates. Never subscribe to secret payloads, poll every
-item continuously or repaint an idle UI. Reconnect by operation ID and persisted revision;
-mutation retries use stable idempotency keys. External effects run after durable acceptance and
-reconcile partial completion. Evidence tests await receipts or Deferreds, not sleeps.
-
-## Alternatives and integration review
-
-Review GitHubCredentials, GitHubHostSetup and the existing setup flow. Preserve existing auth precedence for unmigrated projects; make Vault selection explicit rather than shadowing all ambient credentials.
-
-Prefer existing registries over new upstream seams. A direct provider-specific secret path
-would duplicate policy and is not the recommended design. Where the shared interface is absent,
-report unavailable or implement the approved minimal extension independently; do not import
-another packet's UI/service internals.
+Existing GitHubHostSetup, GitHubCredentials, terminal gh/Git HTTPS, personal login and SSH
+remote behavior remain outside this path. Future explicit project/reference bindings must
+choose integration and opt-in migration without silently overriding unmigrated credentials.
+OAuth/device flows, Enterprise, reusable connector registration, additional providers, provider
+revocation management and broader operations remain full selected scope.

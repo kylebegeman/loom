@@ -1,29 +1,27 @@
-# L82 implementation plan
+# L82 implementation
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: **In progress**. The complete selected product scope remains open.
 
-## Before starting
+## Delivered
 
-Read the packet index, conventions, shared Vault documents and every file in this packet.
-Resolve its open product choices and relevant D gates, promote any required extension contract,
-and refresh source/seam references against the chosen base. Kyle recorded implementation authorization in [IMPLEMENT-NOW.md](../IMPLEMENT-NOW.md). New production dependencies,
-schema and live infrastructure changes still follow the repository's authorization rules.
+- Encrypted dedicated github.com App/token records with verified identity and repository API access.
+- Web/desktop/native private setup, replacement, safe metadata, testing and local disconnect/restore.
+- Current authenticated run/version/exact repository use checks before isolated GH execution.
+- Repository-limited short-lived App tokens, scoped release attempts and safe failure handling.
+- Typed GH reads, PR checks, comments and issue creation through authenticated MCP/CLI.
+- Focused service, transport, CLI, draft and destination-permission coverage.
 
-## Steps
+## Remaining selected sections
 
-1. Choose GitHub OAuth/app/token paths and initial repository permission model at D8.
-2. Adapt existing host setup and GitHub credential resolution to explicit Vault references with an opt-in migration.
-3. Implement refresh, API access and Git-helper delivery under the same selected identity.
-4. Add connection management and reusable connector registration with capability reporting.
+1. Extend profiles and portable declarations with GitHub requirements and environment-local bindings.
+2. Add explicit terminal gh/Git HTTPS credential routing, opt-in migration and useful readiness checks.
+3. Decide OAuth/device onboarding, Enterprise hosts and developer-account ownership conventions.
+4. Add broader GH operations, connector registration and selected additional services independently.
+5. Add provider revocation/reconnection workflows and lifecycle automation with explicit remote outcomes.
 
-## Integration and completion
+## Completion gate
 
-Register shared services and protected methods through existing fork extension points. Add
-focused behavior tests from [TESTING.md](./TESTING.md), then integrate clients, agent tools and
-user guidance under `docs/fork/user/`. Enumerate any real upstream changes in SEAMS.md,
-FORK.md and the seam manifest in the same implementation commit.
-
-The complete product outcome, reverse actions and declared surfaces must work before marking
-Done. Record check results and remaining limits; follow the repository definition of done.
-No live credential or production rollout is implied by a passing local implementation.
+Run focused checks for the current contracts and claimed surfaces. Record actual limitations in
+TESTING.md. Do not mark the packet Done while selected integrations remain. New dependencies,
+live account registration, personal migration, production setup and deployment require their
+applicable authorization; the local milestone grants none of those actions.

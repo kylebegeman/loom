@@ -3058,8 +3058,19 @@ key versions, and profile archive is checked at transport/signing. Management re
 access:write; agents list only their own project and cannot change bindings. `VaultLaunch.profile`
 uses existing signed workload cleanup. Registry/pin paths live under the environment's
 `profiles/<project-hash>/` namespace and need explicit operator policy rights. Pins have no
-automatic retention cleanup yet. Web/desktop/mobile, palette, MCP and CLI register through
-existing fork-owned seams. Composer/task launch selection and other credential kinds remain open.
+automatic retention cleanup yet. Administrator inspection/terminal-run retirement replaces
+current pins with durable no-reselection tombstones; older OpenBao versions remain. Clients gate
+on vault-profile-history. Web/desktop/mobile, palette, MCP and CLI reuse existing registries.
+Composer/task launch selection is implemented below; other credential kinds remain open.
+
+Shared vault-github contracts and VaultGitHub expose dedicated github.com connections, not
+ambient terminal credentials. App/token material uses encrypted service-connection records;
+metadata, administrator management and exact repository use grants remain separate rights.
+GitHubTransport and GitHubCli own provider/API and isolated subprocess adaptation. The
+vault-github capability gates clients. App tokens are repository-limited and released best
+effort; local disconnection never claims provider revocation. Existing upstream GitHub credential
+precedence is untouched. New credential kinds should extend shared profiles/delivery contracts
+rather than import packet UI or bypass current run authority.
 
 `packages/provider-core/src/fork/vaultInstructions.ts` supplies static, capability-aware
 instructions to the existing common provider prompt channel. The two marked `ext-vault` lines

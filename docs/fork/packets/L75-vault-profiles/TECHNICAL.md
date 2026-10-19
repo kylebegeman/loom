@@ -38,9 +38,10 @@ SHA-256 of its project ID. Registry and pins use:
 - `environments/<environment>/profiles/<project>/registry`
 - `environments/<environment>/profiles/<project>/runs/<SHA-256 of encoded thread/run identity>`
 
-Run pins contain references only and persist across service restart. They currently have no
-automatic expiration or deletion. Operators must retain the profiles paths with backups;
-retention and inspection tooling remain selected lifecycle work. No offline resolution/cache,
+Run pins contain references only and persist across service restart. Administrator inspection and
+manual retirement are implemented below. There is no automatic expiration or physical deletion.
+Operators must retain the profiles paths and tombstones with backups; automatic retention
+remains selected lifecycle work. No offline resolution/cache,
 SQL migration, platform replication or service token change is performed automatically.
 Backend denial/unavailability fails closed. Operators must provision the documented policy.
 
@@ -57,7 +58,7 @@ runs can call them; command-only jobs do not acquire a profile automatically.
 ## Remaining selected design
 
 Other credential kinds, Library sharing,
-platform accounts and retained-pin cleanup need their own reviewed contracts. Reuse existing
+platform accounts and automatic pin-retention policies need their own reviewed contracts. Reuse existing
 fork seams, keep secrets out of upstream events, and keep management separate from use rights.
 
 ## Explicit launch attachments
@@ -127,3 +128,22 @@ run automatically.
 Agents remain restricted to their own project and cannot import/change bindings. Human full-access
 administrators may import through profiles-apply. Existing saved profile storage stays compatible;
 Library publication, project-file discovery and additional connector kinds remain separate work.
+
+## Retained selection inspection and retirement
+
+The access:read `pins` query returns 25 records per page for one owning project, including
+profile revision, exact item/key versions, destination, authenticated thread/run and selection
+time. Legacy pins may have no timestamp. The OpenBao listing is bounded to the backend's existing
+4096-key limit; growth beyond that requires a storage/pagination design rather than silent truncation.
+
+The access:write `retirePin` command requires a confirmed terminal V2 run, current CAS version,
+actor and operation ID. Active or unavailable runs cannot be retired. It replaces the current
+snapshot with a schemaVersion 2 tombstone retaining identity, timestamps and the retiring actor/
+operation. Replaying that actor/operation is safe; a changed actor or stale operation conflicts.
+A tombstoned run fails closed on resolution forever, including after restart. New runs can resolve
+normally. Retaining the tombstone prevents cleanup from silently selecting a different credential.
+
+Web/desktop and native management offer inspection, explicit irreversible confirmation and cancel.
+MCP/CLI inspection/retirement are human-administrator operations; agents cannot inspect other runs
+or retire themselves. Capability `vault-profile-history` hides the flow on older servers.
+OpenBao older versions remain: this is neither secure erasure nor credential/provider revocation.
