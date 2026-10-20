@@ -185,7 +185,9 @@ computer the same way, but mobile does not name Mini workers.
 Saved projects and conversation history remain readable when a computer is offline.
 Conversation history shows when it was last saved to the Library; work that has not uploaded
 may be missing. Very long conversations upload less often in the background. Open saved
-attachments from the Library, and use **Save pending history** to upload newer work now.
+attachments from the Library, and use **Save pending history** to upload newer work now. A
+conversation too large for this computer's upload storage keeps waiting, and **Save pending
+history** says so.
 A disconnected Library keeps its selected identity and cached records, but
 must reconnect before you can save changes. It never silently switches to another server.
 
