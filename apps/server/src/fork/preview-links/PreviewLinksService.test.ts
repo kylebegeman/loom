@@ -1237,6 +1237,31 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     }),
   );
 
+  it.effect("never redeems a ticket from before a restart, which only memory knew was spent", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const library = yield* makeLibrary;
+      const first = yield* makeHarness({ baseDir, secrets, library });
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.share({ port: 5173 }, owner);
+      const nonce = randomPreviewNonce();
+      const ticket = library.ticket(link.host, nonce, yield* Clock.currentTimeMillis);
+      expect((yield* first.view).redeemTicket(link.host, ticket, nonce, "/")).not.toBeNull();
+
+      // Still inside the ticket's minute, so only the restart can refuse it.
+      yield* TestClock.adjust("1 second");
+      const reopened = yield* makeHarness({ baseDir, secrets, library });
+      yield* reopened.service.configure({ settings: ready });
+      const view = yield* reopened.view;
+      expect(view.redeemTicket(link.host, ticket, nonce, "/")).toBeNull();
+      const freshNonce = randomPreviewNonce();
+      const fresh = library.ticket(link.host, freshNonce, yield* Clock.currentTimeMillis);
+      expect(view.redeemTicket(link.host, fresh, freshNonce, "/")).not.toBeNull();
+    }),
+  );
+
   it.effect("tells the Library when previews turn on and off, and rides out a Library blip", () =>
     Effect.gen(function* () {
       const library = yield* makeLibrary;

@@ -63,6 +63,7 @@ const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
   Layer.provide(layerLibraryAssets),
+  Layer.provide(PreviewAccess.layer),
 );
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
@@ -175,6 +176,7 @@ const ForkServicesLive = Layer.mergeAll(
             Layer.provide(FetchHttpClient.layer),
             Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
             Layer.provide(layerLibraryAssets),
+            Layer.provide(PreviewAccess.layer),
           ),
         ),
         Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),

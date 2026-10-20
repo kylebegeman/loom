@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "../baseSchemas.ts";
+import { EnvironmentId, IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const PREVIEW_LINKS_FEATURE = "preview-links";
@@ -240,6 +240,12 @@ export type PreviewContainerShareInput = typeof PreviewContainerShareInput.Type;
 // Library sign-in for cold browsers.
 
 export const LibraryPreviewRegisterRequest = Schema.Struct({
+  /**
+   * The registering computer. A computer's own publisher session already names it and must
+   * match; a shared operator token has to say which computer it speaks for. Older computers
+   * omit it.
+   */
+  environmentId: Schema.optionalKey(EnvironmentId),
   /** Null when previews are off, so the Library stops signing tickets for this computer. */
   previews: Schema.NullOr(
     Schema.Struct({ machine: PreviewMachineName, suffix: PreviewLinkSuffix }),
