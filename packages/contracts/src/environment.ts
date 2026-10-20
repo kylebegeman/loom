@@ -136,6 +136,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   serverSelfUpdate: Schema.optionalKey(ServerSelfUpdateCapability),
   /** Manual commands must update this install, not the host's default global prefix. */
   serverInstallation: ForwardCompatibleOptional(ServerInstallation),
+  // fork: runtime-owner: the operating system owns this runtime's updates. Not a serverSelfUpdate literal: that set is closed, so older clients would reject it.
+  serverRuntimeOwner: ForwardCompatibleOptional(Schema.Literals(["operating-system"])), // fork: runtime-owner
   serverSelfUpdateProgress: Schema.optionalKey(Schema.Boolean),
   serverUpdateThreadContinuation: Schema.optionalKey(Schema.Boolean),
   /**

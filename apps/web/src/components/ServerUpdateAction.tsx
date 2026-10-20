@@ -12,6 +12,7 @@ import type {
   ServerSelfUpdateCapability,
 } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import { OS_MANAGED_RUNTIME_NOTE } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -55,6 +56,7 @@ export interface ServerUpdateTarget {
   readonly threadContinuation?: boolean;
   readonly targetVersion: string;
   readonly continueThreadsAfterServerUpdate?: boolean;
+  readonly osManaged?: boolean; // fork: runtime-owner
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -130,6 +132,7 @@ export function ServerUpdatesAction({
   const [isPending, setIsPending] = useState(false);
   const eligible = targets.filter(
     (target) =>
+      target.osManaged !== true && // fork: runtime-owner
       target.selfUpdate !== null &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
   );
@@ -215,6 +218,7 @@ export function ServerUpdateAction({
   size = "xs",
   className,
   appearance = "button",
+  osManaged = false, // fork: runtime-owner
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
@@ -274,6 +278,13 @@ export function ServerUpdateAction({
     });
   };
 
+  // fork: runtime-owner: the operating system updates this runtime, so offer no update or relaunch command.
+  if (osManaged) {
+    // fork: runtime-owner
+    return appearance === "icon" ? null : ( // fork: runtime-owner
+      <span className="text-muted-foreground text-xs">{OS_MANAGED_RUNTIME_NOTE}</span> // fork: runtime-owner
+    ); // fork: runtime-owner
+  } // fork: runtime-owner
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
       <span className="text-muted-foreground text-xs">
