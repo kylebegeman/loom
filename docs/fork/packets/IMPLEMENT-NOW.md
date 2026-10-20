@@ -132,9 +132,9 @@ say what to do when those commits are or are not on the base.
 
 Kyle selected hosted previews on 2026-10-18 and approved the later slices on 2026-10-19:
 
-| Order | Packet                                    | Status                                                                  | Decision                                                                                                                                                                                                                                      |
-| ----- | ----------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; gap-fix Library deploy and client checks pending | Slices 1 to 5 and the gap fixes are built. The Library has served `pages.bagels.top` since 20 October 2026 on a runtime without the gap fixes; LP-22 waits on `0.0.89` or later. Slice 6, guest links, is parked under the one-operator rule. |
+| Order | Packet                                    | Status                                       | Decision                                                                                                                                                                        |
+| ----- | ----------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; client checks pending | Slices 1 to 5 and the gap fixes are built, and the Library has run them on `0.0.90` since 20 October 2026 (LP-22). Slice 6, guest links, is parked under the one-operator rule. |
 
 Kyle selected all Vault packets; stable V identifiers map to these collision-free packet IDs:
 
