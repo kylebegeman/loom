@@ -1,6 +1,7 @@
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { useCallback, useEffect, useRef } from "react";
 import { BackHandler, Keyboard, View, type TextInputInstance } from "react-native";
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { SearchField } from "../../components/ui/SearchField";
@@ -70,7 +71,7 @@ export function PullRequestToolbar(props: { readonly onRequestVisibility?: () =>
         onCloseSearch={closeSearch}
         onOpenSearch={openSearch}
         searchAccessibilityLabel="Search pull requests"
-        titleAccessibilityLabel="T3 Code, Pull requests"
+        titleAccessibilityLabel={`${BRAND_NAME}, Pull requests`} // fork: brand
         onOpenEnvironments={() =>
           navigation.navigate("SettingsSheet", {
             screen: "SettingsContent",
