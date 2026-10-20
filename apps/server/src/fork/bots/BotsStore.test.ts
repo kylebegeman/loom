@@ -144,6 +144,8 @@ describe("BotsStore", () => {
         yield* store.putDefinition(testBot());
         yield* store.bindVaultSlot("reviewer", "github-token", "item-a");
         yield* store.deleteDefinition("reviewer");
+        // A bind that lost the race with the delete leaves nothing behind either.
+        yield* store.bindVaultSlot("reviewer", "github-token", "item-a");
         yield* store.putDefinition(testBot({ createdAt: "2026-10-21T10:00:00.000Z" }));
         expect(yield* store.vaultBindings("reviewer")).toEqual(new Map());
       }),

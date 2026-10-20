@@ -657,7 +657,8 @@ export const makeBotsStore = Effect.gen(function* () {
       if (itemId === null)
         yield* sql`DELETE FROM fork_bots_vault_bindings WHERE bot_id = ${botId} AND slot = ${slot}`;
       else
-        yield* sql`INSERT INTO fork_bots_vault_bindings (bot_id, slot, item_id) VALUES (${botId}, ${slot}, ${itemId}) ON CONFLICT(bot_id, slot) DO UPDATE SET item_id = excluded.item_id`;
+        // A bot deleted since the caller checked it gets no binding to outlive it.
+        yield* sql`INSERT INTO fork_bots_vault_bindings (bot_id, slot, item_id) SELECT ${botId}, ${slot}, ${itemId} WHERE EXISTS (SELECT 1 FROM fork_bots_definitions WHERE id = ${botId}) ON CONFLICT(bot_id, slot) DO UPDATE SET item_id = excluded.item_id`;
     }),
 
     remoteSettings: Effect.fn("BotsStore.remoteSettings")(function* () {
