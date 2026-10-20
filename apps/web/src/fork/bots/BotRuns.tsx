@@ -103,6 +103,8 @@ function RunRow({
           <span className="text-xs text-muted-foreground">
             {runTime(run.finishedAt) ?? runTime(run.startedAt) ?? runTime(run.createdAt)}
             {run.startedBy === "agent" ? " · started by an agent" : ""}
+            {run.ranOn ? ` · Ran on ${run.ranOn.label}` : ""}
+            {run.requestedBy ? ` · Requested by ${run.requestedBy.label}` : ""}
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
@@ -113,7 +115,11 @@ function RunRow({
               render={
                 <Link
                   to="/$environmentId/$threadId"
-                  params={{ environmentId, threadId: run.threadId }}
+                  // A remote run's thread lives on the computer that ran it.
+                  params={{
+                    environmentId: run.ranOn?.environmentId ?? environmentId,
+                    threadId: run.threadId,
+                  }}
                 />
               }
             >

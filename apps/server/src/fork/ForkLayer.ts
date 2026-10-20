@@ -71,6 +71,10 @@ import * as CodeGraph from "./code-graph/CodeGraphService.ts";
 import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
 import * as BotBatches from "./bots/BotBatches.ts";
 import * as Bots from "./bots/BotsService.ts";
+import * as BotLibraryClient from "./bots/BotLibraryClient.ts";
+import { BotLibraryHttpRoutes } from "./bots/botLibraryHttp.ts";
+import * as BotLibraryService from "./bots/BotLibraryService.ts";
+import * as BotSharing from "./bots/BotSharing.ts";
 import * as BotDrafts from "./bots/fromThread/BotDrafts.ts";
 import * as BotTriggers from "./bots/triggers/BotTriggers.ts";
 import * as BotPipelines from "./bots/pipelines/BotPipelines.ts";
@@ -311,6 +315,9 @@ const ForkServicesLive = Layer.mergeAll(
     BotTriggerReactorLive,
     BotTriggerScheduleLive,
     BotVersions.BotVersionsRecoveryLive.pipe(Layer.provideMerge(BotVersions.layer)),
+    BotSharing.layer.pipe(
+      Layer.provide(Layer.merge(LibraryWorkspaceStore.layer, layerVaultReferences)),
+    ),
   ).pipe(
     Layer.provideMerge(BotTriggers.layer),
     Layer.provideMerge(
@@ -322,6 +329,9 @@ const ForkServicesLive = Layer.mergeAll(
         Layer.provideMerge(Bots.BotsRecoveryLive.pipe(Layer.provideMerge(Bots.layer))),
       ),
     ),
+    // The Library routes and this computer's client share one store and its wake-up signals.
+    Layer.provideMerge(BotLibraryClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+    Layer.provideMerge(BotLibraryService.layer),
   ),
   BotDrafts.BotSuggestionsReactorLive.pipe(Layer.provideMerge(BotDrafts.layer)),
   CodeGraphReactorLive.pipe(
@@ -390,4 +400,5 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PreviewAccessHttpRoutes,
   PageLibraryHttpRoutes,
   DirectoryHttpRoutes,
+  BotLibraryHttpRoutes,
 );

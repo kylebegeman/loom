@@ -10,7 +10,16 @@ const BotsSearch = Schema.Struct({
   /** The bot whose "Run on many" dialog is open. */
   many: Schema.optional(BotId),
   tab: Schema.optional(
-    Schema.Literals(["runs", "history", "batches", "pipelines", "triggers", "inbox", "usage"]),
+    Schema.Literals([
+      "runs",
+      "history",
+      "batches",
+      "pipelines",
+      "triggers",
+      "inbox",
+      "usage",
+      "computers",
+    ]),
   ),
   batch: Schema.optional(Schema.String),
   pipelineRun: Schema.optional(Schema.String),

@@ -28,6 +28,8 @@ import {
   BotsSavePipelineInput,
   BotsSaveTriggerInput,
   BotsUsageResult,
+  BotTarget,
+  BotTargetsResult,
   BotTrigger,
   BotTriggerId,
   BotReplay,
@@ -51,6 +53,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
+import { BotSharing } from "./BotSharing.ts";
 import { BotPipelines } from "./pipelines/BotPipelines.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
 import { BotVersions } from "./versions/BotVersions.ts";
@@ -85,7 +88,7 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_run", {
     description:
-      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply and, for a verdict bot, its decoded verdict; otherwise returns the queued run at once. With notify:true, returns at once and posts the bot's result to this thread when the run ends, waking it. Do not combine wait and notify. A bot run cannot start another bot. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
+      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply and, for a verdict bot, its decoded verdict; otherwise returns the queued run at once. With notify:true, returns at once and posts the bot's result to this thread when the run ends, waking it. Do not combine wait and notify. A bot run cannot start another bot. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's. Pass target {type:'environment', environmentId} from loom_bots_targets to run on another computer, or {type:'best'} for the ready computer with the most free slots.",
     parameters: Schema.Struct({
       botId: BotId,
       inputs: BotInputs,
@@ -93,6 +96,7 @@ export const BotsToolkit = Toolkit.make(
       checkoutThreadId: Schema.optionalKey(ThreadId),
       wait: Schema.optionalKey(Schema.Boolean),
       notify: Schema.optionalKey(Schema.Boolean),
+      target: Schema.optionalKey(BotTarget),
     }),
     success: BotRun,
     failure,
@@ -163,7 +167,7 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_run_batch", {
     description:
-      "Run one bot over many items, up to 200, as a batch. Pass source {type:'inputs', items:[...]} with one inputs record per item, or a source Loom resolves: lines (one item per line), glob (tracked files), conflicts (conflicted files in the checkout), pullRequests (open pull requests) or search (files by name or content). Every source but inputs needs itemParameter, the input each item fills; sharedInputs fill the rest. Items run under the bot's concurrency limit, and the whole batch is refused if any item is invalid. With wait:true, returns once the batch finishes or after 10 minutes with its report, which lists every item that did not pass; otherwise returns the batch at once. Read it later with loom_bots_batch_status.",
+      "Run one bot over many items, up to 200, as a batch. Pass source {type:'inputs', items:[...]} with one inputs record per item, or a source Loom resolves: lines (one item per line), glob (tracked files), conflicts (conflicted files in the checkout), pullRequests (open pull requests) or search (files by name or content). Every source but inputs needs itemParameter, the input each item fills; sharedInputs fill the rest. Items run under the bot's concurrency limit, and the whole batch is refused if any item is invalid. With wait:true, returns once the batch finishes or after 10 minutes with its report, which lists every item that did not pass; otherwise returns the batch at once. Read it later with loom_bots_batch_status. With target {type:'best'}, each item goes to the ready computer with the most free slots.",
     parameters: Schema.Struct({
       botId: BotId,
       source: BotBatchSource,
@@ -171,6 +175,7 @@ export const BotsToolkit = Toolkit.make(
       sharedInputs: Schema.optionalKey(BotInputs),
       projectId: Schema.optionalKey(ProjectId),
       wait: Schema.optionalKey(Schema.Boolean),
+      target: Schema.optionalKey(BotTarget),
     }),
     success: Schema.Struct({ batch: BotBatch, report: Schema.optionalKey(BotBatchReport) }),
     failure,
@@ -317,6 +322,21 @@ export const BotsToolkit = Toolkit.make(
       "Resume a stopped or failed pipeline run from the step that stopped it, in the same round, with the bot versions the run started with.",
     parameters: Schema.Struct({ pipelineRunId: BotPipelineRunId }),
     success: BotPipelineRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_targets", {
+    description:
+      "List the computers that can run a bot: this one and every computer connected to the same Library, each with whether it is online and ready, its free run slots, and why it cannot run the bot. A bot must be shared before it runs on another computer. projectId checks the project a run would use.",
+    parameters: Schema.Struct({ botId: BotId, projectId: Schema.optionalKey(ProjectId) }),
+    success: BotTargetsResult,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_share", {
+    description:
+      "Share a bot through the Library so every connected computer gets a copy and can run it, or stop sharing it with shared:false. Stopping leaves each computer its copy as an ordinary bot. A bot scoped to a project needs that project in the Library first.",
+    parameters: Schema.Struct({ botId: BotId, shared: Schema.Boolean }),
+    success: BotDefinition,
     failure,
     dependencies: callerDependencies,
   }),
@@ -575,6 +595,20 @@ export const botsHandlers = McpToolAccess.toLayer(
             ),
           );
         }),
+      ),
+      loom_bots_targets: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(BotSharing, (sharing) =>
+            sharing.targets(input.botId, input.projectId ?? null),
+          ),
+        ),
+      ),
+      loom_bots_share: McpToolAccess.writes((input) =>
+        onHost(
+          Effect.flatMap(BotSharing, (sharing) =>
+            input.shared ? sharing.share(input.botId) : sharing.unshare(input.botId),
+          ),
+        ),
       ),
       loom_bots_set_trigger_enabled: McpToolAccess.writes((input) =>
         onHost(

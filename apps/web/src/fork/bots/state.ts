@@ -16,6 +16,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  BOTS_ANYWHERE_FEATURE,
   BOTS_BATCHES_FEATURE,
   BOTS_BUDGETS_FEATURE,
   BOTS_FEATURE,
@@ -56,6 +57,7 @@ export function useBotsHost() {
     triggersSupported: supportsLoomFeature(capabilities, BOTS_TRIGGERS_FEATURE),
     versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
     pipelinesSupported: supportsLoomFeature(capabilities, BOTS_PIPELINES_FEATURE),
+    anywhereSupported: supportsLoomFeature(capabilities, BOTS_ANYWHERE_FEATURE),
   };
 }
 

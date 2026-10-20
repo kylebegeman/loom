@@ -384,6 +384,7 @@ export const make = Effect.gen(function* () {
           items,
           projectId: run.projectId,
           checkoutThreadId: run.checkoutThreadId,
+          target: step.target ?? null,
           caller,
           pipelineRunId: run.id,
           onInserted: (batchId) =>
@@ -413,6 +414,7 @@ export const make = Effect.gen(function* () {
             inputs: checked.values,
             ...(run.projectId === null ? {} : { projectId: run.projectId }),
             ...(run.checkoutThreadId === null ? {} : { checkoutThreadId: run.checkoutThreadId }),
+            ...(step.target === undefined ? {} : { target: step.target }),
           },
           caller,
           {

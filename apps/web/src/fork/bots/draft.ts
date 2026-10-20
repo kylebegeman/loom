@@ -10,6 +10,8 @@ import {
   type BotParameter,
   type BotOutput,
   type BotParameterType,
+  type BotVaultSlot,
+  type VaultAccessAction,
 } from "@t3tools/contracts/fork";
 import type {
   ModelSelection,
@@ -36,6 +38,15 @@ export interface BotParameterDraft {
   readonly choices: string;
 }
 
+export interface BotVaultSlotDraft {
+  readonly key: string;
+  readonly name: string;
+  readonly label: string;
+  readonly action: VaultAccessAction;
+  /** Empty means anywhere the action allows. */
+  readonly destination: string;
+}
+
 export interface BotDraft {
   readonly id: string;
   readonly name: string;
@@ -56,6 +67,7 @@ export interface BotDraft {
   /** Empty means no limit. */
   readonly runsPerDay: string;
   readonly tokensPerDay: string;
+  readonly vaultSlots: ReadonlyArray<BotVaultSlotDraft>;
 }
 
 let parameterKeys = 0;
@@ -68,6 +80,31 @@ export const newParameterDraft = (): BotParameterDraft => ({
   required: true,
   defaultValue: "",
   choices: "",
+});
+
+let slotKeys = 0;
+export const newVaultSlotDraft = (): BotVaultSlotDraft => ({
+  key: `slot-${++slotKeys}`,
+  name: "",
+  label: "",
+  action: "use",
+  destination: "",
+});
+
+const vaultSlotDrafts = (slots: ReadonlyArray<BotVaultSlot>): ReadonlyArray<BotVaultSlotDraft> =>
+  slots.map((slot) => ({
+    ...newVaultSlotDraft(),
+    name: slot.name,
+    label: slot.label,
+    action: slot.action,
+    destination: slot.destination ?? "",
+  }));
+
+const vaultSlotInput = (slot: BotVaultSlotDraft): BotVaultSlot => ({
+  name: slot.name.trim(),
+  label: slot.label.trim() || slot.name.trim(),
+  action: slot.action,
+  ...(slot.destination.trim() === "" ? {} : { destination: slot.destination.trim() }),
 });
 
 export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft => ({
@@ -88,6 +125,7 @@ export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft =
   output: "text",
   runsPerDay: "",
   tokensPerDay: "",
+  vaultSlots: [],
 });
 
 export const parameterDrafts = (
@@ -130,6 +168,7 @@ export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
   output: bot.output ?? "text",
   runsPerDay: bot.budget?.runsPerDay === undefined ? "" : String(bot.budget.runsPerDay),
   tokensPerDay: bot.budget?.tokensPerDay === undefined ? "" : String(bot.budget.tokensPerDay),
+  vaultSlots: vaultSlotDrafts(bot.vaultSlots ?? []),
 });
 
 /** A limit as typed, with thousands separators allowed; null when left empty. */
@@ -206,6 +245,8 @@ export const saveInputFromDraft = (
     // Text is the default, and an older server would refuse a key it does not know.
     ...(draft.output === "verdict" ? { output: "verdict" } : {}),
     ...(budget === null ? {} : { budget }),
+    // Older servers have no Vault slots and refuse the key.
+    ...(draft.vaultSlots.length === 0 ? {} : { vaultSlots: draft.vaultSlots.map(vaultSlotInput) }),
     ...(expectedVersion === undefined ? {} : { expectedVersion }),
   });
   if (Option.isSome(decoded)) return { ok: true, input: decoded.value };
@@ -224,6 +265,9 @@ const describeProblem = (draft: BotDraft): string => {
     if (parameter.type === "choice" && parameter.choices.trim() === "")
       return `List at least one choice for ${parameter.label || parameter.name}.`;
   }
+  for (const slot of draft.vaultSlots)
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(slot.name.trim()))
+      return "Vault slot names use lowercase letters, digits and dashes, and start with a letter or digit.";
   const timeout = Number(draft.timeoutMinutes);
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120)
     return "The time limit is a whole number of minutes from 1 to 120.";

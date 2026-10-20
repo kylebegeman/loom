@@ -115,6 +115,7 @@ describe("BotsService inbox", () => {
             definition: bot,
             source: { type: "lines", text: "a.ts" },
             checkoutThreadId: null,
+            target: null,
           },
           [{ label: "a.ts", inputs: { file: "a.ts" } }],
         );

@@ -4,6 +4,7 @@ import {
   BotDefinition,
   BotInputs,
   BotRunId,
+  BotTarget,
   type BotBatch,
   type BotBatchCounts,
   type BotBatchItem,
@@ -41,6 +42,7 @@ interface BatchRow {
   readonly created_at: string;
   readonly finished_at: string | null;
   readonly pipeline_run_id?: string | null;
+  readonly target_json?: string | null;
 }
 
 interface ItemRow {
@@ -60,6 +62,8 @@ export interface StoredBatch {
   readonly definition: BotDefinition;
   readonly source: BotBatchSource;
   readonly checkoutThreadId: ThreadId | null;
+  /** Where each item runs; null runs them all on this computer. */
+  readonly target: BotTarget | null;
 }
 
 export interface NewBatchItem {
@@ -71,14 +75,17 @@ const definitionJson = Schema.fromJsonString(BotDefinition);
 const sourceJson = Schema.fromJsonString(BotBatchSource);
 const inputsJson = Schema.fromJsonString(BotInputs);
 const runIdsJson = Schema.fromJsonString(Schema.Array(BotRunId));
+const targetJson = Schema.fromJsonString(BotTarget);
 const decodeDefinition = Schema.decodeUnknownOption(definitionJson);
 const decodeSource = Schema.decodeUnknownOption(sourceJson);
 const decodeInputs = Schema.decodeUnknownOption(inputsJson);
 const decodeRunIds = Schema.decodeUnknownOption(runIdsJson);
+const decodeTarget = Schema.decodeUnknownOption(targetJson);
 const encodeDefinition = Schema.encodeSync(definitionJson);
 const encodeSource = Schema.encodeSync(sourceJson);
 const encodeInputs = Schema.encodeSync(inputsJson);
 const encodeRunIds = Schema.encodeSync(runIdsJson);
+const encodeTarget = Schema.encodeSync(targetJson);
 const isStatus = Schema.is(Schema.Literals(["running", "finished", "cancelled"]));
 const isItemState = Schema.is(Schema.Literals(["pending", "started", "skipped"]));
 
@@ -89,11 +96,13 @@ const toStoredBatch = (row: BatchRow): StoredBatch | null => {
   const definition = decodeDefinition(row.definition_json);
   const source = decodeSource(row.source_json);
   const sharedInputs = decodeInputs(row.shared_inputs_json);
+  const target = row.target_json == null ? Option.some(null) : decodeTarget(row.target_json);
   const { status } = row;
   if (
     Option.isNone(definition) ||
     Option.isNone(source) ||
     Option.isNone(sharedInputs) ||
+    Option.isNone(target) ||
     !isStatus(status)
   )
     return null;
@@ -120,6 +129,7 @@ const toStoredBatch = (row: BatchRow): StoredBatch | null => {
     source: source.value,
     checkoutThreadId:
       row.checkout_thread_id === null ? null : ThreadId.make(row.checkout_thread_id),
+    target: target.value,
   };
 };
 
@@ -228,7 +238,7 @@ export const makeBotBatchesStore = Effect.gen(function* () {
       const { batch } = stored;
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          yield* sql`INSERT INTO fork_bots_batches (id,bot_id,bot_version,bot_name,definition_json,project_id,checkout_thread_id,source_json,source_summary,item_parameter,shared_inputs_json,status,note,started_by,caller_thread_id,created_at,finished_at,pipeline_run_id) VALUES (${batch.id},${batch.botId},${batch.botVersion},${batch.botName},${encodeDefinition(stored.definition)},${batch.projectId},${stored.checkoutThreadId},${encodeSource(stored.source)},${batch.sourceSummary},${batch.itemParameter},${encodeInputs(batch.sharedInputs)},${batch.status},${batch.note},${batch.startedBy},${batch.callerThreadId},${batch.createdAt},${batch.finishedAt},${batch.pipelineRunId ?? null})`;
+          yield* sql`INSERT INTO fork_bots_batches (id,bot_id,bot_version,bot_name,definition_json,project_id,checkout_thread_id,source_json,source_summary,item_parameter,shared_inputs_json,status,note,started_by,caller_thread_id,created_at,finished_at,pipeline_run_id,target_json) VALUES (${batch.id},${batch.botId},${batch.botVersion},${batch.botName},${encodeDefinition(stored.definition)},${batch.projectId},${stored.checkoutThreadId},${encodeSource(stored.source)},${batch.sourceSummary},${batch.itemParameter},${encodeInputs(batch.sharedInputs)},${batch.status},${batch.note},${batch.startedBy},${batch.callerThreadId},${batch.createdAt},${batch.finishedAt},${batch.pipelineRunId ?? null},${stored.target === null ? null : encodeTarget(stored.target)})`;
           for (const [index, item] of items.entries())
             yield* sql`INSERT INTO fork_bots_batch_items (batch_id,item_index,label,inputs_json,state,run_id,previous_run_ids_json) VALUES (${batch.id},${index},${item.label},${encodeInputs(item.inputs)},'pending',NULL,'[]')`;
         }),

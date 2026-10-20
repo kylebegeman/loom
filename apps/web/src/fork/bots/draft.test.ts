@@ -10,6 +10,7 @@ import {
   emptyBotDraft,
   initialRunValues,
   newParameterDraft,
+  newVaultSlotDraft,
   runInputs,
   saveInputFromDraft,
   slugFromName,
@@ -126,6 +127,27 @@ describe("bot drafts", () => {
       message:
         "Tokens per 24 hours is a whole number from 1,000 to 10 billion, or empty for no limit.",
     });
+  });
+
+  it("sends Vault slots only when the bot has some, labelled by name when left blank", () => {
+    const slotted: BotDefinition = {
+      ...bot,
+      vaultSlots: [{ name: "npm-token", label: "npm token", action: "use", destination: "env" }],
+    };
+    const saved = saveInputFromDraft(botDraft(slotted), slotted.version);
+    expect(saved.ok && saved.input.vaultSlots).toEqual(slotted.vaultSlots);
+    const unlabelled = saveInputFromDraft(
+      {
+        ...botDraft(bot),
+        vaultSlots: [{ ...newVaultSlotDraft(), name: " deploy-key ", label: " " }],
+      },
+      4,
+    );
+    expect(unlabelled.ok && unlabelled.input.vaultSlots).toEqual([
+      { name: "deploy-key", label: "deploy-key", action: "use" },
+    ]);
+    const plain = saveInputFromDraft(botDraft(bot), 4);
+    expect(plain.ok && "vaultSlots" in plain.input).toBe(false);
   });
 
   it("offers one checkout per live worktree of the project, newest first", () => {

@@ -1,6 +1,7 @@
 # L100: Bots anywhere
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Library bots. Kyle shares a bot to the Loom Library (loom.begam.in) once, and every computer
 enrolled in that Library gets it, with edits flowing through the Library. A run, a batch or a

@@ -1,6 +1,10 @@
 import { ModelSelection, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotDefinitionInput,
+  BotLibraryLink,
+  BotRemoteSettings,
+  BotRunComputer,
+  DEFAULT_BOT_REMOTE_SETTINGS,
   BotInputs,
   BotOrigin,
   BotRunRating,
@@ -32,6 +36,7 @@ interface DefinitionRow {
   readonly updated_at: string;
   readonly archived_at: string | null;
   readonly stable_version: number | null;
+  readonly library_json?: string | null;
 }
 
 interface VersionRow {
@@ -80,6 +85,10 @@ export interface RunRow {
   readonly note: string | null;
   readonly pipeline_run_id?: string | null;
   readonly pipeline_stopped?: number;
+  readonly target_environment_id?: string | null;
+  readonly remote_request_id?: string | null;
+  readonly ran_on_json?: string | null;
+  readonly requested_by_json?: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -104,6 +113,17 @@ const encodeModelSelection = Schema.encodeSync(modelSelectionJson);
 const changedJson = Schema.fromJsonString(Schema.Array(Schema.String));
 const decodeChanged = Schema.decodeUnknownOption(changedJson);
 const encodeChanged = Schema.encodeSync(changedJson);
+const libraryJson = Schema.fromJsonString(BotLibraryLink);
+const decodeLibrary = Schema.decodeUnknownOption(libraryJson);
+const encodeLibrary = Schema.encodeSync(libraryJson);
+const computerJson = Schema.fromJsonString(BotRunComputer);
+const decodeComputer = (json: string | null | undefined) =>
+  json == null ? null : Option.getOrNull(Schema.decodeUnknownOption(computerJson)(json));
+const encodeComputer = (computer: BotRunComputer | null | undefined) =>
+  computer == null ? null : Schema.encodeSync(computerJson)(computer);
+const remoteSettingsJson = Schema.fromJsonString(BotRemoteSettings);
+const decodeRemoteSettings = Schema.decodeUnknownOption(remoteSettingsJson);
+const encodeRemoteSettings = Schema.encodeSync(remoteSettingsJson);
 const isSavedBy = Schema.is(BotVersionSavedBy);
 const isRating = Schema.is(BotRunRating);
 const isStatus = Schema.is(BotRunStatus);
@@ -131,6 +151,11 @@ const toDefinition = (row: DefinitionRow): BotDefinition | null => {
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
     ...(row.stable_version == null ? {} : { stableVersion: Number(row.stable_version) }),
+    // A link this version cannot read leaves the bot local rather than hiding it.
+    ...Option.match(row.library_json == null ? Option.none() : decodeLibrary(row.library_json), {
+      onNone: () => ({}),
+      onSome: (library) => ({ library }),
+    }),
   };
 };
 
@@ -209,14 +234,20 @@ export const toRun = (row: RunRow): BotRun | null => {
     ...(row.note == null ? {} : { note: row.note }),
     ...(row.pipeline_run_id == null ? {} : { pipelineRunId: row.pipeline_run_id }),
     ...(Number(row.pipeline_stopped ?? 0) === 1 ? { pipelineStopped: true } : {}),
+    ...withComputer("ranOn", decodeComputer(row.ran_on_json)),
+    ...withComputer("requestedBy", decodeComputer(row.requested_by_json)),
   };
 };
+
+const withComputer = <K extends "ranOn" | "requestedBy">(key: K, computer: BotRunComputer | null) =>
+  (computer === null ? {} : { [key]: computer }) as Partial<Record<K, BotRunComputer>>;
 
 /** `isBotInboxRun` in SQL, so the inbox never loads runs it would drop. */
 const inboxCondition = (sql: SqlClient.SqlClient, dismissed: boolean) =>
   sql.and([
     sql`retried_by IS NULL`,
     sql`replay_id IS NULL`,
+    sql`requested_by_json IS NULL`,
     dismissed ? sql`dismissed_at IS NOT NULL` : sql`dismissed_at IS NULL`,
     sql`((pipeline_run_id IS NULL AND (status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))) OR (pipeline_run_id IS NOT NULL AND pipeline_stopped = 1))`,
   ]);
@@ -228,6 +259,7 @@ const definitionFields = ({
   updatedAt: _updatedAt,
   archivedAt: _archivedAt,
   stableVersion: _stableVersion,
+  library: _library,
   ...input
 }: BotDefinition): StoredDefinition => input;
 
@@ -260,7 +292,14 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     putDefinition: Effect.fn("BotsStore.putDefinition")(function* (bot: BotDefinition) {
-      yield* sql`INSERT INTO fork_bots_definitions (id,version,definition_json,scope_project_id,created_by,created_at,updated_at,archived_at) VALUES (${bot.id},${bot.version},${encodeDefinition(definitionFields(bot))},${bot.scopeProjectId},${bot.createdBy},${bot.createdAt},${bot.updatedAt},${bot.archivedAt}) ON CONFLICT(id) DO UPDATE SET version = excluded.version, definition_json = excluded.definition_json, scope_project_id = excluded.scope_project_id, updated_at = excluded.updated_at, archived_at = excluded.archived_at`;
+      yield* sql`INSERT INTO fork_bots_definitions (id,version,definition_json,scope_project_id,created_by,created_at,updated_at,archived_at,library_json) VALUES (${bot.id},${bot.version},${encodeDefinition(definitionFields(bot))},${bot.scopeProjectId},${bot.createdBy},${bot.createdAt},${bot.updatedAt},${bot.archivedAt},${bot.library == null ? null : encodeLibrary(bot.library)}) ON CONFLICT(id) DO UPDATE SET version = excluded.version, definition_json = excluded.definition_json, scope_project_id = excluded.scope_project_id, updated_at = excluded.updated_at, archived_at = excluded.archived_at, library_json = excluded.library_json`;
+    }),
+
+    setLibraryLink: Effect.fn("BotsStore.setLibraryLink")(function* (
+      id: string,
+      link: BotLibraryLink | null,
+    ) {
+      yield* sql`UPDATE fork_bots_definitions SET library_json = ${link === null ? null : encodeLibrary(link)} WHERE id = ${id}`;
     }),
 
     /** The highest version any run recorded, so a recreated bot never reuses a version. */
@@ -385,8 +424,11 @@ export const makeBotsStore = Effect.gen(function* () {
       yield* sql`DELETE FROM fork_bots_definitions WHERE id = ${id}`;
     }),
 
-    insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id,replay_id,pipeline_run_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null},${run.replayId ?? null},${run.pipelineRunId ?? null})`;
+    insertRun: Effect.fn("BotsStore.insertRun")(function* (
+      run: BotRun,
+      remote: { readonly requestId?: string | undefined } = {},
+    ) {
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id,replay_id,pipeline_run_id,target_environment_id,remote_request_id,ran_on_json,requested_by_json) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null},${run.replayId ?? null},${run.pipelineRunId ?? null},${run.ranOn?.environmentId ?? null},${remote.requestId ?? null},${encodeComputer(run.ranOn)},${encodeComputer(run.requestedBy)})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
@@ -534,8 +576,96 @@ export const makeBotsStore = Effect.gen(function* () {
 
     listUnfinishedRuns: Effect.fn("BotsStore.listUnfinishedRuns")(function* () {
       const rows =
-        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE status IN ('queued', 'running') ORDER BY created_at`;
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE status IN ('queued', 'running') AND target_environment_id IS NULL ORDER BY created_at`;
       return rows.flatMap((row) => toRun(row) ?? []);
+    }),
+
+    /** Runs sent to another computer that have not ended, oldest first. */
+    listOpenRemoteRuns: Effect.fn("BotsStore.listOpenRemoteRuns")(function* () {
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE status IN ('queued', 'running') AND target_environment_id IS NOT NULL ORDER BY created_at`;
+      return rows.flatMap((row) => toRun(row) ?? []);
+    }),
+
+    /** The run this computer started for a remote request, if it already has one. */
+    getRunForRequest: Effect.fn("BotsStore.getRunForRequest")(function* (requestId: string) {
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE remote_request_id = ${requestId}`;
+      return rows[0] ? toRun(rows[0]) : null;
+    }),
+
+    /** Remote-requested runs whose latest update the requester has not been sent yet. */
+    listUnreportedRemoteRuns: Effect.fn("BotsStore.listUnreportedRemoteRuns")(function* () {
+      const rows = yield* sql<
+        RunRow & { remote_reported: number }
+      >`SELECT * FROM fork_bots_runs WHERE remote_request_id IS NOT NULL AND requested_by_json IS NOT NULL AND ((started_at IS NOT NULL AND remote_reported < 1) OR (finished_at IS NOT NULL AND remote_reported < 2)) ORDER BY created_at`;
+      return rows.flatMap((row) => {
+        const run = toRun(row);
+        return run === null ? [] : [{ run, reported: Number(row.remote_reported) }];
+      });
+    }),
+
+    markRemoteReported: Effect.fn("BotsStore.markRemoteReported")(function* (
+      id: string,
+      seq: number,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET remote_reported = MAX(remote_reported, ${seq}) WHERE id = ${id}`;
+    }),
+
+    /** Records the model another computer ran a remote run on, as it reported back. */
+    applyRemoteModel: Effect.fn("BotsStore.applyRemoteModel")(function* (
+      id: string,
+      modelSelection: ModelSelection,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET model_selection_json = ${encodeModelSelection(modelSelection)} WHERE id = ${id}`;
+    }),
+
+    vaultBindings: Effect.fn("BotsStore.vaultBindings")(function* (botId: string) {
+      const rows = yield* sql<{
+        slot: string;
+        item_id: string;
+      }>`SELECT slot, item_id FROM fork_bots_vault_bindings WHERE bot_id = ${botId}`;
+      return new Map(rows.map((row) => [row.slot, row.item_id]));
+    }),
+
+    bindVaultSlot: Effect.fn("BotsStore.bindVaultSlot")(function* (
+      botId: string,
+      slot: string,
+      itemId: string | null,
+    ) {
+      if (itemId === null)
+        yield* sql`DELETE FROM fork_bots_vault_bindings WHERE bot_id = ${botId} AND slot = ${slot}`;
+      else
+        yield* sql`INSERT INTO fork_bots_vault_bindings (bot_id, slot, item_id) VALUES (${botId}, ${slot}, ${itemId}) ON CONFLICT(bot_id, slot) DO UPDATE SET item_id = excluded.item_id`;
+    }),
+
+    remoteSettings: Effect.fn("BotsStore.remoteSettings")(function* () {
+      const rows = yield* sql<{
+        value_json: string;
+      }>`SELECT value_json FROM fork_bots_settings WHERE key = 'remote'`;
+      return rows[0] === undefined
+        ? DEFAULT_BOT_REMOTE_SETTINGS
+        : Option.getOrElse(
+            decodeRemoteSettings(rows[0].value_json),
+            () => DEFAULT_BOT_REMOTE_SETTINGS,
+          );
+    }),
+
+    setRemoteSettings: Effect.fn("BotsStore.setRemoteSettings")(function* (
+      settings: BotRemoteSettings,
+    ) {
+      yield* sql`INSERT INTO fork_bots_settings (key, value_json) VALUES ('remote', ${encodeRemoteSettings(settings)}) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`;
+    }),
+
+    libraryCursor: Effect.fn("BotsStore.libraryCursor")(function* () {
+      const rows = yield* sql<{
+        value: string;
+      }>`SELECT value FROM fork_bots_library_cursor WHERE key = 'bots'`;
+      return Number(rows[0]?.value ?? 0);
+    }),
+
+    setLibraryCursor: Effect.fn("BotsStore.setLibraryCursor")(function* (cursor: number) {
+      yield* sql`INSERT INTO fork_bots_library_cursor (key, value) VALUES ('bots', ${String(cursor)}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
     }),
 
     /** Marks the run that stopped its pipeline, or clears the mark when the pipeline resumes. */

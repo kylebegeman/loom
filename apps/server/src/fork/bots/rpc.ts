@@ -1,10 +1,13 @@
 import {
+  BOTS_ANYWHERE_WS_METHODS as BA,
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
   BOTS_PIPELINE_WS_METHODS as BP,
   BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
+  type BotRemoteSettings,
+  type BotVaultBinding,
   type BotsBatchInput,
   type BotsDismissSuggestionInput,
   type BotsDraftFromThreadInput,
@@ -39,11 +42,12 @@ import {
   type BotsVersionRef,
   type BotsVersionsInput,
 } from "@t3tools/contracts/fork";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { BotBatches } from "./BotBatches.ts";
+import { BotSharing } from "./BotSharing.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
 import { BotPipelines } from "./pipelines/BotPipelines.ts";
@@ -238,5 +242,29 @@ export const makeBotPipelinesRpcHandlers = (auth: ForkRpcAuth) =>
       [BP.resumePipelineRun]: (input: { pipelineRunId: string }) =>
         auth.effect(BP.resumePipelineRun, pipelines.resume(input.pipelineRunId, USER_CALLER)),
       [BP.watchPipelines]: () => auth.stream(BP.watchPipelines, pipelines.changes),
+    };
+  });
+
+export const makeBotsAnywhereRpcHandlers = (auth: ForkRpcAuth) =>
+  Effect.gen(function* () {
+    const sharing = yield* BotSharing;
+    const bindings = Effect.map((list: ReadonlyArray<BotVaultBinding>) => ({ bindings: list }));
+    return {
+      [BA.share]: (input: { botId: string }) => auth.effect(BA.share, sharing.share(input.botId)),
+      [BA.unshare]: (input: { botId: string }) =>
+        auth.effect(BA.unshare, sharing.unshare(input.botId)),
+      [BA.syncLibrary]: () => auth.effect(BA.syncLibrary, sharing.sync()),
+      [BA.targets]: (input: { botId: string; projectId?: ProjectId }) =>
+        auth.effect(BA.targets, sharing.targets(input.botId, input.projectId ?? null)),
+      [BA.vaultBindings]: (input: { botId: string }) =>
+        auth.effect(BA.vaultBindings, sharing.vaultBindings(input.botId).pipe(bindings)),
+      [BA.bindVaultSlot]: (input: { botId: string; slot: string; itemId: string | null }) =>
+        auth.effect(
+          BA.bindVaultSlot,
+          sharing.bindVaultSlot(input.botId, input.slot, input.itemId).pipe(bindings),
+        ),
+      [BA.remoteSettings]: () => auth.effect(BA.remoteSettings, sharing.remoteSettings()),
+      [BA.setRemoteSettings]: (input: BotRemoteSettings) =>
+        auth.effect(BA.setRemoteSettings, sharing.setRemoteSettings(input)),
     };
   });

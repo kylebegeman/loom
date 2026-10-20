@@ -83,6 +83,7 @@ const storedBatch = (
   definition: bot,
   source: { type: "lines", text: "a.ts" },
   checkoutThreadId: null,
+  target: null,
 });
 
 describe("BotBatches", () => {

@@ -1,4 +1,5 @@
 import {
+  BOTS_ANYWHERE_WS_METHODS as BA,
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
   BOTS_PIPELINE_WS_METHODS as BP,
@@ -663,6 +664,32 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     resumePipelineRun: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:resume-pipeline-run",
       tag: BP.resumePipelineRun,
+    }),
+    share: createEnvironmentRpcCommand(runtime, { label: "loom:bots:share", tag: BA.share }),
+    unshare: createEnvironmentRpcCommand(runtime, { label: "loom:bots:unshare", tag: BA.unshare }),
+    syncLibrary: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:sync-library",
+      tag: BA.syncLibrary,
+    }),
+    targets: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:targets",
+      tag: BA.targets,
+    }),
+    vaultBindings: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:vault-bindings",
+      tag: BA.vaultBindings,
+    }),
+    bindVaultSlot: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:bind-vault-slot",
+      tag: BA.bindVaultSlot,
+    }),
+    remoteSettings: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:remote-settings",
+      tag: BA.remoteSettings,
+    }),
+    setRemoteSettings: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:set-remote-settings",
+      tag: BA.setRemoteSettings,
     }),
   };
 }

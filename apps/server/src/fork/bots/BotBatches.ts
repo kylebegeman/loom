@@ -10,6 +10,7 @@ import {
   type BotBatchPreview,
   type BotBatchRetryResult,
   type BotDefinition,
+  type BotTarget,
   type BotInputs,
   type BotsBatchInput,
   type BotsChange,
@@ -289,6 +290,7 @@ export const make = Effect.gen(function* () {
           ...(stored.checkoutThreadId === null
             ? {}
             : { checkoutThreadId: stored.checkoutThreadId }),
+          ...(stored.target === null ? {} : { target: stored.target }),
         },
         callerOf(stored),
         {
@@ -442,6 +444,7 @@ export const make = Effect.gen(function* () {
       definition: bot,
       source: input.source,
       checkoutThreadId: prepared.checkoutThreadId,
+      target: input.target ?? null,
     };
     yield* store.insertBatch(stored, prepared.valid).pipe(Effect.catch(storageError));
     yield* store.pruneBatches(bot.id, BATCHES_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
@@ -460,6 +463,7 @@ export const make = Effect.gen(function* () {
     readonly items: ReadonlyArray<NewBatchItem>;
     readonly projectId: ProjectId | null;
     readonly checkoutThreadId: ThreadId | null;
+    readonly target: BotTarget | null;
     readonly caller: BotCaller;
     readonly pipelineRunId: string;
     readonly onInserted: (batchId: string) => Effect.Effect<void, SqlError>;
@@ -487,6 +491,7 @@ export const make = Effect.gen(function* () {
       definition,
       source: { type: "inputs", items: input.items.map((item) => item.inputs) },
       checkoutThreadId: input.checkoutThreadId,
+      target: input.target,
     };
     yield* store
       .withTransaction(

@@ -3,10 +3,12 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { ProjectId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
 import { ScheduledTaskWebhookEndpoint, ScheduledTaskWebhookSignature } from "../scheduledTask.ts";
+import { LibraryId } from "./project-library.ts";
+import { VaultAccessAction } from "./vault-access.ts";
 
 export const BOTS_FEATURE = "bots";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
@@ -19,6 +21,7 @@ export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
 export const BOTS_TRIGGERS_FEATURE = "bots-triggers";
 export const BOTS_VERSIONS_FEATURE = "bots-versions";
 export const BOTS_PIPELINES_FEATURE = "bots-pipelines";
+export const BOTS_ANYWHERE_FEATURE = "bots-anywhere";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -133,6 +136,20 @@ export const BotBudget = Schema.Struct({
 });
 export type BotBudget = typeof BotBudget.Type;
 
+export const BOTS_MAX_VAULT_SLOTS = 16;
+
+/**
+ * A credential the bot needs, bound per computer to one of its own Vault items. Only the slot
+ * travels with a shared bot, never the item.
+ */
+export const BotVaultSlot = Schema.Struct({
+  name: Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,39}$/)),
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  action: VaultAccessAction,
+  destination: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(2048))),
+});
+export type BotVaultSlot = typeof BotVaultSlot.Type;
+
 export const BotDefinitionInput = Schema.Struct({
   id: BotId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
@@ -153,8 +170,23 @@ export const BotDefinitionInput = Schema.Struct({
   output: Schema.optionalKey(BotOutput),
   /** Absent means unlimited. */
   budget: Schema.optionalKey(BotBudget),
+  vaultSlots: Schema.optionalKey(
+    Schema.Array(BotVaultSlot).check(Schema.isMaxLength(BOTS_MAX_VAULT_SLOTS)),
+  ),
 });
 export type BotDefinitionInput = typeof BotDefinitionInput.Type;
+
+/** How a local bot follows its shared Library record. */
+export const BotLibraryLink = Schema.Struct({
+  libraryBotId: BotId,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  /** The Library project a project bot runs in; each computer uses its own copy. */
+  libraryProjectId: Schema.NullOr(LibraryId),
+  syncedAt: Schema.String,
+  /** This computer's model when the shared one's provider is not installed here. Never published. */
+  modelOverride: Schema.NullOr(ModelSelection),
+});
+export type BotLibraryLink = typeof BotLibraryLink.Type;
 
 export const BotCreator = Schema.Literals(["user", "agent"]);
 export type BotCreator = typeof BotCreator.Type;
@@ -180,6 +212,11 @@ export const BotDefinition = Schema.Struct({
   origin: Schema.optionalKey(BotOrigin),
   /** The version marked as known good. Absent or null when none is. */
   stableVersion: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+  /**
+   * Set while the bot is shared through the Library. An optional key rather than an origin kind,
+   * since older clients fail to decode a new union member.
+   */
+  library: Schema.optionalKey(Schema.NullOr(BotLibraryLink)),
 });
 export type BotDefinition = typeof BotDefinition.Type;
 
@@ -262,6 +299,12 @@ export const BOTS_RUN_NOTE_MAX = 500;
 export const BotRunRating = Schema.Literals(["up", "down"]);
 export type BotRunRating = typeof BotRunRating.Type;
 
+export const BotRunComputer = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: Schema.String,
+});
+export type BotRunComputer = typeof BotRunComputer.Type;
+
 export const BotRun = Schema.Struct({
   id: BotRunId,
   botId: BotId,
@@ -310,6 +353,10 @@ export const BotRun = Schema.Struct({
   pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
   /** Set on the run that stopped its pipeline, the pipeline's one inbox item until resumed. */
   pipelineStopped: Schema.optionalKey(Schema.Boolean),
+  /** The computer a remote run was sent to, on the computer that asked for it. */
+  ranOn: Schema.optionalKey(Schema.NullOr(BotRunComputer)),
+  /** The computer that asked for this run, on the computer that ran it. */
+  requestedBy: Schema.optionalKey(Schema.NullOr(BotRunComputer)),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -331,6 +378,8 @@ export const needsBotAttention = (run: BotRun): boolean =>
 export const isBotInboxRun = (run: BotRun): boolean =>
   run.dismissedAt == null &&
   run.replayId == null &&
+  // A run for another computer belongs in that computer's inbox.
+  run.requestedBy == null &&
   (run.pipelineRunId == null
     ? needsBotAttention(run)
     : run.pipelineStopped === true && run.retriedBy == null);
@@ -359,6 +408,15 @@ export const BotsSaveInput = Schema.Struct({
 });
 export type BotsSaveInput = typeof BotsSaveInput.Type;
 
+/** Where a run executes. Absent means this computer. */
+export const BotTarget = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("here") }),
+  Schema.Struct({ type: Schema.Literal("environment"), environmentId: EnvironmentId }),
+  /** The ready computer with the most free slots; this computer wins ties. */
+  Schema.Struct({ type: Schema.Literal("best") }),
+]);
+export type BotTarget = typeof BotTarget.Type;
+
 export const BotsRunInput = Schema.Struct({
   botId: BotId,
   inputs: BotInputs,
@@ -369,6 +427,7 @@ export const BotsRunInput = Schema.Struct({
   callerThreadId: Schema.optionalKey(ThreadId),
   /** Post the result to the calling thread when the run ends. */
   notify: Schema.optionalKey(Schema.Boolean),
+  target: Schema.optionalKey(BotTarget),
 });
 export type BotsRunInput = typeof BotsRunInput.Type;
 
@@ -720,6 +779,7 @@ export const BotsBatchInput = Schema.Struct({
   sharedInputs: Schema.optionalKey(BotInputs),
   /** The thread the batch is started from, for people; agents are always their own thread. */
   callerThreadId: Schema.optionalKey(ThreadId),
+  target: Schema.optionalKey(BotTarget),
 });
 export type BotsBatchInput = typeof BotsBatchInput.Type;
 
@@ -1389,6 +1449,7 @@ export const BotPipelineStep = Schema.Struct({
   onError: Schema.optionalKey(BotPipelineGate),
   /** Runs the step on this model instead of its bot's. */
   modelSelection: Schema.optionalKey(ModelSelection),
+  target: Schema.optionalKey(BotTarget),
 });
 export type BotPipelineStep = typeof BotPipelineStep.Type;
 
@@ -1593,3 +1654,259 @@ export const BotPipelinesRpcGroup = RpcGroup.make(
     stream: true,
   }),
 );
+
+export const BOTS_ANYWHERE_WS_METHODS = {
+  share: "loom.bots.share",
+  unshare: "loom.bots.unshare",
+  syncLibrary: "loom.bots.syncLibrary",
+  targets: "loom.bots.targets",
+  vaultBindings: "loom.bots.vaultBindings",
+  bindVaultSlot: "loom.bots.bindVaultSlot",
+  remoteSettings: "loom.bots.remoteSettings",
+  setRemoteSettings: "loom.bots.setRemoteSettings",
+} as const;
+
+/** Whether this computer runs bots for other computers, and how far their runs may reach. */
+export const BotRemoteSettings = Schema.Struct({
+  acceptRemote: Schema.Boolean,
+  runtimeModeCeiling: RuntimeMode,
+});
+export type BotRemoteSettings = typeof BotRemoteSettings.Type;
+
+export const DEFAULT_BOT_REMOTE_SETTINGS: BotRemoteSettings = {
+  acceptRemote: false,
+  runtimeModeCeiling: "auto",
+};
+
+export const BotTargetReadiness = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  isThisComputer: Schema.Boolean,
+  online: Schema.Boolean,
+  ready: Schema.Boolean,
+  freeSlots: Schema.Int,
+  /** Why the computer cannot run the bot now, such as "Remote runs are off". */
+  reasons: Schema.Array(Schema.String),
+});
+export type BotTargetReadiness = typeof BotTargetReadiness.Type;
+
+/** `unsupported`: a Library is configured but does not record shared bots. */
+export const BotLibraryAvailability = Schema.Literals(["none", "unsupported", "available"]);
+export type BotLibraryAvailability = typeof BotLibraryAvailability.Type;
+
+export const BotTargetsResult = Schema.Struct({
+  library: BotLibraryAvailability,
+  targets: Schema.Array(BotTargetReadiness),
+});
+export type BotTargetsResult = typeof BotTargetsResult.Type;
+
+export const BotVaultBinding = Schema.Struct({
+  slot: BotVaultSlot.fields.name,
+  /** Null while the slot is unbound on this computer. */
+  itemId: Schema.NullOr(Schema.String),
+  /** The bound item's label, or null when it is unbound or no longer readable. */
+  itemLabel: Schema.NullOr(Schema.String),
+});
+export type BotVaultBinding = typeof BotVaultBinding.Type;
+
+export const BotSyncResult = Schema.Struct({
+  pulled: Schema.Int,
+  refused: Schema.Array(Schema.Struct({ libraryBotId: BotId, message: Schema.String })),
+});
+export type BotSyncResult = typeof BotSyncResult.Type;
+
+const BA = BOTS_ANYWHERE_WS_METHODS;
+const Bindings = Schema.Struct({ bindings: Schema.Array(BotVaultBinding) });
+
+export const BotsAnywhereRpcGroup = RpcGroup.make(
+  Rpc.make(BA.share, { payload: BotRef, success: BotDefinition, error: errors }),
+  Rpc.make(BA.unshare, { payload: BotRef, success: BotDefinition, error: errors }),
+  Rpc.make(BA.syncLibrary, { payload: Schema.Struct({}), success: BotSyncResult, error: errors }),
+  Rpc.make(BA.targets, {
+    payload: Schema.Struct({ botId: BotId, projectId: Schema.optionalKey(ProjectId) }),
+    success: BotTargetsResult,
+    error: errors,
+  }),
+  Rpc.make(BA.vaultBindings, { payload: BotRef, success: Bindings, error: errors }),
+  Rpc.make(BA.bindVaultSlot, {
+    payload: Schema.Struct({
+      botId: BotId,
+      slot: BotVaultSlot.fields.name,
+      itemId: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+    }),
+    success: Bindings,
+    error: errors,
+  }),
+  Rpc.make(BA.remoteSettings, {
+    payload: Schema.Struct({}),
+    success: BotRemoteSettings,
+    error: errors,
+  }),
+  Rpc.make(BA.setRemoteSettings, {
+    payload: BotRemoteSettings,
+    success: BotRemoteSettings,
+    error: errors,
+  }),
+);
+
+/*
+ * Library wire schemas. Computers call these routes under /api/loom/library/bots with their
+ * publisher session; the Library takes the calling environment from the session, never a body.
+ */
+
+/** A bot as the Library keeps it: no local project, no per-computer model. */
+export const BotLibraryRecord = Schema.Struct({
+  id: BotId,
+  revision: Schema.Int,
+  seq: Schema.Int,
+  definition: Schema.NullOr(BotDefinitionInput),
+  libraryProjectId: Schema.NullOr(LibraryId),
+  updatedBy: Schema.String,
+  updatedAt: Schema.String,
+  /** Set when the bot was unshared; `definition` is then null. */
+  deletedAt: Schema.NullOr(Schema.String),
+});
+export type BotLibraryRecord = typeof BotLibraryRecord.Type;
+
+export const BotLibraryPublishRequest = Schema.Struct({
+  definition: BotDefinitionInput,
+  libraryProjectId: Schema.NullOr(LibraryId),
+  /** Null to create; a create fails when the id is already shared. */
+  expectedRevision: Schema.NullOr(Schema.Int),
+  /** The publishing computer's name, for conflict messages on other computers. */
+  label: Schema.String.check(Schema.isMaxLength(160)),
+  /** Keeps the shared model: the publisher runs the bot on a model of its own. */
+  keepModel: Schema.optionalKey(Schema.Boolean),
+});
+export type BotLibraryPublishRequest = typeof BotLibraryPublishRequest.Type;
+
+export const BotLibraryListRequest = Schema.Struct({ after: Schema.Int });
+export const BotLibraryListResult = Schema.Struct({
+  records: Schema.Array(BotLibraryRecord),
+  cursor: Schema.Int,
+});
+export type BotLibraryListResult = typeof BotLibraryListResult.Type;
+
+export const BotLibraryStatusReport = Schema.Struct({
+  label: Schema.String.check(Schema.isMaxLength(160)),
+  acceptRemote: Schema.Boolean,
+  runtimeModeCeiling: RuntimeMode,
+  freeSlots: Schema.Int,
+  bots: Schema.Array(
+    Schema.Struct({
+      libraryBotId: BotId,
+      revision: Schema.Int,
+      ready: Schema.Boolean,
+      reasons: Schema.Array(Schema.String),
+    }),
+  ).check(Schema.isMaxLength(500)),
+});
+export type BotLibraryStatusReport = typeof BotLibraryStatusReport.Type;
+
+export const BotLibraryTargetStatus = Schema.Struct({
+  environmentId: EnvironmentId,
+  report: BotLibraryStatusReport,
+  reportedAt: Schema.String,
+});
+export type BotLibraryTargetStatus = typeof BotLibraryTargetStatus.Type;
+
+export const BotRemoteRunRequest = Schema.Struct({
+  requestId: BotRunId,
+  /** The requester's run thread id, so both computers name the run's thread alike. */
+  threadId: ThreadId,
+  libraryBotId: BotId,
+  revision: Schema.Int,
+  inputs: BotInputs,
+  requesterLabel: Schema.String.check(Schema.isMaxLength(160)),
+  /** The run's project as the Library names it; the target runs in its own copy. */
+  libraryProjectId: Schema.optionalKey(Schema.NullOr(LibraryId)),
+});
+export type BotRemoteRunRequest = typeof BotRemoteRunRequest.Type;
+
+export const BotRemoteMessage = Schema.Union([
+  Schema.TaggedStruct("run", { request: BotRemoteRunRequest }),
+  Schema.TaggedStruct("cancel", { requestId: BotRunId }),
+]);
+export type BotRemoteMessage = typeof BotRemoteMessage.Type;
+
+export const BotLibrarySubmitRequest = Schema.Struct({
+  targetEnvironmentId: EnvironmentId,
+  request: BotRemoteRunRequest,
+});
+export type BotLibrarySubmitRequest = typeof BotLibrarySubmitRequest.Type;
+
+export const BotLibraryDelivery = Schema.Struct({
+  messageId: Schema.String,
+  fromEnvironmentId: EnvironmentId,
+  message: BotRemoteMessage,
+});
+export type BotLibraryDelivery = typeof BotLibraryDelivery.Type;
+
+export const BotLibraryAckRequest = Schema.Struct({
+  messageId: Schema.String.check(Schema.isMaxLength(200)),
+  /** A refused run reaches its requester as a failed run with this message. */
+  refused: Schema.NullOr(Schema.String.check(Schema.isMaxLength(2000))),
+});
+export type BotLibraryAckRequest = typeof BotLibraryAckRequest.Type;
+
+export const BotRemoteUpdate = Schema.Union([
+  Schema.TaggedStruct("started", { label: Schema.String, startedAt: Schema.String }),
+  Schema.TaggedStruct("terminal", {
+    label: Schema.String,
+    status: BotRunStatus,
+    startedAt: Schema.NullOr(Schema.String),
+    finishedAt: Schema.String,
+    result: Schema.NullOr(Schema.String),
+    resultTruncated: Schema.Boolean,
+    error: Schema.NullOr(Schema.String),
+    verdict: Schema.NullOr(BotVerdict),
+    usage: Schema.NullOr(BotRunUsage),
+    modelSelection: Schema.NullOr(ModelSelection),
+  }),
+]);
+export type BotRemoteUpdate = typeof BotRemoteUpdate.Type;
+
+/** `seq` 1 is `started` and 2 is `terminal`, so a repeated post is the same update. */
+export const BotLibraryResultPost = Schema.Struct({
+  requestId: BotRunId,
+  seq: Schema.Literals([1, 2]),
+  update: BotRemoteUpdate,
+});
+export type BotLibraryResultPost = typeof BotLibraryResultPost.Type;
+
+export const BotLibraryResultAck = Schema.Struct({
+  requestId: BotRunId,
+  seq: Schema.Int,
+});
+export type BotLibraryResultAck = typeof BotLibraryResultAck.Type;
+
+export const BotLibraryWaitRequest = Schema.Struct({ waitMs: Schema.Number });
+
+/** The Library's refusal, sent as a 409 body; `unavailable` is sent as a 404. */
+export class BotLibraryError extends Schema.TaggedError<BotLibraryError>()("BotLibraryError", {
+  reason: Schema.Literals([
+    "unavailable",
+    "not_found",
+    "conflict",
+    "refused",
+    "invalid",
+    "storage",
+    "io",
+  ]),
+  message: Schema.String,
+}) {}
+
+export const BotLibraryRefusal = Schema.Struct({
+  reason: BotLibraryError.fields.reason,
+  message: Schema.String,
+});
+
+export const BOT_LIBRARY_ROUTE = "/api/loom/library/bots";
+/** A computer whose last status report is older than this is offline for remote runs. */
+export const BOT_LIBRARY_STATUS_FRESH_MS = 2 * 60_000;
+
+export const BotLibraryUnpublishRequest = Schema.Struct({ libraryBotId: BotId });
+export const BotLibraryCancelRequest = Schema.Struct({ requestId: BotRunId });
+export const BotLibraryTargets = Schema.Struct({ targets: Schema.Array(BotLibraryTargetStatus) });
+export const BotLibraryDeliveries = Schema.Struct({ deliveries: Schema.Array(BotLibraryDelivery) });
+export const BotLibraryResults = Schema.Struct({ results: Schema.Array(BotLibraryResultPost) });

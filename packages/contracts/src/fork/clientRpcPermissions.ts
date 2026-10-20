@@ -34,6 +34,7 @@ import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
   BOTS_PIPELINE_WS_METHODS as PIPELINE,
+  BOTS_ANYWHERE_WS_METHODS as ANYWHERE,
   BOTS_TRIGGER_WS_METHODS as TRIGGER,
   BOTS_VERSION_WS_METHODS as BOT_VERSION,
   BOTS_WS_METHODS as BOT,
@@ -243,4 +244,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PIPELINE.runPipeline]: AuthOrchestrationOperateScope,
   [PIPELINE.cancelPipelineRun]: AuthOrchestrationOperateScope,
   [PIPELINE.resumePipelineRun]: AuthOrchestrationOperateScope,
+  [ANYWHERE.share]: AuthOrchestrationOperateScope,
+  [ANYWHERE.unshare]: AuthOrchestrationOperateScope,
+  [ANYWHERE.syncLibrary]: AuthOrchestrationOperateScope,
+  [ANYWHERE.bindVaultSlot]: AuthOrchestrationOperateScope,
+  [ANYWHERE.setRemoteSettings]: AuthOrchestrationOperateScope,
 } as const;

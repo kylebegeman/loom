@@ -158,5 +158,35 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_batches ADD COLUMN pipeline_run_id TEXT`;
       }),
     ],
+    [
+      12,
+      "Anywhere",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_bots_definitions ADD COLUMN library_json TEXT`;
+        // Per computer and never synced: the Library only sees slot names.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_vault_bindings (bot_id TEXT NOT NULL, slot TEXT NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY (bot_id, slot))`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN target_environment_id TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN remote_request_id TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN ran_on_json TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN requested_by_json TEXT`;
+        // The highest result seq the target has posted for a remote request it ran.
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN remote_reported INTEGER NOT NULL DEFAULT 0`;
+        // A redelivered request finds the run it already started.
+        yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS fork_bots_runs_remote_request ON fork_bots_runs (remote_request_id) WHERE remote_request_id IS NOT NULL`;
+        // Each item resolves its own computer, so a `best` batch spreads over the ready ones.
+        yield* sql`ALTER TABLE fork_bots_batches ADD COLUMN target_json TEXT`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_library_cursor (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
+        // Library side: created everywhere, used only on the authority.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_library_bots (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, seq INTEGER NOT NULL, definition_json TEXT, project_id TEXT, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_library_bots_seq ON fork_bots_library_bots (seq)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_library_status (environment_id TEXT PRIMARY KEY, report_json TEXT NOT NULL, reported_at TEXT NOT NULL)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_library_requests (id TEXT PRIMARY KEY, from_env TEXT NOT NULL, target_env TEXT NOT NULL, message_json TEXT NOT NULL, state TEXT NOT NULL, leased_until TEXT, created_at TEXT NOT NULL, delivered_at TEXT)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_library_requests_target ON fork_bots_library_requests (target_env, state, created_at)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_library_results (request_id TEXT NOT NULL, seq INTEGER NOT NULL, to_env TEXT NOT NULL, update_json TEXT NOT NULL, leased_until TEXT, created_at TEXT NOT NULL, acked_at TEXT, PRIMARY KEY (request_id, seq))`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_library_results_to ON fork_bots_library_results (to_env, acked_at, created_at)`;
+      }),
+    ],
   ],
 };

@@ -22,6 +22,7 @@ import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryPermission } from "../project-library/state";
+import { BotRemoteRunsSettings, BotSharingPanel, FromLibraryBadge } from "./BotAnywhere";
 import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotHistory } from "./BotHistory";
@@ -59,6 +60,7 @@ const TAB_LABELS = {
   triggers: "Triggers",
   inbox: "Inbox",
   usage: "Usage",
+  computers: "Computers",
 } as const;
 
 const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
@@ -136,6 +138,7 @@ export function BotsPage() {
   const canRate = useLibraryPermission(bots.rateRun, environmentId) && host.connected;
   const canReplay = useLibraryPermission(bots.replay, environmentId) && host.connected;
   const canRunPipelines = useLibraryPermission(bots.runPipeline, environmentId) && host.connected;
+  const canShare = useLibraryPermission(bots.share, environmentId) && host.connected;
   const versionsLive = live && host.versionsSupported;
   const archive = useAtomCommand(bots.archive, { reportFailure: false });
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
@@ -157,6 +160,7 @@ export function BotsPage() {
     ...(triggersLive ? (["triggers"] as const) : []),
     ...(inboxLive ? (["inbox"] as const) : []),
     ...(live && host.budgetsSupported ? (["usage"] as const) : []),
+    ...(live && host.anywhereSupported ? (["computers"] as const) : []),
   ];
   const tab = tabs.find((value) => value === search.tab) ?? "runs";
   const attention = useBotsAttentionCount();
@@ -375,6 +379,7 @@ export function BotsPage() {
                       <span className="text-xs text-muted-foreground">{botVersionLabel(bot)}</span>
                     ) : null}
                     <StarterBadge status={starterOf(bot)} />
+                    <FromLibraryBadge bot={bot} />
                   </Button>
                 ))}
                 {list.data && allBots.some((bot) => bot.archivedAt !== null) ? (
@@ -423,6 +428,7 @@ export function BotsPage() {
                           <h2 className="text-xl font-semibold">{selected.name}</h2>
                           {selected.archivedAt ? <Badge variant="secondary">Archived</Badge> : null}
                           <StarterBadge status={starterOf(selected)} />
+                          <FromLibraryBadge bot={selected} />
                           <span className="text-xs text-muted-foreground">
                             {botVersionLabel(selected)}
                           </span>
@@ -478,6 +484,14 @@ export function BotsPage() {
                       </div>
                     </div>
                     <BotSummary bot={selected} />
+                    {host.anywhereSupported ? (
+                      <BotSharingPanel
+                        key={selected.id}
+                        environmentId={environmentId}
+                        bot={selected}
+                        canChange={canShare}
+                      />
+                    ) : null}
                     <details className="rounded-lg border border-border p-3 text-sm">
                       <summary className="cursor-pointer font-medium">Instructions</summary>
                       <pre className="mt-2 whitespace-pre-wrap font-sans">
@@ -516,6 +530,8 @@ export function BotsPage() {
                       setReplaying({ bot: selected, source: { kind: "version", version } })
                     }
                   />
+                ) : tab === "computers" ? (
+                  <BotRemoteRunsSettings environmentId={environmentId} canChange={canShare} />
                 ) : tab === "usage" ? (
                   <BotsUsage
                     environmentId={environmentId}
@@ -674,6 +690,7 @@ export function BotsPage() {
           verdictsSupported={host.verdictsSupported}
           budgetsSupported={host.budgetsSupported}
           versionsSupported={host.versionsSupported}
+          anywhereSupported={host.anywhereSupported}
           canReplay={canReplay}
           onReplay={(bot, draft) => setReplaying({ bot, source: { kind: "draft", draft } })}
           onClose={() => setEditing(null)}

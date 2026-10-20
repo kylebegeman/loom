@@ -6,6 +6,7 @@ import {
   type BotPipelineGate,
   type BotPipelineProblem,
   type BotPipelineStep,
+  type BotTarget,
 } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -32,6 +33,7 @@ export interface PipelineStepDraft {
   readonly onError: BotPipelineGate;
   /** Null runs the step on its bot's model. */
   readonly modelSelection: ModelSelection | null;
+  readonly target: BotTarget;
 }
 
 export interface PipelineDraft {
@@ -68,6 +70,7 @@ export const newStepDraft = (
     onNeedsAttention: "stop",
     onError: "stop",
     modelSelection: null,
+    target: { type: "here" },
   };
 };
 
@@ -112,6 +115,7 @@ export const pipelineDraft = (pipeline: BotPipelineInput): PipelineDraft => ({
     onNeedsAttention: step.onNeedsAttention ?? "stop",
     onError: step.onError ?? "stop",
     modelSelection: step.modelSelection ?? null,
+    target: step.target ?? { type: "here" },
   })),
 });
 
@@ -138,6 +142,7 @@ const stepInput = (step: PipelineStepDraft): BotPipelineStep => {
     ...(step.onNeedsAttention === "continue" ? { onNeedsAttention: "continue" as const } : {}),
     ...(step.onError === "continue" ? { onError: "continue" as const } : {}),
     ...(step.modelSelection === null ? {} : { modelSelection: step.modelSelection }),
+    ...(step.target.type === "here" ? {} : { target: step.target }),
   };
 };
 

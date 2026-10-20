@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import type { BotBatch, BotDefinition, BotsBatchInput } from "@t3tools/contracts/fork";
+import type { BotBatch, BotDefinition, BotsBatchInput, BotTarget } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -17,6 +17,7 @@ import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import { BotTargetField } from "./BotAnywhere";
 import { ParameterField } from "./BotRunForm";
 import {
   batchSourceFromDraft,
@@ -31,7 +32,7 @@ import {
   type BatchSourceDraft,
   type BatchSourceType,
 } from "./draft";
-import { bots } from "./state";
+import { bots, useBotsHost } from "./state";
 
 const PREVIEW_DEBOUNCE_MS = 400;
 
@@ -143,6 +144,8 @@ export function RunOnManyDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runBatch = useAtomCommand(bots.runBatch, { reportFailure: false });
+  const anywhereSupported = useBotsHost().anywhereSupported;
+  const [target, setTarget] = useState<BotTarget>({ type: "here" });
 
   const total = previewed?.total ?? 0;
   const ready = previewed !== null && previewed.invalid.length === 0 && total > 0;
@@ -151,7 +154,11 @@ export function RunOnManyDialog({
     setBusy(true);
     setError(null);
     try {
-      const result = await runBatch({ environmentId, input });
+      // Items are found on this computer; only their runs go where the target says.
+      const result = await runBatch({
+        environmentId,
+        input: target.type === "here" ? input : { ...input, target },
+      });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onStarted(result.value);
     } catch (cause) {
@@ -261,6 +268,15 @@ export function RunOnManyDialog({
               ...checkouts.map((choice) => [choice.threadId as string, choice.label] as const),
             ]}
             onChange={(checkoutThreadId) => update({ checkoutThreadId })}
+          />
+        ) : null}
+        {anywhereSupported ? (
+          <BotTargetField
+            environmentId={environmentId}
+            botId={bot.id}
+            projectId={projectId === "" ? null : (projectId as ProjectId)}
+            value={target}
+            onChange={setTarget}
           />
         ) : null}
         {bot.parameters.length > 1 ? (

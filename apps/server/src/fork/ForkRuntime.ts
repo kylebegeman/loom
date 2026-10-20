@@ -37,6 +37,9 @@ import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
 import type { BotBatches } from "./bots/BotBatches.ts";
 import type { BotsService } from "./bots/BotsService.ts";
+import type { BotLibraryClient } from "./bots/BotLibraryClient.ts";
+import type { BotLibraryService } from "./bots/BotLibraryService.ts";
+import type { BotSharing } from "./bots/BotSharing.ts";
 import type { BotDrafts } from "./bots/fromThread/BotDrafts.ts";
 import type { BotTriggers } from "./bots/triggers/BotTriggers.ts";
 import type { BotPipelines } from "./bots/pipelines/BotPipelines.ts";
@@ -94,6 +97,9 @@ export type ForkServices =
   | BotTriggers
   | BotVersions
   | BotPipelines
+  | BotLibraryService
+  | BotLibraryClient
+  | BotSharing
   | WorkspaceHandoffService
   | SwitchboardStatus
   | LibraryBriefSuggestions

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
-import type { BotDefinition, BotParameter, BotRun } from "@t3tools/contracts/fork";
+import type { BotDefinition, BotParameter, BotRun, BotTarget } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -16,6 +16,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import { BotTargetField } from "./BotAnywhere";
 import {
   checkoutChoices,
   initialRunValues,
@@ -23,7 +24,7 @@ import {
   runInputs,
   runsInCheckout,
 } from "./draft";
-import { bots } from "./state";
+import { bots, useBotsHost } from "./state";
 
 export function ParameterField({
   parameter,
@@ -136,6 +137,10 @@ export function BotRunForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = useAtomCommand(bots.run, { reportFailure: false });
+  const anywhereSupported = useBotsHost().anywhereSupported;
+  const [target, setTarget] = useState<BotTarget>({ type: "here" });
+  // Checkouts are this computer's; another computer runs in its own copy of the project.
+  const localRun = target.type === "here";
 
   const submit = async () => {
     if (busy || !canRun) return;
@@ -153,7 +158,10 @@ export function BotRunForm({
           inputs: runInputs(bot, values),
           // A checkout run without a thread runs in the root of the project it names.
           ...(sentProjectId === "" ? {} : { projectId: sentProjectId as ProjectId }),
-          ...(checkout === undefined ? {} : { checkoutThreadId: checkout.threadId as ThreadId }),
+          ...(checkout === undefined || !localRun
+            ? {}
+            : { checkoutThreadId: checkout.threadId as ThreadId }),
+          ...(localRun ? {} : { target }),
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -226,7 +234,16 @@ export function BotRunForm({
             </Select>
           </LibraryField>
         ) : null}
-        {inCheckout && effectiveProjectId !== "" ? (
+        {anywhereSupported ? (
+          <BotTargetField
+            environmentId={environmentId}
+            botId={bot.id}
+            projectId={sentProjectId === "" ? null : (sentProjectId as ProjectId)}
+            value={target}
+            onChange={setTarget}
+          />
+        ) : null}
+        {inCheckout && localRun && effectiveProjectId !== "" ? (
           <LibraryField label="Checkout">
             <Select
               value={checkoutThreadId}

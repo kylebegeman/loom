@@ -18,6 +18,7 @@ import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import { BotTargetField } from "./BotAnywhere";
 import { Choice, ParameterRow } from "./BotEditor";
 import { BotModelPicker } from "./BotModelPicker";
 import { newParameterDraft, slugFromName } from "./draft";
@@ -34,7 +35,7 @@ import {
   type PipelineStepDraft,
   type PipelineVersionChoice,
 } from "./pipelineDraft";
-import { bots } from "./state";
+import { bots, useBotsHost } from "./state";
 
 const CHECK_DEBOUNCE_MS = 400;
 
@@ -95,6 +96,7 @@ function StepCard({
   readonly onRemove: () => void;
 }) {
   const bot = allBots.find((candidate) => candidate.id === step.botId) ?? null;
+  const anywhereSupported = useBotsHost().anywhereSupported;
   const botLabels = Object.fromEntries(
     allBots.map((candidate) => [candidate.id, candidate.name]),
   ) as Record<string, string>;
@@ -281,6 +283,15 @@ function StepCard({
               />
             ) : null}
           </div>
+          {anywhereSupported ? (
+            <BotTargetField
+              environmentId={environmentId}
+              botId={bot.id}
+              projectId={null}
+              value={step.target}
+              onChange={(target) => onChange({ ...step, target })}
+            />
+          ) : null}
         </>
       )}
       <Problems problems={problems} />

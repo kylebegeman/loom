@@ -35,6 +35,7 @@ import { DirectoryRpcGroup } from "./directory.ts";
 import {
   BotBatchesRpcGroup,
   BotDraftsRpcGroup,
+  BotsAnywhereRpcGroup,
   BotPipelinesRpcGroup,
   BotsRpcGroup,
   BotTriggersRpcGroup,
@@ -110,6 +111,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   BotTriggersRpcGroup,
   BotVersionsRpcGroup,
   BotPipelinesRpcGroup,
+  BotsAnywhereRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 

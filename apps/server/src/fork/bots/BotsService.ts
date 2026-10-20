@@ -21,6 +21,10 @@ import {
   type BotDefinition,
   type BotDefinitionInput,
   type BotFinding,
+  type BotLibraryLink,
+  type BotRemoteUpdate,
+  type BotRunComputer,
+  type BotTarget,
   type BotOrigin,
   type BotOutput,
   type BotRun,
@@ -144,8 +148,38 @@ export const versionInput = ({
   archivedAt: _archivedAt,
   stableVersion: _stableVersion,
   origin: _origin,
+  library: _library,
   ...input
 }: BotDefinition): BotDefinitionInput => input;
+
+/**
+ * How runs and saves reach other computers through the Library. BotSharing installs these once
+ * it starts; without them a bot runs only here and a shared bot cannot be saved.
+ */
+export interface BotsAnywhereHooks {
+  /** Publishes a shared bot's edit before it is saved here, returning the link to its revision. */
+  readonly publish: (
+    definition: BotDefinitionInput,
+    link: BotLibraryLink,
+  ) => Effect.Effect<BotLibraryLink, BotsError>;
+  /** The computer a run goes to, or null for this one. */
+  readonly resolveTarget: (
+    bot: BotDefinition,
+    target: BotTarget,
+    projectId: ProjectId | null,
+  ) => Effect.Effect<BotRunComputer | null, BotsError>;
+  /** Hands a queued remote run to the Library. */
+  readonly submit: (run: BotRun, bot: BotDefinition) => Effect.Effect<void, BotsError>;
+  readonly cancel: (run: BotRun) => Effect.Effect<void>;
+  /** The Vault reference lines a run's first message carries, one per bound slot. */
+  readonly vaultLines: (bot: BotDefinition) => Effect.Effect<ReadonlyArray<string>, BotsError>;
+}
+
+/** The project a run on another computer works in; that computer makes its own scratch folder. */
+const remoteProject = (bot: BotDefinition, input: BotsRunInput, caller: BotCaller) =>
+  bot.workspace.type === "scratch"
+    ? null
+    : (bot.workspace.projectId ?? input.projectId ?? caller.projectId ?? bot.scopeProjectId);
 
 const storageError = (cause: unknown) =>
   Effect.logWarning("Bots storage failed", { cause }).pipe(
@@ -246,6 +280,9 @@ export const make = Effect.gen(function* () {
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
+  let anywhere: BotsAnywhereHooks | null = null;
+  const requireHooks = (message: string): Effect.Effect<BotsAnywhereHooks, BotsError> =>
+    anywhere === null ? Effect.fail(fail("invalid", message)) : Effect.succeed(anywhere);
 
   const permitsFor = Effect.fnUntraced(function* (bot: BotDefinition) {
     const existing = botPermits.get(bot.id);
@@ -313,6 +350,8 @@ export const make = Effect.gen(function* () {
       /** Defaults to the caller's actor. */
       readonly savedBy?: BotVersionSavedBy | undefined;
       readonly restoredFrom?: number | undefined;
+      /** Set by sync, which writes what the Library has; otherwise a shared bot publishes first. */
+      readonly library?: BotLibraryLink | null | undefined;
     },
   ) {
     yield* checkDefinition(definition, caller);
@@ -331,6 +370,15 @@ export const make = Effect.gen(function* () {
         "This bot changed since it was opened. Reload it and apply your edits again.",
       );
     const origin = options.origin ?? existing?.origin;
+    const existingLink = existing?.library ?? null;
+    const library =
+      options.library !== undefined
+        ? options.library
+        : existingLink === null
+          ? null
+          : yield* requireHooks("Loom is still connecting to the Library. Try again shortly.").pipe(
+              Effect.flatMap((hooks) => hooks.publish(definition, existingLink)),
+            );
     const now = yield* nowIso;
     const bot = yield* store
       .withTransaction(
@@ -344,6 +392,7 @@ export const make = Effect.gen(function* () {
             archivedAt: options.unarchive === true ? null : (existing?.archivedAt ?? null),
             ...(existing?.stableVersion == null ? {} : { stableVersion: existing.stableVersion }),
             ...(origin === undefined ? {} : { origin }),
+            ...(library === null ? {} : { library }),
           };
           yield* store.putDefinition(next);
           yield* store.insertVersion(next, {
@@ -893,6 +942,8 @@ export const make = Effect.gen(function* () {
       | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
+    /** A run another computer asked for keeps that computer's run id, and so its thread id. */
+    readonly remote?: { readonly runId: string; readonly requestedBy: BotRunComputer } | undefined;
   }
 
   const budgetFor = Effect.fnUntraced(function* (bot: BotDefinition, nowMs: number) {
@@ -918,7 +969,7 @@ export const make = Effect.gen(function* () {
     store
       .withTransaction(
         store
-          .insertRun(run)
+          .insertRun(run, { requestId: options.remote?.runId })
           .pipe(
             Effect.andThen(
               options.onInserted === undefined ? Effect.void : options.onInserted(run),
@@ -926,6 +977,132 @@ export const make = Effect.gen(function* () {
           ),
       )
       .pipe(Effect.catch(storageError));
+
+  /** Settles a remote run that never reached its computer, or that its computer gave up on. */
+  const settleRemote = Effect.fnUntraced(function* (run: BotRun, settled: Partial<BotRun>) {
+    const next: BotRun = { ...run, ...settled };
+    yield* store.saveRun(next).pipe(Effect.ignore({ log: true }));
+    if (isTerminalBotRunStatus(next.status)) {
+      if (next.modelSelection !== undefined && next.modelSelection !== run.modelSelection)
+        yield* store
+          .applyRemoteModel(next.id, next.modelSelection)
+          .pipe(Effect.ignore({ log: true }));
+      yield* store.pruneRuns(next.botId, RUNS_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
+      const delivered = yield* deliver(next);
+      yield* publish({ _tag: "run", run: delivered });
+      return delivered;
+    }
+    yield* publish({ _tag: "run", run: next });
+    return next;
+  });
+
+  /**
+   * Records a run for another computer and hands it to the Library. It takes no permit here; the
+   * other computer applies its own limits, and this bot's budget still counts the run.
+   */
+  const startRemote = Effect.fnUntraced(function* (
+    bot: BotDefinition,
+    values: BotRun["inputs"],
+    input: BotsRunInput,
+    caller: BotCaller,
+    permitBot: BotDefinition,
+    options: StartOptions,
+    ranOn: BotRunComputer,
+  ) {
+    if (bot.library == null)
+      return yield* fail(
+        "invalid",
+        `Share ${bot.name} through the Library to run it on another computer.`,
+      );
+    if (bot.workspace.type === "project" && bot.workspace.checkout === "caller")
+      return yield* fail(
+        "invalid",
+        `${bot.name} runs in the checkout that holds the work, which only this computer has.`,
+      );
+    if (options.modelSelection !== undefined)
+      return yield* fail(
+        "invalid",
+        "A run on another computer uses the model that computer has for the bot.",
+      );
+    const hooks = yield* requireHooks("Running on another computer needs a connected Library.");
+    const runId = yield* randomUuidV4;
+    const run: BotRun = {
+      id: runId,
+      botId: bot.id,
+      botVersion: bot.version,
+      botName: bot.name,
+      threadId: botRunThreadId(runId),
+      projectId: remoteProject(bot, input, caller),
+      inputs: values,
+      status: "queued",
+      startedBy: caller.actor,
+      callerThreadId: caller.threadId,
+      createdAt: yield* nowIso,
+      startedAt: null,
+      finishedAt: null,
+      result: null,
+      resultTruncated: false,
+      error: null,
+      ...(input.notify === true ? { notify: true } : {}),
+      ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
+      ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
+      ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+      ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
+      ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
+      modelSelection: bot.modelSelection,
+      ranOn,
+    };
+    yield* permitBot.budget === undefined
+      ? insertRun(run, options)
+      : checkBudget(permitBot).pipe(
+          Effect.andThen(insertRun(run, options)),
+          budgetPermit.withPermits(1),
+        );
+    yield* publish({ _tag: "run", run });
+    return yield* hooks.submit(run, bot).pipe(
+      Effect.as(run),
+      Effect.catch((error) =>
+        settleRemote(run, { status: "failed", finishedAt: run.createdAt, error: error.message }),
+      ),
+    );
+  });
+
+  /** Applies what the computer running a remote run reported. Updates for an ended run are dropped. */
+  const applyRemoteUpdate = Effect.fn("BotsService.applyRemoteUpdate")(function* (
+    runId: string,
+    update: BotRemoteUpdate,
+  ) {
+    const run = yield* store.getRun(runId).pipe(Effect.catch(storageError));
+    if (run === null || run.ranOn == null || isTerminalBotRunStatus(run.status)) return run;
+    if (update._tag === "started")
+      return run.status === "queued"
+        ? yield* settleRemote(run, { status: "running", startedAt: update.startedAt })
+        : run;
+    return yield* settleRemote(run, {
+      status: isTerminalBotRunStatus(update.status) ? update.status : "failed",
+      startedAt: update.startedAt ?? run.startedAt,
+      finishedAt: update.finishedAt,
+      result: update.result,
+      resultTruncated: update.resultTruncated,
+      error: update.error,
+      ...(update.verdict === null ? {} : { verdict: update.verdict }),
+      ...(update.usage === null ? {} : { usage: update.usage }),
+      ...(update.modelSelection === null ? {} : { modelSelection: update.modelSelection }),
+    });
+  });
+
+  /** Points a bot at its shared Library record, or makes it local again with null. */
+  const setLibraryLink = Effect.fn("BotsService.setLibraryLink")(function* (
+    botId: string,
+    link: BotLibraryLink | null,
+  ) {
+    const bot = yield* requireBot(botId);
+    yield* store.setLibraryLink(botId, link).pipe(Effect.catch(storageError));
+    const { library: _library, ...rest } = bot;
+    const next: BotDefinition = link === null ? rest : { ...rest, library: link };
+    yield* publish({ _tag: "bot", bot: next });
+    return next;
+  });
 
   /** Validates the inputs, writes the queued run and starts it under `permitBot`'s limits. */
   const start = Effect.fnUntraced(function* (
@@ -937,9 +1114,26 @@ export const make = Effect.gen(function* () {
   ) {
     const checked = validateInputs(bot, input.inputs);
     if (!checked.ok) return yield* fail("invalid", checked.message);
+    const target = input.target ?? { type: "here" };
+    const ranOn =
+      target.type === "here"
+        ? null
+        : yield* requireHooks("Running on another computer needs a connected Library.").pipe(
+            Effect.flatMap((hooks) =>
+              hooks.resolveTarget(bot, target, remoteProject(bot, input, caller)),
+            ),
+          );
+    if (ranOn !== null)
+      return yield* startRemote(bot, checked.values, input, caller, permitBot, options, ranOn);
     const checkout = yield* resolveCheckout(bot, input, caller);
     const projectId = checkout?.projectId ?? (yield* resolveProject(bot, input, caller));
-    const runId = yield* randomUuidV4;
+    const vaultLines =
+      (bot.vaultSlots?.length ?? 0) === 0
+        ? []
+        : yield* requireHooks("Loom is still loading Vault bindings. Try again shortly.").pipe(
+            Effect.flatMap((hooks) => hooks.vaultLines(bot)),
+          );
+    const runId = options.remote?.runId ?? (yield* randomUuidV4);
     const modelSelection = options.modelSelection ?? bot.modelSelection;
 
     const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
@@ -979,6 +1173,7 @@ export const make = Effect.gen(function* () {
         ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
         modelSelection,
         checkoutThreadId: checkout?.threadId ?? null,
+        ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
       },
       fiber: null,
       started: false,
@@ -1008,15 +1203,19 @@ export const make = Effect.gen(function* () {
         workspaceStrategy,
         initialMessage: {
           // Event data reaches a trigger's run, so its text inputs are framed as untrusted.
-          text: renderPrompt(
-            bot,
-            checked.values,
-            options.untrusted !== undefined
-              ? { ...options.untrusted, frameId: runId.replaceAll("-", "") }
-              : options.triggerId === undefined
-                ? undefined
-                : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
-          ),
+          text: [
+            renderPrompt(
+              bot,
+              checked.values,
+              options.untrusted !== undefined
+                ? { ...options.untrusted, frameId: runId.replaceAll("-", "") }
+                : options.triggerId === undefined
+                  ? undefined
+                  : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
+            ),
+            // Standalone lines, the form Vault reads as a launch requirement.
+            ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),
+          ].join("\n\n"),
           attachments: [],
           ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
         },
@@ -1046,7 +1245,7 @@ export const make = Effect.gen(function* () {
     reason: string,
     options: StartOptions,
   ) {
-    const runId = yield* randomUuidV4;
+    const runId = options.remote?.runId ?? (yield* randomUuidV4);
     const now = yield* nowIso;
     const failed: BotRun = {
       id: runId,
@@ -1070,6 +1269,7 @@ export const make = Effect.gen(function* () {
       ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
       ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
       ...(input.checkoutThreadId === undefined ? {} : { checkoutThreadId: input.checkoutThreadId }),
+      ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
     };
     yield* insertRun(failed, options);
     yield* publish({ _tag: "run", run: failed });
@@ -1149,7 +1349,13 @@ export const make = Effect.gen(function* () {
 
   const cancel = Effect.fn("BotsService.cancel")(function* (runId: string) {
     const entry = live.get(runId);
-    if (entry === undefined) return yield* getRun(runId);
+    if (entry === undefined) {
+      const run = yield* getRun(runId);
+      // The other computer reports the cancelled run back like any other ending.
+      if (run.ranOn != null && !isTerminalBotRunStatus(run.status) && anywhere !== null)
+        yield* anywhere.cancel(run);
+      return run;
+    }
     entry.cancelRequested = true;
     if (!entry.started && entry.fiber !== null) yield* Fiber.interrupt(entry.fiber);
     // Before launch returns there is no thread run yet; the launch path interrupts it after.
@@ -1198,6 +1404,9 @@ export const make = Effect.gen(function* () {
           ...(old.projectId === null ? {} : { projectId: old.projectId }),
           ...(old.checkoutThreadId == null ? {} : { checkoutThreadId: old.checkoutThreadId }),
           ...(old.notify === true ? { notify: true } : {}),
+          ...(old.ranOn == null
+            ? {}
+            : { target: { type: "environment", environmentId: old.ranOn.environmentId } }),
         },
         { ...caller, threadId: old.callerThreadId, projectId: old.projectId },
         bot,
@@ -1416,6 +1625,15 @@ export const make = Effect.gen(function* () {
     startRunWith,
     setPipelineStopped,
     recordUnstarted,
+    applyRemoteUpdate,
+    setLibraryLink,
+    /** Saves what the Library has for a shared bot, without publishing it back. */
+    writeFromLibrary: (definition: BotDefinitionInput, link: BotLibraryLink, caller: BotCaller) =>
+      write(definition, caller, { library: link, savedBy: "user" }),
+    setAnywhereHooks: (hooks: BotsAnywhereHooks) =>
+      Effect.sync(() => {
+        anywhere = hooks;
+      }),
     checkCaller,
     checkRunnable,
     threadCaller,
@@ -1432,6 +1650,8 @@ export const make = Effect.gen(function* () {
     checkDefinition,
     awaitRun,
     activeRunCount,
+    /** Runs holding or waiting for a permit on this computer, across every bot. */
+    activeRuns: Effect.sync(() => live.size),
     recover,
     /** Marks recovery done, whatever its outcome, so work that depends on it can go ahead. */
     markRecovered: Deferred.succeed(recovered, undefined).pipe(Effect.asVoid),

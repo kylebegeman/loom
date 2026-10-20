@@ -269,6 +269,34 @@ Run **Run pipeline...** from the command palette to start one from anywhere. Loo
 **Review, fix, verify** starter pipeline, with a **Fixer** bot, when the starter reviewer and
 verifier bots exist.
 
+## Bots on your other computers
+
+When this computer is connected to a Library that supports shared bots, a bot can be shared once
+and run on any of your computers. Select the bot and choose **Share to Library** in its
+**Library** panel. Every computer connected to the same Library gets a copy within a few minutes,
+marked **From the Library**, and edits on any computer reach the others. A bot scoped to a
+project needs that project in the Library first. **Stop sharing** leaves every computer its copy
+as an ordinary bot, and deleting a shared bot on one computer removes only that computer's copy.
+
+A computer runs bots for the others only after you allow it. On that computer, open the
+**Computers** tab on the Bots page, turn on **Run bots for other computers**, and choose the
+highest permissions their runs may use. A run that asks for more is refused. **Sync shared bots**
+fetches changes from the Library at once instead of waiting.
+
+**Run**, **Run on many** and each pipeline step then offer **Run on**: this computer, one of your
+other computers, or **Best available**, the ready computer with the most free slots. Each
+computer shows whether it is ready, and why not: offline, remote runs off, the bot's model not
+set up there, or the bot's project or Vault items missing. In a batch, each item picks its own
+computer. A run on another computer appears on both: here as **Ran on** that computer, there as
+**Requested by** this one, and **Open thread** opens the thread where it ran. A remote run uses
+the shared version of the bot, not a version pinned on this computer, and works in that
+computer's own copy of the project rather than in one of this computer's checkouts.
+
+Secrets never leave a computer. A bot that needs one declares a **Vault slot** in its editor, such
+as an npm token it may use. Each computer binds that slot to one of its own Vault items in the
+bot's **Library** panel, and a run is refused until the slot is bound. A computer that runs the bot
+on a model of its own keeps that choice when it saves; the others keep the shared model.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over
@@ -281,6 +309,8 @@ They read history with `loom_bots_versions`, rate runs with `loom_bots_rate_run`
 replay with `loom_bots_replay`, then follow it with `loom_bots_replay_status`.
 Pipelines have `loom_bots_pipelines`, `loom_bots_define_pipeline`, `loom_bots_run_pipeline`,
 `loom_bots_pipeline_status`, `loom_bots_pipeline_cancel` and `loom_bots_pipeline_resume`.
+Agents share a bot with `loom_bots_share`, list where it can run with `loom_bots_targets`, and
+pass a `target` to `loom_bots_run` and `loom_bots_run_batch`.
 
 ## Archiving and deleting
 

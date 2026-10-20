@@ -8,6 +8,7 @@ import type {
   BotOutput,
   BotParameterType,
   BotStarterId,
+  VaultAccessAction,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
@@ -32,10 +33,12 @@ import {
   botDraft,
   emptyBotDraft,
   newParameterDraft,
+  newVaultSlotDraft,
   saveInputFromDraft,
   slugFromName,
   type BotDraft,
   type BotParameterDraft,
+  type BotVaultSlotDraft,
   type BotWorkspaceChoice,
 } from "./draft";
 import { budgetMeterText } from "./BotsUsage";
@@ -75,6 +78,15 @@ const PARAMETER_TYPE_LABELS: Record<BotParameterType, string> = {
   number: "Number",
   boolean: "Yes or no",
   choice: "Choice",
+};
+
+const VAULT_ACTION_LABELS: Record<VaultAccessAction, string> = {
+  use: "Use it",
+  inspect: "See its details",
+  reveal: "Reveal its value",
+  manage: "Change it",
+  export: "Export it",
+  delegate: "Hand it on",
 };
 
 const ANY_PROJECT = "";
@@ -185,6 +197,52 @@ export function ParameterRow({
   );
 }
 
+function VaultSlotRow({
+  slot,
+  onChange,
+  onRemove,
+}: {
+  readonly slot: BotVaultSlotDraft;
+  readonly onChange: (slot: BotVaultSlotDraft) => void;
+  readonly onRemove: () => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-border p-3">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <Input
+          aria-label="Slot name"
+          placeholder="github-token"
+          value={slot.name}
+          onChange={(event) => onChange({ ...slot, name: event.target.value })}
+        />
+        <Input
+          aria-label="Slot label"
+          placeholder="GitHub token"
+          value={slot.label}
+          onChange={(event) => onChange({ ...slot, label: event.target.value })}
+        />
+        <Button size="icon-sm" variant="ghost" aria-label="Remove Vault slot" onClick={onRemove}>
+          <Trash2Icon />
+        </Button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
+        <Choice
+          id={`${slot.key}-action`}
+          value={slot.action}
+          labels={VAULT_ACTION_LABELS}
+          onChange={(action) => onChange({ ...slot, action })}
+        />
+        <Input
+          aria-label="Destination"
+          placeholder="Where it may be sent, such as https://api.github.com (optional)"
+          value={slot.destination}
+          onChange={(event) => onChange({ ...slot, destination: event.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function BotEditor({
   environmentId,
   bot,
@@ -194,6 +252,7 @@ export function BotEditor({
   verdictsSupported,
   budgetsSupported,
   versionsSupported = false,
+  anywhereSupported = false,
   canReplay = false,
   onReplay,
   onSaved,
@@ -213,6 +272,8 @@ export function BotEditor({
   readonly budgetsSupported: boolean;
   /** Older servers keep no history, so they can neither suggest an edit nor replay. */
   readonly versionsSupported?: boolean;
+  /** Older servers have no Vault slots. */
+  readonly anywhereSupported?: boolean;
   readonly canReplay?: boolean;
   /** Tries the unsaved draft on the bot's past runs. */
   readonly onReplay?: (bot: BotDefinition, draft: BotDefinitionInput) => void;
@@ -649,6 +710,42 @@ export function BotEditor({
                 : "A run past a limit is refused, and a batch waits until the window allows it. Runs in progress are never stopped."}
             </span>
           </fieldset>
+        ) : null}
+        {anywhereSupported || draft.vaultSlots.length > 0 ? (
+          <section className="grid gap-2" aria-label="Vault slots">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">Vault slots</h3>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => update({ vaultSlots: [...draft.vaultSlots, newVaultSlotDraft()] })}
+              >
+                <PlusIcon />
+                Add slot
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {draft.vaultSlots.length === 0
+                ? "No Vault slots. Add one for a credential the bot needs."
+                : "Each computer binds a slot to one of its own Vault items, so no secret leaves the computer that holds it."}
+            </p>
+            {draft.vaultSlots.map((slot) => (
+              <VaultSlotRow
+                key={slot.key}
+                slot={slot}
+                onChange={(next) =>
+                  update({
+                    vaultSlots: draft.vaultSlots.map((entry) =>
+                      entry.key === slot.key ? next : entry,
+                    ),
+                  })
+                }
+                onRemove={() =>
+                  update({ vaultSlots: draft.vaultSlots.filter((entry) => entry.key !== slot.key) })
+                }
+              />
+            ))}
+          </section>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive-foreground">
