@@ -27,7 +27,8 @@ import {
   useAction,
   valueOf,
 } from "./parts";
-import { FEATURE, codeGraph, runCommand } from "./state";
+import { FEATURE } from "./panel";
+import { codeGraph, runCommand } from "./state";
 
 /** Splits on spaces; a path with spaces needs a wrapper script. */
 const parseCommand = (text: string) => text.trim().split(/\s+/).filter(Boolean);

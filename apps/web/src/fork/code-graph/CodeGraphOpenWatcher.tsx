@@ -3,7 +3,8 @@ import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { useServerConfigs } from "~/state/entities";
 import { shouldReportProjectOpen } from "./openWatcher.logic";
-import { FEATURE, codeGraph, runCommand } from "./state";
+import { FEATURE } from "./panel";
+import { codeGraph, runCommand } from "./state";
 
 /** Projects reported this session, with when. */
 const reported = new Map<string, number>();

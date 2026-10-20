@@ -166,9 +166,9 @@ worktree's ignored `.t3`, seeded with `vp run migrate-dev-db`. By step:
 14. Reload: drafts were cleared and recent tools remained.
 
 Remote http. The dev web server listens on loopback only, `vp run dev --share` serves HTTPS,
-and Vite's `allowedHosts` rejects the LAN hostname `Dorothy.local`, so no hostname origin
-was reachable. A TCP forwarder, started for this pass and stopped after it, exposed the dev
-port at the LAN address `http://192.168.4.30:5899`, opened after pairing in an incognito T3
+and Vite's `allowedHosts` rejects the Mac's LAN hostname, so no hostname origin was
+reachable. A TCP forwarder, started for this pass and stopped after it, forwarded the dev
+port to the Mac's LAN address over plain `http`, opened after pairing in an incognito T3
 Browser profile on the same Mac. There `isSecureContext` was false and `crypto.subtle` and
 `crypto.randomUUID` were undefined. SHA-256 of `abc` and HMAC-SHA-256 RFC 4231 case 2
 matched their vectors, UUID generated a v4 value, and the regex tester matched. `(a+)+$`
