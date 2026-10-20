@@ -106,6 +106,15 @@ describe("bots changes", () => {
     ]);
   });
 
+  it("keeps the same bot map across run events, so a definitions view does not re-render", () => {
+    const changes = fold({ _tag: "bot", bot: bot("b", "Beta") });
+    const after = foldBotsChange(changes, {
+      _tag: "run",
+      run: run("r", "b", "2026-10-20T10:00:00.000Z", "running"),
+    });
+    expect(after.bots).toBe(changes.bots);
+  });
+
   it("updates listed runs and adds new ones only to pages that should show them", () => {
     const listed = [run("old", "x", "2026-10-20T10:00:00.000Z", "running")];
     const changes = fold(

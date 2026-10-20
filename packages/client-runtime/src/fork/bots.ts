@@ -86,7 +86,7 @@ const byName = (left: BotDefinition, right: BotDefinition) => left.name.localeCo
 /** The bot list with watched edits applied. */
 export const applyBotChanges = (
   listed: ReadonlyArray<BotDefinition>,
-  changes: BotsChanges,
+  changes: Pick<BotsChanges, "bots">,
 ): ReadonlyArray<BotDefinition> => {
   const merged = new Map(listed.map((bot) => [bot.id, bot]));
   for (const [id, bot] of changes.bots) {

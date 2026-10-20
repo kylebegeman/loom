@@ -72,6 +72,26 @@ export function useBotsChanges(environmentId: EnvironmentId | null, enabled: boo
   return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOTS_CHANGES);
 }
 
+// Run events keep `bots` the same map, so this changes only when a definition does.
+const botDefinitionChanges = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) =>
+    Option.match(AsyncResult.value(get(bots.changes({ environmentId, input: {} }))), {
+      onNone: () => EMPTY_BOTS_CHANGES.bots,
+      onSome: (changes) => changes.bots,
+    }),
+  ),
+);
+const NO_DEFINITION_CHANGES = Atom.make(EMPTY_BOTS_CHANGES.bots);
+
+/** Watched bot definition changes, for a view that does not show runs. */
+export function useBotDefinitionChanges(environmentId: EnvironmentId | null, enabled: boolean) {
+  return {
+    bots: useAtomValue(
+      environmentId && enabled ? botDefinitionChanges(environmentId) : NO_DEFINITION_CHANGES,
+    ),
+  };
+}
+
 /** Refetches a list overlaid with watched changes once the watch dropped some of them. */
 export function useRefreshWhenBotsChangesPruned(
   changes: Pick<BotsChanges, "pruned">,

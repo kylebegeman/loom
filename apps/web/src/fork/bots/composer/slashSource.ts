@@ -6,7 +6,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import type { ForkComposerCommandItem, ForkSlashSource } from "../../composer/menu";
 import type { ForkComposerContext } from "../../composer/registry";
 import { useLibraryPermission } from "../../project-library/state";
-import { bots, useBotsChanges, useBotsHost } from "../state";
+import { bots, useBotDefinitionChanges, useBotsHost } from "../state";
 import { useBotRunDrawerStore } from "./drawerStore";
 
 const SOURCE_ID = "bots";
@@ -59,7 +59,7 @@ export function useBotSlashItems(
       ? bots.list({ environmentId: host.environmentId, input: {} })
       : null,
   );
-  const changes = useBotsChanges(host.environmentId, enabled);
+  const changes = useBotDefinitionChanges(host.environmentId, enabled);
   if (!enabled) return [];
   return botSlashItems(applyBotChanges(list.data?.bots ?? [], changes), context.projectId);
 }
