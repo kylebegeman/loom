@@ -8,6 +8,7 @@ import {
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { BotLibraryService, layer } from "./BotLibraryService.ts";
@@ -211,6 +212,46 @@ describe("BotLibraryService", () => {
         expect(yield* library.nextRequests(studio, 0)).toEqual([]);
         const [result] = yield* library.nextResults(laptop, 0);
         expect(result?.update).toMatchObject({ _tag: "terminal", status: "cancelled" });
+      }),
+    ),
+  );
+
+  it.effect("fails a run nobody picked up, but not one its target picked up", () =>
+    withLibrary((library) =>
+      Effect.gen(function* () {
+        const desk = EnvironmentId.make("env-desk");
+        yield* library.reportStatus(studio, report());
+        yield* library.reportStatus(desk, report({ label: "Desk" }));
+        yield* library.submit(laptop, { targetEnvironmentId: desk, request: request("idle") });
+        yield* library.submit(laptop, { targetEnvironmentId: studio, request: request("busy") });
+        // Picked up just before the sweep, and never acked: its target may be running it.
+        yield* TestClock.adjust("14 minutes");
+        expect(yield* library.nextRequests(studio, 0)).toHaveLength(1);
+        yield* TestClock.adjust("10 minutes");
+
+        const swept = yield* library.nextResults(laptop, 0);
+        expect(swept.map((result) => [result.requestId, result.update])).toEqual([
+          ["idle", expect.objectContaining({ status: "failed" })],
+        ]);
+        yield* library.postResult(studio, {
+          requestId: "busy",
+          seq: 2,
+          update: {
+            _tag: "terminal",
+            label: "Studio",
+            status: "completed",
+            startedAt: null,
+            finishedAt: "2026-10-20T10:00:00.000Z",
+            result: "Done.",
+            resultTruncated: false,
+            error: null,
+            verdict: null,
+            usage: null,
+            modelSelection: null,
+          },
+        });
+        const [finished] = yield* library.nextResults(laptop, 0);
+        expect(finished?.update).toMatchObject({ status: "completed" });
       }),
     ),
   );

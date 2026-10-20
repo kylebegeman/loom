@@ -440,7 +440,23 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
           ...(untrusted === undefined ? {} : { untrusted }),
         },
       })
-      .pipe(Effect.mapError((error) => fail("launch", error.message)));
+      .pipe(
+        Effect.catch((error) =>
+          error.reason !== "io"
+            ? Effect.fail(fail("launch", error.message))
+            : // The Library may have queued the run anyway. Withdrawing it makes the failure true;
+              // if that fails too, the run stays queued until a result or its deadline settles it.
+              client.cancel(run.id).pipe(
+                Effect.matchEffect({
+                  onSuccess: () => Effect.fail(fail("launch", error.message)),
+                  onFailure: () =>
+                    Effect.logWarning("Could not tell whether the Library took a bot run", {
+                      runId: run.id,
+                    }),
+                }),
+              ),
+        ),
+      );
   });
 
   const vaultBindings = Effect.fn("BotSharing.vaultBindings")(function* (botId: string) {

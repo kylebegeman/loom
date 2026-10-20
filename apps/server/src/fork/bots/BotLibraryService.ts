@@ -579,9 +579,12 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         const stale = yield* sql<RequestRow>`SELECT * FROM fork_bots_library_requests
-          WHERE state = 'pending' AND created_at < ${isoAt(now - PICKUP_MS)}`;
+          WHERE state = 'pending' AND created_at < ${isoAt(now - PICKUP_MS)}
+            AND (leased_until IS NULL OR leased_until <= ${isoAt(now)})`;
         for (const row of stale) {
           yield* sql`UPDATE fork_bots_library_requests SET state = 'expired' WHERE id = ${row.id}`;
+          // A target that picked the run up may be running it and still reports how it ends.
+          if (row.leased_until !== null) continue;
           const message = decodeMessage(row.message_json);
           if (Option.isSome(message) && message.value._tag === "run") {
             const label = yield* labelOf(row.target_env);

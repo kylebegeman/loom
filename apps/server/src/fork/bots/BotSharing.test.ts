@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, type ModelSelection } from "@t3tools/contracts";
 import {
+  BotLibraryError,
   botRunThreadId,
   type BotLibraryStatusReport,
   type BotRemoteRunRequest,
@@ -10,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
-import { inProcessClient } from "./BotLibraryClient.ts";
+import { inProcessClient, type BotLibraryClient } from "./BotLibraryClient.ts";
 import { BotLibraryService, layer as libraryLayer } from "./BotLibraryService.ts";
 import { makeSharing } from "./BotSharing.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
@@ -34,7 +35,10 @@ const studioReport = (fields: Partial<BotLibraryStatusReport> = {}): BotLibraryS
  * This computer ("Laptop") shares through a real Library store in the same database; the test
  * plays the other computer ("Studio") by calling the store directly.
  */
-const setup = (harness: Harness) =>
+const setup = (
+  harness: Harness,
+  wrap: (client: BotLibraryClient["Service"]) => BotLibraryClient["Service"] = (client) => client,
+) =>
   Effect.gen(function* () {
     const built = yield* Layer.build(
       libraryLayer.pipe(
@@ -48,7 +52,7 @@ const setup = (harness: Harness) =>
     const enabled = { models: [model.model] as Array<string> };
     const sharing = yield* makeSharing({
       bots,
-      client: inProcessClient(library, laptop, Effect.succeed("Laptop")),
+      client: wrap(inProcessClient(library, laptop, Effect.succeed("Laptop"))),
       projects: {
         toLibrary: (id) => Effect.succeed(id === projectId ? libraryProject : null),
         toLocal: (id) => Effect.succeed(id === libraryProject ? projectId : null),
@@ -356,6 +360,45 @@ describe("BotSharing", () => {
           yield* sharing.handleDelivery(received);
         const [result] = yield* library.nextResults(studio, 0);
         expect(result?.update).toMatchObject({ _tag: "terminal", status: "cancelled" });
+      }),
+    ),
+  );
+
+  it.effect("withdraws a run whose submit went unanswered, or keeps waiting on it", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const lost = new BotLibraryError({ reason: "io", message: "The Library timed out." });
+        const cancelFails = { value: false };
+        const { library, bots, sharing } = yield* setup(harness, (client) => ({
+          ...client,
+          // The Library takes the run, but its answer never arrives.
+          submit: (request) => client.submit(request).pipe(Effect.andThen(Effect.fail(lost))),
+          cancel: (requestId) => (cancelFails.value ? Effect.fail(lost) : client.cancel(requestId)),
+        }));
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        yield* library.reportStatus(studio, studioReport());
+        const runThere = bots.startRunWith(
+          yield* bots.get("reviewer"),
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          {},
+        );
+
+        const withdrawn = yield* runThere;
+        expect(withdrawn).toMatchObject({ status: "failed", error: lost.message });
+        expect(yield* library.nextRequests(studio, 0)).toEqual([]);
+
+        cancelFails.value = true;
+        const waiting = yield* runThere;
+        expect(waiting.status).toBe("queued");
+        const [delivery] = yield* library.nextRequests(studio, 0);
+        expect(delivery?.messageId).toBe(waiting.id);
       }),
     ),
   );
