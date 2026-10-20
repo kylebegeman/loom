@@ -3,7 +3,6 @@ import {
   PreviewLink,
   PreviewLinksError,
   PreviewLinksSettings,
-  DEFAULT_PREVIEW_GATEWAY_PORT,
   PREVIEW_CONTAINER_DEFAULT_MINUTES,
   isCurrentPreviewHost,
   type PreviewContainerShareInput,
@@ -45,7 +44,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
-import { forkParked } from "../../serverActivation.ts";
+import { forkParked, forkParkedFiber } from "../../serverActivation.ts";
 import { isContained } from "../model-preview-3d/signedFiles.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
@@ -54,7 +53,6 @@ import {
   DOCKER_MISSING_MESSAGE,
   makePreviewContainerOps,
   makePreviewDockerLocator,
-  previewContainerRunArgs,
   previewPortFree,
   servePreviewFolder,
 } from "./backings.ts";
@@ -62,6 +60,7 @@ import { startPreviewGateway } from "./gateway.ts";
 import {
   PREVIEW_COOKIE_MAX_AGE_SECONDS,
   PREVIEW_ENTRY_CODE_TTL_MS,
+  defaultPreviewGatewayPort,
   endPreviewLink,
   formatPreviewHost,
   isLanePort,
@@ -198,6 +197,11 @@ const PREVIEW_COOKIE_MAX_AGE_MS = PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000;
  * seconds the reconnect takes.
  */
 const DPOP_RENEWAL_GRACE_MS = 5 * 60 * 1000;
+/**
+ * A revoke from another process, such as `t3 auth session revoke`, sends this server no change,
+ * so the store is listed again this often. That also lets sessions in after a failed list.
+ */
+const SESSION_RELIST_INTERVAL = Duration.minutes(1);
 
 /** Access keys of browsers that signed in through the Library rather than a Loom session. */
 const LIBRARY_KEY_PREFIX = "library:";
@@ -231,6 +235,8 @@ interface OpenRoute {
 interface GatewayRuntime {
   readonly scope: Scope.Closeable;
   readonly port: number;
+  /** Ends once the gateway listens or has failed to. */
+  starting: Fiber.Fiber<void> | null;
   handle: PreviewGatewayHandle | null;
   failure: string | null;
 }
@@ -248,6 +254,10 @@ interface FolderServerRuntime {
 
 /** How often open container links are checked for a container that stopped on its own. */
 const CONTAINER_CHECK_INTERVAL = Duration.minutes(1);
+/** How long removing a container that no link covers is retried, such as while Docker is down. */
+const STRAY_CONTAINER_RETRY_MS = 24 * 60 * 60 * 1000;
+/** Shutdown waits this long for Docker to remove containers, so a stuck Docker never holds it. */
+const SHUTDOWN_CONTAINER_REMOVAL_TIMEOUT = Duration.seconds(5);
 
 export interface PreviewLinksServiceDependencies {
   readonly startGateway: StartPreviewGateway;
@@ -279,6 +289,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   const sidecarPath = path.join(config.stateDir, "fork", "preview-links", "state.json");
   const now = () => clock.currentTimeMillisUnsafe();
+  // Spent tickets are memory only, so tickets signed before this run are never redeemed.
+  const startedAtMs = now();
   const devPort = config.devUrl === undefined ? null : Number(config.devUrl.port) || null;
 
   const defaults: PreviewLinksSettings = {
@@ -286,7 +298,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     suffix: null,
     machine: previewMachineSlug(hostname),
     defaultLifetime: "12h",
-    gatewayPort: DEFAULT_PREVIEW_GATEWAY_PORT,
+    gatewayPort: defaultPreviewGatewayPort(config.devUrl === undefined ? null : config.port),
   };
   const fresh = {
     settings: defaults,
@@ -382,6 +394,19 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const folderServers = new Map<string, FolderServerRuntime>();
   /** Ended container links whose container is known to be gone. */
   const removedContainers = new Set<string>();
+  /**
+   * Containers no listed link covers that may still exist, by link id, removed by label: a start
+   * that failed or was cancelled, or a link dropped before its removal was confirmed. Each counts
+   * as gone after a removal that ran from `settleAtMs`, and is given up at `untilMs`.
+   */
+  const strayContainers = new Map<
+    string,
+    { readonly settleAtMs: number; readonly untilMs: number }
+  >();
+  /** Container links listed at the last check, starting with the saved ones the sweep may drop. */
+  let listedContainers = new Set(
+    saved.links.filter((link) => link.backing?.kind === "container").map((link) => link.id),
+  );
   /** Lane ports held for a container still starting, so a second share cannot take them. */
   const pendingPorts = new Set<number>();
 
@@ -468,6 +493,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         audience: previewTicketAudience(host),
         nonce,
         nowMs,
+        notBeforeMs: startedAtMs,
       });
       if (verified === null) return null;
       for (const [spent, untilMs] of spentTickets) {
@@ -550,6 +576,16 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const lock = yield* Semaphore.make(1);
   const timerWake = yield* Latch.make(false);
   const backingWake = yield* Latch.make(false);
+  /** A failed or cancelled start, whose container may appear after it was removed by label. */
+  const addFailedStart = (linkId: string) => {
+    const nowMs = now();
+    strayContainers.set(linkId, {
+      settleAtMs: nowMs + Duration.toMillis(CONTAINER_CHECK_INTERVAL),
+      untilMs: nowMs + STRAY_CONTAINER_RETRY_MS,
+    });
+    // The backing loop waits on no timer while nothing else needs Docker.
+    backingWake.openUnsafe();
+  };
 
   const persist = (next: {
     readonly settings: PreviewLinksSettings;
@@ -627,7 +663,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const startGateway = (port: number) =>
     Effect.gen(function* () {
       const scope = yield* Scope.fork(rootScope, "sequential");
-      const runtime: GatewayRuntime = { scope, port, handle: null, failure: null };
+      const runtime: GatewayRuntime = { scope, port, starting: null, handle: null, failure: null };
       gateway = runtime;
       const report = (update: () => void) =>
         Effect.suspend(() => {
@@ -635,7 +671,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           update();
           return publish;
         });
-      yield* forkParked(
+      runtime.starting = yield* forkParkedFiber(
         dependencies.startGateway({ port, view }).pipe(
           Effect.flatMap((handle) =>
             report(() => {
@@ -1003,10 +1039,19 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     lock.withPermit,
   );
 
-  // Waits briefly, so a browser can sign in as soon as the save returns; a slow Library still
+  // The bind waits for this server to become the active one, so it runs apart from the save.
+  const gatewayStarted = Effect.suspend(() => {
+    const starting = gateway?.starting ?? null;
+    return starting === null ? Effect.void : Fiber.await(starting);
+  });
+
+  // Waits for the gateway, so a port that cannot listen comes back from the save itself. Also
+  // waits briefly, so a browser can sign in as soon as the save returns; a slow Library still
   // finishes in the background.
   const configure = (input: PreviewLinksConfigureInput) =>
     saveSettings(input).pipe(
+      Effect.andThen(gatewayStarted),
+      Effect.map(() => currentSetup()),
       Effect.tap(() =>
         Effect.forkIn(refreshLibraryAccess, rootScope).pipe(
           Effect.flatMap((fiber) =>
@@ -1123,48 +1168,58 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           }),
         ),
       ),
-      (port) =>
-        Effect.gen(function* () {
-          const containerId = yield* containers.run(
-            docker,
-            previewContainerRunArgs({ laneId: lane.id, linkId: id, port, input }),
-            { image: input.image, port },
-          );
-          return yield* lock.withPermit(
+      (port) => {
+        const start = { laneId: lane.id, linkId: id, port, input };
+        // A pull that fails or is cancelled leaves no container, so it has nothing to clean up.
+        return containers.pull(docker, start).pipe(
+          Effect.andThen(
             Effect.gen(function* () {
-              const suffix = yield* requireReady;
-              const nowMs = now();
-              const minutes = input.minutes ?? PREVIEW_CONTAINER_DEFAULT_MINUTES;
-              const stopsAtMs = nowMs + Duration.toMillis(Duration.minutes(minutes));
-              const link = newLink({
-                id,
-                suffix,
-                port,
-                actor: { _tag: "Agent", threadId },
-                laneId: lane.id,
-                // Never extended, so this only has to cover the container's time.
-                lifetime: minutes <= 60 ? "1h" : "12h",
-                nowMs,
-                expiresAtMs: stopsAtMs,
-                backing: {
-                  kind: "container",
-                  image: input.image,
-                  containerId,
-                  containerPort: input.containerPort,
-                  stopsAt: isoAt(stopsAtMs),
-                },
-              });
-              yield* commit({ settings, links: [...links, link] });
-              return link;
-            }),
-          );
-        }).pipe(
-          // Removing by label also catches a container Docker created before it failed or was cut
-          // off. An interruption can land after the commit too, when the container is the link's.
-          Effect.onError(() =>
-            findLink(id) === undefined ? containers.removeLabelled(docker, id) : Effect.void,
+              const containerId = yield* containers.run(docker, start);
+              return yield* lock.withPermit(
+                Effect.gen(function* () {
+                  const suffix = yield* requireReady;
+                  const nowMs = now();
+                  const minutes = input.minutes ?? PREVIEW_CONTAINER_DEFAULT_MINUTES;
+                  const stopsAtMs = nowMs + Duration.toMillis(Duration.minutes(minutes));
+                  const link = newLink({
+                    id,
+                    suffix,
+                    port,
+                    actor: { _tag: "Agent", threadId },
+                    laneId: lane.id,
+                    // Never extended, so this only has to cover the container's time.
+                    lifetime: minutes <= 60 ? "1h" : "12h",
+                    nowMs,
+                    expiresAtMs: stopsAtMs,
+                    backing: {
+                      kind: "container",
+                      image: input.image,
+                      containerId,
+                      containerPort: input.containerPort,
+                      stopsAt: isoAt(stopsAtMs),
+                    },
+                  });
+                  yield* commit({ settings, links: [...links, link] });
+                  return link;
+                }),
+              );
+            }).pipe(
+              // Removing by label also catches a container Docker created before it failed or was
+              // cut off. One whose create was still landing shows up later, so the minute check
+              // removes by label again. An interruption can land after the commit too, when the
+              // container is the link's.
+              Effect.onError(() =>
+                findLink(id) === undefined
+                  ? Effect.suspend(() => {
+                      addFailedStart(id);
+                      return containers.removeLabelled(docker, id);
+                    })
+                  : Effect.void,
+              ),
+            ),
           ),
-        ),
+        );
+      },
       (port) => Effect.sync(() => pendingPorts.delete(port)),
     );
   });
@@ -1257,6 +1312,31 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       }
     });
 
+  /** A folder link's port is its lane's, so it can come back only while that lane still owns it. */
+  const requireFolderLane = (link: PreviewLink) =>
+    Effect.gen(function* () {
+      const status = Option.getOrNull(yield* Stream.runHead(lifecycle.changes));
+      if (status?.enabled === false) {
+        return yield* fail(
+          "not-restorable",
+          "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
+        );
+      }
+      const lane = status?.lanes.find((each) => each.id === link.laneId);
+      if (lane === undefined) {
+        return yield* fail(
+          "not-restorable",
+          "The lane this folder was shared from is gone, so its port may belong to something else now. Share the folder again.",
+        );
+      }
+      if (!isLanePort(link.port, lane.ports?.first ?? null)) {
+        return yield* fail(
+          "not-restorable",
+          `The lane this folder was shared from no longer uses port ${link.port}, so it may belong to something else now. Share the folder again.`,
+        );
+      }
+    });
+
   const restore = Effect.fn("PreviewLinksService.restore")(function* (
     input: PreviewLinkLifetimeInput,
   ) {
@@ -1285,6 +1365,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         `Port ${link.port} already has an open link. End it first, then restore this one.`,
       );
     }
+    const folder = link.backing?.kind === "folder";
+    if (folder) yield* requireFolderLane(link);
     const lifetime = input.lifetime ?? link.lifetime;
     const restored: PreviewLink = {
       ...link,
@@ -1293,18 +1375,17 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       expiresAt: previewExpiry(nowMs, lifetime),
       endedAt: null,
       restorableUntil: null,
-      // The owner vouches for it now, so it no longer ends with the lane it came from.
-      laneId: null,
+      // A folder link still ends with its lane, which owns its port. For any other link the owner
+      // vouches for the port now, so it no longer ends with the lane it came from.
+      laneId: folder ? link.laneId : null,
     };
     yield* Effect.gen(function* () {
-      if (link.backing?.kind === "folder") yield* restartFolderServer(link);
+      if (folder) yield* restartFolderServer(link);
       yield* commit({ settings, links: replaceLink(restored) });
     }).pipe(
       Effect.onError(() =>
         // An interruption can also land after the commit, when the server is the link's.
-        link.backing?.kind === "folder" && findLink(link.id)?.state !== "open"
-          ? closeFolderServer(link.id)
-          : Effect.void,
+        folder && findLink(link.id)?.state !== "open" ? closeFolderServer(link.id) : Effect.void,
       ),
     );
     return restored;
@@ -1442,21 +1523,28 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     }),
   );
 
-  const lanesSeen = new Set<string>();
+  // A saved open link's lane existed when it was shared, and the first status lists every lane
+  // still stored, so one missing from it was released while this server was down.
+  const lanesSeen = new Set(
+    links.flatMap((link) => (link.state === "open" && link.laneId !== null ? [link.laneId] : [])),
+  );
   yield* forkParked(
     Stream.runForEach(lifecycle.changes, (status) => {
       // Lanes being off hides them without removing them, so it ends nothing.
       if (!status.enabled) return Effect.void;
-      const current = new Set(status.lanes.map((lane) => lane.id));
-      for (const id of current) lanesSeen.add(id);
+      const portBases = new Map(status.lanes.map((lane) => [lane.id, lane.ports?.first ?? null]));
+      for (const id of portBases.keys()) lanesSeen.add(id);
+      // A lane gives up a link's port by going, or by moving to a new block at startup when
+      // another server claimed its old one.
       const isGone = (link: PreviewLink) =>
         link.state === "open" &&
         link.laneId !== null &&
         lanesSeen.has(link.laneId) &&
-        !current.has(link.laneId);
-      if (!links.some(isGone)) return Effect.void;
+        !isLanePort(link.port, portBases.get(link.laneId) ?? null);
+      // Checked under the lock, so a share or restore still finishing ends here too.
       return lock.withPermit(
         Effect.suspend(() => {
+          if (!links.some(isGone)) return Effect.void;
           const nowMs = now();
           return commitBackground(
             links.map((link) => (isGone(link) ? endPreviewLink(link, "revoked", nowMs) : link)),
@@ -1528,11 +1616,31 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   // Outside the lock: Docker can take seconds to answer, and shares must not wait on it.
   const reconcileContainers = Effect.gen(function* () {
+    const nowMs = now();
+    const listed = new Set(
+      links.filter((link) => containerOf(link) !== null).map((link) => link.id),
+    );
+    // A link can leave the list with its container still there, such as one the sweep dropped
+    // after Docker was down for its whole restore window.
+    for (const linkId of listedContainers) {
+      if (!listed.has(linkId) && !removedContainers.has(linkId)) {
+        strayContainers.set(linkId, {
+          settleAtMs: nowMs,
+          untilMs: nowMs + STRAY_CONTAINER_RETRY_MS,
+        });
+      }
+    }
+    listedContainers = listed;
     for (const linkId of removedContainers) {
-      if (findLink(linkId) === undefined) removedContainers.delete(linkId);
+      if (!listed.has(linkId)) removedContainers.delete(linkId);
+    }
+    for (const [linkId, stray] of strayContainers) {
+      if (stray.untilMs > nowMs) continue;
+      strayContainers.delete(linkId);
+      yield* Effect.logWarning("Gave up removing a preview container", { linkId });
     }
     const watched = watchedContainers();
-    if (watched.length === 0) return;
+    if (watched.length === 0 && strayContainers.size === 0) return;
     const docker = yield* dependencies.dockerPath;
     if (docker === null) return;
     const gone = new Set<string>();
@@ -1544,7 +1652,24 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         gone.add(link.id);
       }
     }
+    for (const [linkId, stray] of strayContainers) {
+      const removed = yield* containers.removeLabelled(docker, linkId);
+      if (removed && nowMs >= stray.settleAtMs) strayContainers.delete(linkId);
+    }
     if (gone.size > 0) yield* lock.withPermit(expireLinks(gone));
+  });
+
+  /** What is left in Docker for this server: every container a link may still have. */
+  const removeContainersNow = Effect.gen(function* () {
+    const docker = yield* dependencies.dockerPath;
+    if (docker === null) return;
+    yield* Effect.all(
+      [
+        ...watchedContainers().map(({ containerId }) => containers.remove(docker, containerId)),
+        ...[...strayContainers.keys()].map((linkId) => containers.removeLabelled(docker, linkId)),
+      ],
+      { concurrency: "unbounded", discard: true },
+    );
   });
 
   /**
@@ -1558,13 +1683,30 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     ),
   );
 
+  // Added before the loop starts, so it runs after the loop is interrupted. Links stay as they are:
+  // the next start finds their containers gone and ends them.
+  yield* Effect.addFinalizer(() =>
+    removeContainersNow.pipe(
+      Effect.interruptible,
+      Effect.timeoutOption(SHUTDOWN_CONTAINER_REMOVAL_TIMEOUT),
+      Effect.flatMap((done) =>
+        Option.isNone(done)
+          ? Effect.logWarning("Docker did not remove preview containers before shutdown")
+          : Effect.void,
+      ),
+      Effect.catchDefect((defect) =>
+        Effect.logError("Could not remove preview containers at shutdown", { defect }),
+      ),
+    ),
+  );
   yield* forkParked(
     Effect.gen(function* () {
       for (;;) {
         yield* backingWake.close;
         yield* reconcileBackings;
-        // A container that stops on its own announces nothing, so open ones are checked on a timer.
-        if (watchedContainers().length > 0) {
+        // A container that stops on its own announces nothing, so open ones are checked on a timer,
+        // and Docker being down is only noticed by trying again.
+        if (watchedContainers().length > 0 || strayContainers.size > 0) {
           yield* backingWake.await.pipe(
             Effect.timeoutOrElse({ duration: CONTAINER_CHECK_INTERVAL, orElse: () => Effect.void }),
           );
@@ -1603,6 +1745,29 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     ),
   );
   for (const each of activeSessions) admitSession(each, now());
+
+  const relistSessions = Effect.gen(function* () {
+    // Only sessions known before the list was read can be missing from it; one that signs in
+    // meanwhile is not on it yet.
+    const known = new Set(sessionKeys.keys());
+    const listed = yield* sessions.listActive();
+    // Read after the list, so a session it left out for running out counts as expired here too.
+    const nowMs = now();
+    const listedIds = new Set<string>(listed.map((each) => each.sessionId));
+    let revoked = false;
+    for (const sid of known) {
+      if (!listedIds.has(sid) && removeSession(sid, nowMs)) revoked = true;
+    }
+    for (const each of listed) if (!sessionKeys.has(each.sessionId)) admitSession(each, nowMs);
+    if (revoked) yield* saveRevocations;
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not list Loom sessions for preview links", { cause }),
+    ),
+  );
+  yield* forkParked(
+    Effect.forever(Effect.sleep(SESSION_RELIST_INTERVAL).pipe(Effect.andThen(relistSessions))),
+  );
 
   if (swept.changed) yield* persist({ settings, links }).pipe(Effect.ignore);
   yield* reconcileRuntime;

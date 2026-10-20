@@ -9,21 +9,26 @@ import * as Console from "effect/Console";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 import { FetchHttpClient } from "effect/http";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ServerConfig from "../src/config.ts";
 import * as Maintenance from "../src/fork/project-library/LibraryMaintenance.ts";
 import * as Assets from "../src/fork/project-library/assets/LibraryAssetService.ts";
 import * as Recovery from "../src/fork/project-library/assets/LibraryRecoveryStore.ts";
+import * as ProcessRunner from "../src/processRunner.ts";
 import {
   availableBytes,
   fileFingerprint,
+  settleSqliteReplica,
   sqliteSnapshot,
 } from "../../../scripts/lib/loomLibrarySnapshot.ts";
 
@@ -39,6 +44,11 @@ const fingerprint = (file: string) =>
 const sqliteCopy = (source: string, destination: string) =>
   Effect.tryPromise({
     try: () => sqliteSnapshot(source, destination),
+    catch: (cause) => new LibraryError({ reason: "io", cause }),
+  });
+const settleReplica = (database: string) =>
+  Effect.tryPromise({
+    try: () => settleSqliteReplica(database),
     catch: (cause) => new LibraryError({ reason: "io", cause }),
   });
 const BACKUP_NAME = /^library-backup-(\d+)-[0-9a-f-]{36}(\.partial)?$/;
@@ -59,6 +69,54 @@ export const LibraryBackupFreeSpace = Context.Reference<
       catch: (cause) => new LibraryError({ reason: "io", cause }),
     }),
 });
+const REPLICA_SYNCING = "syncing";
+// Well inside the nightly cron's time limit, so a hung sync ends here and the run still removes
+// its marker, instead of being killed with a marker that blocks reruns for six hours.
+const REPLICA_SYNC_TIMEOUT_MS = 45 * 60 * 1000;
+const SQLITE_RSYNC_FAILED = "Databases were not synced due to errors";
+// sqlite3_rsync spawns its replica side as `argv[0] --replica` through /bin/sh, so the
+// command must be on PATH or absolute. Its exit status is its error count modulo 256, so
+// its own failure line is checked too.
+export const sqliteRsync =
+  (command = "sqlite3_rsync") =>
+  (origin: string, replica: string) =>
+    ProcessRunner.ProcessRunner.use((runner) =>
+      runner.run({
+        command,
+        args: ["-v", origin, replica],
+        timeout: REPLICA_SYNC_TIMEOUT_MS,
+        maxOutputBytes: 64 * 1024,
+        outputMode: "truncate",
+      }),
+    ).pipe(
+      Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+      Effect.flatMap((result) =>
+        result.code === 0 && !result.stdout.includes(SQLITE_RSYNC_FAILED)
+          ? Effect.succeed(result.stdout.trim())
+          : Effect.fail(
+              new LibraryError({
+                reason: "io",
+                cause: `${command} exited with code ${result.code}: ${`${result.stderr}\n${result.stdout}`.trim()}`,
+              }),
+            ),
+      ),
+      Effect.provide(ProcessRunner.layer),
+    );
+// Overridable so tests can stand in for sqlite3_rsync.
+export const LibraryReplicaSync = Context.Reference<
+  (
+    origin: string,
+    replica: string,
+  ) => Effect.Effect<string, LibraryError, ChildProcessSpawner.ChildProcessSpawner>
+>("loom/LibraryReplicaSync", { defaultValue: () => sqliteRsync() });
+// Printed as each stage ends, so a run killed at its timeout still shows how far it got.
+const timed = <A, E, R>(stage: string, effect: Effect.Effect<A, E, R>) =>
+  Effect.timed(effect).pipe(
+    Effect.tap(([duration]) =>
+      Console.log(`Library snapshot ${stage}: ${(Duration.toMillis(duration) / 1000).toFixed(1)}s`),
+    ),
+    Effect.map(([, result]) => result),
+  );
 const describeBytes = (bytes: number) => `${bytes} bytes (${(bytes / 1024 ** 3).toFixed(2)} GiB)`;
 const fileBytes = Effect.fnUntraced(function* (file: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -112,6 +170,106 @@ const syncFile = Effect.fnUntraced(function* (file: string) {
   const fs = yield* FileSystem.FileSystem;
   yield* Effect.scoped(fs.open(file).pipe(Effect.flatMap((handle) => handle.sync)));
 });
+// Copies the local objects a manifest references that the snapshot does not hold intact. A
+// replica keeps its objects between runs, so a damaged one is copied again and objects it no
+// longer references are removed. Both kinds are named by their SHA-256.
+const syncObjects = Effect.fnUntraced(function* (input: {
+  directory: string;
+  stateDir: string;
+  spaceDir: string;
+  manifest: Maintenance.LibraryBackupManifest;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const kinds = [
+    {
+      kind: "objects",
+      wanted: new Map(input.manifest.assets.map((asset) => [asset.digest, asset.bytes])),
+    },
+    {
+      kind: "recovery",
+      wanted: new Map(
+        input.manifest.recovery.map((archive) => [archive.digest, archive.byteLength]),
+      ),
+    },
+  ];
+  const missing: { source: string; target: string }[] = [];
+  let missingBytes = 0;
+  for (const { kind, wanted } of kinds)
+    for (const [digest, bytes] of wanted) {
+      const target = path.join(input.directory, "objects", "project-library", kind, digest);
+      if (yield* fs.exists(target)) {
+        // An unreadable object, or anything else left under its name, is replaced like a
+        // damaged one. Failing here would stop every later run from repairing it.
+        const saved = yield* fingerprint(target).pipe(Effect.option);
+        if (Option.isSome(saved) && saved.value.digest === digest && saved.value.bytes === bytes)
+          continue;
+        yield* fs.remove(target, { recursive: true, force: true });
+      }
+      missing.push({ source: path.join(input.stateDir, "project-library", kind, digest), target });
+      missingBytes += bytes;
+    }
+  yield* ensureFreeSpace(input.spaceDir, missingBytes);
+  for (const { kind, wanted } of kinds) {
+    const directory = path.join(input.directory, "objects", "project-library", kind);
+    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
+    for (const name of yield* fs.readDirectory(directory))
+      if (!wanted.has(name)) yield* fs.remove(path.join(directory, name), { recursive: true });
+  }
+  // Each object takes its final name only once complete, so an interrupted copy is never reused.
+  for (const { source, target } of missing) {
+    const partial = `${target}${PARTIAL_SUFFIX}`;
+    yield* fs.copyFile(source, partial);
+    yield* fs.chmod(partial, 0o600);
+    yield* syncFile(partial);
+    yield* fs.rename(partial, target);
+  }
+  for (const { kind } of kinds)
+    yield* syncFile(path.join(input.directory, "objects", "project-library", kind));
+});
+// Describes the database already in `directory`, then marks the directory complete.
+const finishSnapshot = Effect.fnUntraced(function* (input: {
+  directory: string;
+  stateDir: string;
+  spaceDir: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const database = path.join(input.directory, "statev2.sqlite");
+  const checksum = yield* timed("fingerprint", fingerprint(database));
+  const manifest = yield* timed(
+    "manifest",
+    Maintenance.LibraryMaintenance.use((service) =>
+      service.manifest({ databaseDigest: checksum.digest, databaseBytes: checksum.bytes }),
+    ).pipe(Effect.provide(sourceLayer(database, input.stateDir))),
+  );
+  // Not kept for diagnosis: a rerun reproduces this manifest without leaving a database copy.
+  if (!manifest.assetBytesVerified || !manifest.recoveryBytesVerified)
+    return yield* new LibraryError({
+      reason: "blocked",
+      cause: `Library assets or recovery archives failed verification (${manifest.missingReferences.length} missing references), so no backup was kept.`,
+    });
+  if (manifest.storageMode === "local")
+    yield* timed("objects", syncObjects({ ...input, manifest }));
+  const manifestFile = path.join(input.directory, "manifest.json");
+  // Only a replica has a previous manifest. Its marker goes first, so a crash between the two
+  // removals cannot leave a marker without the manifest it names.
+  yield* fs.remove(path.join(input.directory, "complete"), { force: true });
+  yield* fs.remove(manifestFile, { force: true });
+  yield* fs.writeFileString(manifestFile, yield* encodeManifest(manifest), {
+    flag: "wx",
+    mode: 0o600,
+  });
+  yield* syncFile(manifestFile);
+  yield* fs.writeFileString(
+    path.join(input.directory, "complete"),
+    (yield* fingerprint(manifestFile)).digest,
+    { flag: "wx", mode: 0o600 },
+  );
+  yield* syncFile(path.join(input.directory, "complete"));
+  yield* syncFile(input.directory);
+  return manifest;
+});
 export const createLibraryBackup = Effect.fnUntraced(function* (input: {
   database: string;
   stateDir: string;
@@ -128,64 +286,12 @@ export const createLibraryBackup = Effect.fnUntraced(function* (input: {
   const directory = path.join(input.backupsDir, `library-backup-${time}-${yield* randomUuidV4}`);
   const staging = `${directory}${PARTIAL_SUFFIX}`;
   const build = Effect.gen(function* () {
-    const database = path.join(staging, "statev2.sqlite");
-    yield* sqliteCopy(input.database, database);
-    const checksum = yield* fingerprint(database);
-    const manifest = yield* Maintenance.LibraryMaintenance.use((service) =>
-      service.manifest({ databaseDigest: checksum.digest, databaseBytes: checksum.bytes }),
-    ).pipe(Effect.provide(sourceLayer(database, input.stateDir)));
-    // Not kept for diagnosis: a rerun reproduces this manifest without leaving a database copy.
-    if (!manifest.assetBytesVerified || !manifest.recoveryBytesVerified)
-      return yield* new LibraryError({
-        reason: "blocked",
-        cause: `Library assets or recovery archives failed verification (${manifest.missingReferences.length} missing references), so no backup was kept.`,
-      });
-    if (manifest.storageMode === "local") {
-      yield* ensureFreeSpace(
-        input.backupsDir,
-        manifest.assets.reduce((total, asset) => total + asset.bytes, 0) +
-          manifest.recovery.reduce((total, archive) => total + archive.byteLength, 0),
-      );
-      const objects = path.join(staging, "objects", "project-library", "objects");
-      const recovery = path.join(staging, "objects", "project-library", "recovery");
-      yield* fs.makeDirectory(objects, { recursive: true, mode: 0o700 });
-      yield* fs.makeDirectory(recovery, { recursive: true, mode: 0o700 });
-      for (const asset of manifest.assets) {
-        const target = path.join(objects, asset.digest);
-        if (!(yield* fs.exists(target))) {
-          yield* fs.copyFile(
-            path.join(input.stateDir, "project-library", "objects", asset.digest),
-            target,
-          );
-          yield* fs.chmod(target, 0o600);
-          yield* syncFile(target);
-        }
-      }
-      for (const archive of manifest.recovery) {
-        const target = path.join(recovery, archive.digest);
-        if (!(yield* fs.exists(target))) {
-          yield* fs.copyFile(
-            path.join(input.stateDir, "project-library", "recovery", archive.digest),
-            target,
-          );
-          yield* fs.chmod(target, 0o600);
-          yield* syncFile(target);
-        }
-      }
-    }
-    const manifestFile = path.join(staging, "manifest.json");
-    yield* fs.writeFileString(manifestFile, yield* encodeManifest(manifest), {
-      flag: "wx",
-      mode: 0o600,
+    yield* timed("copy", sqliteCopy(input.database, path.join(staging, "statev2.sqlite")));
+    const manifest = yield* finishSnapshot({
+      directory: staging,
+      stateDir: input.stateDir,
+      spaceDir: input.backupsDir,
     });
-    yield* syncFile(manifestFile);
-    yield* fs.writeFileString(
-      path.join(staging, "complete"),
-      (yield* fingerprint(manifestFile)).digest,
-      { flag: "wx", mode: 0o600 },
-    );
-    yield* syncFile(path.join(staging, "complete"));
-    yield* syncFile(staging);
     yield* fs.rename(staging, directory);
     yield* syncFile(input.backupsDir);
     return { directory, manifest };
@@ -202,9 +308,118 @@ export const createLibraryBackup = Effect.fnUntraced(function* (input: {
         : fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore),
   );
 });
+// Milliseconds since the epoch when the running sync started, or null when none is marked.
+// An unreadable marker reads as NaN, which counts as stale.
+const replicaSyncStarted = (replicaDir: string) =>
+  Effect.flatMap(Effect.all([FileSystem.FileSystem, Path.Path]), ([fs, path]) =>
+    fs.readFileString(path.join(replicaDir, REPLICA_SYNCING)).pipe(
+      Effect.map((text) => Number.parseInt(text, 10)),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+    ),
+  );
+// Brings one standing copy up to date in place. sqlite3_rsync sends only changed pages and
+// commits them in one replica transaction, so an interrupted sync leaves the previous state,
+// which the next run repairs.
+export const createLibraryReplica = Effect.fnUntraced(function* (input: {
+  database: string;
+  stateDir: string;
+  replicaDir: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const now = DateTime.toEpochMillis(yield* DateTime.now);
+  const marker = path.join(input.replicaDir, REPLICA_SYNCING);
+  const replica = path.join(input.replicaDir, "statev2.sqlite");
+  const started = yield* replicaSyncStarted(input.replicaDir);
+  if (started !== null && now - started < STALE_SNAPSHOT_MS)
+    return yield* new LibraryError({
+      reason: "request-conflict",
+      cause: `Another Library replica sync started at ${DateTime.formatIso(DateTime.makeUnsafe(started))} in ${input.replicaDir}. If it was interrupted, a run six hours after it started takes over.`,
+    });
+  if (started !== null) yield* fs.remove(marker, { force: true });
+  // sqlite3_rsync has no such check, and syncing the live database onto itself would write
+  // its read snapshot back over newer commits.
+  const origin = yield* fs.realPath(input.database);
+  if (
+    yield* fs.realPath(replica).pipe(
+      Effect.map((resolved) => resolved === origin),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+    )
+  )
+    return yield* new LibraryError({
+      reason: "invalid",
+      cause: `--replica-dir ${input.replicaDir} holds the live database ${input.database}.`,
+    });
+  // The rollback journal can hold every page a sync replaces, so allow for a full copy.
+  yield* ensureFreeSpace(
+    input.replicaDir,
+    Math.max(
+      (yield* fileBytes(input.database)) + (yield* fileBytes(`${input.database}-wal`)),
+      yield* fileBytes(replica),
+    ),
+  );
+  const build = Effect.gen(function* () {
+    // The previous manifest stays until a new one replaces it. A sync that fails rolls the
+    // replica back, so it still verifies; one that commits changes the database digest, so it
+    // stops verifying until the new manifest lands.
+    const sync = yield* LibraryReplicaSync;
+    const report = yield* timed("sync", sync(input.database, replica));
+    for (const line of report.split("\n"))
+      if (line.trim()) yield* Console.log(`sqlite3_rsync: ${line}`);
+    yield* timed("settle", settleReplica(replica));
+    const manifest = yield* finishSnapshot({
+      directory: input.replicaDir,
+      stateDir: input.stateDir,
+      spaceDir: input.replicaDir,
+    });
+    return { directory: input.replicaDir, manifest };
+  });
+  return yield* Effect.acquireUseRelease(
+    fs.makeDirectory(input.replicaDir, { recursive: true, mode: 0o700 }).pipe(
+      Effect.andThen(fs.writeFileString(marker, String(now), { flag: "wx", mode: 0o600 })),
+      Effect.catchReason("PlatformError", "AlreadyExists", () =>
+        Effect.fail(
+          new LibraryError({
+            reason: "request-conflict",
+            cause: `Another Library replica sync started in ${input.replicaDir} at the same moment.`,
+          }),
+        ),
+      ),
+    ),
+    () => build,
+    // A run that outlived its marker leaves the marker of the run that took over.
+    () =>
+      replicaSyncStarted(input.replicaDir).pipe(
+        Effect.flatMap((current) =>
+          current === now ? fs.remove(marker, { force: true }) : Effect.void,
+        ),
+        Effect.ignore,
+      ),
+  );
+});
 export const verifyLibraryBackup = Effect.fnUntraced(function* (directory: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  if (!(yield* fs.exists(path.join(directory, "complete"))))
+    return yield* new LibraryError({
+      reason: "invalid",
+      cause: `${directory} has no complete marker, so its snapshot never finished.`,
+    });
+  const started = yield* replicaSyncStarted(directory);
+  if (started !== null && DateTime.toEpochMillis(yield* DateTime.now) - started < STALE_SNAPSHOT_MS)
+    return yield* new LibraryError({
+      reason: "request-conflict",
+      cause: `${directory} is being synced; check it again once the sync finishes.`,
+    });
+  // A killed sync can leave a hot journal, which a read-only restore cannot roll back. The
+  // next snapshot run rolls it back. Reading a WAL-mode copy, as every dated backup of the live
+  // database is, leaves an empty -wal that holds nothing.
+  for (const suffix of ["-journal", "-wal"])
+    if ((yield* fileBytes(path.join(directory, `statev2.sqlite${suffix}`))) > 0)
+      return yield* new LibraryError({
+        reason: "invalid",
+        cause: `${directory} holds statev2.sqlite${suffix} from an interrupted sync; the next snapshot run repairs it.`,
+      });
   const manifest = yield* decodeManifest(
     yield* fs.readFileString(path.join(directory, "manifest.json")),
   );
@@ -247,6 +462,14 @@ export const restoreLibraryBackup = Effect.fnUntraced(function* (input: {
     return yield* new LibraryError({ reason: "blocked" });
   const backup = yield* verifyLibraryBackup(input.directory);
   yield* sqliteCopy(backup.database, destination);
+  // A replica sync that committed after verification would have changed what was copied.
+  if ((yield* fingerprint(backup.database)).digest !== backup.manifest.database.digest) {
+    yield* fs.remove(destination, { force: true });
+    return yield* new LibraryError({
+      reason: "request-conflict",
+      cause: `${input.directory} changed during the restore; run it again.`,
+    });
+  }
   const requestId = `restore-${yield* randomUuidV4}`;
   const next = yield* Maintenance.LibraryMaintenance.use((service) =>
     service.rotateAuthorityEpoch({
@@ -262,10 +485,26 @@ export const restoreLibraryBackup = Effect.fnUntraced(function* (input: {
       backup.manifest.storageMode === "local" ? path.join(input.directory, "objects") : null,
   };
 });
+const inspectReplica = Effect.fnUntraced(function* (replicaDir: string, now: number) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const started = yield* replicaSyncStarted(replicaDir);
+  if (started !== null && now - started < STALE_SNAPSHOT_MS) return { state: "syncing" as const };
+  if (!(yield* fs.exists(path.join(replicaDir, "statev2.sqlite"))))
+    return { state: "absent" as const };
+  const verified = yield* verifyLibraryBackup(replicaDir).pipe(Effect.option);
+  return Option.isSome(verified)
+    ? { state: "verified" as const, createdAt: Date.parse(verified.value.manifest.createdAt) }
+    : { state: "unverified" as const };
+});
+// With a replica given, a dated backup older than a verified replica stops counting toward
+// `keep`: the replica and the volume backups' own history stand in for it. Without one, or
+// while it does not verify, `keep` holds as before. Prune never changes the replica.
 export const pruneLibraryBackups = Effect.fnUntraced(function* (input: {
   backupsDir: string;
   keep: number;
   days: number;
+  replicaDir?: string | undefined;
 }) {
   if (
     !Number.isInteger(input.keep) ||
@@ -309,10 +548,16 @@ export const pruneLibraryBackups = Effect.fnUntraced(function* (input: {
     yield* fs.remove(directory, { recursive: true, force: true });
     (partial ? stalePartial : staleIncomplete).push(directory);
   }
+  const replica =
+    input.replicaDir === undefined ? null : yield* inspectReplica(input.replicaDir, now);
   eligible.sort((a, b) => b.createdAt - a.createdAt);
   const removed: string[] = [];
   for (const [index, backup] of eligible.entries())
-    if (index >= input.keep && backup.createdAt < now - input.days * 86400000) {
+    if (
+      (index >= input.keep ||
+        (replica?.state === "verified" && backup.createdAt < replica.createdAt)) &&
+      backup.createdAt < now - input.days * 86400000
+    ) {
       yield* fs.remove(backup.directory, { recursive: true });
       removed.push(backup.directory);
     }
@@ -323,6 +568,7 @@ export const pruneLibraryBackups = Effect.fnUntraced(function* (input: {
     staleIncomplete,
     unverified,
     inProgress,
+    replica,
   };
 });
 const snapshot = Command.make(
@@ -330,10 +576,32 @@ const snapshot = Command.make(
   {
     database: Flag.String("database"),
     stateDir: Flag.String("state-dir"),
-    backupsDir: Flag.String("backups-dir"),
+    backupsDir: Flag.String("backups-dir").pipe(Flag.optional),
+    replicaDir: Flag.String("replica-dir").pipe(Flag.optional),
   },
-  (input) =>
-    createLibraryBackup(input).pipe(
+  ({ database, stateDir, backupsDir, replicaDir }) => {
+    const [target, run] =
+      Option.isSome(replicaDir) && Option.isNone(backupsDir)
+        ? ([
+            "replica",
+            createLibraryReplica({ database, stateDir, replicaDir: replicaDir.value }),
+          ] as const)
+        : Option.isSome(backupsDir) && Option.isNone(replicaDir)
+          ? ([
+              "backup",
+              createLibraryBackup({ database, stateDir, backupsDir: backupsDir.value }),
+            ] as const)
+          : ([
+              "backup",
+              Effect.fail(
+                new LibraryError({
+                  reason: "invalid",
+                  cause: "Pass exactly one of --backups-dir or --replica-dir.",
+                }),
+              ),
+            ] as const);
+    const flag = target === "replica" ? "--replica-dir" : "--backups-dir";
+    return run.pipe(
       Effect.catchIf(
         (error): error is LibraryError =>
           isLibraryError(error) &&
@@ -341,12 +609,13 @@ const snapshot = Command.make(
         (error) =>
           Effect.fail(
             new LibrarySnapshotSkipped({
-              message: `${String(error.cause)} No backup was written.${error.reason === "storage-limit" ? " Free space on that volume or pass a --backups-dir on a larger one." : ""}`,
+              message: `${String(error.cause)} No ${target} was written.${error.reason === "storage-limit" ? ` Free space on that volume or pass a ${flag} on a larger one.` : ""}`,
             }),
           ),
       ),
-      Effect.flatMap((result) => Console.log(`Verified Library backup: ${result.directory}`)),
-    ),
+      Effect.flatMap((result) => Console.log(`Verified Library ${target}: ${result.directory}`)),
+    );
+  },
 );
 const verify = Command.make("verify", { directory: Flag.String("directory") }, ({ directory }) =>
   verifyLibraryBackup(directory).pipe(
@@ -376,7 +645,7 @@ const restore = Command.make(
     restoreLibraryBackup(input).pipe(
       Effect.flatMap((result) =>
         Console.log(
-          `Restored isolated database: ${result.destination}. Authority epoch ${result.authority.epoch}.`,
+          `Restored isolated database: ${result.destination}. Authority epoch ${result.authority.epoch}.${result.objectsDir === null ? "" : ` Copy its attachments and recovery archives out of ${result.objectsDir} before a replica's next sync changes them.`}`,
         ),
       ),
     ),
@@ -387,9 +656,10 @@ const prune = Command.make(
     backupsDir: Flag.String("backups-dir"),
     keep: Flag.Int("keep").pipe(Flag.withDefault(7)),
     days: Flag.Int("days").pipe(Flag.withDefault(30)),
+    replicaDir: Flag.String("replica-dir").pipe(Flag.optional),
   },
-  (input) =>
-    pruneLibraryBackups(input).pipe(
+  ({ replicaDir, ...input }) =>
+    pruneLibraryBackups({ ...input, replicaDir: Option.getOrUndefined(replicaDir) }).pipe(
       Effect.flatMap((result) =>
         Effect.gen(function* () {
           yield* Console.log(
@@ -397,6 +667,20 @@ const prune = Command.make(
           );
           for (const directory of result.unverified)
             yield* Console.warn(`Investigate this backup; it failed verification: ${directory}`);
+          const replica = result.replica;
+          if (replica === null || Option.isNone(replicaDir)) return;
+          if (replica.state === "verified")
+            yield* Console.log(
+              `Verified Library replica from ${DateTime.formatIso(DateTime.makeUnsafe(replica.createdAt))}: ${replicaDir.value}`,
+            );
+          else if (replica.state === "unverified")
+            yield* Console.warn(
+              `Investigate the Library replica; it failed verification, so --keep still applies: ${replicaDir.value}`,
+            );
+          else
+            yield* Console.log(
+              `The Library replica is ${replica.state === "syncing" ? "syncing" : "not written yet"}, so --keep still applies: ${replicaDir.value}`,
+            );
         }),
       ),
     ),

@@ -30,6 +30,7 @@ import {
   PreviewPagesError,
   PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
+import { PreviewAccessService } from "../preview-access/PreviewAccessService.ts";
 import { resolveLibraryConnection } from "./LibraryConnection.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -104,6 +105,8 @@ export class LibraryPublisher extends Context.Service<
     readonly ackReply: (
       input: LibraryPageReplyAckRequest,
     ) => Effect.Effect<void, PreviewPagesError>;
+    /** Ends every pages browser sign-in; a Library that predates this answers `unavailable`. */
+    readonly signOutPageReaders: () => Effect.Effect<void, PreviewPagesError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -185,6 +188,7 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   };
   if (connection.kind === "none") return unavailable(false);
@@ -194,6 +198,7 @@ const make = Effect.gen(function* () {
   if (connection.kind === "authority") {
     const localLibrary = yield* LibraryService.LibraryService;
     const localAssets = yield* Assets.LibraryAssetService;
+    const localPreviewAccess = yield* PreviewAccessService;
     const publishLocalAttachments = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
       for (const attachment of [
         ...libraryAttachments(archive),
@@ -238,9 +243,17 @@ const make = Effect.gen(function* () {
           environmentId: sourceEnvironmentId,
           threadId,
         }),
-      // Preview sign-in is answered by the Library's HTTP route, which a computer reaches over the
-      // network; a Library that is its own computer has nothing to register with in-process.
-      registerPreviews: () => Effect.fail(new LibraryError({ reason: "not-found" })),
+      // A Library that is its own computer registers in-process, with no session to outlive.
+      registerPreviews: (previews) =>
+        localPreviewAccess
+          .register({ environmentId: sourceEnvironmentId, sessionId: null, previews })
+          .pipe(
+            // Callers read not-found as "no preview sign-in here", as a remote Library answers it.
+            Effect.catchIf(
+              (error) => error.reason === "not-authority",
+              () => Effect.fail(new LibraryError({ reason: "not-found" })),
+            ),
+          ),
       // Pages are filed under the publishing computer's Library sign-in, which a Library that is
       // its own computer does not have.
       publishPage: () => noPages,
@@ -248,6 +261,7 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   }
   const { credential, endpoint, send } = connection;
@@ -479,7 +493,7 @@ const make = Effect.gen(function* () {
   const registerPreviews = Effect.fnUntraced(function* (
     previews: LibraryPreviewRegisterRequest["previews"],
   ) {
-    const body = yield* encodePreviews({ previews }).pipe(
+    const body = yield* encodePreviews({ environmentId: sourceEnvironmentId, previews }).pipe(
       Effect.mapError(() => new LibraryError({ reason: "invalid" })),
     );
     const response = yield* execute(
@@ -530,6 +544,9 @@ const make = Effect.gen(function* () {
     const body = yield* encodeReplyAck(input).pipe(Effect.mapError(invalidPageRequest));
     yield* postPage("/replies/ack", body);
   });
+  const signOutPageReaders = Effect.fnUntraced(function* () {
+    yield* postPage("/sign-out", "{}");
+  });
   return LibraryPublisher.of({
     enabled: true,
     info,
@@ -545,6 +562,7 @@ const make = Effect.gen(function* () {
     updatePage,
     nextReplies,
     ackReply,
+    signOutPageReaders,
   });
 });
 export const layer = Layer.effect(LibraryPublisher, make);

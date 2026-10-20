@@ -4,6 +4,7 @@ import {
   type MiniSubmit,
   type MiniRef,
   type MiniWorkerRef,
+  type MiniWorkerConnection,
 } from "@t3tools/contracts/fork";
 import type { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,10 @@ export const makeMiniOffloadRpcHandlers = (auth: ForkRpcAuth) =>
       [M.patch]: (input: MiniRef) => auth.effect(M.patch, service.patch(input)),
       [M.check]: (input: MiniWorkerRef) => auth.effect(M.check, service.check(input)),
       [M.prepare]: (input: MiniWorkerRef) => auth.effect(M.prepare, service.prepare(input)),
+      [M.updateWorker]: (input: MiniWorkerConnection) =>
+        auth.effect(M.updateWorker, service.updateWorker(input)),
+      [M.removeWorker]: (input: MiniWorkerRef) =>
+        auth.effect(M.removeWorker, service.removeWorker(input)),
       [M.artifacts]: (input: MiniRef) => auth.effect(M.artifacts, service.artifacts(input)),
     };
   });

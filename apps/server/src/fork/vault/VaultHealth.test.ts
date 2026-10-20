@@ -26,6 +26,7 @@ const itemId = "a".repeat(32);
 const fixture = Effect.sync(() => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = {
+    others: new Map<string, VaultItemSummary>(),
     version: 1,
     kind: "service-connection" as "service-connection" | "ssh-key",
     sshCalls: 0,
@@ -62,7 +63,7 @@ const fixture = Effect.sync(() => {
   const dependencies = Layer.mergeAll(
     backend,
     Layer.mock(VaultCore.VaultCore)({
-      inspect: (id) => Effect.sync(() => (id === itemId ? item() : null)),
+      inspect: (id) => Effect.sync(() => (id === itemId ? item() : (state.others.get(id) ?? null))),
     }),
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("health-test")),
@@ -75,6 +76,15 @@ const fixture = Effect.sync(() => {
     Layer.provide(
       Layer.merge(
         Layer.mock(VaultSsh.VaultSsh)({
+          info: () =>
+            Effect.succeed({
+              item: item(),
+              target: { hostname: "qa.example", username: "qa", port: 22, hostKey: null },
+              publicKey: "synthetic",
+              fingerprint: "synthetic",
+              hostFingerprint: null,
+              destination: "ssh://qa@qa.example:22",
+            }),
           probe: () =>
             Effect.gen(function* () {
               state.sshCalls++;
@@ -319,6 +329,11 @@ it.effect(
         expect(f.state.sshCalls).toBe(1);
         expect(f.state.probeCalls).toBe(0);
         expect((yield* health.snapshot).issues.map((i) => i.category)).toEqual(["outage"]);
+        expect((yield* health.snapshot).issues[0]?.outageTarget).toEqual({
+          kind: "ssh",
+          hostname: "qa.example",
+          port: 22,
+        });
         yield* TestClock.adjust("15 minutes");
         f.state.sshFailure = "untrusted-host";
         yield* checks.recheck(itemId);
@@ -344,6 +359,87 @@ it.effect(
             rule: { ...rule, githubRepository: "owner/repo" },
           }).pipe(Effect.flip)).reason,
         ).toBe("invalid-input");
+      }),
+    ),
+);
+
+it.effect(
+  "groups only attributed unresolved outages by endpoint and preserves independent item actions",
+  () =>
+    test((f, health) =>
+      Effect.gen(function* () {
+        const ids = [itemId, ...["b", "c", "d", "e", "f"].map((letter) => letter.repeat(32))];
+        for (const id of ids.slice(1))
+          f.state.others.set(id, {
+            id,
+            label: `Synthetic ${id[0]}`,
+            kind: "ssh-key",
+            state: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          });
+        for (const [index, id] of ids.entries())
+          yield* health.report({
+            itemId: id,
+            itemVersion: 1,
+            category: "outage",
+            healthy: false,
+            ...(index < 2
+              ? { outageTarget: { kind: "github" as const } }
+              : index < 5
+                ? {
+                    outageTarget: {
+                      kind: "ssh" as const,
+                      hostname: "qa.example",
+                      port: index === 4 ? 2222 : 22,
+                    },
+                  }
+                : {}),
+          });
+        let snapshot = yield* health.snapshot;
+        expect(snapshot.outageGroups?.map((group) => group.issueIds.length)).toEqual([2, 2]);
+        expect(snapshot.outageGroups?.flatMap((group) => group.issueIds)).not.toContain(
+          `${ids[5]}:outage`,
+        );
+        yield* health.report({
+          itemId,
+          itemVersion: 1,
+          category: "authentication",
+          healthy: false,
+          outageTarget: { kind: "github" },
+        });
+        expect(
+          (yield* health.snapshot).issues.find((issue) => issue.category === "authentication")
+            ?.outageTarget,
+        ).toBeUndefined();
+        yield* health.report({ itemId, itemVersion: 1, category: "outage", healthy: true });
+        snapshot = yield* health.snapshot;
+        expect(snapshot.outageGroups).toHaveLength(1);
+        expect(snapshot.issues.find((issue) => issue.itemId === ids[1])?.state).toBe("open");
+        yield* change(health, { action: "snooze", issueId: `${ids[2]}:outage`, until: 60_000 });
+        expect((yield* health.snapshot).outageGroups).toHaveLength(1);
+        yield* change(health, { action: "dismiss", issueId: `${ids[3]}:outage`, until: null });
+        expect((yield* health.snapshot).outageGroups).toEqual([]);
+        yield* change(health, { action: "reopen", issueId: `${ids[3]}:outage`, until: null });
+        expect((yield* health.snapshot).outageGroups).toHaveLength(1);
+        yield* health.report({
+          itemId: ids[2]!,
+          itemVersion: 1,
+          category: "outage",
+          healthy: false,
+        });
+        expect((yield* health.snapshot).outageGroups).toEqual([]);
+        yield* health.report({
+          itemId: ids[2]!,
+          itemVersion: 0,
+          category: "outage",
+          healthy: false,
+          outageTarget: { kind: "github" },
+        });
+        expect(
+          (yield* health.snapshot).issues.find((issue) => issue.itemId === ids[2])?.outageTarget,
+        ).toBeUndefined();
       }),
     ),
 );

@@ -57,6 +57,7 @@ subject to design review; the following choices are not resolved by selection:
   128 rules and 32 mutation receipts. Omission counts are visible; notifications stay in the inbox.
 - Automatic GitHub validation is explicit opt-in for a dedicated connection/repository. Snapshot
   and project-context reads do not contact providers. Additional connector checks remain selected.
-- Retained run pins, external-consumer discovery and broader client acceptance remain incomplete.
+- Outage reports group open/snoozed issues by a recorded GitHub endpoint or SSH host/port, without claiming a common cause. Disposition and recovery remain per item; reports without a known destination stay individual.
+- Current and retained references, explicit external-consumer limits and web maintenance acceptance are implemented. Native/remote acceptance and other validation adapters remain incomplete.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

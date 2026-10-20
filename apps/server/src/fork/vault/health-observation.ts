@@ -1,4 +1,9 @@
-import { VaultGitHubError, VaultSshError, type VaultHealthClass } from "@t3tools/contracts/fork";
+import {
+  VaultGitHubError,
+  VaultSshError,
+  type VaultHealthClass,
+  type VaultHealthOutageTarget,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -16,6 +21,7 @@ export const observeVaultHealth = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   itemId: string,
   itemVersion: number,
+  outageTarget?: VaultHealthOutageTarget,
 ) =>
   Effect.gen(function* () {
     const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
@@ -25,7 +31,14 @@ export const observeVaultHealth = <A, E, R>(
     };
     const report = (category: VaultHealthClass, healthy: boolean) =>
       health.value
-        .report({ itemId, itemVersion, category, healthy, ...observation })
+        .report({
+          itemId,
+          itemVersion,
+          category,
+          healthy,
+          ...observation,
+          ...(category === "outage" && outageTarget ? { outageTarget } : {}),
+        })
         .pipe(Effect.ignore);
     return yield* effect.pipe(
       Effect.tap((result) =>

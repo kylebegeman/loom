@@ -30,7 +30,8 @@ function History({
   const page = useEnvironmentQuery(
       connected ? atoms.pins({ environmentId, input: { projectId, cursor } }) : null,
     ),
-    retire = useAtomCommand(atoms.retirePin, { reportFailure: false });
+    retire = useAtomCommand(atoms.retirePin, { reportFailure: false }),
+    data = page.isSuccess && !page.isPending ? page.data : null;
   return (
     <View className="gap-3">
       <Text className="font-t3-medium">Retained run selections</Text>
@@ -43,6 +44,7 @@ function History({
         disabled={busy || !connected}
         onPress={() => {
           setConfirm(null);
+          setError(null);
           page.refresh();
         }}
       />
@@ -52,8 +54,8 @@ function History({
           {error ?? "Could not load run selections. Refresh after checking Vault access."}
         </Text>
       ) : null}
-      {page.data?.items.length === 0 ? <Text>No retained selections in this page.</Text> : null}
-      {page.data?.items.map((pin) => (
+      {data?.items.length === 0 ? <Text>No retained selections in this page.</Text> : null}
+      {data?.items.map((pin) => (
         <View key={pin.id} className="gap-2 rounded-lg bg-subtle p-3">
           <Text>
             {pin.resolution?.label ?? "Retired selection"} · {pin.runState}
@@ -130,7 +132,7 @@ function History({
       ))}
       <Button
         label="First selections"
-        disabled={busy || !cursor}
+        disabled={busy || !cursor || page.isPending || !connected}
         onPress={() => {
           setCursor(null);
           setConfirm(null);
@@ -138,9 +140,9 @@ function History({
       />
       <Button
         label="More selections"
-        disabled={busy || !page.data?.nextCursor}
+        disabled={busy || !data?.nextCursor}
         onPress={() => {
-          setCursor(page.data?.nextCursor ?? null);
+          setCursor(data?.nextCursor ?? null);
           setConfirm(null);
         }}
       />

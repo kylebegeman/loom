@@ -17,5 +17,15 @@ export const PreviewPagesMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_preview_page_replies_subject_acked ON fork_preview_page_replies (subject, acked_at)`;
       }),
     ],
+    [
+      2,
+      "PreviewPageSignOuts",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // One row per computer that signed out pages browsers; the pages host refuses every
+        // cookie minted at or before the latest one.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_preview_page_signouts (subject TEXT PRIMARY KEY, signed_out_at INTEGER NOT NULL)`;
+      }),
+    ],
   ],
 };

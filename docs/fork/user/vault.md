@@ -510,6 +510,11 @@ the command palette. Review expiry warnings and failed development access, reche
 item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
 item's grant and destination. An outage warning does not mean the credential was revoked.
 
+Outage reports with the same recorded GitHub service or SSH host and port appear together.
+Each item keeps its own recheck, snooze and dismiss actions. A shared destination does not prove
+a shared cause; one item recovering does not clear the others. Older reports without a recorded
+destination remain individual.
+
 Choose a Vault item and declare its expiry, optionally adding a dedicated GitHub repository
 for validation. Enable automatic checks explicitly; otherwise checks run only when requested.
 Warnings begin seven days before declared expiry. Recent checks can be rate limited, and an
@@ -520,14 +525,14 @@ From a maintenance issue, choose **Show project references** to inspect current 
 and grants that name the item. **More projects** checks the next ten projects; a page with no
 references does not establish that later projects have none. Review a project's profiles to
 change its bindings, or review grants before changing authority. Archived profiles and inactive
-grants keep their state labels. These references do not prove working access.
+grants keep their state labels. Coverage states what the current page inspected. Grants whose project or thread no longer exists are counted separately across the environment; use **Review unattributed grants** to inspect them. These references do not prove working access.
 
 Under **Retained run selections**, choose any project on the current page, including one with
 no current references. Matching selections show the earlier profile and item versions they
 pinned. Continue through pages even when a page has no matches. Retired selections whose
 binding snapshot was removed are counted as unattributable. Review the project's run selections
 to inspect or retire a stopped selection; current backend checks still decide whether retirement
-is allowed. Consumers outside Loom and provider-side credential copies are not discovered.
+is allowed. Consumers outside Loom are not discovered, provider-held credential copies remain unknown, and these inspections do not evaluate current access. An older server that omits coverage shows that limit explicitly. An empty final page does not prove the item is unused.
 
 For an SSH key, **Validate SSH connection** checks its saved destination with the pinned host key
 and a fixed no-op command. Saving this rule does not run the check unless automatic checks are

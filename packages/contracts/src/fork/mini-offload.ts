@@ -17,6 +17,8 @@ export const MINI_OFFLOAD_WS_METHODS = {
   artifacts: "loom.mini-offload.artifacts",
   check: "loom.mini-offload.check",
   prepare: "loom.mini-offload.prepare",
+  updateWorker: "loom.mini-offload.updateWorker",
+  removeWorker: "loom.mini-offload.removeWorker",
 } as const;
 const Id = Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/));
 const WorkerId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/));
@@ -34,6 +36,13 @@ export const MiniWorkerSummary = Schema.Struct({
   name: MiniWorker.fields.name,
   enabled: MiniWorker.fields.enabled,
 });
+/** A registered worker's new SSH connection. Its id, name and enabled state stay. */
+export const MiniWorkerConnection = Schema.Struct({
+  workerId: MiniWorker.fields.id,
+  target: MiniWorker.fields.target,
+  sshConfig: MiniWorker.fields.sshConfig,
+});
+export type MiniWorkerConnection = typeof MiniWorkerConnection.Type;
 // Match Mini's plain, canonical POSIX file paths. Directories and glob patterns are not expanded.
 const OutputPath = Schema.String.check(
   Schema.isMinLength(1),
@@ -127,7 +136,7 @@ export class MiniOffloadError extends Schema.TaggedError<MiniOffloadError>()("Mi
     return {
       workspace: "The thread needs a Git repository rooted at its workspace.",
       worker:
-        "Register and enable an SSH worker first. Existing destinations cannot change their connection; use a new worker ID.",
+        "The worker is not registered and enabled, or its connection is invalid. An SSH config path must be absolute. Change a registered worker's connection instead of registering it again; a removed worker's ID returns only at its last connection.",
       dirty: "Commit local edits or explicitly send only the committed revision.",
       conflict: "This request ID already belongs to different work or another thread.",
       storage: "The offload receipt or source archive could not be saved or read.",
@@ -190,6 +199,8 @@ export const MiniWorkerReadiness = Schema.Struct({
   reasons: Schema.Array(Schema.String.check(Schema.isMaxLength(80))).check(Schema.isMaxLength(32)),
 });
 export type MiniWorkerReadiness = typeof MiniWorkerReadiness.Type;
+/** A readiness reason: SSH refused the worker's host key, which changed or is not yet known for its address. */
+export const MINI_HOST_KEY_MISMATCH = "host_key_mismatch";
 const M = MINI_OFFLOAD_WS_METHODS;
 const error = Schema.Union([MiniOffloadError, EnvironmentAuthorizationError]);
 export const MiniOffloadRpcGroup = RpcGroup.make(
@@ -217,4 +228,6 @@ export const MiniOffloadRpcGroup = RpcGroup.make(
   Rpc.make(M.artifacts, { payload: MiniRef, success: MiniArtifacts, error }),
   Rpc.make(M.check, { payload: MiniWorkerRef, success: MiniWorkerReadiness, error }),
   Rpc.make(M.prepare, { payload: MiniWorkerRef, success: MiniWorkerReadiness, error }),
+  Rpc.make(M.updateWorker, { payload: MiniWorkerConnection, success: MiniWorkerSummary, error }),
+  Rpc.make(M.removeWorker, { payload: MiniWorkerRef, success: MiniWorkerSummary, error }),
 );

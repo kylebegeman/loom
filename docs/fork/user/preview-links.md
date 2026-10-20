@@ -42,8 +42,13 @@ covers only names one level below it, which is where link addresses live.
 The status reads **Ready on example.com** once the tunnel connects. Loom keeps the token on
 the computer and never shows it again. **Remove** deletes it and stops the tunnel.
 
-If the status shows **Gateway error**, another program is using the gateway port. Pick a
-different **Gateway port** and use the same port in the tunnel's route.
+If saving reports that the port is in use, or the status shows **Gateway error**, another
+program is using the gateway port. Pick a different **Gateway port** and use the same port in
+the tunnel's route.
+
+Loom keeps `cloudflared` up to date itself. If it finds an older copy on your computer, the
+status shows **Installing cloudflared** briefly while it fetches the current release, and it
+keeps using the older copy if the download fails.
 
 Setup is in the web and desktop apps. The mobile app shows each computer's status under
 **Settings > Previews**.
@@ -85,14 +90,19 @@ Ask an agent to share a built site or a container, and it gets a link like any o
 - **A folder link** serves a built folder from the thread's workspace, such as `dist`. Ask
   the agent to build first; a folder link serves files as they are and does not run a dev
   server. Addresses without a file, such as a single-page app's client routes, show
-  **Not found**.
+  **Not found**. Video and audio can seek.
 - **A container link** runs a Docker image. It runs for 2 hours unless you ask for a
   different time, up to 4 hours. It cannot be extended or restored: ending it removes the
-  container. For more time, ask the agent to share it again.
+  container. For more time, ask the agent to share it again. If the image is not on the
+  computer yet, Docker downloads it first, which can take up to 10 minutes.
 
 Both need lanes on (**Settings > Loom > Storage**), because they use the thread's lane ports
 and end with its lane. Container links also need Docker Desktop or OrbStack running on the
-computer.
+computer. Containers stop when Loom quits. One that could not be removed while Docker was not
+running is removed once Docker answers again.
+
+A folder link comes back only on the lane it was shared from. If that lane is gone, or lanes
+are off, **Restore** says so; ask the agent to share the folder again.
 
 ## Lifetimes and restoring
 
@@ -130,8 +140,14 @@ Each computer's pages are listed under **Pages** in **Settings > Loom > Previews
 - **Restore** reopens an ended or expired page for a fresh 30 days. You can restore a page
   for 7 days after it ends; after that your Library deletes it.
 
-A page stays open for 30 days unless you keep it. If the list says **Your Library does not
-publish pages yet**, the Library this computer uses does not serve pages.
+A page stays open for 30 days unless you keep it. The list updates on its own when this
+computer publishes or changes a page; pages that expire show up the next time you open it.
+If the list says **Your Library does not publish pages yet**, the Library this computer uses
+does not serve pages.
+
+A computer can have 500 open pages. At that point publishing and restoring are refused until
+you end some. Your Library also keeps up to 1,000 pages per computer, counting ended ones;
+past that, publishing removes the pages that ended longest ago.
 
 ### Replying to the agent
 
@@ -153,10 +169,18 @@ if it asks, and you land on the page. This works on any device, without the Loom
 A browser stays signed in to a link, or to your pages, for up to 12 hours. After that, open
 the link from Loom or sign in again.
 
+Signing in works for every computer connected to your Library, and for the computer your
+Library runs on. After your Library is updated, signing in to a computer's links can fail for
+up to 30 minutes, until that computer checks in again. Opening links from Loom still works,
+and restarting Loom on that computer is quicker. Removing a computer's access to your Library
+stops sign-in to its links at once. Computers that connected with one shared Library token
+lose it together.
+
 **Sign out preview browsers** in Settings > Loom > Previews signs out every browser that
-opened any link on that computer, whether it came from Loom or signed in to your Library.
-Links stay open; each browser has to open them from Loom or sign in again. It does not sign
-browsers out of your pages; their sign-in runs out on its own within 12 hours.
+opened any link on that computer, whether it came from Loom or signed in to your Library. It
+also signs every browser out of your published pages, from every computer. Links and pages
+stay open; each browser has to open them from Loom or sign in again. If your Library cannot be
+reached at that moment, links are still signed out, but pages are not.
 
 Removing a device's access to Loom also signs out the browsers it opened links in, and they
 stay out after the computer restarts. The same happens when a device's Loom sign-in runs out,
@@ -175,8 +199,8 @@ is out, use **Sign out preview browsers**.
   Library to sign in through. Click the link in a thread, use **Open** on the link, or use
   **Open in browser** on a running server in the preview panel.
 - **This sign-in expired or was already used**, or **Open the preview again from Loom**: a
-  one-time sign-in works once, within a minute. Sign in again, or open the link from Loom
-  again.
+  one-time sign-in works once, within a minute, and not after the computer or your Library
+  restarts. Sign in again, or open the link from Loom again.
 - **This preview has ended**: the link expired, was ended or no longer exists. Restore it if
   it is still listed, or share the port again.
 - **Nothing is answering on port 5173 yet**: start the server on the computer, then reload.
@@ -188,3 +212,5 @@ is out, use **Sign out preview browsers**.
 - **This page has ended or expired**: restore the page from Pages, or ask the agent to
   publish it again.
 - **This page could not load**: your Library could not answer. Reload to try again.
+- **Sign-in is unavailable**: your Library could not read the key it signs pages sign-ins
+  with, so it signs no one in. Check the Library server's logs.

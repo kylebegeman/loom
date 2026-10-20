@@ -84,7 +84,7 @@ is never performed by this service.
 `VaultHealthContext` inspects current profile bindings and grant references for one item. It
 uses the environment's project store and existing profile/access services, sorted by project ID,
 with ten projects per page and two concurrent profile reads. Thread grants resolve to the
-thread's current project; deleted or unknown threads are omitted. Suspended/revoked grants and
+thread's current project. References with deleted/unknown threads or projects contribute to an environment-wide unattributed-grant count, rather than silently disappearing. Valid grants on other pages do not contribute to that count. Suspended/revoked grants and
 archived profiles retain their labels and state, without being represented as usable authority.
 The response contains only metadata. Project and registry failures return an error rather than
 an empty-success result. Each page is a current inspection, not a transaction across registries.
@@ -107,7 +107,7 @@ Web handoff stores the requested project in the Vault navigation atom and routes
 so the profile picker owns project selection rather than the global settings scope.
 The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
 optional on older context responses. External consumers and provider-side copies remain
-undiscovered. No field or empty page should be interpreted as proof they do not exist.
+undiscovered. Optional structured coverage accompanies both responses, including empty/final pages. It identifies page scope, external consumers as not discovered, provider copies as unknown and current authorization as not evaluated. Missing coverage on older servers renders an explicit unknown notice. No field or empty page should be interpreted as proof external consumers do not exist.
 
 SSH validation reuses the existing pinned-host probe with its fixed `/usr/bin/true` command
 and eight-second timeout. The optional rule field defaults to no SSH validation for existing
@@ -118,3 +118,19 @@ other SSH failures create configuration issues without claiming revocation or au
 failure. A successful probe resolves prior validation issues through the same stale-claim guard.
 The existing opt-in, interval, burst and concurrency bounds apply. Clients gate the new form
 control on `vault-health-ssh-validation` and retain explicit automatic-check consent.
+
+## Outage aggregation
+
+Outage observations may retain a typed destination: the fixed GitHub service, or an SSH hostname
+and port. GitHub delivery observers, SSH/Git launch observers and explicit validation supply it
+from their recorded connection. Usernames, remote paths, credential values and provider responses
+are excluded. The fields are optional for existing encrypted records and older clients; there is
+no application database migration or additional backend policy path.
+
+The snapshot derives groups only for two or more open/snoozed outage issues with the same recorded
+destination. Dismissed/resolved history stays separate, and missing attribution is never guessed
+from item kind or label. This is destination aggregation, not incident diagnosis. Group membership
+has no authority and is not mutable state: recheck, snooze, dismiss and confirmed recovery continue
+to operate on individual issues with the existing CAS/version guards. Recovering one item never
+resolves another. CLI/MCP return the same grouped snapshot. Both clients hide cached snapshots
+while the current read is pending or failed, and refresh clears stale operation messages.

@@ -103,7 +103,7 @@ The first review attempt exposed a global-settings scope mismatch. The corrected
 retains the requested project in the Vault navigation atom and routes by environment. A fresh
 web pass opened the selected profile, displayed its saved requirement and focused the profile
 section. The web typecheck and scoped lint passed after this correction.
-Matched retained selection cards and native interaction retain service/static evidence only.
+Matched retained cards and the review/retirement handoff now have web acceptance below. Native interaction retains service/static evidence only.
 
 ## SSH validation follow-up
 
@@ -127,3 +127,86 @@ merge/health/MCP files passed. The real fork MCP registration check is included 
 All five affected package typechecks and scoped Vault lint passed on the merged tree.
 `vp run lint:mobile` also passed, including SwiftLint, ktlint and detekt. No live installation,
 SSH execution or production check was performed.
+
+## Discovery coverage follow-up
+
+Ten focused service/client/MCP tests in three files passed. Coverage verifies missing/deleted
+thread and project attribution, valid references on later pages, environment-wide grant counts,
+empty final pages, retired snapshot limits and older response compatibility. The server fixture's
+deleted-thread date was corrected to the actual Effect UTC type; all five affected package
+typechecks then passed. Scoped lint, changed-document links and all 390 seam rows passed.
+
+Web acceptance expanded the current issue, displayed current-page scope and external/provider
+unknowns, then selected a scanned project and verified the same limits on an empty final
+retained-selection page. Unattributed-grant counts and legacy-server messaging have service/shared
+client coverage; their interactive states were not seeded in this pass. Mobile shares the coverage
+formatter and passed its package typecheck; native interaction remains pending because its
+installed client is stale and Kyle's no-install restriction remains in force. No live SSH command,
+provider validation, schema migration or production action was performed.
+
+After merging fork main `e970ee0c25`, 71 tests passed in eight focused coverage/MCP/feature,
+Directory service/HTTP and utility registry/runtime files. All five affected package typechecks,
+scoped Vault lint and the documentation/seam check passed on the merged tree. Main's Directory
+and utilities work was preserved. This Vault slice adds no Library deployment requirement.
+
+## Matched history and recovery acceptance
+
+The focused history/context/profile/shared-client run passed 18 tests in five files. The new
+real-service history regression resolves a run, edits current bindings, inspects the earlier
+profile/item versions, rejects an invalid retained record, recovers after repair and retires the
+stopped selection through the profile service. Its transport fails if inspection attempts SSH.
+Shared mounted-query tests cover unavailable and invalid-response failures followed by refresh
+of the same project/cursor. They verify that a failed result can retain cached data, so clients
+must check its success state before rendering it. Four affected package typechecks and scoped
+lint passed. No contracts or application schema changed.
+
+Web acceptance used 27 synthetic OpenBao selections and existing stopped runs in the isolated
+worktree database; SQLite was read-only and no provider ran. The first page contained 25
+unmatched/retired entries with a usable continuation. The next page displayed two matching
+failed runs, earlier profile version 3 and item version 4. Injecting one invalid fixture record
+produced a read error without a false empty state. Repair and refresh recovered those matches.
+The review handoff selected the same project, exposed the pinned bindings, supported cancelling
+retirement, and retired one synthetic stopped selection. Returning to maintenance showed its
+snapshot as unattributable. External consumers remained not discovered, provider copies unknown
+and current authorization not evaluated.
+
+This pass found that the linked profile-history view rendered cached cards and enabled retirement
+controls after a failed refresh. Both web and mobile now require a settled successful read before
+rendering cards or using its continuation. The corrected web pass showed an error with no old
+cards, no empty-success message and no enabled retirement action, then recovered on refresh.
+A concurrent fixture-version change rejected retirement with a conflict; refresh cleared that
+mutation error and its confirmation without retiring the second selection. Native interaction
+remains pending under the no-install restriction. Production, relay/tunnel, live providers and
+other validation adapters are not established by this evidence.
+
+After merging fork main `967d8875d8`, 80 tests passed in ten focused history/context/profile,
+shared-client, MCP registration, preview MCP/gateway/host and Library publisher files. All five
+affected package typechecks, scoped Vault lint and documentation/seam checks passed. Main's
+preview and Library changes were preserved; this Vault slice adds no Library deployment work.
+
+## Outage aggregation and maintenance acceptance
+
+Focused contract, service, observer, launch, client and MCP checks cover grouping by recorded
+endpoint, SSH port separation, unknown destinations, dismissed/resolved history, snoozed issues,
+independent recovery and legacy snapshots. The launch regression uses a mocked timeout transport
+and verifies host-only attribution for SSH and Git; no SSH binary runs. The maintenance MCP
+regression rejects agent/read-only callers, confirms snapshot reads do not probe and reaches
+recheck only for a full-access administrator. Existing item/version and claim guards remain in
+force.
+
+Web acceptance used isolated synthetic GitHub outage reports plus a separate SSH report. It
+verified grouping, snooze/unsnooze, dismiss/history/reopen, rule save/removal, an expiry-only recheck,
+burst limiting and the unconfigured result after rule removal. No provider validation or automatic
+check was enabled. An invalid synthetic health record produced an error with no old groups, no
+false empty-success message and disabled mutation controls; restoring it and refreshing recovered
+the inbox. Both clients now require a settled successful snapshot before showing its issues.
+The layout was inspected at 1280px and 390px, with no horizontal overflow. Native interaction,
+relay/tunnel and live provider acceptance remain unverified under the no-install/no-SSH/production
+restrictions. External-consumer and provider-copy discovery limits remain explicit.
+
+After merging fork main `06ad3bed07`, 79 tests passed in fifteen focused files, including the real
+fork MCP registration check and affected Mini worker, authorization, permission and presentation
+checks. Main's Mini connection/edit/removal changes were preserved. All five affected package
+typechecks, scoped Vault lint and changed-document/seam checks passed.
+No upstream seam, new dependency, application schema migration or Library deployment requirement
+was introduced. This remains a partial packet rather than full native/live-provider acceptance.

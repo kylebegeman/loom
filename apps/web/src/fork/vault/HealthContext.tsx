@@ -2,7 +2,11 @@ import { VaultHealthRetained } from "./HealthRetained";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { type EnvironmentId, type ProjectId } from "@t3tools/contracts";
-import { createVaultHealthAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createVaultHealthAtoms,
+  supportsLoomFeature,
+  vaultHealthCoverageMessages,
+} from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
@@ -53,6 +57,18 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
             Inspected {page.inspectedProjects} projects on this page, at{" "}
             {new Date(page.checkedAt).toLocaleString()}.
           </p>
+          {vaultHealthCoverageMessages(page.coverage).map((message) => (
+            <p key={message}>{message}</p>
+          ))}
+          {page.coverage && page.coverage.unattributedGrants > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openVaultAccess({ environmentId, itemId })}
+            >
+              Review unattributed grants
+            </Button>
+          ) : null}
           {page.projects.length === 0 ? (
             <p>No references in these projects. Continue to the next page if available.</p>
           ) : null}

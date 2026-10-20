@@ -4,8 +4,6 @@ import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { createVaultProfileAtoms } from "@t3tools/client-runtime/fork";
-import { AsyncResult } from "effect/reactivity";
-import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -27,7 +25,7 @@ function History({
     [error, setError] = useState<string | null>(null);
   const atom = atoms.pins({ environmentId, input: { projectId, cursor } }),
     result = useAtomValue(atom),
-    page = Option.getOrNull(AsyncResult.value(result));
+    page = result._tag === "Success" && !result.waiting ? result.value : null;
   return (
     <section aria-label="Retained run selections" className="flex flex-col gap-3">
       <h3 className="font-medium">Retained run selections</h3>
@@ -42,6 +40,7 @@ function History({
         disabled={busy}
         onClick={() => {
           setConfirm(null);
+          setError(null);
           appAtomRegistry.refresh(atom);
         }}
       >
@@ -147,7 +146,7 @@ function History({
         <Button
           size="sm"
           variant="outline"
-          disabled={busy || !cursor}
+          disabled={busy || !cursor || result.waiting}
           onClick={() => {
             setCursor(null);
             setConfirm(null);

@@ -127,8 +127,8 @@ runs at share time and on every request.
   and container links add a line naming the folder, or the image and when it stops.
 - Pages: open with time left or "Kept", or ended or expired with how long they stay
   restorable. A computer whose Library does not serve pages says so instead of listing.
-- Page host: "This page has ended or expired", and "This page could not load" when the
-  Library cannot answer.
+- Page host: "This page has ended or expired", "This page could not load" when the Library
+  cannot answer, and "Sign-in is unavailable" when it cannot read its sign-in key.
 - Unsupported: a server without the feature, or a connection without the preview scope,
   explains itself instead of offering actions.
 

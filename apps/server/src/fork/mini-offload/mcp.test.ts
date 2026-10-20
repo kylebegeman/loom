@@ -312,4 +312,66 @@ describe("Mini agent tools", () => {
       expect(error).toMatchObject({ code: "thread_credential_required" });
     }),
   );
+  it.effect(
+    "changes and removes workers only for a full-access caller, which may be a client",
+    () =>
+      Effect.gen(function* () {
+        const changed: string[] = [];
+        const summary = { id: "pi", name: "Pi", enabled: true };
+        const toolkit = yield* toolkitWith({
+          updateWorker: (input) => {
+            changed.push(`update ${input.workerId} ${input.target}`);
+            return Effect.succeed(summary);
+          },
+          removeWorker: (input) => {
+            changed.push(`remove ${input.workerId}`);
+            return Effect.succeed(summary);
+          },
+        });
+        const update = toolkit
+          .handle("loom_mini_worker_update", {
+            workerId: "pi",
+            target: "pi-moved",
+            sshConfig: null,
+          })
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.asVoid);
+        const remove = toolkit
+          .handle("loom_mini_worker_remove", { workerId: "pi" })
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.asVoid);
+        const run = (
+          tool: typeof update | typeof remove,
+          scope: McpInvocationScope,
+          live = callers(),
+        ) =>
+          tool.pipe(
+            Effect.exit,
+            Effect.map((exit) => exit._tag),
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provide(live),
+          );
+        // Thread sessions carry the orchestration capability that environment writes check.
+        const thread: McpInvocationScope = {
+          ...invocation,
+          capabilities: new Set(["orchestration"]),
+        };
+        const readonly = {
+          ...thread,
+          client: { sessionId: "readonly", label: "Read only", access: "read-only" as const },
+        };
+        for (const tool of [update, remove]) {
+          expect(yield* run(tool, readonly)).toBe("Failure");
+          expect(yield* run(tool, thread, callers(true, "approval-required"))).toBe("Failure");
+        }
+        expect(changed).toEqual([]);
+        expect(yield* run(update, thread)).toBe("Success");
+        expect(
+          yield* run(remove, {
+            ...thread,
+            thread: undefined,
+            client: { sessionId: "admin", label: "Admin", access: "full-access" as const },
+          }),
+        ).toBe("Success");
+        expect(changed).toEqual(["update pi pi-moved", "remove pi"]);
+      }),
+  );
 });

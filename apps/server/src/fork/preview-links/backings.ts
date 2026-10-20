@@ -7,6 +7,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeStreamPromises from "node:stream/promises";
 import { PreviewLinksError, type PreviewContainerShareInput } from "@t3tools/contracts/fork";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { guardHttpResponseWriteErrors } from "../../httpResponseErrorGuard.ts";
@@ -64,6 +65,7 @@ const STATUS_TEXT: Readonly<Record<number, string>> = {
   403: "Forbidden",
   404: "Not found",
   405: "Method not allowed",
+  416: "Range not satisfiable",
   500: "Something went wrong",
 };
 
@@ -148,6 +150,33 @@ const sendStatus = (
   response.end(request.method === "HEAD" ? undefined : body);
 };
 
+export type PreviewByteRange =
+  | { readonly start: number; readonly end: number }
+  | "unsatisfiable"
+  | null;
+
+/**
+ * The single byte range a `Range` header asks for, clamped to the file. Null serves the whole
+ * file: no header, another unit, a malformed or backwards range, or several ranges, which media
+ * seeking never needs and which would take a multipart body.
+ */
+export function previewByteRange(header: string | undefined, size: number): PreviewByteRange {
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  if (match === null) return null;
+  const [, first = "", last = ""] = match;
+  if (first === "") {
+    if (last === "") return null;
+    const suffix = Number(last);
+    return suffix === 0 || size === 0
+      ? "unsatisfiable"
+      : { start: Math.max(0, size - suffix), end: size - 1 };
+  }
+  const start = Number(first);
+  const end = last === "" ? Infinity : Number(last);
+  if (end < start) return null;
+  return start >= size ? "unsatisfiable" : { start, end: Math.min(end, size - 1) };
+}
+
 const sendFile = async (
   request: NodeHttp.IncomingMessage,
   response: NodeHttp.ServerResponse,
@@ -160,19 +189,34 @@ const sendFile = async (
   try {
     const info = await handle.stat();
     if (!info.isFile()) return sendStatus(request, response, 404);
-    response.writeHead(200, {
+    // Answers carry no validator, so an If-Range can never match and the whole file goes out.
+    const range =
+      request.headers["if-range"] === undefined
+        ? previewByteRange(request.headers.range, info.size)
+        : null;
+    if (range === "unsatisfiable") {
+      return sendStatus(request, response, 416, {
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes */${info.size}`,
+      });
+    }
+    const start = range?.start ?? 0;
+    const length = range === null ? info.size : range.end - range.start + 1;
+    response.writeHead(range === null ? 200 : 206, {
       ...FOLDER_HEADERS,
       "Content-Type": previewContentType(file),
-      "Content-Length": String(info.size),
+      "Content-Length": String(length),
+      "Accept-Ranges": "bytes",
+      ...(range === null ? {} : { "Content-Range": `bytes ${start}-${range.end}/${info.size}` }),
     });
-    if (request.method === "HEAD" || info.size === 0) return void response.end();
+    if (request.method === "HEAD" || length === 0) return void response.end();
     streaming = true;
     // The stream closes the handle when it ends or either side fails. A build can rewrite the file
     // meanwhile: bytes past the stated length would read as the next response on a kept-alive
     // connection, and a short read must not end as if it were complete.
-    const stream = handle.createReadStream({ start: 0, end: info.size - 1 });
+    const stream = handle.createReadStream({ start, end: start + length - 1 });
     await NodeStreamPromises.pipeline(stream, response, { end: false });
-    if (stream.bytesRead === info.size) response.end();
+    if (stream.bytesRead === length) response.end();
     else response.destroy();
   } finally {
     if (!streaming) await handle.close().catch(() => undefined);
@@ -297,17 +341,22 @@ export const DOCKER_MISSING_MESSAGE =
 const DOCKER_NOT_RUNNING_MESSAGE =
   "Docker is not running. Start Docker Desktop or OrbStack, then share the container again.";
 
-/** Argv for `docker run`, never a shell line, so nothing in the input is interpreted. */
-export const previewContainerRunArgs = (options: {
+export interface PreviewContainerStart {
   readonly laneId: string;
   readonly linkId: string;
   readonly port: number;
   readonly input: PreviewContainerShareInput;
-}): ReadonlyArray<string> => [
+}
+
+/**
+ * Argv for `docker run`, never a shell line, so nothing in the input is interpreted. The image is
+ * pulled beforehand, so a share cancelled during a slow pull has created nothing yet.
+ */
+export const previewContainerRunArgs = (options: PreviewContainerStart): ReadonlyArray<string> => [
   "run",
   "-d",
   "--pull",
-  "missing",
+  "never",
   "--label",
   `${DOCKER_LABEL}=${options.laneId}`,
   "--label",
@@ -319,8 +368,9 @@ export const previewContainerRunArgs = (options: {
   ...(options.input.command ?? []),
 ];
 
-// Pulls are slow on a cold cache, and `--pull missing` pulls inside `docker run`.
-const DOCKER_RUN_TIMEOUT = "10 minutes";
+// Pulls are slow on a cold cache. Starting a container whose image is already here is not.
+const DOCKER_PULL_TIMEOUT = "10 minutes";
+const DOCKER_RUN_TIMEOUT = "2 minutes";
 const DOCKER_QUERY_TIMEOUT = "30 seconds";
 const MAX_DOCKER_OUTPUT_BYTES = 1024 * 1024;
 const MAX_DOCKER_MESSAGE_LENGTH = 300;
@@ -342,7 +392,10 @@ const lastLine = (text: string) =>
 
 const invalid = (message: string) => new PreviewLinksError({ reason: "invalid", message });
 
-const runFailure = (output: ProcessRunOutput, options: { image: string; port: number }) => {
+const startFailure = (
+  output: ProcessRunOutput,
+  options: { readonly image: string; readonly port: number; readonly step: "pull" | "run" },
+) => {
   if (DAEMON_DOWN.test(output.stderr)) return invalid(DOCKER_NOT_RUNNING_MESSAGE);
   if (IMAGE_MISSING.test(output.stderr)) {
     return invalid(`Docker could not find the image ${options.image}. Check its name and tag.`);
@@ -355,11 +408,11 @@ const runFailure = (output: ProcessRunOutput, options: { image: string; port: nu
   const detail = lastLine(output.stderr)
     .replace(/^docker: /i, "")
     .slice(0, MAX_DOCKER_MESSAGE_LENGTH);
-  return invalid(
-    detail.length > 0
-      ? `Docker could not start the container: ${detail}`
-      : "Docker could not start the container.",
-  );
+  const failed =
+    options.step === "pull"
+      ? `Docker could not pull the image ${options.image}`
+      : "Docker could not start the container";
+  return invalid(detail.length > 0 ? `${failed}: ${detail}` : `${failed}.`);
 };
 
 /** Docker commands for container links. Queries degrade to "unknown" rather than failing. */
@@ -379,17 +432,17 @@ export const makePreviewContainerOps = Effect.gen(function* () {
       })
       .pipe(Effect.option, Effect.map(Option.getOrNull));
 
-  /** Starts the container detached and resolves to its short id. */
-  const run = (
+  const command = (
     docker: string,
     args: ReadonlyArray<string>,
-    options: { readonly image: string; readonly port: number },
+    timeout: Duration.Input,
+    timeoutMessage: string,
   ) =>
     runner
       .run({
         command: docker,
         args,
-        timeout: DOCKER_RUN_TIMEOUT,
+        timeout,
         maxOutputBytes: MAX_DOCKER_OUTPUT_BYTES,
         outputMode: "truncate",
         env,
@@ -398,18 +451,51 @@ export const makePreviewContainerOps = Effect.gen(function* () {
         Effect.mapError((error) =>
           invalid(
             error._tag === "ProcessTimeoutError"
-              ? "Docker took more than 10 minutes to start the container. Check the image name and the network, then try again."
+              ? timeoutMessage
               : "Docker could not be started on this computer.",
           ),
         ),
-        Effect.flatMap((output) => {
-          if (output.code !== 0) return Effect.fail(runFailure(output, options));
-          const id = lastLine(output.stdout);
-          return CONTAINER_ID_PATTERN.test(id)
-            ? Effect.succeed(id.slice(0, CONTAINER_ID_LENGTH))
-            : Effect.fail(invalid("Docker started the container without reporting its id."));
-        }),
       );
+
+  /**
+   * Pulls the image if it is not here yet. Nothing a failed or cancelled pull leaves behind is a
+   * container, so only `run` needs cleaning up after.
+   */
+  const pull = (docker: string, start: PreviewContainerStart) =>
+    Effect.gen(function* () {
+      const { image } = start.input;
+      const local = yield* query(docker, ["image", "inspect", "--format", "{{.Id}}", image]);
+      if (local?.code === 0) return;
+      const pulled = yield* command(
+        docker,
+        ["pull", image],
+        DOCKER_PULL_TIMEOUT,
+        `Docker took more than 10 minutes to pull the image ${image}. Check the image name and the network, then try again.`,
+      );
+      if (pulled.code !== 0) {
+        return yield* startFailure(pulled, { image, port: start.port, step: "pull" });
+      }
+    });
+
+  /** Starts the container detached from an image `pull` made sure is here. */
+  const run = (docker: string, start: PreviewContainerStart) =>
+    Effect.gen(function* () {
+      const { image } = start.input;
+      const output = yield* command(
+        docker,
+        previewContainerRunArgs(start),
+        DOCKER_RUN_TIMEOUT,
+        "Docker took more than 2 minutes to start the container. Try again.",
+      );
+      if (output.code !== 0) {
+        return yield* startFailure(output, { image, port: start.port, step: "run" });
+      }
+      const id = lastLine(output.stdout);
+      if (!CONTAINER_ID_PATTERN.test(id)) {
+        return yield* invalid("Docker started the container without reporting its id.");
+      }
+      return id.slice(0, CONTAINER_ID_LENGTH);
+    });
 
   /** Null when Docker cannot say, such as while it is not running. */
   const running = (docker: string, containerId: string) =>
@@ -447,7 +533,7 @@ export const makePreviewContainerOps = Effect.gen(function* () {
       }),
     );
 
-  return { run, running, remove, removeLabelled };
+  return { pull, run, running, remove, removeLabelled };
 });
 
 export type PreviewContainerOps = Effect.Success<typeof makePreviewContainerOps>;

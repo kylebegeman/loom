@@ -250,7 +250,8 @@ const make = Effect.gen(function* () {
         };
       },
       Effect.scoped,
-      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+      (effect, input) =>
+        observeVaultHealth(effect, input.id, input.expectedVersion, { kind: "github" }),
     ),
     change: Effect.fn("VaultGitHub.change")(function* (input, actor, authorize) {
       yield* authorize;
@@ -300,7 +301,8 @@ const make = Effect.gen(function* () {
         );
       },
       Effect.scoped,
-      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+      (effect, input) =>
+        observeVaultHealth(effect, input.id, input.expectedVersion, { kind: "github" }),
     ),
     readiness: Effect.fn("VaultGitHub.readiness")(function* (input, adminAuthorize) {
       let providerInstanceId: string | null = null;
@@ -453,7 +455,8 @@ const make = Effect.gen(function* () {
         );
       },
       Effect.scoped,
-      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+      (effect, input) =>
+        observeVaultHealth(effect, input.id, input.expectedVersion, { kind: "github" }),
     ),
   });
 });

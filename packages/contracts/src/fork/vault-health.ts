@@ -4,6 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { ProjectId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { VaultProfilePinList, VaultProfilePin } from "./vault-profiles.ts";
+import { VaultSshTarget } from "./vault-ssh.ts";
 import { VaultError, VaultItemId } from "./vault-core.ts";
 const Time = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const VaultHealthClass = Schema.Literals([
@@ -13,12 +14,22 @@ export const VaultHealthClass = Schema.Literals([
   "configuration",
 ]);
 export type VaultHealthClass = typeof VaultHealthClass.Type;
+export const VaultHealthOutageTarget = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github") }),
+  Schema.Struct({
+    kind: Schema.Literal("ssh"),
+    hostname: VaultSshTarget.fields.hostname,
+    port: VaultSshTarget.fields.port,
+  }),
+]);
+export type VaultHealthOutageTarget = typeof VaultHealthOutageTarget.Type;
 export const VaultHealthIssue = Schema.Struct({
   id: Schema.String,
   itemId: VaultItemId,
   itemLabel: Schema.String,
   itemVersion: Schema.Int,
   category: VaultHealthClass,
+  outageTarget: Schema.optional(VaultHealthOutageTarget),
   state: Schema.Literals(["open", "snoozed", "dismissed", "resolved"]),
   firstSeenAt: Time,
   lastSeenAt: Time,
@@ -45,6 +56,15 @@ export const VaultHealthSnapshot = Schema.Struct({
   rules: Schema.Array(VaultHealthRule),
   issues: Schema.Array(VaultHealthIssue),
   omittedIssues: Schema.Int,
+  outageGroups: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        target: VaultHealthOutageTarget,
+        issueIds: Schema.Array(Schema.String).check(Schema.isMinLength(2), Schema.isMaxLength(256)),
+      }),
+    ).check(Schema.isMaxLength(128)),
+  ),
 });
 export type VaultHealthSnapshot = typeof VaultHealthSnapshot.Type;
 export const VaultHealthRecheckResult = Schema.Struct({
@@ -71,10 +91,22 @@ export const VaultHealthContextInput = Schema.Struct({
   cursor: Schema.NullOr(ProjectId),
 });
 export type VaultHealthContextInput = typeof VaultHealthContextInput.Type;
+const discoveryLimits = {
+  externalConsumers: Schema.Literal("not-discovered"),
+  providerCopies: Schema.Literal("unknown"),
+  authorization: Schema.Literal("not-evaluated"),
+};
 export const VaultHealthContextPage = Schema.Struct({
   itemId: VaultItemId,
   checkedAt: Time,
   inspectedProjects: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({
+      ...discoveryLimits,
+      scope: Schema.Literal("project-page"),
+      unattributedGrants: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
   scannedProjects: Schema.optional(
     Schema.Array(Schema.Struct({ id: ProjectId, title: Schema.String })).check(
       Schema.isMaxLength(10),
@@ -117,6 +149,9 @@ export const VaultHealthRetainedPage = Schema.Struct({
   projectId: ProjectId,
   checkedAt: Time,
   inspectedSelections: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({ ...discoveryLimits, scope: Schema.Literal("retained-page") }),
+  ),
   unattributableSelections: Schema.Int,
   nextCursor: VaultProfilePinList.fields.cursor,
   items: Schema.Array(

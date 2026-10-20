@@ -12,9 +12,8 @@ import {
   vaultHealthMessage,
   vaultHealthRecheckMessage,
   vaultHealthVisibleState,
+  vaultHealthInboxGroups,
 } from "@t3tools/client-runtime/fork";
-import { AsyncResult } from "effect/reactivity";
-import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -63,7 +62,7 @@ function Inbox({
 }) {
   const atom = atoms.snapshot({ environmentId, input: {} }),
     result = useAtomValue(atom),
-    snapshot = Option.getOrNull(AsyncResult.value(result));
+    snapshot = result._tag === "Success" && !result.waiting ? result.value : null;
   const [contextIssue, setContextIssue] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null),
     [itemId, setItemId] = useState(""),
@@ -78,10 +77,11 @@ function Inbox({
   const pageResult = useAtomValue(
       core.list({ environmentId, input: { cursor, includeArchived: false } }),
     ),
-    page = Option.getOrNull(AsyncResult.value(pageResult));
+    page = pageResult._tag === "Success" && !pageResult.waiting ? pageResult.value : null;
   const canApply = useAtomValue(atoms.apply.permissionAtom(environmentId));
   const now = useVaultTime(snapshot?.issues.map((issue) => issue.snoozedUntil) ?? []);
-  const locked = busy || !canWrite || !canApply || result.waiting || result._tag === "Failure";
+  const locked =
+    !snapshot || busy || !canWrite || !canApply || result.waiting || result._tag === "Failure";
   const act = async (work: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
@@ -131,7 +131,11 @@ function Inbox({
           size="sm"
           variant="outline"
           disabled={busy}
-          onClick={() => appAtomRegistry.refresh(atom)}
+          onClick={() => {
+            setError(null);
+            setNotice(null);
+            appAtomRegistry.refresh(atom);
+          }}
         >
           Refresh health
         </Button>
@@ -148,97 +152,112 @@ function Inbox({
         .length === 0 ? (
         <p>No active maintenance issues.</p>
       ) : null}
-      {snapshot?.issues
-        .filter((i) => history || !["dismissed", "resolved"].includes(i.state))
-        .map((issue) => (
-          <section
-            key={issue.id}
-            className="flex flex-col gap-2 rounded-md border p-3"
-            aria-label={`${issue.itemLabel} ${issue.category}`}
-          >
-            <p className="font-medium">
-              {issue.itemLabel}: {issue.category}
-            </p>
-            <p>{vaultHealthMessage(issue)}</p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
-            >
-              Review access
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
-            >
-              {contextIssue === issue.id ? "Hide project references" : "Show project references"}
-            </Button>
-            {contextIssue === issue.id ? (
-              <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
-            ) : null}
-            <p className="text-sm">
-              {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences · Last seen{" "}
-              {new Date(issue.lastSeenAt).toLocaleString()}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={locked}
-                onClick={() =>
-                  void act(async () => {
-                    const result = await runVault(atoms.recheck, {
-                      environmentId,
-                      input: { itemId: issue.itemId },
-                    });
-                    setNotice(vaultHealthRecheckMessage(result.outcome));
-                  })
-                }
-              >
-                Recheck
-              </Button>
-              {issue.state === "snoozed" ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked}
-                  onClick={() => void issueAction(issue, "unsnooze")}
+      {snapshot
+        ? vaultHealthInboxGroups(snapshot, history).map((group) => (
+            <div key={group.id} className="flex flex-col gap-3">
+              {group.label ? (
+                <>
+                  <h3 className="font-medium">Outage reports: {group.label}</h3>
+                  <p>
+                    {group.issues.length} affected items. Reports share a destination; they may have
+                    different causes. Review and update each item separately.
+                  </p>
+                </>
+              ) : null}
+              {group.issues.map((issue) => (
+                <section
+                  key={issue.id}
+                  className="flex flex-col gap-2 rounded-md border p-3"
+                  aria-label={`${issue.itemLabel} ${issue.category}`}
                 >
-                  Unsnooze
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked}
-                  onClick={() => void issueAction(issue, "snooze")}
-                >
-                  Snooze 1 day
-                </Button>
-              )}
-              {["dismissed", "resolved"].includes(issue.state) ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked}
-                  onClick={() => void issueAction(issue, "reopen")}
-                >
-                  Reopen
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked}
-                  onClick={() => void issueAction(issue, "dismiss")}
-                >
-                  Dismiss
-                </Button>
-              )}
+                  <p className="font-medium">
+                    {issue.itemLabel}: {issue.category}
+                  </p>
+                  <p>{vaultHealthMessage(issue)}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
+                  >
+                    Review access
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
+                  >
+                    {contextIssue === issue.id
+                      ? "Hide project references"
+                      : "Show project references"}
+                  </Button>
+                  {contextIssue === issue.id ? (
+                    <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
+                  ) : null}
+                  <p className="text-sm">
+                    {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences · Last
+                    seen {new Date(issue.lastSeenAt).toLocaleString()}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={locked}
+                      onClick={() =>
+                        void act(async () => {
+                          const result = await runVault(atoms.recheck, {
+                            environmentId,
+                            input: { itemId: issue.itemId },
+                          });
+                          setNotice(vaultHealthRecheckMessage(result.outcome));
+                        })
+                      }
+                    >
+                      Recheck
+                    </Button>
+                    {issue.state === "snoozed" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => void issueAction(issue, "unsnooze")}
+                      >
+                        Unsnooze
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => void issueAction(issue, "snooze")}
+                      >
+                        Snooze 1 day
+                      </Button>
+                    )}
+                    {["dismissed", "resolved"].includes(issue.state) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => void issueAction(issue, "reopen")}
+                      >
+                        Reopen
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => void issueAction(issue, "dismiss")}
+                      >
+                        Dismiss
+                      </Button>
+                    )}
+                  </div>
+                </section>
+              ))}
             </div>
-          </section>
-        ))}
+          ))
+        : null}
       {snapshot?.omittedIssues ? (
         <p>{snapshot.omittedIssues} older issues omitted by retention.</p>
       ) : null}
