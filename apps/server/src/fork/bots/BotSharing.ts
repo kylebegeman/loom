@@ -843,7 +843,9 @@ const make = Effect.gen(function* () {
   );
   yield* keepGoing(
     "Reading remote bot runs from the Library failed",
+    // A cancel read before recovery finds no live run to stop, and is acked all the same.
     Effect.gen(function* () {
+      yield* bots.whenRecovered;
       const reading = (yield* available) && (yield* sharing.readsRequests());
       if (!reading) return yield* Effect.sleep(IDLE_POLL);
       const deliveries = yield* client.nextRequests(LONG_POLL_MS);

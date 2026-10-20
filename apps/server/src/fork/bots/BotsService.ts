@@ -1381,7 +1381,15 @@ export const make = Effect.gen(function* () {
   });
 
   const cancel = Effect.fn("BotsService.cancel")(function* (runId: string) {
-    const entry = live.get(runId);
+    let entry = live.get(runId);
+    if (entry === undefined) {
+      const run = yield* getRun(runId);
+      // After a restart an unfinished run is live only once recovery reaches it.
+      if (run.ranOn == null && !isTerminalBotRunStatus(run.status)) {
+        yield* Deferred.await(recovered);
+        entry = live.get(runId);
+      }
+    }
     if (entry === undefined) {
       const run = yield* getRun(runId);
       // The other computer reports the cancelled run back like any other ending.

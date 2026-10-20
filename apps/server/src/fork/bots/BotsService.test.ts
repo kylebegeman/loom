@@ -3,6 +3,7 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { BOTS_RESULT_MAX_BYTES, type BotRun, type BotStarterId } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { makeBotsStore } from "./BotsStore.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
@@ -211,8 +212,12 @@ describe("BotsService", () => {
           finishedAt: null,
         });
 
+        // A cancel that arrives before recovery waits for it instead of finding no live run.
+        const cancelling = yield* Effect.forkChild(bots.cancel("running-run"));
+        yield* Effect.yieldNow;
         yield* bots.recover();
-        yield* bots.cancel("running-run");
+        yield* bots.markRecovered;
+        yield* Fiber.join(cancelling);
         expect(harness.interrupted).toEqual(["bot-run-running-run"]);
         expect(yield* bots.awaitRun("running-run", 60_000)).toMatchObject({
           status: "cancelled",
