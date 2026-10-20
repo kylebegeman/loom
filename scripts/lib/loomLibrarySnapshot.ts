@@ -52,6 +52,39 @@ export async function sqliteSnapshot(
     database?.close();
   }
 }
+const decodeJournalMode = Schema.decodeUnknownSync(
+  Schema.Array(Schema.Struct({ journal_mode: Schema.String })),
+);
+// sqlite3_rsync gives a replica the origin's WAL mode. Rollback-journal mode keeps it one
+// self-contained file, so read-only verification and restores never need its -wal or -shm.
+export async function settleSqliteReplica(file: string): Promise<void> {
+  const database = new NodeSqlite.DatabaseSync(file);
+  try {
+    const mode = decodeJournalMode(database.prepare("PRAGMA journal_mode=DELETE").all())[0]
+      ?.journal_mode;
+    if (mode !== "delete")
+      throw new Error(`Replica stayed in ${mode ?? "an unknown"} journal mode; is it still open?`);
+    if (
+      decodeIntegrity(database.prepare("PRAGMA integrity_check").all()).some(
+        (row) => row.integrity_check !== "ok",
+      )
+    )
+      throw new Error("Replica integrity check failed.");
+  } finally {
+    database.close();
+  }
+  // A leftover journal may hold committed pages or a rollback, so it is never removed here.
+  for (const suffix of ["-wal", "-journal"])
+    if (
+      await NodeFSP.access(`${file}${suffix}`).then(
+        () => true,
+        () => false,
+      )
+    )
+      throw new Error(`Replica left ${NodePath.basename(file)}${suffix} behind.`);
+  // sqlite3_rsync creates a new replica with the process umask.
+  await NodeFSP.chmod(file, 0o600);
+}
 export async function fileFingerprint(file: string): Promise<{ digest: string; bytes: number }> {
   const hash = NodeCrypto.createHash("sha256");
   let bytes = 0;
