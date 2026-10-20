@@ -1,21 +1,22 @@
 # L75 seams
 
-## Extension points
+## Implemented integration
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
-future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+No upstream files or seam manifest entries were added. The initial import uses fork-owned
+contracts, service, RPC authorization, runtime, settings, palette, MCP and CLI registries.
+Web/desktop use the existing settings route; mobile mounts the import section from the
+fork-owned Vault settings. The capability is `vault-migration-imports`.
 
-## Packet integration review
+Private values use the existing redacted RPC ingress. The initial import has no filesystem,
+SSH, GitHub, provider configuration, scheduled-run or Library integration. It adds an encrypted
+OpenBao migration subtree; the reviewed namespace policy is an operator-owned prerequisite.
+See [operations](../../operations/vault.md#development-import-operating-policy).
 
-Inspect GitHubHostSetup and SSH configuration writers. Prefer explicit per-repository configuration; no global rewrite of personal SSH or Git defaults.
+## Remaining integration review
 
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
+Inventory and verified cutover must inspect GitHubHostSetup and SSH configuration writers.
+Prefer explicit per-repository configuration, with reviewed fingerprints and guarded rollback.
+No global rewrite of personal SSH or Git defaults is selected by this first implementation.
+Enumerate any future upstream edits with markers in this packet, FORK.md and the seam manifest.
 
-## Actual seams and merge status
-
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+Reviewed against fork main `f7cd2e14d1`; no new upstream integration needs a seam exemption.

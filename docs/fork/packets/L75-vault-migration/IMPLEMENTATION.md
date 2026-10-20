@@ -1,7 +1,21 @@
 # L75 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: **In progress; initial reviewed imports implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
+
+## Delivered slice and next work
+
+The service, redacted contracts, guarded shared commands, web/desktop and mobile forms, safe
+administrator MCP/CLI status, and synthetic failure/recovery checks implement one manually
+entered development secret/note. No personal credential source is read or changed.
+Production readiness waits on the reviewed migration-subtree policy; the host owner applies
+[the exact commands](../../operations/vault.md#development-import-operating-policy).
+
+Next: inventory configured development dependencies without extracting credentials, then
+review fresh SSH and dedicated GitHub replacements, verify access, and prepare per-repository
+cutover with guarded rollback. Typed import adapters, native/remote acceptance, interrupted
+cutover, unrelated personal-repository preservation and source-specific cleanup remain open.
+Full scope is retained; the manual import slice does not complete L75.
 
 ## Before starting
 

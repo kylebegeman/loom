@@ -1,24 +1,18 @@
 # L75 references
 
-## Product selection
+Kyle selected V03 and the complete sixteen-item Vault scope for implementation. The initial
+reviewed import was developed against fork main `f7cd2e14d1`.
 
-Kyle selected all sixteen Loom Vault ideas for implementation on 2026-10-17. This packet is
-**V03** in the [shared index](../LOOM-VAULT.md). It is new platform scope, not a claim of
-an old Loom implementation or inherited P/F selection.
+- [Contracts](../../../../packages/contracts/src/fork/vault-migration.ts): explicit confirmations,
+  redacted private ingress and safe result states.
+- [Migration service](../../../../apps/server/src/fork/vault/VaultMigration.ts): encrypted plan
+  binding and receipts over the existing [VaultCore](../../../../apps/server/src/fork/vault/VaultCore.ts).
+- [GitHubHostSetup](../../../../apps/server/src/sourceControl/GitHubHostSetup.ts): existing HTTPS
+  setup; no automatic SSH remote migration is added here.
+- [User help](../../user/vault.md#import-development-records): starting the reviewed import.
+- [Operating policy](../../operations/vault.md#development-import-operating-policy): host-owner handoff.
+- [Foundation](../LOOM-VAULT-FOUNDATION.md), [extension points](../EXTENSION-POINTS.md), and
+  [shared design gates](../LOOM-VAULT.md#design-decisions-before-building): cross-packet constraints.
 
-## Current source
-
-Verified against `2f385ee835`; refresh line citations before implementation.
-
-- [`apps/server/src/sourceControl/GitHubHostSetup.ts:330`](../../../../apps/server/src/sourceControl/GitHubHostSetup.ts#L330): Existing setup configures GitHub HTTPS access.
-- [`apps/desktop/src/shell/DesktopShellEnvironment.ts:433`](../../../../apps/desktop/src/shell/DesktopShellEnvironment.ts#L433): Desktop inherits an SSH agent socket; this is not Vault enrollment.
-
-## Shared design and prior art
-
-- [Shared foundation](../LOOM-VAULT-FOUNDATION.md): shared boundaries and backend selection.
-- [Packet conventions](../CONVENTIONS.md): additive integration and focused verification.
-- [Loom Vault decisions](../LOOM-VAULT.md#design-decisions-before-building): unsettled product choices.
-
-External engines and specs in the foundation are evaluation references. No external code or
-assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
-this packet adds no application dependency.
+Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0). This slice adds no external code, application
+dependency, Library deployment or SQL migration. Personal password managers remain separate.

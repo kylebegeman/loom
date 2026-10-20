@@ -1,3 +1,4 @@
+import { VAULT_MIGRATION_WS_METHODS as VM } from "@t3tools/contracts/fork";
 import { VAULT_HEALTH_WS_METHODS as VH } from "@t3tools/contracts/fork";
 import { VAULT_GITHUB_WS_METHODS as VG } from "@t3tools/contracts/fork";
 import {
@@ -48,6 +49,12 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [VM.list]: AuthAccessReadScope,
+  [VM.inspect]: AuthAccessReadScope,
+  [VM.prepare]: AuthAccessWriteScope,
+  [VM.apply]: AuthAccessWriteScope,
+  [VM.cancel]: AuthAccessWriteScope,
+  [VM.archive]: AuthAccessWriteScope,
   [VH.snapshot]: AuthAccessReadScope,
   [VH.context]: AuthAccessReadScope,
   [VH.retained]: AuthAccessReadScope,

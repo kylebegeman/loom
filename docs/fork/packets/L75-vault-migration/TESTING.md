@@ -1,45 +1,73 @@
 # L75 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L79; they do not establish this packet's acceptance.
+Status: initial reviewed development secret/note imports verified locally. Full migration
+acceptance is incomplete; no personal credentials, production paths or provider probes used.
 
-## Automated behavior
+## Automated evidence
 
-- SSH remotes remain unchanged until the user selects that exact migration.
-- A replacement failing its access check leaves the working configuration intact.
-- Repeated apply is idempotent; concurrent config edits block apply or rollback instead of being overwritten.
+- `VaultMigration.test.ts`: explicit development attestation, prepare without item creation,
+  immutable metadata/private-byte binding, idempotency, expiry using a controlled clock,
+  cancellation, guarded archive conflicts after edits, and import/archive receipt recovery.
+  Inspecting a recovered import does not write its ledger. Migration records/results omit the
+  private value. Tests use real VaultCore with an in-memory CAS OpenBao boundary.
+- `vault-migration.test.ts`: redacted ingress, required literal confirmations, unsupported
+  typed kinds and private input length limits.
+- `vault-migration.permissions.test.ts`: four mutations require the destination environment's
+  write grant and observe revocation, independently of another environment's grant.
+- `migration-mcp.test.ts`: list/status are the only tools; agents and read-only MCP clients are
+  refused before service access.
+- The real fork `mcp/registration.test.ts` verifies all toolkits can register during startup.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
-
-## Manual and integrated acceptance
-
-Use synthetic personal and development identities. Migrate one repository, preserve a second personal repository, interrupt during cutover and recover from the persisted receipt.
-
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
-
-## Focused verification commands
-
-Once implementation files exist, assign concrete test filenames in this document and run:
+These five files passed **11 tests**. Existing feature, RPC authorization, settings and palette
+registry checks passed **27 tests** in four additional files. All five changed package
+typechecks, focused lint and the mobile native static check passed. Documentation links, the
+390-row seam manifest and whitespace checks passed. Relevant packages: server, contracts, client-runtime,
+web and mobile. Use only focused commands:
 
 ```sh
-vp test run apps/server/src/fork/vault-migration/service.test.ts
-vp lint apps/server/src/fork/vault-migration
-vp run --filter t3 typecheck
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigration.test.ts apps/server/src/fork/vault/migration-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts packages/contracts/src/fork/vault-migration.test.ts packages/client-runtime/src/fork/vault-migration.permissions.test.ts
+./node_modules/.bin/vp run --filter t3 typecheck
+./node_modules/.bin/vp run --filter @t3tools/contracts typecheck
+./node_modules/.bin/vp run --filter @t3tools/client-runtime typecheck
+./node_modules/.bin/vp run --filter @t3tools/web typecheck
+./node_modules/.bin/vp run --filter @t3tools/mobile typecheck
+./node_modules/.bin/vp run lint:mobile
 ```
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+## Main integration
 
-## Merge safety and results
+Merged current fork main `9b59eb558d` without conflicts; its Library backup changes are retained.
+The ten-file focused integration run passed **56 tests**, including real fork MCP registration
+and the merged backup suite. One existing live `sqlite3_rsync` test was skipped because
+`LOOM_TEST_SQLITE3_RSYNC` is not configured; no binary was installed. All five consumer package
+typechecks and focused lint passed again after the merge. No repository-wide checks ran.
 
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+## Integrated acceptance
+
+Authorized local Browser-panel checks against isolated state passed:
+
+- Blank and unconfirmed development forms cannot prepare; the separate review is required.
+- Preparing creates only a migration ledger, confirmed by the synthetic OpenBao item 404.
+- Cancel clears private input and creates no record. A prepared review can reopen and accept
+  the same private value without losing the input field during typing.
+- Confirmed secret and multiline note imports reach committed version one; status refresh
+  preserves the result. Mismatched reentry reports a review-specific error and creates no item;
+  corrected reentry can commit the same review. Guarded archive reaches version two, with restore in Vault management.
+- Review hides private values, secret entry is masked, and a 390 CSS-pixel viewport has no
+  horizontal document overflow.
+
+The dev proxy briefly returned 502 during source-watch restarts; a reload after the backend
+recovered restored the same isolated environment. This was not a migration operation failure.
+
+Native mobile interaction is pending because the installed client is stale and installs are
+currently prohibited. Electron shell, remote/relay/tunnel, version-skew interaction and real
+OpenBao outage recovery remain unverified. Shared contracts and package checks do not replace
+those acceptance passes. No browser result establishes native mobile acceptance.
+
+## Full packet acceptance still required
+
+Inventory must identify selected dependency metadata without reading personal store contents.
+Typed adapters must verify replacement access before changing a selected repository, preserve
+an unrelated personal repository, recover interrupted cutover and reject concurrent config edits
+on apply/rollback. No such configuration-writing implementation is claimed in this slice.
+L77 also remains restricted to its recorded local maintenance acceptance.

@@ -1,10 +1,26 @@
 # L75: Guided migration from personal credential stores
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress; reviewed development imports implemented locally; waiting on host policy.** Kyle selected the full packet. Inventory, typed adapter migration and verified configuration cutover remain unfinished.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
 V03 | Minor improvement | Complexity: Medium | Impact: High
+
+## Delivered and remaining scope
+
+Web/desktop and native mobile settings can prepare a ten-minute review of one manually entered
+development secret or secure note. A separate confirmation stores a new record. Cancellation,
+reopen/reentry, status recovery, and guarded archival of the unchanged imported item use the
+same service. CLI/MCP expose safe administrator list/status, without private-value import tools.
+Local browser acceptance passed with synthetic input; native, Electron shell and remote
+interaction acceptance remain pending. This does not access personal stores or files, configure
+SSH/GitHub, verify provider access, create grants, or change repository configuration.
+
+Inventory, dedicated replacement orchestration, typed SSH/GitHub imports, access verification,
+reviewed repository cutover and guarded configuration rollback remain selected work. Prefer
+fresh Vault SSH keys and dedicated GitHub App/token connections in their existing flows.
+Production use waits on the namespace policy in [operations](../../operations/vault.md#development-import-operating-policy).
+No Library deployment, SQL migration or new dependency is required.
 
 ## Scope
 
@@ -22,7 +38,7 @@ OS-specific execution constraints are defined in the product and technical docum
 
 Existing fork core, HTTP, settings, palette, CLI and MCP registrations as applicable.
 `ext-vault` has an implemented encrypted-record boundary. Broker, identity and delivery portions
-remain target designs; inspect the exact specification before consuming them.
+have partial implementations; inspect their packets before relying on their target scope.
 
 ## Dependencies and future opportunities
 
@@ -30,8 +46,8 @@ Uses foundation import, connector and SSH adapter interfaces when available; mis
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+No upstream seams were added. [SEAMS.md](./SEAMS.md) records fork registry integration.
+Implementation was reviewed against fork main `f7cd2e14d1`.
 
 ## Documents
 
