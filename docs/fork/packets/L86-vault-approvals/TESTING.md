@@ -223,3 +223,36 @@ services explicitly; no new retry/resume endpoint or dispatch engine is enabled.
 integration acceptance, not live-provider proof, durable duplicate suppression or crash-safe
 one-time consumption. Server typecheck, focused lint/format, documentation links, 392 seam rows
 and whitespace pass. No production, Library, OpenBao-path/policy, install or release action occurs.
+
+## Gated durable journal and crash reconciliation
+
+Six focused suites pass **84 tests**, including 11 journal cases, access-service behavior,
+OpenBao store boundaries, explicit-retry acceptance, feature registration and real MCP registration.
+Crash cases simulate failures before/after prepare, reservation and completion commits, rebuilding
+services over retained storage. They prove unknown-reservation refusal, stable replay receipts,
+one winner under concurrent CAS, terminal cancellation, ownership denial, revocation before
+reservation, corrupt/unsupported/unavailable isolation, 128-entry refusal without young eviction,
+atomic age reclamation and original-request-based retirement. A synthetic transport that dies if
+called demonstrates the journal never executes an operation. Every observation's execution,
+automatic-resumption and allow-once gates remain false.
+
+The dedicated proof runs two phases against a fresh loopback OpenBao 2.7.1 using a service token
+with exactly the documented minimal policy, not root. Root is used only for disposable fixture
+setup. First phase proves journal create/read/update and stale CAS conflict under existing
+`profiles/*` rights, denies a sibling path with no grant, reads the unchanged format-3 policy
+alongside the journal, and revokes approval despite a corrupt journal. It restores the journal's
+unknown record, stops the captured backend process, restarts/unseals its retained synthetic Raft
+data, then proves unknown outcome and approval revocation survive. Both phase tests pass; each
+phase skips only its counterpart. Tokens and unseal shares are private fixture data and the
+runner removes its temporary directory/process afterward. No existing dev backend is touched.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/OperationJournal.test.ts apps/server/src/fork/vault/VaultAccess.test.ts apps/server/src/fork/vault/OpenBaoStore.test.ts apps/server/src/fork/vault/VaultApprovalRetry.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/features.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/journal_proof.py --bao /absolute/path/to/bao
+```
+
+Server typecheck, focused lint/format, Python syntax, documentation links, 392 seam rows and
+whitespace pass. No client or public transport changed; no additional simulator/browser pass
+is needed. Policy remains 3; notification observations remain memory-only. Journal-based dispatch,
+exactly-once effects and actual one-time grant consumption are not implemented or claimed.
+Older runtimes ignore the separate reserved record, as described in TECHNICAL.md.

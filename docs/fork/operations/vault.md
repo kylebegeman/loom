@@ -643,3 +643,22 @@ Existing policy write rights suffice; no new OpenBao paths, destroy permissions 
 rollout are introduced. Migration/replacement rollout remains deferred to the host owner behind
 L79. Notification delivery remains stubbed; automatic resumption and one-time consumption are
 still disabled. Kyle owns native acceptance and the Threads-screen render defect.
+
+## Gated operation-journal compatibility
+
+L86's internal journal uses `environments/<namespace>/profiles/_operations/approval-journal-v1`
+in the existing `loom` KV v2 mount. `_operations` is reserved and is not a project hash. The
+existing documented `profiles/*` read/create/update rights cover this record; no list, delete,
+destroy or additional policy capability is needed. The isolated policy proof is in L86 TESTING.md.
+No production policy was inspected or modified. Service construction does not open the record;
+no public operation or background dispatcher currently writes it.
+
+The version-1 journal body is separate from access-policy format 3 and uses the same json-v1
+store envelope and CAS. It retains at most 128 entries for 24 hours from original request
+creation; current-value pruning does not erase KV version history or snapshots. Older runtimes
+continue reading format 3 and ignore the reserved journal path safely. They cannot resume a
+journal-bound operation. Re-upgrade must reconcile journal state with current access, item and
+run state; never remove journal evidence to make a request retryable. Restoring an old snapshot
+also needs revocation and outcome reconciliation. A reserved entry with uncertain dispatch becomes
+unknown and is not automatically repeated. Notification observations are still process memory.
+Execution, resumption and allow-once gates remain closed; enabling them requires Kyle's approval.

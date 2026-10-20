@@ -1,3 +1,4 @@
+import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
 import * as MigrationGitMetadata from "./vault/MigrationGitMetadata.ts";
@@ -215,6 +216,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultWorkloads,
   layerVaultCore,
   layerVaultAccess,
+  OperationJournal.layer.pipe(Layer.provide(Layer.merge(layerVaultAccess, layerVaultStore))),
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(

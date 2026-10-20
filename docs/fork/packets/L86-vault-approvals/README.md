@@ -47,6 +47,9 @@ are blocked or require review. Every result still requires normal adapter valida
 all execution gates false. Proposals are not captured continuations or stored credentials.
 Preparation now rejects concurrent policy/status changes, fails closed on backend outages and
 returns actionable repair guidance. Lost approval replies reconcile without duplicating grants.
+The internal digest-only operation journal now persists bounded crash/reconciliation evidence
+through the existing OpenBao adapter. It adds no public execution path; no operation resumes
+or consumes an allow-once approval. See TECHNICAL.md for its reserved path and downgrade behavior.
 Policy format remains 3. The inbox opens with pending work first and shows retained/pending counts. Show all requests
 restores decision review and revocation. Expiry and age-out update the client view without
 changing the authoritative server checks. Kyle's native iOS acceptance passed on `0.0.99`; TESTING.md records evidence and remaining

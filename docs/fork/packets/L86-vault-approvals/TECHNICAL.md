@@ -291,3 +291,61 @@ delivery later. This does not cancel an already dispatched external alert or imp
 recall. Production still has no external transport. A controlled service race proves approval
 can commit while its original creation call awaits an adapter; the subsequent status remains
 approved with one grant and no executable continuation.
+
+## Durable operation journal v1
+
+Kyle authorized this separate journal within the existing KV v2 `loom/` mount and environment
+namespace, without changing access-policy format 3 or opening an execution gate. The documented
+minimal service policy already permits read/create/update on `profiles/*`, but does not grant a
+new sibling at the environment root. Use the reserved non-project branch
+`environments/<sha256(environmentId)>/profiles/_operations/approval-journal-v1`. Project profile
+readers resolve only SHA-256 project IDs and their registry/run children; they never enumerate
+or open `_operations`. This reuse needs no new capability, mount or list/delete/destroy right.
+An isolated OpenBao proof must use that existing narrow policy, demonstrate successful CAS
+read/create/update, and prove a sibling outside it is denied. No production policy is read.
+
+The existing store supplies the `json-v1` envelope. The journal body has `schemaVersion: 1`,
+its environment ID, a monotonic logical revision, and at most 128 operation entries. Each entry
+contains the original request ID, waiting-operation ID, requester thread/run, item/version,
+request revision, canonical operation digest, server creation/update times, fixed retirement
+deadline, entry revision, state, optional reservation ID and a bounded outcome classification.
+No credential, argv, prompt, continuation, output, private error text or arbitrary URL is stored.
+The original retained request creation time fixes retirement at 24 hours, not 24 hours after
+retry. New writes prune aged entries in the same CAS; reads hide aged entries. Young entries are
+never evicted. Backend versions/backups have separate operator retention, as with access-policy.
+
+Journal states are `prepared`, `reserved`, `completed`, `unknown` and `cancelled`. Preparation
+requires current requester ownership and operation-specific policy validation. Reservation saves
+a stable reservation ID before any possible future dispatch. It is durable evidence of intent,
+never a dispatch permit: every result keeps `canExecute`, `automaticResumption` and
+`allowOnceConsumption` false. No public RPC/MCP/CLI, provider continuation, execution adapter or
+background worker calls these journal mutations in this milestone. There is no environment
+setting that opens a gate. Synthetic tests exercise reservation and result recording directly
+through this internal journal service.
+
+| Crash boundary                                                          | Recovery behavior                                                                                                                                  |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Before prepare commits                                                  | No journal entry; fresh explicit preparation still needs the retained approved request.                                                            |
+| Prepare commits, reply lost                                             | Same ID/digest reconciles to the prepared entry; changed context conflicts.                                                                        |
+| Before reservation commits                                              | Remains prepared; no dispatch is authorized by a failed write.                                                                                     |
+| Reservation commits, reply lost, or process dies before/during dispatch | Treat reservation as unknown and never redispatch automatically, even if an external effect probably never started.                                |
+| External result arrives but completion write/reply is lost              | A saved completed entry is readable; an unsaved result remains unknown. No journal state proves an external write did not occur.                   |
+| Competing reservations                                                  | One CAS winner; a losing or repeated reservation never creates another dispatch opportunity.                                                       |
+| Approval revoked, run/item changes, or request expires                  | New preparation/reservation is refused. Existing outcome evidence cannot restore access.                                                           |
+| Missing/corrupt/unsupported journal, outage or age-out                  | Journal operation fails closed; ordinary approval inbox and policy readers remain usable. Missing evidence cannot recreate an execution allowance. |
+
+Reconciliation of a retained reserved entry conservatively commits `unknown`. Completion accepts
+only the exact retained reservation identity and expected entry revision. Completed, unknown or
+cancelled states cannot return to prepared/reserved. Stable operation IDs and CAS protect retained
+retries, not permanent idempotency after age-out. There is no atomic transaction with policy:
+validate before and immediately before journal CAS, and any future dispatcher must recheck policy
+at its adapter boundary after reservation. A race may consume an opportunity without execution;
+it must never grant an opportunity after revocation. An eventual provider-side idempotency key
+or verified result could improve recovery but is not claimed here.
+
+Downgrade: older runtimes never open this reserved record and continue reading/writing policy
+format 3 and ordinary project profiles. They cannot safely continue a journal-bound operation;
+resumption/one-time paths remain unavailable. Re-upgrade requires reconciliation with current
+policy and request/run state; never delete the journal to manufacture a retry. The proof checks
+an unchanged format-3 reader alongside the journal. No policy format 4 or capability escalation
+is introduced. This journal is separate from memory-only notification observations.

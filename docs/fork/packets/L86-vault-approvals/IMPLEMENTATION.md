@@ -51,9 +51,19 @@ or GitHub API operation; revocation, stale context and uncertain writes retain t
 The public preparation/resumption/allow-once gates stay false and no new execution endpoint is
 introduced. Live-provider and durable resumption/consumption acceptance remain open.
 
-Next selected work: durable operation-journal design and synthetic crash/reconciliation proof
-behind closed execution gates. Keep policy format 3 and no new OpenBao path or permission. The
-existing notification-memory decision does not authorize a persistent execution journal.
+The durable journal is implemented as an internal service under the reserved non-project branch
+`profiles/_operations/approval-journal-v1` in the existing environment namespace. It stores
+versioned digest-only entries through the existing json-v1/CAS adapter, bounded at 24 hours from
+request creation and 128 entries. No public endpoint, dispatcher or continuation uses it;
+registration has no backend reads/writes. Reservations reconcile conservatively to unknown.
+The real synthetic OpenBao proof uses only the documented minimal service-policy capabilities,
+checks denied siblings and format-3 independence, and restarts the backend to verify retention
+of unknown outcome and approval revocation. No production policy was inspected or changed.
+
+Next selected work: approver-context labels and accessible review navigation. The journal must
+remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
+approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome
+reconciliation remain unfinished. Policy stays at format 3.
 Approver-context labels/accessibility, fresh step-up authentication, Android/Electron and remote
 relay/tunnel acceptance remain unfinished. L75 stays waiting on CW-1/L79 host policy.
 Do not mark the full packet done.
