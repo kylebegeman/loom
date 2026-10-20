@@ -255,16 +255,33 @@ expected sender and a fifteen-minute window. It EXAMINEs the exact tag folder, t
 folder is unavailable; it never enumerates folders. UID SEARCH covers at most the latest 64
 possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient and server
 INTERNALDATE before fetching a bounded body. Conflicting run aliases refuse selection; sender
-Date headers do not set freshness. A final STATUS observes UIDVALIDITY independently of the
-cached EXAMINE response. Changed epoch, message identity/body metadata or expiry across reads
-and logout withdraw the result. This is an observation, not an atomic verification transaction.
+Date headers do not set freshness. INTERNALDATE has second precision, so arrival filtering
+floors the request start to its second; no wider clock-skew allowance is implied. Malformed
+address-header objects refuse correlation, including semicolon-separated or trailing-dot aliases.
+A final STATUS observes UIDVALIDITY independently of the cached EXAMINE response. Changed epoch,
+routing headers, body metadata or expiry across reads and logout withdraw the result. This is an observation, not an atomic verification transaction.
 
-Bounds are three matching messages, 256 KiB per body, 16 KiB per header and 64 KiB decoded plain
-text per message. The transport caps literals and aggregate bytes, verifies the certificate and
-hostname for `imap.migadu.com:993`, uses a ten-second socket timeout and checks an elapsed budget
-at read boundaries. It never downgrades to plaintext or accepts a prompt-selected host. MIME
-plain text is decoded without rendering HTML, fetching resources or descending into attachments
-or forwarded bodies. HTML-only messages produce empty text; no OTP or link is selected or used.
+The result distinguishes usable messages from per-candidate outcomes. An unusable matched MIME
+body, part/encoding/text limit or oversized message is visible as `unusable`, while another UID's
+usable text remains available. With no usable message, such candidates produce `unusable-candidates`,
+not pending. Oversized in-window headers are skipped as `unclassified`; arrival filtering happens
+first so old unrelated mail produces no candidate. A missing UID or FETCH NO becomes
+`unavailable`, without assuming that NO proves expungement. With no usable/unusable message,
+these observations produce `incomplete-in-bounded-window`. All candidate reasons are fixed
+codes, with no provider error or unusable body content. Candidate outcomes are bounded by the
+64-UID scan; at most three usable messages are returned.
+
+Other bounds are 256 KiB per body, 16 KiB per header, 32 visited MIME parts and 64 KiB decoded
+plain text per message. The transport caps literals and aggregate logical bytes, plus stdlib
+socket read-ahead, and verifies the certificate and hostname for `imap.migadu.com:993`. It uses
+a ten-second socket inactivity timeout and checks a thirty-second elapsed budget at logical
+read boundaries. This is not a hard wall-clock bound: one imaplib read with continuous slow
+progress can outlast it. A custom deadline-aware receive layer is not implemented; this remains
+a live-read acceptance limit. The stdlib TLS handshake has its own timeout. The reader never
+downgrades to plaintext or accepts a prompt-selected host. MIME multipart subtypes, including
+signed/unknown ones, are traversed as mixed without validating signatures. Plain text is decoded
+without rendering HTML, fetching resources or descending into attachments or message/rfc822
+forwarded bodies. HTML-only messages produce empty text; no OTP or link is selected or used.
 
 The result identifies its bounded coverage. An empty scan does not prove absence from older
 mail, Spam or other folders. Sender-header matching is correlation, not authenticated sender

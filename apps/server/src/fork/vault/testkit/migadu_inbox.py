@@ -35,6 +35,10 @@ class InboxError(Exception):
     """Public failures use fixed messages, never server replies or message content."""
 
 
+class UnusableMessage(InboxError):
+    """A fixed per-candidate reason, without withdrawing other UIDs' usable text."""
+
+
 @dataclass(frozen=True)
 class Credentials:
     username: str
@@ -141,13 +145,22 @@ def literal(data: Any, uid: int) -> tuple[bytes, bytes, datetime, int]:
     return metadata, body, received_at, int(size[1])
 
 
+def routing_headers(message: EmailMessage) -> list[tuple[str, str]]:
+    # BODY.PEEK[HEADER.FIELDS] omits MIME structure; compare only the fields actually observed.
+    names = {"from", *(name.lower() for name in RECIPIENT_HEADERS)}
+    return sorted((name.lower(), value.replace("\r\n", "\n")) for name, value in message.raw_items()
+                  if name.lower() in names)
+
+
 def matches(message: EmailMessage, request: Request) -> bool:
-    if message.defects or len(message.get_all("From", [])) != 1:
-        return False
     try:
-        senders = getaddresses(message.get_all("From", []), strict=True)
-        recipients = getaddresses([str(value) for name in RECIPIENT_HEADERS
-                                  for value in message.get_all(name, [])], strict=True)
+        from_headers = message.get_all("From", [])
+        recipient_headers = [value for name in RECIPIENT_HEADERS for value in message.get_all(name, [])]
+        if (message.defects or len(from_headers) != 1
+                or any(value.defects for value in [*from_headers, *recipient_headers])):
+            return False
+        senders = getaddresses([str(value) for value in from_headers], strict=True)
+        recipients = getaddresses([str(value) for value in recipient_headers], strict=True)
     except (TypeError, ValueError):
         return False
     if len(senders) != 1 or senders[0][1].lower() != request.expected_sender:
@@ -158,6 +171,12 @@ def matches(message: EmailMessage, request: Request) -> bool:
     return request.recipient in addresses and run_addresses == {request.recipient}
 
 
+def fetch_unavailable(kind: str, data: Any) -> bool:
+    # NO does not prove expungement, so expose uncertainty rather than infer absence or pending mail.
+    return kind == "NO" or (kind == "OK" and (data is None or isinstance(data, (list, tuple))
+                                            and all(part is None for part in data)))
+
+
 def plain_text(message: EmailMessage) -> str:
     result: list[str] = []
     remaining_parts = 32
@@ -166,26 +185,35 @@ def plain_text(message: EmailMessage) -> str:
         nonlocal remaining_parts
         remaining_parts -= 1
         if remaining_parts < 0:
-            raise InboxError("The test message has too many MIME parts.")
+            raise UnusableMessage("too-many-mime-parts")
+        if part.defects:
+            raise UnusableMessage("invalid-mime")
         if part.get_content_disposition() == "attachment" or part.get_filename() is not None:
             return
         if part.get_content_type() == "text/plain":
             try:
                 text = part.get_content()
             except (LookupError, ValueError, TypeError):
-                raise InboxError("The test message uses an unsupported text encoding.") from None
+                raise UnusableMessage("unsupported-text-encoding") from None
             if not isinstance(text, str):
-                raise InboxError("The test message uses an unsupported text encoding.")
+                raise UnusableMessage("unsupported-text-encoding")
+            if part.defects:
+                raise UnusableMessage("invalid-mime")
             result.append(text)
-        elif part.get_content_type() in ("multipart/alternative", "multipart/mixed", "multipart/related"):
+        elif part.get_content_maintype() == "multipart":
             for child in part.iter_parts():
                 visit(child)
         # Forwarded messages, HTML, attachments and external resources are never rendered or followed.
 
-    visit(message)
+    try:
+        visit(message)
+    except UnusableMessage:
+        raise
+    except (MessageError, LookupError, ValueError, TypeError, RecursionError):
+        raise UnusableMessage("invalid-mime") from None
     text = "\n".join(result)
     if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
-        raise InboxError("The test message text exceeds the read limit.")
+        raise UnusableMessage("text-too-large")
     return text
 
 
@@ -213,6 +241,7 @@ def read_once(credentials: Credentials, request: Request, *,
         validity, next_uid = number(client, "UIDVALIDITY"), number(client, "UIDNEXT")
         lower = max(1, next_uid - UID_WINDOW)
         messages: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
         if next_uid > 1:
             kind, data = client.uid("SEARCH", None, "UID", f"{lower}:{next_uid - 1}")
             if kind != "OK" or len(data) != 1 or not isinstance(data[0], bytes):
@@ -226,26 +255,45 @@ def read_once(credentials: Credentials, request: Request, *,
             for uid in sorted(uids, reverse=True):
                 validate_request(request, clock())
                 kind, data = client.uid("FETCH", str(uid), f"(UID INTERNALDATE RFC822.SIZE {HEADER_PART})")
+                if fetch_unavailable(kind, data):
+                    candidates.append({"uid": uid, "status": "unavailable", "reason": "message-unavailable"})
+                    continue
                 if kind != "OK":
                     raise InboxError("The test-message read failed.")
                 _, headers, arrived, size = literal(data, uid)
+                if not request.started_at.replace(microsecond=0) <= arrived <= clock():
+                    continue
                 if len(headers) > MAX_HEADER_BYTES:
-                    raise InboxError("The test-message headers exceed the read limit.")
-                if not request.started_at <= arrived <= clock() or not 0 < size <= MAX_MESSAGE_BYTES:
+                    candidates.append({"uid": uid, "status": "unclassified", "reason": "headers-too-large"})
                     continue
                 header = BytesParser(policy=policy.default).parsebytes(headers)
                 if not matches(header, request):
                     continue
+                if not 0 < size <= MAX_MESSAGE_BYTES:
+                    candidates.append({"uid": uid, "status": "unusable", "reason": "message-too-large"})
+                    continue
                 kind, data = client.uid("FETCH", str(uid), f"(UID INTERNALDATE RFC822.SIZE BODY.PEEK[]<0.{MAX_MESSAGE_BYTES + 1}>)")
+                if fetch_unavailable(kind, data):
+                    candidates.append({"uid": uid, "status": "unavailable", "reason": "message-unavailable"})
+                    continue
                 if kind != "OK":
                     raise InboxError("The test-message read failed.")
                 _, body, body_arrived, body_size = literal(data, uid)
                 if body_arrived != arrived or body_size != size or len(body) != size:
                     raise InboxError("The test message changed during its read.")
-                message = BytesParser(policy=policy.default).parsebytes(body)
-                if not matches(message, request):
+                try:
+                    message = BytesParser(policy=policy.default).parsebytes(body)
+                except (MessageError, ValueError, RecursionError):
+                    candidates.append({"uid": uid, "status": "unusable", "reason": "invalid-mime"})
+                    continue
+                if routing_headers(message) != routing_headers(header):
                     raise InboxError("The test message changed during its read.")
-                messages.append({"uid": uid, "receivedAt": arrived.isoformat(), "text": plain_text(message)})
+                try:
+                    text = plain_text(message)
+                except UnusableMessage as error:
+                    candidates.append({"uid": uid, "status": "unusable", "reason": str(error)})
+                    continue
+                messages.append({"uid": uid, "receivedAt": arrived.isoformat(), "text": text})
                 if len(messages) == MAX_MATCHES:
                     break
         # STATUS observes the current epoch; response() would only return the cached EXAMINE value.
@@ -256,8 +304,10 @@ def read_once(credentials: Credentials, request: Request, *,
         validate_request(request, clock())
         result = {"runId": request.run_id, "recipient": request.recipient, "folder": folder,
                 "uidValidity": validity, "uidNext": next_uid, "coverage": "bounded-latest-64-uids",
-                "status": "found" if messages else "pending-in-bounded-window",
-                "messages": messages, "readOnly": True, "senderAuthenticated": False,
+                "status": ("found" if messages else "unusable-candidates"
+                           if any(candidate["status"] == "unusable" for candidate in candidates)
+                           else "incomplete-in-bounded-window" if candidates else "pending-in-bounded-window"),
+                "messages": messages, "candidates": candidates, "readOnly": True, "senderAuthenticated": False,
                 "canReadLive": False, "canExecute": False, "automaticResumption": False,
                 "automaticVerification": False, "allowOnceConsumption": False}
     except InboxError:

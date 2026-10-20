@@ -767,7 +767,8 @@ The mail owner can prepare the following in the existing Migadu dashboard:
 
 1. Preserve the existing dedicated `vault@begam.in` mailbox. No mailbox creation is needed.
 2. Create a custom-password identity for the test reader, scoped to that mailbox, with IMAP
-   access enabled. Disable sending, POP and ManageSieve for that identity. Keep the organization
+   access enabled. The gated contract expects the proposed login `vault-reader@begam.in`; its
+   creation and access have not been verified. Disable sending, POP and ManageSieve for that identity. Keep the organization
    API key and the mailbox administrator password outside worker access.
 3. Verify a harmless message to `vault+loom-<run-id>@begam.in` arrives in that mailbox. Migadu
    supports plus addressing without creating aliases for each run and normally sorts each tag

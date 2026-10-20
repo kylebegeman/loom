@@ -101,23 +101,63 @@ records the dedicated-mail setup and remaining live acceptance.
 
 ## Migadu contract evidence
 
-Twenty-five focused Python tests pass from `apps/server`: 23 message/selection/failure cases
-and two real stdlib IMAP-over-TLS cases against a disposable loopback server. The combined
-local-target and Migadu suites pass 71 tests at this tip, also with `TMPDIR=/var/tmp`. A temporary
-certificate is trusted only in the positive synthetic test. An untrusted certificate fails
-before LOGIN. The connector keeps the fixed Migadu hostname/SNI while its socket is redirected
-to loopback for this proof. The wire transcript exercises EXAMINE, UID SEARCH/FETCH with
-BODY.PEEK, STATUS and LOGOUT; any mutation command would fail the synthetic server. Temporary
-TLS keys are removed by fixture cleanup. No live provider or personal credential is used.
+Thirty-nine focused Migadu Python tests pass from `apps/server`: 35 message/selection/budget
+cases and four stdlib IMAP-over-TLS cases against a disposable loopback server. Together with
+the 46 local-target cases, **85 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
+cases also pass using stock macOS `/usr/bin/openssl` through `PATH=/usr/bin:/bin` and the current
+Python executable. Temporary certificates use portable `-nodes`; fixture keys are removed on
+cleanup. Both untrusted certificates and a trusted certificate for another hostname refuse
+before any IMAP verb reaches the server. Fixed Migadu hostname/SNI is retained while socket
+destinations are redirected to loopback. No live provider or personal credential is used.
 
-Cases prove the default plus folder and Inbox fallback; exact sender/run recipients; conflicting
-and case-variant aliases; another run's body refusal; server arrival filtering independent of
-Date headers; invalid/expired requests and expiry during body read or logout; UID epoch/identity
-and body drift; search/literal/header/body/text bounds; MIME plain text without HTML, attachments
-or forwarded messages; fixed private errors; password protocol-injection refusal; reader identity;
-explicit unsupported-Python refusal; and default live-connection refusal before authentication.
-HTML-only content is not rendered or followed and exports empty plain text. Sender authentication
-and automatic verification are not claimed.
+Both fixtures honor the actual requested HEADER.FIELDS, preserving raw address syntax instead
+of rebuilding it through the contract's recipient list. Conflicts in Cc, Delivered-To and
+X-Original-To prevent body reads, including on the real loopback wire. Raw encoded From CR/LF,
+semicolon-separated recipients and trailing-dot aliases cannot abort or cross-match a read.
+
+Per-candidate regressions cover body-only MIME defects, invalid base64, unknown charset, more
+than 32 parts, decoded-text and message-size bounds, both UID orderings around a valid message,
+and all-unusable versus pending. Old unrelated oversized headers are skipped before parsing;
+in-window oversized headers report unclassified coverage. Vanished/header-or-body FETCH and NO
+responses preserve another UID's text and report unavailable coverage; an all-unavailable scan
+reports incomplete, not pending. Same-second INTERNALDATE is accepted despite a microsecond
+request start. Signed/unknown multipart text is read while forwarded/attached text stays closed.
+
+Independent body cases change INTERNALDATE, RFC822.SIZE and literal length while preserving
+routing headers, each withdrawing the entire observation. A three-message expiry case proves
+only the first body is fetched. Private-provider failures check formatted traceback, cause and
+suppressed context, in addition to fixed public error text. Finite flooding-socket fixtures drive
+both untagged lines (5 MB offered) and repeated literals (10 MB offered) through actual imaplib
+parsing and stop near the 2 MB logical-byte budget, allowing one stdlib receive buffer of read-ahead.
+Expired readline refuses before socket access. No sleeps or live network destinations are used.
+
+A separate no-sleep slow-drip reproduction confirms optional s1: one read can finish after 45
+simulated seconds despite a thirty-second boundary budget. This remains explicitly documented,
+not claimed fixed. No live-read gate is opened. The proposed `vault-reader@begam.in` login is
+now named in the mail-owner handoff; its setup is not claimed.
+
+An in-memory mutation pass kills **28/28 mutants**, without changing the disk source:
+
+| Review item | Mutations caught                                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| m1          | Body-only defects treated as drift; unusable candidate abort; removed part/text/MIME-defect limits. Separate unknown-charset and body-defect regressions also pass. |
+| m2          | From parsing moved outside the guarded block.                                                                                                                       |
+| m3          | Same-second start truncation removed.                                                                                                                               |
+| m4          | Oversized matched candidate silently discarded.                                                                                                                     |
+| m5          | Oversized-header abort restored, or header classification moved before arrival filtering.                                                                           |
+| m6          | Traversal restricted to the original three multipart subtypes.                                                                                                      |
+| m8          | `-nodes` replaced with `-noenc` under stock macOS PATH, failing certificate setup.                                                                                  |
+| m9          | Requested fields reduced to FROM/TO; Cc, Delivered-To or X-Original-To removed from correlation separately.                                                         |
+| m10         | Byte accounting removed; readline override removed; readline deadline check removed.                                                                                |
+| m11         | Whole body-metadata check removed, then each arrival, size and length guard removed separately.                                                                     |
+| m12         | Certificate hostname verification disabled despite a trusted wrong-host certificate.                                                                                |
+| m13         | In-loop request expiry removed; provider exception-context suppression removed.                                                                                     |
+| c2, c3      | Header-object defects ignored; vanished-FETCH handling removed.                                                                                                     |
+
+m7 is the tracker correction restoring durable broker delivery alongside broker mail integration.
+c1 is the explicit proposed reader identity in the handoff. Existing search/epoch/identity,
+request validation, credential-ingress refusal, default-live refusal and no-mutation coverage
+remain. Sender authentication and automatic verification are not claimed.
 
 ```sh
 # From apps/server:

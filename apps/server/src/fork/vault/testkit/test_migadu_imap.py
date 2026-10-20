@@ -1,9 +1,6 @@
 """Real stdlib IMAP/TLS proof against a disposable loopback synthetic mail server."""
 from __future__ import annotations
 
-from email import policy
-from email.message import EmailMessage
-from email.parser import BytesParser
 from pathlib import Path
 import socket
 import ssl
@@ -14,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import migadu_inbox as inbox
-from test_migadu_inbox import CREDENTIALS, NOW, REQUEST, message
+from test_migadu_inbox import CREDENTIALS, NOW, REQUEST, OTHER_RUN, message, selected_headers
 
 
 class TestMigaduTransport(unittest.TestCase):
@@ -24,24 +21,27 @@ class TestMigaduTransport(unittest.TestCase):
         cls.addClassCleanup(temporary.cleanup)
         cls.certificate = Path(temporary.name) / "cert.pem"
         cls.key = Path(temporary.name) / "key.pem"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-noenc",
-                        "-keyout", str(cls.key), "-out", str(cls.certificate), "-days", "1",
-                        "-subj", "/CN=imap.migadu.com", "-addext", "subjectAltName=DNS:imap.migadu.com"],
-                       check=True, capture_output=True, timeout=15)
+        cls.wrong_certificate = Path(temporary.name) / "wrong-cert.pem"
+        cls.wrong_key = Path(temporary.name) / "wrong-key.pem"
+        for hostname, certificate, key in (("imap.migadu.com", cls.certificate, cls.key),
+                                           ("imap.evil.example", cls.wrong_certificate, cls.wrong_key)):
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                            "-keyout", str(key), "-out", str(certificate), "-days", "1",
+                            "-subj", "/CN=" + hostname, "-addext", "subjectAltName=DNS:" + hostname],
+                           check=True, capture_output=True, timeout=15)
 
-    def exercise(self, *, trusted: bool):
+    def exercise(self, *, trusted: bool, wrong_hostname: bool = False,
+                 mail: bytes | None = None, expect_found: bool = True):
         server = socket.socket()
         server.bind(("127.0.0.1", 0))
         server.listen(1)
         server.settimeout(5)
         port = server.getsockname()[1]
         server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        server_context.load_cert_chain(str(self.certificate), str(self.key))
-        body = message()
-        parsed = BytesParser(policy=policy.default).parsebytes(body)
-        headers = EmailMessage()
-        headers["From"], headers["To"] = parsed["From"], parsed["To"]
-        header_bytes = headers.as_bytes()
+        certificate = self.wrong_certificate if wrong_hostname else self.certificate
+        key = self.wrong_key if wrong_hostname else self.key
+        server_context.load_cert_chain(str(certificate), str(key))
+        body = message() if mail is None else mail
         verbs: list[str] = []
         failures: list[str] = []
 
@@ -70,7 +70,7 @@ class TestMigaduTransport(unittest.TestCase):
                                 elif verb == b"UID" and arguments.startswith(b"SEARCH "):
                                     stream.write(b"* SEARCH 1\r\n" + suffix)
                                 elif verb == b"UID" and arguments.startswith(b"FETCH ") and b"BODY.PEEK[" in arguments:
-                                    data = header_bytes if b"HEADER.FIELDS" in arguments else body
+                                    data = selected_headers(body, arguments.decode("ascii")) if b"HEADER.FIELDS" in arguments else body
                                     metadata = f'* 1 FETCH (UID 1 INTERNALDATE "20-Oct-2026 20:00:00 +0000" RFC822.SIZE {len(body)} BODY[] {{{len(data)}}}\r\n'.encode()
                                     stream.write(metadata + data + b")\r\n" + suffix)
                                 elif verb == b"STATUS":
@@ -83,7 +83,7 @@ class TestMigaduTransport(unittest.TestCase):
                                     failures.append(verb.decode("ascii"))
                                     stream.write(tag + b" BAD forbidden command\r\n")
             except ssl.SSLError:
-                if trusted:
+                if trusted and not wrong_hostname:
                     failures.append("unexpected TLS failure")
             except (OSError, ValueError):
                 failures.append("synthetic transport failure")
@@ -99,14 +99,17 @@ class TestMigaduTransport(unittest.TestCase):
             destinations.append(address)
             return original_connect(("127.0.0.1", port), *args, **kwargs)
 
-        context = ssl.create_default_context(cafile=str(self.certificate) if trusted else None)
+        context = ssl.create_default_context(cafile=str(certificate) if trusted else None)
         try:
             with patch.object(socket, "create_connection", side_effect=loopback), \
                  patch.object(inbox.ssl, "create_default_context", return_value=context):
-                if trusted:
+                if trusted and not wrong_hostname:
                     result = inbox.read_once(CREDENTIALS, REQUEST, connect=inbox.BoundedImap, clock=lambda: NOW)
-                    self.assertEqual(result["status"], "found")
-                    self.assertIn("123456", result["messages"][0]["text"])
+                    self.assertEqual(result["status"], "found" if expect_found else "pending-in-bounded-window")
+                    if expect_found:
+                        self.assertIn("123456", result["messages"][0]["text"])
+                    else:
+                        self.assertEqual(result["messages"], [])
                 else:
                     with self.assertRaises(inbox.InboxError):
                         inbox.read_once(CREDENTIALS, REQUEST, connect=inbox.BoundedImap, clock=lambda: NOW)
@@ -127,6 +130,16 @@ class TestMigaduTransport(unittest.TestCase):
 
     def test_untrusted_server_certificate_fails_before_sending_login(self):
         self.assertEqual(self.exercise(trusted=False), [])
+
+    def test_trusted_certificate_for_another_hostname_fails_before_any_imap_verb(self):
+        self.assertEqual(self.exercise(trusted=True, wrong_hostname=True), [])
+
+    def test_wire_header_field_selection_exposes_conflicting_recipient_routes(self):
+        other = REQUEST.recipient.replace(REQUEST.run_id, OTHER_RUN)
+        for name in ("Cc", "Delivered-To", "X-Original-To"):
+            with self.subTest(name=name):
+                verbs = self.exercise(trusted=True, mail=message(extra={name: other}), expect_found=False)
+                self.assertEqual(verbs.count("UID"), 2)
 
 
 if __name__ == "__main__":
