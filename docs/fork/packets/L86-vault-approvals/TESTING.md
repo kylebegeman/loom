@@ -571,3 +571,28 @@ enforcement. Item-wide protection remains a product/schema recommendation. Compa
 classification persistence across retention, temporal handoff/callback revalidation, live adapters,
 restart-safe cleanup and the host rollback barrier remain open. L86 stays partial; L75 remains
 waiting on CW-1/L79 host policy. No Library, production, SSH, install or release action is included.
+
+## Temporal intent revalidation proof
+
+`OperationIntentTemporal.proof.test.ts` adds ten tests. Its test-local protocol models separate
+classification, coverage, reviewed-binding and current-authority observations, validation and
+final commit. Eleven hazards at eight positions, with and without restoration, cover 352
+handoff/callback schedules. Changes before commit refuse new starts or callback acceptance;
+changes after a start cannot recall it but prevent subsequent callbacks. Restored values,
+interruption, unknown outcome, ownership loss and duplicate callback commit cannot refund the
+opportunity. Normal unchanged context permits one abstract start and fresh same-owner callback
+checks, without claiming multiple signatures or remote effects.
+
+Counterexamples show stale cached validation and individually valid mixed reads authorizing
+unsafe commits. Restored classification/coverage/binding values retain a different symbolic
+generation, so old observations refuse. Coherent generation and final atomic commit are explicit
+model assumptions. This does not prove a production snapshot/fence, unobserved change detection,
+real callback enforcement or cancellation of in-flight external effects. Every reported gate
+stays literal false, even in successful abstract transitions.
+
+The temporal, mandatory-boundary, dispatcher and real acquisition suites pass 51 tests. Server
+typecheck, focused lint/format, changed documentation links, 392 seam rows and whitespace pass. No runtime, contracts, MCP/RPC/CLI/client, persistent schema/classification/
+intent or OpenBao format/path/policy changes are included; policy3/journal1 remain unchanged.
+No UI/native, real OpenBao or live adapter pass is inferred or repeated. The bounded synthetic
+review is complete; remaining owners and opening checks are in IMPLEMENT-NOW. L86 remains partial
+and L75 parked. No Library schema, production, SSH, install or release action is included.

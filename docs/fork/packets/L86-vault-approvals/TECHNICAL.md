@@ -696,6 +696,62 @@ instantiate a production classifier. Actual coverage, protected-item semantics, 
 storage/readers, restart-safe cleanup and host rollback protection require later review and
 implementation. No runtime eligibility or one-time claim follows from this proof.
 
+### Temporal revalidation at handoff and callbacks
+
+`OperationIntentTemporal.proof.test.ts` models asynchronous classification, coverage, reviewed
+binding and current-authority reads, validation and final handoff/callback commit. It adds no
+runtime classifier, field, schema, fence or permit. The model's coherent generation and atomic
+commit are **explicit assumptions**, not capabilities supplied by OpenBao or the existing
+separate policy/journal CAS records. Selecting an implementable consistency primitive remains
+a prerequisite for a future persisted-intent design.
+
+The captured dependency generation belongs to the acquired attempt and cannot be refreshed by
+a caller or a second read. Each component read must be both valid and from that same generation;
+final commit must still observe it and current authority. A changed classification, incomplete
+coverage, changed reviewed binding, revoked/expired/unreadable authority, interruption, crash or
+unknown outcome refuses the remaining operation and retires the local opportunity. Returning
+to the same visible values does not restore that opportunity. Declassification to ordinary mode
+cannot continue an already protected attempt through timed access. A deliberate new operation
+would need fresh authority and review under the eventual selected policy, never a reset.
+
+The proof includes two unsafe protocols as counterexamples. Individually valid reads can come
+from states in which classification and coverage were never valid together. A cached successful
+validation can also be stale by the time a handoff or callback commits. Value equality alone
+misses a protected-to-ordinary-to-protected transition, restored coverage or a changed-and-restored
+binding. A trusted monotonic dependency history would distinguish those transitions; an optional
+field, client timestamp, content hash or two equal reads cannot establish that history. The test
+generation is symbolic and is not proposed as a new persisted property.
+
+Fresh handoff and later callbacks have different ownership requirements. A handoff consumes the
+fresh local opportunity before credential-bearing work. Subsequent authorization callbacks may
+revalidate only the same live attempt, original requester/run, reviewed binding and current
+reservation/authority; they must not require or recreate an unused intent, manufacture a new
+acquisition or start another adapter. Each callback observation is itself single-use. This model
+counts authorization callbacks only, not extra signatures, token issues or remote effects; the
+existing SSH signature limits and unsupported reusable-session boundaries remain unchanged.
+Copied historical evidence or a reconstructed service without live ownership cannot authorize
+a callback. Interruption/ownership loss retires the attempt rather than leaving an implicit
+continuation to recover. Known-session cleanup remains a separately constrained obligation, not
+a callback that resumes the workload.
+
+The model places eleven hazards, both with and without value restoration, at eight positions
+across handoff and callback traces: 352 schedules. A hazard observed before commit prevents new
+starts/callback acceptance. A hazard after an accepted handoff cannot undo that start, but later
+callbacks refuse. No restored evidence refunds an opportunity. Baseline checks allow one abstract
+start and independently revalidated callbacks with unchanged context; duplicate commit, restart
+without ownership and later withdrawal refuse. Every reported observation retains three
+literal-false gates.
+
+This is a proof of the candidate transitions **given the coherent commit assumption**. It does
+not close the physical gap between a final remote authorization read and an external effect,
+make independent OpenBao reads atomic, identify unobserved changes, or recall an already
+released credential/started operation. A real design must select a writer/reader consistency
+boundary and explicitly state its remaining revocation window. Its tests must interrupt the
+actual chosen primitive and adapter callbacks, not substitute this model for it. Actual temporal
+enforcement, compatible persistence/readers, host rollback protection, restart-safe cleanup and
+live adapter behavior remain owner-gated. The bounded synthetic design review is complete;
+additional speculative models would not settle those implementation choices.
+
 ### Adapter-start consumption unit and transport limits
 
 The proposed attempt boundary must precede **all credential-bearing adapter work**, not just

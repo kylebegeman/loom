@@ -130,10 +130,19 @@ shows timed attenuation does not bind an intent budget. Environment/item-wide cl
 a conservative future recommendation, not a selected persisted schema or changed product policy.
 The current services do not implement mandatory intent enforcement.
 
-Next suggested synthetic section: temporal revalidation of classification, coverage and reviewed
-binding across asynchronous handoff/callbacks. It must keep all runtime gates false and add no
-persisted schema/intent. Selecting protected-item semantics, compatible persistence/readers,
-restart-safe cleanup or the host rollback barrier still needs separate Kyle/host-owner review.
+The temporal design proof now covers classification/coverage/binding/authority changes during
+asynchronous reads, validation, handoff and callbacks, including restored-value races and lost
+ownership. It distinguishes a consumed attempt's same-owner callbacks from a new adapter start.
+The coherent generation/atomic commit is a test assumption, not a runtime primitive. The current
+services still do not enforce persisted one-time intent or its mandatory/temporal boundary.
+
+The selected bounded synthetic review is complete. No further independent synthetic L86 slice
+is selected: persistence/readers, protected-item semantics, an implementable consistency boundary,
+restart-safe cleanup and rollback protection require the named owners' decisions and real proofs.
+See [the next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff) for each owner and the
+check that permits the next step. Stop this lane after landing this test/docs slice; retain its
+worktree and unrelated result.json. Do not infer approval to persist new fields, change formats
+or enable execution/resumption/allow-once from these model results.
 Real adapter/provider/host verification remains owner-gated. True one-time eligibility,
 cross-adapter enforcement and downgrade safety remain prerequisites before any gate can open.
 The journal must

@@ -77,7 +77,10 @@ live-provider acceptance remain open. One-time intent and downgrade-reader desig
 optional format-3 metadata and alternate-grant fallback using real-service counterexamples;
 its eligibility model is synthetic only. The mandatory boundary design covers omitted references, delegation and alternate entry points;
 its protected-item classification and coverage checks exist only in a synthetic model. No
-persisted intent or gate change is selected.
+persisted intent or gate change is selected. Temporal synthetic proof now covers handoff and
+callback races, with a coherent commit explicitly assumed rather than implemented. The bounded
+synthetic review is complete; [next-owner checks](../IMPLEMENT-NOW.md#l86-next-owner-handoff)
+identify the remaining decisions and real verification. The packet remains partial.
 
 ## Scope
 
