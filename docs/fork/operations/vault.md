@@ -522,3 +522,34 @@ There is no automatic ledger retention/erase job. Include these paths in existin
 retention procedures. Cancellation, archival and restore are logical actions, not KV history
 erasure. If an imported record changed before a failed receipt was recovered, resolve the
 conflict manually without overwriting that newer record.
+
+## Replacement plan operating policy
+
+Metadata-only inventory uses no OpenBao writes, authentication or network probes. Replacement
+plans are separate from private import ledgers and need read/create/update on
+`<mount>/data/environments/<namespace>/migration-replacements/*` plus list on
+`<mount>/metadata/environments/<namespace>/migration-replacements`. Existing core item rights
+are required to inspect candidate adapter metadata. L75 remains **waiting on deploy**, gated
+on L79; the host owner is not being asked to run production commands now. No Library change.
+
+When the host owner clears those gates, use the development-import procedure above with this
+additional policy block. For the exact same command sequence, replace the two `migrations`
+path segments in that procedure with `migration-replacements`. Preserve the original policy
+backup, review the namespace-scoped diff, then use the same `bao policy write` and rollback
+commands. These paths must be added separately; existing import permissions do not cover them.
+
+```hcl
+path "<mount>/data/environments/<namespace>/migration-replacements/*" {
+  capabilities = ["read", "create", "update"]
+}
+path "<mount>/metadata/environments/<namespace>/migration-replacements" {
+  capabilities = ["list"]
+}
+```
+
+Inventory excludes global/included config, SSH configuration/aliases, environment overrides,
+other checkout roots and external consumers. It cannot identify a personal credential owner or
+prove unattended readiness. GitHub API/gh connection plans cannot verify Git transport. Reviewed
+plans retain explicit verification-required and cutover-unavailable outcomes; they grant no
+workload access and perform no configuration writes. Retain these encrypted ledgers in the
+existing backup procedure; there is no automatic retention or history erasure.

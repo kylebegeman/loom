@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; initial reviewed imports implemented locally.** The sequence below describes the full packet outcome;
+Status: **In progress; reviewed imports, local inventory and replacement intent implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -11,9 +11,14 @@ entered development secret/note. No personal credential source is read or change
 Production readiness waits on the reviewed migration-subtree policy; the host owner applies
 [the exact commands](../../operations/vault.md#development-import-operating-policy).
 
-Next: inventory configured development dependencies without extracting credentials, then
-review fresh SSH and dedicated GitHub replacements, verify access, and prepare per-repository
-cutover with guarded rollback. Typed import adapters, native/remote acceptance, interrupted
+Local metadata inventory and reviewed replacement intent are implemented. They retain unknown
+identity/global/alias coverage and never authorize cutover. SSH Git and GitHub API/gh plans
+have distinct scope. The replacement namespace adds an operator-owned policy prerequisite.
+
+Next: explicit source-specific access verification, bound to the reviewed source/item version,
+then per-repository cutover with guarded rollback. SSH checks must distinguish connection
+success from Git repository access, and GitHub API checks cannot stand in for Git transport.
+Recheck source, item, trust and permissions immediately before any future operation. Typed import adapters, native/remote acceptance, interrupted
 cutover, unrelated personal-repository preservation and source-specific cleanup remain open.
 Full scope is retained; the manual import slice does not complete L75.
 

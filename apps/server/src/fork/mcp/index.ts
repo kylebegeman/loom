@@ -1,3 +1,7 @@
+import {
+  VaultMigrationInventoryToolkit,
+  vaultMigrationInventoryHandlers,
+} from "../vault/migration-inventory-mcp.ts";
 import { VaultMigrationToolkit, vaultMigrationHandlers } from "../vault/migration-mcp.ts";
 import { VaultHealthToolkit, vaultHealthHandlers } from "../vault/health-mcp.ts";
 import { VaultGitHubToolkit, vaultGitHubHandlers } from "../vault/github-mcp.ts";
@@ -25,6 +29,12 @@ import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.
 import { DirectoryToolkit, directoryHandlers } from "../directory/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: VaultMigrationInventoryToolkit,
+    handlers: vaultMigrationInventoryHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultMigrationInventoryToolkit, vaultMigrationInventoryHandlers),
+  },
   {
     toolkit: VaultMigrationToolkit,
     handlers: vaultMigrationHandlers,

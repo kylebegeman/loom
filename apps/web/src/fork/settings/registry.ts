@@ -1,3 +1,4 @@
+import { VaultMigrationInventorySettingsSection } from "../vault/MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
 import { VaultHealthSettingsSection } from "../vault/HealthSettingsSection";
 import { VaultGitHubSettingsSection } from "../vault/GitHubSettingsSection";
@@ -22,6 +23,11 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "vault-migration-inventory",
+    title: "Vault migration plans",
+    Component: VaultMigrationInventorySettingsSection,
+  },
   {
     id: "vault-migration",
     title: "Vault development imports",

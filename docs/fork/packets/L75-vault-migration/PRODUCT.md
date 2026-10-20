@@ -19,6 +19,29 @@ Use the dedicated SSH and GitHub connection flows for their typed records. This 
 never inspects personal stores, bulk exports or files, and does not establish usable workload
 access. The complete workflow below remains selected.
 
+## Implemented inventory and replacement planning
+
+Open **Vault migration plans** in the selected computer's settings or command palette. Inspect
+project dependencies, choose a reported remote, then choose a dedicated existing Vault SSH key
+or GitHub App/token record. Preparing requires a development-only statement; recording review
+requires a separate confirmation of the replacement, scope and computer. Reviews last ten
+minutes, can be reopened by receipt, and can be cancelled even after being reviewed.
+
+Inventory reads only selected local Git configuration at registered project roots. It reports
+fetch URLs and explicit push URLs separately, sanitizes endpoint hints, preserves safe exact SSH
+Git paths, and reports omitted entries. It never invokes helpers, SSH or authentication. Global
+and included configuration, SSH aliases, environment overrides and account identity remain
+unknown. A missing explicit push URL does not imply that pushes have no credential dependency.
+Local URL rewrites require separate review. Unsupported sources are visible without a plan action.
+
+SSH plans concern mediated SSH Git operations and report missing host trust. GitHub App/token
+plans cover API and `gh` operations; they do not replace SSH or HTTPS Git authentication. The
+server checks source freshness, candidate type, endpoint/repository and active item version.
+This is metadata matching, not verification of provider access or development-only ownership.
+Every plan explicitly requires access verification and forbids cutover. Plans create no identity,
+grant, profile, provider session or configuration change. Source-specific verification and guarded
+configuration cutover remain the next implementation section.
+
 ## How it works
 
 Inventory configured credential sources without extracting personal vault contents. Prepare a reviewed change set for dedicated key generation, service reconnection, explicit imports and optional repository configuration updates. Record prior non-secret configuration for rollback and test replacement access before cutover.

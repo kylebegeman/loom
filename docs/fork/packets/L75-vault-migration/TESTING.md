@@ -1,6 +1,6 @@
 # L75 testing
 
-Status: initial reviewed development secret/note imports verified locally. Full migration
+Status: reviewed development imports, metadata inventory and replacement intent verified locally. Full migration
 acceptance is incomplete; no personal credentials, production paths or provider probes used.
 
 ## Automated evidence
@@ -64,10 +64,42 @@ currently prohibited. Electron shell, remote/relay/tunnel, version-skew interact
 OpenBao outage recovery remain unverified. Shared contracts and package checks do not replace
 those acceptance passes. No browser result establishes native mobile acceptance.
 
+## Metadata inventory and replacement-plan evidence
+
+The ten-file focused inventory/adapter/contracts/permissions/registry/MCP run passed **45 tests**.
+It includes the real fork MCP startup registration test. The adapter runs against a disposable
+Git repository: included/global remote config is omitted, helper and SSH-command bodies are
+not executed, ambient authentication variables are not inherited, and the config file stays
+unchanged. Other cases cover bounded project pages, unavailable roots, omitted metadata,
+URL userinfo/query/fragment sanitization, unsupported protocols, absolute/relative SSH paths,
+`.git` preservation and ambiguous path rejection.
+
+Replacement tests cover separate development/review attestations, matching typed adapter
+metadata, immutable retries, source/root/item changes, expiry with a controlled clock, and
+cancellation even when the source cannot be read. GitHub plans retain API/gh-only scope.
+Contracts cannot represent a verified or cutover-authorizing result. Three destination write
+commands observe revocation; administrator MCP reads refuse agent and read-only clients.
+
+Authorized Browser-panel acceptance on isolated state passed inventory, development attestation,
+separate review, GitHub scope display, source-change rejection, failed-read-safe refresh,
+restored-source retry, review, cancellation, and an SSH plan showing missing host trust and the
+exact absolute Git path. The 390 CSS-pixel layout has no horizontal document overflow. No SSH
+probe, GitHub authentication, provider session, grant or repository cutover was performed.
+Synthetic fixture Git metadata was changed only to exercise source conflict/recovery.
+Native mobile interaction, Electron shell and remote/relay/tunnel acceptance remain pending;
+mobile installation remains prohibited. Mobile code is covered by typecheck/static checks.
+
+Run the six new focused files plus the existing four registry/authorization files:
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigrationInventory.test.ts apps/server/src/fork/vault/MigrationGitMetadata.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts packages/client-runtime/src/fork/vault-migration-inventory.permissions.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/settings/registry.test.ts apps/web/src/fork/commandPalette/registry.test.ts
+```
+
 ## Full packet acceptance still required
 
-Inventory must identify selected dependency metadata without reading personal store contents.
-Typed adapters must verify replacement access before changing a selected repository, preserve
-an unrelated personal repository, recover interrupted cutover and reject concurrent config edits
-on apply/rollback. No such configuration-writing implementation is claimed in this slice.
-L77 also remains restricted to its recorded local maintenance acceptance.
+Live source-specific verification must bind the reviewed source, replacement item/version,
+host trust and current permissions. Connection success alone is not repository access, and a
+GitHub API result is not Git transport readiness. Typed imports and replacement provisioning,
+verified cutover, interrupted-cutover recovery, unrelated personal-repository preservation and
+concurrent-edit rejection during configuration apply/rollback remain unfinished. No configuration
+writer is implemented in this slice. L77 retains its separate restricted local acceptance.

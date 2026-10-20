@@ -52,6 +52,28 @@ does not read 1Password, import exports, discover projects, verify logins or cha
 configuration. Administrator `loom vault migration-plans` and `migration-status` report safe
 receipts; private imports use the reviewed form. Never put credentials in chat or command arguments.
 
+## Plan development replacements
+
+Open **Vault migration plans** in the selected computer's Loom settings or command palette.
+Inspect project dependencies, select a remote and choose an existing dedicated Vault SSH key
+or GitHub connection. Confirm that it is dedicated to development, prepare the plan, then review
+its scope and computer before recording your review. You can reopen, refresh or cancel a plan.
+Reviews expire after ten minutes; changed project settings or record versions require a new plan.
+Create fresh SSH keys or dedicated GitHub App/token connections in their existing Vault sections.
+
+Inventory covers selected local Git settings in registered project roots, ten projects per page.
+It reports sanitized endpoint hints and explicit fetch/push URL entries. Global and included
+configuration, SSH aliases, environment overrides and account identity remain unknown. A missing
+explicit push URL does not mean pushes have no credential dependency. Unsupported sources and
+local rewrites need separate review. Inventory does not authenticate or inspect personal stores.
+
+SSH plans cover mediated SSH Git operations. GitHub App/token plans cover API and `gh` operations;
+they do not replace Git SSH/HTTPS authentication. Reviewing a plan verifies no provider access
+and changes no configuration, grants or profiles. **Access verification is still required before
+any cutover.** This release provides no cutover action. Administrator CLI commands
+`loom vault migration-inventory`, `migration-replacements` and `migration-replacement-status`
+return the same safe reports; lists do not recheck source freshness until a plan is opened.
+
 ## Grant recurring access
 
 Open **Vault access** in the selected computer's settings. Add a grant for one thread or all

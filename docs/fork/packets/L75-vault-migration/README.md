@@ -1,6 +1,6 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed development imports implemented locally; waiting on host policy.** Kyle selected the full packet. Inventory, typed adapter migration and verified configuration cutover remain unfinished.
+Status: **In progress; reviewed development imports, local inventory and replacement plans implemented; waiting on host policy.** Kyle selected the full packet. Provider verification, typed imports and configuration cutover remain unfinished.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
@@ -13,10 +13,18 @@ development secret or secure note. A separate confirmation stores a new record. 
 reopen/reentry, status recovery, and guarded archival of the unchanged imported item use the
 same service. CLI/MCP expose safe administrator list/status, without private-value import tools.
 Local browser acceptance passed with synthetic input; native, Electron shell and remote
-interaction acceptance remain pending. This does not access personal stores or files, configure
+interaction acceptance remain pending. The import flow does not access personal stores or files, configure
 SSH/GitHub, verify provider access, create grants, or change repository configuration.
 
-Inventory, dedicated replacement orchestration, typed SSH/GitHub imports, access verification,
+On-demand inventory now reads selected local Git metadata for ten registered project roots per
+page, without network/authentication or personal-store access. It reports safe endpoint hints
+and local helper/SSH-command presence, not account identities. Expiring replacement plans bind
+that source and an explicitly selected active SSH/GitHub item/version. Human review and
+cancellation are recorded; changes or outages block review. Verification remains required and
+cutover is explicitly unavailable, including for reviewed plans. Native, remote and Electron
+shell interaction acceptance remain pending.
+
+Dedicated replacement provisioning, typed SSH/GitHub imports, explicit access verification,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer
 fresh Vault SSH keys and dedicated GitHub App/token connections in their existing flows.
 Production use waits on the namespace policy in [operations](../../operations/vault.md#development-import-operating-policy).

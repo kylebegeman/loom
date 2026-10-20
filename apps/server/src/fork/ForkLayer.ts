@@ -1,3 +1,5 @@
+import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
+import * as MigrationGitMetadata from "./vault/MigrationGitMetadata.ts";
 import * as VaultMigration from "./vault/VaultMigration.ts";
 import * as VaultHealthContext from "./vault/VaultHealthContext.ts";
 import * as VaultHealth from "./vault/VaultHealth.ts";
@@ -169,6 +171,18 @@ const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
 
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultMigrationInventory.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerVaultStore,
+        layerVaultCore,
+        layerVaultSsh,
+        layerVaultGitHub,
+        ProjectStore.layer,
+        MigrationGitMetadata.layer,
+      ),
+    ),
+  ),
   VaultMigration.layer.pipe(Layer.provide(Layer.merge(layerVaultStore, layerVaultCore))),
   layerVaultHealth,
   layerVaultHealthContext,

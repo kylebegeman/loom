@@ -1,3 +1,4 @@
+import { VAULT_MIGRATION_INVENTORY_WS_METHODS as VI } from "./vault-migration-inventory.ts";
 import { VAULT_MIGRATION_WS_METHODS as VM } from "./vault-migration.ts";
 import { VAULT_HEALTH_WS_METHODS as VH } from "./vault-health.ts";
 import { VAULT_GITHUB_WS_METHODS as VG } from "./vault-github.ts";
@@ -32,6 +33,9 @@ import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [VI.prepare]: AuthAccessWriteScope,
+  [VI.review]: AuthAccessWriteScope,
+  [VI.cancel]: AuthAccessWriteScope,
   [VM.prepare]: AuthAccessWriteScope,
   [VM.apply]: AuthAccessWriteScope,
   [VM.cancel]: AuthAccessWriteScope,

@@ -9,6 +9,11 @@ reviewed import was developed against fork main `f7cd2e14d1`.
   binding and receipts over the existing [VaultCore](../../../../apps/server/src/fork/vault/VaultCore.ts).
 - [GitHubHostSetup](../../../../apps/server/src/sourceControl/GitHubHostSetup.ts): existing HTTPS
   setup; no automatic SSH remote migration is added here.
+- [Inventory adapter](../../../../apps/server/src/fork/vault/MigrationGitMetadata.ts) and
+  [replacement service](../../../../apps/server/src/fork/vault/VaultMigrationInventory.ts): bounded
+  local reads, sanitized hints and unverified intent, without config writers.
+- [Inventory contracts](../../../../packages/contracts/src/fork/vault-migration-inventory.ts):
+  literal verification/cutover limits and destination-scoped commands.
 - [User help](../../user/vault.md#import-development-records): starting the reviewed import.
 - [Operating policy](../../operations/vault.md#development-import-operating-policy): host-owner handoff.
 - [Foundation](../LOOM-VAULT-FOUNDATION.md), [extension points](../EXTENSION-POINTS.md), and

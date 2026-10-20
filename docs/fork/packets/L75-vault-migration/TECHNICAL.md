@@ -1,7 +1,7 @@
 # L75 technical design
 
 The initial implementation uses the existing encrypted OpenBao boundary and destination-scoped
-RPC authorization. The complete inventory/cutover design below remains pending.
+RPC authorization. Local inventory and replacement intent are implemented; live verification and cutover remain pending.
 
 ## Implemented reviewed import boundary
 
@@ -41,15 +41,57 @@ The OpenBao service policy requires read/create/update on the migration data sub
 on its metadata directory. [Host commands](../../operations/vault.md#development-import-operating-policy)
 are a handoff to the host owner, not an executed deployment. No Library service change is needed.
 
+## Inventory and replacement intent boundary
+
+`MigrationGitMetadata` runs bounded, read-only Git configuration reads through ProcessRunner.
+It uses `--local --no-includes`, disables system/global config and prompts, and replaces the
+child environment with a small allowlist. Selected remote URL values are transient redacted
+input: URL authentication, query/fragment data, helper bodies and SSH command strings are never
+returned or stored in a plan. Safe SSH paths retain their leading slash and `.git` suffix;
+canonical repository hints alone cannot identify the path for future Git verification. HTTP,
+file/remote-helper schemes and ambiguous paths stay unsupported. Git configuration is never
+executed as a shell command, and SSH configuration is neither read nor evaluated.
+
+`VaultMigrationInventory` limits inventory to ten registered project roots, two reads at once,
+with 40 dependency entries per project. Reads have a five-second/256 KB limit and show
+unavailability instead of trusting partial output. This excludes other checkouts, global or
+included settings, environment overrides, personal identity and external consumers. An absent
+push URL is only the absence of an explicit local setting, not proof of no push dependency.
+
+Replacement preparation rechecks the displayed descriptor, resolves safe candidate adapter
+metadata, and binds the current project ID/root, selected local configuration and exact item
+version. Only active typed SSH keys or GitHub connections matching the reported destination
+are accepted. Local URL rewrites block preparation. Raw config fingerprints stay encrypted and
+are never returned. The development-only statement is attestation, not source classification.
+
+Plans use a separate `migration-replacements/<review-id>` subtree under the environment namespace,
+so existing import ledger readers cannot confuse the two formats. OpenBao CAS and an immutable
+request fingerprint protect retries. Reviews expire after ten minutes. Recording human review
+rechecks source and item freshness and never widens permissions. Cancelling prepared, expired
+or reviewed plans makes no provider/configuration changes; restart and read-only status retain
+the receipt. Lists return 25 stored summaries without project scans; explicit inspect rechecks
+freshness. There is no automatic retention/physical erase job and the shared 4096-key bound applies.
+
+RPC inventory/list/inspect require destination `access:read`; prepare/review/cancel require
+`access:write` with revocation checks. Administrator-only MCP/CLI expose the safe reads, not
+review or mutation. Capability `vault-migration-inventory` gates both clients. No provider adapter
+or scheduled workload receives implicit migration access. GitHub connection metadata is for API
+and `gh` use and never establishes Git transport readiness. Every result has literal
+`verification: required` and `canCutover: false`; reviewed intent cannot authorize future writes.
+
+The separate data/metadata subtree needs an operator-owned policy extension, documented in
+[operations](../../operations/vault.md#replacement-plan-operating-policy). It remains gated by
+L79 production readiness. No Library deployment, SQL migration or application dependency is added.
+
 ## Overview
 
 Inventory configured credential sources without extracting personal vault contents. Prepare a reviewed change set for dedicated key generation, service reconnection, explicit imports and optional repository configuration updates. Record prior non-secret configuration for rollback and test replacement access before cutover.
 
 ## Contracts and authorization
 
-The future inventory operation reports source types and affected consumers; current `inspect` reads one import receipt. `prepare` produces an immutable, expiring plan with configuration fingerprints. `apply` requires that reviewed plan and idempotency key. `rollback` restores only unchanged configuration owned by the migration.
+Current inventory reports selected project-local dependency hints; import `inspect` reads one import receipt and replacement inspect rechecks local source/item metadata. `prepare` produces an immutable, expiring plan with configuration fingerprints. `apply` requires that reviewed plan and idempotency key. `rollback` restores only unchanged configuration owned by the migration.
 
-Existing `loom.vault-migration.*` RPC methods serve the initial import. Inventory/cutover schemas
+Existing `loom.vault-migration.*` RPC methods serve the initial import. Live verification/cutover schemas
 remain a follow-up design output. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.

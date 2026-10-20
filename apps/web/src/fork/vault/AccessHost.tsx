@@ -53,11 +53,11 @@ export function VaultAccessHost() {
   );
   useEffect(
     () =>
-      onOpenVaultMigration((environmentId) => {
+      onOpenVaultMigration((environmentId, section) => {
         void navigate({
           to: "/settings/loom",
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: "loom-vault-migration",
+          hash: section === "inventory" ? "loom-vault-migration-inventory" : "loom-vault-migration",
         });
       }),
     [navigate],
