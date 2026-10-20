@@ -5,7 +5,6 @@ import {
   isBotTriggerHookId,
   BotsError,
   checkTriggerMapping,
-  type BotDefinition,
   type BotInputs,
   type BotInputValue,
   type BotPipelineChange,

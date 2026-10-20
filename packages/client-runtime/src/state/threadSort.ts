@@ -2,8 +2,6 @@ import type { ProjectId } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { EnvironmentThreadShell } from "./models.ts";
-import * as Arr from "effect/Array";
-import * as Order from "effect/Order";
 
 export interface ThreadSortInput {
   readonly createdAt: string;

@@ -230,7 +230,7 @@ describe("BotSharing", () => {
   it.effect("refuses a request sent before the bot changed instead of running the edit", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
-        const { library, bots, sharing } = yield* setup(harness);
+        const { library, sharing } = yield* setup(harness);
         yield* studioPublishes(library);
         yield* studioPublishes(library, { description: "Edited." }, 1);
         yield* sharing.sync();
