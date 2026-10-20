@@ -682,3 +682,8 @@ sending an alert. Status remains available only during the request's retention w
 The inbox starts with pending requests. Choose **Show all requests** to review retained decisions
 or revoke an active or expired approval, then **Show pending requests** to return. Counts and
 visible pending work update at expiry; server-side checks remain authoritative.
+
+Approval cards show current record, thread and project names alongside the IDs and version
+requested. Review those details and the destination before deciding. Changed or unavailable
+context requires refreshed review; you can still deny or cancel the request. On an older server,
+IDs remain available even when names are not. Names do not verify an external account's identity.

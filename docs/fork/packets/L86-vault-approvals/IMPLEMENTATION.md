@@ -60,11 +60,17 @@ The real synthetic OpenBao proof uses only the documented minimal service-policy
 checks denied siblings and format-3 independence, and restarts the backend to verify retention
 of unknown outcome and approval revocation. No production policy was inspected or changed.
 
-Next selected work: approver-context labels and accessible review navigation. The journal must
+Approver-context labels and accessible review are implemented with bounded current metadata,
+ID fallback for older servers, changed/unavailable-context warnings, named web regions/headings
+and contextual native action hints. Stable IDs/version/destination remain visible and server
+decisions stay authoritative. Native acceptance of these additions remains owner-led.
+
+Next selected work: requester-safe journal recovery status and explicit outcome-review guidance,
+without a journal mutation tool or dispatcher. The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome
 reconciliation remain unfinished. Policy stays at format 3.
-Approver-context labels/accessibility, fresh step-up authentication, Android/Electron and remote
+Fresh step-up authentication, Android/Electron and remote
 relay/tunnel acceptance remain unfinished. L75 stays waiting on CW-1/L79 host policy.
 Do not mark the full packet done.
 

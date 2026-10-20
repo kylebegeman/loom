@@ -7,6 +7,7 @@ import {
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
   vaultApprovalState,
+  vaultApprovalReviewLabels,
   vaultApprovalReviewQueue,
   vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
@@ -113,7 +114,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
       ) : null}
       {data ? (
         <div className="flex flex-col items-start gap-2">
-          <p className="text-sm">
+          <p role="status" className="text-sm">
             {review.pendingCount} pending of {review.totalCount} retained requests.
           </p>
           <Button
@@ -136,6 +137,10 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
       {data &&
         review.requests.map((r) => {
           const state = vaultApprovalState(r, now);
+          const labels = vaultApprovalReviewLabels(
+            r,
+            data.reviewContext?.find((c) => c.requestId === r.id),
+          );
           const decide = (
             decision: VaultApprovalChange["decision"],
             durationMs: 300000 | 900000 = 300000,
@@ -149,10 +154,22 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               durationMs,
             });
           return (
-            <article key={r.id} className="flex flex-col gap-2 rounded-md border p-3">
-              <p className="font-medium">
-                {VAULT_ACTION_LABELS[r.action]} · {state}
+            <article
+              key={r.id}
+              aria-labelledby={`vault-request-${r.id}`}
+              className="flex flex-col gap-2 rounded-md border p-3"
+            >
+              <h4 id={`vault-request-${r.id}`} className="font-medium">
+                {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
+              </h4>
+              <p className="break-words text-sm">
+                {labels.thread} · {labels.project}
               </p>
+              {state === "pending" && labels.warning ? (
+                <p role="status" className="text-sm">
+                  {labels.warning}
+                </p>
+              ) : null}
               <p className="break-all text-sm">
                 Thread {r.threadId} · Project {r.projectId}
                 <br />
@@ -184,14 +201,16 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 {state === "pending" ? (
                   <>
                     <Button
-                      disabled={!canWrite || busy || pending !== null}
+                      disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
+                      aria-label={`Approve for 5 minutes: ${labels.accessibleContext}`}
                       onClick={() => decide("approve")}
                     >
                       Approve for 5 minutes
                     </Button>
                     <Button
                       variant="outline"
-                      disabled={!canWrite || busy || pending !== null}
+                      disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
+                      aria-label={`Approve for 15 minutes: ${labels.accessibleContext}`}
                       onClick={() => decide("approve", 900000)}
                     >
                       Approve for 15 minutes
@@ -199,6 +218,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                     <Button
                       variant="outline"
                       disabled={!canWrite || busy || pending !== null}
+                      aria-label={`Deny for ${labels.accessibleContext}`}
                       onClick={() => decide("deny")}
                     >
                       Deny
@@ -206,6 +226,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                     <Button
                       variant="ghost"
                       disabled={!canWrite || busy || pending !== null}
+                      aria-label={`Cancel request for ${labels.accessibleContext}`}
                       onClick={() => decide("cancel")}
                     >
                       Cancel request
@@ -216,6 +237,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                   <Button
                     variant="outline"
                     disabled={!canWrite || busy || pending !== null}
+                    aria-label={`Revoke approval for ${labels.accessibleContext}`}
                     onClick={() => decide("revoke")}
                   >
                     Revoke approval

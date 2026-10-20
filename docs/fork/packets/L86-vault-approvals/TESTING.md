@@ -256,3 +256,26 @@ whitespace pass. No client or public transport changed; no additional simulator/
 is needed. Policy remains 3; notification observations remain memory-only. Journal-based dispatch,
 exactly-once effects and actual one-time grant consumption are not implemented or claimed.
 Older runtimes ignore the separate reserved record, as described in TECHNICAL.md.
+
+## Approver context and accessibility follow-up
+
+Five focused suites pass **73 tests**: access-service metadata derivation, shared review labels,
+client permission behavior, server RPC authorization and real MCP registration. New cases prove
+current label resolution without policy writes, current-run change detection, unavailable project
+fallback with request still readable/deniable, ID fallback for older servers, mismatched response
+ID isolation and changed/unavailable approval blocking. The isolated journal proof also passes
+both phases after its project-store fixtures were completed for the new metadata lookup.
+
+All five affected package typechecks and focused lint/format, documentation links, 392 seam rows
+and whitespace pass. Isolated web acceptance verifies named card headings, readable names plus
+stable IDs, distinct five/fifteen-minute decision accessible names, pending/all toggle, and
+390-pixel layout without horizontal overflow. One synthetic request was created with a matching
+waiting-operation reference through the authenticated service and cancelled using its labelled
+control; no approval grant or pending QA request was left. Existing terminal requests were not
+modified. Browser pairing was recovered only against this lane's isolated backend; no simulator
+pass or production service was touched. Full keyboard/screen-reader and new native interaction
+acceptance remain open rather than inferred from DOM semantics or typechecks.
+
+This additive response metadata changes no policy/journal format, path, grant scope, execution
+or resumption gate. The previously accepted native milestone remains documented above; it is
+not claimed as acceptance of these later UI additions.

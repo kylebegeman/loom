@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 
 const configured = Boolean(
@@ -72,7 +73,7 @@ const policyDependencies = Layer.mergeAll(
   Layer.succeed(ServerEnvironmentIdentity, {
     getEnvironmentId: Effect.succeed(policyEnvironment),
   }),
-  Layer.mock(ProjectStoreV2)({}),
+  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeed(Option.none()) }),
   Layer.mock(ThreadManagementService)({
     getThreadShell: () =>
       Effect.succeed({

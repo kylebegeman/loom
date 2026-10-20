@@ -8,6 +8,7 @@ import {
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
   vaultApprovalState,
+  vaultApprovalReviewLabels,
   vaultApprovalReviewQueue,
   vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
@@ -119,7 +120,7 @@ function Inbox({
       ) : null}
       {data ? (
         <View className="gap-2">
-          <Text>
+          <Text accessibilityLiveRegion="polite">
             {review.pendingCount} pending of {review.totalCount} retained requests.
           </Text>
           <Button
@@ -140,6 +141,10 @@ function Inbox({
       {data &&
         review.requests.map((r) => {
           const state = vaultApprovalState(r, now);
+          const labels = vaultApprovalReviewLabels(
+            r,
+            data.reviewContext?.find((c) => c.requestId === r.id),
+          );
           const decide = (
             decision: VaultApprovalChange["decision"],
             durationMs: 300000 | 900000 = 300000,
@@ -155,9 +160,13 @@ function Inbox({
           const disabled = !connected || !canWrite || busy || pending !== null;
           return (
             <View key={r.id} className="gap-2 rounded-lg border border-border p-3">
-              <Text className="font-semibold">
-                {VAULT_ACTION_LABELS[r.action]} · {state}
+              <Text accessibilityRole="header" className="font-semibold">
+                {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
               </Text>
+              <Text>
+                {labels.thread} · {labels.project}
+              </Text>
+              {labels.warning ? <Text accessibilityRole="alert">{labels.warning}</Text> : null}
               <Text>
                 Thread {r.threadId}
                 {"\n"}Project {r.projectId}
@@ -187,17 +196,25 @@ function Inbox({
                 <>
                   <Button
                     label="Approve for 5 minutes"
+                    accessibilityHint={labels.accessibleContext}
                     onPress={() => decide("approve")}
-                    disabled={disabled}
+                    disabled={disabled || labels.approvalBlocked}
                   />
                   <Button
                     label="Approve for 15 minutes"
+                    accessibilityHint={labels.accessibleContext}
                     onPress={() => decide("approve", 900000)}
+                    disabled={disabled || labels.approvalBlocked}
+                  />
+                  <Button
+                    label="Deny"
+                    accessibilityHint={labels.accessibleContext}
+                    onPress={() => decide("deny")}
                     disabled={disabled}
                   />
-                  <Button label="Deny" onPress={() => decide("deny")} disabled={disabled} />
                   <Button
                     label="Cancel request"
+                    accessibilityHint={labels.accessibleContext}
                     onPress={() => decide("cancel")}
                     disabled={disabled}
                   />
@@ -206,6 +223,7 @@ function Inbox({
               {r.grantId && (state === "approved" || state === "expired") ? (
                 <Button
                   label="Revoke approval"
+                  accessibilityHint={labels.accessibleContext}
                   onPress={() => decide("revoke")}
                   disabled={disabled}
                 />

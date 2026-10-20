@@ -65,6 +65,7 @@ const fixture = () => {
     runId: RunId.make("grant-run"),
     active: true,
     deleted: false,
+    projectAvailable: true,
     approvalRequired: false,
   };
   const store = OpenBaoStore.OpenBaoStore.of({
@@ -109,7 +110,7 @@ const fixture = () => {
     Layer.mock(ProjectStoreV2)({
       get: (id) =>
         Effect.succeed(
-          id === projectId
+          id === projectId && state.projectAvailable
             ? Option.some({ projectId, title: "Test project" } as never)
             : Option.none(),
         ),
@@ -126,6 +127,7 @@ const fixture = () => {
             : ({
                 id,
                 projectId,
+                title: "Review thread",
                 deletedAt: state.deleted ? "2026-10-18T00:00:00Z" : null,
                 archivedAt: null,
                 activeRunId: state.active ? state.runId : null,
@@ -1660,4 +1662,35 @@ it.effect("keeps decisions authoritative when notification completion arrives af
       expect((yield* access.snapshot).grants).toHaveLength(1);
     }),
   ),
+);
+
+it.effect(
+  "adds bounded current review names without changing the stored request or grant policy",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        const records = [...fixture.records.entries()];
+        const inbox = yield* access.approvalInbox;
+        expect(inbox.reviewContext?.[0]).toEqual({
+          requestId: approvalInput.id,
+          threadTitle: "Review thread",
+          projectTitle: "Test project",
+          itemLabel: "Private account",
+          state: "current",
+        });
+        expect([...fixture.records.entries()]).toEqual(records);
+        expect(inbox.requests[0]).not.toHaveProperty("threadTitle");
+        fixture.state.runId = RunId.make("changed-run");
+        expect((yield* access.approvalInbox).reviewContext?.[0]?.state).toBe("changed");
+        fixture.state.projectAvailable = false;
+        expect((yield* access.approvalInbox).reviewContext?.[0]).toMatchObject({
+          projectTitle: null,
+          state: "unavailable",
+        });
+        expect((yield* access.approvalInbox).requests).toHaveLength(1);
+        yield* access.approvalChange({ ...approveInput, decision: "deny" }, "human", Effect.void);
+        expect((yield* access.approvalInbox).requests[0]?.state).toBe("denied");
+      }),
+    ),
 );

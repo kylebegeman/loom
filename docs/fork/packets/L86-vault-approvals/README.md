@@ -50,7 +50,10 @@ returns actionable repair guidance. Lost approval replies reconcile without dupl
 The internal digest-only operation journal now persists bounded crash/reconciliation evidence
 through the existing OpenBao adapter. It adds no public execution path; no operation resumes
 or consumes an allow-once approval. See TECHNICAL.md for its reserved path and downgrade behavior.
-Policy format remains 3. The inbox opens with pending work first and shows retained/pending counts. Show all requests
+Policy format remains 3. The inbox shows current record/thread/project names with stable ID fallback and accessible
+decision context. Changed or unavailable pending context requires refreshed review; deny/cancel
+remain reachable. Names do not replace server-side decision checks.
+The inbox opens with pending work first and shows retained/pending counts. Show all requests
 restores decision review and revocation. Expiry and age-out update the client view without
 changing the authoritative server checks. Kyle's native iOS acceptance passed on `0.0.99`; TESTING.md records evidence and remaining
 surfaces. Local retry integration through existing SSH/Git/GitHub services also passes with

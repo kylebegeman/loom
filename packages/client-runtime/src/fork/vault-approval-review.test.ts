@@ -1,7 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import type { VaultApprovalRequest } from "@t3tools/contracts/fork";
-import { vaultApprovalState, vaultApprovalReviewQueue } from "./vault-access.ts";
+import {
+  vaultApprovalState,
+  vaultApprovalReviewQueue,
+  vaultApprovalReviewLabels,
+} from "./vault-access.ts";
 const base: VaultApprovalRequest = {
   id: "a".repeat(32),
   threadId: ThreadId.make("review-thread"),
@@ -60,4 +64,47 @@ it("hides cached entries at the retention boundary and handles an empty queue", 
     totalCount: 0,
     requests: [],
   });
+});
+
+it("uses readable labels while retaining safe ID fallback for old or unavailable context", () => {
+  const labels = vaultApprovalReviewLabels(base, {
+    requestId: base.id,
+    itemLabel: "Development key",
+    threadTitle: "Fix the build",
+    projectTitle: "Loom",
+    state: "current",
+  });
+  expect(labels).toMatchObject({
+    item: "Development key",
+    thread: "Fix the build",
+    project: "Loom",
+    approvalBlocked: false,
+  });
+  expect(labels.accessibleContext).toContain(base.id);
+  const legacy = vaultApprovalReviewLabels(base, undefined);
+  expect(legacy.item).toContain(base.itemId);
+  expect(legacy.approvalBlocked).toBe(false);
+  const mismatched = vaultApprovalReviewLabels(base, {
+    requestId: "f".repeat(32),
+    itemLabel: "Other key",
+    threadTitle: "Other",
+    projectTitle: "Other",
+    state: "changed",
+  });
+  expect(mismatched.item).toContain(base.itemId);
+  expect(mismatched.approvalBlocked).toBe(false);
+});
+it("requires refreshed review for changed or unavailable context without adding decision authority", () => {
+  for (const state of ["changed", "unavailable"] as const) {
+    const labels = vaultApprovalReviewLabels(base, {
+      requestId: base.id,
+      itemLabel: null,
+      threadTitle: null,
+      projectTitle: null,
+      state,
+    });
+    expect(labels.approvalBlocked).toBe(true);
+    expect(labels.warning).not.toBeNull();
+    expect(labels.accessibleContext).toContain(base.threadId);
+  }
 });

@@ -349,3 +349,25 @@ resumption/one-time paths remain unavailable. Re-upgrade requires reconciliation
 policy and request/run state; never delete the journal to manufacture a retry. The proof checks
 an unchanged format-3 reader alongside the journal. No policy format 4 or capability escalation
 is introduced. This journal is separate from memory-only notification observations.
+
+## Approver context and accessible review
+
+Inbox responses optionally include current thread/project/item metadata keyed by request ID.
+The access service resolves only retained-request references, deduplicates each ID set, and
+bounds parallel lookups (four per category). The existing `access:read` inbox boundary is
+unchanged; no new lookup endpoint or grant is introduced. Metadata errors/missing references
+produce unavailable labels without hiding the durable request or blocking deny/cancel/revoke.
+Labels are response metadata and never enter the access-policy or journal.
+
+Each result distinguishes current, changed and unavailable context. Current names do not attest
+account identity or replace decision-time checks. A changed project/run, deleted/archived thread,
+retired project or changed/archived item is flagged. Clients disable pending approval for changed
+or unavailable context, retain the reverse actions, and continue showing the exact stored IDs,
+version, destination and run. Older servers omit the field; clients retain ID fallback and normal
+server-enforced decisions. A mismatched response request ID cannot relabel another card.
+
+Web cards have named regions and record headings; decision accessible names include current
+record/thread/project names and request ID, retaining distinct five/fifteen-minute actions.
+Native cards have accessible headings and contextual action hints. Pending counts use polite
+status semantics. No control is hidden inside an accessible group that would swallow its child
+buttons. Native/screen-reader interaction acceptance for these additions is still owner-led.

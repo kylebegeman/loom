@@ -950,6 +950,68 @@ const make = Effect.gen(function* () {
         requests,
         notifications: "stubbed" as const,
         notificationOutcomes: yield* notifications.outcomes(requests),
+        reviewContext: yield* Effect.gen(function* () {
+          const names = yield* Effect.all(
+            {
+              threads: Effect.forEach(
+                [...new Set(requests.map((r) => r.threadId))],
+                (id) =>
+                  threads.getThreadShell(id).pipe(
+                    Effect.orElseSucceed(() => null),
+                    Effect.map((value) => [id, value] as const),
+                  ),
+                { concurrency: 4 },
+              ),
+              projects: Effect.forEach(
+                [...new Set(requests.map((r) => r.projectId))],
+                (id) =>
+                  projects.get(ProjectId.make(id)).pipe(
+                    Effect.map(Option.getOrNull),
+                    Effect.orElseSucceed(() => null),
+                    Effect.map((value) => [id, value] as const),
+                  ),
+                { concurrency: 4 },
+              ),
+              items: Effect.forEach(
+                [...new Set(requests.map((r) => r.itemId))],
+                (id) =>
+                  core.inspect(id).pipe(
+                    Effect.orElseSucceed(() => null),
+                    Effect.map((value) => [id, value] as const),
+                  ),
+                { concurrency: 4 },
+              ),
+            },
+            { concurrency: 3 },
+          );
+          const threadMap = new Map(names.threads),
+            projectMap = new Map(names.projects),
+            itemMap = new Map(names.items);
+          return requests.map((r) => {
+            const thread = threadMap.get(r.threadId),
+              project = projectMap.get(r.projectId),
+              item = itemMap.get(r.itemId);
+            const state =
+              !thread || !project || !item
+                ? ("unavailable" as const)
+                : thread.projectId !== r.projectId ||
+                    thread.archivedAt !== null ||
+                    thread.deletedAt !== null ||
+                    project.deletedAt != null ||
+                    item.state !== "active" ||
+                    item.version !== r.itemVersion ||
+                    (r.waitingOperation != null && r.waitingOperation.runId !== thread.activeRunId)
+                  ? ("changed" as const)
+                  : ("current" as const);
+            return {
+              requestId: r.id,
+              threadTitle: thread?.title?.slice(0, 200) || null,
+              projectTitle: project?.title?.slice(0, 200) || null,
+              itemLabel: item?.label ?? null,
+              state,
+            };
+          });
+        }),
       };
     }),
     catalog: Effect.gen(function* () {

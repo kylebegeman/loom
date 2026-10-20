@@ -3,6 +3,7 @@ import {
   VAULT_APPROVAL_RETENTION_MS,
   type VaultApprovalNotificationOutcome,
   type VaultApprovalRequest,
+  type VaultApprovalReviewContext,
   type VaultAccessAction,
   type VaultReadinessReport,
   type VaultGrant,
@@ -136,5 +137,28 @@ export const vaultApprovalReviewQueue = (
           b.requestedAt - a.requestedAt ||
           a.id.localeCompare(b.id),
       ),
+  };
+};
+
+export const vaultApprovalReviewLabels = (
+  request: VaultApprovalRequest,
+  context: VaultApprovalReviewContext | undefined,
+) => {
+  const own = context?.requestId === request.id ? context : undefined;
+  const item = own?.itemLabel || `Record ${request.itemId}`;
+  const thread = own?.threadTitle || `Thread ${request.threadId}`;
+  const project = own?.projectTitle || `Project ${request.projectId}`;
+  return {
+    item,
+    thread,
+    project,
+    accessibleContext: `${item}, ${thread}, ${project}, request ${request.id}`,
+    warning:
+      own?.state === "changed"
+        ? "Context has changed. Deny or cancel this request and ask for a fresh one."
+        : own?.state === "unavailable"
+          ? "Some request context is unavailable. Refresh before approving."
+          : null,
+    approvalBlocked: own?.state === "changed" || own?.state === "unavailable",
   };
 };
