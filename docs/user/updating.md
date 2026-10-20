@@ -77,6 +77,10 @@ The offered action depends on how the server runs:
 | **Copy update command**    | Run the command on the named host to update the detected global npm install, then restart the server with your usual options.                                                                   |
 | **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `t3` command.                       |
 
+A computer whose operating system ships its Loom runtime, such as LoomOS, offers none of these.
+Its notice says the operating system manages the runtime; install the operating system's update
+instead. `t3 update` refuses on that computer too.
+
 On the host, run:
 
 ```sh

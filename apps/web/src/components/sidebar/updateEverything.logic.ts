@@ -1,6 +1,7 @@
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
+import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 
 import {
   resolveServerSelfUpdateCapability,
@@ -55,6 +56,9 @@ export function collectRestartingMachines(
   });
 }
 
+/** Its operating system ships the runtime, so no client command may replace it. */
+export const OS_MANAGED_SKIP_REASON = "managed by its operating system"; // fork: runtime-owner
+
 export interface SkippedMachine {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -98,6 +102,11 @@ export function collectServerUpdateTargets(
     }
     const selfUpdate = resolveServerSelfUpdateCapability(config);
     const desktopAppUpdate = supportsDesktopAppUpdate(config);
+    // fork: runtime-owner: its operating system updates it, so it is never a manual update.
+    if (runtimeManagedByOperatingSystem(config.environment.capabilities)) {
+      skip(OS_MANAGED_SKIP_REASON); // fork: runtime-owner
+      continue; // fork: runtime-owner
+    } // fork: runtime-owner
     if (selfUpdate === null) {
       skip("needs a manual update");
       continue;

@@ -18,7 +18,10 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveServerInstallation } from "../cli/invocation.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
-import { serverSelfUpdateEnabled } from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
+import {
+  OS_RUNTIME_OWNER,
+  serverSelfUpdateEnabled,
+} from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -196,10 +199,12 @@ export const make = Effect.gen(function* () {
   const launcher = yield* resolveServiceLauncherMode();
   const selfUpdateEnabled = yield* serverSelfUpdateEnabled; // fork: runtime-owner
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
-    desktopManaged: serverConfig.mode === "desktop",
+    desktopManaged: serverConfig.mode === "desktop" && selfUpdateEnabled, // fork: runtime-owner
     launcherManaged: launcher.managed && selfUpdateEnabled, // fork: runtime-owner
   });
-  const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
+  // fork: runtime-owner: no install method either, or an older client would build an npm command that replaces the operating system's runtime.
+  const serverInstallation =
+    serverSelfUpdate === null && selfUpdateEnabled ? yield* resolveServerInstallation : null; // fork: runtime-owner
   // Static is correct: the control fd is known at bootstrap, and the desktop
   // app and its bundled server ship in one artifact, so a present fd means the
   // app speaks the requestDesktopUpdate protocol.
@@ -270,6 +275,7 @@ export const make = Effect.gen(function* () {
       projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
+      ...(selfUpdateEnabled ? {} : { serverRuntimeOwner: OS_RUNTIME_OWNER }), // fork: runtime-owner
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? { serverSelfUpdateProgress: true }
         : {}),

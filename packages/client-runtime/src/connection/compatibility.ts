@@ -4,6 +4,7 @@ import {
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 
+import { runtimeManagedByOperatingSystem } from "../fork/capabilities.ts"; // fork: runtime-owner
 import { ConnectionBlockedError } from "./model.ts";
 
 export function orchestrationProtocolCompatibilityError(
@@ -21,7 +22,9 @@ export function orchestrationProtocolCompatibilityError(
       })
     : new ConnectionBlockedError({
         reason: "unsupported",
-        detail: `This client requires a newer server. Update T3 Code on ${descriptor.label} to connect.`,
+        detail: runtimeManagedByOperatingSystem(descriptor.capabilities) // fork: runtime-owner
+          ? `This client requires a newer server. Update ${descriptor.label} through its operating system to connect.` // fork: runtime-owner
+          : `This client requires a newer server. Update T3 Code on ${descriptor.label} to connect.`,
         ...(canSelfUpdate(descriptor) ? { serverUpdateRequired: true } : {}),
       });
 }

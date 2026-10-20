@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { ServerUpdateProgress } from "~/components/ServerUpdateAction";
@@ -88,6 +89,9 @@ export function FleetUpdatesSection() {
                     providerCount: providers.length,
                     localVersion: machine.hostedByThisApp ? localVersion : null,
                     blockedReason,
+                    osManaged: runtimeManagedByOperatingSystem(
+                      machine.serverConfig?.environment.capabilities,
+                    ),
                   });
           return (
             <div key={machine.environmentId} className="flex flex-col gap-1 px-3 py-3 sm:px-4">

@@ -299,17 +299,25 @@ this task. Package-runner examples keep the actual upstream npm package name; do
 | `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
 
 `LOOM_SERVER_SELF_UPDATE=false` stops the server from updating its own runtime
-(`fork: runtime-owner`; `apps/server/src/cloud/selfUpdate.ts`, 4 marker lines,
-`apps/server/src/environment/ServerEnvironment.ts`, 3 marker lines, and
-`apps/server/src/cli/update.ts`, 2 marker lines). LoomOS sets it because its signed releases
-ship the runtime, and a second updater would replace it. The server then omits
-`serverSelfUpdate` from its descriptor and refuses a direct update request, and `t3 update`
-refuses too, both with a reason that names the operating system. Clients still show the
-manual update fallback for a server they cannot update. `false`, `no`, `off` and `0` turn it
-off; any spelling effect's `Config.Boolean` rejects stops the server from starting. The
-service launcher does not read the switch: an operating system's `t3 service install`
-rewrites the launcher state, which clears any update accepted earlier. The setting lives in
-`apps/server/src/fork/runtime-owner/selfUpdateSwitch.ts`.
+(`fork: runtime-owner`). LoomOS sets it because its signed releases ship the runtime, and a
+second updater would replace it. The server then omits `serverSelfUpdate` from its descriptor,
+in desktop mode too, refuses every direct update request before it looks at the launcher or
+the desktop app, and `t3 update` refuses too, each with a reason that names the operating
+system. It also omits `serverInstallation`, or an older client would build an npm command
+that starts a second server against the service's home. Instead the descriptor carries
+`capabilities.serverRuntimeOwner: "operating-system"`. That is a separate optional field, not
+a `serverSelfUpdate` literal: every client decodes that set as closed, so a new literal would
+make older clients reject the descriptor, while an unknown owner decodes as absent. Clients
+read it through `runtimeManagedByOperatingSystem` in
+`packages/client-runtime/src/fork/capabilities.ts` and show `OS_MANAGED_RUNTIME_NOTE` wherever
+they would offer an update or relaunch command: web's update action, ChatView's version
+banner, Connections, the update banner, Update everything and Fleet, mobile's computer
+settings, and the protocol mismatch message. `false`, `no`, `off` and `0` turn it off; any
+spelling effect's `Config.Boolean` rejects stops the server from starting. The service
+launcher does not read the switch: an operating system's `t3 service install` rewrites the
+launcher state, which clears any update accepted earlier. The setting lives in
+`apps/server/src/fork/runtime-owner/selfUpdateSwitch.ts`; `docs/fork/seams.tsv` lists the
+marked files.
 
 L72 shares dev server ports as preview links (`fork: preview-links`). The web preview
 resolves a URL through `navigablePreviewUrlFor` before loading it, so a loopback port the

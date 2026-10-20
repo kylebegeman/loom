@@ -354,9 +354,17 @@ apps/server/src/scheduledTasks/ScheduledTaskService.ts	vault-scheduled-outcomes	
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-scheduled-outcomes	2
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-scheduled-outcomes	2
 
-apps/server/src/cloud/selfUpdate.ts	runtime-owner	4
-apps/server/src/environment/ServerEnvironment.ts	runtime-owner	3
+apps/server/src/cloud/selfUpdate.ts	runtime-owner	5
+apps/server/src/environment/ServerEnvironment.ts	runtime-owner	7
 apps/server/src/cli/update.ts	runtime-owner	2
+packages/contracts/src/environment.ts	runtime-owner	2
+packages/client-runtime/src/connection/compatibility.ts	runtime-owner	3
+apps/web/src/components/ServerUpdateAction.tsx	runtime-owner	10
+apps/web/src/components/ChatView.tsx	runtime-owner	4
+apps/web/src/components/settings/ConnectionsSettings.tsx	runtime-owner	5
+apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	runtime-owner	8
+apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	5
 
 apps/web/src/browser/browserTargetResolver.ts	preview-links	5
 apps/web/src/browser/browserTargetResolver.test.ts	preview-links	15

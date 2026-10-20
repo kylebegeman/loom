@@ -10,3 +10,6 @@ export const serverSelfUpdateEnabled = Config.Boolean(SERVER_SELF_UPDATE_ENV).pi
 
 export const OS_MANAGED_RUNTIME_REASON =
   "This computer's operating system manages its Loom runtime. Update it through the operating system.";
+
+/** Set on the environment descriptor whenever the switch is off, so clients say who updates the runtime. */
+export const OS_RUNTIME_OWNER = "operating-system" as const;

@@ -1,4 +1,8 @@
 import { LibrarySetup } from "~/fork/project-library/LibrarySetup"; // fork: library-setup
+import {
+  OS_MANAGED_RUNTIME_NOTE,
+  runtimeManagedByOperatingSystem,
+} from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { SessionPermissions } from "./SessionPermissions";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
@@ -1513,6 +1517,9 @@ function SavedBackendListRow({
     },
   });
   const versionMismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
+  const osManaged = runtimeManagedByOperatingSystem(
+    environment.serverConfig?.environment.capabilities,
+  ); // fork: runtime-owner
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
@@ -1572,7 +1579,7 @@ function SavedBackendListRow({
     versionMismatch
       ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
       : ""
-  }`;
+  }${versionMismatch && osManaged ? `\n${OS_MANAGED_RUNTIME_NOTE}` : "" /* fork: runtime-owner */}`;
 
   return (
     <EnvironmentRow
@@ -1658,6 +1665,7 @@ function SavedBackendListRow({
           targetVersion={versionMismatch.clientVersion}
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
           appearance="icon"
+          osManaged={osManaged} // fork: runtime-owner
         />
       ) : null}
       <Tooltip>
@@ -3390,6 +3398,9 @@ export function ConnectionsSettings() {
                         primaryServerConfig,
                       )}
                       targetVersion={primaryVersionMismatch.clientVersion}
+                      osManaged={runtimeManagedByOperatingSystem(
+                        primaryServerConfig?.environment.capabilities,
+                      )} // fork: runtime-owner
                       label={
                         primaryServerUpdateState.status === "failed"
                           ? "Retry update"
