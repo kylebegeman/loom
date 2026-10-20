@@ -295,6 +295,7 @@ export const make = Effect.gen(function* () {
         callerOf(stored),
         {
           batchId,
+          ...(stored.triggerId === undefined ? {} : { triggerId: stored.triggerId }),
           ...(stored.batch.pipelineRunId == null
             ? {}
             : {
@@ -414,6 +415,7 @@ export const make = Effect.gen(function* () {
   const runBatch = Effect.fn("BotBatches.runBatch")(function* (
     input: BotsBatchInput,
     caller: BotCaller,
+    options: { readonly triggerId?: string } = {},
   ) {
     const prepared = yield* prepare(input, caller);
     const firstInvalid = prepared.invalid[0];
@@ -445,6 +447,7 @@ export const make = Effect.gen(function* () {
       source: input.source,
       checkoutThreadId: prepared.checkoutThreadId,
       target: input.target ?? null,
+      ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
     };
     yield* store.insertBatch(stored, prepared.valid).pipe(Effect.catch(storageError));
     yield* store.pruneBatches(bot.id, BATCHES_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));

@@ -469,6 +469,7 @@ export const make = Effect.gen(function* () {
             ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
           },
           caller,
+          { triggerId: trigger.id },
         )
         .pipe(
           Effect.map((batch): Outcome => ({

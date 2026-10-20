@@ -60,7 +60,8 @@ Recorded when the packet landed: `v0.1.1-nightly.20261020.3411`, 68 conflicting 
   its public origin, so the page builds the address from `path` and the environment's base URL.
   Callers without `orchestration:operate` never receive the field.
 - A merge conflict report runs as one batch per delivery, keyed by the tag and a hash of the file
-  list. Batch runs are not framed as untrusted; the file names come from the fork's own script.
+  list. Its batch records the trigger, so each item run frames the tag, branch and file as
+  untrusted, also after a restart resumes the batch.
 - A trigger ignores events from before it was saved (`occurredAt`), and a pull request first seen
   before then (`firstSeenSince`), so turning one on does not fire for every pull request already
   linked.

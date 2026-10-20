@@ -188,5 +188,14 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_library_results_to ON fork_bots_library_results (to_env, acked_at, created_at)`;
       }),
     ],
+    [
+      13,
+      "BatchTriggers",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // A trigger's batch frames its items as untrusted, also when a restart resumes it.
+        yield* sql`ALTER TABLE fork_bots_batches ADD COLUMN trigger_id TEXT`;
+      }),
+    ],
   ],
 };
