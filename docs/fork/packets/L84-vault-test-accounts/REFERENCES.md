@@ -28,3 +28,12 @@ this packet adds no application dependency.
 - [Shared expiry/actions](../../../../packages/client-runtime/src/fork/vault-test-accounts.ts), [web manager](../../../../apps/web/src/fork/vault/TestAccountSettingsSection.tsx) and [mobile manager](../../../../apps/mobile/src/fork/vault/TestAccountSettingsSection.tsx): metadata-only management.
 
 - [Authenticated workload boundary](../../../../apps/server/src/fork/vault/VaultTestAccountWorkloads.ts), [behavior proof](../../../../apps/server/src/fork/vault/VaultTestAccountWorkloads.test.ts) and [agent transport](../../../../apps/server/src/fork/vault/test-accounts-mcp.ts): run identity, inspect/use ceilings and durable quarantine without login delivery.
+
+- [Local Loom target harness](../../../../apps/server/src/fork/vault/testkit/loom_test_instance.py)
+  and [isolation/failure tests](../../../../apps/server/src/fork/vault/testkit/test_loom_test_instance.py):
+  operator-only real session provision/revoke/replacement proof; no live pool login adapter.
+- [Session CLI](../../../../apps/server/src/cli/auth.ts),
+  [fixture seeder](../../../../apps/server/scripts/seed-dev-db.ts) and
+  [HTTP contracts](../../../../packages/contracts/src/environmentHttp.ts): existing Loom identity paths.
+- [Local setup and Migadu handoff](../../operations/vault.md#isolated-loom-account-test-target):
+  chosen target/provider and the remaining mailbox-owner setup.

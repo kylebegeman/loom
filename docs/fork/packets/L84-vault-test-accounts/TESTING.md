@@ -3,6 +3,59 @@
 Status: **Local pool and authenticated run reservation milestones verified within the limits below.** Full
 packet acceptance remains unfinished. Implementation base is current fork main `4070ef99a2`.
 
+## Selected Loom target evidence
+
+On 2026-10-20 the operator-only `loom_test_instance.py prepare/start/prove` workflow ran against
+its own `.t3/vault-app-test` home, backend `127.0.0.1:15713`, web `localhost:7673`. This is a
+second target application, separate from the earlier Vault controller QA instance. It seeds one
+synthetic project and three stopped threads through the existing fixture seeder. The sample
+workspace has its own local Git repository with no remotes, preventing ancestor-repository discovery. All configured
+agent providers are disabled; inherited personal credentials and root `.env` loading are excluded.
+No real userdata, production identity, Library or OpenBao backend is used by the target.
+
+The actual session proof passes: unauthenticated shell access refuses; a five-minute
+`orchestration:read` session reads the three stopped fixture threads; access administration
+refuses; revocation makes the original credential refuse; a new session works while the old one
+continues to refuse; final cleanup removes every active session for that invocation's subject
+and the replacement then refuses too. The output contains no credential. This proves real Loom
+runtime session provisioning/reset, not an email/password account, browser logout, pool-integrated
+provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
+session until the five-minute TTL. No execution, resumption or allow-once flag changes.
+
+Fifteen Python cases cover environment sanitization, existing fixture preservation, disabled
+providers, unmarked/redirected fixture refusal, independent Git-root initialization and refusal
+of missing/redirecting Git state, owner-only files, origin refusal, environment
+identity mismatch, private command failures, lost mint response cleanup, reset restoring old
+access, failed cleanup and a real loopback redirect/proxy refusal. Seven tests in two server suites
+cover the fixture guard and the real seed/reset paths, run from the server package CWD. The new
+descendant-home guard initially failed, then passed after the fix; installed userdata, sibling
+state and escaped paths continue to refuse. Server typecheck and changed-file TypeScript lint
+pass. No other package source or MCP tool changes in this slice.
+
+```sh
+# From the repository root:
+PYTHONDONTWRITEBYTECODE=1 python3 -W error::ResourceWarning -m unittest discover \
+  -s apps/server/src/fork/vault/testkit -p test_loom_test_instance.py -v
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prove
+# From apps/server:
+../../node_modules/.bin/vp test run src/fork/dev-fixtures/fixtureHome.test.ts scripts/seed-dev-db.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
+Using the `test-t3-app` skill and authorized Browser panel, an isolated incognito tab first showed
+Loom's pairing page, then consumed this target's private startup pairing link and rendered the
+three synthetic thread titles, the isolated `loom-test` checkout and disabled-provider guidance.
+Screenshot:
+`/Users/kyle/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh4ehig-babc67b0.png`.
+The screenshot is QA evidence outside git, not runtime state used by this target. Browser startup
+showed expected unauthenticated WebSocket refusals; a source-watch restart also briefly returned
+502 before recovery. Pause server source edits during the proof. No native pass is claimed;
+native acceptance remains with the release owner.
+
+Migadu is selected but no mailbox, IMAP credential or live verification-message delivery is
+claimed. The [mailbox-owner handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+records the dedicated-mail setup and remaining live acceptance.
+
 ## Authenticated workload evidence
 
 Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract

@@ -50,11 +50,16 @@ Uses account records, grants and delivery interfaces. Provisioning and mail adap
 ## Decisions and open questions
 
 Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
-separation and self-hosting option are product requirements. Proposed behavior above remains
-subject to design review; the following choices are not resolved by selection:
+separation and self-hosting option are product requirements. Kyle selected **an isolated Loom
+test instance** as the first target and **Migadu** for test email on 2026-10-20. Loom runtime
+identities are scoped client sessions, not email/password users. The first local operator proof
+provisions, revokes and replaces a session against synthetic data, independently of gated Vault
+login delivery. The local target is available without a VPS deployment.
 
-- Which application and test environment should supply the first provisioning adapter?
-- Which owned test-mail domain and mail service should be used, and what cleanup rules apply?
+The proposed dedicated mailbox is `vault@begam.in`, with per-run plus addresses. Its existence,
+mailbox-scoped credentials and live mail delivery are not yet verified. Remaining choices:
+
+- Confirm the dedicated mailbox and ownership; decide message retention and cleanup before deletion is enabled.
 - How should shared accounts differ from exclusive reservations, and which sessions may be reused?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

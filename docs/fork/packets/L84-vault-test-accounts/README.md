@@ -2,7 +2,10 @@
 
 Status: **In progress; local pool management and authenticated run leases implemented.** Kyle selected
 full implementation on 2026-10-17 and approved this section on 2026-10-20. Provisioning, reset,
-mail and login-delivery adapters and broader acceptance remain selected work.
+mail and login-delivery adapters and broader acceptance remain selected work. Kyle selected a
+separate Loom test instance and Migadu; the [local operator proof](../../operations/vault.md#isolated-loom-account-test-target)
+now issues, revokes and replaces real scoped sessions against stopped synthetic data. This does
+not enable the pool's broker login path or configure live email.
 
 Manage application test identities as reusable, isolated QA resources.
 

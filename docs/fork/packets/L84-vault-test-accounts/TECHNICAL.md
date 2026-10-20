@@ -64,8 +64,9 @@ manual quarantine and expiry all require a new clean review before another reser
 cancels the local lease; restore returns to quarantine. Archiving/restoring collections refuses
 while they have active reservations. Nothing terminates an external login, resets app data,
 revokes an upstream token or promises isolation of a full-access process. Reset/provision/mail
-and browser/native login adapters remain unavailable; no first application or mail domain has
-been selected for them.
+and browser/native login adapters remain unavailable. Kyle selected an isolated Loom target
+and Migadu; the proposed dedicated mailbox is `vault@begam.in`. Selection does not enable those
+adapters or prove that mailbox exists.
 
 Web and mobile use a shared action/expiry helper, bounded metadata snapshots and explicit
 refresh. A deadline timer updates visible expiry without continuous polling. All changes have
@@ -144,8 +145,8 @@ literal false, and no MCP/RPC/CLI login endpoint, live adapter, credential revea
 login intent is added. The synthetic transport proof opens only a local fixture session and
 cleans it on a rejected callback; it proves no real provider logout or crash recovery.
 
-The revalidation effect is not an atomic transaction with an external provider. Live login must
-wait for a selected test app and a reviewed durable cleanup/unknown-outcome policy. A lost mint
+The revalidation effect is not an atomic transaction with an external provider. Loom is the
+selected test app; live login still requires a reviewed durable cleanup/unknown-outcome policy. A lost mint
 response cannot be treated as not-started, retried into another session or refunded by lease
 release. The L86 protected-item and temporal-consistency decisions remain separate owner gates;
 this account boundary does not bypass them.
@@ -192,6 +193,35 @@ adapter decisions, not a new OpenBao permission/path/schema proposal.
 
 All delivery, automatic-resumption and allow-once gates remain literal false. Policy3, journal1,
 registry1 and existing runtime behavior are unchanged by this test/docs slice. L75 stays parked.
+
+## Selected Loom test target and email boundary
+
+The operator-only [local harness](../../../../apps/server/src/fork/vault/testkit/loom_test_instance.py)
+uses the existing auth CLI and authenticated HTTP API against its fixed worktree-local
+`.t3/vault-app-test` home. It seeds stopped synthetic threads through the event sink, disables all
+configured providers, suppresses root `.env` loading and excludes inherited identity, Vault,
+relay, SSH-agent and provider variables. The sample workspace gets its own local Git repository
+with no remotes, without reading personal/system Git configuration during initialization; the
+harness refuses a missing or redirecting Git boundary at start/proof. Canonical fixture guards permit a dedicated descendant
+of the recognized worktree home while refusing installed state or escapes from that descendant.
+The target accepts loopback traffic only. Proof requests refuse proxies and redirects, bind to
+the persisted environment identity, and mint only five-minute `orchestration:read` sessions.
+
+Session reset means revoke and replace, with real HTTP refusal of the old credential before
+and after replacement. Final cleanup revokes only sessions bearing the invocation's unique
+subject, including a successful mint whose reply was lost. Tokens are kept in subprocess output
+capture/memory and never included in the proof report. A process crash can leave a session until
+its five-minute TTL expires; this operator proof has no durable cleanup barrier and does not
+mark any pool account clean. It is neither a live broker adapter nor proof of human OIDC/passkey
+account provisioning, browser-session revocation, application data reset or worker isolation.
+No Vault store, policy, journal, schema, execution flag or public transport is changed.
+
+Migadu is selected independently of Loom runtime pairing, which has no email verification step.
+The proposed `vault@begam.in` mailbox and per-run plus recipients need a dedicated read credential
+and a real delivery check. Use IMAP for message reads; Migadu's management API manages mailboxes
+and aliases and is not the inbox transport. Keep management credentials out of worker access.
+The [mail handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) records the
+remaining external setup. No personal mailbox, DNS or production identity was accessed.
 
 ## Contracts and authorization
 

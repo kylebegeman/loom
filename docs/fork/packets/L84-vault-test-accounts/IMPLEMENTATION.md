@@ -23,11 +23,16 @@ backend restart. TESTING records focused checks and integrated web evidence.
 1. Finish separate broker-delivered login access bound to the current lease, item version,
    collection app/environment and grant. Include loss/restart/revocation handling before claiming
    parallel worker isolation; raw credential release is not part of this milestone.
-2. Select the first dedicated application/test environment for provision/reset. Add its real
-   adapter with idempotent creation, cancellation/late-result reconciliation and reset-before-reuse.
+2. Build the selected Loom adapter around scoped client sessions. The operator-only local
+   target now proves real session issue, access, revocation, replacement and final cleanup. It is
+   not integrated with pool leases or broker login delivery. Add durable idempotent creation,
+   cancellation/late-result reconciliation and reset-before-reuse before enabling that adapter.
    Manual mark-clean remains an operator attestation until then.
-3. Select the owned test-mail domain/provider and cleanup policy before inbox integration.
-   Session/TOTP/recovery field structures, fixture selectors and optional browser/native test
+3. Implement the selected Migadu inbox adapter after dedicated mailbox-scoped credentials are
+   available. `vault@begam.in` and per-run plus addressing are the proposed configuration, not
+   a verified live mailbox. The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+   keeps organization-management credentials out of workers. Message deletion/retention policy,
+   session/TOTP/recovery field structures, fixture selectors and optional browser/native test
    integration remain to build.
 4. Complete native iOS/Android, Electron shell, remote/tunnel, assistive-technology and live QA
    acceptance with independently authorized synthetic accounts. Shared-account semantics remain
@@ -37,9 +42,11 @@ The synthetic admission and broker login-delivery contract are implemented as te
 They cover exact broker binding, callback revalidation, concurrent dispatch, ambiguous start/cleanup,
 cancellation fencing and model reconstruction with a retained synthetic fence. No live delivery
 implementation or durable cleanup storage is added.
-The next live section needs the dedicated app/environment and a durable cleanup barrier that also blocks reset/reuse. Keep
-delivery unavailable until its adapter, unknown-outcome recovery and cleanup behavior are proven. A live application/reset adapter and test-mail
-domain still need Kyle's selection. L86's execution gates and L75's host-policy park remain unchanged.
+Loom and Migadu are selected; no further app/provider selection is needed. The next live
+section needs a durable cleanup barrier that also blocks reset/reuse. Keep delivery unavailable
+until its adapter, unknown-outcome recovery and cleanup behavior are proven. The local harness
+has five-minute sessions and invocation-scoped cleanup, but no durable worker journal or
+restart reconciliation; it cannot clear that gate. L86's execution gates and L75's host-policy park remain unchanged.
 
 ## Before starting
 

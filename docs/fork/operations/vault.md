@@ -701,3 +701,79 @@ this support or explicitly quarantine affected leases before downgrading. Access
 journal 1 remain unchanged. No new host policy, path, mount or Library rollout is needed for
 this slice. This is pool coordination only; generic credential use and external sessions are
 not governed or revoked by it.
+
+## Isolated Loom account test target
+
+Kyle selected Loom as the first L84 target and Migadu for test email. The Loom runtime uses
+pairing/scoped client sessions; it does not create email/password users. The following local
+operator workflow proves session provisioning and reset without enabling the pool's gated login
+adapter or contacting live identity, the Library, OpenBao or the VPS.
+
+From this checkout, using installed Node/Python and dependencies:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prepare
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py start
+```
+
+`start` stays in the foreground; retain its terminal session. It uses only
+`.t3/vault-app-test`, with a marker, a synthetic project, three stopped threads and all agent
+providers disabled. Its synthetic workspace has its own local Git repository with no remotes;
+startup refuses a missing or redirecting Git boundary. Existing marked fixtures are preserved; unrelated, redirected or modified
+provider settings refuse. Nothing installs or builds a release. Read actual ports from the
+`[dev-runner]` line; the preferred web/backend ports are 7673/15713, and occupied ports can shift.
+Use the private startup pairing link in an isolated browser profile. Do not publish the token.
+Do not set `VITE_HTTP_URL` or `VITE_WS_URL`. Keep runtime logs private.
+
+Once the target is listening, run in a second terminal:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prove
+```
+
+The proof checks target identity and unauthenticated refusal, creates a five-minute read-only
+session, reads the three synthetic threads, revokes it, verifies refusal, issues a replacement,
+verifies the old credential still refuses and revokes the replacement. Reports contain results,
+never tokens. Cleanup queries only the invocation's unique subject, including after a lost mint
+reply, and verifies that no matching active session remains. Cleanup failure fails the proof;
+a killed harness may leave a credential valid until its five-minute expiry. Do not interpret
+this as durable cleanup, browser logout, pool reset, data wipe or authority to mark an account
+clean. The test target needs no Vault backend and changes no execution gate.
+
+Pause code edits under server `src/` while running the proof: the dev runner watches them and
+restarts the target. If a restart interrupts the proof, wait for its next listening message and
+rerun; the partial invocation's session expires within five minutes. Keep the instance for local
+inspection, then stop its retained terminal session or the exact PID captured at launch. Never
+kill by name or substitute installed userdata. The harness has no delete/reset-database command.
+
+## Dedicated Migadu test mailbox handoff
+
+Migadu is selected. `vault@begam.in` is the proposed dedicated mailbox, pending owner confirmation
+that it is separate from personal mail. Live mail integration is not configured. Runtime session
+provisioning above does not send verification email; email tests will be a separate adapter proof.
+No VPS or Library deployment is needed for the local target.
+
+The mail owner can prepare the following in the existing Migadu dashboard:
+
+1. Verify `begam.in` belongs to the organization. Create the dedicated `vault` mailbox if absent;
+   if it already serves another purpose, preserve it and choose a separate test mailbox.
+2. Create a custom-password identity for the test reader, scoped to that mailbox, with IMAP
+   access enabled. Disable sending, POP and ManageSieve for that identity. Keep the organization
+   API key and the mailbox administrator password outside worker access.
+3. Verify a harmless message to `vault+loom-<run-id>@begam.in` arrives in that mailbox. Migadu
+   supports plus addressing without creating aliases for each run. Do not add catch-all routing,
+   forward personal mail or change working DNS for this check.
+4. Store the reader credential through private input in the approved development Vault backend;
+   never send it in a thread or commit it. The planned reader connects to `imap.migadu.com:993`
+   with TLS and validates the certificate. Its first milestone should read without marking seen
+   or deleting messages and correlate each message with the exact test recipient and run.
+5. Before enabling deletion or reuse, choose the retention/cleanup policy and prove that another
+   run's messages cannot be selected or removed. No mail deletion policy is silently assumed.
+
+The Migadu [management API](https://www.migadu.com/api/),
+[identities](https://www.migadu.com/guides/identities/),
+[plus addressing](https://www.migadu.com/guides/plus_addressing/) and
+[connection settings](https://www.migadu.com/support/) describe these separate responsibilities.
+The API manages mailboxes/identities; incoming messages use IMAP. No live mailbox, management API,
+SMTP or IMAP request has been made by this lane. A later hosted test instance remains a host-owner
+handoff behind the applicable L79 identity/custody/policy gates; this local setup does not clear them.
