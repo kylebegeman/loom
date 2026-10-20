@@ -17,6 +17,10 @@ export const journalFixture = Effect.gen(function* () {
     reads: false,
     journalReads: 0,
     onJournalRead: null as null | (() => void),
+    beforeJournalRead: null as null | (() => Effect.Effect<void, VaultError>),
+    beforePolicyRead: null as null | (() => Effect.Effect<void, VaultError>),
+    beforeJournalWrite: null as null | ((value: unknown) => Effect.Effect<void, VaultError>),
+    afterJournalWrite: null as null | ((value: unknown) => Effect.Effect<void, VaultError>),
   };
   const store = Layer.succeed(OpenBaoStore.OpenBaoStore, {
     status: Effect.succeed({ backend: "openbao" as const, state: "ready" as const, origin: null }),
@@ -27,29 +31,36 @@ export const journalFixture = Effect.gen(function* () {
           .map((k) => k.slice(prefix.length + 1)),
       ),
     read: (path: string) =>
-      Effect.suspend(() => {
+      Effect.gen(function* () {
+        if (path.endsWith("/access-policy") && faults.beforePolicyRead)
+          yield* faults.beforePolicyRead();
         if (path.endsWith("approval-journal-v1")) {
+          if (faults.beforeJournalRead) yield* faults.beforeJournalRead();
           faults.journalReads++;
           faults.onJournalRead?.();
         }
-        return faults.reads && path.endsWith("approval-journal-v1")
-          ? Effect.fail(new VaultError({ reason: "unavailable" }))
-          : Effect.succeed(records.get(path) ?? null);
+        if (faults.reads && path.endsWith("approval-journal-v1"))
+          return yield* new VaultError({ reason: "unavailable" });
+        return records.get(path) ?? null;
       }),
     write: (path: string, value: Redacted.Redacted<unknown>, expected: number) =>
-      Effect.suspend(() => {
+      Effect.gen(function* () {
         const journal = path.endsWith("approval-journal-v1");
+        if (journal && faults.beforeJournalWrite)
+          yield* faults.beforeJournalWrite(Redacted.value(value));
         if (journal && faults.write === "before")
-          return Effect.fail(new VaultError({ reason: "unavailable" }));
+          return yield* new VaultError({ reason: "unavailable" });
         const version = records.get(path)?.version ?? 0;
         if (version !== expected || (journal && faults.conflict))
-          return Effect.fail(new VaultError({ reason: "conflict" }));
+          return yield* new VaultError({ reason: "conflict" });
         records.set(path, { value, version: version + 1 });
+        if (journal && faults.afterJournalWrite)
+          yield* faults.afterJournalWrite(Redacted.value(value));
         if (journal && faults.write === "after") {
           faults.write = "none";
-          return Effect.fail(new VaultError({ reason: "unavailable" }));
+          return yield* new VaultError({ reason: "unavailable" });
         }
-        return Effect.succeed(version + 1);
+        return version + 1;
       }),
   });
   const f = yield* launchFixture(

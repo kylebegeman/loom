@@ -393,3 +393,43 @@ The prior real OpenBao policy/restart proof is not rerun because persistence/run
 unchanged; its accepted scope remains above. Access-policy format 3, journal version 1, paths,
 policy capabilities and all gates are unchanged. L86 remains partial. No Library, production,
 install, SSH, tag or release action is included.
+
+## Internal fresh acquisition and single-use validation
+
+Five focused suites pass **70 tests**, including 26 acquisition-service cases, existing journal
+behavior, the dispatcher design model, operation-specific retry integration and real fork MCP
+startup registration. Contention tests hold both writers at a Deferred barrier after they read
+the prepared record. Same-ID and different-ID competitors yield one acknowledged CAS winner;
+the loser reconciles unknown and the winner's handle then fails validation. A second barrier
+proves a concurrent check is refused while the first check remains suspended, because handle
+identity is discarded before asynchronous work. No sleeps or polling are used.
+
+Other cases cover failed pre-commit writes, lost committed acknowledgements, unavailable
+reconciliation, interruption after commit, interruption during checking, restart/replay,
+JSON/copy/other-instance handle refusal, caller mutation after capture, current authority
+withdrawal, run/item changes, corruption/outage, expired approval, aged journal evidence while
+the request is still retained, stale revision, changed operation and mismatched item/operation
+bindings. A replay racing between initial journal lookup and policy validation is rejected by
+the final journal-version reread. Refusal never refunds an identity, and every successful
+observation has execution/resumption/allow-once gates false. The synthetic transport dies if
+called. Existing policy bytes/versions remain unchanged by successful acquisition/checking.
+
+The real loopback OpenBao proof passes both phases under the existing minimal service token.
+It now acquires through the fresh service boundary, refuses a handle in a reconstructed service,
+checks it once in its original service without opening a gate, refuses a repeated check, and
+reconciles replay to unknown. Existing CAS conflict, denied sibling, format-3 independence and
+backend restart/revocation cases still pass. The fixture stops its captured process and removes
+temporary data; no existing QA backend or production policy is touched.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/OperationAcquisition.test.ts apps/server/src/fork/vault/OperationJournal.test.ts apps/server/src/fork/vault/OperationDispatch.proof.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/vault/VaultApprovalRetry.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/journal_proof.py --bao /absolute/path/to/bao
+```
+
+Server typecheck, focused lint/format, documentation links, 392 seam rows and whitespace pass.
+No wire/client code changed, so no client typechecks, browser or simulator pass was added.
+Access-policy stays format 3, journal body stays version 1, and no new path/capability or Library
+change is included. Construction/registration remains inert. No public acquisition tool or
+execution endpoint is exposed. Internal handle validation does not consume a timed grant or
+implement adapter admission, remote effects, automatic resumption or true one-time enforcement;
+those limitations and the existing downgrade/recovery requirements remain explicit. L86 is partial.

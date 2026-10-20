@@ -47,3 +47,5 @@ Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 - [Profile cleanup regression](../../../../apps/server/src/fork/vault/VaultProfiles.test.ts): reserved journal and sibling-project isolation during retirement.
 
 - [Dispatcher design proof](../../../../apps/server/src/fork/vault/OperationDispatch.proof.test.ts): synthetic interleavings plus real reserve-replay and timed-grant counterexamples; no runtime dispatcher.
+
+- [Fresh acquisition service races](../../../../apps/server/src/fork/vault/OperationAcquisition.test.ts): acknowledged CAS, replay, interruption, single-use validation and handle isolation with no dispatch.

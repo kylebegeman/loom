@@ -415,11 +415,12 @@ validation; an observation cannot close an external effect race or authorize exe
 
 ## Gated dispatcher and consumption boundary
 
-This is an approved design and synthetic proof, not a registered dispatcher. Every public
-`canExecute`, `automaticResumption` and `allowOnceConsumption` gate stays false. No production
-service, policy, schema, path, mount, capability or adapter changes in this milestone. Candidate
-state transitions live only in `OperationDispatch.proof.test.ts`; its counter represents a
-simulated adapter handoff, not an external effect.
+This is an approved dispatcher design and synthetic proof, with the internal acquisition
+boundary implemented below. No dispatcher or acquisition transport is registered. Every public
+`canExecute`, `automaticResumption` and `allowOnceConsumption` gate stays false. Policy, schema,
+path, mount, capability and external adapters are unchanged. Candidate dispatch transitions live
+only in `OperationDispatch.proof.test.ts`; its counter represents a simulated adapter handoff,
+not an external effect.
 
 ### What is consumed
 
@@ -472,10 +473,11 @@ The proposed boundary performs these steps in the same invocation:
    completion write leaves reserved evidence for reconciliation to unknown. A confirmed receipt
    can be read repeatedly but cannot dispatch. Late completion cannot reopen unknown state.
 
-Neither existing `reserve` nor the production adapter implements that process-local acquisition
-contract yet. The proof models the proposed CAS distinction and uses real journal services to
-verify the replay hazard. There is no promise that an old reserve receipt can later be upgraded
-into a dispatch opportunity.
+The existing `reserve` remains an idempotent receipt API. Internal `acquire` now implements the
+fresh CAS distinction, and `checkAcquisition` provides single-use validation with no handoff.
+The production adapter does not consume either result. An old reserve receipt cannot be upgraded
+into an acquisition, and a successful handle check is an observation with false gates, never an
+execution permit.
 
 ### Authority and concurrency limits
 
@@ -514,3 +516,45 @@ one-time/resumption paths and preserve existing timed-grant behavior. No mode fi
 new path or policy right is selected or written here. A future strategy needing one requires
 Kyle's explicit approval. Cross-client/evaluator acceptance and live-adapter crash/revocation
 proofs are required before asking to open a gate; the abstract model alone cannot justify it.
+
+### Implemented internal acquisition contract
+
+`OperationJournal.acquire` accepts a typed proposal, prepared revision and reservation identity,
+with requester identity supplied by the trusted service caller. It snapshots proposal/mutation
+values, checks ownership before reading the journal and validates the complete request, operation,
+thread/run, item/version and canonical digest binding. A retained reservation is reconciled to
+unknown and returns conflict. Terminal, aged, mismatched, denied or unreadable evidence refuses
+acquisition. An acknowledged fresh CAS alone creates a frozen opaque handle. A failed CAS never
+retries into acquisition; it reconciles then returns failure. If reconciliation is unavailable,
+refusal is preserved and a later attempt must reconcile before obtaining anything.
+
+Handles are keyed by object identity in a service-instance-local `WeakMap`; their symbol brand
+has no serializable payload. JSON decoding, copying the symbol or reconstructing the service
+cannot reproduce ownership. Captured proposal and reservation data are independent snapshots
+in process memory, never added to the journal. A dropped handle may be garbage collected;
+retained handles remain subject to the original request/journal expiry and cannot extend it.
+Construction and registration perform no backend reads or writes.
+
+`checkAcquisition` deletes that identity before any asynchronous check, even when the requester
+is wrong, validation refuses or the fiber is interrupted. It verifies current request authority,
+reservation identity/revision/digest/retirement and current workload/item state, then rereads the
+journal and retirement clock after policy validation. Any journal version change, including a
+competing replay's reconciliation, refuses the observation. Concurrent checks of the same
+handle cannot both succeed. Success returns only the reserved observation and three false
+gates; it never releases credentials, invokes an adapter or returns another handle. After owner
+binding succeeds, a failed or interrupted check attempts reconciliation without refunding the
+identity. Unknown or wrong-owner handles are
+refused before reading or mutating the journal.
+Interrupted reservation writes also attempt reconciliation; a process crash or failed cleanup
+can leave reserved evidence, which every later acquire must reconcile. No unknown state becomes
+prepared or reserved again.
+
+A losing contender can reconcile the acknowledged winner to unknown, invalidating its handle.
+This sacrifices availability to preserve refusal on uncertainty. Policy/journal records still
+have no shared transaction; the final reread narrows races but is not a lock against later
+withdrawal, host changes or remote effects. A future dispatcher still needs its normal adapter
+readiness/authorization boundary and explicitly approved gate changes. Neither this handle nor
+its consumed observation supplies that permission. No public MCP/RPC/CLI, queue worker or
+provider continuation calls acquisition in this milestone. Existing timed grants remain timed.
+Access-policy stays format 3 and journal body version 1 at the same existing path. Old runtimes
+cannot recover a handle; restart/downgrade retains only reservation evidence requiring review.

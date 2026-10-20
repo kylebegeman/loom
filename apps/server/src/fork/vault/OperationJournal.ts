@@ -85,6 +85,9 @@ type Observation = {
   readonly automaticResumption: false;
   readonly allowOnceConsumption: false;
 };
+const AcquisitionTypeId: unique symbol = Symbol("OperationJournal.Acquisition");
+type Acquisition = { readonly [AcquisitionTypeId]: true };
+type Acquired = Observation & { readonly acquisition: Acquisition };
 const observe = (entry: Entry): Observation => ({
   entry,
   canExecute: false,
@@ -105,6 +108,15 @@ export class OperationJournal extends Context.Service<
     ) => Effect.Effect<VaultApprovalRetryReport, VaultError>;
     readonly prepare: (
       input: VaultApprovalRetryInput,
+      requester: ThreadId,
+    ) => Effect.Effect<Observation, VaultError>;
+    readonly acquire: (
+      input: VaultApprovalRetryInput,
+      mutation: typeof Mutation.Type,
+      requester: ThreadId,
+    ) => Effect.Effect<Acquired, VaultError>;
+    readonly checkAcquisition: (
+      acquisition: Acquisition,
       requester: ThreadId,
     ) => Effect.Effect<Observation, VaultError>;
     readonly reserve: (
@@ -180,6 +192,10 @@ const make = Effect.gen(function* () {
   });
   const matches = (entry: Entry, report: Effect.Success<ReturnType<typeof validated>>) =>
     entry.digest === report.operationDigest &&
+    entry.requestId === report.status.request.id &&
+    entry.threadId === report.status.request.threadId &&
+    entry.itemId === report.status.request.itemId &&
+    entry.operationId === report.status.request.waitingOperation?.operationId &&
     entry.requestRevision === report.status.request.revision &&
     entry.runId === report.status.request.waitingOperation?.runId &&
     entry.itemVersion === report.status.request.itemVersion;
@@ -209,6 +225,82 @@ const make = Effect.gen(function* () {
       if (saved.failure.reason !== "conflict") return yield* saved.failure;
     }
     return yield* new VaultError({ reason: "conflict" });
+  });
+  const reconcile = (id: string, requester: ThreadId) =>
+    update(id, requester, (entry, now) =>
+      Effect.succeed(
+        entry.state === "reserved"
+          ? {
+              ...entry,
+              state: "unknown" as const,
+              outcome: "unknown" as const,
+              updatedAt: now,
+              revision: entry.revision + 1,
+            }
+          : entry,
+      ),
+    );
+  // Identity, not serialized content, owns a single-use observation in this service instance.
+  const acquisitions = new WeakMap<
+    Acquisition,
+    {
+      readonly input: VaultApprovalRetryInput;
+      readonly entry: Entry;
+      readonly requester: ThreadId;
+    }
+  >();
+  const acquire = Effect.fn("OperationJournal.acquire")(function* (
+    raw: VaultApprovalRetryInput,
+    mutation: typeof Mutation.Type,
+    requester: ThreadId,
+  ) {
+    if (!isMutation(mutation)) return yield* new VaultError({ reason: "invalid-input" });
+    const claim = { ...mutation };
+    const retry = structuredClone(
+      yield* decodeRetry(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      ),
+    );
+    if (claim.id !== retry.id) return yield* new VaultError({ reason: "invalid-input" });
+    yield* access.approvalStatus(retry.id, requester);
+    const { value, version } = yield* load();
+    const entry = yield* own(value, retry.id, requester, yield* Clock.currentTimeMillis);
+    if (entry.state === "reserved") {
+      yield* reconcile(retry.id, requester);
+      return yield* new VaultError({ reason: "conflict" });
+    }
+    if (entry.state !== "prepared" || entry.revision !== claim.expectedRevision)
+      return yield* new VaultError({ reason: "conflict" });
+    const report = yield* validated(retry, requester);
+    if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
+    const now = yield* Clock.currentTimeMillis;
+    if (now >= entry.retireAt) return yield* new VaultError({ reason: "not-found" });
+    const reserved: Entry = {
+      ...entry,
+      state: "reserved",
+      reservationId: claim.reservationId,
+      revision: entry.revision + 1,
+      updatedAt: now,
+    };
+    const saved = yield* save(
+      {
+        ...value,
+        revision: value.revision + 1,
+        entries: retained(value, now).map((e) => (e.requestId === entry.requestId ? reserved : e)),
+      },
+      version,
+    ).pipe(
+      Effect.onInterrupt(() => reconcile(retry.id, requester).pipe(Effect.ignore)),
+      Effect.result,
+    );
+    if (saved._tag === "Failure") {
+      // Never retry a failed CAS into a fresh claim or reconstruct ownership from read-back.
+      yield* reconcile(retry.id, requester);
+      return yield* saved.failure;
+    }
+    const acquisition: Acquisition = Object.freeze({ [AcquisitionTypeId]: true });
+    acquisitions.set(acquisition, { input: retry, entry: structuredClone(reserved), requester });
+    return { ...observe(reserved), acquisition };
   });
   const prepare = Effect.fn("OperationJournal.prepare")(function* (
     raw: VaultApprovalRetryInput,
@@ -380,6 +472,41 @@ const make = Effect.gen(function* () {
       return result;
     }),
     prepare,
+    acquire,
+    checkAcquisition: (acquisition, requester) =>
+      Effect.suspend(() => {
+        const held = acquisitions.get(acquisition);
+        // Burn before any asynchronous check, including refusal or interruption.
+        acquisitions.delete(acquisition);
+        if (!held || held.requester !== requester)
+          return Effect.fail(new VaultError({ reason: "denied" }));
+        return Effect.gen(function* () {
+          yield* access.approvalStatus(held.input.id, requester);
+          const { value, version } = yield* load();
+          const entry = yield* own(value, held.input.id, requester, yield* Clock.currentTimeMillis);
+          if (
+            entry.state !== "reserved" ||
+            entry.revision !== held.entry.revision ||
+            entry.reservationId !== held.entry.reservationId ||
+            entry.digest !== held.entry.digest ||
+            entry.operationId !== held.entry.operationId ||
+            entry.retireAt !== held.entry.retireAt
+          )
+            return yield* new VaultError({ reason: "conflict" });
+          const report = yield* validated(held.input, requester);
+          if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
+          const current = yield* load();
+          const observed = yield* own(
+            current.value,
+            held.input.id,
+            requester,
+            yield* Clock.currentTimeMillis,
+          );
+          if (current.version !== version) return yield* new VaultError({ reason: "conflict" });
+          // This observation cannot authorize dispatch; all execution gates remain closed.
+          return observe(observed);
+        }).pipe(Effect.onError(() => reconcile(held.input.id, requester).pipe(Effect.ignore)));
+      }),
     reserve: (raw, input, requester) =>
       Effect.gen(function* () {
         if (!isMutation(input) || input.id !== raw.id)
@@ -426,20 +553,7 @@ const make = Effect.gen(function* () {
         });
       });
     },
-    reconcile: (id, requester) =>
-      update(id, requester, (entry, now) =>
-        Effect.succeed(
-          entry.state === "reserved"
-            ? {
-                ...entry,
-                state: "unknown" as const,
-                outcome: "unknown" as const,
-                updatedAt: now,
-                revision: entry.revision + 1,
-              }
-            : entry,
-        ),
-      ),
+    reconcile,
     cancel: (id, expectedRevision, requester) =>
       update(id, requester, (entry, now) => {
         if (entry.state === "cancelled" && entry.revision === expectedRevision + 1)

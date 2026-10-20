@@ -136,7 +136,7 @@ it.live.skipIf(!configured || restarted)(
       const saved = yield* store.read(path);
       expect(saved?.version).toBe(1);
       expect((yield* store.write(path, saved!.value, 0).pipe(Effect.flip)).reason).toBe("conflict");
-      yield* journal.reserve(
+      const acquired = yield* journal.acquire(
         input,
         { id: requestId, expectedRevision: 1, reservationId: "d".repeat(32) },
         threadId,
@@ -153,6 +153,26 @@ it.live.skipIf(!configured || restarted)(
       const rebuilt = yield* OperationJournal.OperationJournal.pipe(
         Effect.provide(Layer.fresh(journalLayer)),
       );
+      expect(
+        (yield* rebuilt.checkAcquisition(acquired.acquisition, threadId).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(yield* journal.checkAcquisition(acquired.acquisition, threadId)).toMatchObject({
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      });
+      expect(
+        (yield* journal.checkAcquisition(acquired.acquisition, threadId).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(
+        (yield* rebuilt
+          .acquire(
+            input,
+            { id: requestId, expectedRevision: 1, reservationId: "d".repeat(32) },
+            threadId,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
       expect(yield* rebuilt.reconcile(requestId, threadId)).toMatchObject({
         entry: { state: "unknown" },
         canExecute: false,

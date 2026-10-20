@@ -66,7 +66,9 @@ surfaces. Local retry integration through existing SSH/Git/GitHub services also 
 synthetic transports. Kyle's later approver-context native pass accepted current/changed/missing
 context and UI deny/cancel; accessibility speech/hints remain source-only. The gated dispatcher
 and consumption design now has a synthetic race/crash proof, including reserve replay, but no
-runtime dispatcher or true one-time grant enforcement. Durable resumption/consumption and
+runtime dispatcher or true one-time grant enforcement. Internal fresh acquisition now separates
+acknowledged CAS ownership from replay, with opaque local handles and single-use validation.
+It invokes no adapter and opens no execution gate. Durable resumption/consumption and
 live-provider acceptance remain open.
 
 ## Scope

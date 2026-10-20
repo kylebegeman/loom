@@ -86,15 +86,22 @@ The gated dispatcher/consumption design and synthetic proof are recorded in TECH
 Fresh CAS acknowledgement, a non-serializable single-use in-process opportunity, mandatory
 reconciliation of every replay and final adapter authorization define the proposed boundary.
 The model explores both contenders and failure placement; real services prove that reserve
-replays are indistinguishable and that reservation does not consume a timed grant. No runtime
-dispatcher, acquisition contract, one-time approval discriminator or evaluator enforcement has
-been implemented. All public gates stay false; schema, paths and policy capabilities stay put.
+replays are indistinguishable and that reservation does not consume a timed grant. No runtime dispatcher, one-time approval
+discriminator or evaluator enforcement has been implemented. All public gates stay false; schema, paths and policy capabilities stay put.
 
-Next selected work: an internal fresh-acquisition contract and race tests behind the closed
-gates, using the existing journal record and no adapter dispatch. Distinguish fresh acknowledged
-CAS from replay/uncertainty in the service; replay must reconcile, and no serialized observation
-may become a permit. True one-time eligibility, cross-adapter enforcement and downgrade safety
-remain open design prerequisites before any gate can be enabled.
+Internal fresh acquisition is now implemented in the existing journal service. Only an
+acknowledged prepared-to-reserved CAS yields a service-instance-local opaque handle. Replay,
+CAS loss or uncertain writes reconcile and refuse. The handle is discarded before asynchronous
+validation; current policy/bindings plus a final journal-version/age check remain required.
+Copied, serialized or reconstructed handles cannot recover ownership. Every returned observation
+keeps false gates. No transport, continuation, worker or adapter calls this internal boundary.
+Controlled service races and the existing-policy synthetic OpenBao proof cover it.
+
+Next selected work: adapter admission and revalidation for SSH, Git-over-SSH and GitHub using
+synthetic transports, while live dispatch remains disabled. Preserve final authority/readiness
+checks and ensure neither an acquisition nor a consumed observation becomes a transferable
+permit. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
+design prerequisites before any gate can be enabled.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome
