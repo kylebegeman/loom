@@ -6,6 +6,7 @@ import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/t
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import {
   CircleAlertIcon,
@@ -162,6 +163,7 @@ function EnvironmentNotifications({
     const subagentRequests = pendingSubagentRequestsByThread(threads);
     for (const rawThread of threads) {
       if (rawThread.lineage.relationshipToParent === "subagent") continue;
+      if (isBotRunThreadId(rawThread.id)) continue; // fork: bots - the Bots page reports runs
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
       if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {

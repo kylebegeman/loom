@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  BotIcon, // fork: bots
   ChartNoAxesColumnIcon,
   FolderKanbanIcon,
   GlobeIcon,
@@ -171,7 +172,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const isOnUtilityPage = useLocation({
     select: (location) =>
       isSidebarUtilityPage(location.pathname) &&
-      !/^\/(?:sites|projects|library)(?:\/|$)/.test(location.pathname),
+      !/^\/(?:sites|projects|library|loom\/bots)(?:\/|$)/.test(location.pathname), // fork: bots
   });
   const pullRequestsSupported = usePullRequestsSupported();
   const closeMobileSidebar = () => {
@@ -249,6 +250,16 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/sites" });
+            }}
+          />
+          {/* fork: bots */}
+          <SidebarUtilityItem
+            icon={<BotIcon />}
+            label="Bots"
+            active={pathname === "/loom/bots"}
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/loom/bots" });
             }}
           />
         </>

@@ -30,6 +30,7 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
 import { AuthPreviewOperateScope } from "../auth.ts";
 import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
+import { BOTS_WS_METHODS as BOT } from "./bots.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -201,4 +202,10 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PL.pagesUpdate]: AuthPreviewOperateScope,
   // The directory list stays unguarded for the same reason.
   [DIR.forget]: AuthSettingsWriteScope,
+  // Bot list and run history stay unguarded: clients read them with query atoms.
+  [BOT.save]: AuthOrchestrationOperateScope,
+  [BOT.archive]: AuthOrchestrationOperateScope,
+  [BOT.delete]: AuthOrchestrationOperateScope,
+  [BOT.run]: AuthOrchestrationOperateScope,
+  [BOT.cancel]: AuthOrchestrationOperateScope,
 } as const;

@@ -69,6 +69,7 @@ import * as DeviceQa from "./device-qa/DeviceQaService.ts";
 import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
 import * as CodeGraph from "./code-graph/CodeGraphService.ts";
 import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
+import * as Bots from "./bots/BotsService.ts";
 import * as PreviewLinks from "./preview-links/PreviewLinksService.ts";
 import * as PreviewAccess from "./preview-access/PreviewAccessService.ts";
 import { PreviewAccessHttpRoutes } from "./preview-access/http.ts";
@@ -298,6 +299,7 @@ const ForkServicesLive = Layer.mergeAll(
       DeviceQa.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
     ),
   ),
+  Bots.BotsRecoveryLive.pipe(Layer.provideMerge(Bots.layer)),
   CodeGraphReactorLive.pipe(
     Layer.provideMerge(
       CodeGraph.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),

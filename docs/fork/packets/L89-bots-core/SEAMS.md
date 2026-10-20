@@ -8,9 +8,9 @@ None: all existed.
 
 | File                                                        | Marker       | Lines | Why                                                                  |
 | ----------------------------------------------------------- | ------------ | ----- | -------------------------------------------------------------------- |
-| `apps/web/src/components/sidebar/SidebarChrome.tsx`         | `fork: bots` | 12    | The Bots footer entry after Sites; the footer has no registry.       |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx`         | `fork: bots` | 3     | The Bots footer entry after Sites; the footer has no registry.       |
 | `apps/web/src/components/sidebar/mainAppLocation.ts`        | `fork: bots` | 1     | `/loom/bots` is a utility page so the sidebar returns to the thread. |
-| `apps/web/src/components/Sidebar.logic.ts`                  | `fork: bots` | 1     | Bot run threads join subagents in the hidden set.                    |
+| `apps/web/src/components/Sidebar.logic.ts`                  | `fork: bots` | 2     | Bot run threads join subagents in the hidden set.                    |
 | `packages/client-runtime/src/state/threadShell.ts`          | `fork: bots` | 1     | Hide bot run threads from navigation, which web and mobile share.    |
 | `apps/web/src/components/ThreadNotificationCoordinator.tsx` | `fork: bots` | 1     | No completion notification per bot run.                              |
 
@@ -28,8 +28,11 @@ tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
 git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
-Record the tag and result here when the packet lands.
+Against `v0.1.1-nightly.20261020.3411` on 2026-10-20, L89 added no conflicting file. The branch
+base already conflicted in 68 files, `ThreadNotificationCoordinator.tsx` among them, before L89's
+seam line.
 
-## FORK.md rows
+## Registry
 
-One row per file above in the "Packet seams" table, slug `bots`, packet L89.
+One row per file above in `docs/fork/seams.tsv` with marker `bots`, and one paragraph in FORK.md
+under "Packet seams".

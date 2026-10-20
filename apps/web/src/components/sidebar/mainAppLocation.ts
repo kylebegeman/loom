@@ -11,6 +11,7 @@ export function isSidebarUtilityPage(pathname: string) {
     pathname === "/library" ||
     pathname.startsWith("/library/") ||
     pathname === "/sites" ||
+    pathname === "/loom/bots" || // fork: bots
     pathname === "/usage" ||
     pathname === "/computers" || // fork: fleet-connections
     pathname === "/pull-requests"

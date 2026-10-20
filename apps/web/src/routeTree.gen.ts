@@ -39,6 +39,7 @@ import { Route as SettingsArchivedRouteImport } from './routes/settings.archived
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ProjectsStorageRouteImport } from './routes/projects.storage'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
+import { Route as LoomBotsRouteImport } from './routes/loom.bots'
 import { Route as LibraryProjectIdRouteImport } from './routes/library.$projectId'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
@@ -197,6 +198,11 @@ const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   path: '/projects/$projectKey',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoomBotsRoute = LoomBotsRouteImport.update({
+  id: '/loom/bots',
+  path: '/loom/bots',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryProjectIdRoute = LibraryProjectIdRouteImport.update({
   id: '/$projectId',
   path: '/$projectId',
@@ -250,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/library/$projectId': typeof LibraryProjectIdRoute
+  '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -286,6 +293,7 @@ export interface FileRoutesByTo {
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/library/$projectId': typeof LibraryProjectIdRoute
+  '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -326,6 +334,7 @@ export interface FileRoutesById {
   '/_chat/new': typeof ChatNewRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/library/$projectId': typeof LibraryProjectIdRoute
+  '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -367,6 +376,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/pull-requests'
     | '/library/$projectId'
+    | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -403,6 +413,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/pull-requests'
     | '/library/$projectId'
+    | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -442,6 +453,7 @@ export interface FileRouteTypes {
     | '/_chat/new'
     | '/_chat/pull-requests'
     | '/library/$projectId'
+    | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -478,6 +490,7 @@ export interface RootRouteChildren {
   SitesRoute: typeof SitesRoute
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
+  LoomBotsRoute: typeof LoomBotsRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
   ProjectsStorageRoute: typeof ProjectsStorageRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
@@ -695,6 +708,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/loom/bots': {
+      id: '/loom/bots'
+      path: '/loom/bots'
+      fullPath: '/loom/bots'
+      preLoaderRoute: typeof LoomBotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library/$projectId': {
       id: '/library/$projectId'
       path: '/$projectId'
@@ -834,6 +854,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitesRoute: SitesRoute,
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
+  LoomBotsRoute: LoomBotsRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
   ProjectsStorageRoute: ProjectsStorageRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,

@@ -1,6 +1,6 @@
 # L89: Bots core and the Bots page
 
-Status: In progress.
+Status: Implemented on `feat/loom-bots`.
 
 A bot is a named, reusable job: a fixed brief with typed inputs, a pinned model, fixed modes,
 a workspace rule, a timeout and a concurrency limit. Running a bot fills in its inputs and starts

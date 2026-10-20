@@ -43,9 +43,9 @@ wait and interrupt methods that `t3_thread_launch` and `t3_thread_wait` use.
   `status` in `queued | running | completed | failed | cancelled | timed_out`, `startedBy`
   (`user | agent`), `callerThreadId`, `createdAt`, `startedAt`, `finishedAt`, `result`
   (final reply, capped), `resultTruncated`, `error`.
-- `BotsChange`: `{ type: "bot", bot }`, `{ type: "bot-deleted", botId }` or `{ type: "run", run }`.
+- `BotsChange`: `{ _tag: "bot", bot }`, `{ _tag: "bot-deleted", botId }` or `{ _tag: "run", run }`.
 - `BotsError`: `reason` in `not_found | invalid | archived | permission | storage | launch`
-  plus a user-facing `detail`.
+  plus a user-facing `message`.
 - `BOT_RUN_THREAD_PREFIX = "bot-run-"` and `isBotRunThreadId(id)`, the one predicate every
   client filter uses.
 
@@ -132,17 +132,20 @@ thread lifecycle and storage cleanup.
 ## Clients
 
 - `packages/client-runtime/src/fork/bots.ts`: query atoms for `list` and `listRuns`, the
-  `watch` subscription folded into both, and `createEnvironmentRpcCommand` commands for save,
-  archive, delete, run and cancel with `permissionAtom` gating. `isBotRunThreadId` is reused
-  from contracts.
-- `apps/web/src/fork/bots/`: `BotsPage.tsx` (list on the left, detail on the right),
-  `BotEditor.tsx`, `BotRunForm.tsx` (generated from parameters), `BotRuns.tsx` (running,
-  recent and failed, with duration, inputs, reply preview and an "Open thread" link),
-  `palette.tsx`, `state.ts`.
-- Route `apps/web/src/routes/loom.bots.tsx` with search `{ botId?, tab? }`; `routeTree.gen.ts`
+  `watch` subscription folded into a map of changes (`foldBotsChange`) that `applyBotChanges`
+  and `applyRunChanges` lay over the fetched lists, and `createEnvironmentRpcCommand` commands
+  for save, archive, delete, run and cancel with `permissionAtom` gating. `isBotRunThreadId` is
+  reused from contracts. Changes missed while disconnected never arrive, so the page refetches
+  both lists on reconnect.
+- `apps/web/src/fork/bots/`: `BotsPage.tsx` (bots on the left, the selected bot or all runs on
+  the right), `BotEditor.tsx`, `BotRunForm.tsx` (generated from parameters), `BotRuns.tsx`
+  (status, inputs, reply, cancel and an "Open thread" link), `draft.ts` (form state to
+  `BotsSaveInput`, run form values to typed inputs), `palette.tsx`, `state.ts`.
+- Route `apps/web/src/routes/loom.bots.tsx` with search `{ bot?, run? }`: `bot` selects a bot and
+  `run` opens its run form, which is how the palette's "Run bot..." lands. `routeTree.gen.ts`
   regenerates.
-- Gating: the footer entry and palette items require `supportsLoomFeature(..., "bots")` on the
-  active environment. The route shows an "update the server" empty state otherwise.
+- Bots live on the primary environment. The footer entry is always shown; the page explains an
+  offline or outdated server. Palette items require `supportsLoomFeature(..., "bots")` there.
 
 ## Agent-facing tools
 

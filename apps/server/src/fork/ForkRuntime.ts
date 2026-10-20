@@ -35,6 +35,7 @@ import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecyc
 import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.ts";
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
+import type { BotsService } from "./bots/BotsService.ts";
 import type { SwitchboardStatus } from "./switchboard/SwitchboardStatus.ts";
 import type { PreviewLinksService } from "./preview-links/PreviewLinksService.ts";
 import type { PreviewAccessService } from "./preview-access/PreviewAccessService.ts";
@@ -82,6 +83,7 @@ export type ForkServices =
   | AppleBuildService
   | DeviceQaService
   | CodeGraphService
+  | BotsService
   | WorkspaceHandoffService
   | SwitchboardStatus
   | LibraryBriefSuggestions

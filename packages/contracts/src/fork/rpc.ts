@@ -32,6 +32,7 @@ import { DeviceQaRpcGroup, DEVICE_QA_WS_METHODS } from "./device-qa.ts";
 import { CodeGraphRpcGroup, CODE_GRAPH_WS_METHODS } from "./code-graph.ts";
 import { PreviewLinksRpcGroup, PREVIEW_LINKS_WS_METHODS } from "./preview-links.ts";
 import { DirectoryRpcGroup } from "./directory.ts";
+import { BotsRpcGroup, BOTS_WS_METHODS } from "./bots.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -92,6 +93,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   GitHubHostSetupRpcGroup,
   PreviewLinksRpcGroup,
   DirectoryRpcGroup,
+  BotsRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -122,7 +124,8 @@ export type ForkSubscriptionRpcTag =
   | typeof DEVICE_QA_WS_METHODS.watchRuns
   | typeof DEVICE_QA_WS_METHODS.watchEvidence
   | typeof CODE_GRAPH_WS_METHODS.subscribeStatus
-  | typeof PREVIEW_LINKS_WS_METHODS.watch;
+  | typeof PREVIEW_LINKS_WS_METHODS.watch
+  | typeof BOTS_WS_METHODS.watch;
 export type ForkStreamCommandRpcTag =
   | typeof APPLE_BUILD_TOOLING_WS_METHODS.tailLog
   | typeof DEVICE_QA_WS_METHODS.runEvents;
