@@ -4,7 +4,8 @@ import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useServerConfigs } from "~/state/entities";
 import type { ForkDiffHeaderAction, ForkDiffHeaderActionProps } from "../diffHeader/registry";
-import { FEATURE, openImpact } from "./state";
+import { FEATURE } from "./panel";
+import { openImpact } from "./state";
 
 /** The diff panel's scope labels, as they read inside a sentence. */
 const SCOPE_TEXT: Record<string, string> = {

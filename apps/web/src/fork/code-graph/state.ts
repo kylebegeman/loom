@@ -10,12 +10,10 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { readThreadShell } from "~/state/entities";
 import { forkPanelSurface } from "../panels/registry";
+import { PANEL_ID } from "./panel";
 import { useCodeGraphViewStore, type ImpactRequest } from "./viewStore";
 
 export const codeGraph = createCodeGraphAtoms(connectionAtomRuntime);
-
-export const FEATURE = "code-graph";
-export const PANEL_ID = "code-graph";
 
 export async function runCommand<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
   const result = await command.run(appAtomRegistry, input);

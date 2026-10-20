@@ -1,6 +1,7 @@
 import { NetworkIcon } from "lucide-react";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
-import { FEATURE, buildGraph, openImpact, openPanel, projectIdOf } from "./state";
+import { FEATURE } from "./panel";
+import { buildGraph, openImpact, openPanel, projectIdOf } from "./state";
 
 export const codeGraphPaletteSource: ForkCommandPaletteSource = {
   id: FEATURE,

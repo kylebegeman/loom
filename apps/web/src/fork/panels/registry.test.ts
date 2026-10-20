@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -31,6 +31,18 @@ describe("fork right panels", () => {
     expect(new Set(letters).size).toBe(letters.length);
     expect(letters.filter((letter) => !/^[A-Z]$/.test(letter))).toEqual([]);
     expect(letters.filter((letter) => UPSTREAM_LETTERS.has(letter))).toEqual([]);
+  });
+
+  // A packet module that opens its panel imports this registry, which imports every panel.
+  // Loaded first, it must not leave its panel definition reading an id that is not set yet.
+  it.each([
+    ["code-graph/state", () => import("../code-graph/state")],
+    ["utilities/open", () => import("../utilities/open")],
+  ])("loads %s before the registry", async (_name, load) => {
+    vi.resetModules();
+    await load();
+    const { FORK_PANELS: panels } = await import("./registry");
+    expect(panels.filter((panel) => typeof panel.id !== "string")).toEqual([]);
   });
 
   it("builds stable surface ids", () => {

@@ -1,8 +1,12 @@
 import { lazy, Suspense } from "react";
 import { NetworkIcon } from "lucide-react";
 import type { ForkPanelDefinition } from "../panels/types";
-import { FEATURE, PANEL_ID } from "./state";
 const CodeGraphPanel = lazy(() => import("./CodeGraphPanel"));
+
+// Here, not in state.ts: state.ts imports the panel registry, which imports this file.
+export const FEATURE = "code-graph";
+export const PANEL_ID = "code-graph";
+
 export const codeGraphPanel: ForkPanelDefinition = {
   id: PANEL_ID,
   title: "Code map",
