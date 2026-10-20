@@ -7,6 +7,7 @@ import {
   type LibraryIngestHistoryRequest,
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
@@ -67,6 +68,13 @@ const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 const EVENT_SCAN_LIMIT = 512;
 const PUBLISH_BATCH_LIMIT = 10;
 const PUBLISH_BATCH_BYTES = 8 * 1024 * 1024;
+// Every snapshot carries a conversation's whole history, which the Library parses, writes and
+// compresses again. A conversation is snapshotted at most once a second for every 256 KiB it
+// holds: a small one at every milestone, a 200 MB one about every 13 minutes.
+const SNAPSHOT_SPACING_BYTES_PER_SECOND = 256 * 1024;
+const MILESTONE_EVENTS = `event_type IN ('thread.created','thread.metadata-updated','thread.archived','thread.unarchived','thread.deleted','thread.settled','thread.unsettled','thread.snoozed','thread.unsnoozed','thread.provider-switched','thread.model-selection-updated','thread.runtime-mode-updated','thread.interaction-mode-updated','run.created','checkpoint.captured','checkpoint.rollback-requested','runtime-request.updated','context-handoff.updated','context-transfer.created','context-transfer.updated','thread.pinned','thread.unpinned','thread.auto-settle-set','thread.pull-request-synced')
+  OR (event_type='run.updated' AND json_extract(payload_json,'$.status') NOT IN ('preparing','starting','running'))
+  OR (event_type='message.updated' AND json_extract(payload_json,'$.streaming')=0)`;
 
 const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
@@ -97,6 +105,13 @@ const make = Effect.gen(function* () {
   const environmentId = yield* identity.getEnvironmentId;
   const lock = yield* Semaphore.make(1);
   const failure = yield* Ref.make<LibraryError["reason"] | null>(null);
+  const milestone = sql.literal(MILESTONE_EVENTS);
+  // Only capture uses these, and it runs under the drain lock. Threads with a milestone not yet
+  // snapshotted wait here for their spacing and for their previous snapshot's acknowledgement.
+  // A restart forgets them, so the first capture finds them again in the event log.
+  const deferred = new Set<ThreadId>();
+  const spacedUntil = new Map<ThreadId, number>();
+  let reconciled = false;
   const readState = sql<{
     journal_id: string;
     environment_id: string;
@@ -151,6 +166,13 @@ const make = Effect.gen(function* () {
     if (current[0] !== undefined && current[0].queued_sequence >= snapshot.summary.sequence) return;
     const payload = yield* encodeArchive(snapshot);
     const bytes = new TextEncoder().encode(payload).length;
+    // Spacing also follows a snapshot that did not fit, so an oversized one is not encoded again
+    // on every drain.
+    spacedUntil.set(
+      threadId,
+      (yield* Clock.currentTimeMillis) +
+        Math.floor(bytes / SNAPSHOT_SPACING_BYTES_PER_SECOND) * 1000,
+    );
     const pendingBytes =
       (yield* sql<{
         bytes: number;
@@ -183,14 +205,22 @@ const make = Effect.gen(function* () {
           // Activation verified these exact bytes against this authority before staging the
           // host binding. Seed acknowledgements without replaying the entire source history.
           yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
-        } else yield* sql.withTransaction(queueThread(entry.threadId));
+        } else deferred.add(entry.threadId);
+      }
+      if (!reconciled) {
+        const unsnapshotted = yield* sql<{ thread_id: string }>`
+        SELECT thread_id FROM fork_library_source_threads t WHERE EXISTS (
+          SELECT 1 FROM orchestration_events
+          WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=t.thread_id
+            AND sequence>t.queued_sequence AND sequence<=${current.scan_sequence} AND (${milestone}))`;
+        for (const row of unsnapshotted) {
+          const threadId = ThreadId.make(row.thread_id);
+          if (bound.has(threadId)) deferred.add(threadId);
+        }
+        reconciled = true;
       }
       const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
-      SELECT sequence,stream_id,
-        CASE WHEN event_type IN ('thread.created','thread.metadata-updated','thread.archived','thread.unarchived','thread.deleted','thread.settled','thread.unsettled','thread.snoozed','thread.unsnoozed','thread.provider-switched','thread.model-selection-updated','thread.runtime-mode-updated','thread.interaction-mode-updated','run.created','checkpoint.captured','checkpoint.rollback-requested','runtime-request.updated','context-handoff.updated','context-transfer.created','context-transfer.updated','thread.pinned','thread.unpinned','thread.auto-settle-set','thread.pull-request-synced')
-          OR (event_type='run.updated' AND json_extract(payload_json,'$.status') NOT IN ('preparing','starting','running'))
-          OR (event_type='message.updated' AND json_extract(payload_json,'$.streaming')=0)
-        THEN 1 ELSE 0 END AS milestone
+      SELECT sequence,stream_id,CASE WHEN ${milestone} THEN 1 ELSE 0 END AS milestone
       FROM orchestration_events
       WHERE application_event_version=2 AND aggregate_kind='thread' AND sequence>${current.scan_sequence}
       ORDER BY sequence LIMIT ${EVENT_SCAN_LIMIT}`;
@@ -203,12 +233,30 @@ const make = Effect.gen(function* () {
         const rows = yield* sql<{
           queued_sequence: number;
         }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
-        if ((rows[0]?.queued_sequence ?? -1) < sequence)
-          yield* sql.withTransaction(queueThread(threadId));
+        if ((rows[0]?.queued_sequence ?? -1) < sequence) deferred.add(threadId);
       }
       const last = events.at(-1);
       if (last !== undefined)
         yield* sql`UPDATE fork_library_source_state SET scan_sequence=${last.sequence} WHERE key='host'`;
+      const now = yield* Clock.currentTimeMillis;
+      for (const threadId of deferred) {
+        if (!bound.has(threadId)) {
+          deferred.delete(threadId);
+          continue;
+        }
+        if ((spacedUntil.get(threadId) ?? 0) > now) continue;
+        // The Library accepts a journal only in order, so a queued snapshot is never replaced.
+        // Later milestones wait for its acknowledgement and then share one fresh snapshot.
+        const outstanding =
+          (yield* sql<{
+            count: number;
+          }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
+            ?.count ?? 0;
+        if (outstanding > 0) continue;
+        // A failure, such as a full journal, ends this pass and keeps the conversation deferred.
+        yield* sql.withTransaction(queueThread(threadId));
+        deferred.delete(threadId);
+      }
     }),
   );
   const publish = mapIo(

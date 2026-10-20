@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { ServerActivation } from "../../serverActivation.ts";
@@ -395,7 +396,47 @@ describe("durable Library history replication", () => {
     ),
   );
   it.effect(
-    "retains the event watermark at the journal limit while allowing pending entries to upload",
+    "keeps one unacknowledged snapshot per conversation and coalesces later milestones",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* f.event(1, "thread.created", "{}");
+          yield* f.service.drain;
+          yield* f.event(2, "message.updated", '{"streaming":false}');
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 2 },
+          }));
+          yield* Ref.set(f.failAck, true);
+          expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("io");
+          const snapshots = yield* Ref.get(f.snapshots);
+          yield* f.event(3, "message.updated", '{"streaming":false}');
+          yield* f.event(4, "checkpoint.captured", "{}");
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 4 },
+          }));
+          expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("io");
+          expect(yield* Ref.get(f.snapshots)).toBe(snapshots);
+          expect((yield* f.service.status).pendingEntries).toBe(1);
+          yield* Ref.set(f.failAck, false);
+          yield* f.service.drain;
+          expect((yield* f.service.status).threads[0]).toMatchObject({
+            acknowledgedSequence: 2,
+            pending: true,
+          });
+          yield* f.service.drain;
+          expect(yield* Ref.get(f.snapshots)).toBe(snapshots + 1);
+          expect((yield* f.service.status).threads[0]).toMatchObject({
+            currentSequence: 4,
+            acknowledgedSequence: 4,
+            pending: false,
+          });
+        }),
+      ),
+  );
+  it.effect(
+    "advances the event watermark past a snapshot over the journal limit and retries it once it fits",
     () =>
       run((f) =>
         Effect.gen(function* () {
@@ -407,17 +448,9 @@ describe("durable Library history replication", () => {
             summary: { ...archive.summary, sequence: 2 },
             projection: {
               ...archive.projection,
-              messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(2000) }],
+              messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(6000) }],
             },
           }));
-          yield* Ref.set(f.failAck, true);
-          expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("io");
-          yield* f.event(3, "message.updated", '{"streaming":false}');
-          yield* Ref.update(f.archive, (archive) => ({
-            ...archive,
-            summary: { ...archive.summary, sequence: 3 },
-          }));
-          yield* Ref.set(f.failAck, false);
           expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
           expect(yield* f.service.status).toMatchObject({
             pendingEntries: 0,
@@ -431,10 +464,18 @@ describe("durable Library history replication", () => {
             }>`SELECT scan_sequence FROM fork_library_source_state`,
           ).toMatchObject([{ scan_sequence: 2 }]);
           expect((yield* f.service.status).threads[0]?.pending).toBe(true);
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            projection: {
+              ...archive.projection,
+              messages: [{ ...archive.projection.messages[0]!, text: "shorter" }],
+            },
+          }));
           yield* f.service.drain;
+          expect(yield* f.service.status).toMatchObject({ lastFailure: null });
           expect((yield* f.service.status).threads[0]).toMatchObject({
-            currentSequence: 3,
-            acknowledgedSequence: 3,
+            currentSequence: 2,
+            acknowledgedSequence: 2,
             pending: false,
           });
         }),
@@ -445,6 +486,80 @@ describe("durable Library history replication", () => {
           ),
         ),
       ),
+  );
+  it.effect("spaces snapshots of a long conversation by its size", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        // About 600 KiB, so each snapshot waits two seconds before the next.
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+          },
+        }));
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        yield* f.event(2, "message.updated", '{"streaming":false}');
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* f.service.drain;
+        yield* TestClock.adjust("1 second");
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        expect((yield* f.service.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 1,
+          pending: true,
+        });
+        yield* TestClock.adjust("1 second");
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+        expect((yield* f.service.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 2,
+          pending: false,
+        });
+      }),
+    ),
+  );
+  it.effect("finds a deferred snapshot again in the event log after a restart", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+          },
+        }));
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.service.drain;
+        yield* f.event(2, "message.updated", '{"streaming":false}');
+        yield* f.event(3, "message.updated", '{"streaming":true}');
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 3 },
+        }));
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        expect(
+          yield* f.sql<{
+            scan_sequence: number;
+          }>`SELECT scan_sequence FROM fork_library_source_state`,
+        ).toMatchObject([{ scan_sequence: 3 }]);
+        const restarted = yield* f.restart;
+        yield* restarted.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+        expect((yield* restarted.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 3,
+          pending: false,
+        });
+        yield* (yield* f.restart).drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+      }),
+    ),
   );
   it.effect("does not report a pending conversation after navigation-only events", () =>
     run((f) =>
