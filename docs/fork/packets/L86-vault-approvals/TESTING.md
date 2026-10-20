@@ -467,3 +467,32 @@ All methods are internal; no MCP, RPC, CLI, provider or scheduled execution path
 Live session capacity, signing/proofs, credential/provider validity, tool/file/repository state
 and actual network access remain unverified. One-time grant enforcement, live dispatch, L79
 host policy/production and broader client/remote acceptance remain open; L86 stays partial.
+
+## Synthetic admission result loss and recovery follow-up
+
+Three focused suites pass **59 tests**: 32 adapter-admission cases, fresh acquisition and real
+MCP registration. The added coverage reconstructs journal and admission services over the same
+retained synthetic store and dependencies. It deliberately does not claim a full process/host,
+provider, notification, workload-service or OpenBao backend restart.
+
+Across SSH, Git-over-SSH and GitHub, successful metadata observation followed by a lost internal
+result cannot resume. Serialized observations and the original handle are refused by the new
+instance; explicit acquire reconciles reserved evidence to unknown and retry preparation requires
+review. Constructors leave retained records unchanged and no extra metadata/provider call occurs.
+All three adapters also pass interruption at a deterministic metadata barrier without transport
+execution, session allocation or handle restoration.
+
+A concurrent duplicate is denied while the original metadata call is paused; it leaves the
+original reservation usable for that observation, whose result still has false gates. Storage
+outage after admission leaves ordinary approval review usable, preserves records and yields no
+acquisition; restoration forces reconciliation rather than replay. An elapsed entry is unavailable
+while its request remains approved/retained, without erasing or recreating evidence. Withdrawal
+after a successful result stays authoritative on reconstruction, and the old observation never
+becomes permission. The existing 26 fresh-acquisition cases remain green.
+
+Server typecheck, focused lint/format, changed documentation links, 392 seam rows and whitespace
+pass. This follow-up changes only tests and packet evidence, so client checks, browser/native
+passes and the unchanged real OpenBao persistence proof were not repeated. No production,
+Library, host-owner, SSH, install, release, surface, policy/path/format or gate action is included.
+L86 remains partial; full one-time intent/enforcement and compatibility design, actual adapter
+admission/execution, fresh human authentication and broader surface acceptance are still open.

@@ -105,9 +105,15 @@ checks and GitHub repository/run checks execute locally; no command, signing, pr
 or probe occurs. Existing execution authorization remains audited; admission uses the same
 read-only evaluator. No MCP/RPC/CLI or other dispatch surface was added.
 
-Next selected work: synthetic crash/recovery acceptance around the new admission boundary,
-including restart, lost success replies, concurrent replay and refusal after age-out. Preserve
-explicit live-adapter and one-time enforcement limits. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
+Synthetic admission recovery acceptance now covers all three adapters' interruption and lost
+results, reconstructed journal/admission services, copied results, concurrent use of one handle,
+backend outage/restoration, still-approved requests with aged evidence and withdrawal after a
+successful observation. It creates no runtime delta or new execution capability.
+
+Next selected work: one-time intent, evaluator enforcement and downgrade-reader design with
+synthetic counterexamples. Compare safe compatibility strategies before proposing a persisted
+intent contract; do not change format 3, journal version 1, paths or gates. Keep decisions needing
+Kyle or the host owner explicit. Real adapter/provider/host verification remains owner-gated. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
 design prerequisites before any gate can be enabled.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's

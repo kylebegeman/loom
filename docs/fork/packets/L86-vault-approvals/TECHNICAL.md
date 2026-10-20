@@ -598,3 +598,23 @@ CLI, provider continuation or worker calls this service. Policy/journal formats,
 are unchanged. The service layer reuses the same journal/launch instances; startup performs no
 admission. Web/mobile/desktop and remote interaction acceptance are not inferred from these
 internal checks.
+
+### Admission result loss and recovery
+
+Successful local admission leaves the durable entry reserved; it must not record execution
+completion because no operation ran. The consumed handle is gone, and the result is neither a
+continuation nor a replacement handle. Reconstructing journal/admission services creates no
+recovery opportunity. A later acquire observes reserved evidence, reconciles unknown and
+refuses even if the earlier operation probably never started. A serialized admission result
+cannot authorize metadata checking or execution. Concurrent attempts with one handle admit at
+most one caller; a refused duplicate must not invalidate the owner's still-running metadata
+observation.
+
+Backend outage leaves approval review independent. Restoring storage cannot restore a handle
+or refund a reservation. Aged journal evidence stays unavailable while a younger retained
+request may still appear approved; absence does not prove non-execution or permit recreation.
+Authority withdrawn after a successful observation remains authoritative on reconstruction.
+Interrupted metadata checks reconcile owned reservations without opening a workload or invoking
+an external transport. The synthetic tests reconstruct only journal/admission instances over
+retained storage and existing synthetic dependencies; they do not claim a full host/provider
+restart or live-adapter acceptance.
