@@ -8,22 +8,22 @@ are designated for implementation; retained proposals remain parked.
 
 Kyle authorized implementation of all sixteen Loom Vault packets on 2026-10-17 and selected
 **self-hosted OpenBao** behind Loom's UI, identity model and agent broker. V01 to V16 remain
-mapped to L72 to L87 in the [Vault index](./LOOM-VAULT.md). No packet was dropped.
+mapped to L73 to L88 in the [Vault index](./LOOM-VAULT.md). No packet was dropped.
 
-L78 encrypted records and L80/L77/L72 grants, access explanations and server-context readiness
+L79 encrypted records and L81/L78/L73 grants, access explanations and server-context readiness
 are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
 delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
-L79 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
+L80 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
 with web/mobile management and a foreground macOS/Linux runner. Hosted SSH/Git use is now
 implemented below; GitHub account authentication and remaining delivery modes stay selected. The current readiness
 check explicitly does not prove unattended SSH or provider authentication.
-L84 now adds signed workload authorization-check sessions bound to active runs and current
+L85 now adds signed workload authorization-check sessions bound to active runs and current
 use grants, with CLI/MCP cleanup. Existing provider/task launches now expose authenticated
 tools with automatic on-demand session setup/release for hosted SSH and Git ref listing/fetch.
 The server's enrolled broker must be configured and online. General terminal delivery remains pending;
-L81 supplies the bounded SSH operation described below.
+L82 supplies the bounded SSH operation described below.
 
-L81 now adds dedicated Ed25519 generation and independent trust replacement/removal, with keys
+L82 now adds dedicated Ed25519 generation and independent trust replacement/removal, with keys
 stored in OpenBao. Dual-proof runner requests execute bounded commands from the Loom server
 through a strict host-bound SSH agent. Web/desktop and native mobile now provide dedicated
 key creation, copying, reviewed host trust and a fixed authenticated connection test. Synthetic
@@ -34,7 +34,7 @@ Kyle requested that every work-cycle overview suggest a concrete next section fo
 until the selected work is complete. Finish the current section, report its exact verification
 and limits, then propose the next bounded section.
 
-L73/L75 now add searchable metadata references and environment/project-local SSH/Git profiles,
+L74/L76 now add searchable metadata references and environment/project-local SSH/Git profiles,
 with web/desktop/native management and MCP/CLI named execution. First use durably pins run
 selection and key versions; current grants, host trust, item state and profile archive remain
 live checks. Full scopes remain In progress. Portable requirements now import/export without local bindings; other credential kinds stay selected. Explicit standalone Vault attachments now cover interactive/scheduled prompts and common
@@ -44,7 +44,7 @@ the exact latest Vault-attached provider run, with review and explicit retry. Po
 requirements export without local bindings and import into a fresh reviewed profile.
 Retained selections now have paged administrator inspection and explicit terminal-run retirement.
 Retirement replaces the current snapshot with a durable no-reselection tombstone; OpenBao history
-remains. L82 adds dedicated github.com App/token management and scoped headless GH operations,
+remains. L83 adds dedicated github.com App/token management and scoped headless GH operations,
 with repository grants, isolated CLI configuration and short-lived App token release attempts.
 Both sections remain local milestones within the complete selected packet scopes.
 

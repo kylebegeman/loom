@@ -87,7 +87,7 @@ connects to an existing service or changes the live Loom home.
 
 The stopped-copy test is a baseline recovery proof, not a production backup system. Production
 requires a separately protected Raft snapshot/recovery-key process, restore drills, retention
-and revocation reconciliation through Helios and L87. The fixture's single-share initialization
+and revocation reconciliation through Helios and L88. The fixture's single-share initialization
 is exclusively for disposable data.
 
 Official references: [OpenBao docs](https://openbao.org/docs/),
@@ -161,7 +161,7 @@ The encrypted registry retains 128 safe activity events and 32 mutation receipts
 permanent for that identity, survives normal restart and prevents new renewal. New identity
 approval is required to restore a host. Restoring older backend data can restore older machine
 approval state; reconcile disables before resuming traffic after any rollback. The complete
-recovery/revocation process remains L87 work. This activity history is not an immutable ledger.
+recovery/revocation process remains L88 work. This activity history is not an immutable ledger.
 
 ## Workload channel checks
 

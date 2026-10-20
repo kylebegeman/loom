@@ -7,12 +7,12 @@ owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
 
 ## Implemented reference and profile boundary
 
-L73/L75 now provide metadata search, stable environment/item references and project-local
+L74/L76 now provide metadata search, stable environment/item references and project-local
 SSH/Git/GitHub profiles through existing shared `ext-vault` services and client state. Profiles
 hold no values. First use durably pins a profile revision and key versions for the active run;
 current policy/key/host/archive checks still gate execution. OpenBao paths and retention limits
 include manual terminal-run retirement with durable tombstones and retained OpenBao history,
-and are documented in [L75 technical design](./L75-vault-profiles/TECHNICAL.md). Explicit composer/scheduled-prompt links now require blocking server preflight. Portable
+and are documented in [L76 technical design](./L76-vault-profiles/TECHNICAL.md). Explicit composer/scheduled-prompt links now require blocking server preflight. Portable
 declarations, additional kinds and run-pin cleanup remain selected.
 
 ## Implemented GitHub command boundary
@@ -21,7 +21,7 @@ Explicit terminal gh/Git HTTPS requests reuse authenticated active-run access an
 connection/version/repository. The CLI preserves streams and exit status; no surrounding-shell
 login or SSH migration occurs. API/GH/Git HTTPS readiness is cancellable, expires after 60 seconds
 and reports server context plus optional provider/run access. Independent runner and native
-provider-terminal setup remain outside these probe guarantees. See [connector design](./L82-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
+provider-terminal setup remain outside these probe guarantees. See [connector design](./L83-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
 
 ## Implemented record boundary
 
@@ -157,7 +157,7 @@ Shared `vault-brokers.ts` and `VaultBrokers` implement reviewed Ed25519 enrollme
 single-use online heartbeat challenges. OpenBao holds the environment-scoped CAS registry;
 local identity files are owner-only plaintext, outside the current working tree. The runner
 holds no central backend token. Web/mobile and administrator CLI/MCP share service methods;
-agent threads cannot approve themselves. See [L79](./L79-vault-brokers/TECHNICAL.md).
+agent threads cannot approve themselves. See [L80](./L80-vault-brokers/TECHNICAL.md).
 
 The macOS/Linux process proves machine identity and renews two-minute presence. It can run
 in the foreground or as a separately managed launchd GUI-user/systemd-user service. macOS
@@ -169,13 +169,13 @@ recovery. Those limits apply even when the UI shows Online.
 
 ## Explicit terminal SSH activation
 
-L81 now adds run-owned SSH agent activation for one local SSH/Git child, using the existing
+L82 now adds run-owned SSH agent activation for one local SSH/Git child, using the existing
 MCP authority and a signed five-minute workload check. Host-bound signing and current grants
 remain on the server; private keys never enter the terminal. This requires host SSH access,
 since an SSH authentication message cannot bind a repository path. Exact repository-only use
 stays on the mediated Git path. Pi/ACP terminal connections work with their existing variables;
 remaining native harnesses need explicit terminal configuration. See
-[L81](./L81-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for lifecycle and trust limits.
+[L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for lifecycle and trust limits.
 
 The shared OpenBao adapter now uses a versioned serialized payload to avoid engine JSON
 string-count limits for bounded audit/registry records. It reads legacy records, preserves
@@ -184,21 +184,21 @@ rollback requires matching application/backend recovery versions. No live data w
 
 ## Implemented workload authorization checks
 
-L84 adds five-minute sessions bound to the authenticated active run, provider, project, enrolled
+L85 adds five-minute sessions bound to the authenticated active run, provider, project, enrolled
 machine, item and destination. Separate machine/workload signatures protect single-use check
 and cleanup requests. Policy and runtime permissions are checked again after the challenge.
 Sessions are intentionally invalidated by control-plane restart; they do not extend durable
 grants into offline authority. No credential delivery or OS process isolation is established by
-these checks. See [the exact boundary](./L84-vault-delivery/TECHNICAL.md).
+these checks. See [the exact boundary](./L85-vault-delivery/TECHNICAL.md).
 
 ## Implemented mediated SSH
 
-L81 generates dedicated Ed25519 keys into existing encrypted item records and keeps host trust
+L82 generates dedicated Ed25519 keys into existing encrypted item records and keeps host trust
 independent of user-key identity. Administrator clients can pin/replace/remove a host key;
 ordinary workloads cannot approve their own trust. A command-bound dual proof authorizes a
 short mediated connection from the Loom server. A private scoped agent verifies the host's
 exchange signature and signs only the assigned host-bound user-authentication payload. It does
-not expose a generic workload signing API or private-key files. See [L81](./L81-vault-ssh/).
+not expose a generic workload signing API or private-key files. See [L82](./L82-vault-ssh/).
 
 This milestone requires online policy/backend availability and a reachable target. Revocation
 prevents new signatures at subsequent checks; remote effects and already-issued signatures
@@ -351,11 +351,11 @@ the relevant design review before reusing code, adding dependencies or promising
 
 ## Dedicated GitHub milestone
 
-L82 now adapts github.com App installations and dedicated tokens through encrypted core records.
+L83 now adapts github.com App installations and dedicated tokens through encrypted core records.
 Mediated GH uses exact repository grants, stable current run/version checks and isolated temporary
 CLI configuration. It does not give ordinary terminals GitHub credentials or isolate same-user
 full-access processes. App session tokens are repository-limited and released best effort; local
-disconnection, provider revocation and OpenBao history are distinct outcomes. The [L82 design](./L82-vault-connectors/TECHNICAL.md)
+disconnection, provider revocation and OpenBao history are distinct outcomes. The [L83 design](./L83-vault-connectors/TECHNICAL.md)
 records implementation limits and the selected onboarding/connector work still to do. GitHub project bindings now reuse the
 profile/run-pin boundary, with configuration/grant preflight and named mediated GH execution.
 Version 2 declarations omit all local connection/repository bindings; SSH/Git exports retain

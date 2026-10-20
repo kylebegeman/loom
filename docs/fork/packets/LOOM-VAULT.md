@@ -1,10 +1,10 @@
 # Loom Vault product and packet index
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
-2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment,
-L84 hosted run access, L81 mediated/terminal SSH/Git and key/trust management, L80/L77/L72 grants,
-inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L82 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
-from the brainstorm; L72 to L87 are their repository packet IDs.
+2026-10-17 and chose self-hosted OpenBao. L79/shared encrypted records, L80 public-key enrollment,
+L85 hosted run access, L82 mediated/terminal SSH/Git and key/trust management, L81/L78/L73 grants,
+inspection and server readiness, and L74/L76 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L83 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+from the brainstorm; L73 to L88 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
 It separates agent/development access from Kyle's personal 1Password vault. Dorothy, other
@@ -25,33 +25,33 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L78, L79, L80, L77, L72, L84, L81, L73, L75 and L82 are in progress; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L79, L80, L81, L78, L73, L85, L82, L74, L76 and L83 are in progress; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 
 | Idea | Packet and complete outcome                                                    | Complexity | Impact |
 | ---- | ------------------------------------------------------------------------------ | ---------- | ------ |
-| V01  | [L72 Headless readiness checks](./L72-vault-readiness/)                        | Medium     | High   |
-| V02  | [L73 Searchable credential references everywhere](./L73-vault-references/)     | Medium     | High   |
-| V03  | [L74 Guided migration from personal credential stores](./L74-vault-migration/) | Medium     | High   |
-| V04  | [L75 Project environment profiles](./L75-vault-profiles/)                      | Medium     | High   |
-| V05  | [L76 Credential health and maintenance inbox](./L76-vault-health/)             | Medium     | High   |
-| V06  | [L77 Explain access and preview changes](./L77-vault-access-inspector/)        | Medium     | High   |
+| V01  | [L73 Headless readiness checks](./L73-vault-readiness/)                        | Medium     | High   |
+| V02  | [L74 Searchable credential references everywhere](./L74-vault-references/)     | Medium     | High   |
+| V03  | [L75 Guided migration from personal credential stores](./L75-vault-migration/) | Medium     | High   |
+| V04  | [L76 Project environment profiles](./L76-vault-profiles/)                      | Medium     | High   |
+| V05  | [L77 Credential health and maintenance inbox](./L77-vault-health/)             | Medium     | High   |
+| V06  | [L78 Explain access and preview changes](./L78-vault-access-inspector/)        | Medium     | High   |
 
 ### Major Features, Systems & Refactors
 
 | Idea | Packet and complete outcome                                                             | Complexity | Impact           |
 | ---- | --------------------------------------------------------------------------------------- | ---------- | ---------------- |
-| V07  | [L78 Encrypted Vault and self-hosted control plane](./L78-vault-core/)                  | Large      | Transformational |
-| V08  | [L79 Enrolled machines and headless brokers](./L79-vault-brokers/)                      | Large      | Transformational |
-| V09  | [L80 Agent identities and persistent access grants](./L80-vault-grants/)                | Large      | Transformational |
-| V10  | [L81 SSH key management and Loom SSH agent](./L81-vault-ssh/)                           | Large      | High             |
-| V11  | [L82 Developer service accounts and authentication connectors](./L82-vault-connectors/) | Large      | High             |
-| V12  | [L83 Test account collections and provisioning](./L83-vault-test-accounts/)             | Massive    | Transformational |
-| V13  | [L84 Credential delivery API, CLI, and runner integrations](./L84-vault-delivery/)      | Large      | Transformational |
-| V14  | [L85 Remote approvals and temporary access](./L85-vault-approvals/)                     | Large      | High             |
-| V15  | [L86 Credential lifecycle automation and short-lived access](./L86-vault-lifecycle/)    | Massive    | High             |
-| V16  | [L87 Backup, recovery, and portability](./L87-vault-recovery/)                          | Large      | High             |
+| V07  | [L79 Encrypted Vault and self-hosted control plane](./L79-vault-core/)                  | Large      | Transformational |
+| V08  | [L80 Enrolled machines and headless brokers](./L80-vault-brokers/)                      | Large      | Transformational |
+| V09  | [L81 Agent identities and persistent access grants](./L81-vault-grants/)                | Large      | Transformational |
+| V10  | [L82 SSH key management and Loom SSH agent](./L82-vault-ssh/)                           | Large      | High             |
+| V11  | [L83 Developer service accounts and authentication connectors](./L83-vault-connectors/) | Large      | High             |
+| V12  | [L84 Test account collections and provisioning](./L84-vault-test-accounts/)             | Massive    | Transformational |
+| V13  | [L85 Credential delivery API, CLI, and runner integrations](./L85-vault-delivery/)      | Large      | Transformational |
+| V14  | [L86 Remote approvals and temporary access](./L86-vault-approvals/)                     | Large      | High             |
+| V15  | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Massive    | High             |
+| V16  | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Large      | High             |
 
 Read the [shared foundation proposal](./LOOM-VAULT-FOUNDATION.md) for technical boundaries,
 identity, key custody, recovery and backend evaluation. The [HTML overview](./LOOM-VAULT.html)
@@ -87,12 +87,12 @@ it must not import another feature packet's internals or assume its UI exists.
 
 | Shared capability                                       | Primary design owner    | Consumers and graceful absence                                                                |
 | ------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| Encrypted records, stable references, baseline recovery | V07 / L78               | All Vault features; no backend means clearly unavailable, never fallback to personal secrets. |
-| Enrolled host and workload channels                     | V08 / L79               | Readiness, SSH, delivery and automation; absent broker means no unattended-use claim.         |
-| Grants, principal attestation, minimum decision audit   | V09 / L80               | All execution and explanation paths; absence denies use.                                      |
-| Purpose-specific delivery adapters                      | V13 / L84               | SSH, connectors and account sessions; unsupported modes fail before launch.                   |
-| Provider connection/issuance adapters                   | V11 / L82 and V15 / L86 | Checks, health and renewal; report each adapter's capability rather than assuming support.    |
-| Durable requests and account leases                     | V14 / L85 and V12 / L83 | Approval and QA consumers; existing grants/stored accounts work without automation UI.        |
+| Encrypted records, stable references, baseline recovery | V07 / L79               | All Vault features; no backend means clearly unavailable, never fallback to personal secrets. |
+| Enrolled host and workload channels                     | V08 / L80               | Readiness, SSH, delivery and automation; absent broker means no unattended-use claim.         |
+| Grants, principal attestation, minimum decision audit   | V09 / L81               | All execution and explanation paths; absence denies use.                                      |
+| Purpose-specific delivery adapters                      | V13 / L85               | SSH, connectors and account sessions; unsupported modes fail before launch.                   |
+| Provider connection/issuance adapters                   | V11 / L83 and V15 / L87 | Checks, health and renewal; report each adapter's capability rather than assuming support.    |
+| Durable requests and account leases                     | V14 / L86 and V12 / L84 | Approval and QA consumers; existing grants/stored accounts work without automation UI.        |
 
 The owner column identifies who develops the design, not a compulsory sequence of sixteen
 feature builds. Each packet's optional adapters must be independently installable or unavailable
@@ -118,15 +118,15 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 
 | ID  | Choice and evidence needed                                                                                           | Design owner  | Status                                                                             |
 | --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L78           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed                    |
-| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L78, L79, L87 | Open                                                                               |
-| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L78, L80      | Open                                                                               |
-| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | User-service matrix implemented locally; real-host acceptance and other modes open |
-| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                               |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                                     |
-| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Host-bound mediated/terminal POSIX resolved; other transports open                 |
-| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | App/token implemented locally; broader onboarding/adapters open                    |
-| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                               |
+| D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L79           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed                    |
+| D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L79, L80, L88 | Open                                                                               |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L79, L81      | Open                                                                               |
+| D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L80, L85      | User-service matrix implemented locally; real-host acceptance and other modes open |
+| D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L80, L81      | Open                                                                               |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L81           | Local policy resolved; platform/isolation open                                     |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L82           | Host-bound mediated/terminal POSIX resolved; other transports open                 |
+| D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L83, L84, L87 | App/token implemented locally; broader onboarding/adapters open                    |
+| D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L79, L88      | Open                                                                               |
 
 Each PRODUCT.md adds packet-specific choices. A recommendation is not an answer from Kyle.
 Record decided choices, concrete contracts and precise seams as implementation advances.

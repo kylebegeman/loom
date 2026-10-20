@@ -2970,7 +2970,7 @@ The active shared boundary lives outside the feature packet folders:
   and bounded key listing for the selected KV v2 mount. It owns backend token access.
 - Domain: `VaultCore` implements environment-owned records and atomic mutation receipts;
   `VaultPrivateInput` binds private ingress to authenticated thread/project/environment/backend
-  context. Other packets consume these shared services, not L78 UI internals.
+  context. Other packets consume these shared services, not L79 UI internals.
 - Private handoff seam: `SecretRequests.transfer(input, callback)` durably claims a ref for
   one destination operation before the callback. A callback must be idempotent. Failure retains
   the claim for that operation only; success removes the source. Source deletion failures
@@ -3005,7 +3005,7 @@ material and cap machines/invitations/activity. Presence renews every minute for
 it is not a workload credential lease. Fork-owned `BrokerService` and `BrokerDaemon` add explicit
 host-local user-service lifecycle and bounded safe diagnostics. macOS requires a GUI login;
 Linux/Pi continuity depends on operator-configured linger. No live service installation or
-offline decrypted cache is included. See [L79](./L79-vault-brokers/TECHNICAL.md).
+offline decrypted cache is included. See [L80](./L80-vault-brokers/TECHNICAL.md).
 
 Shared `vault-workloads.ts` and `VaultWorkloads` now provide active-run/item/destination-bound
 check sessions. Machine and workload Ed25519 proofs are both required; current host state,
@@ -3037,7 +3037,7 @@ only host-bound agent requests and never receives a private key. The terminal wr
 its destination, isolates SSH/Git configuration and preserves child streams/exit status. Host SSH
 grants are required because authentication signatures cannot enforce repository paths. Pi/ACP
 terminal connections are recognized; remaining native-harness setup is explicit. No new
-upstream seam or client RPC is added. See [L81](./L81-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
+upstream seam or client RPC is added. See [L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
 
 `vault-ssh-management` separately advertises public-info and key/trust/probe RPCs, protected by
 environment access:read/access:write. Web/desktop and mobile use the shared client-runtime

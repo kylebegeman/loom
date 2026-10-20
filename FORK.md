@@ -113,11 +113,11 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-launch-ui`          | Review and attach Vault requirements to scheduled prompts.                                                           |
 | `apps/mobile/src/features/threads/ThreadComposer.tsx`                        | `vault-launch-ui`          | Mount native Vault prompt attachment controls.                                                                       |
 | `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`    | `vault-launch-ui`          | Mount native Vault controls in the scheduled prompt editor.                                                          |
-| `apps/server/src/scheduledTasks/ScheduledTaskService.ts`                     | `vault-scheduled-outcomes` | Exact scheduled-message ownership and task outcome projection; [L75](docs/fork/packets/L75-vault-profiles/SEAMS.md). |
+| `apps/server/src/scheduledTasks/ScheduledTaskService.ts`                     | `vault-scheduled-outcomes` | Exact scheduled-message ownership and task outcome projection; [L76](docs/fork/packets/L76-vault-profiles/SEAMS.md). |
 | `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-scheduled-outcomes` | Review/retry controls for failed Vault-attached scheduled runs.                                                      |
 | `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`    | `vault-scheduled-outcomes` | Capability-aware native outcome and recovery guidance.                                                               |
 
-L78's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L78-vault-core/),
+L79's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L79-vault-core/),
 [user help](docs/fork/user/vault.md) and [operating guide](docs/fork/operations/vault.md).
 No live deployment or personal credential migration is part of the foundation milestone.
 
