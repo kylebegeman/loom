@@ -152,7 +152,10 @@ $unlisted"
 
 fork_tests() {
   printf '%s\n' "${BRAND_TESTS[@]}"
-  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts'
+  # Browser-mode tests need apps/web's headless Chromium project, which the root
+  # config used here lacks; CI's web test job runs them.
+  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts' \
+    ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
 }
 
 # Lint only fork-owned source. Skip unmatched globs so future fork directories

@@ -69,7 +69,9 @@ const fixture = Effect.gen(function* () {
   const context: ProjectionStore.ProjectionCheckpointContext = {
     runs: [{ id: runId, ordinal: 1, status: "completed" }],
     checkpointScopes: [{ id: scopeId, runId, kind: "root_run", cwd }],
-    checkpoints: [{ scopeId, runId, appRunOrdinal: 1, status: "ready", ref }],
+    checkpoints: [
+      { scopeId, runId, ordinalWithinScope: 1, appRunOrdinal: 1, status: "ready", ref },
+    ],
   };
   let contextReads = 0;
   let setupCalls = 0;

@@ -1,4 +1,5 @@
 import {
+  isOrchestrationV2WorkActive,
   isToolLifecycleItemType,
   type AssetResource,
   type RuntimeItemStatus,
@@ -68,12 +69,11 @@ export function contextCompactionTokenCounts(
 }
 
 export function contextCompactionLabel(item: CompactionLabelItem): string {
-  // fork: compaction-recovery: only completed compaction can claim success.
   if (item.status === "failed") return "Context compaction failed";
+  // fork: compaction-recovery: interrupted and cancelled compactions keep distinct labels.
   if (item.status === "interrupted") return "Context compaction interrupted";
   if (item.status === "cancelled") return "Context compaction cancelled";
-  if (item.status === "pending" || item.status === "running" || item.status === "waiting")
-    return "Compacting context";
+  if (isOrchestrationV2WorkActive(item.status)) return "Compacting context";
   const tokens = contextCompactionTokenCounts(item);
   return tokens
     ? `Context compacted ${tokens.before} → ${tokens.after} tokens`

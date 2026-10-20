@@ -249,48 +249,47 @@ const REQUEST_TIMEOUT = "2 seconds";
  * failure is tolerated. Without a controller nothing is read, and the hub's
  * accounts are not polled in its place.
  */
-export const readSwitchboardUsage = <E>(
+export const readSwitchboardUsage = Effect.fn("Switchboard.readUsage")(function* <E>(
   source: SwitchboardUsageSource,
   authFiles: Effect.Effect<ReadonlyArray<HubAuthFile>, E>,
-): Effect.Effect<
+): Effect.fn.Return<
   ReadonlyArray<UsageLimitSourceAccount>,
   UsageLimitSourceError,
   HttpClient.HttpClient
-> =>
-  Effect.gen(function* () {
-    const { controller } = source;
-    if (controller === null) {
-      return yield* new UsageLimitSourceError({
-        detail:
-          "This Switchboard hub has no controller configured. Set LOOM_SWITCHBOARD_CONTROLLER_URL on this server to its controller origin. Loom does not poll providers in its place.",
-      });
-    }
-    const client = yield* HttpClient.HttpClient;
-    const [snapshot, files] = yield* Effect.all(
-      [
-        client.get(`${controller}/api/v1/usage`).pipe(
-          Effect.flatMap(HttpClientResponse.filterStatusOk),
-          Effect.flatMap((response) => response.json),
-          Effect.flatMap(decodeCachedUsage),
-          Effect.timeout(REQUEST_TIMEOUT),
-          Effect.mapError(
-            () =>
-              new UsageLimitSourceError({
-                detail:
-                  "Switchboard's usage collector is unavailable or incompatible. Run switchboard doctor. Loom did not poll providers in its place.",
-              }),
-          ),
+> {
+  const { controller } = source;
+  if (controller === null) {
+    return yield* new UsageLimitSourceError({
+      detail:
+        "This Switchboard hub has no controller configured. Set LOOM_SWITCHBOARD_CONTROLLER_URL on this server to its controller origin. Loom does not poll providers in its place.",
+    });
+  }
+  const client = yield* HttpClient.HttpClient;
+  const [snapshot, files] = yield* Effect.all(
+    [
+      client.get(`${controller}/api/v1/usage`).pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap((response) => response.json),
+        Effect.flatMap(decodeCachedUsage),
+        Effect.timeout(REQUEST_TIMEOUT),
+        Effect.mapError(
+          () =>
+            new UsageLimitSourceError({
+              detail:
+                "Switchboard's usage collector is unavailable or incompatible. Run switchboard doctor. Loom did not poll providers in its place.",
+            }),
         ),
-        authFiles.pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.option),
-      ],
-      { concurrency: 2 },
-    );
-    return cachedUsageAccounts(
-      snapshot,
-      yield* Clock.currentTimeMillis,
-      Option.getOrUndefined(files),
-    );
-  }).pipe(Effect.withSpan("Switchboard.readUsage"));
+      ),
+      authFiles.pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.option),
+    ],
+    { concurrency: 2 },
+  );
+  return cachedUsageAccounts(
+    snapshot,
+    yield* Clock.currentTimeMillis,
+    Option.getOrUndefined(files),
+  );
+});
 
 /**
  * Asks the controller for a coordinated collection, as its dashboard does. A 429

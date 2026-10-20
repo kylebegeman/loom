@@ -21,20 +21,21 @@ export type SwitchboardSnapshotSettings<Settings> = ProviderSnapshotSettings<Set
  * `switchboardEnabled`, so turning routing on or off probes the provider again in
  * place, and `routed` reads the current mode for that probe.
  */
-export const makeSwitchboardSnapshotSettingsSource = <Settings>(provider: Settings) =>
-  Effect.gen(function* () {
-    const { settings } = yield* ProviderHost.ProviderHost;
-    const mapSettings = (current: ServerSettings): SwitchboardSnapshotSettings<Settings> => ({
-      provider,
-      enableProviderUpdateChecks: current.enableProviderUpdateChecks,
-      switchboardEnabled: current.switchboardEnabled,
-    });
-    return {
-      getSettings: settings.get.pipe(Effect.map(mapSettings)),
-      streamSettings: settings.changes.pipe(Stream.map(mapSettings)),
-      routed: settings.get.pipe(Effect.map((current) => current.switchboardEnabled)),
-    };
+export const makeSwitchboardSnapshotSettingsSource = Effect.fn(
+  "Switchboard.makeSnapshotSettingsSource",
+)(function* <Settings>(provider: Settings) {
+  const { settings } = yield* ProviderHost.ProviderHost;
+  const mapSettings = (current: ServerSettings): SwitchboardSnapshotSettings<Settings> => ({
+    provider,
+    enableProviderUpdateChecks: current.enableProviderUpdateChecks,
+    switchboardEnabled: current.switchboardEnabled,
   });
+  return {
+    getSettings: settings.get.pipe(Effect.map(mapSettings)),
+    streamSettings: settings.changes.pipe(Stream.map(mapSettings)),
+    routed: settings.get.pipe(Effect.map((current) => current.switchboardEnabled)),
+  };
+});
 
 const ROUTED_PROBE_TTL = Duration.minutes(5);
 /**
@@ -53,66 +54,63 @@ const ROUTED_PROBE_KEY = "switchboard";
  * other's login, and invalid hub configuration stays unverified instead of falling
  * back to native auth.
  */
-export const makeSwitchboardClaudeProbes = (
+export const makeSwitchboardClaudeProbes = Effect.fn("Switchboard.makeClaudeProbes")(function* (
   claudeSettings: ClaudeSettings,
   environment: NodeJS.ProcessEnv,
   cwd: string,
-) =>
-  Effect.gen(function* () {
-    const { settings } = yield* ProviderHost.ProviderHost;
-    const hostEnvironment = yield* HostProcess.Environment;
-    const platform = yield* HostProcess.Platform;
-    const routing = Effect.try(() =>
-      resolveSwitchboardClaudeProbeRouting(hostEnvironment, platform),
-    );
-    const cache = yield* Cache.makeWith(
-      () =>
-        routing.pipe(
-          Effect.flatMap((route) =>
-            Effect.all(
-              {
-                capabilities: probeClaudeCapabilities(
-                  claudeSettings,
-                  environment,
-                  cwd,
-                  true,
-                  route.settings,
-                ),
-                credentialAvailable: probeSwitchboardCredential(route.keyCommand, hostEnvironment),
-              },
-              { concurrency: "unbounded" },
-            ),
+) {
+  const { settings } = yield* ProviderHost.ProviderHost;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const platform = yield* HostProcess.Platform;
+  const routing = Effect.try(() => resolveSwitchboardClaudeProbeRouting(hostEnvironment, platform));
+  const cache = yield* Cache.makeWith(
+    () =>
+      routing.pipe(
+        Effect.flatMap((route) =>
+          Effect.all(
+            {
+              capabilities: probeClaudeCapabilities(
+                claudeSettings,
+                environment,
+                cwd,
+                true,
+                route.settings,
+              ),
+              credentialAvailable: probeSwitchboardCredential(route.keyCommand, hostEnvironment),
+            },
+            { concurrency: "unbounded" },
           ),
-          Effect.map(({ capabilities, credentialAvailable }) =>
-            capabilities
-              ? { ...capabilities, switchboardCredentialAvailable: credentialAvailable }
-              : undefined,
-          ),
-          Effect.orElseSucceed(() => undefined),
         ),
-      {
-        capacity: 1,
-        timeToLive: (exit) =>
-          Exit.isSuccess(exit) && exit.value?.switchboardCredentialAvailable === true
-            ? ROUTED_PROBE_TTL
-            : ROUTED_PROBE_RETRY_TTL,
-      },
-    );
-    const routed = settings.get.pipe(Effect.map((current) => current.switchboardEnabled));
-    return {
-      routed,
-      capabilities: Cache.get(cache, ROUTED_PROBE_KEY),
-      invalidate: Cache.invalidateAll(cache),
-      /** Runs a workspace probe with the hub settings when routed; any failure keeps `fallback`. */
-      withWorkspaceSettings: <A, R>(
-        fallback: A,
-        probe: (switchboardSettings: ClaudeSdkSettings | undefined) => Effect.Effect<A, never, R>,
-      ) =>
-        routed.pipe(
-          Effect.flatMap((on) =>
-            on ? routing.pipe(Effect.flatMap((route) => probe(route.settings))) : probe(undefined),
-          ),
-          Effect.orElseSucceed(() => fallback),
+        Effect.map(({ capabilities, credentialAvailable }) =>
+          capabilities
+            ? { ...capabilities, switchboardCredentialAvailable: credentialAvailable }
+            : undefined,
         ),
-    };
-  });
+        Effect.orElseSucceed(() => undefined),
+      ),
+    {
+      capacity: 1,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) && exit.value?.switchboardCredentialAvailable === true
+          ? ROUTED_PROBE_TTL
+          : ROUTED_PROBE_RETRY_TTL,
+    },
+  );
+  const routed = settings.get.pipe(Effect.map((current) => current.switchboardEnabled));
+  return {
+    routed,
+    capabilities: Cache.get(cache, ROUTED_PROBE_KEY),
+    invalidate: Cache.invalidateAll(cache),
+    /** Runs a workspace probe with the hub settings when routed; any failure keeps `fallback`. */
+    withWorkspaceSettings: <A, R>(
+      fallback: A,
+      probe: (switchboardSettings: ClaudeSdkSettings | undefined) => Effect.Effect<A, never, R>,
+    ) =>
+      routed.pipe(
+        Effect.flatMap((on) =>
+          on ? routing.pipe(Effect.flatMap((route) => probe(route.settings))) : probe(undefined),
+        ),
+        Effect.orElseSucceed(() => fallback),
+      ),
+  };
+});

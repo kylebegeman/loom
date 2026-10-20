@@ -660,42 +660,41 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     return Scope.close(runtime.scope, Exit.void);
   });
 
-  const startGateway = (port: number) =>
-    Effect.gen(function* () {
-      const scope = yield* Scope.fork(rootScope, "sequential");
-      const runtime: GatewayRuntime = { scope, port, starting: null, handle: null, failure: null };
-      gateway = runtime;
-      const report = (update: () => void) =>
-        Effect.suspend(() => {
-          if (gateway !== runtime) return Effect.void;
-          update();
-          return publish;
-        });
-      runtime.starting = yield* forkParkedFiber(
-        dependencies.startGateway({ port, view }).pipe(
-          Effect.flatMap((handle) =>
-            report(() => {
-              runtime.handle = handle;
-            }),
-          ),
-          Effect.catchTags({
-            PreviewGatewayListenError: (error) =>
-              report(() => {
-                runtime.failure = error.message;
-              }),
+  const startGateway = Effect.fn("PreviewLinksService.startGateway")(function* (port: number) {
+    const scope = yield* Scope.fork(rootScope, "sequential");
+    const runtime: GatewayRuntime = { scope, port, starting: null, handle: null, failure: null };
+    gateway = runtime;
+    const report = (update: () => void) =>
+      Effect.suspend(() => {
+        if (gateway !== runtime) return Effect.void;
+        update();
+        return publish;
+      });
+    runtime.starting = yield* forkParkedFiber(
+      dependencies.startGateway({ port, view }).pipe(
+        Effect.flatMap((handle) =>
+          report(() => {
+            runtime.handle = handle;
           }),
-          Effect.catchDefect((defect) =>
-            Effect.logError("The preview gateway failed to start", { defect }).pipe(
-              Effect.andThen(
-                report(() => {
-                  runtime.failure = "The preview gateway could not start.";
-                }),
-              ),
+        ),
+        Effect.catchTags({
+          PreviewGatewayListenError: (error) =>
+            report(() => {
+              runtime.failure = error.message;
+            }),
+        }),
+        Effect.catchDefect((defect) =>
+          Effect.logError("The preview gateway failed to start", { defect }).pipe(
+            Effect.andThen(
+              report(() => {
+                runtime.failure = "The preview gateway could not start.";
+              }),
             ),
           ),
         ),
-      ).pipe(Scope.provide(scope));
-    });
+      ),
+    ).pipe(Scope.provide(scope));
+  });
 
   const stopTunnel = Effect.suspend(() => {
     const runtime = tunnel;
@@ -704,27 +703,26 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     return Scope.close(runtime.scope, Exit.void);
   });
 
-  const startTunnel = (token: string) =>
-    Effect.gen(function* () {
-      const scope = yield* Scope.fork(rootScope, "sequential");
-      const runtime: TunnelRuntime = {
-        scope,
+  const startTunnel = Effect.fn("PreviewLinksService.startTunnel")(function* (token: string) {
+    const scope = yield* Scope.fork(rootScope, "sequential");
+    const runtime: TunnelRuntime = {
+      scope,
+      token,
+      status: { state: "starting", message: null, metricsPort: null },
+    };
+    tunnel = runtime;
+    yield* forkParked(
+      dependencies.runTunnel({
         token,
-        status: { state: "starting", message: null, metricsPort: null },
-      };
-      tunnel = runtime;
-      yield* forkParked(
-        dependencies.runTunnel({
-          token,
-          onStatus: (status) =>
-            Effect.suspend(() => {
-              if (tunnel !== runtime) return Effect.void;
-              runtime.status = status;
-              return publish;
-            }),
-        }),
-      ).pipe(Scope.provide(scope));
-    });
+        onStatus: (status) =>
+          Effect.suspend(() => {
+            if (tunnel !== runtime) return Effect.void;
+            runtime.status = status;
+            return publish;
+          }),
+      }),
+    ).pipe(Scope.provide(scope));
+  });
 
   /** Starts, stops or restarts only what the current settings and token call for. */
   const reconcileRuntime = Effect.gen(function* () {
@@ -766,22 +764,22 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       : Effect.void;
 
   /** Resolves to the lane id when the lane check passed, or null for a terminal-owned server. */
-  const checkAgentPort = (threadId: ThreadId, port: number) =>
-    Effect.gen(function* () {
-      // Any lane failure, including lanes being off, just means this thread has no lane ports.
-      const lane = yield* lifecycle.ensureForThread(threadId).pipe(Effect.option);
-      if (Option.isSome(lane) && isLanePort(port, lane.value.portBase)) return lane.value.id;
-      const servers = yield* discovery.scan();
-      if (
-        servers.some((server) => server.port === port && server.terminal?.threadId === threadId)
-      ) {
-        return null;
-      }
-      return yield* fail(
-        "port-not-in-lane",
-        `Port ${port} is not one of this thread's lane ports, and no server from this thread's terminals is listening on it.`,
-      );
-    });
+  const checkAgentPort = Effect.fn("PreviewLinksService.checkAgentPort")(function* (
+    threadId: ThreadId,
+    port: number,
+  ) {
+    // Any lane failure, including lanes being off, just means this thread has no lane ports.
+    const lane = yield* lifecycle.ensureForThread(threadId).pipe(Effect.option);
+    if (Option.isSome(lane) && isLanePort(port, lane.value.portBase)) return lane.value.id;
+    const servers = yield* discovery.scan();
+    if (servers.some((server) => server.port === port && server.terminal?.threadId === threadId)) {
+      return null;
+    }
+    return yield* fail(
+      "port-not-in-lane",
+      `Port ${port} is not one of this thread's lane ports, and no server from this thread's terminals is listening on it.`,
+    );
+  });
 
   const uniqueHost = (port: number, suffix: string) => {
     for (;;) {
@@ -836,56 +834,54 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   };
 
   /** The lane a folder or container link goes on, which must have ports. */
-  const threadLane = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const lanesOff = fail(
-        "port-not-in-lane",
-        "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+  const threadLane = Effect.fn("PreviewLinksService.threadLane")(function* (threadId: ThreadId) {
+    const lanesOff = fail(
+      "port-not-in-lane",
+      "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+    );
+    // With lanes off, ensureForThread still hands back a lane the thread already had.
+    if (!(yield* lifecycle.getSettings).enabled) return yield* lanesOff;
+    const lane = yield* lifecycle
+      .ensureForThread(threadId)
+      .pipe(
+        Effect.mapError((error) =>
+          error.reason === "disabled"
+            ? lanesOff
+            : fail(
+                "port-not-in-lane",
+                `Folder and container links need this thread's lane. ${error.message}`,
+              ),
+        ),
       );
-      // With lanes off, ensureForThread still hands back a lane the thread already had.
-      if (!(yield* lifecycle.getSettings).enabled) return yield* lanesOff;
-      const lane = yield* lifecycle
-        .ensureForThread(threadId)
-        .pipe(
-          Effect.mapError((error) =>
-            error.reason === "disabled"
-              ? lanesOff
-              : fail(
-                  "port-not-in-lane",
-                  `Folder and container links need this thread's lane. ${error.message}`,
-                ),
-          ),
-        );
-      if (lane.portBase === null) {
-        return yield* fail(
-          "port-not-in-lane",
-          "This thread's lane has no ports, so folder and container links cannot be shared from it.",
-        );
-      }
-      return { id: lane.id, checkoutPath: lane.checkoutPath, portBase: lane.portBase };
-    });
+    if (lane.portBase === null) {
+      return yield* fail(
+        "port-not-in-lane",
+        "This thread's lane has no ports, so folder and container links cannot be shared from it.",
+      );
+    }
+    return { id: lane.id, checkoutPath: lane.checkoutPath, portBase: lane.portBase };
+  });
 
   /**
    * Hands the first lane port no open link uses and nothing listens on to `claim`, which returns
    * null when it lost the port after all. Runs under the lock, so two shares never pick one port.
    */
-  const claimLanePort = <A>(
+  const claimLanePort = Effect.fn("PreviewLinksService.claimLanePort")(function* <A>(
     portBase: number,
     claim: (port: number) => Effect.Effect<A | null, PreviewLinksError>,
-  ) =>
-    Effect.gen(function* () {
-      for (let port = portBase; port < portBase + PORT_BLOCK; port++) {
-        if (isPreviewPortDenied(port, ownPorts()) || pendingPorts.has(port)) continue;
-        if (links.some((link) => link.state === "open" && link.port === port)) continue;
-        if (!(yield* dependencies.portFree(port))) continue;
-        const claimed = yield* claim(port);
-        if (claimed !== null) return claimed;
-      }
-      return yield* fail(
-        "invalid",
-        `Ports ${portBase} to ${portBase + PORT_BLOCK - 1} of this thread's lane are all in use or shared. Stop a server on one of them or end one of this thread's links, then try again.`,
-      );
-    });
+  ) {
+    for (let port = portBase; port < portBase + PORT_BLOCK; port++) {
+      if (isPreviewPortDenied(port, ownPorts()) || pendingPorts.has(port)) continue;
+      if (links.some((link) => link.state === "open" && link.port === port)) continue;
+      if (!(yield* dependencies.portFree(port))) continue;
+      const claimed = yield* claim(port);
+      if (claimed !== null) return claimed;
+    }
+    return yield* fail(
+      "invalid",
+      `Ports ${portBase} to ${portBase + PORT_BLOCK - 1} of this thread's lane are all in use or shared. Stop a server on one of them or end one of this thread's links, then try again.`,
+    );
+  });
 
   /**
    * Whether the server is listening now. A failure leaves nothing running. Listening takes one
@@ -922,35 +918,37 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     );
 
   /** The folder's realpath and its path within the workspace, which must contain it. */
-  const resolveFolder = (checkoutPath: string, requested: string) =>
-    Effect.gen(function* () {
-      const workspace = yield* fs
-        .realPath(checkoutPath)
-        .pipe(
-          Effect.mapError(() => fail("invalid", "This thread's workspace folder was not found.")),
-        );
-      const root = yield* fs
-        .realPath(path.resolve(workspace, requested))
-        .pipe(
-          Effect.mapError(() =>
-            fail("invalid", `${requested} was not found in this thread's workspace.`),
-          ),
-        );
-      // Compared after resolving symlinks, so a link inside the workspace cannot reach out of it.
-      if (!isContained(workspace, root)) {
-        return yield* fail(
-          "invalid",
-          "Folder links can only share a folder inside this thread's workspace.",
-        );
-      }
-      if (!(yield* isDirectory(root))) {
-        return yield* fail(
-          "invalid",
-          `${requested} is not a folder. Share the built folder that holds the site, such as dist.`,
-        );
-      }
-      return { root, relativePath: path.relative(workspace, root) || "." };
-    });
+  const resolveFolder = Effect.fn("PreviewLinksService.resolveFolder")(function* (
+    checkoutPath: string,
+    requested: string,
+  ) {
+    const workspace = yield* fs
+      .realPath(checkoutPath)
+      .pipe(
+        Effect.mapError(() => fail("invalid", "This thread's workspace folder was not found.")),
+      );
+    const root = yield* fs
+      .realPath(path.resolve(workspace, requested))
+      .pipe(
+        Effect.mapError(() =>
+          fail("invalid", `${requested} was not found in this thread's workspace.`),
+        ),
+      );
+    // Compared after resolving symlinks, so a link inside the workspace cannot reach out of it.
+    if (!isContained(workspace, root)) {
+      return yield* fail(
+        "invalid",
+        "Folder links can only share a folder inside this thread's workspace.",
+      );
+    }
+    if (!(yield* isDirectory(root))) {
+      return yield* fail(
+        "invalid",
+        `${requested} is not a folder. Share the built folder that holds the site, such as dist.`,
+      );
+    }
+    return { root, relativePath: path.relative(workspace, root) || "." };
+  });
 
   const libraryLock = yield* Semaphore.make(1);
   /** Whether the Library may still hold this computer's hosts from a registration this run. */
@@ -1287,55 +1285,57 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   }, lock.withPermit);
 
   /** Brings an ended folder link's server back on the port its address names. */
-  const restartFolderServer = (link: PreviewLink) =>
-    Effect.gen(function* () {
-      const root = folderRoots.get(link.id);
-      if (root === undefined || !(yield* isDirectory(root))) {
-        return yield* fail(
-          "not-restorable",
-          "The folder this link served is gone. Share the folder again.",
-        );
-      }
-      // The backing reconcile may not have closed it yet.
-      if (folderServers.get(link.id)?.port === link.port) return;
-      yield* closeFolderServer(link.id);
-      // A pending port is a container still starting, which nothing listens on yet.
-      const started =
-        !pendingPorts.has(link.port) &&
-        (yield* dependencies.portFree(link.port)) &&
-        (yield* startFolderServer(link.id, root, link.port));
-      if (!started) {
-        return yield* fail(
-          "not-restorable",
-          `Port ${link.port} is in use now, so this folder link cannot come back at its address. Share the folder again.`,
-        );
-      }
-    });
+  const restartFolderServer = Effect.fn("PreviewLinksService.restartFolderServer")(function* (
+    link: PreviewLink,
+  ) {
+    const root = folderRoots.get(link.id);
+    if (root === undefined || !(yield* isDirectory(root))) {
+      return yield* fail(
+        "not-restorable",
+        "The folder this link served is gone. Share the folder again.",
+      );
+    }
+    // The backing reconcile may not have closed it yet.
+    if (folderServers.get(link.id)?.port === link.port) return;
+    yield* closeFolderServer(link.id);
+    // A pending port is a container still starting, which nothing listens on yet.
+    const started =
+      !pendingPorts.has(link.port) &&
+      (yield* dependencies.portFree(link.port)) &&
+      (yield* startFolderServer(link.id, root, link.port));
+    if (!started) {
+      return yield* fail(
+        "not-restorable",
+        `Port ${link.port} is in use now, so this folder link cannot come back at its address. Share the folder again.`,
+      );
+    }
+  });
 
   /** A folder link's port is its lane's, so it can come back only while that lane still owns it. */
-  const requireFolderLane = (link: PreviewLink) =>
-    Effect.gen(function* () {
-      const status = Option.getOrNull(yield* Stream.runHead(lifecycle.changes));
-      if (status?.enabled === false) {
-        return yield* fail(
-          "not-restorable",
-          "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
-        );
-      }
-      const lane = status?.lanes.find((each) => each.id === link.laneId);
-      if (lane === undefined) {
-        return yield* fail(
-          "not-restorable",
-          "The lane this folder was shared from is gone, so its port may belong to something else now. Share the folder again.",
-        );
-      }
-      if (!isLanePort(link.port, lane.ports?.first ?? null)) {
-        return yield* fail(
-          "not-restorable",
-          `The lane this folder was shared from no longer uses port ${link.port}, so it may belong to something else now. Share the folder again.`,
-        );
-      }
-    });
+  const requireFolderLane = Effect.fn("PreviewLinksService.requireFolderLane")(function* (
+    link: PreviewLink,
+  ) {
+    const status = Option.getOrNull(yield* Stream.runHead(lifecycle.changes));
+    if (status?.enabled === false) {
+      return yield* fail(
+        "not-restorable",
+        "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
+      );
+    }
+    const lane = status?.lanes.find((each) => each.id === link.laneId);
+    if (lane === undefined) {
+      return yield* fail(
+        "not-restorable",
+        "The lane this folder was shared from is gone, so its port may belong to something else now. Share the folder again.",
+      );
+    }
+    if (!isLanePort(link.port, lane.ports?.first ?? null)) {
+      return yield* fail(
+        "not-restorable",
+        `The lane this folder was shared from no longer uses port ${link.port}, so it may belong to something else now. Share the folder again.`,
+      );
+    }
+  });
 
   const restore = Effect.fn("PreviewLinksService.restore")(function* (
     input: PreviewLinkLifetimeInput,

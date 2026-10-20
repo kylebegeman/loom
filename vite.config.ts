@@ -2,6 +2,13 @@ import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 
+// fork: ext-lint -- loom.sh check runs fork tests through this root config, which has no DOM
+// project, so fork DOM tests keep their per-file environment pragma.
+const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [
+  "apps/web/src/fork/**/*.test.{ts,tsx}",
+  "apps/mobile/src/fork/**/*.test.{ts,tsx}",
+];
+
 const RESTRICTED_IMPORT_PATHS = [
   {
     name: "@t3tools/client-runtime",
@@ -88,6 +95,7 @@ export default defineConfig({
       "**/routeTree.gen.ts",
       "**/*.graphql.ts",
       "packages/source-control-github/schema/**",
+      "apps/server/schema/**",
       "apps/mobile/android/**",
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
@@ -115,6 +123,7 @@ export default defineConfig({
       "**/routeTree.gen.ts",
       "**/*.graphql.ts",
       "packages/source-control-github/schema/**",
+      "apps/server/schema/**",
       "apps/mobile/android/**",
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
@@ -170,10 +179,24 @@ export default defineConfig({
       "t3code/no-unscoped-has": "error",
       "t3code/namespace-node-imports": "error",
       "t3code/prefer-catch-tags": "error",
+      "t3code/prefer-effect-fn": "error",
       "t3code/require-centered-scroll-gutter": "error",
       "t3code/require-suppression-reason": "error",
     },
     overrides: [
+      {
+        files: [
+          "**/*.{test,spec,testkit}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,fixtures,integration}/**",
+          "packages/provider-testing/**",
+        ],
+        rules: { "t3code/prefer-effect-fn": "off" },
+      },
+      {
+        files: ["apps/**/src/**", "packages/**/src/**"],
+        excludeFiles: DOM_TEST_ENVIRONMENT_ALLOWLIST,
+        rules: { "t3code/no-dom-test-environment": "error" },
+      },
       {
         files: ["packages/client-runtime/src/state/**", "apps/{web,mobile,desktop}/src/**"],
         rules: { "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: false }] },

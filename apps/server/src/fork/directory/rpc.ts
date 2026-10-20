@@ -4,14 +4,14 @@ import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { DirectoryReporter } from "./DirectoryReporter.ts";
 import { DirectoryService } from "./DirectoryService.ts";
 
-export const makeDirectoryRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
-    const service = yield* DirectoryService;
-    const reporter = yield* DirectoryReporter;
-    return {
-      [DIR.list]: () => auth.effect(DIR.list, service.list),
-      [DIR.forget]: (input: DirectoryForgetRequest) =>
-        auth.effect(DIR.forget, service.forget(input)),
-      [DIR.reporting]: () => auth.effect(DIR.reporting, reporter.status),
-    };
-  });
+export const makeDirectoryRpcHandlers = Effect.fn("Directory.makeRpcHandlers")(function* (
+  auth: ForkRpcAuth,
+) {
+  const service = yield* DirectoryService;
+  const reporter = yield* DirectoryReporter;
+  return {
+    [DIR.list]: () => auth.effect(DIR.list, service.list),
+    [DIR.forget]: (input: DirectoryForgetRequest) => auth.effect(DIR.forget, service.forget(input)),
+    [DIR.reporting]: () => auth.effect(DIR.reporting, reporter.status),
+  };
+});

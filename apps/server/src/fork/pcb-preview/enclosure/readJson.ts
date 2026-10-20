@@ -14,19 +14,18 @@ export const readGlbDocument = (file: string) =>
       const fs = yield* FileSystem.FileSystem,
         handle = yield* fs.open(file, { flag: "r" }),
         info = yield* handle.stat;
-      const exact = (n: number) =>
-        Effect.gen(function* () {
-          const out = new Uint8Array(n);
-          let offset = 0;
-          while (offset < n) {
-            const data = yield* handle.readAlloc(n - offset);
-            if (Option.isNone(data) || !data.value.length)
-              return yield* new ReadGlbError({ message: "Truncated board reference." });
-            out.set(data.value, offset);
-            offset += data.value.length;
-          }
-          return out;
-        });
+      const exact = Effect.fn("PcbPreview.readGlbChunk")(function* (n: number) {
+        const out = new Uint8Array(n);
+        let offset = 0;
+        while (offset < n) {
+          const data = yield* handle.readAlloc(n - offset);
+          if (Option.isNone(data) || !data.value.length)
+            return yield* new ReadGlbError({ message: "Truncated board reference." });
+          out.set(data.value, offset);
+          offset += data.value.length;
+        }
+        return out;
+      });
       const header = yield* exact(20),
         v = new DataView(header.buffer),
         n = v.getUint32(12, true);

@@ -85,91 +85,94 @@ export function fuseRankings(text: ReadonlyArray<number>, semantic: ReadonlyArra
   return [...fused.values()].sort((a, b) => b.score - a.score || a.id - b.id);
 }
 
-export const makeLibrarySemanticSearch = (embedder: LibraryEmbedderShape) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const model = embedder.model;
+export const makeLibrarySemanticSearch = Effect.fn("LibrarySemanticSearch.make")(function* (
+  embedder: LibraryEmbedderShape,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const model = embedder.model;
 
-    /** Embed up to `limit` pending items, newest first. Returns how many were pending. */
-    const embedPending = Effect.fnUntraced(function* (limit: number) {
-      const pending = yield* sql<{ id: number; text: string }>`
+  /** Embed up to `limit` pending items, newest first. Returns how many were pending. */
+  const embedPending = Effect.fnUntraced(function* (limit: number) {
+    const pending = yield* sql<{ id: number; text: string }>`
         SELECT i.id, substr(i.body, 1, ${LIBRARY_EMBEDDING_MAX_CHARS}) AS text
         FROM fork_library_search_items AS i
         WHERE NOT EXISTS (SELECT 1 FROM fork_library_search_vectors AS v WHERE v.id = i.id)
         ORDER BY i.id DESC LIMIT ${limit}`;
-      const embedded = yield* Effect.forEach(pending, (item) =>
-        embedder
-          .embed(item.text)
-          .pipe(Effect.map((vector) => ({ item, ...quantizeEmbedding(vector) }))),
-      );
-      // An item edited or removed while it was embedded keeps no vector, and is embedded again.
-      yield* sql.withTransaction(
-        Effect.forEach(
-          embedded,
-          ({ item, scale, bytes }) => sql`
+    const embedded = yield* Effect.forEach(pending, (item) =>
+      embedder
+        .embed(item.text)
+        .pipe(Effect.map((vector) => ({ item, ...quantizeEmbedding(vector) }))),
+    );
+    // An item edited or removed while it was embedded keeps no vector, and is embedded again.
+    yield* sql.withTransaction(
+      Effect.forEach(
+        embedded,
+        ({ item, scale, bytes }) => sql`
             INSERT OR REPLACE INTO fork_library_search_vectors (id, model, scale, vector)
             SELECT ${item.id}, ${model}, ${scale}, ${bytes}
             WHERE EXISTS (SELECT 1 FROM fork_library_search_items
               WHERE id = ${item.id} AND substr(body, 1, ${LIBRARY_EMBEDDING_MAX_CHARS}) = ${item.text})`,
-          { discard: true },
+        { discard: true },
+      ),
+    );
+    return pending.length;
+  });
+
+  /**
+   * Embed history until none is pending, then wait for `revisions` to change. Runs for the life
+   * of the Library; a failure is logged and retried later rather than ending it. Untraced,
+   * since a span for the Library's lifetime would never end.
+   */
+  const backfill = Effect.fnUntraced(function* (
+    revisions: SubscriptionRef.SubscriptionRef<number>,
+  ) {
+    yield* Effect.sleep(STARTUP_DELAY);
+    // Vectors from another model cannot be compared with this one's queries.
+    yield* sql`DELETE FROM fork_library_search_vectors WHERE model <> ${model}`;
+    while (true) {
+      const seen = yield* SubscriptionRef.get(revisions);
+      const pending = yield* embedPending(BATCH_SIZE).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Semantic search could not embed history", cause).pipe(
+            Effect.andThen(Effect.sleep(RETRY_AFTER_FAILURE)),
+            Effect.as(0),
+          ),
         ),
       );
-      return pending.length;
-    });
+      // A full batch may leave more behind; a partial one emptied the queue.
+      if (pending === BATCH_SIZE) {
+        yield* Effect.sleep(BATCH_PAUSE);
+        continue;
+      }
+      yield* SubscriptionRef.changes(revisions).pipe(
+        Stream.filter((revision) => revision !== seen),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.timeoutOption(IDLE_POLL),
+      );
+    }
+  });
 
-    /**
-     * Embed history until none is pending, then wait for `revisions` to change. Runs for the life
-     * of the Library; a failure is logged and retried later rather than ending it.
-     */
-    const backfill = (revisions: SubscriptionRef.SubscriptionRef<number>) =>
-      Effect.gen(function* () {
-        yield* Effect.sleep(STARTUP_DELAY);
-        // Vectors from another model cannot be compared with this one's queries.
-        yield* sql`DELETE FROM fork_library_search_vectors WHERE model <> ${model}`;
-        while (true) {
-          const seen = yield* SubscriptionRef.get(revisions);
-          const pending = yield* embedPending(BATCH_SIZE).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Semantic search could not embed history", cause).pipe(
-                Effect.andThen(Effect.sleep(RETRY_AFTER_FAILURE)),
-                Effect.as(0),
-              ),
-            ),
-          );
-          // A full batch may leave more behind; a partial one emptied the queue.
-          if (pending === BATCH_SIZE) {
-            yield* Effect.sleep(BATCH_PAUSE);
-            continue;
-          }
-          yield* SubscriptionRef.changes(revisions).pipe(
-            Stream.filter((revision) => revision !== seen),
-            Stream.take(1),
-            Stream.runDrain,
-            Effect.timeoutOption(IDLE_POLL),
-          );
-        }
-      });
-
-    /**
-     * Ids of the items closest in meaning to `query`, best first, among the items `scope` admits.
-     * `scope` is a condition on `fork_library_search_items AS i` and `fork_library_threads AS t`.
-     */
-    const nearest = Effect.fnUntraced(function* (query: Float32Array, scope: Fragment) {
-      const rows = yield* sql<{ id: number; scale: number; vector: Uint8Array }>`
+  /**
+   * Ids of the items closest in meaning to `query`, best first, among the items `scope` admits.
+   * `scope` is a condition on `fork_library_search_items AS i` and `fork_library_threads AS t`.
+   */
+  const nearest = Effect.fnUntraced(function* (query: Float32Array, scope: Fragment) {
+    const rows = yield* sql<{ id: number; scale: number; vector: Uint8Array }>`
         SELECT v.id, v.scale, v.vector FROM fork_library_search_vectors AS v
         JOIN fork_library_search_items AS i ON i.id = v.id
         JOIN fork_library_threads AS t ON t.library_id = i.library_id
         WHERE v.model = ${model} AND ${scope}`;
-      const scored: { id: number; similarity: number }[] = [];
-      for (const row of rows) {
-        const similarity = storedSimilarity(query, row.scale, row.vector);
-        if (similarity >= SEMANTIC_MIN_SIMILARITY) scored.push({ id: row.id, similarity });
-      }
-      return scored
-        .sort((a, b) => b.similarity - a.similarity || a.id - b.id)
-        .slice(0, SEMANTIC_DEPTH)
-        .map(({ id }) => id);
-    });
-
-    return { embedQuery: embedder.embed, embedPending, backfill, nearest };
+    const scored: { id: number; similarity: number }[] = [];
+    for (const row of rows) {
+      const similarity = storedSimilarity(query, row.scale, row.vector);
+      if (similarity >= SEMANTIC_MIN_SIMILARITY) scored.push({ id: row.id, similarity });
+    }
+    return scored
+      .sort((a, b) => b.similarity - a.similarity || a.id - b.id)
+      .slice(0, SEMANTIC_DEPTH)
+      .map(({ id }) => id);
   });
+
+  return { embedQuery: embedder.embed, embedPending, backfill, nearest };
+});

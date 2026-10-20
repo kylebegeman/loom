@@ -208,14 +208,16 @@ it.layer(layerTest)("ClaudeDriver with Switchboard routing", (it) => {
           Effect.provideService(HostProcess.HomeDirectory, tempDir),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, readinessSpawner),
         );
+        // The native ANTHROPIC_BASE_URL is a custom endpoint, so the CLI's empty
+        // first-party account does not read as signed out.
         const firstNative = yield* Stream.toPull(
           instance.snapshot.streamChanges.pipe(
-            Stream.filter((snapshot) => snapshot.auth.status === "unauthenticated"),
+            Stream.filter((snapshot) => snapshot.auth.type === "customEndpoint"),
           ),
         );
         yield* Effect.sync(releaseInitialProbe);
         const [nativeSnapshot] = yield* firstNative;
-        assert.equal(nativeSnapshot.status, "error");
+        assert.equal(nativeSnapshot.status, "ready");
         yield* routing.listening;
         // Same-mode refresh must keep its cached native initialization result.
         yield* instance.snapshot.refresh;
@@ -272,14 +274,14 @@ it.layer(layerTest)("ClaudeDriver with Switchboard routing", (it) => {
 
         const nativeUpdate = yield* Stream.toPull(
           instance.snapshot.streamChanges.pipe(
-            Stream.filter((snapshot) => snapshot.auth.status === "unauthenticated"),
+            Stream.filter((snapshot) => snapshot.auth.type === "customEndpoint"),
           ),
         );
         yield* routing.setRouted(false);
         const [restoredSnapshot] = yield* nativeUpdate;
         // The native probe keeps its own cache entry, so turning routing off reuses it.
-        assert.equal(restoredSnapshot.status, "error");
-        assert.equal(restoredSnapshot.auth.type, undefined);
+        assert.equal(restoredSnapshot.status, "ready");
+        assert.equal(restoredSnapshot.auth.type, "customEndpoint");
         assert.deepEqual(probeOptions.map(hasKeyHelper), [false, true]);
         assert.deepEqual(usageModes, ["native"]);
         assert.equal(probeOptions[0]?.env?.ANTHROPIC_API_KEY, "fixture-native-key");

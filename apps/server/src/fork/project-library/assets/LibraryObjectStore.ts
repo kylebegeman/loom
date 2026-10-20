@@ -86,50 +86,49 @@ const make = Effect.gen(function* () {
         });
       }),
     );
-  const get = (digest: string): Effect.Effect<Uint8Array, LibraryError> =>
-    Effect.gen(function* () {
-      if (!validDigest(digest)) return yield* new LibraryError({ reason: "invalid" });
-      let bytes: Uint8Array;
-      if (mode === "local") {
-        bytes = yield* fs
-          .readFile(path.join(directory, digest))
-          .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
-      } else {
-        const response = yield* http
-          .execute(HttpClientRequest.get(yield* sign("GET", digest)))
-          .pipe(
-            Effect.timeout("30 seconds"),
-            Effect.mapError(() => new LibraryError({ reason: "io" })),
-          );
-        if (response.status !== 200) return yield* new LibraryError({ reason: "io" });
-        const length = response.headers["content-length"];
-        if (
-          length !== undefined &&
-          (!/^\d+$/.test(length) || Number(length) > LIBRARY_ASSET_MAX_BYTES)
-        )
-          return yield* new LibraryError({ reason: "invalid" });
-        bytes = new Uint8Array(
-          yield* response.arrayBuffer.pipe(
-            Effect.provideService(
-              HttpIncomingMessage.MaxBodySize,
-              ByteSize.bytes(LIBRARY_ASSET_MAX_BYTES),
-            ),
-            Effect.timeout("30 seconds"),
-            Effect.mapError(() => new LibraryError({ reason: "io" })),
-          ),
-        );
-      }
+  const get = Effect.fn("LibraryObjectStore.get")(function* (
+    digest: string,
+  ): Effect.fn.Return<Uint8Array, LibraryError> {
+    if (!validDigest(digest)) return yield* new LibraryError({ reason: "invalid" });
+    let bytes: Uint8Array;
+    if (mode === "local") {
+      bytes = yield* fs
+        .readFile(path.join(directory, digest))
+        .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+    } else {
+      const response = yield* http.execute(HttpClientRequest.get(yield* sign("GET", digest))).pipe(
+        Effect.timeout("30 seconds"),
+        Effect.mapError(() => new LibraryError({ reason: "io" })),
+      );
+      if (response.status !== 200) return yield* new LibraryError({ reason: "io" });
+      const length = response.headers["content-length"];
       if (
-        bytes.length > LIBRARY_ASSET_MAX_BYTES ||
-        (yield* assetDigest(crypto, bytes).pipe(
-          Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
-        )) !== digest
+        length !== undefined &&
+        (!/^\d+$/.test(length) || Number(length) > LIBRARY_ASSET_MAX_BYTES)
       )
         return yield* new LibraryError({ reason: "invalid" });
-      return bytes;
-    });
-  const put = (digest: string, bytes: Uint8Array, contentType: string) =>
-    Effect.gen(function* () {
+      bytes = new Uint8Array(
+        yield* response.arrayBuffer.pipe(
+          Effect.provideService(
+            HttpIncomingMessage.MaxBodySize,
+            ByteSize.bytes(LIBRARY_ASSET_MAX_BYTES),
+          ),
+          Effect.timeout("30 seconds"),
+          Effect.mapError(() => new LibraryError({ reason: "io" })),
+        ),
+      );
+    }
+    if (
+      bytes.length > LIBRARY_ASSET_MAX_BYTES ||
+      (yield* assetDigest(crypto, bytes).pipe(
+        Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+      )) !== digest
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    return bytes;
+  });
+  const put = Effect.fn("LibraryObjectStore.put")(
+    function* (digest: string, bytes: Uint8Array, contentType: string) {
       if (
         !validDigest(digest) ||
         bytes.length > LIBRARY_ASSET_MAX_BYTES ||
@@ -164,11 +163,11 @@ const make = Effect.gen(function* () {
       }
       // Availability is acknowledged only after verifying the stored bytes.
       yield* get(digest);
-    }).pipe(
-      Effect.mapError((cause) =>
-        isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
-      ),
-    );
+    },
+    Effect.mapError((cause) =>
+      isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
+    ),
+  );
   return LibraryObjectStore.of({
     mode,
     get,

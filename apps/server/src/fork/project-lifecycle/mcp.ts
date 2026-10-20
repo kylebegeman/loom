@@ -81,28 +81,27 @@ export const ProjectLifecycleToolkit = Toolkit.make(
 );
 
 /** Runs `use` against the calling thread's lane, creating the lane if it does not exist yet. */
-const onCallerLane = <A, E>(
+const onCallerLane = Effect.fn("ProjectLifecycle.onCallerLane")(function* <A, E>(
   use: (
     service: ProjectLifecycleService["Service"],
     laneId: string,
   ) => Effect.Effect<A, E | ProjectLifecycleError>,
-) =>
-  Effect.gen(function* () {
-    const invocation = yield* McpInvocationContext;
-    if (invocation.thread === undefined)
-      return yield* new ProjectLifecycleError({
-        reason: "not-found",
-        message: "Use lane tools from an agent running in a Loom project thread.",
-      });
-    const threadId = invocation.thread.threadId;
-    return yield* withForkRuntime(
-      Effect.gen(function* () {
-        const service = yield* ProjectLifecycleService;
-        const lane = yield* service.ensureForThread(threadId);
-        return yield* use(service, lane.id);
-      }),
-    );
-  });
+) {
+  const invocation = yield* McpInvocationContext;
+  if (invocation.thread === undefined)
+    return yield* new ProjectLifecycleError({
+      reason: "not-found",
+      message: "Use lane tools from an agent running in a Loom project thread.",
+    });
+  const threadId = invocation.thread.threadId;
+  return yield* withForkRuntime(
+    Effect.gen(function* () {
+      const service = yield* ProjectLifecycleService;
+      const lane = yield* service.ensureForThread(threadId);
+      return yield* use(service, lane.id);
+    }),
+  );
+});
 
 export const projectLifecycleHandlers = McpToolAccess.toLayer(
   ProjectLifecycleToolkit,

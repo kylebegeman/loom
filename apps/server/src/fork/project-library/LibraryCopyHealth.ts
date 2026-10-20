@@ -126,30 +126,30 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         Effect.orElseSucceed(() => null),
       );
 
+  // Untraced: commitsSince and lastFetchedAt only run inside readRepository, whose span covers them.
   // Counted only when the earlier head is an ancestor. After a force push, a rebase or a branch
   // switch the range means nothing, so the report says the head moved without a count.
-  const commitsSince = (cwd: string, since: string) =>
-    Effect.gen(function* () {
-      if (!COMMIT_ID.test(since)) return null;
-      const ancestor = yield* runner
-        .run({
-          command: "git",
-          args: ["merge-base", "--is-ancestor", since, "HEAD"],
-          cwd,
-          timeout: "30 seconds",
-          maxOutputBytes: 1024,
-        })
-        .pipe(
-          Effect.map((result) => result.code === 0),
-          Effect.orElseSucceed(() => false),
-        );
-      if (!ancestor) return null;
-      const count = Number.parseInt(
-        (yield* git(cwd, ["rev-list", "--count", `${since}..HEAD`])) ?? "",
-        10,
+  const commitsSince = Effect.fnUntraced(function* (cwd: string, since: string) {
+    if (!COMMIT_ID.test(since)) return null;
+    const ancestor = yield* runner
+      .run({
+        command: "git",
+        args: ["merge-base", "--is-ancestor", since, "HEAD"],
+        cwd,
+        timeout: "30 seconds",
+        maxOutputBytes: 1024,
+      })
+      .pipe(
+        Effect.map((result) => result.code === 0),
+        Effect.orElseSucceed(() => false),
       );
-      return Number.isFinite(count) ? { head: since, count } : null;
-    });
+    if (!ancestor) return null;
+    const count = Number.parseInt(
+      (yield* git(cwd, ["rev-list", "--count", `${since}..HEAD`])) ?? "",
+      10,
+    );
+    return Number.isFinite(count) ? { head: since, count } : null;
+  });
 
   const modifiedAt = (file: string) =>
     fs.stat(file).pipe(
@@ -159,8 +159,8 @@ export const makeCopyHealthReader = Effect.gen(function* () {
   // FETCH_HEAD is rewritten on every fetch, so its mtime is the last time remotes were read. A
   // linked worktree has two: its own, from a `git fetch` run there, and the shared one the
   // status fetch writes through `--git-dir`. The newer one counts.
-  const lastFetchedAt = (cwd: string) =>
-    Effect.gen(function* () {
+  const lastFetchedAt = Effect.fnUntraced(
+    function* (cwd: string) {
       const [own, common] = yield* Effect.all([
         git(cwd, ["rev-parse", "--git-path", "FETCH_HEAD"]),
         git(cwd, ["rev-parse", "--git-common-dir"]),
@@ -173,76 +173,77 @@ export const makeCopyHealthReader = Effect.gen(function* () {
       ]);
       const latest = Math.max(...times.map((time) => time ?? -Infinity));
       return Number.isFinite(latest) ? DateTime.formatIso(DateTime.makeUnsafe(latest)) : null;
-    }).pipe(Effect.orElseSucceed(() => null));
+    },
+    Effect.orElseSucceed(() => null),
+  );
 
-  const readRepository = (
+  const readRepository = Effect.fn("LibraryCopyHealth.readRepository")(function* (
     repository: LibraryWorkingCopy["repositories"][number],
     refreshRemote: boolean,
     since: string | undefined,
-  ) =>
-    Effect.gen(function* () {
-      if (!(yield* fs.exists(repository.path).pipe(Effect.orElseSucceed(() => false))))
-        return unreadableRepositoryHealth(repository.resourceId, "missing", yield* now);
-      // The copy root can be a Git repository itself, so a folder without its own .git would
-      // otherwise report the root's status.
-      if (
-        !(yield* fs
-          .exists(path.join(repository.path, ".git"))
-          .pipe(Effect.orElseSucceed(() => false)))
-      )
-        return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", yield* now);
-      // Only a requested refresh fetches. A plain read leaves the shared status cache's remote
-      // part alone, so other readers still fetch when theirs is stale. A requested refresh is the
-      // app's own status refresh, so it also auto-pulls when the project has auto-pull on.
-      const local = broadcaster.refreshLocalStatus(repository.path);
-      const status = yield* (
-        refreshRemote
-          ? broadcaster.refreshStatus(repository.path).pipe(Effect.catch(() => local))
-          : local
-      ).pipe(Effect.option);
-      const checkedAt = yield* now;
-      if (Option.isNone(status))
-        return unreadableRepositoryHealth(repository.resourceId, "unreadable", checkedAt);
-      if (!status.value.isRepo)
-        return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", checkedAt);
-      const refName = status.value.refName;
-      // Counting against the upstream ref reads the last fetch, never fetches, and reflects a
-      // pull at once instead of after the broadcaster's background refresh.
-      const [tracking, head, unpushed, divergence, fetchedAt] = yield* Effect.all(
-        [
-          refName
-            ? git(repository.path, [
-                "for-each-ref",
-                "--format=%(upstream:short)%09%(upstream:track,nobracket)",
-                `refs/heads/${refName}`,
-              ])
-            : Effect.succeed(null),
-          git(repository.path, ["rev-parse", "--verify", "HEAD"]),
-          git(repository.path, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
-          git(repository.path, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
-          lastFetchedAt(repository.path),
-        ],
-        { concurrency: "unbounded" },
-      );
-      const unpushedCommits = unpushed === null ? Number.NaN : Number.parseInt(unpushed, 10);
-      const commits =
-        since !== undefined && head !== null && since !== head
-          ? yield* commitsSince(repository.path, since)
-          : null;
-      const upstream = parseUpstreamTracking(tracking);
-      return toRepositoryHealth({
-        resourceId: repository.resourceId,
-        status: status.value,
-        upstream,
-        divergence: parseDivergence(divergence),
-        head,
-        commitsSince: commits,
-        unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : null,
-        checkedAt,
-        fetchedAt,
-        fetchFailed: refreshRemote && remoteCheckFailed(upstream, fetchedAt, checkedAt),
-      });
+  ) {
+    if (!(yield* fs.exists(repository.path).pipe(Effect.orElseSucceed(() => false))))
+      return unreadableRepositoryHealth(repository.resourceId, "missing", yield* now);
+    // The copy root can be a Git repository itself, so a folder without its own .git would
+    // otherwise report the root's status.
+    if (
+      !(yield* fs
+        .exists(path.join(repository.path, ".git"))
+        .pipe(Effect.orElseSucceed(() => false)))
+    )
+      return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", yield* now);
+    // Only a requested refresh fetches. A plain read leaves the shared status cache's remote
+    // part alone, so other readers still fetch when theirs is stale. A requested refresh is the
+    // app's own status refresh, so it also auto-pulls when the project has auto-pull on.
+    const local = broadcaster.refreshLocalStatus(repository.path);
+    const status = yield* (
+      refreshRemote
+        ? broadcaster.refreshStatus(repository.path).pipe(Effect.catch(() => local))
+        : local
+    ).pipe(Effect.option);
+    const checkedAt = yield* now;
+    if (Option.isNone(status))
+      return unreadableRepositoryHealth(repository.resourceId, "unreadable", checkedAt);
+    if (!status.value.isRepo)
+      return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", checkedAt);
+    const refName = status.value.refName;
+    // Counting against the upstream ref reads the last fetch, never fetches, and reflects a
+    // pull at once instead of after the broadcaster's background refresh.
+    const [tracking, head, unpushed, divergence, fetchedAt] = yield* Effect.all(
+      [
+        refName
+          ? git(repository.path, [
+              "for-each-ref",
+              "--format=%(upstream:short)%09%(upstream:track,nobracket)",
+              `refs/heads/${refName}`,
+            ])
+          : Effect.succeed(null),
+        git(repository.path, ["rev-parse", "--verify", "HEAD"]),
+        git(repository.path, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
+        git(repository.path, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+        lastFetchedAt(repository.path),
+      ],
+      { concurrency: "unbounded" },
+    );
+    const unpushedCommits = unpushed === null ? Number.NaN : Number.parseInt(unpushed, 10);
+    const commits =
+      since !== undefined && head !== null && since !== head
+        ? yield* commitsSince(repository.path, since)
+        : null;
+    const upstream = parseUpstreamTracking(tracking);
+    return toRepositoryHealth({
+      resourceId: repository.resourceId,
+      status: status.value,
+      upstream,
+      divergence: parseDivergence(divergence),
+      head,
+      commitsSince: commits,
+      unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : null,
+      checkedAt,
+      fetchedAt,
+      fetchFailed: refreshRemote && remoteCheckFailed(upstream, fetchedAt, checkedAt),
     });
+  });
 
   return Effect.fn("LibraryCopyHealth.read")(function* (
     copy: LibraryWorkingCopy,

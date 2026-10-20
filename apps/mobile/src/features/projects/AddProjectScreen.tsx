@@ -281,20 +281,7 @@ function PrimaryActionButton(props: {
   readonly loading?: boolean;
   readonly onPress: () => void;
 }) {
-  if (Platform.OS === "android") return <Button {...props} tone="primary" fullWidth />;
-  return (
-    <Pressable
-      disabled={props.disabled}
-      onPress={props.onPress}
-      className="h-12 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-45"
-    >
-      {props.loading ? (
-        <AppActivityIndicator colorClassName={String("accent-primary-foreground")} />
-      ) : (
-        <Text className="text-base font-t3-bold text-primary-foreground">{props.label}</Text>
-      )}
-    </Pressable>
-  );
+  return <Button {...props} tone="primary" fullWidth />;
 }
 
 function ProjectPathInput(props: {
@@ -495,11 +482,15 @@ function EmptyEnvironmentState() {
             : "Connect a computer to create a project, open a folder, or clone a repository there."}
       </Text>
       {!isLoadingSavedConnection ? (
-        <Button
-          label={hasSavedComputers ? "Manage computers" : "Add computer"}
-          tone="primary"
-          onPress={() => navigation.navigate(hasSavedComputers ? "Connections" : "ConnectionsNew")}
-        />
+        <View className="mt-1">
+          <Button
+            label={hasSavedComputers ? "Manage computers" : "Add computer"}
+            tone="primary"
+            onPress={() =>
+              navigation.navigate(hasSavedComputers ? "Connections" : "ConnectionsNew")
+            }
+          />
+        </View>
       ) : null}
     </View>
   );

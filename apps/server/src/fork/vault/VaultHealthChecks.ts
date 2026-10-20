@@ -92,19 +92,18 @@ const make = Effect.gen(function* () {
     return true;
   });
   return VaultHealthChecks.of({
-    recheck: (itemId) =>
-      Effect.gen(function* () {
-        const checked = yield* check(itemId, true),
-          snapshot = yield* health.snapshot;
-        return {
-          snapshot,
-          outcome: checked
-            ? "checked"
-            : snapshot.rules.some((rule) => rule.itemId === itemId)
-              ? "rate-limited"
-              : "unconfigured",
-        };
-      }),
+    recheck: Effect.fn("VaultHealthChecks.recheck")(function* (itemId) {
+      const checked = yield* check(itemId, true),
+        snapshot = yield* health.snapshot;
+      return {
+        snapshot,
+        outcome: checked
+          ? "checked"
+          : snapshot.rules.some((rule) => rule.itemId === itemId)
+            ? "rate-limited"
+            : "unconfigured",
+      };
+    }),
     sweep: Effect.gen(function* () {
       const snapshot = yield* health.snapshot,
         now = yield* Clock.currentTimeMillis;

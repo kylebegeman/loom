@@ -775,14 +775,15 @@ const make = Effect.gen(function* () {
   const originalView = (record: Stored) =>
     verificationView(record, true).pipe(Effect.map(asOriginalStatus));
   return VaultMigrationInventory.of({
-    originalVerify: (input, actor, authorize) =>
-      Effect.gen(function* () {
+    originalVerify: Effect.fn("VaultMigrationInventory.originalVerify")(
+      function* (input, actor, authorize) {
         if (!isOriginalVerify(input)) return yield* invalid();
         return asOriginalStatus(yield* verify(input, actor, authorize, input.original));
-      }),
+      },
+    ),
     originalVerification: (id) => Effect.flatMap(load(id), ({ record }) => originalView(record)),
-    recoveryPreview: (input, authorize) =>
-      Effect.gen(function* () {
+    recoveryPreview: Effect.fn("VaultMigrationInventory.recoveryPreview")(
+      function* (input, authorize) {
         if (!isRecoveryInput(input)) return yield* invalid();
         yield* preview(
           {
@@ -879,7 +880,8 @@ const make = Effect.gen(function* () {
             };
           }),
         );
-      }),
+      },
+    ),
     preview,
     verify,
     verification: (id) => Effect.flatMap(load(id), ({ record }) => verificationView(record)),

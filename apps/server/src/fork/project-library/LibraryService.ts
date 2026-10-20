@@ -627,43 +627,43 @@ const make = Effect.gen(function* () {
       }),
     );
   // Shared by updateProject and accepted brief proposals, so both keep the saved profile.
-  const reviseProject = (input: LibraryUpdateProjectRequest) =>
-    Effect.gen(function* () {
-      const current = yield* getProject(input.projectId);
-      if (current.revision !== input.expectedRevision)
-        return yield* new LibraryError({ reason: "revision-conflict" });
-      if (!validLibraryResources(input.resources)) return yield* invalid();
-      // Omitted keeps the saved color and profile so older clients never clear them; null
-      // returns the color to automatic and removes the profile.
-      const { color: savedColor, profile: savedProfile, ...rest } = current;
-      const color = input.color === undefined ? savedColor : (input.color ?? undefined);
-      const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
-      // Only what this save adds is checked, so a profile saved under older rules still
-      // survives an unrelated edit or being resent unchanged.
-      if (input.profile) {
-        const unknownTools = libraryProfileAddedUnknownTools(input.profile, savedProfile);
-        if (unknownTools.length)
-          return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
-        const secretField = libraryProfileSecretValueField(input.profile, savedProfile);
-        if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
-      }
-      const next = {
-        ...rest,
-        ...(color ? { color } : {}),
-        ...(profile ? { profile } : {}),
-        title: input.title.trim(),
-        brief: input.brief,
-        resources: input.resources,
-      };
-      // An edit that changes nothing keeps its revision, so conversations stay current.
-      if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
-        return current;
-      return yield* putProject({
-        ...next,
-        revision: current.revision + 1,
-        updatedAt: yield* now,
-      });
+  // Untraced like the other catalog steps: it runs inside the calling request's RPC span.
+  const reviseProject = Effect.fnUntraced(function* (input: LibraryUpdateProjectRequest) {
+    const current = yield* getProject(input.projectId);
+    if (current.revision !== input.expectedRevision)
+      return yield* new LibraryError({ reason: "revision-conflict" });
+    if (!validLibraryResources(input.resources)) return yield* invalid();
+    // Omitted keeps the saved color and profile so older clients never clear them; null
+    // returns the color to automatic and removes the profile.
+    const { color: savedColor, profile: savedProfile, ...rest } = current;
+    const color = input.color === undefined ? savedColor : (input.color ?? undefined);
+    const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
+    // Only what this save adds is checked, so a profile saved under older rules still
+    // survives an unrelated edit or being resent unchanged.
+    if (input.profile) {
+      const unknownTools = libraryProfileAddedUnknownTools(input.profile, savedProfile);
+      if (unknownTools.length)
+        return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
+      const secretField = libraryProfileSecretValueField(input.profile, savedProfile);
+      if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
+    }
+    const next = {
+      ...rest,
+      ...(color ? { color } : {}),
+      ...(profile ? { profile } : {}),
+      title: input.title.trim(),
+      brief: input.brief,
+      resources: input.resources,
+    };
+    // An edit that changes nothing keeps its revision, so conversations stay current.
+    if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
+      return current;
+    return yield* putProject({
+      ...next,
+      revision: current.revision + 1,
+      updatedAt: yield* now,
     });
+  });
   const updateProject = (input: LibraryUpdateProjectRequest) =>
     mutation(
       "update-project",

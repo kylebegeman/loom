@@ -23,94 +23,93 @@ export const checkWorkerUrl = (moduleUrl = import.meta.url) =>
   );
 const source = () => Effect.sync(() => checkWorkerUrl());
 /** One worker owns one check. Termination is awaited on success, timeout and interruption. */
-const runWorker = (
+const runWorker = Effect.fn("ModelChecks.runWorker")(function* (
   request: WorkerRequest,
   options: {
     timeoutMs?: number;
     workerUrl?: URL;
     onWorker?: (worker: NodeWorkerThreads.Worker) => void;
   } = {},
-) =>
-  Effect.gen(function* () {
-    const workerUrl = options.workerUrl ?? (yield* source());
-    if (workerUrl.protocol === "file:")
-      yield* Effect.tryPromise({
-        try: () => NodeFSP.access(workerUrl),
-        catch: () =>
-          new ModelPreviewError({
-            reason: "unavailable",
-            message: "Print checks are not available in this build.",
-          }),
-      });
-    const worker = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () =>
-          new NodeWorkerThreads.Worker(workerUrl, {
-            resourceLimits: { maxOldGenerationSizeMb: 512 },
-          }),
-        catch: () =>
-          new ModelPreviewError({
-            reason: "unavailable",
-            message: "Print checks are not available in this build.",
-          }),
-      }),
-      (w) => Effect.promise(() => w.terminate()).pipe(Effect.asVoid),
-    );
-    options.onWorker?.(worker);
-    const reply = Effect.callback<WorkerReply, ModelPreviewError>((resume) => {
-      const message = (value: WorkerReply) => resume(Effect.succeed(value)),
-        error = () =>
-          resume(
-            Effect.fail(
-              new ModelPreviewError({
-                reason: "command-failed",
-                message: "The print check stopped unexpectedly.",
-              }),
-            ),
-          ),
-        exit = (code: number) =>
-          resume(
-            Effect.fail(
-              new ModelPreviewError({
-                reason: "command-failed",
-                message: `The print check stopped unexpectedly (exit code ${code}).`,
-              }),
-            ),
-          );
-      worker.once("message", message);
-      worker.once("error", error);
-      worker.once("exit", exit);
-      try {
-        const files =
-          "kind" in request
-            ? request.kind === "bounds"
-              ? request.part.files
-              : request.parts.flatMap((part) => part.files)
-            : request.files;
-        const buffers = files.map((file) => file.bytes.buffer as ArrayBuffer);
-        worker.postMessage(request, [...new Set(buffers)]);
-      } catch {
-        error();
-      }
-      return Effect.sync(() => {
-        worker.off("message", message);
-        worker.off("error", error);
-        worker.off("exit", exit);
-      });
+) {
+  const workerUrl = options.workerUrl ?? (yield* source());
+  if (workerUrl.protocol === "file:")
+    yield* Effect.tryPromise({
+      try: () => NodeFSP.access(workerUrl),
+      catch: () =>
+        new ModelPreviewError({
+          reason: "unavailable",
+          message: "Print checks are not available in this build.",
+        }),
     });
-    return yield* reply.pipe(
-      Effect.timeoutOrElse({
-        duration: options.timeoutMs ?? 60000,
-        orElse: () =>
+  const worker = yield* Effect.acquireRelease(
+    Effect.try({
+      try: () =>
+        new NodeWorkerThreads.Worker(workerUrl, {
+          resourceLimits: { maxOldGenerationSizeMb: 512 },
+        }),
+      catch: () =>
+        new ModelPreviewError({
+          reason: "unavailable",
+          message: "Print checks are not available in this build.",
+        }),
+    }),
+    (w) => Effect.promise(() => w.terminate()).pipe(Effect.asVoid),
+  );
+  options.onWorker?.(worker);
+  const reply = Effect.callback<WorkerReply, ModelPreviewError>((resume) => {
+    const message = (value: WorkerReply) => resume(Effect.succeed(value)),
+      error = () =>
+        resume(
           Effect.fail(
             new ModelPreviewError({
-              reason: "timeout",
-              message: "The print check took longer than 60 seconds and was stopped.",
+              reason: "command-failed",
+              message: "The print check stopped unexpectedly.",
             }),
           ),
-      }),
-    );
-  }).pipe(Effect.scoped);
+        ),
+      exit = (code: number) =>
+        resume(
+          Effect.fail(
+            new ModelPreviewError({
+              reason: "command-failed",
+              message: `The print check stopped unexpectedly (exit code ${code}).`,
+            }),
+          ),
+        );
+    worker.once("message", message);
+    worker.once("error", error);
+    worker.once("exit", exit);
+    try {
+      const files =
+        "kind" in request
+          ? request.kind === "bounds"
+            ? request.part.files
+            : request.parts.flatMap((part) => part.files)
+          : request.files;
+      const buffers = files.map((file) => file.bytes.buffer as ArrayBuffer);
+      worker.postMessage(request, [...new Set(buffers)]);
+    } catch {
+      error();
+    }
+    return Effect.sync(() => {
+      worker.off("message", message);
+      worker.off("error", error);
+      worker.off("exit", exit);
+    });
+  });
+  return yield* reply.pipe(
+    Effect.timeoutOrElse({
+      duration: options.timeoutMs ?? 60000,
+      orElse: () =>
+        Effect.fail(
+          new ModelPreviewError({
+            reason: "timeout",
+            message: "The print check took longer than 60 seconds and was stopped.",
+          }),
+        ),
+    }),
+  );
+}, Effect.scoped);
 
 export const runCheckWorker = (
   request: CheckRequest,

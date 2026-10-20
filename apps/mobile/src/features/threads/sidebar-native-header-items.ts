@@ -32,23 +32,30 @@ function toNativeHeaderMenuItems(items: HomeListFilterMenu["items"]): NativeHead
   );
 }
 
+export function createSidebarFilterHeaderItem(input: {
+  readonly filterIcon: string;
+  readonly filterMenu: HomeListFilterMenu;
+}): NativeStackHeaderItemMenu {
+  return withNativeGlassHeaderItem({
+    type: "menu",
+    axisBehavior: "horizontalOnly",
+    label: "",
+    accessibilityLabel: input.filterMenu.accessibilityLabel,
+    icon: sfSymbolIcon(input.filterIcon),
+    menu: {
+      title: input.filterMenu.title,
+      items: toNativeHeaderMenuItems(input.filterMenu.items),
+    },
+  });
+}
+
 export function createSidebarHeaderItems(input: {
   readonly filterIcon: string;
   readonly filterMenu: HomeListFilterMenu;
   readonly onOpenSettings: () => void;
 }): NativeStackHeaderItem[] {
   return [
-    withNativeGlassHeaderItem({
-      type: "menu",
-      axisBehavior: "horizontalOnly",
-      label: "",
-      accessibilityLabel: input.filterMenu.accessibilityLabel,
-      icon: sfSymbolIcon(input.filterIcon),
-      menu: {
-        title: input.filterMenu.title,
-        items: toNativeHeaderMenuItems(input.filterMenu.items),
-      },
-    }),
+    createSidebarFilterHeaderItem(input),
     withNativeGlassHeaderItem({
       type: "button",
       axisBehavior: "horizontalOnly",

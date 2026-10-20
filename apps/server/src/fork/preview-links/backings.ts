@@ -461,41 +461,45 @@ export const makePreviewContainerOps = Effect.gen(function* () {
    * Pulls the image if it is not here yet. Nothing a failed or cancelled pull leaves behind is a
    * container, so only `run` needs cleaning up after.
    */
-  const pull = (docker: string, start: PreviewContainerStart) =>
-    Effect.gen(function* () {
-      const { image } = start.input;
-      const local = yield* query(docker, ["image", "inspect", "--format", "{{.Id}}", image]);
-      if (local?.code === 0) return;
-      const pulled = yield* command(
-        docker,
-        ["pull", image],
-        DOCKER_PULL_TIMEOUT,
-        `Docker took more than 10 minutes to pull the image ${image}. Check the image name and the network, then try again.`,
-      );
-      if (pulled.code !== 0) {
-        return yield* startFailure(pulled, { image, port: start.port, step: "pull" });
-      }
-    });
+  const pull = Effect.fn("PreviewContainerOps.pull")(function* (
+    docker: string,
+    start: PreviewContainerStart,
+  ) {
+    const { image } = start.input;
+    const local = yield* query(docker, ["image", "inspect", "--format", "{{.Id}}", image]);
+    if (local?.code === 0) return;
+    const pulled = yield* command(
+      docker,
+      ["pull", image],
+      DOCKER_PULL_TIMEOUT,
+      `Docker took more than 10 minutes to pull the image ${image}. Check the image name and the network, then try again.`,
+    );
+    if (pulled.code !== 0) {
+      return yield* startFailure(pulled, { image, port: start.port, step: "pull" });
+    }
+  });
 
   /** Starts the container detached from an image `pull` made sure is here. */
-  const run = (docker: string, start: PreviewContainerStart) =>
-    Effect.gen(function* () {
-      const { image } = start.input;
-      const output = yield* command(
-        docker,
-        previewContainerRunArgs(start),
-        DOCKER_RUN_TIMEOUT,
-        "Docker took more than 2 minutes to start the container. Try again.",
-      );
-      if (output.code !== 0) {
-        return yield* startFailure(output, { image, port: start.port, step: "run" });
-      }
-      const id = lastLine(output.stdout);
-      if (!CONTAINER_ID_PATTERN.test(id)) {
-        return yield* invalid("Docker started the container without reporting its id.");
-      }
-      return id.slice(0, CONTAINER_ID_LENGTH);
-    });
+  const run = Effect.fn("PreviewContainerOps.run")(function* (
+    docker: string,
+    start: PreviewContainerStart,
+  ) {
+    const { image } = start.input;
+    const output = yield* command(
+      docker,
+      previewContainerRunArgs(start),
+      DOCKER_RUN_TIMEOUT,
+      "Docker took more than 2 minutes to start the container. Try again.",
+    );
+    if (output.code !== 0) {
+      return yield* startFailure(output, { image, port: start.port, step: "run" });
+    }
+    const id = lastLine(output.stdout);
+    if (!CONTAINER_ID_PATTERN.test(id)) {
+      return yield* invalid("Docker started the container without reporting its id.");
+    }
+    return id.slice(0, CONTAINER_ID_LENGTH);
+  });
 
   /** Null when Docker cannot say, such as while it is not running. */
   const running = (docker: string, containerId: string) =>
