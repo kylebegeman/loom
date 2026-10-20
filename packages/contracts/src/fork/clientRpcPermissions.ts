@@ -27,6 +27,7 @@ import { DEVICE_QA_WS_METHODS as Q } from "./device-qa.ts";
 import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
 import { AuthPreviewOperateScope } from "../auth.ts";
+import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -179,4 +180,6 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PL.signOutBrowsers]: AuthPreviewOperateScope,
   // pagesList stays unguarded: clients read it with a query atom, which excludes guarded tags.
   [PL.pagesUpdate]: AuthPreviewOperateScope,
+  // The directory list stays unguarded for the same reason.
+  [DIR.forget]: AuthSettingsWriteScope,
 } as const;

@@ -24,6 +24,7 @@ import { LibraryPublishingCredentialFile } from "../../auth/LibraryPublishingCre
 import * as LibraryRecoveryStore from "./assets/LibraryRecoveryStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { isLibraryAuthorityEnv } from "./authority.ts";
 import { libraryComputerDirectory } from "./enrollment.ts";
 
 const decodeCredential = Schema.decodeEffect(
@@ -51,7 +52,7 @@ const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const http = yield* HttpClient.HttpClient;
   const localStore = yield* Effect.serviceOption(LibraryRecoveryStore.LibraryRecoveryStore);
-  const localAuthority = env.LOOM_LIBRARY_AUTHORITY === "true";
+  const localAuthority = isLibraryAuthorityEnv(env);
   let credentialPath = env.LOOM_LIBRARY_CREDENTIAL_FILE?.trim();
   if (!localAuthority && !credentialPath) {
     const config = yield* Effect.serviceOption(ServerConfig.ServerConfig);

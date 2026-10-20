@@ -37,6 +37,7 @@ import type { PreviewLinksService } from "./preview-links/PreviewLinksService.ts
 import type { PreviewAccessService } from "./preview-access/PreviewAccessService.ts";
 import type { PageLibraryService } from "./preview-pages/PageLibraryService.ts";
 import type { PreviewPagesService } from "./preview-pages/PreviewPagesService.ts";
+import type { DirectoryService } from "./directory/DirectoryService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -80,7 +81,8 @@ export type ForkServices =
   | PreviewLinksService
   | PreviewAccessService
   | PageLibraryService
-  | PreviewPagesService;
+  | PreviewPagesService
+  | DirectoryService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

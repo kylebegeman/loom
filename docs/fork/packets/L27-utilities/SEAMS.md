@@ -42,6 +42,13 @@ git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 
 Record the tag and result here.
 
+2026-10-20, against `v0.1.1-nightly.20261020.3386`: 33 conflicted paths, exactly the list
+`main` (`147e83e3f6`) produces on its own. None is an L27 file, so this packet adds no
+conflicts. The four registrations above are the only edits outside `fork/utilities/` and
+the docs.
+
+This packet created no extension points; all four already existed on `main`.
+
 ## FORK.md rows
 
 None for packet seams.
