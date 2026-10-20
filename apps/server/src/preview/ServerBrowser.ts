@@ -323,6 +323,8 @@ interface ServerTab {
   } | null;
 
   recordingStart: Promise<Recording> | null;
+  /** A timed-out action that left this recording tab in place; another timeout before it settles is a real stall. */
+  recordingTimeout: Promise<unknown> | null; // fork: browser-timeout-recovery
   captureLock: Promise<void>;
   capturing: number;
 }
@@ -834,6 +836,7 @@ const make = Effect.gen(function* () {
         replacedByDesktop: false,
         recording: null,
         recordingStart: null,
+        recordingTimeout: null,
         initialNavigation: null,
         navigationGeneration: 0,
         abortedNavigation: null,
@@ -2129,12 +2132,13 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const handleRequest = (connectionId: string, request: PreviewAutomationRequest) =>
-    Effect.tryPromise({
+  const handleRequest = (connectionId: string, request: PreviewAutomationRequest) => {
+    let operation: Promise<unknown> | undefined;
+    return Effect.tryPromise({
       try: () =>
-        runOperation(request, performance.now() + request.timeoutMs).finally(() =>
+        (operation = runOperation(request, performance.now() + request.timeoutMs).finally(() =>
           markUsed(request),
-        ),
+        )),
       catch: ServerBrowserPage.toOperationError,
     }).pipe(
       // CDP captures and page evaluation can outlive Playwright's locator timeouts.
@@ -2148,28 +2152,42 @@ const make = Effect.gen(function* () {
               request.tabId === undefined
                 ? undefined
                 : tabs.get(tabKey(request.threadId, request.tabId));
-            // A recording tab keeps its page: dropping it would discard the capture
-            // and the queued stop that still runs after its deadline.
-            if (
-              tab &&
-              tab.recording === null &&
-              tab.recordingStart === null &&
-              tab.control.agentCanActNow(request.agentSessionId ?? "")
-            ) {
-              if (!tab.desktop)
-                recoveryPages.set(tabKey(tab.threadId, tab.tabId), {
-                  context: tab.page.context(),
-                  isolated: tab.isolatedContext,
-                  profileId: tab.profileId,
-                  url: tab.page.url(),
-                });
-              // Closing the old page cancels pending clicks; only its context and committed URL survive.
-              dropTab(tab, false, false, !tab.desktop);
+            let kept = false;
+            if (tab && tab.control.agentCanActNow(request.agentSessionId ?? "")) {
+              // A recording tab keeps its page once: dropping it would discard the
+              // capture and the queued stop that still runs after its deadline. A
+              // second timeout before the first action settles means nothing queued
+              // can finish, so the tab recovers and dropTab closes the encoder.
+              const pending = operation;
+              if (
+                pending &&
+                (tab.recording !== null || tab.recordingStart !== null) &&
+                tab.recordingTimeout === null
+              ) {
+                kept = true;
+                tab.recordingTimeout = pending;
+                const settle = () => {
+                  if (tab.recordingTimeout === pending) tab.recordingTimeout = null;
+                };
+                pending.then(settle, settle);
+              } else {
+                if (!tab.desktop)
+                  recoveryPages.set(tabKey(tab.threadId, tab.tabId), {
+                    context: tab.page.context(),
+                    isolated: tab.isolatedContext,
+                    profileId: tab.profileId,
+                    url: tab.page.url(),
+                  });
+                // Closing the old page cancels pending clicks; only its context and committed URL survive.
+                dropTab(tab, false, false, !tab.desktop);
+              }
             }
             return Effect.fail(
               new ServerBrowserPage.ServerBrowserOperationError(
                 "PreviewAutomationTimeoutError",
-                `Browser ${request.operation} did not finish within ${request.timeoutMs}ms. Its agent tab will reconnect on the next request; the action was not replayed.`,
+                kept
+                  ? `Browser ${request.operation} did not finish within ${request.timeoutMs}ms. The tab is recording, so it stayed open; the action was not replayed. Stop the recording, or retry: another timeout reconnects the tab.`
+                  : `Browser ${request.operation} did not finish within ${request.timeoutMs}ms. Its agent tab will reconnect on the next request; the action was not replayed.`,
               ),
             );
           }),
@@ -2195,6 +2213,7 @@ const make = Effect.gen(function* () {
       ),
       Effect.ignore,
     );
+  };
 
   const mirrorManagerEvent = (event: PreviewEvent) =>
     Effect.promise(async () => {

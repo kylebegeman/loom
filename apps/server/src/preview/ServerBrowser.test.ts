@@ -936,6 +936,65 @@ it.effect(
     ).pipe(Effect.provide(layer)),
 );
 
+it.effect("a recording tab whose snapshot never settles recovers on the next timeout", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      const page = contexts[0]!.page;
+      const encoder = {
+        evaluate: vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(true),
+        close: vi.fn(async () => {}),
+      };
+      const scratchPage = vi
+        .spyOn(ServerBrowserContexts.ServerBrowserContexts.prototype, "scratchPage")
+        .mockResolvedValue(encoder as unknown as Page);
+      yield* Effect.addFinalizer(() => Effect.sync(() => scratchPage.mockRestore()));
+      yield* broker.invoke({ scope, tabId, operation: "recordingStart", input: {} });
+
+      const started = Promise.withResolvers<void>();
+      page.evaluate.mockImplementationOnce(async () => {
+        started.resolve();
+        return new Promise(() => {});
+      });
+      const stalled = yield* broker
+        .invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+          timeoutMs: 150,
+        })
+        .pipe(Effect.flip, Effect.forkScoped);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust(150);
+      expect(yield* Fiber.join(stalled)).toMatchObject({
+        _tag: "PreviewAutomationTimeoutError",
+        remoteTag: "PreviewAutomationTimeoutError",
+      });
+      expect(page.isClosed()).toBe(false);
+
+      const retry = yield* broker
+        .invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+          timeoutMs: 150,
+        })
+        .pipe(Effect.flip, Effect.forkScoped);
+      // The status reply marks delivery while the stalled snapshot still holds the tab queue.
+      yield* broker.invoke({ scope, tabId, operation: "status", input: {} });
+      yield* TestClock.adjust(150);
+      expect(yield* Fiber.join(retry)).toMatchObject({
+        _tag: "PreviewAutomationTimeoutError",
+        remoteTag: "PreviewAutomationTimeoutError",
+      });
+      expect(page.isClosed()).toBe(true);
+      expect(encoder.close).toHaveBeenCalledOnce();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
 it.live("enforces provider ownership and explicit targets when a session has multiple tabs", () =>
   Effect.scoped(
     Effect.gen(function* () {
