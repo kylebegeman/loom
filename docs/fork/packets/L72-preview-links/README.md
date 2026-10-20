@@ -1,8 +1,9 @@
 # L72: Preview links
 
-Status: Slices 1 to 5 are implemented on fork `main`. The Library side waits for the LP-22
-deploy (gate D4: Kyle adds a DNS-only record for `pages.bagels.top` at the Library host and
-deploys). Slice 6, guest links, is parked. The real-client checks in
+Status: Slices 1 to 5 are implemented on fork `main`, with the follow-up gap fixes for
+sign-in, pages, the gateway and backings. The Library side waits for the LP-22 deploy (gate
+D4: Kyle adds a DNS-only record for `pages.bagels.top` at the Library host, then the
+Library is deployed). Slice 6, guest links, is parked. The real-client checks in
 [TESTING.md](./TESTING.md#still-to-check) are pending.
 
 Selection: Hosted previews, Kyle 2026-10-18. Kyle approved slices 2 to 6 and their Library
@@ -90,8 +91,9 @@ registrations in fork-owned files only. See [SEAMS.md](./SEAMS.md).
 - Port links: a domain on Cloudflare with a proxied wildcard record pointing at a remotely
   managed tunnel, whose public hostname routes to `http://127.0.0.1:<gateway port>`. Loom
   installs `cloudflared` itself through the relay client when it is missing.
-- Library sign-in and pages: a Library this computer publishes to. Pages also need the
-  Library to set `LOOM_PAGES_ORIGIN` and route that host to its pages listener.
+- Library sign-in and pages: a Library this computer publishes to, with
+  `LOOM_IDENTITY_REDIRECT_URI` set to its public https callback. Pages also need the Library
+  to set `LOOM_PAGES_ORIGIN` and route that host to its pages listener.
 - Folder and container links: lanes on (Settings > Loom > Storage). Container links also
   need Docker Desktop or OrbStack running.
 

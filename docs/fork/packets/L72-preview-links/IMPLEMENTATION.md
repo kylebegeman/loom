@@ -7,9 +7,9 @@ left.
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
 folder. Never enable previews against the live install's state, and never touch a running
-`cloudflared`. A dev server that enables previews needs a gateway port other than the live
-install's. Library behavior needs a server with `LOOM_LIBRARY_AUTHORITY` and its own state
-directory, never the live Library.
+`cloudflared`. A dev server defaults to a gateway port of its own (its port plus 10,000), so
+keep a saved port off the live install's 3779. Library behavior needs a server with
+`LOOM_LIBRARY_AUTHORITY` and its own state directory, never the live Library.
 
 ## Build order
 
@@ -31,6 +31,15 @@ directory, never the live Library.
 5. **Folder and container links (slice 5).** `backings.ts`, the folder and container shares
    in `PreviewLinksService`, the reconcile, `folderRoots` in the sidecar, and the backing
    line and missing Extend on clients.
+
+6. **Gap fixes.** Four parallel branches closed most Known gaps: sign-in (`preview-access`
+   migration 2 ties host rows to the registering session, shared-token and self-Library
+   registration, no `Host` fallback, no ticket replay across restarts), pages (fail closed
+   without the cookie key, revocable sign-ins through a second `preview-pages` migration and
+   a sign-out route, the stored-page cap, the pushed `pagesRevision`), the gateway (idle
+   sockets, `configure` waiting for the bind, lanes gone while down, the pinned
+   `cloudflared`, the dev gateway port, the session relist) and backings (shutdown removal,
+   pull before run, folder restore on its lane, byte ranges, stray retries).
 
 Slice 6, guest links, is parked under the one-operator rule. Do not start it from this
 packet.
