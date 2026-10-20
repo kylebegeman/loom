@@ -7,6 +7,7 @@ import {
   applyInboxChanges,
   createBotsAtoms,
   EMPTY_BOT_BATCH_CHANGES,
+  EMPTY_BOT_TRIGGER_CHANGES,
   EMPTY_BOTS_CHANGES,
   makeWaitingBotRunsAtom,
   supportsLoomFeature,
@@ -21,6 +22,7 @@ import {
   BOTS_INVOCATION_FEATURE,
   BOTS_LIST_RUNS_MAX_LIMIT,
   BOTS_STARTERS_FEATURE,
+  BOTS_TRIGGERS_FEATURE,
   BOTS_VERDICTS_FEATURE,
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -47,6 +49,7 @@ export function useBotsHost() {
     inboxSupported: supportsLoomFeature(capabilities, BOTS_INBOX_FEATURE),
     budgetsSupported: supportsLoomFeature(capabilities, BOTS_BUDGETS_FEATURE),
     fromThreadSupported: supportsLoomFeature(capabilities, BOTS_FROM_THREAD_FEATURE),
+    triggersSupported: supportsLoomFeature(capabilities, BOTS_TRIGGERS_FEATURE),
   };
 }
 
@@ -68,6 +71,18 @@ export function useBotBatchChanges(environmentId: EnvironmentId | null, enabled:
     environmentId && enabled ? bots.batchChanges({ environmentId, input: {} }) : NO_BATCH_CHANGES,
   );
   return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOT_BATCH_CHANGES);
+}
+
+const NO_TRIGGER_CHANGES = Atom.make(AsyncResult.success(EMPTY_BOT_TRIGGER_CHANGES));
+
+/** Trigger edits and firings watched while connected, overlaid on lists fetched once. */
+export function useBotTriggerChanges(environmentId: EnvironmentId | null, enabled: boolean) {
+  const result = useAtomValue(
+    environmentId && enabled
+      ? bots.triggerChanges({ environmentId, input: {} })
+      : NO_TRIGGER_CHANGES,
+  );
+  return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOT_TRIGGER_CHANGES);
 }
 
 /** The host, its watched changes, and its bots with those changes applied. */

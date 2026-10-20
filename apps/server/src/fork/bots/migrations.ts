@@ -103,5 +103,21 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_suggestions (shape_key TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, dismissed_at TEXT, dismissed_total INTEGER NOT NULL DEFAULT 0, reopened INTEGER NOT NULL DEFAULT 0)`;
       }),
     ],
+    [
+      9,
+      "Triggers",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_triggers (id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, trigger_json TEXT NOT NULL, enabled INTEGER NOT NULL, pinned_version INTEGER NOT NULL, follow_latest INTEGER NOT NULL, created_by TEXT NOT NULL, creator_runtime_mode TEXT, webhook_token TEXT, webhook_secret TEXT, next_fire_at TEXT, last_fired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_triggers_bot ON fork_bots_triggers (bot_id)`;
+        // The unique key is the dedupe: one event fires a trigger once, however often it is seen.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_trigger_firings (id TEXT PRIMARY KEY, trigger_id TEXT NOT NULL, event_key TEXT NOT NULL, event_summary TEXT NOT NULL, fired_at TEXT NOT NULL, outcome TEXT NOT NULL, run_id TEXT, reason TEXT, UNIQUE(trigger_id, event_key))`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_trigger_firings_fired ON fork_bots_trigger_firings (trigger_id, fired_at DESC)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_trigger_cursors (event_type TEXT PRIMARY KEY, after_sequence INTEGER NOT NULL)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_trigger_pr_state (pr_key TEXT PRIMARY KEY, checks_state TEXT, head_sha TEXT, seen_open INTEGER NOT NULL, updated_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_trigger_pr_state_updated ON fork_bots_trigger_pr_state (updated_at)`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN trigger_id TEXT`;
+      }),
+    ],
   ],
 };

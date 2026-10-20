@@ -6,6 +6,7 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 import { ProjectId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
+import { ScheduledTaskWebhookEndpoint, ScheduledTaskWebhookSignature } from "../scheduledTask.ts";
 
 export const BOTS_FEATURE = "bots";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
@@ -15,6 +16,7 @@ export const BOTS_BATCHES_FEATURE = "bots-batches";
 export const BOTS_INBOX_FEATURE = "bots-inbox";
 export const BOTS_BUDGETS_FEATURE = "bots-budgets";
 export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
+export const BOTS_TRIGGERS_FEATURE = "bots-triggers";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -288,6 +290,8 @@ export const BotRun = Schema.Struct({
   checkoutThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   /** Null until the run ends, and when its usage could not be read. */
   usage: Schema.optionalKey(Schema.NullOr(BotRunUsage)),
+  /** The trigger that started the run, or skipped it. */
+  triggerId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -838,5 +842,265 @@ export const BotDraftsRpcGroup = RpcGroup.make(
     payload: BotsDismissSuggestionInput,
     success: BotSuggestion,
     error: errors,
+  }),
+);
+
+export const BOTS_TRIGGER_WS_METHODS = {
+  listTriggers: "loom.bots.listTriggers",
+  saveTrigger: "loom.bots.saveTrigger",
+  deleteTrigger: "loom.bots.deleteTrigger",
+  setTriggerEnabled: "loom.bots.setTriggerEnabled",
+  repinTrigger: "loom.bots.repinTrigger",
+  testTrigger: "loom.bots.testTrigger",
+  triggerFirings: "loom.bots.triggerFirings",
+  rotateTriggerToken: "loom.bots.rotateTriggerToken",
+  watchTriggers: "loom.bots.watchTriggers",
+} as const;
+
+export const BOTS_TRIGGER_FIRINGS_MAX_LIMIT = 50;
+export const BOTS_TRIGGER_DEFAULT_COOLDOWN_MINUTES = 10;
+export const BOTS_TRIGGER_DEFAULT_DAILY_LIMIT = 20;
+export const BOTS_TRIGGER_MIN_INTERVAL_MS = 60_000;
+/** Webhook ids of bot triggers start with this, on the route scheduled task hooks use. */
+export const BOT_TRIGGER_HOOK_PREFIX = "bot-trigger-";
+
+export const BotTriggerId = Schema.String.check(Schema.isPattern(/^trg_[0-9a-f]{20}$/));
+export type BotTriggerId = typeof BotTriggerId.Type;
+
+export const botTriggerHookId = (triggerId: string) => `${BOT_TRIGGER_HOOK_PREFIX}${triggerId}`;
+
+export const isBotTriggerHookId = (hookId: string) => hookId.startsWith(BOT_TRIGGER_HOOK_PREFIX);
+
+const PullRequestFilter = {
+  projectId: Schema.optionalKey(ProjectId),
+  /** `owner/name`. */
+  repository: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+  /** The head branch, with `*` matching any run of characters, such as `release/*`. */
+  branchPattern: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+};
+
+/** The scheduled task rules: intervals advance elapsed time, times of day are local. */
+export const BotTriggerSchedule = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("interval"),
+    everyMs: Schema.Int.check(
+      Schema.isBetween({ minimum: BOTS_TRIGGER_MIN_INTERVAL_MS, maximum: 31 * 24 * 60 * 60_000 }),
+    ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("fixed_time"),
+    timeOfDay: TrimmedNonEmptyString.check(Schema.isPattern(/^([01]?\d|2[0-3]):([0-5]\d)$/)),
+    /** 0 is Sunday. Absent or empty means every day. */
+    weekdays: Schema.optionalKey(
+      Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 }))).check(
+        Schema.isMaxLength(7),
+      ),
+    ),
+  }),
+]);
+export type BotTriggerSchedule = typeof BotTriggerSchedule.Type;
+
+export const BotTriggerEvent = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("pull-request-checks-failing"), ...PullRequestFilter }),
+  Schema.Struct({ kind: Schema.Literal("pull-request-opened"), ...PullRequestFilter }),
+  /** The project is required, so a trigger never fires for every thread. */
+  Schema.Struct({ kind: Schema.Literal("thread-settled"), projectId: ProjectId }),
+  Schema.Struct({ kind: Schema.Literal("merge-conflict") }),
+  Schema.Struct({
+    kind: Schema.Literal("webhook"),
+    signature: Schema.optionalKey(ScheduledTaskWebhookSignature),
+  }),
+  Schema.Struct({ kind: Schema.Literal("schedule"), schedule: BotTriggerSchedule }),
+]);
+export type BotTriggerEvent = typeof BotTriggerEvent.Type;
+export type BotTriggerEventKind = BotTriggerEvent["kind"];
+
+/** The fields each event offers to a mapping. Webhooks offer `body.*`, `headers.*` and `query.*`. */
+export const BOT_TRIGGER_EVENT_FIELDS: Record<BotTriggerEventKind, ReadonlyArray<string>> = {
+  "pull-request-checks-failing": [
+    "repository",
+    "number",
+    "url",
+    "title",
+    "headBranch",
+    "baseBranch",
+    "failedChecks",
+    "threadId",
+  ],
+  "pull-request-opened": [
+    "repository",
+    "number",
+    "url",
+    "title",
+    "headBranch",
+    "baseBranch",
+    "threadId",
+  ],
+  "thread-settled": ["threadId", "title", "branch", "projectId"],
+  "merge-conflict": ["tag", "branch", "file"],
+  webhook: [],
+  schedule: ["firedAt"],
+};
+
+const WEBHOOK_FIELD = /^(?:body|headers|query)(?:\.[^.\s]+)+$/;
+
+export const isBotTriggerField = (kind: BotTriggerEventKind, field: string): boolean =>
+  kind === "webhook" ? WEBHOOK_FIELD.test(field) : BOT_TRIGGER_EVENT_FIELDS[kind].includes(field);
+
+export const BotTriggerMappingEntry = Schema.Union([
+  Schema.Struct({ field: TrimmedNonEmptyString.check(Schema.isMaxLength(200)) }),
+  Schema.Struct({ value: BotInputValue }),
+]);
+export type BotTriggerMappingEntry = typeof BotTriggerMappingEntry.Type;
+
+/** For each bot parameter, an event field or a fixed value. */
+export const BotTriggerMapping = Schema.Record(BotParameterName, BotTriggerMappingEntry);
+export type BotTriggerMapping = typeof BotTriggerMapping.Type;
+
+/** Every mapped name is a parameter, every field the event offers, every required input set. */
+export const checkTriggerMapping = (
+  bot: { readonly name: string; readonly parameters: ReadonlyArray<BotParameter> },
+  event: Pick<BotTriggerEvent, "kind">,
+  mapping: BotTriggerMapping,
+): string | null => {
+  const names = new Set(bot.parameters.map((parameter) => parameter.name));
+  for (const [name, entry] of Object.entries(mapping)) {
+    if (!names.has(name)) return `${name} is not an input of ${bot.name}.`;
+    if ("field" in entry && !isBotTriggerField(event.kind, entry.field))
+      return `This event has no field ${entry.field}.`;
+  }
+  for (const parameter of bot.parameters)
+    if (
+      parameter.required &&
+      parameter.default === undefined &&
+      mapping[parameter.name] === undefined
+    )
+      return `${bot.name} needs ${parameter.label}; map it to a field or a fixed value.`;
+  return null;
+};
+
+const TriggerFields = {
+  botId: BotId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
+  event: BotTriggerEvent,
+  mapping: BotTriggerMapping,
+  enabled: Schema.Boolean,
+  /** Skip a firing within this many minutes of the last run it started. */
+  cooldownMinutes: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
+  /** Runs started in the rolling 24 hours, at most. */
+  dailyLimit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+  /** Run the bot as saved now instead of the version the trigger was set with. */
+  followLatest: Schema.Boolean,
+};
+
+export const BotTrigger = Schema.Struct({
+  id: BotTriggerId,
+  ...TriggerFields,
+  pinnedVersion: Schema.Int,
+  createdBy: BotCreator,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  lastFiredAt: Schema.NullOr(Schema.String),
+  /** Webhook and merge-conflict triggers, for callers allowed to operate. */
+  webhook: Schema.optionalKey(ScheduledTaskWebhookEndpoint),
+  /** Schedule triggers: when it fires next. */
+  nextFireAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+export type BotTrigger = typeof BotTrigger.Type;
+
+export const BotTriggerFiring = Schema.Struct({
+  id: Schema.String,
+  triggerId: BotTriggerId,
+  eventKey: Schema.String,
+  /** For example "acme/app#12 checks failing". */
+  eventSummary: Schema.String,
+  firedAt: Schema.String,
+  outcome: Schema.Literals(["run", "skipped"]),
+  runId: Schema.NullOr(BotRunId),
+  reason: Schema.NullOr(Schema.String),
+});
+export type BotTriggerFiring = typeof BotTriggerFiring.Type;
+
+/** Its own stream, since an older client fails to decode a tag added to {@link BotsChange}. */
+export const BotTriggerChange = Schema.Union([
+  Schema.TaggedStruct("trigger", { trigger: BotTrigger }),
+  Schema.TaggedStruct("trigger-deleted", { triggerId: BotTriggerId }),
+  Schema.TaggedStruct("firing", { firing: BotTriggerFiring }),
+]);
+export type BotTriggerChange = typeof BotTriggerChange.Type;
+
+export const BotsSaveTriggerInput = Schema.Struct({
+  /** Absent creates a trigger pinned to the bot's current version. */
+  id: Schema.optionalKey(BotTriggerId),
+  ...TriggerFields,
+  /** Rejects the save when the stored trigger changed since. */
+  expectedUpdatedAt: Schema.optionalKey(Schema.String),
+  /** The webhook signing secret. Omit to keep the stored one; an empty string removes it. */
+  webhookSecret: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+});
+export type BotsSaveTriggerInput = typeof BotsSaveTriggerInput.Type;
+
+export const BotsRepinTriggerInput = Schema.Struct({
+  triggerId: BotTriggerId,
+  /** Absent pins the bot's current version. */
+  version: Schema.optionalKey(Schema.Int),
+  followLatest: Schema.optionalKey(Schema.Boolean),
+});
+export type BotsRepinTriggerInput = typeof BotsRepinTriggerInput.Type;
+
+export const BotsTestTriggerInput = Schema.Struct({
+  triggerId: BotTriggerId,
+  /** The sample event's fields, such as `number` or `body.pull_request.number`. */
+  fields: Schema.Record(Schema.String, BotInputValue),
+});
+export type BotsTestTriggerInput = typeof BotsTestTriggerInput.Type;
+
+export const BotsTriggerFiringsInput = Schema.Struct({
+  triggerId: BotTriggerId,
+  /** Returns firings strictly before this ISO timestamp. */
+  before: Schema.optionalKey(Schema.String),
+  limit: Schema.Int.check(
+    Schema.isBetween({ minimum: 1, maximum: BOTS_TRIGGER_FIRINGS_MAX_LIMIT }),
+  ),
+});
+export type BotsTriggerFiringsInput = typeof BotsTriggerFiringsInput.Type;
+
+const BT = BOTS_TRIGGER_WS_METHODS;
+const TriggerRef = Schema.Struct({ triggerId: BotTriggerId });
+
+export const BotTriggersRpcGroup = RpcGroup.make(
+  Rpc.make(BT.listTriggers, {
+    payload: Schema.Struct({ botId: Schema.optionalKey(BotId) }),
+    success: Schema.Struct({ triggers: Schema.Array(BotTrigger) }),
+    error: errors,
+  }),
+  Rpc.make(BT.saveTrigger, { payload: BotsSaveTriggerInput, success: BotTrigger, error: errors }),
+  Rpc.make(BT.deleteTrigger, { payload: TriggerRef, success: Schema.Struct({}), error: errors }),
+  Rpc.make(BT.setTriggerEnabled, {
+    payload: Schema.Struct({ triggerId: BotTriggerId, enabled: Schema.Boolean }),
+    success: BotTrigger,
+    error: errors,
+  }),
+  Rpc.make(BT.repinTrigger, {
+    payload: BotsRepinTriggerInput,
+    success: BotTrigger,
+    error: errors,
+  }),
+  Rpc.make(BT.testTrigger, {
+    payload: BotsTestTriggerInput,
+    success: BotTriggerFiring,
+    error: errors,
+  }),
+  Rpc.make(BT.triggerFirings, {
+    payload: BotsTriggerFiringsInput,
+    success: Schema.Struct({ firings: Schema.Array(BotTriggerFiring), hasMore: Schema.Boolean }),
+    error: errors,
+  }),
+  Rpc.make(BT.rotateTriggerToken, { payload: TriggerRef, success: BotTrigger, error: errors }),
+  Rpc.make(BT.watchTriggers, {
+    payload: Schema.Struct({}),
+    success: BotTriggerChange,
+    error: errors,
+    stream: true,
   }),
 );

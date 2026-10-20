@@ -36,14 +36,17 @@ import {
   makeBotBatchesRpcHandlers,
   makeBotDraftsRpcHandlers,
   makeBotsRpcHandlers,
+  makeBotTriggersRpcHandlers,
 } from "./bots/rpc.ts";
 import {
   BOTS_BATCH_WS_METHODS,
   BOTS_DRAFT_WS_METHODS,
+  BOTS_TRIGGER_WS_METHODS,
   BOTS_WS_METHODS,
   BotBatchesRpcGroup,
   BotDraftsRpcGroup,
   BotsRpcGroup,
+  BotTriggersRpcGroup,
 } from "@t3tools/contracts/fork";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
@@ -91,6 +94,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(BOTS_WS_METHODS),
   ...Object.values(BOTS_BATCH_WS_METHODS),
   ...Object.values(BOTS_DRAFT_WS_METHODS),
+  ...Object.values(BOTS_TRIGGER_WS_METHODS),
 );
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
@@ -112,6 +116,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotBatchesRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotDraftsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotTriggersRpcGroup>>
 > =>
   Layer.mergeAll(
     VaultMigrationInventoryRpcGroup.toLayer(
@@ -151,6 +156,9 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeBotBatchesRpcHandlers(makeForkRpcAuth(session))),
     ),
     BotDraftsRpcGroup.toLayer(withForkRuntime(makeBotDraftsRpcHandlers(makeForkRpcAuth(session)))),
+    BotTriggersRpcGroup.toLayer(
+      withForkRuntime(makeBotTriggersRpcHandlers(makeForkRpcAuth(session))),
+    ),
     VaultSshRpcGroup.toLayer(
       withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),

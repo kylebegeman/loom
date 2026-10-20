@@ -158,12 +158,60 @@ own when the window allows. Runs already in progress are never stopped, so the t
 passed by the runs that were in flight when it was reached. Agents read the same numbers with
 `loom_bots_usage`.
 
+## Triggers
+
+A trigger runs a bot when something happens. Open a bot, choose the **Triggers** tab and **New
+trigger**, or run **New bot trigger...** from the command palette. Pick what starts it:
+
+- **Pull request checks fail**: a linked pull request's checks turn failing, and again for each
+  new failing commit.
+- **Pull request opens**: the first time Loom sees a linked pull request open.
+- **Thread settles**: a thread in the chosen project settles. Bot runs never start it.
+- **Upstream merge conflicts**: `scripts/fork/loom.sh integrate` hits conflicts. Each conflicting
+  file runs as one item of a batch.
+- **Webhook request**: any service posts to the trigger's address.
+- **Schedule**: every few minutes, or at a local time of day on chosen weekdays.
+
+Pull request triggers can be narrowed to a project, a repository and a branch pattern such as
+`release/*`. Loom notices a watched pull request within a few minutes; one nobody watches can be
+noticed up to 15 minutes late. A trigger never fires for an event from before it was saved.
+
+Under **Inputs**, map each of the bot's inputs to a field of the event, a fixed value or its
+default. Every required input needs one. For a webhook, name fields as `body.pull_request.number`,
+`headers.x-github-event` or `query.ref`.
+
+Each trigger fires once per event, however often Loom sees it, and waits out its **Cooldown** and
+**Runs per day, at most** before firing again. The bot's budget still applies. A firing that is
+held back becomes a skipped run in the inbox with the reason, and **Firings** on the trigger lists
+recent firings with the run each one started.
+
+A trigger runs the bot version it was saved with. When the bot changes, its firings are skipped
+until you choose **Use version N** on the trigger, or turn on **Always run the latest version**.
+
+**Test** fires the trigger once with event fields you enter. It skips the filters, cooldown and
+daily limit, and starts a real run.
+
+### Webhooks
+
+After saving a webhook or merge conflict trigger, its address is shown on the trigger with
+**Copy**; only people who can run bots see it. To start a bot from GitHub, add a webhook in the
+repository's settings, paste the address as the payload URL, choose `application/json`, and set a
+secret. On the trigger, turn on the signature check with the header `x-hub-signature-256`,
+prefix `sha256=` and the same secret. A delivery GitHub resends fires once. **Rotate** replaces
+the address; the old one stops working.
+
+For merge conflicts, set `LOOM_BOTS_CONFLICT_HOOK` to the address before running
+`scripts/fork/loom.sh integrate`. The script posts the conflicting files and carries on whether or
+not the post succeeds.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over
 briefing a new thread. An agent cannot give a bot broader permissions than its own thread has.
 An agent that starts a run without waiting for it can ask to be told when it ends; the result
 then arrives in its thread like a finished delegated task. A bot run cannot start another bot.
+Agents list and save triggers with `loom_bots_triggers`, `loom_bots_save_trigger` and
+`loom_bots_set_trigger_enabled`.
 
 ## Archiving and deleting
 

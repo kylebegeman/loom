@@ -43,7 +43,7 @@ const SOURCE_LABELS: Record<BatchSourceType, string> = {
   search: "Search results",
 };
 
-function Choice<T extends string>({
+export function Choice<T extends string>({
   label,
   value,
   options,

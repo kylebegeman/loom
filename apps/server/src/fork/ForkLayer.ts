@@ -72,6 +72,9 @@ import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
 import * as BotBatches from "./bots/BotBatches.ts";
 import * as Bots from "./bots/BotsService.ts";
 import * as BotDrafts from "./bots/fromThread/BotDrafts.ts";
+import * as BotTriggers from "./bots/triggers/BotTriggers.ts";
+import { BotTriggerReactorLive } from "./bots/triggers/BotTriggerReactor.ts";
+import { BotTriggerScheduleLive } from "./bots/triggers/BotTriggerSchedule.ts";
 import * as PreviewLinks from "./preview-links/PreviewLinksService.ts";
 import * as PreviewAccess from "./preview-access/PreviewAccessService.ts";
 import { PreviewAccessHttpRoutes } from "./preview-access/http.ts";
@@ -301,10 +304,15 @@ const ForkServicesLive = Layer.mergeAll(
       DeviceQa.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
     ),
   ),
-  // Batches feed runs through the one BotsService instance, so both share it.
-  BotBatches.BotBatchesRecoveryLive.pipe(
-    Layer.provideMerge(BotBatches.layer.pipe(Layer.provide(ProjectStore.layer))),
-    Layer.provideMerge(Bots.BotsRecoveryLive.pipe(Layer.provideMerge(Bots.layer))),
+  // Batches and triggers feed runs through the one BotsService instance, so all three share it.
+  Layer.merge(BotTriggerReactorLive, BotTriggerScheduleLive).pipe(
+    Layer.provideMerge(BotTriggers.layer),
+    Layer.provideMerge(
+      BotBatches.BotBatchesRecoveryLive.pipe(
+        Layer.provideMerge(BotBatches.layer.pipe(Layer.provide(ProjectStore.layer))),
+        Layer.provideMerge(Bots.BotsRecoveryLive.pipe(Layer.provideMerge(Bots.layer))),
+      ),
+    ),
   ),
   BotDrafts.BotSuggestionsReactorLive.pipe(Layer.provideMerge(BotDrafts.layer)),
   CodeGraphReactorLive.pipe(

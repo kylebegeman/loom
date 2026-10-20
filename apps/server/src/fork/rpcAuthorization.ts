@@ -37,6 +37,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
+  BOTS_TRIGGER_WS_METHODS as BOT_TRIGGER,
   BOTS_WS_METHODS as BOT,
 } from "@t3tools/contracts/fork";
 import {
@@ -358,6 +359,16 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   // Refinement starts provider work.
   [BOT_DRAFT.refineDraft]: AuthOrchestrationOperateScope,
   [BOT_DRAFT.dismissSuggestion]: AuthOrchestrationOperateScope,
+  // Readers see triggers without their webhook address, which carries the token.
+  [BOT_TRIGGER.listTriggers]: AuthOrchestrationReadScope,
+  [BOT_TRIGGER.triggerFirings]: AuthOrchestrationReadScope,
+  [BOT_TRIGGER.watchTriggers]: AuthOrchestrationReadScope,
+  [BOT_TRIGGER.saveTrigger]: AuthOrchestrationOperateScope,
+  [BOT_TRIGGER.deleteTrigger]: AuthOrchestrationOperateScope,
+  [BOT_TRIGGER.setTriggerEnabled]: AuthOrchestrationOperateScope,
+  [BOT_TRIGGER.repinTrigger]: AuthOrchestrationOperateScope,
+  [BOT_TRIGGER.testTrigger]: AuthOrchestrationOperateScope,
+  [BOT_TRIGGER.rotateTriggerToken]: AuthOrchestrationOperateScope,
   [G.status]: AuthOrchestrationReadScope,
   [G.subscribeStatus]: AuthOrchestrationReadScope,
   [G.list]: AuthOrchestrationReadScope,
@@ -398,6 +409,8 @@ const denied = (scope: AuthEnvironmentScope) =>
 
 /** Authorization for fork handlers, bound to one connection. The server group instruments calls. */
 export const makeForkRpcAuth = (session: AuthenticatedSession) => ({
+  /** For handlers that show more to a session holding `scope`. */
+  has: (scope: AuthEnvironmentScope) => session.scopes.includes(scope),
   effect: <A, E, R>(
     method: ForkRpcMethod,
     effect: Effect.Effect<A, E, R>,

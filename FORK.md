@@ -213,6 +213,13 @@ L96 adds "Save as bot…" to the thread action menu in `apps/web/src/components/
 `apps/web/src/fork/bots/fromThread/state.ts`. See the
 [L96 packet](docs/fork/packets/L96-bots-from-thread/SEAMS.md).
 
+L97 hands `bot-trigger-` webhook deliveries to the bot trigger service in
+`apps/server/src/scheduledTasks/webhookRoute.ts` (`fork: bots`, 2 marker lines). The route takes
+its scheduled task service from `BotTriggers.webhookTarget`, which routes bot hooks and returns the
+service unchanged on a server without the fork layer.
+The `ext-core` comment in `apps/server/src/server.ts` also gives `ForkLayer` the webhook origin.
+See the [L97 packet](docs/fork/packets/L97-bots-triggers/SEAMS.md).
+
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.
 

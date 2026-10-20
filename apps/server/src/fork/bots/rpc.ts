@@ -1,6 +1,7 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
+  BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_WS_METHODS as B,
   type BotsBatchInput,
   type BotsDismissSuggestionInput,
@@ -18,12 +19,21 @@ import {
   type BotsSaveInput,
   type BotStarterId,
   type BotsUsageInput,
+  type BotsRepinTriggerInput,
+  type BotsSaveTriggerInput,
+  type BotsTestTriggerInput,
+  type BotsTriggerFiringsInput,
+  type BotTrigger,
+  type BotTriggerChange,
 } from "@t3tools/contracts/fork";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
+import { BotTriggers } from "./triggers/BotTriggers.ts";
 
 export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
@@ -111,5 +121,41 @@ export const makeBotDraftsRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(BD.suggestions, drafts.suggestions(input)),
       [BD.dismissSuggestion]: (input: BotsDismissSuggestionInput) =>
         auth.effect(BD.dismissSuggestion, drafts.dismissSuggestion(input)),
+    };
+  });
+
+const withoutWebhook = ({ webhook: _webhook, ...trigger }: BotTrigger): BotTrigger => trigger;
+
+export const makeBotTriggersRpcHandlers = (auth: ForkRpcAuth) =>
+  Effect.gen(function* () {
+    const triggers = yield* BotTriggers;
+    // The webhook address carries the token, so only sessions that can edit triggers see it.
+    const shown = auth.has(AuthOrchestrationOperateScope)
+      ? (trigger: BotTrigger) => trigger
+      : withoutWebhook;
+    const shownChange = (change: BotTriggerChange): BotTriggerChange =>
+      change._tag === "trigger" ? { ...change, trigger: shown(change.trigger) } : change;
+    return {
+      [BT.listTriggers]: (input: { botId?: string }) =>
+        auth.effect(
+          BT.listTriggers,
+          triggers.list(input.botId).pipe(Effect.map((list) => ({ triggers: list.map(shown) }))),
+        ),
+      [BT.saveTrigger]: (input: BotsSaveTriggerInput) =>
+        auth.effect(BT.saveTrigger, triggers.save(input, USER_CALLER)),
+      [BT.deleteTrigger]: (input: { triggerId: string }) =>
+        auth.effect(BT.deleteTrigger, triggers.delete(input.triggerId).pipe(Effect.as({}))),
+      [BT.setTriggerEnabled]: (input: { triggerId: string; enabled: boolean }) =>
+        auth.effect(BT.setTriggerEnabled, triggers.setEnabled(input.triggerId, input.enabled)),
+      [BT.repinTrigger]: (input: BotsRepinTriggerInput) =>
+        auth.effect(BT.repinTrigger, triggers.repin(input)),
+      [BT.testTrigger]: (input: BotsTestTriggerInput) =>
+        auth.effect(BT.testTrigger, triggers.test(input)),
+      [BT.triggerFirings]: (input: BotsTriggerFiringsInput) =>
+        auth.effect(BT.triggerFirings, triggers.firings(input)),
+      [BT.rotateTriggerToken]: (input: { triggerId: string }) =>
+        auth.effect(BT.rotateTriggerToken, triggers.rotate(input.triggerId)),
+      [BT.watchTriggers]: () =>
+        auth.stream(BT.watchTriggers, triggers.changes.pipe(Stream.map(shownChange))),
     };
   });

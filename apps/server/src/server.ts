@@ -601,8 +601,13 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
-  // fork: ext-core -- bot batches list open pull requests with the shared service.
-  Layer.provideMerge(ForkLayer.pipe(Layer.provide(layerPullRequestService))),
+  // fork: ext-core -- bot batches list open pull requests with the shared service; bot triggers
+  // show webhook addresses on the relay like scheduled tasks.
+  Layer.provideMerge(
+    ForkLayer.pipe(
+      Layer.provide(Layer.merge(layerPullRequestService, layerScheduledTaskWebhookOrigin)),
+    ),
+  ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),

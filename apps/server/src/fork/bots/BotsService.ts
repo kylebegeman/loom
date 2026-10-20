@@ -759,6 +759,7 @@ export const make = Effect.gen(function* () {
     /** Runs on this model instead of the bot's. */
     readonly modelSelection?: ModelSelection | undefined;
     readonly retryOf?: string | undefined;
+    readonly triggerId?: string | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
   }
@@ -837,6 +838,7 @@ export const make = Effect.gen(function* () {
         ...(input.notify === true ? { notify: true } : {}),
         ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
         ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
+        ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
         modelSelection,
         checkoutThreadId: checkout?.threadId ?? null,
       },
@@ -867,7 +869,14 @@ export const make = Effect.gen(function* () {
         interactionMode: bot.interactionMode,
         workspaceStrategy,
         initialMessage: {
-          text: renderPrompt(bot, checked.values),
+          // Event data reaches a trigger's run, so its text inputs are framed as untrusted.
+          text: renderPrompt(
+            bot,
+            checked.values,
+            options.triggerId === undefined
+              ? undefined
+              : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
+          ),
           attachments: [],
           ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
         },
@@ -887,15 +896,54 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Starts one batch item with the definition the batch pinned. The bot must still exist and be
-   * active; its stored limit, not the pinned one, holds the run back. A run that cannot start is
-   * recorded as failed, so the item shows why and can be retried.
+   * Records a run that never started, as failed with `reason`, so it reaches the inbox and can be
+   * retried. It does not count against the bot's budget.
+   */
+  const recordUnstarted = Effect.fn("BotsService.recordUnstarted")(function* (
+    definition: BotDefinition,
+    input: BotsRunInput,
+    caller: BotCaller,
+    reason: string,
+    options: StartOptions,
+  ) {
+    const runId = yield* randomUuidV4;
+    const now = yield* nowIso;
+    const failed: BotRun = {
+      id: runId,
+      botId: definition.id,
+      botVersion: definition.version,
+      botName: definition.name,
+      threadId: botRunThreadId(runId),
+      projectId: input.projectId ?? null,
+      inputs: input.inputs,
+      status: "failed",
+      startedBy: caller.actor,
+      callerThreadId: caller.threadId,
+      createdAt: now,
+      startedAt: null,
+      finishedAt: now,
+      result: null,
+      resultTruncated: false,
+      error: reason,
+      ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
+      ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+      ...(input.checkoutThreadId === undefined ? {} : { checkoutThreadId: input.checkoutThreadId }),
+    };
+    yield* insertRun(failed, options);
+    yield* publish({ _tag: "run", run: failed });
+    return failed;
+  });
+
+  /**
+   * Starts a run of a pinned definition for a batch item or a trigger. The bot must still exist
+   * and be active; its stored limit, not the pinned one, holds the run back. A run that cannot
+   * start is recorded as failed, so the item or trigger shows why and can be retried.
    */
   const startRunWith = Effect.fn("BotsService.startRunWith")(function* (
     definition: BotDefinition,
     input: BotsRunInput,
     caller: BotCaller,
-    options: StartOptions & { readonly batchId: string },
+    options: StartOptions,
   ) {
     const current = yield* requireBot(definition.id);
     if (current.archivedAt !== null)
@@ -904,33 +952,7 @@ export const make = Effect.gen(function* () {
       // A budget refusal is not recorded: the batch waits for the budget instead.
       Effect.catchIf(
         (error) => error.reason === "invalid" && error.retryAt === undefined,
-        (error) =>
-          Effect.gen(function* () {
-            const runId = yield* randomUuidV4;
-            const now = yield* nowIso;
-            const failed: BotRun = {
-              id: runId,
-              botId: definition.id,
-              botVersion: definition.version,
-              botName: definition.name,
-              threadId: botRunThreadId(runId),
-              projectId: input.projectId ?? null,
-              inputs: input.inputs,
-              status: "failed",
-              startedBy: caller.actor,
-              callerThreadId: caller.threadId,
-              createdAt: now,
-              startedAt: null,
-              finishedAt: now,
-              result: null,
-              resultTruncated: false,
-              error: error.message,
-              batchId: options.batchId,
-            };
-            yield* insertRun(failed, options);
-            yield* publish({ _tag: "run", run: failed });
-            return failed;
-          }),
+        (error) => recordUnstarted(definition, input, caller, error.message, options),
       ),
     );
   });
@@ -993,6 +1015,7 @@ export const make = Effect.gen(function* () {
         bot,
         {
           batchId: batchId ?? undefined,
+          triggerId: old.triggerId ?? undefined,
           modelSelection: input.modelSelection,
           retryOf: old.id,
           onInserted: (inserted) =>
@@ -1176,6 +1199,7 @@ export const make = Effect.gen(function* () {
     delete: remove,
     run,
     startRunWith,
+    recordUnstarted,
     checkCaller,
     checkRunnable,
     threadCaller,

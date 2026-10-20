@@ -6,6 +6,7 @@ import {
   type BotDefinition,
   type BotStarterState,
   type BotStarterStatus,
+  type BotTrigger,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
 import { applyBatchChanges, applyRunChanges } from "@t3tools/client-runtime/fork";
@@ -25,6 +26,8 @@ import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
+import { BotTriggerEditor } from "./BotTriggerEditor";
+import { BotTriggers } from "./BotTriggers";
 import { BotsInbox } from "./BotsInbox";
 import { BotsUsage } from "./BotsUsage";
 import { BotFromThreadEditor } from "./fromThread/BotFromThreadEditor";
@@ -35,13 +38,20 @@ import {
   bots,
   useBotBatchChanges,
   useBots,
+  useBotTriggerChanges,
   useBotsAttentionCount,
   useWaitingBotRuns,
 } from "./state";
 
 type Editing = { readonly bot: BotDefinition | null } | null;
 
-const TAB_LABELS = { runs: "Runs", batches: "Batches", inbox: "Inbox", usage: "Usage" } as const;
+const TAB_LABELS = {
+  runs: "Runs",
+  batches: "Batches",
+  triggers: "Triggers",
+  inbox: "Inbox",
+  usage: "Usage",
+} as const;
 
 const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
   present: "Starter",
@@ -120,9 +130,15 @@ export function BotsPage() {
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
   const batchesLive = live && host.batchesSupported;
   const inboxLive = live && host.inboxSupported;
+  const triggersLive = live && host.triggersSupported;
+  const triggerChanges = useBotTriggerChanges(environmentId, triggersLive && host.connected);
+  const canOperateTriggers =
+    useLibraryPermission(bots.saveTrigger, environmentId) && host.connected;
+  const [editingTrigger, setEditingTrigger] = useState<BotTrigger | null>(null);
   const tabs = [
     "runs" as const,
     ...(batchesLive ? (["batches"] as const) : []),
+    ...(triggersLive ? (["triggers"] as const) : []),
     ...(inboxLive ? (["inbox"] as const) : []),
     ...(live && host.budgetsSupported ? (["usage"] as const) : []),
   ];
@@ -196,6 +212,14 @@ export function BotsPage() {
     search.many === undefined || !host.batchesSupported
       ? null
       : (allBots.find((bot) => bot.id === search.many) ?? null);
+  const newTriggerBot =
+    search.newTrigger === undefined || !triggersLive
+      ? null
+      : (allBots.find((bot) => bot.id === search.newTrigger) ?? null);
+  const editingTriggerBot =
+    editingTrigger === null
+      ? null
+      : (allBots.find((bot) => bot.id === editingTrigger.botId) ?? null);
   const latestVersionOf = (botId: string) =>
     allBots.find((bot) => bot.id === botId && bot.archivedAt === null)?.version ?? null;
 
@@ -468,6 +492,17 @@ export function BotsPage() {
                     connected={host.connected}
                     canAct={canRetry}
                   />
+                ) : tab === "triggers" ? (
+                  <BotTriggers
+                    environmentId={environmentId}
+                    allBots={allBots}
+                    selected={selected ?? null}
+                    changes={triggerChanges}
+                    connected={host.connected}
+                    canOperate={canOperateTriggers}
+                    onNew={(bot) => go({ bot: bot.id, tab: "triggers", newTrigger: bot.id })}
+                    onEdit={setEditingTrigger}
+                  />
                 ) : tab === "batches" ? (
                   <section className="space-y-3" aria-label="Batches">
                     {search.batch !== undefined ? (
@@ -614,6 +649,28 @@ export function BotsPage() {
           canRun={canRun}
           onClose={() => go({ bot: search.bot })}
           onStarted={(run) => go({ bot: run.botId })}
+        />
+      ) : null}
+      {newTriggerBot && environmentId ? (
+        <BotTriggerEditor
+          key={newTriggerBot.id}
+          environmentId={environmentId}
+          bot={newTriggerBot}
+          trigger={null}
+          canSave={canOperateTriggers}
+          onClose={() => go({ bot: search.bot, tab: search.tab })}
+          onSaved={(trigger) => go({ bot: trigger.botId, tab: "triggers" })}
+        />
+      ) : null}
+      {editingTrigger && editingTriggerBot && environmentId ? (
+        <BotTriggerEditor
+          key={editingTrigger.id}
+          environmentId={environmentId}
+          bot={editingTriggerBot}
+          trigger={editingTrigger}
+          canSave={canOperateTriggers}
+          onClose={() => setEditingTrigger(null)}
+          onSaved={() => setEditingTrigger(null)}
         />
       ) : null}
       {manyTarget && environmentId ? (

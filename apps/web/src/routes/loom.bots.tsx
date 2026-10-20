@@ -9,8 +9,10 @@ const BotsSearch = Schema.Struct({
   run: Schema.optional(BotId),
   /** The bot whose "Run on many" dialog is open. */
   many: Schema.optional(BotId),
-  tab: Schema.optional(Schema.Literals(["runs", "batches", "inbox", "usage"])),
+  tab: Schema.optional(Schema.Literals(["runs", "batches", "triggers", "inbox", "usage"])),
   batch: Schema.optional(Schema.String),
+  /** The bot whose new trigger editor is open. */
+  newTrigger: Schema.optional(BotId),
   /** A thread to draft a bot from; the editor opens with the draft. */
   fromThread: Schema.optional(ThreadId),
   /** The suggestion the draft came from, dismissed once the bot is saved. */

@@ -1,6 +1,7 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
+  BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_WS_METHODS as B,
   type BotBatch,
   type BotBatchChange,
@@ -9,6 +10,9 @@ import {
   type BotRun,
   type BotsChange,
   type BotsInboxPage,
+  type BotTrigger,
+  type BotTriggerChange,
+  type BotTriggerFiring,
   type BotVerdictValue,
   isBotInboxRun,
   isBotRunThreadId,
@@ -225,6 +229,68 @@ export const applyBatchItemChanges = (
   return { batch, items: fetched.items.map((item) => watched.get(item.index) ?? item) };
 };
 
+/** Trigger changes seen since the watch started; a null trigger was deleted. */
+export interface BotTriggerChanges {
+  readonly triggers: ReadonlyMap<string, BotTrigger | null>;
+  /** Firings newest first, per trigger. */
+  readonly firings: ReadonlyMap<string, ReadonlyArray<BotTriggerFiring>>;
+}
+
+export const EMPTY_BOT_TRIGGER_CHANGES: BotTriggerChanges = {
+  triggers: new Map(),
+  firings: new Map(),
+};
+
+export const foldBotTriggerChange = (
+  changes: BotTriggerChanges,
+  change: BotTriggerChange,
+): BotTriggerChanges => {
+  switch (change._tag) {
+    case "trigger":
+      return {
+        ...changes,
+        triggers: new Map(changes.triggers).set(change.trigger.id, change.trigger),
+      };
+    case "trigger-deleted":
+      return { ...changes, triggers: new Map(changes.triggers).set(change.triggerId, null) };
+    case "firing": {
+      const { firing } = change;
+      const seen = (changes.firings.get(firing.triggerId) ?? []).filter(
+        (candidate) => candidate.id !== firing.id,
+      );
+      return {
+        ...changes,
+        firings: new Map(changes.firings).set(firing.triggerId, [firing, ...seen]),
+      };
+    }
+  }
+};
+
+/** Listed triggers with watched changes applied, oldest first like the server's list. */
+export const applyTriggerChanges = (
+  listed: ReadonlyArray<BotTrigger>,
+  changes: BotTriggerChanges,
+  botId?: string,
+): ReadonlyArray<BotTrigger> => {
+  const merged = new Map(listed.map((trigger) => [trigger.id, trigger]));
+  for (const [id, trigger] of changes.triggers) {
+    if (trigger === null) merged.delete(id);
+    else if (botId === undefined || trigger.botId === botId) merged.set(id, trigger);
+  }
+  return [...merged.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+};
+
+/** A page of firings with watched ones in front, without repeats. */
+export const applyFiringChanges = (
+  listed: ReadonlyArray<BotTriggerFiring>,
+  changes: BotTriggerChanges,
+  triggerId: string,
+): ReadonlyArray<BotTriggerFiring> => {
+  const watched = changes.firings.get(triggerId) ?? [];
+  const byId = new Map(watched.map((firing) => [firing.id, firing]));
+  return [...watched, ...listed.filter((firing) => !byId.has(firing.id))];
+};
+
 /** Bots live on one environment, which runs them; every request stays on that host. */
 export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   return {
@@ -305,6 +371,44 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     dismissSuggestion: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:dismiss-suggestion",
       tag: BD.dismissSuggestion,
+    }),
+    listTriggers: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:list-triggers",
+      tag: BT.listTriggers,
+    }),
+    triggerFirings: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:trigger-firings",
+      tag: BT.triggerFirings,
+    }),
+    triggerChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:bots:trigger-changes",
+      tag: BT.watchTriggers,
+      transform: (stream) =>
+        stream.pipe(Stream.scan(() => EMPTY_BOT_TRIGGER_CHANGES, foldBotTriggerChange)),
+    }),
+    saveTrigger: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:save-trigger",
+      tag: BT.saveTrigger,
+    }),
+    deleteTrigger: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:delete-trigger",
+      tag: BT.deleteTrigger,
+    }),
+    setTriggerEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:set-trigger-enabled",
+      tag: BT.setTriggerEnabled,
+    }),
+    repinTrigger: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:repin-trigger",
+      tag: BT.repinTrigger,
+    }),
+    testTrigger: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:test-trigger",
+      tag: BT.testTrigger,
+    }),
+    rotateTriggerToken: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:rotate-trigger-token",
+      tag: BT.rotateTriggerToken,
     }),
   };
 }

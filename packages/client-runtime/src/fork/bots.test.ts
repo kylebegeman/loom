@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import type { BotBatch, BotBatchItem, BotDefinition, BotRun } from "@t3tools/contracts/fork";
+import type {
+  BotBatch,
+  BotBatchItem,
+  BotDefinition,
+  BotRun,
+  BotTrigger,
+  BotTriggerFiring,
+} from "@t3tools/contracts/fork";
 import {
   applyBatchChanges,
   applyBatchItemChanges,
   applyBotChanges,
+  applyFiringChanges,
   applyInboxChanges,
   applyRunChanges,
+  applyTriggerChanges,
   EMPTY_BOT_BATCH_CHANGES,
+  EMPTY_BOT_TRIGGER_CHANGES,
   EMPTY_BOTS_CHANGES,
   foldBotBatchChange,
+  foldBotTriggerChange,
   foldBotsChange,
   type BotsChanges,
   waitingBotRunThreads,
@@ -246,5 +257,73 @@ describe("waitingBotRunThreads", () => {
       shell("thread-e", { hasPendingApprovals: true }),
     ]);
     expect(waiting.map((thread) => thread.id)).toEqual(["bot-run-b", "bot-run-a"]);
+  });
+});
+
+const trigger = (id: string, botId: string, createdAt: string, name = id): BotTrigger => ({
+  id,
+  botId,
+  name,
+  event: { kind: "merge-conflict" },
+  mapping: {},
+  enabled: true,
+  cooldownMinutes: 0,
+  dailyLimit: 10,
+  followLatest: false,
+  pinnedVersion: 1,
+  createdBy: "user",
+  createdAt,
+  updatedAt: createdAt,
+  lastFiredAt: null,
+});
+
+const firing = (id: string, triggerId: string, firedAt: string): BotTriggerFiring => ({
+  id,
+  triggerId,
+  eventKey: id,
+  eventSummary: id,
+  firedAt,
+  outcome: "run",
+  runId: null,
+  reason: null,
+});
+
+describe("bot trigger changes", () => {
+  const first = "trg_00000000000000000001";
+  const second = "trg_00000000000000000002";
+  const other = "trg_00000000000000000003";
+
+  it("edits, adds and removes listed triggers, keeping a bot's page to that bot", () => {
+    const listed = [trigger(first, "a", "2026-10-20T10:00:00.000Z")];
+    const changes = [
+      {
+        _tag: "trigger" as const,
+        trigger: trigger(first, "a", "2026-10-20T10:00:00.000Z", "Renamed"),
+      },
+      { _tag: "trigger" as const, trigger: trigger(second, "a", "2026-10-20T09:00:00.000Z") },
+      { _tag: "trigger" as const, trigger: trigger(other, "b", "2026-10-20T11:00:00.000Z") },
+    ].reduce(foldBotTriggerChange, EMPTY_BOT_TRIGGER_CHANGES);
+
+    expect(applyTriggerChanges(listed, changes, "a").map((t) => [t.id, t.name])).toEqual([
+      [second, second],
+      [first, "Renamed"],
+    ]);
+    expect(applyTriggerChanges(listed, changes).map((t) => t.id)).toEqual([second, first, other]);
+
+    const deleted = foldBotTriggerChange(changes, { _tag: "trigger-deleted", triggerId: first });
+    expect(applyTriggerChanges(listed, deleted, "a").map((t) => t.id)).toEqual([second]);
+  });
+
+  it("puts new firings in front of a fetched page without repeating one", () => {
+    const listed = [firing("f1", first, "2026-10-20T10:00:00.000Z")];
+    const changes = [
+      firing("f2", first, "2026-10-20T10:05:00.000Z"),
+      firing("f1", first, "2026-10-20T10:00:00.000Z"),
+      firing("f3", other, "2026-10-20T10:06:00.000Z"),
+    ].reduce(
+      (current, next) => foldBotTriggerChange(current, { _tag: "firing", firing: next }),
+      EMPTY_BOT_TRIGGER_CHANGES,
+    );
+    expect(applyFiringChanges(listed, changes, first).map((f) => f.id)).toEqual(["f1", "f2"]);
   });
 });

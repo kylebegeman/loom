@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BotIcon, InboxIcon, LayersIcon, PlayIcon } from "lucide-react";
+import { BotIcon, InboxIcon, LayersIcon, PlayIcon, ZapIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -26,6 +26,8 @@ export interface BotsPaletteContext {
   readonly runBot: (botId: string) => Promise<void>;
   /** Null while the server cannot run batches. */
   readonly runBotOnMany: ((botId: string) => Promise<void>) | null;
+  /** Null while the server has no triggers or this connection cannot change them. */
+  readonly newTrigger: ((botId: string) => Promise<void>) | null;
   /** Null while the server cannot draft bots from threads or this connection cannot save. */
   readonly saveAsBot: {
     readonly allowed: (thread: ScopedThreadRef) => boolean;
@@ -77,6 +79,19 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
             icon: icon(BotIcon),
             run: () => runOnMany(bot.id),
           }));
+    const newTrigger = context.newTrigger;
+    const triggerItems: CommandPaletteActionItem[] =
+      newTrigger === null
+        ? []
+        : context.runnable.map((bot) => ({
+            kind: "action",
+            value: `action:loom:bots:new-trigger:${bot.id}`,
+            title: bot.name,
+            ...(bot.description ? { description: bot.description } : {}),
+            searchTerms: [bot.name, bot.id],
+            icon: icon(BotIcon),
+            run: () => newTrigger(bot.id),
+          }));
     return [
       {
         kind: "action",
@@ -125,6 +140,19 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
               groups: [{ value: "bots-run-many", label: "Bots", items: manyItems }],
             },
           ]),
+      ...(triggerItems.length === 0
+        ? []
+        : [
+            {
+              kind: "submenu" as const,
+              value: "action:loom:bots:new-trigger",
+              title: "New bot trigger...",
+              searchTerms: ["bots", "trigger", "webhook", "schedule", "automate", "checks", "when"],
+              icon: icon(ZapIcon),
+              addonIcon: icon(ZapIcon, ADDON_ICON_CLASS),
+              groups: [{ value: "bots-new-trigger", label: "Bots", items: triggerItems }],
+            },
+          ]),
     ];
   },
 };
@@ -135,6 +163,7 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   const { host, live, bots: listed } = useBots();
   const canRun = useLibraryPermission(bots.run, host.environmentId) && host.connected;
   const canSave = useLibraryPermission(bots.save, host.environmentId) && host.connected;
+  const canTrigger = useLibraryPermission(bots.saveTrigger, host.environmentId) && host.connected;
   if (!live) return null;
   const capabilities = host.environment?.serverConfig?.environment.capabilities;
   return {
@@ -147,6 +176,14 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
     runBotOnMany: host.batchesSupported
       ? (botId) => navigate({ to: "/loom/bots", search: { bot: botId, many: botId } })
       : null,
+    newTrigger:
+      host.triggersSupported && canTrigger
+        ? (botId) =>
+            navigate({
+              to: "/loom/bots",
+              search: { bot: botId, tab: "triggers", newTrigger: botId },
+            })
+        : null,
     saveAsBot:
       host.fromThreadSupported && canSave
         ? {

@@ -1,6 +1,7 @@
 # L97: Event triggers
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Bots run when something happens, not only when someone asks. Kyle binds a bot to an event and
 maps the event's fields to the bot's inputs: "When a check fails on any pull request in Loom, run

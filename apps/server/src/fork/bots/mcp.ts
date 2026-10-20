@@ -19,7 +19,10 @@ import {
   BotSuggestion,
   BotsRetryBatchInput,
   BotsRetryInput,
+  BotsSaveTriggerInput,
   BotsUsageResult,
+  BotTrigger,
+  BotTriggerId,
   BOTS_LIST_RUNS_MAX_LIMIT,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
@@ -35,6 +38,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
+import { BotTriggers } from "./triggers/BotTriggers.ts";
 
 /** A waiting run call returns the run as it stands after this, even if it is still going. */
 export const AGENT_RUN_WAIT_MAX_MS = 10 * 60 * 1000;
@@ -194,6 +198,28 @@ export const BotsToolkit = Toolkit.make(
     success: Schema.Struct({ suggestions: Schema.Array(BotSuggestion) }),
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_triggers", {
+    description:
+      "List bot triggers, optionally for one bot: what event each listens for, how event fields map to the bot's inputs, its cooldown and daily limit, and when it last fired.",
+    parameters: Schema.Struct({ botId: Schema.optionalKey(BotId) }),
+    success: Schema.Struct({ triggers: Schema.Array(BotTrigger) }),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_save_trigger", {
+    description:
+      "Create or update a trigger that runs a bot when an event happens: a pull request's checks start failing, a pull request opens, a thread settles in a project, a schedule comes due, a webhook arrives, or `scripts/fork/loom.sh integrate` hits merge conflicts. mapping fills each bot input from an event field ({field}) or a fixed value ({value}); every required input needs one. Webhook and merge conflict triggers return webhook.url (or webhook.path on this server) to give the sender. Runs start with this thread's runtime mode as their ceiling, and a trigger skips its runs once the bot changes unless followLatest is set.",
+    parameters: BotsSaveTriggerInput,
+    success: BotTrigger,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_set_trigger_enabled", {
+    description: "Turn a bot trigger on or off. A schedule trigger turned on counts from now.",
+    parameters: Schema.Struct({ triggerId: BotTriggerId, enabled: Schema.Boolean }),
+    success: BotTrigger,
+    failure,
+    dependencies: callerDependencies,
+  }),
 );
 
 const agentCaller = loadCaller().pipe(
@@ -355,6 +381,28 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_suggestions: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(BotDrafts, (drafts) => drafts.suggestions({}))),
+      ),
+      loom_bots_triggers: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(BotTriggers, (triggers) =>
+            triggers.list(input.botId).pipe(Effect.map((list) => ({ triggers: list }))),
+          ),
+        ),
+      ),
+      loom_bots_save_trigger: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotTriggers, (triggers) => triggers.save(input, caller)),
+          );
+        }),
+      ),
+      loom_bots_set_trigger_enabled: McpToolAccess.writes((input) =>
+        onHost(
+          Effect.flatMap(BotTriggers, (triggers) =>
+            triggers.setEnabled(input.triggerId, input.enabled),
+          ),
+        ),
       ),
     };
   }),

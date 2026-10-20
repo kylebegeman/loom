@@ -57,6 +57,7 @@ export interface RunRow {
   readonly cached_input_tokens: number | null;
   readonly output_tokens: number | null;
   readonly usage_status: string | null;
+  readonly trigger_id: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -148,6 +149,7 @@ export const toRun = (row: RunRow): BotRun | null => {
       ? {}
       : { checkoutThreadId: ThreadId.make(row.checkout_thread_id) }),
     ...(row.usage_status == null ? {} : { usage: toUsage(row) }),
+    ...(row.trigger_id == null ? {} : { triggerId: row.trigger_id }),
   };
 };
 
@@ -234,7 +236,7 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
