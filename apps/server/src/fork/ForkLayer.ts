@@ -1,3 +1,24 @@
+import * as GitHubTerminal from "./vault/GitHubTerminal.ts";
+import * as VaultGitHub from "./vault/VaultGitHub.ts";
+import * as GitHubTransport from "./vault/GitHubTransport.ts";
+import * as GitHubCli from "./vault/GitHubCli.ts";
+import * as VaultPromptContext from "./vault/VaultPromptContext.ts";
+import * as VaultProfiles from "./vault/VaultProfiles.ts";
+import * as VaultReferences from "./vault/VaultReferences.ts";
+import * as VaultLaunch from "./vault/VaultLaunch.ts";
+import * as BrokerIdentity from "./vault/BrokerIdentity.ts";
+import * as VaultSsh from "./vault/VaultSsh.ts";
+import * as SshCrypto from "./vault/SshCrypto.ts";
+import * as SshTransport from "./vault/SshTransport.ts";
+import * as VaultWorkloads from "./vault/VaultWorkloads.ts";
+import { VaultWorkloadHttpRoutes } from "./vault/workload-http.ts";
+import { VaultBrokerHttpRoutes } from "./vault/broker-http.ts";
+import * as VaultBrokers from "./vault/VaultBrokers.ts";
+import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
+import * as VaultAccess from "./vault/VaultAccess.ts";
+import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
+import * as VaultCore from "./vault/VaultCore.ts";
+import * as OpenBaoStore from "./vault/OpenBaoStore.ts";
 import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
@@ -55,6 +76,59 @@ import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
+const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
+const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
+
+const layerVaultAccess = VaultAccess.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
+);
+
+const layerVaultBrokers = VaultBrokers.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultStore, BrokerCrypto.layer)),
+);
+const layerVaultWorkloads = VaultWorkloads.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultBrokers, layerVaultAccess, BrokerCrypto.layer)),
+);
+
+const layerVaultSsh = VaultSsh.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      layerVaultWorkloads,
+      SshCrypto.layer,
+      SshTransport.layer.pipe(Layer.provide(SshCrypto.layer)),
+    ),
+  ),
+);
+
+const layerVaultGitHub = VaultGitHub.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      layerVaultAccess,
+      GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+      GitHubCli.layer,
+      GitHubTerminal.layer,
+      ProjectStore.layer,
+    ),
+  ),
+);
+
+const layerVaultProfiles = VaultProfiles.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultStore,
+      layerVaultAccess,
+      layerVaultSsh,
+      layerVaultGitHub,
+      ProjectStore.layer,
+    ),
+  ),
+);
+const layerVaultReferences = VaultReferences.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess)),
+);
+
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
@@ -73,6 +147,31 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  layerVaultGitHub,
+  VaultPromptContext.layer.pipe(
+    Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
+  ),
+  layerVaultProfiles,
+  layerVaultReferences,
+  VaultLaunch.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerVaultProfiles,
+        layerVaultGitHub,
+        layerVaultSsh,
+        layerVaultWorkloads,
+        BrokerCrypto.layer,
+        BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
+        ProjectStore.layer,
+      ),
+    ),
+  ),
+  layerVaultSsh,
+  layerVaultBrokers,
+  layerVaultWorkloads,
+  layerVaultCore,
+  layerVaultAccess,
+  VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
@@ -197,6 +296,8 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
   Layer.empty,
+  VaultBrokerHttpRoutes,
+  VaultWorkloadHttpRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

@@ -1713,8 +1713,7 @@ it.effect("ProviderSessionManagerV2 releases sessions in parallel on server shut
 
       const stopping = yield* manager.shutdown.pipe(Effect.forkChild);
       yield* TestClock.adjust("30 seconds");
-      yield* Effect.yieldNow;
-      assert.isDefined(stopping.pollUnsafe());
+      yield* Fiber.join(stopping); // fork: ext-vault-terminal: await private connection-file cleanup after the release deadline.
     }).pipe(
       Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, hangSessionScopeClose: true })),
     );

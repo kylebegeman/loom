@@ -2,8 +2,8 @@
 
 Loom is a personal fork of [T3 Code](https://github.com/pingdotgg/t3code). The fork is
 additive: it tracks upstream and keeps upstream's internal names so merges stay easy.
-The `fork/branding` work is purely cosmetic. The app shows the name "Loom" and its own
-icon; behavior, data locations and identifiers are upstream's.
+The branding layer supplies the Loom display name, icon and primary CLI command. Existing
+data locations, protocol names and compatibility identifiers remain upstream-compatible.
 
 ## Implementation packets
 
@@ -63,34 +63,81 @@ The shared plumbing packets register into, specified in
 [docs/fork/packets/EXTENSION-POINTS.md](docs/fork/packets/EXTENSION-POINTS.md). Find them with
 `git grep -n "fork: ext-"`.
 
-| File                                                                                         | Marker            | Why                                                                                                         |
-| -------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/ws.ts`                                                                      | `ext-core`        | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                                              |
-| `apps/server/src/server.ts`                                                                  | `ext-core`        | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes.                             |
-| `apps/server/src/environment/ServerEnvironment.ts`                                           | `ext-core`        | Advertises `capabilities.loomFeatures`.                                                                     |
-| `packages/contracts/src/environment.ts`                                                      | `ext-core`        | Optional `loomFeatures` capability key.                                                                     |
-| `packages/client-runtime/src/rpc/protocol.ts`                                                | `ext-core`        | Clients speak `LoomWsRpcGroup`.                                                                             |
-| `packages/client-runtime/src/rpc/client.ts`                                                  | `ext-core`        | Fork streaming tags join the client's stream unions.                                                        |
-| `packages/contracts/package.json` (no marker)                                                | `ext-core`        | `./fork` export and schema-free `./fork/model-check-limits` for geometry workers.                           |
-| `apps/web/src/routes/__root.tsx`                                                             | `ext-web-root`    | Mounts `ForkRoot` in the authenticated app shell.                                                           |
-| `apps/web/src/rightPanelStore.ts`                                                            | `ext-panels`      | The generic `"fork"` surface kind and the `openSurface` action.                                             |
-| `apps/web/src/components/RightPanelTabs.tsx`                                                 | `ext-panels`      | Fork panels in the launcher and "+" menu; their tab titles and icons.                                       |
-| `apps/web/src/components/ChatView.tsx`                                                       | `ext-panels`      | Renders fork panels, passes panel actions to both tab bars, and lets focusable canvases own keyboard input. |
-| `apps/web/src/components/CommandPalette.tsx`                                                 | `ext-palette`     | Adds fork palette items to the root action list.                                                            |
-| `packages/contracts/src/keybindings.ts`                                                      | `ext-keybindings` | Fork `loom.*` commands join the static keybinding command list.                                             |
-| `apps/web/src/components/settings/KeybindingsSettings.logic.ts`                              | `ext-keybindings` | Fork feature names in keybinding labels, such as "Device QA".                                               |
-| `packages/client-runtime/package.json` (no marker)                                           | `ext-core`        | `./fork` subpath export, after `./errors`.                                                                  |
-| `apps/web/src/components/settings/settingsSearch.ts`                                         | `ext-settings`    | Adds the Loom settings route, label and scope.                                                              |
-| `apps/web/src/components/settings/SettingsSidebarNav.tsx`                                    | `ext-settings`    | Gives the Loom page its icon.                                                                               |
-| `apps/web/src/routes/settings.loom.tsx` (fork-owned)                                         | `ext-settings`    | Hosts packet settings in the route directory.                                                               |
-| `apps/web/src/routeTree.gen.ts` (generated)                                                  | `ext-settings`    | Regenerated by the web build to include the Loom route.                                                     |
-| `apps/server/src/binCli.ts`                                                                  | `ext-cli`         | Registers service-backed fork CLI commands through authenticated MCP.                                       |
-| `apps/server/src/mcp/McpHttpServer.ts`                                                       | `ext-mcp`         | Registers the fork's toolkits on the shared agent server.                                                   |
-| `packages/contracts/src/clientRpcPermissions.ts`, `apps/server/src/auth/RpcAuthorization.ts` | `ext-core`        | Add fork client grants while preserving the exhaustive upstream server scope map.                           |
-| `packages/client-runtime/src/state/runtime.ts`, `usage.test.ts`                              | `ext-core`        | Expose cancellable document results through the shared command boundary.                                    |
-| `apps/server/src/observability/RpcInstrumentation.ts`                                        | `ext-core`        | Label fork RPC spans within the shared middleware.                                                          |
-| `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`      | Persist and reopen fork documents; retire archived inspector history.                                       |
-| `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header` | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
+| File                                                                                         | Marker                      | Why                                                                                                         |
+| -------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `packages/provider-core/src/server/orchestrationInstructions.ts`                             | `fork: ext-vault`           | Add capability-aware Vault guidance through existing provider instruction channels.                         |
+| `apps/server/src/orchestration-v2/ProviderTurnStartService.ts`                               | `fork: ext-vault-preflight` | Check explicit Vault launch requirements before opening a provider; settle blocked runs.                    |
+| `apps/server/src/orchestration-v2/ProviderTurnControlService.ts`                             | `fork: ext-vault-preflight` | Recheck explicit Vault requirements before steering an active provider.                                     |
+| `apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts`                          | `fork: ext-vault-preflight` | Prove explicit unavailable or invalid attachments never open a provider.                                    |
+| `apps/server/src/ws.ts`                                                                      | `ext-core`                  | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                                              |
+| `apps/server/src/server.ts`                                                                  | `ext-core`                  | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes.                             |
+| `apps/server/src/environment/ServerEnvironment.ts`                                           | `ext-core`                  | Advertises `capabilities.loomFeatures`.                                                                     |
+| `packages/contracts/src/environment.ts`                                                      | `ext-core`                  | Optional `loomFeatures` capability key.                                                                     |
+| `packages/client-runtime/src/rpc/protocol.ts`                                                | `ext-core`                  | Clients speak `LoomWsRpcGroup`.                                                                             |
+| `packages/client-runtime/src/rpc/client.ts`                                                  | `ext-core`                  | Fork streaming tags join the client's stream unions.                                                        |
+| `packages/contracts/package.json` (no marker)                                                | `ext-core`                  | `./fork` export and schema-free `./fork/model-check-limits` for geometry workers.                           |
+| `apps/web/src/routes/__root.tsx`                                                             | `ext-web-root`              | Mounts `ForkRoot` in the authenticated app shell.                                                           |
+| `apps/web/src/rightPanelStore.ts`                                                            | `ext-panels`                | The generic `"fork"` surface kind and the `openSurface` action.                                             |
+| `apps/web/src/components/RightPanelTabs.tsx`                                                 | `ext-panels`                | Fork panels in the launcher and "+" menu; their tab titles and icons.                                       |
+| `apps/web/src/components/ChatView.tsx`                                                       | `ext-panels`                | Renders fork panels, passes panel actions to both tab bars, and lets focusable canvases own keyboard input. |
+| `apps/web/src/components/CommandPalette.tsx`                                                 | `ext-palette`               | Adds fork palette items to the root action list.                                                            |
+| `packages/contracts/src/keybindings.ts`                                                      | `ext-keybindings`           | Fork `loom.*` commands join the static keybinding command list.                                             |
+| `apps/web/src/components/settings/KeybindingsSettings.logic.ts`                              | `ext-keybindings`           | Fork feature names in keybinding labels, such as "Device QA".                                               |
+| `packages/client-runtime/package.json` (no marker)                                           | `ext-core`                  | `./fork` subpath export, after `./errors`.                                                                  |
+| `apps/web/src/components/settings/settingsSearch.ts`                                         | `ext-settings`              | Adds the Loom settings route, label and scope.                                                              |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx`                                    | `ext-settings`              | Gives the Loom page its icon.                                                                               |
+| `apps/web/src/routes/settings.loom.tsx` (fork-owned)                                         | `ext-settings`              | Hosts packet settings in the route directory.                                                               |
+| `apps/web/src/routeTree.gen.ts` (generated)                                                  | `ext-settings`              | Regenerated by the web build to include the Loom route.                                                     |
+| `apps/server/src/binCli.ts`                                                                  | `ext-cli`                   | Registers service-backed fork CLI commands through authenticated MCP.                                       |
+| `apps/server/src/mcp/McpHttpServer.ts`                                                       | `ext-mcp`                   | Registers the fork's toolkits on the shared agent server.                                                   |
+| `packages/contracts/src/clientRpcPermissions.ts`, `apps/server/src/auth/RpcAuthorization.ts` | `ext-core`                  | Add fork client grants while preserving the exhaustive upstream server scope map.                           |
+| `packages/client-runtime/src/state/runtime.ts`, `usage.test.ts`                              | `ext-core`                  | Expose cancellable document results through the shared command boundary.                                    |
+| `apps/server/src/observability/RpcInstrumentation.ts`                                        | `ext-core`                  | Label fork RPC spans within the shared middleware.                                                          |
+| `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`                | Persist and reopen fork documents; retire archived inspector history.                                       |
+| `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header`           | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
+
+### Native Vault terminal connection seams
+
+`fork: ext-vault-terminal` supplies a private session connection-file path to native
+Codex shell configuration and Claude query environments. Provider-session rotation and cleanup
+remove prior files; existing MCP credential revocation remains authoritative. Files are plaintext
+with owner-only POSIX permissions, not same-user process isolation. See
+[L85](docs/fork/packets/L85-vault-delivery/SEAMS.md).
+
+| File                                                                | Purpose                                                        |
+| ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `packages/provider-core/src/server/mcpSession.ts`                   | Optional connection path and shared environment helper.        |
+| `packages/provider-core/src/server/McpProviderSessions.ts`          | Session-owned creation, replacement and cleanup.               |
+| `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`       | Thread-local shell environment configuration.                  |
+| `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts`  | Native configuration regression coverage.                      |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`      | Query-local terminal environment configuration.                |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts` | Launched query environment regression coverage.                |
+| `apps/server/src/orchestration-v2/ProviderSessionManager.test.ts`   | Await connection cleanup after the parallel shutdown deadline. |
+
+### Development fixture seam
+
+| File                                 | Marker         | Why                                                                                         |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
+| `apps/server/scripts/seed-dev-db.ts` | `dev-fixtures` | Permit recognized worktree fixture homes while retaining live-state and symlink protection. |
+
+### Vault seams
+
+| File                                                                         | Marker                     | Why                                                                                                                  |
+| ---------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private input transfers durably to an idempotent destination operation.                                         |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries and cleanup failures.                                                                 |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core`               | Mount Vault management in the selected computer's native settings.                                                   |
+| `apps/web/src/components/chat/ChatComposer.tsx`                              | `vault-launch-ui`          | Mount the Vault reference/profile attachment control in the prompt.                                                  |
+| `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-launch-ui`          | Review and attach Vault requirements to scheduled prompts.                                                           |
+| `apps/mobile/src/features/threads/ThreadComposer.tsx`                        | `vault-launch-ui`          | Mount native Vault prompt attachment controls.                                                                       |
+| `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`    | `vault-launch-ui`          | Mount native Vault controls in the scheduled prompt editor.                                                          |
+| `apps/server/src/scheduledTasks/ScheduledTaskService.ts`                     | `vault-scheduled-outcomes` | Exact scheduled-message ownership and task outcome projection; [L76](docs/fork/packets/L76-vault-profiles/SEAMS.md). |
+| `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-scheduled-outcomes` | Review/retry controls for failed Vault-attached scheduled runs.                                                      |
+| `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`    | `vault-scheduled-outcomes` | Capability-aware native outcome and recovery guidance.                                                               |
+
+L79's OpenBao record foundation is in progress. See the [packet](docs/fork/packets/L79-vault-core/),
+[user help](docs/fork/user/vault.md) and [operating guide](docs/fork/operations/vault.md).
+No live deployment or personal credential migration is part of the foundation milestone.
 
 ### Dependencies added by packets
 
@@ -218,6 +265,38 @@ L05 adds the outline toggle and column to the file viewer in
 `apps/web/src/components/files/FilePreviewPanel.tsx` (`fork: file-outline`, 3 marker
 lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
 [user help](docs/fork/user/file-outline.md).
+
+## Loom CLI and pairing copy
+
+User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`
+alongside its compatibility executable, and new pairing credentials are labelled `Loom pairing`.
+Desktop command settings now install `loom`; existing `t3` launchers and package aliases remain
+compatible. Stored connection identifiers are unchanged. No global command was installed during
+this task. Package-runner examples keep the actual upstream npm package name; do not substitute
+`npx loom`, which could fetch an unrelated package.
+
+| File                                                                | Marker      | Why                                           |
+| ------------------------------------------------------------------- | ----------- | --------------------------------------------- |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `brand`     | Loom pairing instructions in the scanner.     |
+| `apps/web/src/components/onboarding/WelcomeWizard.tsx`              | `brand`     | Loom CLI pairing/start examples.              |
+| `apps/server/src/binCli.ts`                                         | `brand`     | Loom CLI root/help naming.                    |
+| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`        | `brand`     | Loom server errors and new credential labels. |
+| `apps/server/package.json`                                          | (no marker) | Add the `loom` executable alias.              |
+
+| `apps/desktop/src/app/DesktopCliCommand.ts` | `brand` | Install, inspect and remove the Loom command without replacing unrelated executables. |
+| `apps/desktop/src/app/DesktopCliShim.ts` | `brand` | Use the Loom launcher filename; preserve legacy shim ownership and runtime identifiers. |
+| `apps/desktop/src/app/DesktopCliCommand.test.ts` | `brand` | Exercise installation, ownership, PATH shadowing and removal under the Loom name. |
+| `apps/desktop/src/app/DesktopCliShim.test.ts` | `brand` | Verify moved-install messaging uses Loom. |
+| `apps/server/src/cli/invocation.ts` | `brand` | Suggest Loom for direct invocations; keep actual npm package runner specs compatible. |
+| `apps/server/src/cli/invocation.test.ts` | `brand` | Verify direct Loom invocations alongside actual package runner and launcher paths. |
+| `apps/server/src/cli/server.ts` | `brand` | Use Loom in server command help and unknown-command examples. |
+| `apps/web/src/components/settings/CliCommandSettingsRow.tsx` | `brand` | Describe the installed Loom command and actionable PATH errors. |
+| `apps/web/src/components/settings/settingsSearch.ts` | `brand` | Discover the Loom command setting by its product name. |
+| `apps/web/src/components/settings/SourceControlSettings.tsx` | `brand` | Recommend Loom GitHub setup in connection guidance. |
+
+| `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
+| `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
+| `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
 
 `LOOM_SERVER_SELF_UPDATE=false` stops the server from updating its own runtime
 (`fork: runtime-owner`; `apps/server/src/cloud/selfUpdate.ts`, 4 marker lines,

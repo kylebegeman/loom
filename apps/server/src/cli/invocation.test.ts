@@ -1,3 +1,4 @@
+// fork: brand: plain commands use Loom; actual npm package runner detection stays compatible.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -49,7 +50,7 @@ it("treats stable installs as direct invocations", () => {
   ]) {
     assert.equal(
       formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }),
-      "t3 serve",
+      "loom serve",
     );
   }
 });
@@ -95,7 +96,7 @@ it("formats serve suggestions to match the launching command", () => {
       entryPath: "/usr/local/lib/node_modules/t3/dist/bin.mjs",
       version: "0.0.31-nightly.20260729",
     }),
-    "t3 serve",
+    "loom serve",
   );
 });
 
@@ -119,7 +120,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const bin = yield* fs.makeTempDirectoryScoped();
-    yield* fs.writeFileString(path.join(bin, "t3"), "#!/bin/sh\n", { mode: 0o755 });
+    yield* fs.writeFileString(path.join(bin, "loom"), "#!/bin/sh\n", { mode: 0o755 });
     return bin;
   });
 
@@ -140,7 +141,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           entry: "/home/theo/.local/lib/node_modules/t3/dist/bin.mjs",
           path: yield* pathWithT3,
         }),
-      ).toBe('sudo env "PATH=$PATH" t3 browser setup');
+      ).toBe('sudo env "PATH=$PATH" loom browser setup');
     }).pipe(Effect.scoped),
   );
 
@@ -161,7 +162,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
 
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
-        'sudo env "PATH=$PATH" t3 browser setup',
+        'sudo env "PATH=$PATH" loom browser setup',
       );
 
       expect(
@@ -174,7 +175,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
       expect(
         yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
-      ).toBe('sudo env "PATH=$PATH" t3 browser setup');
+      ).toBe('sudo env "PATH=$PATH" loom browser setup');
     }).pipe(Effect.scoped),
   );
 });
@@ -205,7 +206,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       );
       // Without a launcher, plain `t3` with PowerShell-quoted arguments.
       expect((yield* hostCommand("win32", {})).command).toBe(
-        't3 doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+        'loom doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
       );
       // Typographic quotes also delimit PowerShell strings; doubling keeps them.
       expect(
@@ -216,7 +217,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Arguments, ["C:\\t3.exe", "C:\\bin.mjs"]),
           Effect.provideService(HostProcess.IsExecutable, false),
         )).command,
-      ).toBe('t3 doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
+      ).toBe('loom doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
       // POSIX hosts keep single quotes for the same input. The shim prefix is
       // a host path, so only the arguments are asserted.
       expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(

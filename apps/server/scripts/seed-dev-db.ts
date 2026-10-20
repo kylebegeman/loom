@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Fixture state is isolated before opening SQLite.
+import { isProtectedFixturePath } from "../src/fork/dev-fixtures/fixtureHome.ts"; // fork: dev-fixtures
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -229,9 +230,11 @@ export const runSeedDevDb = Effect.fn("runSeedDevDb")(function* (
   },
   options: { readonly sharedHome?: string | undefined } = {},
 ) {
+  // fork: dev-fixtures
+  const worktreeHome = yield* resolveWorktreeT3Home(process.cwd());
   const requestedHome =
     input.baseDir ??
-    (yield* resolveWorktreeT3Home(process.cwd())) ??
+    worktreeHome ??
     NodePath.resolve(import.meta.dirname, "../../..", ".t3-fixtures");
   const [baseDir, sharedHome] = yield* io(() =>
     Promise.all([
@@ -239,14 +242,25 @@ export const runSeedDevDb = Effect.fn("runSeedDevDb")(function* (
       canonicalPath(NodePath.resolve(options.sharedHome ?? NodePath.join(NodeOS.homedir(), ".t3"))),
     ]),
   );
-  if (contains(sharedHome, baseDir)) return yield* new SeedDevDbError({ reason: "shared-home" });
+  // fork: dev-fixtures
+  const recognizedHome =
+    worktreeHome === undefined
+      ? null
+      : yield* io(async () =>
+          NodePath.join(await canonicalPath(NodePath.dirname(worktreeHome)), ".t3"),
+        );
+  // fork: dev-fixtures
+  if (isProtectedFixturePath(baseDir, sharedHome, baseDir, recognizedHome))
+    return yield* new SeedDevDbError({ reason: "shared-home" });
   const stateDir = NodePath.join(baseDir, "userdata");
   const databasePath = NodePath.join(stateDir, "statev2.sqlite");
   const markerPath = NodePath.join(stateDir, MARKER_FILE);
   const workspaceRoot = NodePath.join(baseDir, "fixtures", "sample-project");
   for (const target of [stateDir, databasePath, markerPath, workspaceRoot]) {
     const resolved = yield* io(() => canonicalPath(target));
-    if (contains(sharedHome, resolved)) return yield* new SeedDevDbError({ reason: "shared-home" });
+    // fork: dev-fixtures
+    if (isProtectedFixturePath(resolved, sharedHome, baseDir, recognizedHome))
+      return yield* new SeedDevDbError({ reason: "shared-home" });
     if (!contains(baseDir, resolved)) return yield* new SeedDevDbError({ reason: "outside-home" });
   }
   const exists = yield* io(() =>

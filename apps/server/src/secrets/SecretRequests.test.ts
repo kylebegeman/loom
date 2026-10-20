@@ -401,3 +401,57 @@ it.effect("a used value that cannot be deleted is not handed out", () =>
     { removeFails: true },
   ),
 );
+
+// fork: ext-vault
+it.effect("retains failed private transfers for their original operation only", () =>
+  withService(({ service }) =>
+    Effect.gen(function* () {
+      yield* service.answer({
+        threadId,
+        turnItemId,
+        answer: { type: "save", secret: "private-transfer-value" },
+      });
+      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
+      const input = { ref, projectId, operationId: "vault:item:save" };
+      yield* service.transfer(input, () => Effect.fail("backend-unavailable")).pipe(Effect.flip);
+      const other = yield* service
+        .transfer({ ...input, operationId: "another-destination" }, () => Effect.succeed("copied"))
+        .pipe(Effect.flip);
+      assert.equal(other.reason, "ref_unavailable");
+      const ordinary = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
+      assert.equal(ordinary.reason, "ref_unavailable");
+      assert.equal(
+        yield* service.transfer(input, (value) => Effect.succeed(value.length)),
+        "private-transfer-value".length,
+      );
+      assert.equal(
+        (yield* service.consume({ ref, projectId }).pipe(Effect.flip)).reason,
+        "ref_unavailable",
+      );
+    }),
+  ),
+);
+
+// fork: ext-vault
+it.effect("keeps committed transfers bound when source cleanup fails", () =>
+  withService(
+    ({ service }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "private-transfer-value" },
+        });
+        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
+        assert.equal(
+          yield* service.transfer({ ref, projectId, operationId: "vault:item:save" }, () =>
+            Effect.succeed("committed"),
+          ),
+          "committed",
+        );
+        const other = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
+        assert.equal(other.reason, "ref_unavailable");
+      }),
+    { removeFails: true },
+  ),
+);

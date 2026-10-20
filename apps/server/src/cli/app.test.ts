@@ -171,7 +171,8 @@ describe("t3 server command safety", () => {
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "home");
         const help = yield* runCli(["help"], { T3CODE_HOME: baseDir }).pipe(Effect.flip);
-        expect(help).toMatchObject({ _tag: "ShowHelp", commandPath: ["t3"], errors: [] });
+        // fork: brand
+        expect(help).toMatchObject({ _tag: "ShowHelp", commandPath: ["loom"], errors: [] });
         expect(yield* pathExists(baseDir)).toBe(false);
       }),
     ),

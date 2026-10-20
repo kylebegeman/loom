@@ -1,3 +1,4 @@
+import { VaultSettingsSection } from "../../fork/vault/VaultSettingsSection"; // fork: vault-core
 // fork: brand - Remote hosts may run upstream T3 Code or Loom.
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
@@ -196,6 +197,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             {/* fork: computer-naming - One name follows the computer across clients. */}
             <ComputerNameSection environmentId={environmentId} connected={connected} />
             <ComputerConnectSection environmentId={environmentId} connected={connected} />
+            {/* fork: vault-core */}
+            <VaultSettingsSection environmentId={environmentId} connected={connected} />
             <SettingsSection title="Connection">
               <ConnectionEnvironmentRow
                 environment={environment}

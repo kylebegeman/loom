@@ -1,0 +1,22 @@
+import { useEffect, useState } from "react";
+
+export function useVaultTime(deadlines: readonly (number | null)[]) {
+  const [now, setNow] = useState(Date.now);
+  const next = Math.min(
+    ...deadlines.filter((value): value is number => value !== null && value > now),
+  );
+  useEffect(() => {
+    if (!Number.isFinite(next)) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const remaining = next - Date.now();
+      timer =
+        remaining > 2_147_483_647
+          ? setTimeout(schedule, 2_147_483_647)
+          : setTimeout(() => setNow(Date.now()), Math.max(0, remaining) + 1);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [next]);
+  return now;
+}

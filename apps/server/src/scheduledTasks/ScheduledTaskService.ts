@@ -1,3 +1,4 @@
+import * as VaultScheduledOutcomes from "../fork/vault/VaultScheduledOutcomes.ts"; // fork: vault-scheduled-outcomes
 import {
   CommandId,
   MessageId,
@@ -358,6 +359,7 @@ export const layer = Layer.effect(
   ScheduledTaskService,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const vaultOutcomes = yield* VaultScheduledOutcomes.make; // fork: vault-scheduled-outcomes
     const crypto = yield* Crypto.Crypto;
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
@@ -409,7 +411,12 @@ export const layer = Layer.effect(
     const listRows = Effect.fn("ScheduledTaskService.listRows")(function* () {
       const rows = yield* selectAllRows();
       const origin = yield* readWebhookOrigin;
-      return yield* Effect.forEach(rows, (row) => decodeRow(row, origin), { concurrency: 1 });
+      // fork: vault-scheduled-outcomes
+      return yield* Effect.forEach(
+        rows,
+        (row) => decodeRow(row, origin).pipe(Effect.flatMap(vaultOutcomes.decorate)),
+        { concurrency: 1 },
+      );
     });
 
     const getRows = (id: ScheduledTaskId) => sql<ScheduledTaskRow>`
@@ -735,6 +742,8 @@ export const layer = Layer.effect(
         const messageId = MessageId.make(`scheduled-task-message:${fireKey}`);
         // A webhook prompt was rendered from the row when the request arrived.
         const prompt = webhook?.prompt ?? active.prompt;
+        // fork: vault-scheduled-outcomes
+        yield* vaultOutcomes.track(active, startedAtIso, messageId, prompt);
 
         // Effect.exit (not Effect.result) so defects and interruptions in the
         // dispatch are also captured and recorded as a failed run instead of
@@ -912,6 +921,13 @@ export const layer = Layer.effect(
     );
 
     yield* scheduler.register("scheduled-tasks", runDueTasks());
+    // fork: vault-scheduled-outcomes
+    yield* scheduler.register(
+      "vault-scheduled-outcomes",
+      vaultOutcomes.changed.pipe(
+        Effect.flatMap((changed) => (changed ? notifyChanged : Effect.void)),
+      ),
+    );
 
     const list: ScheduledTaskService["Service"]["list"] = () =>
       listRows().pipe(
@@ -1104,7 +1120,7 @@ export const layer = Layer.effect(
             taskError("Could not run schedule task.", { taskId: input.id, cause }),
           ),
         );
-        return { task: next };
+        return { task: yield* vaultOutcomes.decorate(next) }; // fork: vault-scheduled-outcomes
       });
 
     const rotateWebhookToken: ScheduledTaskService["Service"]["rotateWebhookToken"] = (input) =>

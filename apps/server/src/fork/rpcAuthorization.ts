@@ -1,3 +1,13 @@
+import { VAULT_GITHUB_WS_METHODS as VG } from "@t3tools/contracts/fork";
+import {
+  VAULT_PROFILE_WS_METHODS as VP,
+  VAULT_REFERENCE_WS_METHODS as VR,
+} from "@t3tools/contracts/fork";
+import { VAULT_SSH_WS_METHODS as VS } from "@t3tools/contracts/fork";
+import { VAULT_BROKER_WS_METHODS as VB } from "@t3tools/contracts/fork";
+import { VAULT_ACCESS_WS_METHODS as VA } from "@t3tools/contracts/fork";
+import { VAULT_CORE_WS_METHODS as V } from "@t3tools/contracts/fork";
+import { AuthAccessReadScope, AuthAccessWriteScope } from "@t3tools/contracts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
 import { LIBRARY_HEALTH_WS_METHODS as LH } from "@t3tools/contracts/fork";
@@ -36,6 +46,37 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [VP.list]: AuthAccessReadScope,
+  [VP.preview]: AuthAccessReadScope,
+  [VG.save]: AuthAccessWriteScope,
+  [VG.test]: AuthAccessWriteScope,
+  [VG.readiness]: AuthAccessWriteScope,
+  [VG.change]: AuthAccessWriteScope,
+  [VG.info]: AuthAccessReadScope,
+  [VG.list]: AuthAccessReadScope,
+  [VP.apply]: AuthAccessWriteScope,
+  [VP.pins]: AuthAccessReadScope,
+  [VP.retirePin]: AuthAccessWriteScope,
+  [VR.search]: AuthAccessReadScope,
+  [VR.describe]: AuthAccessReadScope,
+  [VS.info]: AuthAccessReadScope,
+  [VB.snapshot]: AuthAccessReadScope,
+  [VS.generate]: AuthAccessWriteScope,
+  [VS.trust]: AuthAccessWriteScope,
+  [VS.probe]: AuthAccessWriteScope,
+  [VB.begin]: AuthAccessWriteScope,
+  [VB.apply]: AuthAccessWriteScope,
+  [VA.catalog]: AuthAccessReadScope,
+  [VA.snapshot]: AuthAccessReadScope,
+  [VA.apply]: AuthAccessWriteScope,
+  [VA.preview]: AuthAccessReadScope,
+  [VA.explain]: AuthAccessReadScope,
+  [VA.readiness]: AuthAccessReadScope,
+  [V.status]: AuthAccessReadScope,
+  [V.list]: AuthAccessReadScope,
+  [V.save]: AuthAccessWriteScope,
+  [V.change]: AuthAccessWriteScope,
+  [V.reveal]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

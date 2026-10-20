@@ -62,7 +62,8 @@ export function GitHubRoutingSettings() {
                     {entry.target.label}
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-                    {connectionCatalogDisplayUrl(entry) ?? "T3 Connect"}
+                    {/* fork: brand */}
+                    {connectionCatalogDisplayUrl(entry) ?? "Loom Connect"}
                   </Text>
                 </View>
                 <Text className="text-sm text-foreground-muted">

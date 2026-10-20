@@ -117,7 +117,8 @@ export function formatCliCommand(input: {
 }): string {
   const runner = detectCliRunner(input.entryPath);
   if (runner === null) {
-    return `t3 ${input.subcommand}`;
+    // fork: brand
+    return `loom ${input.subcommand}`;
   }
   return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
 }
@@ -176,8 +177,10 @@ export const resolveHostCliCommand = (subcommand: string, args: ReadonlyArray<st
     const withArgs = (prefix: string) =>
       [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
     const command = yield* resolveCliCommand(subcommand);
-    if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
-    if (yield* isCommandAvailable("t3")) return { command: withArgs(command), launcher: false };
+    // fork: brand
+    if (command !== `loom ${subcommand}`) return { command: withArgs(command), launcher: false };
+    // fork: brand
+    if (yield* isCommandAvailable("loom")) return { command: withArgs(command), launcher: false };
     const launcher = yield* resolveInstallLauncher;
     if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
     // PowerShell runs a quoted path only through the call operator.

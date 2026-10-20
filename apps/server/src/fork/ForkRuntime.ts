@@ -1,3 +1,13 @@
+import type { VaultGitHub } from "./vault/VaultGitHub.ts";
+import type { VaultProfiles } from "./vault/VaultProfiles.ts";
+import type { VaultReferences } from "./vault/VaultReferences.ts";
+import type { VaultLaunch } from "./vault/VaultLaunch.ts";
+import type { VaultSsh } from "./vault/VaultSsh.ts";
+import type { VaultWorkloads } from "./vault/VaultWorkloads.ts";
+import type { VaultBrokers } from "./vault/VaultBrokers.ts";
+import type { VaultAccess } from "./vault/VaultAccess.ts";
+import type { VaultPrivateInput } from "./vault/VaultPrivateInput.ts";
+import type { VaultCore } from "./vault/VaultCore.ts";
 import type { SitesService } from "./sites/SitesService.ts";
 import type { LibraryRecoveryStore } from "./project-library/assets/LibraryRecoveryStore.ts";
 import type { LibraryReplication } from "./project-library/LibraryReplication.ts";
@@ -29,6 +39,16 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | VaultGitHub
+  | VaultProfiles
+  | VaultReferences
+  | VaultLaunch
+  | VaultSsh
+  | VaultWorkloads
+  | VaultBrokers
+  | VaultAccess
+  | VaultCore
+  | VaultPrivateInput
   | SitesService
   | LibraryRecoveryStore
   | LibraryReplication
