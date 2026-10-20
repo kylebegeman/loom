@@ -3,7 +3,7 @@
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
 2026-10-17 and chose self-hosted OpenBao. L79/shared encrypted records, L80 public-key enrollment,
 L85 hosted run access, L82 mediated/terminal SSH/Git and key/trust management, L81/L78/L73 grants,
-inspection and server readiness, and L74/L76 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L83 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness, and L84 development account collections with exclusive session-owned reservations are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
+inspection and server readiness, and L74/L76 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L83 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness, and L84 development account collections with session-owned and authenticated run-owned reservations are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L73 to L88 are their repository packet IDs.
 
 Loom Vault is a development resource system for credentials, accounts and other secure records.
@@ -25,7 +25,7 @@ hosting/integration options, not infrastructure to replace or deploy without rev
 ## Packet catalog
 
 Each folder contains README, PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING and REFERENCES.
-Complexity and impact are the brainstorm estimates, not delivery dates. L79, L80, L81, L78, L73, L85, L82, L74, L76, L77, L75, L86 and L83 have local milestones; L84 now adds development account collections and reservation lifecycle. All remain partial; the other packets are selected and queued.
+Complexity and impact are the brainstorm estimates, not delivery dates. L79, L80, L81, L78, L73, L85, L82, L74, L76, L77, L75, L86 and L83 have local milestones; L84 now adds development account collections, scoped agent reservations and durable lease cleanup. All remain partial; the other packets are selected and queued.
 
 ### Minor Features & Improvements
 

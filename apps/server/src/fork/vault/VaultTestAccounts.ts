@@ -22,6 +22,9 @@ export class VaultTestAccounts extends Context.Service<
   VaultTestAccounts,
   {
     readonly snapshot: (actor: string) => Effect.Effect<VaultTestAccountSnapshot, VaultError>;
+    readonly quarantineLeases: (
+      invalid: (account: VaultTestAccount) => Effect.Effect<boolean, VaultError>,
+    ) => Effect.Effect<void, VaultError>;
     readonly apply: (
       input: VaultTestAccountMutation,
       actor: string,
@@ -107,6 +110,25 @@ const make = Effect.gen(function* () {
     if (item.version !== account.itemVersion) return yield* new VaultError({ reason: "conflict" });
   });
   return VaultTestAccounts.of({
+    quarantineLeases: Effect.fn("VaultTestAccounts.quarantineLeases")(function* (invalid) {
+      const loaded = yield* load();
+      const now = yield* Clock.currentTimeMillis;
+      const accounts = yield* Effect.forEach(loaded.ledger.accounts, (account) =>
+        Effect.gen(function* () {
+          if (!account.lease) return account;
+          if (account.lease.expiresAt > now && !(yield* invalid(account))) return account;
+          return { ...account, state: "quarantined" as const, lease: null };
+        }),
+      );
+      if (accounts.every((a, index) => a === loaded.ledger.accounts[index])) return;
+      const encoded = yield* encodeLedger({
+        ...loaded.ledger,
+        revision: loaded.ledger.revision + 1,
+        accounts,
+      }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-response" })));
+      // CAS includes the observed lease identities. Never clear a newer owner's reservation.
+      yield* store.write(path, Redacted.make(encoded), loaded.version);
+    }),
     snapshot: Effect.fn("VaultTestAccounts.snapshot")(function* (actor) {
       yield* checkActor(actor);
       return view((yield* load()).ledger, actor, yield* Clock.currentTimeMillis);

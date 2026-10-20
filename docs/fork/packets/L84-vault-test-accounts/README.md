@@ -1,6 +1,6 @@
 # L84: Test account collections and provisioning
 
-Status: **In progress; first local collection/reservation milestone implemented.** Kyle selected
+Status: **In progress; local pool management and authenticated run leases implemented.** Kyle selected
 full implementation on 2026-10-17 and approved this section on 2026-10-20. Provisioning, reset,
 mail and login-delivery adapters and broader acceptance remain selected work.
 
@@ -20,7 +20,9 @@ is copied into reservation metadata, and reserving grants no credential access.
 This milestone manages the pool, not external login sessions. Quarantine and retirement block
 new pool reservations but do not revoke credentials or log out an application. Clean review is
 an explicit operator attestation, not a successful automated reset. Provisioning and login delivery
-are unavailable and no agent reservation tool is exposed yet. TESTING records the isolated web,
+are unavailable. Authenticated agents can discover granted references and reserve/renew/release
+only for their live run. Stopped/replaced or no-longer-authorized run leases are quarantined by
+CAS cleanup; reservations still deliver no credentials. TESTING records the isolated web,
 service/OpenBao proof and remaining native/remote acceptance limits.
 
 ## Scope

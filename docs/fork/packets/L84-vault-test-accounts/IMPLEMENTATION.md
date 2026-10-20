@@ -1,6 +1,6 @@
 # L84 implementation plan
 
-Status: **In progress; local collections and reservation lifecycle implemented.** Full packet
+Status: **In progress; local collections and authenticated run reservation lifecycle implemented.** Full packet
 scope remains selected. This section is committed on its own branch for the release owner's
 landing review; production and release actions remain outside this lane.
 
@@ -10,31 +10,31 @@ Dedicated development/staging/test collection management, searchable existing-ac
 exclusive session-owned leases, bounded renewal, expiry/release quarantine, explicit clean review
 and retire/restore are implemented through a service, guarded RPC, shared client logic and web/
 mobile settings. Account values stay in VaultCore; the registry contains metadata/references only.
-The existing profiles-subtree policy covers the reserved registry. Real disposable OpenBao proof
+Agents now discover only granted references and their own leases, reserve/renew/release for the
+authenticated live run, and receive no login material. A CAS cleanup reactor quarantines invalid
+run leases on startup and every minute. The existing profiles-subtree policy covers the reserved registry. Real disposable OpenBao proof
 covers CAS, denied siblings, unchanged policy, encrypted persistence and lease retention over
 backend restart. TESTING records focused checks and integrated web evidence.
 
 ## Remaining selected work
 
-1. Add requester-scoped agent account discovery and reservation with authenticated workload
-   identity, item-use ceilings and explicit cleanup. The current UI reservations belong to human
-   connection sessions; do not treat a label or project selection as workload attestation.
-2. Implement separate broker-delivered login access bound to the current lease, item version,
+1. Implement separate broker-delivered login access bound to the current lease, item version,
    collection app/environment and grant. Include loss/restart/revocation handling before claiming
    parallel worker isolation; raw credential release is not part of this milestone.
-3. Select the first dedicated application/test environment for provision/reset. Add its real
+2. Select the first dedicated application/test environment for provision/reset. Add its real
    adapter with idempotent creation, cancellation/late-result reconciliation and reset-before-reuse.
    Manual mark-clean remains an operator attestation until then.
-4. Select the owned test-mail domain/provider and cleanup policy before inbox integration.
+3. Select the owned test-mail domain/provider and cleanup policy before inbox integration.
    Session/TOTP/recovery field structures, fixture selectors and optional browser/native test
    integration remain to build.
-5. Complete native iOS/Android, Electron shell, remote/tunnel, assistive-technology and live QA
+4. Complete native iOS/Android, Electron shell, remote/tunnel, assistive-technology and live QA
    acceptance with independently authorized synthetic accounts. Shared-account semantics remain
    open; the first milestone is exclusively reserved.
 
-Suggested next section: authenticated requester-scoped account discovery/reservation and durable
-lease cleanup, before login delivery or a live provision/reset adapter. L86's execution gates and
-L75's host-policy park remain unchanged.
+Suggested next section: a synthetic broker login-delivery contract and failure/revocation proof,
+bound to a current run-owned lease and exact app/environment. Keep delivery unavailable until
+its adapter and cleanup behavior are proven. A live application/reset adapter and test-mail
+domain still need Kyle's selection. L86's execution gates and L75's host-policy park remain unchanged.
 
 ## Before starting
 

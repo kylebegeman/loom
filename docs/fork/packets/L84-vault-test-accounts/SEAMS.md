@@ -14,3 +14,7 @@ remain in existing VaultCore Account records. Test fixtures and screenshots are 
 no personal accounts, production policy, credentials or QA screenshots are committed.
 
 Implementation base: fork main `4070ef99a2`, which includes the PR #35 upstream integration.
+
+The agent slice adds only fork-owned service/MCP registrations in ForkLayer, ForkRuntime and the
+fork MCP index. Cleanup writes the same registry via CAS; no orchestration event/schema seam,
+Library contract, OpenBao policy/path or access-policy/journal format change is introduced.

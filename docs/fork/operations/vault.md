@@ -679,10 +679,25 @@ not a restriction on all generic credential use, revocation of external logins o
 for item grants. Do not promote generic access to a protected worker-login claim. Access-policy
 format 3 and the operation journal version 1 are unchanged.
 
-Leases bind to authenticated client session IDs, not pairing subject labels. Re-pairing cannot
+Human leases bind to authenticated client session IDs, not pairing subject labels. Re-pairing cannot
 renew/release a prior session's lease; an authorized manager must explicitly quarantine or retire
 it. Expired entries are quarantined on reads and persisted on the next successful mutation.
 Manual mark-clean is an operator attestation, not provider reset evidence. Capacity is 32
 collections and 128 references, including archived/retired entries; receipts retain at most 128
 and prune entries older than 24 hours on mutation. No production accounts are auto-discovered,
 provisioned or migrated. Use only separately approved dedicated test identities.
+
+Agent pool ownership is a `run-v1:` binding inside the same registry-1 owner string. Authenticated
+MCP callers cannot choose it. Discovery and reserve/renew require inspect/use grants for
+`loom:test-accounts:<collectionId>`; this is a metadata pool scope and does not authorize provider
+login. Release requires the exact owned lease even after grant withdrawal. The cleanup reactor
+runs at startup and every minute, quarantining expired or invalid run leases via the existing
+ledger CAS. Outages/corruption refuse and retry later; reads cannot grant login while waiting.
+A cleanup conflict never clears a newer lease. Clean review remains a separate manager action.
+
+Runtimes predating workload cleanup can still decode registry 1 and preserve run owner strings,
+but cannot reconcile run termination or grant withdrawal. Keep pool workers on a runtime with
+this support or explicitly quarantine affected leases before downgrading. Access-policy 3 and
+journal 1 remain unchanged. No new host policy, path, mount or Library rollout is needed for
+this slice. This is pool coordination only; generic credential use and external sessions are
+not governed or revoked by it.

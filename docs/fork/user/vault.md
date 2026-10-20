@@ -711,3 +711,15 @@ connection is replaced, an authorized manager can quarantine its abandoned reser
 
 This first version manages the account pool. It does not provision/reset accounts, log a test
 worker in, or revoke existing application sessions. Reserving grants no extra Vault access.
+
+Agents running in a live Loom thread can use `loom_vault_test_accounts_discover` to find available
+accounts and their own run's reservations. Grant both inspect and use for the relevant Account
+items, scoped to `loom:test-accounts:<collectionId>` when access should cover only that pool.
+They can reserve, renew or release with `loom_vault_test_accounts_apply`; they cannot mark an
+account clean or grant themselves access. Reservations belong to that run. Stopping or replacing
+it, or withdrawing access, causes cleanup to quarantine its accounts. Expiry remains enforced
+while cleanup is unavailable. A manager must independently check/reset and mark them clean again.
+
+These agent tools return account references and leases, not passwords or a logged-in browser.
+Login delivery remains unavailable. Other runs' reservations and accounts without the required
+grants do not appear in discovery.

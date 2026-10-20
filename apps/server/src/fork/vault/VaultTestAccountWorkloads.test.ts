@@ -1,0 +1,634 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { expect, it } from "@effect/vitest";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  VaultError,
+  vaultTestAccountDestination,
+  type VaultGrantDefinition,
+  type VaultTestAccountChange,
+} from "@t3tools/contracts/fork";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
+import * as Store from "./OpenBaoStore.ts";
+import * as Core from "./VaultCore.ts";
+import * as Access from "./VaultAccess.ts";
+import * as Notifications from "./ApprovalNotifications.ts";
+import * as Accounts from "./VaultTestAccounts.ts";
+import * as Workloads from "./VaultTestAccountWorkloads.ts";
+
+const caller = {
+  environmentId: EnvironmentId.make("account-workloads"),
+  threadId: ThreadId.make("worker"),
+  providerInstanceId: ProviderInstanceId.make("codex"),
+};
+const projectId = ProjectId.make("test-project");
+const collection = {
+  id: "a".repeat(32),
+  label: "Editors",
+  application: "Disposable app",
+  target: "test" as const,
+};
+const account = {
+  id: "b".repeat(32),
+  collectionId: collection.id,
+  label: "Dedicated editor",
+  role: "editor",
+  itemId: "c".repeat(32),
+  itemVersion: 1,
+};
+const fixture = () => {
+  const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
+  const state = {
+    runId: RunId.make("run-one"),
+    active: true,
+    archived: false,
+    deleted: false,
+    project: true,
+    provider: caller.providerInstanceId,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    readsFail: false,
+    beforeRegistryWrite: null as null | (() => Effect.Effect<void>),
+    loseReply: false,
+  };
+  const dependencies = Layer.mergeAll(
+    NodeServices.layer,
+    Layer.succeed(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(caller.environmentId),
+    }),
+    Layer.mock(ThreadManagementService)({
+      getThreadShell: (id) =>
+        Effect.sync(
+          () =>
+            ({
+              ...liveThreadShell(id),
+              projectId,
+              status: state.active ? "running" : "idle",
+              activeRunId: state.active ? state.runId : null,
+              providerInstanceId: state.provider,
+              runtimeMode: state.runtimeMode,
+              interactionMode: state.interactionMode,
+              archivedAt: state.archived ? "2026-10-20T00:00:00Z" : null,
+              deletedAt: state.deleted ? "2026-10-20T00:00:00Z" : null,
+            }) as never,
+        ),
+    }),
+    Layer.mock(ProjectStoreV2)({
+      get: () =>
+        Effect.sync(() =>
+          state.project ? Option.some({ id: projectId } as never) : Option.none(),
+        ),
+    }),
+    Layer.succeed(Store.OpenBaoStore, {
+      status: Effect.succeed({
+        backend: "openbao" as const,
+        state: "ready" as const,
+        origin: null,
+      }),
+      keys: () => Effect.succeed([]),
+      read: (path) =>
+        Effect.suspend(() =>
+          state.readsFail
+            ? Effect.fail(new VaultError({ reason: "unavailable" }))
+            : Effect.succeed(records.get(path) ?? null),
+        ),
+      write: (path, value, expected) =>
+        Effect.gen(function* () {
+          if (path.endsWith("registry-v1") && state.beforeRegistryWrite)
+            yield* state.beforeRegistryWrite();
+          const version = records.get(path)?.version ?? 0;
+          if (version !== expected) return yield* new VaultError({ reason: "conflict" });
+          records.set(path, { value, version: version + 1 });
+          if (path.endsWith("registry-v1") && state.loseReply) {
+            state.loseReply = false;
+            return yield* new VaultError({ reason: "unavailable" });
+          }
+          return version + 1;
+        }),
+    }),
+  );
+  const core = Core.layer.pipe(Layer.provide(dependencies));
+  const access = Access.layer.pipe(
+    Layer.provide(Notifications.stub),
+    Layer.provide(core),
+    Layer.provide(dependencies),
+  );
+  const accounts = Accounts.layer.pipe(Layer.provide(core), Layer.provide(dependencies));
+  const services = Layer.mergeAll(core, access, accounts);
+  const layer = Workloads.layer.pipe(
+    Layer.provideMerge(services),
+    Layer.provideMerge(dependencies),
+  );
+  return { records, state, layer };
+};
+const setup = Effect.gen(function* () {
+  const service = yield* Workloads.VaultTestAccountWorkloads,
+    manager = yield* Accounts.VaultTestAccounts,
+    core = yield* Core.VaultCore,
+    access = yield* Access.VaultAccess;
+  let sequence = 1;
+  const id = () => (sequence++).toString(16).padStart(32, "0");
+  const manage = Effect.fnUntraced(function* (change: VaultTestAccountChange) {
+    return yield* manager.apply(
+      {
+        operationId: id(),
+        expectedRevision: (yield* manager.snapshot("client:manager")).revision,
+        change,
+      },
+      "client:manager",
+      Effect.void,
+    );
+  });
+  const grant = Effect.fnUntraced(function* (overrides: Partial<VaultGrantDefinition> = {}) {
+    const definition: VaultGrantDefinition = {
+      id: id(),
+      label: "QA pool use",
+      principal: { kind: "project", id: projectId },
+      projectId,
+      itemIds: [account.itemId],
+      actions: ["inspect", "use"],
+      destination: vaultTestAccountDestination(collection.id),
+      notBefore: 0,
+      expiresAt: null,
+      parentId: null,
+      ...overrides,
+    };
+    return yield* access.apply(
+      {
+        operationId: id(),
+        expectedRevision: (yield* access.snapshot).revision,
+        change: { type: "save", grant: definition },
+      },
+      "client:manager",
+    );
+  });
+  const input = Effect.fnUntraced(function* () {
+    return {
+      operationId: id(),
+      expectedRevision: (yield* service.discover(caller)).revision,
+      change: { type: "reserve" as const, id: account.id, durationMs: 300_000 as const },
+    };
+  });
+  const reserve = Effect.fnUntraced(function* () {
+    return yield* service.apply(yield* input(), caller, Effect.void);
+  });
+  yield* core.save(
+    {
+      id: account.itemId,
+      operationId: id(),
+      expectedVersion: 0,
+      label: account.label,
+      kind: "account",
+      value: Redacted.make("synthetic-account-secret"),
+    },
+    "human",
+  );
+  yield* manage({ type: "collection-save", collection });
+  yield* manage({ type: "account-save", account, developmentOnly: true });
+  yield* manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+  return { service, manager, core, access, manage, grant, id, input, reserve };
+});
+const withFixture = <A, E, R>(
+  use: (f: Effect.Success<typeof setup> & ReturnType<typeof fixture>) => Effect.Effect<A, E, R>,
+) => {
+  const f = fixture();
+  return setup.pipe(
+    Effect.flatMap((services) => use({ ...services, ...f })),
+    Effect.provide(f.layer),
+  );
+};
+
+it.effect(
+  "discovers only item-use and metadata-authorized accounts without writing or leaking other owners",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const before = [...f.records.values()];
+        expect((yield* f.service.discover(caller)).accounts).toEqual([]);
+        expect([...f.records.values()]).toEqual(before);
+        yield* f.grant({ actions: ["inspect"] });
+        expect((yield* f.service.discover(caller)).collections).toEqual([]);
+        yield* f.grant({ actions: ["use"], destination: "loom:test-accounts:other" });
+        expect((yield* f.service.discover(caller)).accounts).toEqual([]);
+        yield* f.grant({ actions: ["use"] });
+        const snapshot = yield* f.service.discover(caller);
+        expect(snapshot.accounts.map((a) => a.id)).toEqual([account.id]);
+        expect(snapshot.loginDelivery).toBe("unsupported");
+        expect(JSON.stringify(snapshot)).not.toContain("synthetic-account-secret");
+        yield* f.reserve();
+        const other = yield* f.service.discover({
+          ...caller,
+          threadId: ThreadId.make("another-worker"),
+        });
+        expect(other.accounts).toEqual([]);
+        expect(JSON.stringify(other)).not.toContain("worker");
+      }),
+    ),
+);
+
+it.effect("uses audited grants to reserve and binds renewal/release to the exact current run", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const request = yield* f.input();
+      expect((yield* f.service.apply(request, caller, Effect.void).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      yield* f.grant();
+      const snapshot = yield* f.service.apply(request, caller, Effect.void),
+        lease = snapshot.accounts[0]!.lease!;
+      expect(lease.owner).toContain("run-one");
+      expect(
+        (yield* f.access.snapshot).audit.some((a) => a.type === "decision" && a.action === "use"),
+      ).toBe(true);
+      const release = {
+        operationId: f.id(),
+        expectedRevision: snapshot.revision,
+        change: { type: "release" as const, id: account.id, leaseId: lease.id },
+      };
+      expect(
+        (yield* f.service
+          .apply(release, { ...caller, threadId: ThreadId.make("other") }, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      f.state.runId = RunId.make("run-two");
+      expect((yield* f.service.apply(release, caller, Effect.void).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      expect((yield* f.service.discover(caller)).accounts).toEqual([]);
+      yield* f.service.reconcile;
+      expect((yield* f.manager.snapshot("client:manager")).accounts[0]).toMatchObject({
+        state: "quarantined",
+        lease: null,
+      });
+    }),
+  ),
+);
+
+it.effect("allows exact-owner release after grant withdrawal without opening login delivery", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const grant = yield* f.grant(),
+        reserved = yield* f.reserve(),
+        lease = reserved.accounts[0]!.lease!;
+      yield* f.access.apply(
+        {
+          operationId: f.id(),
+          expectedRevision: (yield* f.access.snapshot).revision,
+          change: { type: "state", id: grant.definition.id, state: "revoked" },
+        },
+        "client:manager",
+      );
+      expect((yield* f.service.discover(caller)).accounts).toEqual([]);
+      const result = yield* f.service.apply(
+        {
+          operationId: f.id(),
+          expectedRevision: reserved.revision,
+          change: { type: "release", id: account.id, leaseId: lease.id },
+        },
+        caller,
+        Effect.void,
+      );
+      expect(result.accounts).toEqual([]);
+      expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("quarantined");
+    }),
+  ),
+);
+
+it.effect(
+  "rechecks identity and grants after async waits and refuses agent administration or injected identity",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const request = yield* f.input();
+        let checks = 0;
+        const authorize = Effect.sync(() => {
+          if (++checks === 3) f.state.runId = RunId.make("replacement");
+        });
+        expect((yield* f.service.apply(request, caller, authorize).pipe(Effect.flip)).reason).toBe(
+          "denied",
+        );
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.lease).toBe(null);
+        expect(
+          (yield* f.service
+            .apply(
+              {
+                ...request,
+                change: { type: "mark-clean", id: account.id, confirmedReset: true },
+              } as never,
+              caller,
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+        expect(
+          (yield* f.service
+            .apply({ ...request, owner: "client:manager" } as never, caller, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+        expect(
+          (yield* f.service
+            .apply(request, caller, Effect.fail(new VaultError({ reason: "denied" })))
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+
+it.effect(
+  "denies inactive, archived, deleted, restricted, foreign provider/environment and missing-project callers",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        for (const change of [
+          { active: false },
+          { archived: true },
+          { deleted: true },
+          { runtimeMode: "approval-required" },
+          { interactionMode: "plan" },
+          { project: false },
+          { provider: ProviderInstanceId.make("claude") },
+        ]) {
+          const previous = { ...f.state };
+          Object.assign(f.state, change);
+          expect((yield* f.service.discover(caller).pipe(Effect.flip)).reason).toBe("denied");
+          Object.assign(f.state, previous);
+        }
+        expect(
+          (yield* f.service
+            .discover({ ...caller, environmentId: EnvironmentId.make("foreign") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+
+it.effect(
+  "recovers lost replies without extending a lease and never replays it into a replacement run",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const request = yield* f.input();
+        f.state.loseReply = true;
+        expect(
+          (yield* f.service.apply(request, caller, Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        const first = yield* f.service.discover(caller);
+        yield* TestClock.adjust("1 minute");
+        expect((yield* f.service.apply(request, caller, Effect.void)).accounts[0]!.lease).toEqual(
+          first.accounts[0]!.lease,
+        );
+        f.state.runId = RunId.make("replacement");
+        yield* f.service.reconcile;
+        expect(
+          (yield* f.service.apply(request, caller, Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.lease).toBeNull();
+      }),
+    ),
+);
+
+it.effect(
+  "durably quarantines stopped runs, provider changes, withdrawn use and stale account versions",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const grant = yield* f.grant();
+        for (const change of [
+          { active: false },
+          { provider: ProviderInstanceId.make("claude") },
+          { project: false },
+        ]) {
+          yield* f.reserve();
+          const previous = { ...f.state };
+          Object.assign(f.state, change);
+          yield* f.service.reconcile;
+          expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+            "quarantined",
+          );
+          Object.assign(f.state, previous);
+          yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+        }
+        yield* f.reserve();
+        yield* f.access.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: (yield* f.access.snapshot).revision,
+            change: { type: "state", id: grant.definition.id, state: "revoked" },
+          },
+          "human",
+        );
+        yield* f.service.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.lease).toBeNull();
+        yield* f.grant();
+        yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+        yield* f.reserve();
+        yield* f.core.save(
+          {
+            id: account.itemId,
+            operationId: f.id(),
+            expectedVersion: 1,
+            label: account.label,
+            kind: "account",
+            value: Redacted.make("synthetic-replacement"),
+          },
+          "human",
+        );
+        yield* f.service.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+          "quarantined",
+        );
+      }),
+    ),
+);
+
+it.effect("persists expiry on cleanup while read-only discovery derives it without writes", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.reserve();
+      yield* TestClock.adjust("5 minutes");
+      const before = [...f.records.values()];
+      expect((yield* f.service.discover(caller)).accounts).toEqual([]);
+      expect([...f.records.values()]).toEqual(before);
+      yield* f.service.reconcile;
+      const stored = [...f.records.entries()].find(([key]) => key.endsWith("registry-v1"))![1];
+      expect(Redacted.value(stored.value)).toMatchObject({
+        schemaVersion: 1,
+        accounts: [{ state: "quarantined", lease: null }],
+      });
+      const after = [...f.records.values()];
+      yield* f.service.reconcile;
+      expect([...f.records.values()]).toEqual(after);
+    }),
+  ),
+);
+
+it.effect("never clears a newer reservation when cleanup loses a CAS race", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.reserve();
+      f.state.active = false;
+      const arrived = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      f.state.beforeRegistryWrite = () =>
+        Effect.gen(function* () {
+          f.state.beforeRegistryWrite = null;
+          yield* Deferred.succeed(arrived, undefined);
+          yield* Deferred.await(release);
+        });
+      const cleanup = yield* f.service.reconcile.pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(arrived);
+      yield* f.manage({ type: "quarantine", id: account.id });
+      yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+      f.state.active = true;
+      f.state.runId = RunId.make("new-owner-run");
+      const newer = yield* f.reserve();
+      yield* Deferred.succeed(release, undefined);
+      expect((yield* Fiber.join(cleanup))._tag).toBe("Failure");
+      expect((yield* f.service.discover(caller)).accounts[0]!.lease).toEqual(
+        newer.accounts[0]!.lease,
+      );
+    }),
+  ),
+);
+
+it.effect(
+  "leaves durable leases untouched on backend outage and reconciles after service restart",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        yield* f.reserve();
+        const before = [...f.records.values()];
+        f.state.readsFail = true;
+        expect((yield* f.service.reconcile.pipe(Effect.flip)).reason).toBe("unavailable");
+        expect([...f.records.values()]).toEqual(before);
+        f.state.readsFail = false;
+        f.state.active = false;
+        const restarted = yield* Workloads.VaultTestAccountWorkloads.pipe(
+          Effect.provide(Workloads.layer),
+        );
+        yield* restarted.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+          "quarantined",
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "renews only the owned live lease and refuses credential rotation during authorization",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const first = yield* f.reserve(),
+          lease = first.accounts[0]!.lease!;
+        yield* TestClock.adjust("1 minute");
+        const renewed = yield* f.service.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: first.revision,
+            change: { type: "renew", id: account.id, leaseId: lease.id },
+          },
+          caller,
+          Effect.void,
+        );
+        expect(renewed.accounts[0]!.lease!.id).toBe(lease.id);
+        expect(renewed.accounts[0]!.lease!.expiresAt).toBeGreaterThan(lease.expiresAt);
+        yield* TestClock.adjust("1 minute");
+        let checks = 0;
+        const authorize = Effect.gen(function* () {
+          if (++checks === 3)
+            yield* f.core.save(
+              {
+                id: account.itemId,
+                operationId: f.id(),
+                expectedVersion: 1,
+                label: account.label,
+                kind: "account",
+                value: Redacted.make("synthetic-rotated"),
+              },
+              "human",
+            );
+        });
+        expect(
+          (yield* f.service
+            .apply(
+              {
+                operationId: f.id(),
+                expectedRevision: renewed.revision,
+                change: { type: "renew", id: account.id, leaseId: lease.id },
+              },
+              caller,
+              authorize,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(checks).toBe(3);
+        expect((yield* f.core.inspect(account.itemId))!.version).toBe(2);
+        expect((yield* f.manager.snapshot("client:manager")).revision).toBe(renewed.revision);
+      }),
+    ),
+);
+
+it.effect(
+  "refuses grants withdrawn during the final write check and quarantines malformed run owners",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const grant = yield* f.grant(),
+          request = yield* f.input();
+        let checks = 0;
+        const authorize = Effect.gen(function* () {
+          if (++checks === 3)
+            yield* f.access.apply(
+              {
+                operationId: f.id(),
+                expectedRevision: (yield* f.access.snapshot).revision,
+                change: { type: "state", id: grant.definition.id, state: "revoked" },
+              },
+              "human",
+            );
+        });
+        expect((yield* f.service.apply(request, caller, authorize).pipe(Effect.flip)).reason).toBe(
+          "denied",
+        );
+        yield* f.grant();
+        yield* f.reserve();
+        const [key, record] = [...f.records.entries()].find(([key]) =>
+          key.endsWith("registry-v1"),
+        )!;
+        const ledger = Redacted.value(record.value) as {
+          accounts: Array<{ lease: { owner: string } }>;
+        };
+        f.records.set(key, {
+          version: record.version + 1,
+          value: Redacted.make({
+            ...ledger,
+            accounts: ledger.accounts.map((a) => ({
+              ...a,
+              lease: { ...a.lease, owner: "run-v1:malformed" },
+            })),
+          }),
+        });
+        yield* f.service.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+          "quarantined",
+        );
+      }),
+    ),
+);

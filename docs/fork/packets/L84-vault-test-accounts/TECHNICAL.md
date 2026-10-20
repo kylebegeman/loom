@@ -16,8 +16,8 @@ inspection and `access:write` for mutations. Client commands use the existing gu
 boundary and its destination permission atom. Ownership uses `client:<authenticated sessionId>`
 from the server, not a client-selected label or the shared pairing subject. Renew/release require
 the exact active lease ID and owner; authorized managers can quarantine or retire an abandoned
-entry. Re-pairing creates a different owner and requires that explicit recovery. No agent MCP,
-CLI, provider continuation or automatic account-selection surface is added in this milestone.
+entry. Re-pairing creates a different owner and requires that explicit recovery. The workload service adds requester-scoped MCP discovery/reservation; provider continuation and
+automatic account selection remain unavailable.
 Management metadata grants never substitute for item-use/reveal grants or supported delivery.
 
 The encrypted json-v1/CAS ledger is independent of access-policy format 3 and journal version 1,
@@ -58,7 +58,8 @@ must revalidate independently and bind to a live owned lease; current generic cr
 are not restricted by this pool.
 
 Reads derive expired reservations as quarantined without writing. The next successful mutation
-persists that safe state, so no background worker or timer is required for correctness. Release,
+persists that safe state, so no background worker or timer is required for expiry safety. The workload cleanup reactor also
+persists expiry on its next successful pass. Release,
 manual quarantine and expiry all require a new clean review before another reservation. Retire
 cancels the local lease; restore returns to quarantine. Archiving/restoring collections refuses
 while they have active reservations. Nothing terminates an external login, resets app data,
@@ -73,6 +74,51 @@ refresh after conflict. Reference search uses existing safe-account pagination; 
 field appears in this manager. Older servers are capability-gated as unavailable. Native
 interaction, remote/relay/tunnel and assistive-technology acceptance remain distinct from web
 and static evidence.
+
+## Authenticated agent reservations
+
+`VaultTestAccountWorkloads` is the narrow workload boundary over the same account registry. MCP
+invocation supplies environment, thread and provider identity; inputs cannot choose an owner,
+thread, run or project. The service resolves the live run and project, refuses inactive, archived,
+deleted, non-full-access/default or mismatched-provider callers, and rechecks that binding across
+async waits. `loom_vault_test_accounts_discover` is observational. It returns only available
+references and the calling run's own reservations, with just their collection context. Other
+leases, unavailable entries and unrelated collection metadata are omitted; no receipts or admin
+snapshot cross this boundary. Empty discovery is not proof that a collection does not exist.
+The ledger revision is a conflict token, not authority or an environment activity feed.
+
+Discovery requires both `inspect` and `use` through the existing grant evaluator. The exact scope
+is `loom:test-accounts:<collectionId>`; existing unscoped grants also match under normal evaluator
+rules. This is a pool scope, not a provider host or login endpoint. Reserve/renew audit and recheck
+those actions, active pinned Account version, workload identity and transport ceiling before CAS.
+The sole mutation tool accepts reserve, renew and release. It cannot mark clean, create, archive,
+retire, approve itself or return credentials. Release requires the exact owned lease but remains
+possible after item grant withdrawal. Mutation results pass through the same filtered discovery;
+withdrawal can hide a lease that was already committed. Inspect/reconcile before retrying.
+
+Run ownership uses a versioned `run-v1:` JSON binding in the existing owner string: environment,
+thread, provider instance, project and run IDs. It is public identity metadata, never a bearer
+credential. Bindings exceeding the existing 512-character limit refuse. No optional ownership
+field, ledger schema bump, access-policy field or operation-journal entry is introduced. Old
+registry readers preserve the owner string and enforce expiry, but cannot enforce run/grant
+cleanup. Downgrade therefore needs upgraded pool workers or explicit manager quarantine; storage
+read compatibility does not imply equal lifecycle enforcement.
+
+The scoped cleanup reactor runs on startup and every minute. It CAS-quarantines expired leases
+of either owner kind and run leases whose original identity, project, provider, item/version or
+inspect/use access is no longer valid. Malformed run bindings quarantine. Unavailable/corrupt
+backend or identity reads fail closed without inventing a clean state; the next pass retries.
+There is no broad host cleanup or provider logout. CAS is against the observed ledger version,
+so cleanup never clears a newer lease after a competing manager or worker change. A conflict is
+retried only by a future scan, not by replaying a stale cleanup decision. Reconciliation is
+idempotent, preserves receipts, and increments the registry revision only when it changes leases.
+Reads and mutations refuse current invalid identities independently of the cleanup interval.
+
+These are local pool metadata checks, not an atomic transaction with grants, thread state or
+providers. Discovery is a point-in-time observation; a reservation is not login delivery. A future
+broker delivery operation must check the current owned lease, its deadline and pinned item,
+exact app/environment and operation-specific destination again, then handle revocation and
+external cleanup. No login, reset, continuation or L86 one-time execution gate is enabled here.
 
 ## Contracts and authorization
 

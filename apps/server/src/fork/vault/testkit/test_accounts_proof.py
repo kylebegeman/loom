@@ -58,7 +58,7 @@ def main() -> None:
             environment.update(LOOM_VAULT_TEST_ACCOUNTS_URL=fixture.origin,
                                LOOM_VAULT_TEST_ACCOUNTS_RESTART="1")
             subprocess.run(command, cwd=REPOSITORY, env=environment, check=True)
-            print("PASS: scoped existing policy, account reservation CAS, denied sibling, unchanged policy and retained lease after restart")
+            print("PASS: scoped existing policy, account reservation CAS, denied sibling, policy3/registry1 compatibility, retained leases and abandoned-run cleanup after restart")
         finally:
             if fixture is not None:
                 fixture.stop()

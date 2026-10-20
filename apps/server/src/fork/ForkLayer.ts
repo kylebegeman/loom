@@ -1,3 +1,4 @@
+import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
 import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
 import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
@@ -98,6 +99,12 @@ const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
 const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(ApprovalNotifications.stub),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
+);
+
+const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultTestAccounts, layerVaultCore, layerVaultAccess, ProjectStore.layer),
+  ),
 );
 
 const layerVaultBrokers = VaultBrokers.layer.pipe(
@@ -229,6 +236,8 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,
+  layerVaultTestAccountWorkloads,
+  VaultTestAccountWorkloads.reactor.pipe(Layer.provide(layerVaultTestAccountWorkloads)),
   layerVaultTestAccounts,
   layerVaultCore,
   layerVaultAccess,

@@ -1,13 +1,51 @@
 # L84 testing
 
-Status: **First local collection/reservation milestone verified within the limits below.** Full
+Status: **Local pool and authenticated run reservation milestones verified within the limits below.** Full
 packet acceptance remains unfinished. Implementation base is current fork main `4070ef99a2`.
 
-## Focused automated evidence
+## Authenticated workload evidence
+
+Four focused suites pass **27 tests**: the existing 13 manager cases, 12 real-service workload
+cases, one MCP authorization case and real startup registration. Workload tests use the real
+account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
+boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
+no other-owner/unrelated-collection leakage; audited reserve; exact run/lease release; renewal;
+run/provider/project/mode/identity refusal; permission withdrawal and account rotation at async
+write checks; lost replies; restart reconciliation; durable expiry; corrupt owner quarantine;
+outage refusal; and cleanup CAS loss preserving a newer reservation. Agent administration and
+injected owner fields refuse. The MCP case drains toolkit result streams, verifies trusted caller
+identity and refuses external clients or a runtime lowered before mutation. No login is delivered.
+
+```sh
+./node_modules/.bin/vp test run \
+  apps/server/src/fork/vault/VaultTestAccountWorkloads.test.ts \
+  apps/server/src/fork/vault/test-accounts-mcp.test.ts \
+  apps/server/src/fork/vault/VaultTestAccounts.test.ts \
+  apps/server/src/fork/mcp/registration.test.ts
+```
+
+The scoped OpenBao proof now runs **four applicable integration cases across two backend
+lifetimes** (two per phase; complementary phase cases are skipped deliberately). In addition to
+the first milestone's CAS/encryption/namespace proof, it runs real inspect/use grants and a
+run-owned reservation, retains that lease through backend restart, then CAS-quarantines the
+stopped run without changing policy3 or registry1. It uses only the existing documented scoped
+rights; no production policy is read or changed. The policy's ordinary grant/audit contents change
+through VaultAccess; no new field, path or capability is introduced. The initial manager-only
+phase also proves unchanged policy before agent grants are created.
+
+Server/contracts/client-runtime/web/mobile package typechecks and focused changed-file lint pass.
+The web check uses a fresh temporary incremental cache. Links, seam manifest and whitespace are
+checked before commit. These are backend/tool changes; no new browser or native interaction pass
+is claimed. The existing integrated web evidence below remains the manager milestone evidence.
+The reactor is tested through its reconciliation service and real backend restart, not by a
+live production worker or provider session cleanup.
+
+## First manager milestone evidence
 
 Six focused suites pass **42 tests**: 13 real-service lifecycle/failure cases, client action/expiry
 logic, destination-scoped command permissions, profile cleanup isolation, exhaustive fork RPC
-permission mapping and actual MCP startup registration. No new MCP tool is added. Behavior covers
+permission mapping and actual MCP startup registration. That first milestone added no MCP tool; the workload milestone above adds two. Behavior
+covers
 competing CAS writers, actor-bound replay/lost replies, expiry into quarantine without read writes,
 old/new lease IDs, another session's refusal, renewal bounded to one hour, expiry during async
 authorization, blocked archive while reserved, quarantine/retire/restore, duplicate item references,
@@ -15,8 +53,8 @@ collection identity/move refusal, active account/version checks, missing/wrong-k
 corruption, malformed input, permission withdrawal and aged/evicted receipt replay. Client tests
 cover reverse actions, ownership, archived state and the exact expiry boundary.
 
-The disposable OpenBao 2.7.1 proof passes both phases (one applicable integration test before and
-one after restart). It uses only the documented existing environment-scoped service policy,
+The original disposable OpenBao 2.7.1 proof passed one applicable case in each phase.
+The expanded workload proof above adds a second case in each phase. It uses only the documented existing environment-scoped service policy,
 including profiles/*; no production policy is read. It proves a single reservation CAS winner,
 denied sibling namespace, unchanged format-3 policy, core item-list independence and matching-owner
 release into quarantine after a backend restart. Synthetic account plaintext is absent from the
@@ -76,12 +114,12 @@ the browser pass does not imply Electron-specific acceptance.
 No raw password, cookie, TOTP or login session is returned or copied into the registry. This is
 reference-only pool management; quarantine/retirement prevent reservations but do not revoke
 external sessions or block generic Vault account access. Provisioning, automatic reset, mail
-and login delivery remain unavailable. No agent reservation/delivery endpoint is exposed yet.
+and login delivery remain unavailable. Authenticated agent reservations are exposed.
 Manual clean review is an operator attestation, never adapter-reset proof. Full-access process
 isolation and exactly-once provider effects are not claimed.
 
-Continue with authenticated requester-scoped account selection/reservation and separate delivery
-checks, then a chosen disposable app adapter, real reset/provision failure/cancellation recovery,
+Continue with a synthetic separate login-delivery contract bound to the live lease and its
+failure/revocation checks, then a chosen disposable app adapter, real reset/provision failure/cancellation recovery,
 mail ownership/cleanup and browser/native login verification. These remain the full selected
 PRODUCT outcomes. Policy3/journal1 and L86's false execution/resumption/allow-once gates stay
 unchanged. L75 stays parked behind CW-1/L79. No Library schema, production, SSH, install or release

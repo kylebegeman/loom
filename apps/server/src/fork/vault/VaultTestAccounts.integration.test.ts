@@ -1,16 +1,24 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as Store from "./OpenBaoStore.ts";
 import * as Core from "./VaultCore.ts";
+import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
+import { vaultTestAccountDestination } from "@t3tools/contracts/fork";
+import * as Access from "./VaultAccess.ts";
+import * as Notifications from "./ApprovalNotifications.ts";
+import * as Workloads from "./VaultTestAccountWorkloads.ts";
 import * as Accounts from "./VaultTestAccounts.ts";
 const origin = process.env.LOOM_VAULT_TEST_ACCOUNTS_URL;
 const tokenFile = process.env.LOOM_VAULT_TEST_ACCOUNTS_TOKEN_FILE;
@@ -32,13 +40,40 @@ const store = Store.layer.pipe(
     ),
   ),
 );
+const caller = {
+  environmentId,
+  threadId: ThreadId.make("test-account-proof-worker"),
+  providerInstanceId: ProviderInstanceId.make("codex"),
+};
+const projectId = ProjectId.make("test-account-proof-project");
 const dependencies = Layer.mergeAll(
+  Layer.mock(ThreadManagementService)({
+    getThreadShell: (id) =>
+      Effect.succeed({
+        ...liveThreadShell(id),
+        projectId,
+        activeRunId: restarted ? null : RunId.make("account-proof-run"),
+        status: restarted ? "idle" : "running",
+      } as never),
+  }),
+  Layer.mock(ProjectStoreV2)({
+    get: () => Effect.succeed(Option.some({ id: projectId } as never)),
+  }),
   NodeServices.layer,
   store,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
 );
 const core = Core.layer.pipe(Layer.provide(dependencies));
-const layer = Accounts.layer.pipe(Layer.provideMerge(core), Layer.provideMerge(dependencies));
+const accounts = Accounts.layer.pipe(Layer.provide(core), Layer.provide(dependencies));
+const access = Access.layer.pipe(
+  Layer.provide(Notifications.stub),
+  Layer.provide(core),
+  Layer.provide(dependencies),
+);
+const layer = Workloads.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(accounts, access, core)),
+  Layer.provideMerge(dependencies),
+);
 const itemId = "a".repeat(32),
   collectionId = "b".repeat(32),
   accountId = "c".repeat(32);
@@ -173,5 +208,117 @@ it.live.skipIf(!configured || !restarted)(
         state: "quarantined",
         lease: null,
       });
+    }).pipe(Effect.provide(layer)),
+);
+
+it.live.skipIf(!configured || restarted)(
+  "reserves an authenticated run lease with the existing scoped policy and registry version",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* Workloads.VaultTestAccountWorkloads,
+        manager = yield* Accounts.VaultTestAccounts,
+        vault = yield* Core.VaultCore,
+        policy = yield* Access.VaultAccess;
+      const itemId = "d".repeat(32),
+        id = "e".repeat(32);
+      yield* vault.save(
+        {
+          id: itemId,
+          operationId: "8".repeat(32),
+          expectedVersion: 0,
+          label: "Synthetic runner account",
+          kind: "account",
+          value: Redacted.make("test-account-plaintext-canary-6284"),
+        },
+        "human",
+      );
+      const manage = Effect.fnUntraced(function* (
+        change: import("@t3tools/contracts/fork").VaultTestAccountChange,
+        operationId: string,
+      ) {
+        return yield* manager.apply(
+          { operationId, expectedRevision: (yield* manager.snapshot("human")).revision, change },
+          "human",
+          Effect.void,
+        );
+      });
+      yield* manage(
+        {
+          type: "account-save",
+          account: { id, collectionId, label: "Runner", role: "editor", itemId, itemVersion: 1 },
+          developmentOnly: true,
+        },
+        "9".repeat(32),
+      );
+      yield* manage({ type: "mark-clean", id, confirmedReset: true }, "a".repeat(32));
+      yield* policy.apply(
+        {
+          operationId: "b".repeat(32),
+          expectedRevision: (yield* policy.snapshot).revision,
+          change: {
+            type: "save",
+            grant: {
+              id: "f".repeat(32),
+              label: "Disposable QA pool use",
+              principal: { kind: "thread", id: caller.threadId },
+              projectId,
+              itemIds: [itemId],
+              actions: ["inspect", "use"],
+              destination: vaultTestAccountDestination(collectionId),
+              notBefore: 0,
+              expiresAt: null,
+              parentId: null,
+            },
+          },
+        },
+        "human",
+      );
+      const found = yield* service.discover(caller);
+      expect(found.accounts.map((a) => a.id)).toEqual([id]);
+      const reserved = yield* service.apply(
+        {
+          operationId: "c".repeat(32),
+          expectedRevision: found.revision,
+          change: { type: "reserve", id, durationMs: 900_000 },
+        },
+        caller,
+        Effect.void,
+      );
+      expect(reserved.accounts[0]!.lease!.owner).toContain("account-proof-run");
+      expect(JSON.stringify(reserved)).not.toContain("plaintext-canary");
+      yield* service.reconcile;
+      expect((yield* service.discover(caller)).accounts[0]!.lease!.id).toBe("c".repeat(32));
+    }).pipe(Effect.provide(layer)),
+);
+it.live.skipIf(!configured || !restarted)(
+  "quarantines the durable abandoned run lease after restart without resetting policy3 or registry1",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* Workloads.VaultTestAccountWorkloads,
+        manager = yield* Accounts.VaultTestAccounts,
+        store = yield* Store.OpenBaoStore,
+        crypto = yield* Crypto.Crypto;
+      const namespace = Hex.encode(
+        yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)),
+      );
+      const before = yield* manager.snapshot("human");
+      expect(before.accounts.find((a) => a.id === "e".repeat(32))!.lease!.owner).toContain(
+        "account-proof-run",
+      );
+      yield* service.reconcile;
+      const after = yield* manager.snapshot("human");
+      expect(after.accounts.find((a) => a.id === "e".repeat(32))).toMatchObject({
+        state: "quarantined",
+        lease: null,
+      });
+      expect(
+        Redacted.value((yield* store.read(`environments/${namespace}/access-policy`))!.value),
+      ).toMatchObject({ schemaVersion: 3 });
+      expect(
+        Redacted.value(
+          (yield* store.read(`environments/${namespace}/profiles/_test_accounts/registry-v1`))!
+            .value,
+        ),
+      ).toMatchObject({ schemaVersion: 1 });
     }).pipe(Effect.provide(layer)),
 );

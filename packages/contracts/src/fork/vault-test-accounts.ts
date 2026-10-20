@@ -93,6 +93,32 @@ export const VaultTestAccountMutation = Schema.Struct({
   change: VaultTestAccountChange,
 });
 export type VaultTestAccountMutation = typeof VaultTestAccountMutation.Type;
+// A pool destination is an authorization scope, never a provider login endpoint.
+export const vaultTestAccountDestination = (collectionId: string) =>
+  `loom:test-accounts:${collectionId}`;
+export const VaultTestAccountAgentMutation = Schema.Struct({
+  operationId: VaultItemId,
+  expectedRevision: NonNegativeInt,
+  change: Schema.Union([
+    Schema.Struct({
+      type: Schema.Literal("reserve"),
+      id: VaultItemId,
+      durationMs: Schema.Literals([300_000, 900_000]),
+    }),
+    Schema.Struct({ type: Schema.Literal("renew"), id: VaultItemId, leaseId: VaultItemId }),
+    Schema.Struct({ type: Schema.Literal("release"), id: VaultItemId, leaseId: VaultItemId }),
+  ]),
+});
+export type VaultTestAccountAgentMutation = typeof VaultTestAccountAgentMutation.Type;
+export const VaultTestAccountDiscovery = Schema.Struct({
+  revision: NonNegativeInt,
+  checkedAt: Time,
+  collections: Schema.Array(VaultTestCollection).check(Schema.isMaxLength(32)),
+  // Only available entries and this run's own reservations are returned.
+  accounts: Schema.Array(VaultTestAccount).check(Schema.isMaxLength(128)),
+  loginDelivery: Schema.Literal("unsupported"),
+});
+export type VaultTestAccountDiscovery = typeof VaultTestAccountDiscovery.Type;
 export const VAULT_TEST_ACCOUNT_WS_METHODS = {
   snapshot: "loom.vault-test-accounts.snapshot",
   apply: "loom.vault-test-accounts.apply",
