@@ -4,8 +4,10 @@ import * as NodeHttp from "node:http";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
@@ -13,6 +15,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../../processRunner.ts";
 import {
   makePreviewContainerOps,
+  previewByteRange,
   previewContainerRunArgs,
   previewContentType,
   previewPortFree,
@@ -57,7 +60,12 @@ interface Reply {
 /** Sends `path` exactly as given, which a fetch client would normalize first. */
 const request = (
   port: number,
-  options: { readonly path: string; readonly method?: string; readonly host?: string },
+  options: {
+    readonly path: string;
+    readonly method?: string;
+    readonly host?: string;
+    readonly headers?: Readonly<Record<string, string>>;
+  },
 ) =>
   Effect.promise(
     () =>
@@ -68,7 +76,7 @@ const request = (
             port,
             method: options.method ?? "GET",
             path: options.path,
-            headers: { host: options.host ?? `localhost:${port}` },
+            headers: { ...options.headers, host: options.host ?? `localhost:${port}` },
             agent: false,
           },
           (response) => {
@@ -87,9 +95,13 @@ const request = (
 
 type DockerReply =
   | { readonly code: number; readonly stdout?: string; readonly stderr?: string }
-  | ProcessRunner.ProcessRunError;
+  | ProcessRunner.ProcessRunError
+  | "hang";
 
-/** Records each docker command line and answers from `respond`; no docker ever runs. */
+/**
+ * Records each docker command line and answers from `respond`; no docker ever runs. A command
+ * that hangs runs until it is interrupted.
+ */
 const scriptedDocker = (respond: (line: string) => DockerReply) => {
   const calls: Array<ProcessRunner.ProcessRunInput> = [];
   const runner = ProcessRunner.ProcessRunner.of({
@@ -97,6 +109,7 @@ const scriptedDocker = (respond: (line: string) => DockerReply) => {
       Effect.suspend(() => {
         calls.push(input);
         const reply = respond([input.command, ...input.args].join(" "));
+        if (reply === "hang") return Effect.never;
         if ("_tag" in reply) return Effect.fail(reply);
         return Effect.succeed({
           stdout: reply.stdout ?? "",
@@ -147,7 +160,7 @@ describe("preview backing helpers", () => {
       "run",
       "-d",
       "--pull",
-      "missing",
+      "never",
       "--label",
       "loom.lane=lane-a",
       "--label",
@@ -273,6 +286,79 @@ it.layer(NodeServices.layer)("preview folder backing", (it) => {
       }),
   );
 
+  it("reads one byte range of a file and leaves anything else to the whole file", () => {
+    const cases: ReadonlyArray<readonly [string | undefined, number, unknown]> = [
+      [undefined, 5, null],
+      ["bytes=0-", 5, { start: 0, end: 4 }],
+      ["bytes=1-99", 5, { start: 1, end: 4 }],
+      [" BYTES=1-2 ", 5, { start: 1, end: 2 }],
+      ["bytes=-2", 5, { start: 3, end: 4 }],
+      ["bytes=-99", 5, { start: 0, end: 4 }],
+      ["bytes=5-", 5, "unsatisfiable"],
+      ["bytes=-0", 5, "unsatisfiable"],
+      ["bytes=0-", 0, "unsatisfiable"],
+      ["bytes=-1", 0, "unsatisfiable"],
+      ["bytes=3-1", 5, null],
+      ["bytes=0-1,3-4", 5, null],
+      ["bytes=-", 5, null],
+      ["items=0-1", 5, null],
+    ];
+    for (const [header, size, range] of cases) {
+      expect(previewByteRange(header, size), `${header} of ${size}`).toEqual(range);
+    }
+  });
+
+  it.effect("answers a byte range so media can seek", () =>
+    Effect.gen(function* () {
+      const site = yield* makeSite;
+      const { port } = yield* servePreviewFolder({ root: site, port: 0 });
+      const ranged = (range: string, extra: Readonly<Record<string, string>> = {}) =>
+        request(port, { path: "/data.bin", headers: { range, ...extra } });
+
+      const whole = yield* request(port, { path: "/data.bin" });
+      expect(whole).toMatchObject({ status: 200, body: "bytes" });
+      expect(whole.headers["accept-ranges"]).toBe("bytes");
+
+      const middle = yield* ranged("bytes=1-3");
+      expect(middle).toMatchObject({ status: 206, body: "yte" });
+      expect(middle.headers).toMatchObject({
+        "accept-ranges": "bytes",
+        "content-range": "bytes 1-3/5",
+        "content-length": "3",
+        "content-type": "application/octet-stream",
+        "cache-control": "no-store",
+      });
+      expect(yield* ranged("bytes=2-")).toMatchObject({ status: 206, body: "tes" });
+      expect(yield* ranged("bytes=-2")).toMatchObject({ status: 206, body: "es" });
+
+      const past = yield* ranged("bytes=9-");
+      expect(past.status).toBe(416);
+      expect(past.headers).toMatchObject({
+        "content-range": "bytes */5",
+        "accept-ranges": "bytes",
+      });
+
+      // Several ranges would take a multipart body, and an If-Range never matches without a
+      // validator, so both get the whole file.
+      expect(yield* ranged("bytes=0-0,2-3")).toMatchObject({ status: 200, body: "bytes" });
+      expect(yield* ranged("bytes=1-3", { "if-range": '"abc"' })).toMatchObject({
+        status: 200,
+        body: "bytes",
+      });
+
+      const head = yield* request(port, {
+        path: "/data.bin",
+        method: "HEAD",
+        headers: { range: "bytes=1-3" },
+      });
+      expect(head).toMatchObject({ status: 206, body: "" });
+      expect(head.headers["content-length"]).toBe("3");
+      // A range reaches nothing the folder keeps private.
+      const hidden = yield* request(port, { path: "/.env", headers: { range: "bytes=0-1" } });
+      expect(hidden.status).toBe(404);
+    }),
+  );
+
   it.effect("reports a taken port and frees its port when its scope closes", () =>
     Effect.gen(function* () {
       const site = yield* makeSite;
@@ -294,34 +380,103 @@ it.layer(NodeServices.layer)("preview folder backing", (it) => {
   );
 });
 
+const startInput = (image: string) => ({
+  laneId: "lane-a",
+  linkId: "link1",
+  port: 41003,
+  input: { image, containerPort: 80 },
+});
+
 it.layer(NodeServices.layer)("preview container backing", (it) => {
-  it.effect("starts a container and keeps its short id", () =>
+  it.effect("pulls an image only when it is not here, then starts it and keeps its short id", () =>
     Effect.gen(function* () {
-      const docker = scriptedDocker(() => ({ code: 0, stdout: `Pulling...\n${FULL_ID}\n` }));
+      const images = new Set(["nginx"]);
+      const docker = scriptedDocker((line) => {
+        const image = line.split(" ").at(-1) ?? "";
+        if (line.includes(" image inspect ")) {
+          return images.has(image)
+            ? { code: 0, stdout: "sha256:1\n" }
+            : { code: 1, stderr: `Error response from daemon: No such image: ${image}` };
+        }
+        if (line.includes(" pull ")) {
+          images.add(image);
+          return { code: 0, stdout: `Pulling from library/${image}\n` };
+        }
+        return { code: 0, stdout: `${FULL_ID}\n` };
+      });
       const ops = yield* docker.ops;
-      const args = ["run", "-d", "nginx"];
-      expect(yield* ops.run(DOCKER, args, { image: "nginx", port: 41003 })).toBe("0123456789ab");
-      expect(docker.calls[0]).toMatchObject({ command: DOCKER, args, timeout: "10 minutes" });
-      expect(docker.calls[0]?.env?.LC_ALL).toBe("C");
+      const subcommands = () => docker.calls.map((call) => call.args.slice(0, 2).join(" "));
+
+      expect(yield* ops.run(DOCKER, startInput("nginx"))).toBe("0123456789ab");
+      expect(subcommands()).toEqual(["image inspect", "run -d"]);
+      expect(docker.calls[1]).toMatchObject({ command: DOCKER, timeout: "2 minutes" });
+      expect(docker.calls[1]?.args.slice(2, 4)).toEqual(["--pull", "never"]);
+      expect(docker.calls[1]?.env?.LC_ALL).toBe("C");
+
+      docker.calls.length = 0;
+      expect(yield* ops.run(DOCKER, startInput("redis"))).toBe("0123456789ab");
+      expect(subcommands()).toEqual(["image inspect", "pull redis", "run -d"]);
+      expect(docker.calls[1]).toMatchObject({ timeout: "10 minutes" });
     }),
   );
 
-  it.effect("explains why Docker could not start a container", () =>
+  it.effect("creates nothing when a start is cancelled during its pull", () =>
     Effect.gen(function* () {
-      const cases: ReadonlyArray<readonly [DockerReply, string]> = [
+      const pulling = yield* Deferred.make<void>();
+      const docker = scriptedDocker((line) => {
+        if (line.includes(" image inspect ")) return { code: 1, stderr: "No such image: nginx" };
+        if (line.includes(" pull ")) {
+          Deferred.doneUnsafe(pulling, Exit.void);
+          return "hang";
+        }
+        return { code: 0, stdout: `${FULL_ID}\n` };
+      });
+      const ops = yield* docker.ops;
+      const starting = yield* Effect.forkChild(ops.run(DOCKER, startInput("nginx")));
+      yield* Deferred.await(pulling);
+      yield* Fiber.interrupt(starting);
+      expect(docker.lines().some((line) => line.includes(" run "))).toBe(false);
+    }),
+  );
+
+  it.effect("explains why Docker could not pull or start a container", () =>
+    Effect.gen(function* () {
+      const notHere = { code: 1, stderr: "Error response from daemon: No such image: nope" };
+      const pulled = { code: 0, stdout: "Status: Downloaded newer image for nope\n" };
+      const registryDown =
+        'Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http: TLS handshake timeout';
+      // Each case is the pull's reply, the run's reply and the message the agent gets.
+      const cases: ReadonlyArray<readonly [DockerReply, DockerReply, string]> = [
         [
+          { code: 1, stderr: DAEMON_DOWN },
           { code: 125, stderr: DAEMON_DOWN },
           "Docker is not running. Start Docker Desktop or OrbStack, then share the container again.",
         ],
         [
           {
-            code: 125,
+            code: 1,
             stderr:
-              "Unable to find image 'nope:latest' locally\ndocker: Error response from daemon: pull access denied for nope, repository does not exist",
+              "Error response from daemon: pull access denied for nope, repository does not exist or may require 'docker login'",
           },
+          { code: 0 },
           "Docker could not find the image nope. Check its name and tag.",
         ],
         [
+          { code: 1, stderr: registryDown },
+          { code: 0 },
+          `Docker could not pull the image nope: ${registryDown}`,
+        ],
+        [
+          new ProcessRunner.ProcessTimeoutError({
+            command: DOCKER,
+            argumentCount: 2,
+            timeoutMs: 600_000,
+          }),
+          { code: 0 },
+          "Docker took more than 10 minutes to pull the image nope. Check the image name and the network, then try again.",
+        ],
+        [
+          pulled,
           {
             code: 125,
             stderr:
@@ -330,30 +485,40 @@ it.layer(NodeServices.layer)("preview container backing", (it) => {
           "Port 41003 was taken before the container could use it. Share the container again.",
         ],
         [
+          pulled,
+          { code: 125, stderr: "docker: Error response from daemon: No such image: nope\n" },
+          "Docker could not find the image nope. Check its name and tag.",
+        ],
+        [
+          pulled,
           { code: 125, stderr: "docker: invalid reference format.\n" },
           "Docker could not start the container: invalid reference format.",
         ],
-        [{ code: 0, stdout: "" }, "Docker started the container without reporting its id."],
+        [pulled, { code: 0, stdout: "" }, "Docker started the container without reporting its id."],
         [
           new ProcessRunner.ProcessSpawnError({
             command: DOCKER,
-            argumentCount: 3,
+            argumentCount: 2,
             cause: new Error("ENOENT"),
           }),
+          { code: 0 },
           "Docker could not be started on this computer.",
         ],
         [
+          pulled,
           new ProcessRunner.ProcessTimeoutError({
             command: DOCKER,
-            argumentCount: 3,
-            timeoutMs: 600_000,
+            argumentCount: 12,
+            timeoutMs: 120_000,
           }),
-          "Docker took more than 10 minutes to start the container. Check the image name and the network, then try again.",
+          "Docker took more than 2 minutes to start the container. Try again.",
         ],
       ];
-      for (const [reply, message] of cases) {
-        const ops = yield* scriptedDocker(() => reply).ops;
-        const error = yield* Effect.flip(ops.run(DOCKER, ["run"], { image: "nope", port: 41003 }));
+      for (const [pull, run, message] of cases) {
+        const ops = yield* scriptedDocker((line) =>
+          line.includes(" image inspect ") ? notHere : line.includes(" pull ") ? pull : run,
+        ).ops;
+        const error = yield* Effect.flip(ops.run(DOCKER, startInput("nope")));
         expect(error, message).toMatchObject({ reason: "invalid", message });
       }
     }),
