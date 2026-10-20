@@ -71,11 +71,15 @@ The complete selected packet remains In progress.
 
 ## Profile and enrollment integration
 
-Eight real-service readiness cases plus RPC authorization, agent-bound MCP behavior and actual
-fork registration pass (15 tests in four suites). They prove default-profile requirement discovery,
+Thirteen readiness cases cover the real profile/access services plus a retired-pin refusal.
+RPC authorization, agent-bound MCP behavior and fork registration have separate focused coverage. They prove default-profile requirement discovery,
 missing defaults/bindings, current use denial, explicit inspect independence, broker expiry,
 restricted runtime, context/profile changes across waits, no SSH execution or run-pin creation,
-unchanged decision audit, expired slow results and preservation of sealed backend reports. Existing web/native views
+unchanged decision audit, expired slow results and preservation of sealed backend reports.
+Current-run pins take precedence over defaults, including attached profiles with no default and
+subsequent default switches. Pinned key/profile version drift blocks readiness. Unreadable or
+retired pins cannot fall back to defaults. SSH and Git requirements sharing a key produce unique,
+destination-labelled grant checks. Existing web/native views
 render the same typed check list; no new client control or simulator pass is claimed.
 
 ```sh

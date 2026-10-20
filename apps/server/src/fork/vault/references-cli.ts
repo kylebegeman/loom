@@ -4,6 +4,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { VaultItemKind, VaultReferencePage, vaultReferenceText } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 import * as Console from "effect/Console";
 import { callAcpMcpTool } from "../../mcp/AcpMcpStdioBridge.ts";
@@ -23,6 +24,17 @@ class ReferenceCompletionError extends Schema.TaggedError<ReferenceCompletionErr
         : "The Loom server returned an unsupported reference completion result.";
   }
 }
+class ReferenceCompletionExit extends Schema.TaggedError<ReferenceCompletionExit>()(
+  "ReferenceCompletionExit",
+  {},
+) {
+  override readonly [Runtime.errorReported] = false;
+  override readonly [Runtime.errorExitCode] = 1;
+}
+const reportCompletionFailure = () =>
+  Console.error(
+    "Vault reference completion failed. Check the Loom connection and inspect grants.",
+  ).pipe(Effect.andThen(Effect.fail(new ReferenceCompletionExit({}))));
 const envelope = Schema.decodeUnknownOption(
   Schema.Struct({
     isError: Schema.optionalKey(Schema.Boolean),
@@ -101,6 +113,12 @@ export const referencesCompleteCommand = Command.make("references-complete", {
     Effect.gen(function* () {
       const values = yield* completeVaultReferences(query, Option.getOrNull(kind), NodeProcess.env);
       if (values.length) yield* Console.log(values.join("\n"));
-    }),
+    }).pipe(
+      Effect.catchTags({
+        ReferenceCompletionError: reportCompletionFailure,
+        TerminalConnectionError: reportCompletionFailure,
+        AcpMcpBridgeError: reportCompletionFailure,
+      }),
+    ),
   ),
 );

@@ -1209,13 +1209,13 @@ const make = Effect.gen(function* () {
       const decisions: VaultAccessDecision[] = [];
       if (backend.state === "ready") {
         const { policy } = yield* load();
-        for (const requirement of input.requirements) {
+        for (const [index, requirement] of input.requirements.entries()) {
           const result = yield* decision(policy, { ...requirement, threadId: input.threadId });
           decisions.push(result.result);
           checks.push({
-            id: `grant:${requirement.itemId}:${requirement.action}`,
+            id: `grant:${requirement.itemId}:${requirement.action}:${requirement.destination ?? "unscoped"}:${index}`,
             state: result.result.allowed ? "passed" : "blocked",
-            reason: result.result.reason,
+            reason: `${requirement.destination ?? "Unscoped access"}: ${result.result.reason}`,
             repair: result.result.allowed
               ? "No repair needed."
               : "Inspect the item and grant; restore or request access from an administrator.",

@@ -3,6 +3,7 @@ import {
   VaultError,
   VaultReadinessInput,
   type VaultReadinessReport,
+  VaultProfileResolution,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -21,6 +22,7 @@ export class VaultReadiness extends Context.Service<
   }
 >()("t3/fork/vault/VaultReadiness") {}
 const decode = Schema.decodeUnknownEffect(VaultReadinessInput, { onExcessProperty: "error" });
+const samePin = Schema.toEquivalence(Schema.NullOr(VaultProfileResolution));
 const sameContext = (a: OrchestrationV2ThreadShell, b: OrchestrationV2ThreadShell | null) =>
   b !== null &&
   a.projectId === b.projectId &&
@@ -52,19 +54,41 @@ const make = Effect.gen(function* () {
       const checks: VaultReadinessReport["checks"][number][] = [];
       let requirements: VaultReadinessInput["requirements"] = input.requirements;
       let observedProfile: { id: string; version: number; revision: number } | null = null;
+      let pinned: VaultProfileResolution | null = null;
+      let pinFailed = false;
       if (requirements.length === 0) {
         const registry = yield* profiles.listForThread(input.threadId);
-        const selected = registry.profiles.find(
-          (p) => p.id === registry.activeProfileId && p.state === "active",
-        );
-        if (!selected)
+        const pin = yield* profiles.currentPin(input.threadId).pipe(Effect.result);
+        pinFailed = pin._tag === "Failure";
+        pinned = pin._tag === "Success" ? pin.success : null;
+        // A retired or unreadable pin is never permission to silently select a future-run default.
+        if (pinFailed)
+          checks.push({
+            id: "profile-pin",
+            state: "blocked",
+            reason: "The current run's profile selection is unavailable or retired.",
+            repair: "Review the retained run selection before checking again.",
+          });
+        const selected = pinned
+          ? {
+              id: pinned.profileId,
+              version: pinned.profileVersion,
+              label: pinned.label,
+              bindings: pinned.bindings,
+            }
+          : pinFailed
+            ? null
+            : registry.profiles.find(
+                (p) => p.id === registry.activeProfileId && p.state === "active",
+              );
+        if (!selected && !pinFailed)
           checks.push({
             id: "profile-default",
             state: "blocked",
             reason: "No active project Vault profile is selected.",
             repair: "Choose a project profile or supply explicit requirements.",
           });
-        else {
+        else if (selected) {
           observedProfile = {
             id: selected.id,
             version: selected.version,
@@ -79,22 +103,43 @@ const make = Effect.gen(function* () {
               ? [{ itemId: b.itemId, action: "use" as const, destination: b.destination }]
               : [],
           );
-          for (const binding of preview.bindings)
+          for (const binding of preview.bindings) {
+            const saved = pinned?.bindings.find((b) => b.name === binding.name);
+            const matchesPin =
+              !pinned ||
+              (saved?.version === binding.version && saved.destination === binding.destination);
+            const configured =
+              (binding.state === "unchecked" || binding.state === "ready") && matchesPin;
             checks.push({
               id: `profile-binding:${binding.name}`,
-              state:
-                binding.state === "unchecked" || binding.state === "ready" ? "passed" : "blocked",
-              reason:
-                binding.state === "unchecked" || binding.state === "ready"
-                  ? `Profile requirement ${binding.name} is configured; live access is checked separately.`
+              state: configured ? "passed" : "blocked",
+              reason: configured
+                ? `Profile requirement ${binding.name} is configured; live access is checked separately.`
+                : !matchesPin
+                  ? `Profile requirement ${binding.name} changed from the run's pinned credential version or destination.`
                   : `Profile requirement ${binding.name} is ${binding.state}.`,
               repair:
                 "Repair the project's local binding and selected provider or host trust configuration.",
             });
+          }
+          if (pinned)
+            requirements = pinned.bindings.map((b) => ({
+              itemId: b.itemId,
+              action: "use" as const,
+              destination: b.destination,
+            }));
+          const currentSelection = registry.profiles.find(
+            (p) => p.id === selected.id && p.state === "active",
+          );
+          const matchesProfile = currentSelection?.version === selected.version;
           checks.push({
-            id: "profile-default",
-            state: "passed",
-            reason: "Requirements were discovered from the active project profile.",
+            id: pinned ? "profile-pin" : "profile-default",
+            state: matchesProfile ? "passed" : "blocked",
+            reason: !matchesProfile
+              ? "The selected profile was changed or archived since this run was pinned."
+              : pinned
+                ? "Requirements were discovered from the current run's pinned profile and credential versions."
+                : "Requirements were discovered from the active project profile.",
             repair: "Refresh after changing the profile. No retained run selection was written.",
           });
         }
@@ -168,7 +213,7 @@ const make = Effect.gen(function* () {
         const current = yield* profiles.listForThread(input.threadId);
         if (
           current.revision !== observedProfile.revision ||
-          current.activeProfileId !== observedProfile.id ||
+          (!pinned && current.activeProfileId !== observedProfile.id) ||
           !current.profiles.some(
             (p) =>
               p.id === observedProfile.id &&
@@ -181,6 +226,16 @@ const make = Effect.gen(function* () {
             state: "blocked",
             reason: "The active profile changed during this check.",
             repair: "Refresh the intended profile and check again.",
+          });
+      }
+      if (input.requirements.length === 0 && !pinFailed) {
+        const latestPin = yield* profiles.currentPin(input.threadId).pipe(Effect.result);
+        if (latestPin._tag === "Failure" || !samePin(latestPin.success, pinned))
+          checks.push({
+            id: "profile-pin-changed",
+            state: "blocked",
+            reason: "The run's retained profile selection changed during this check.",
+            repair: "Check again in the current run.",
           });
       }
       const allChecks = [...report.checks, ...checks],

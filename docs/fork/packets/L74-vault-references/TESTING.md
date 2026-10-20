@@ -26,21 +26,26 @@ native static checks pass. No repo-wide checks or production actions were run.
 
 ## Terminal completion evidence
 
-Five focused CLI cases exercise a real disposable loopback MCP endpoint and the actual Loom
+Six focused CLI cases exercise a real disposable loopback MCP endpoint and the actual Loom
 CLI child. Structured/text responses, sparse continuation, bounded scans (four requests), output
 caps (20 references), deduplication, canonical-reference enforcement, mixed-environment refusal,
 archived response refusal, cursor loops, missing credentials and tool failures are covered.
+Child-process failures assert exit 1, empty stdout and one fixed stderr message for tool refusal,
+malformed responses, missing connections and JSON-RPC errors containing a synthetic private body.
 The CLI prints no item labels, server error bodies or credential values. It uses only its
 inherited authenticated environment and never installs a shell function or edits a startup file.
 The actual child also verifies the new account-discovery CLI alias uses the existing agent tool.
 
 ```sh
-./node_modules/.bin/vp test run apps/server/src/fork/vault/references-cli.test.ts
+cd apps/server
+../../node_modules/.bin/vp test run src/fork/vault/references-cli.test.ts
 ```
 
 This provides newline completion candidates for a terminal picker or completion integration.
 It does not modify the user's shell or complete an arbitrary embedded JSON argument. Use the
-existing paged reference search for results beyond the bounded candidate scan.
+existing paged reference search for results beyond the bounded candidate scan. Reference-service
+regressions cover canonical prefixes and mismatched environments. Wrappers must replace a label
+query with the canonical candidates, not apply shell prefix filtering to the original label.
 
 ## Client evidence and limits
 

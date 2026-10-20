@@ -725,41 +725,34 @@ it.effect(
       }),
     ),
 );
-it.effect(
-  "keeps the prepared deadline even after lease renewal and refuses released or replaced leases",
-  () =>
-    withFixture((f) =>
-      Effect.gen(function* () {
-        yield* f.grant();
-        yield* f.grant({
-          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
-          actions: ["use"],
-        });
-        const reserved = yield* f.reserve(),
-          leaseId = reserved.accounts[0]!.lease!.id;
-        const prepared = yield* f.service.prepareLogin(
-          { accountId: account.id, leaseId, origin: loginOrigin },
-          caller,
-        );
-        yield* TestClock.adjust("1 minute");
-        yield* f.service.apply(
-          {
-            operationId: f.id(),
-            expectedRevision: reserved.revision,
-            change: { type: "renew", id: account.id, leaseId },
-          },
-          caller,
-          Effect.void,
-        );
-        yield* TestClock.adjust("4 minutes");
-        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
-        yield* f.manage({ type: "quarantine", id: account.id });
-        yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
-        const fresh = yield* f.reserve();
-        expect(fresh.accounts[0]!.lease!.id).not.toBe(leaseId);
-        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
-      }),
-    ),
+it.effect("keeps the prepared deadline even after lease renewal", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.grant({
+        destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+        actions: ["use"],
+      });
+      const reserved = yield* f.reserve(),
+        leaseId = reserved.accounts[0]!.lease!.id;
+      const prepared = yield* f.service.prepareLogin(
+        { accountId: account.id, leaseId, origin: loginOrigin },
+        caller,
+      );
+      yield* TestClock.adjust("1 minute");
+      yield* f.service.apply(
+        {
+          operationId: f.id(),
+          expectedRevision: reserved.revision,
+          change: { type: "renew", id: account.id, leaseId },
+        },
+        caller,
+        Effect.void,
+      );
+      yield* TestClock.adjust("4 minutes");
+      expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+    }),
+  ),
 );
 it.effect(
   "quarantines and cleans a synthetic login when a callback loses current access, without resuming or reminting",
@@ -919,6 +912,82 @@ it.effect.each(["queued", "waiting"])(
         expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
           "quarantined",
         );
+      }),
+    ),
+);
+
+it.effect("refuses released and replaced leases before the original prepared deadline", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.grant({
+        destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+        actions: ["use"],
+      });
+      const reserved = yield* f.reserve(),
+        leaseId = reserved.accounts[0]!.lease!.id;
+      const prepared = yield* f.service.prepareLogin(
+        { accountId: account.id, leaseId, origin: loginOrigin },
+        caller,
+      );
+      yield* TestClock.adjust("1 minute");
+      yield* prepared.revalidate;
+      yield* f.service.apply(
+        {
+          operationId: f.id(),
+          expectedRevision: reserved.revision,
+          change: { type: "release", id: account.id, leaseId },
+        },
+        caller,
+        Effect.void,
+      );
+      expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+      yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+      const fresh = yield* f.reserve(),
+        freshLeaseId = fresh.accounts[0]!.lease!.id;
+      expect(freshLeaseId).not.toBe(leaseId);
+      expect(fresh.accounts[0]!.lease!.owner).toBe(reserved.accounts[0]!.lease!.owner);
+      // Both leases are within their deadlines; the old preparation must reject only the replacement identity.
+      expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+      const current = yield* f.service.prepareLogin(
+        { accountId: account.id, leaseId: freshLeaseId, origin: loginOrigin },
+        caller,
+      );
+      yield* current.revalidate;
+    }),
+  ),
+);
+it.effect.each(["run", "item", "deadline"] as const)(
+  "refuses %s drift during the awaited login audit write",
+  (drift) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        yield* f.grant({
+          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+          actions: ["use"],
+        });
+        const reserved = yield* f.reserve(),
+          leaseId = reserved.accounts[0]!.lease!.id;
+        const prepared = yield* f.service.prepareLogin(
+          { accountId: account.id, leaseId, origin: loginOrigin },
+          caller,
+        );
+        let interleaved = false;
+        f.state.beforePolicyWrite = () =>
+          Effect.gen(function* () {
+            f.state.beforePolicyWrite = null;
+            interleaved = true;
+            if (drift === "run") f.state.runId = RunId.make("changed-during-policy-write");
+            else if (drift === "item")
+              yield* f.core.change(
+                { id: account.itemId, expectedVersion: 1, operationId: f.id(), action: "archive" },
+                "human",
+              );
+            else yield* TestClock.adjust("5 minutes");
+          });
+        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+        expect(interleaved).toBe(true);
       }),
     ),
 );

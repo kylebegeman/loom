@@ -25,7 +25,7 @@ const entry = (n: number, label = "Dedicated development item") => {
     },
   };
 };
-const fixture = (reply: (index: number) => unknown) =>
+const fixture = (reply: (index: number) => unknown, rpcError = false) =>
   Effect.acquireRelease(
     Effect.promise(async () => {
       const calls: Array<{ name: string; arguments: unknown }> = [];
@@ -54,7 +54,13 @@ const fixture = (reply: (index: number) => unknown) =>
         }
         response
           .writeHead(200, { "content-type": "application/json", "mcp-session-id": "synthetic" })
-          .end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+          .end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              ...(rpcError && message.method === "tools/call" ? { error: result } : { result }),
+            }),
+          );
       });
       await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
       const address = http.address();
@@ -73,6 +79,32 @@ const fixture = (reply: (index: number) => unknown) =>
         () =>
           new Promise<void>((resolve, reject) => http.close((e) => (e ? reject(e) : resolve()))),
       ),
+  );
+
+const run = (args: string[], environment: Readonly<Record<string, string | undefined>>) =>
+  Effect.promise(
+    () =>
+      new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = NodeChildProcess.spawn(
+          NodeProcess.execPath,
+          [NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url)), "vault", ...args],
+          {
+            env: { PATH: "/usr/bin:/bin", NO_COLOR: "1", ...environment },
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 30000,
+          },
+        );
+        let stdout = "",
+          stderr = "";
+        child.stdout.on("data", (part) => {
+          stdout += part;
+        });
+        child.stderr.on("data", (part) => {
+          stderr += part;
+        });
+        child.once("error", reject);
+        child.once("close", (code) => resolve({ code, stdout, stderr }));
+      }),
   );
 
 it.effect.each([true, false])(
@@ -186,43 +218,43 @@ it.effect(
       const f = yield* fixture(() => ({
         structuredContent: { items: [entry(1, "Label never printed")], nextCursor: null },
       }));
-      const run = (args: string[]) =>
-        Effect.promise(
-          () =>
-            new Promise<{ code: number | null; stdout: string; stderr: string }>(
-              (resolve, reject) => {
-                const child = NodeChildProcess.spawn(
-                  NodeProcess.execPath,
-                  [
-                    NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url)),
-                    "vault",
-                    ...args,
-                  ],
-                  {
-                    env: { PATH: "/usr/bin:/bin", NO_COLOR: "1", ...f.environment },
-                    stdio: ["ignore", "pipe", "pipe"],
-                    timeout: 30000,
-                  },
-                );
-                let stdout = "",
-                  stderr = "";
-                child.stdout.on("data", (part) => {
-                  stdout += part;
-                });
-                child.stderr.on("data", (part) => {
-                  stderr += part;
-                });
-                child.once("error", reject);
-                child.once("close", (code) => resolve({ code, stdout, stderr }));
-              },
-            ),
-        );
-      const completed = yield* run(["references-complete", "editor", "--kind", "account"]);
+      const completed = yield* run(
+        ["references-complete", "editor", "--kind", "account"],
+        f.environment,
+      );
       expect(completed.code, completed.stderr).toBe(0);
       expect(completed.stdout.trim()).toBe(entry(1).reference);
       expect(completed.stdout + completed.stderr).not.toContain("Label never printed");
-      const accounts = yield* run(["test-accounts"]);
+      const accounts = yield* run(["test-accounts"], f.environment);
       expect(accounts.code, accounts.stderr).toBe(0);
       expect(f.calls.at(-1)!.name).toBe("loom_vault_test_accounts_discover");
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "keeps failed completion stdout empty for tool, RPC, response and connection failures",
+  () =>
+    Effect.gen(function* () {
+      for (const [reply, rpcError] of [
+        [{ isError: true, content: [{ type: "text", text: "synthetic-private-body" }] }, false],
+        [{ code: -32603, message: "synthetic-private-body" }, true],
+        [{ structuredContent: { items: "invalid" } }, false],
+      ] as const) {
+        const f = yield* fixture(() => reply, rpcError);
+        const result = yield* run(["references-complete"], f.environment);
+        expect(result).toEqual({
+          code: 1,
+          stdout: "",
+          stderr:
+            "Vault reference completion failed. Check the Loom connection and inspect grants.\n",
+        });
+      }
+      const result = yield* run(["references-complete"], {});
+      expect(result).toEqual({
+        code: 1,
+        stdout: "",
+        stderr:
+          "Vault reference completion failed. Check the Loom connection and inspect grants.\n",
+      });
     }).pipe(Effect.scoped),
 );

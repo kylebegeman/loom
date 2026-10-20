@@ -153,3 +153,9 @@ quarantined card without a stale lease banner. Evidence: browser-screenshot-loca
 in the local browser-artifacts directory. No synthetic wall-clock mutation or native interaction
 is claimed. Four affected package typechecks, focused lint, mobile static checks and seam/link
 checks pass. The release owner's landing review remains separate from these local checks.
+
+Lease identity regressions release and replace a lease before the original preparation deadline,
+then prove that a fresh preparation succeeds while the old one fails. Removing the lease-id guard
+makes this regression fail. Separate renewal coverage enforces the original deadline. Audit-write
+hooks change the run, archive the account item or advance past expiry during access.require;
+post-await revalidation refuses each case. These are synthetic service tests, not login delivery.

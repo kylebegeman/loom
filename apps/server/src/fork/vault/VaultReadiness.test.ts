@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId } from "@t3tools/contracts";
-import { VaultError } from "@t3tools/contracts/fork";
+import { VaultError, vaultGitDestination } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -273,6 +273,168 @@ it.effect("reports a visible expired result after an unusually slow check", () =
       expect(report.checks).toContainEqual(
         expect.objectContaining({ id: "result-expired", state: "blocked" }),
       );
+    }),
+  ),
+);
+
+it.effect(
+  "uses an attached run pin even with no project default, then ignores a changed default",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        yield* f.profiles.apply(
+          {
+            projectId: f.state.thread.projectId,
+            operationId: yield* f.id,
+            expectedRevision: 2,
+            change: { type: "activate", id: null },
+          },
+          "admin",
+        );
+        const pin = yield* f.profiles.resolve(f.threadId, f.profile.id);
+        const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+        expect(report.checks).toContainEqual(
+          expect.objectContaining({ id: "profile-pin", state: "passed" }),
+        );
+        expect(report.checks.some((c) => c.id === "profile-default")).toBe(false);
+        expect(report.decisions.map((d) => d.allowed)).toEqual([true]);
+        const otherId = yield* f.id;
+        yield* f.profiles.apply(
+          {
+            projectId: f.state.thread.projectId,
+            operationId: yield* f.id,
+            expectedRevision: 3,
+            change: {
+              type: "save",
+              profile: {
+                ...f.profile,
+                id: otherId,
+                bindings: [{ ...f.profile.bindings[0]!, itemId: null }],
+              },
+            },
+          },
+          "admin",
+        );
+        yield* f.profiles.apply(
+          {
+            projectId: f.state.thread.projectId,
+            operationId: yield* f.id,
+            expectedRevision: 4,
+            change: { type: "activate", id: otherId },
+          },
+          "admin",
+        );
+        const switched = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+        expect(switched.checks).toContainEqual(
+          expect.objectContaining({ id: "profile-binding:server", state: "passed" }),
+        );
+        expect(switched.decisions.map((d) => d.allowed)).toEqual([true]);
+        expect(
+          (yield* f.profiles.pins({ projectId: f.state.thread.projectId, cursor: null })).items,
+        ).toHaveLength(1);
+        expect(pin.profileId).toBe(f.profile.id);
+      }),
+    ),
+);
+it.effect(
+  "blocks a rotated key in a run pin instead of inspecting only the latest configured version",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        yield* f.profiles.resolve(f.threadId, f.profile.id);
+        yield* f.ssh.trust(
+          {
+            id: f.itemId,
+            operationId: yield* f.id,
+            expectedVersion: 1,
+            hostKey: f.key.target.hostKey,
+          },
+          "admin",
+          Effect.void,
+        );
+        const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+        expect(report.checks).toContainEqual(
+          expect.objectContaining({ id: "profile-binding:server", state: "blocked" }),
+        );
+        expect(report.ready).toBe(false);
+      }),
+    ),
+);
+it.effect(
+  "distinguishes SSH and Git grants for one key with unique destination-labelled checks",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        yield* f.save([
+          f.profile.bindings[0]!,
+          { name: "repository", kind: "git", itemId: f.itemId, repository: "owner/repo" },
+        ] as never);
+        const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+        const grants = report.checks.filter((c) => c.id.startsWith("grant:"));
+        expect(grants).toHaveLength(2);
+        expect(new Set(report.checks.map((c) => c.id)).size).toBe(report.checks.length);
+        expect(grants).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              state: "passed",
+              reason: expect.stringContaining(f.key.destination),
+            }),
+            expect.objectContaining({
+              state: "blocked",
+              reason: expect.stringContaining(vaultGitDestination(f.key.target, "owner/repo")),
+            }),
+          ]),
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "does not fall back to the default when the current run pin is retired or unreadable",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const original = Context.get(f.context, VaultProfiles.VaultProfiles);
+        const service = yield* VaultReadiness.VaultReadiness.pipe(
+          Effect.provide(
+            VaultReadiness.layer.pipe(
+              Layer.provide(
+                Layer.succeed(VaultProfiles.VaultProfiles, {
+                  ...original,
+                  currentPin: () => Effect.fail(new VaultError({ reason: "denied" })),
+                }),
+              ),
+            ),
+          ),
+          Effect.provideContext(f.context),
+        );
+        const report = yield* service.check({ threadId: f.threadId, requirements: [] });
+        expect(report.checks).toContainEqual(
+          expect.objectContaining({ id: "profile-pin", state: "blocked" }),
+        );
+        expect(
+          report.checks.some(
+            (c) => c.id === "profile-default" || c.id.startsWith("profile-binding:"),
+          ),
+        ).toBe(false);
+        expect(report.ready).toBe(false);
+      }),
+    ),
+);
+it.effect("blocks a changed pinned profile version even when its bindings still exist", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant(f.key.destination);
+      yield* f.profiles.resolve(f.threadId, f.profile.id);
+      yield* f.save();
+      const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+      expect(report.checks).toContainEqual(
+        expect.objectContaining({ id: "profile-pin", state: "blocked" }),
+      );
+      expect(report.ready).toBe(false);
     }),
   ),
 );
