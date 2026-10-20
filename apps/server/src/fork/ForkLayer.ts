@@ -1,3 +1,4 @@
+import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
@@ -172,6 +173,28 @@ const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
 
+const layerVaultJournal = OperationJournal.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultAccess, layerVaultStore)),
+);
+const layerVaultLaunch = VaultLaunch.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultProfiles,
+      layerVaultGitHub,
+      layerVaultSsh,
+      layerVaultWorkloads,
+      BrokerCrypto.layer,
+      BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
+      ProjectStore.layer,
+    ),
+  ),
+);
+const layerOperationAdmission = OperationAdmission.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultJournal, layerVaultAccess, layerVaultLaunch, layerVaultGitHub),
+  ),
+);
+
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   VaultMigrationInventory.layer.pipe(
@@ -198,25 +221,14 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   layerVaultProfiles,
   layerVaultReferences,
-  VaultLaunch.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerVaultProfiles,
-        layerVaultGitHub,
-        layerVaultSsh,
-        layerVaultWorkloads,
-        BrokerCrypto.layer,
-        BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
-        ProjectStore.layer,
-      ),
-    ),
-  ),
+  layerVaultLaunch,
   layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,
   layerVaultCore,
   layerVaultAccess,
-  OperationJournal.layer.pipe(Layer.provide(Layer.merge(layerVaultAccess, layerVaultStore))),
+  layerVaultJournal,
+  layerOperationAdmission,
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(

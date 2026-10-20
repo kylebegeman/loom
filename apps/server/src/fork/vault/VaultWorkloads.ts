@@ -1,3 +1,4 @@
+import { admissionStamp } from "./admission-stamp.ts";
 import { ThreadId, type ProviderInstanceId } from "@t3tools/contracts";
 import {
   VaultError,
@@ -32,6 +33,13 @@ export class VaultWorkloads extends Context.Service<
       threadId: ThreadId,
       providerInstanceId: ProviderInstanceId,
     ) => Effect.Effect<VaultTerminalReadiness, Failure>;
+    readonly admission: (
+      input: Pick<VaultWorkloadOpen, "machineId" | "itemId" | "destination">,
+      threadId: ThreadId,
+    ) => Effect.Effect<
+      { readonly environmentId: string; readonly publicKey: string; readonly context: string },
+      Failure
+    >;
     readonly open: (
       input: VaultWorkloadOpen,
       threadId: ThreadId,
@@ -183,6 +191,29 @@ const make = Effect.gen(function* () {
     return session;
   });
   return VaultWorkloads.of({
+    admission: Effect.fn("VaultWorkloads.admission")(function* (input, threadId) {
+      const context = (thread: Effect.Success<ReturnType<typeof live>>) =>
+        admissionStamp([
+          thread.activeRunId,
+          thread.projectId,
+          thread.providerInstanceId ?? null,
+          thread.worktreePath ?? null,
+        ]);
+      const initial = yield* live(threadId);
+      const initialContext = yield* context(initial);
+      const machine = yield* host(input.machineId);
+      const explanation = yield* access.explain({
+        threadId,
+        itemId: input.itemId,
+        action: "use",
+        destination: input.destination,
+      });
+      if (!explanation.decision.allowed) return yield* denied();
+      if (initialContext !== (yield* context(yield* live(threadId)))) return yield* denied();
+      const current = yield* host(input.machineId);
+      if (machine.publicKey !== current.publicKey) return yield* denied();
+      return { environmentId, publicKey: current.publicKey, context: initialContext };
+    }),
     terminalReadiness: Effect.fn("VaultWorkloads.terminalReadiness")(
       function* (threadId, providerInstanceId) {
         const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
@@ -234,7 +265,7 @@ const make = Effect.gen(function* () {
         threadId,
         projectId: thread.projectId,
         runId: thread.activeRunId!,
-        providerInstanceId: thread.providerInstanceId,
+        providerInstanceId: thread.providerInstanceId ?? null,
         itemId: input.itemId,
         destination: input.destination,
         publicKey: input.publicKey,

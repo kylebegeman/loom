@@ -433,3 +433,37 @@ change is included. Construction/registration remains inert. No public acquisiti
 execution endpoint is exposed. Internal handle validation does not consume a timed grant or
 implement adapter admission, remote effects, automatic resumption or true one-time enforcement;
 those limitations and the existing downgrade/recovery requirements remain explicit. L86 is partial.
+
+## Metadata-only adapter admission and revalidation
+
+Six focused suites pass **73 tests**: 23 admission cases, fresh acquisition, normal launch,
+workload and GitHub behavior, plus real MCP startup registration. The new coordinator composes
+real journal/access/workload/launch/connector services. GitHub provider/command transports throw
+if invoked; SSH uses the existing transport that throws on execution. GitHub fixtures are direct
+synthetic connection seeds, including a non-signable App key, not verified provider accounts.
+Real metadata methods are wrapped only to insert deterministic post-observation fault barriers;
+no wrapper fabricates an admission verdict.
+
+Happy paths cover SSH, Git-over-SSH, GitHub token and GitHub App proposals. They require two
+matching metadata observations, return three false gates and required-live-validation, leave
+stored payloads/versions unchanged and create no workload session. Reusing the consumed handle
+fails. Changed proposal binding fails before metadata. Other cases cover repository allowlist
+refusal, authority withdrawal during checks, provider/worktree changes between observations,
+replayed journal reconciliation, cancellation while paused, expired broker lease, disabled
+machine, broker environment mismatch, exact pinned host key and absolute Git working directory.
+Failures reconcile owned reservation evidence without reopening execution.
+
+The first checks caught existing execution authorization writing its normal audit record;
+metadata admission now uses the same evaluator's read-only explanation. Existing execution and
+networked readiness retain audited authorization. The unchanged normal-service suites cover
+that distinction. Broker age is derived from the actual fixture lease, and revoke fixtures use
+the existing required duration contract. No sleeps, provider probes or personal host actions run.
+
+Server typecheck, focused lint/format, documentation links, 392 seam rows and whitespace pass.
+No wire/client code changed, so no UI verification or client typechecks were added. The separate
+OpenBao journal proof is unchanged and was not rerun: this slice adds no persistence format,
+path, policy permission or backend operation. Constructor/registry assembly remains inert.
+All methods are internal; no MCP, RPC, CLI, provider or scheduled execution path is exposed.
+Live session capacity, signing/proofs, credential/provider validity, tool/file/repository state
+and actual network access remain unverified. One-time grant enforcement, live dispatch, L79
+host policy/production and broader client/remote acceptance remain open; L86 stays partial.

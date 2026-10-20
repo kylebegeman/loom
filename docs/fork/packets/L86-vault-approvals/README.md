@@ -68,7 +68,9 @@ context and UI deny/cancel; accessibility speech/hints remain source-only. The g
 and consumption design now has a synthetic race/crash proof, including reserve replay, but no
 runtime dispatcher or true one-time grant enforcement. Internal fresh acquisition now separates
 acknowledged CAS ownership from replay, with opaque local handles and single-use validation.
-It invokes no adapter and opens no execution gate. Durable resumption/consumption and
+It invokes no external adapter and opens no execution gate. Internal SSH/Git/GitHub admission
+now compares local adapter metadata with fresh authority/journal checks; it mints no credential,
+opens no workload, invokes no command/probe and returns no execution permit. Durable resumption/consumption and
 live-provider acceptance remain open.
 
 ## Scope

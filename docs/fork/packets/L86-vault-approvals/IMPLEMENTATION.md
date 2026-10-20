@@ -97,10 +97,17 @@ Copied, serialized or reconstructed handles cannot recover ownership. Every retu
 keeps false gates. No transport, continuation, worker or adapter calls this internal boundary.
 Controlled service races and the existing-policy synthetic OpenBao proof cover it.
 
-Next selected work: adapter admission and revalidation for SSH, Git-over-SSH and GitHub using
-synthetic transports, while live dispatch remains disabled. Preserve final authority/readiness
-checks and ensure neither an acquisition nor a consumed observation becomes a transferable
-permit. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
+Internal adapter admission and revalidation is implemented for SSH, Git-over-SSH and GitHub API
+proposals. It consumes the local handle, binds the proposal digest, compares real adapter metadata
+observations and rechecks current authority/journal state. Success writes nothing, opens no
+workload and returns only false gates plus a required-live-validation limit. SSH broker/key/cwd
+checks and GitHub repository/run checks execute locally; no command, signing, provider session
+or probe occurs. Existing execution authorization remains audited; admission uses the same
+read-only evaluator. No MCP/RPC/CLI or other dispatch surface was added.
+
+Next selected work: synthetic crash/recovery acceptance around the new admission boundary,
+including restart, lost success replies, concurrent replay and refusal after age-out. Preserve
+explicit live-adapter and one-time enforcement limits. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
 design prerequisites before any gate can be enabled.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's

@@ -558,3 +558,43 @@ its consumed observation supplies that permission. No public MCP/RPC/CLI, queue 
 provider continuation calls acquisition in this milestone. Existing timed grants remain timed.
 Access-policy stays format 3 and journal body version 1 at the same existing path. Old runtimes
 cannot recover a handle; restart/downgrade retains only reservation evidence requiring review.
+
+### Internal adapter admission and revalidation
+
+`OperationAdmission.admit` consumes the instance-local acquisition through its single-use check,
+then decodes and snapshots the proposed operation. The request ID and canonical digest must
+match the acquired entry. Current evaluator access, request revision and reserved journal
+state/revision/digest are checked before and after adapter metadata observations. Both metadata
+passes must agree on execution context. A changed proposal, stale authority, reconciled
+reservation, changed context or interrupted check refuses; once ownership is known, failed
+admission attempts reconciliation to unknown. It never refunds the acquisition.
+
+For SSH and Git-over-SSH, `VaultLaunch.admission` checks the current active key/version, exact
+saved destination and pinned host key, configured local broker identity, environment/machine
+binding, enrolled public key, online lease and workload authority. Git also derives the current
+working directory from the thread/project and requires an absolute path. `VaultWorkloads` uses
+the same live-workload and broker checks as normal opening, without opening a session, creating
+a key, signing a challenge or checking session capacity. A schema-encoded metadata stamp binds
+run, project, provider/worktree context, broker identity, destination, key version and Git cwd.
+The stamp is a local comparison value, not a credential or execution capability.
+
+For GitHub API proposals, `VaultGitHub.admission` shares normal run-context and target validation:
+active connection/version, stored repository allowlist, current grant, run/project/provider and
+worktree identity. Its observe mode uses the same evaluator through read-only explanation;
+normal execution keeps its existing audited authorization mode. Stored connector metadata is
+decoded inside the existing service, but no credential value leaves it. Neither App signing/
+installation-token minting nor token validation, CLI invocation or provider/API probing occurs.
+The networked GitHub readiness method is deliberately not used. Account/provider identity,
+credential expiry and remote permissions remain unverified until a separately authorized live
+adapter path performs them.
+
+Successful admission performs no persistent write and creates no workload session. Existing
+execution services retain their normal proof, signing, destination, account, authorization,
+provider and outcome checks. Admission does not claim that capacity, tool availability, file
+existence, Git repository state or live access is ready. The internal result carries only adapter,
+operation digest, observation time, local-metadata-only/required-live-validation labels and three
+literal-false gates. It contains neither a handle nor a transferable permit. No public MCP, RPC,
+CLI, provider continuation or worker calls this service. Policy/journal formats, paths and rights
+are unchanged. The service layer reuses the same journal/launch instances; startup performs no
+admission. Web/mobile/desktop and remote interaction acceptance are not inferred from these
+internal checks.
