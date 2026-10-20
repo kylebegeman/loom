@@ -590,6 +590,9 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
       bot = yield* findShared;
     }
     if (bot === null) return yield* ack(`${label} does not have this bot.`);
+    // The requester recorded the run as the revision it sent, so a later edit must not run in its place.
+    if (bot.library!.revision > request.revision)
+      return yield* ack(`${bot.name} changed after this run was sent. Run it again.`);
     if (bot.archivedAt !== null) return yield* ack(`${bot.name} is archived on ${label}.`);
     if (outranks(bot.runtimeMode, settings.runtimeModeCeiling))
       return yield* ack(

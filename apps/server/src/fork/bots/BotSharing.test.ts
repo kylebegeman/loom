@@ -227,6 +227,31 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("refuses a request sent before the bot changed instead of running the edit", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* studioPublishes(library);
+        yield* studioPublishes(library, { description: "Edited." }, 1);
+        yield* sharing.sync();
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: studioRequest("stale"),
+        });
+        for (const delivery of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(delivery);
+
+        const [refusal] = yield* library.nextResults(studio, 0);
+        expect(refusal?.update).toMatchObject({
+          status: "failed",
+          error: "Reviewer changed after this run was sent. Run it again.",
+        });
+        expect(harness.launches).toHaveLength(0);
+      }),
+    ),
+  );
+
   it.effect("refuses a request that needs a broader mode than this computer allows", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

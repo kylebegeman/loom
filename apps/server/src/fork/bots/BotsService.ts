@@ -1024,7 +1024,7 @@ export const make = Effect.gen(function* () {
   /**
    * Records a run for another computer and hands it to the Library. It takes no permit here; the
    * other computer applies its own limits, and this bot's budget still counts the run. That
-   * computer runs the Library's latest revision, not a pinned version, so the run is recorded and
+   * computer runs only the Library revision sent, not a pinned version, so the run is recorded and
    * sent as `permitBot`, the bot as it stands now.
    */
   const startRemote = Effect.fnUntraced(function* (

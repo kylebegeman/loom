@@ -164,7 +164,7 @@ It long-polls `requests/next` and handles each leased message:
 1. **Dedupe.** `fork_bots_runs.remote_request_id` is unique; a redelivered request returns the
    existing run.
 2. **Definition.** Load the linked bot by `libraryBotId`; if its revision is older, sync first;
-   a mismatch is refused. The request never supplies instructions.
+   a mismatch is refused, including a newer revision, since the requester recorded the one it sent. The request never supplies instructions.
 3. **Policy.** The caller is `{ actor: "agent", runtimeMode: ceiling }`, so L89's runtime mode
    rank check refuses bots above the ceiling. L95 budgets apply here.
 4. **Start.** `startRunWith(definition, inputs, caller, { remoteRequestId, requestedBy })`, then
