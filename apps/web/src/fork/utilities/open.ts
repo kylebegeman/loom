@@ -2,10 +2,9 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 import { forkPanelSurface } from "../panels/registry";
+import { UTILITIES_PANEL_ID } from "./panel";
 import { DEFAULT_UTILITY_TOOL_ID } from "./registry-meta";
 import { useUtilitiesStore } from "./store";
-
-export const UTILITIES_PANEL_ID = "utilities";
 
 /**
  * Opens a tool in the thread's right panel, or in the dialog when no thread is showing, so
