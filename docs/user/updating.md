@@ -61,7 +61,8 @@ A client and server must speak the same orchestration protocol. If they do not, 
 refused rather than running half-upgraded:
 
 - An app newer than the server is blocked before connecting, with a notice telling you to update
-  T3 Code on the machine named in the notice.
+  T3 Code on the machine named in the notice, or, for a computer whose operating system ships
+  Loom, to update it through that operating system.
 - A server newer than your app refuses the connection with an update message.
 
 Update the side the notice names, then reconnect.
@@ -76,10 +77,6 @@ The offered action depends on how the server runs:
 | **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
 | **Copy update command**    | Run the command on the named host to update the detected global npm install, then restart the server with your usual options.                                                                   |
 | **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `t3` command.                       |
-
-A computer whose operating system ships its Loom runtime, such as LoomOS, offers none of these.
-Its notice says the operating system manages the runtime; install the operating system's update
-instead. `t3 update` refuses on that computer too.
 
 On the host, run:
 
@@ -96,6 +93,12 @@ or `--tailscale-serve`.
 If you run the server with `npx` rather than an installed `t3`, there is
 nothing to update on the host: stop the server and relaunch it as
 `npx t3@<client-version>` with the same subcommand and options.
+
+A computer whose operating system ships its Loom runtime, such as LoomOS, offers none of these
+actions, and `t3 update` refuses there. Current Loom apps show a notice that the server's
+operating system manages its runtime; install the operating system's update instead. An app
+built before that notice may still offer **Copy relaunch command** for such a computer. Do not
+run it there.
 
 ## If an update fails
 

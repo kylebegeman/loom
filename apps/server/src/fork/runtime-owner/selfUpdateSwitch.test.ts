@@ -27,6 +27,7 @@ import {
 } from "./selfUpdateSwitch.ts";
 
 const DESKTOP_RAN = "The desktop app ran its update.";
+const DESKTOP_COMMITTED = "The desktop app committed its update.";
 
 const withSwitch = (value: string | undefined) =>
   Effect.provide(
@@ -73,7 +74,10 @@ const makeSelfUpdate = Effect.fn("test.make_switched_self_update")(function* (op
         Effect.sync(() => calls.push("desktopAppUpdate")).pipe(
           Effect.andThen(Effect.fail(new ServerSelfUpdateError({ reason: DESKTOP_RAN }))),
         ),
-      commit: () => Effect.die("unexpected desktop app commit"),
+      commit: () =>
+        Effect.sync(() => calls.push("desktopAppCommit")).pipe(
+          Effect.andThen(Effect.fail(new ServerSelfUpdateError({ reason: DESKTOP_COMMITTED }))),
+        ),
     }),
     Effect.provideService(
       HttpClient.HttpClient,
@@ -197,6 +201,24 @@ it.layer(NodeServices.layer)("server self-update switch", (it) => {
         .pipe(Effect.flip);
       expect(unsetError.reason).toBe(DESKTOP_RAN);
       expect(unset.calls).toEqual(["desktopAppUpdate"]);
+    }),
+  );
+
+  it.effect("refuses a desktop commit without asking the desktop app", () =>
+    Effect.gen(function* () {
+      const off = yield* makeSelfUpdate({ managed: false, selfUpdate: "false", mode: "desktop" });
+      const offError = yield* off.selfUpdate.commitDesktopUpdate("request").pipe(Effect.flip);
+      expect(offError.reason).toBe(OS_MANAGED_RUNTIME_REASON);
+      expect(off.calls).toEqual([]);
+
+      const unset = yield* makeSelfUpdate({
+        managed: false,
+        selfUpdate: undefined,
+        mode: "desktop",
+      });
+      const unsetError = yield* unset.selfUpdate.commitDesktopUpdate("request").pipe(Effect.flip);
+      expect(unsetError.reason).toBe(DESKTOP_COMMITTED);
+      expect(unset.calls).toEqual(["desktopAppCommit"]);
     }),
   );
 

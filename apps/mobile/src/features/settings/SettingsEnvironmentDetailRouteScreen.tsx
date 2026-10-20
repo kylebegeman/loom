@@ -287,7 +287,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   <SettingsActionRow
                     icon="arrow.clockwise"
                     label="Check for updates"
-                    disabled={disabled}
+                    disabled={disabled || osManaged} // fork: runtime-owner
                     loading={pending === "check"}
                     onPress={() => {
                       if (disabled) return;
