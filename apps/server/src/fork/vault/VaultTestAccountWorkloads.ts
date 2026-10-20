@@ -3,9 +3,13 @@ import {
   VaultError,
   VaultTestAccountAgentMutation,
   vaultTestAccountDestination,
+  vaultTestAccountLoginDestination,
+  VaultTestAccountLoginPrepare,
+  type VaultTestAccountLoginAdmission,
   type VaultTestAccount,
   type VaultTestAccountDiscovery,
 } from "@t3tools/contracts/fork";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -30,6 +34,9 @@ const decodeBinding = Schema.decodeUnknownOption(Schema.fromJsonString(Binding))
 const decodeMutation = Schema.decodeUnknownEffect(VaultTestAccountAgentMutation, {
   onExcessProperty: "error",
 });
+const decodeLogin = Schema.decodeUnknownEffect(VaultTestAccountLoginPrepare, {
+  onExcessProperty: "error",
+});
 const ownerPrefix = "run-v1:";
 const ownerOf = (binding: typeof Binding.Type) => ownerPrefix + JSON.stringify(binding);
 const denied = () => new VaultError({ reason: "denied" });
@@ -43,6 +50,16 @@ export class VaultTestAccountWorkloads extends Context.Service<
       caller: Caller,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultTestAccountDiscovery, VaultError>;
+    readonly prepareLogin: (
+      input: VaultTestAccountLoginPrepare,
+      caller: Caller,
+    ) => Effect.Effect<
+      {
+        readonly report: VaultTestAccountLoginAdmission;
+        readonly revalidate: Effect.Effect<void, VaultError>;
+      },
+      VaultError
+    >;
     readonly reconcile: Effect.Effect<void, VaultError>;
   }
 >()("t3/fork/vault/VaultTestAccountWorkloads") {}
@@ -173,6 +190,80 @@ const make = Effect.gen(function* () {
       // The generic manager's result is never exposed through the requester boundary.
       yield* accounts.apply(input, actor, recheck);
       return yield* discoverBound(binding);
+    }),
+    prepareLogin: Effect.fn("VaultTestAccountWorkloads.prepareLogin")(function* (raw, caller) {
+      const input = yield* decodeLogin(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      const binding = yield* bind(caller),
+        actor = ownerOf(binding);
+      const snapshot = yield* accounts.snapshot(actor);
+      const account = snapshot.accounts.find((a) => a.id === input.accountId);
+      const collection = snapshot.collections.find((c) => c.id === account?.collectionId);
+      if (
+        !account?.lease ||
+        account.lease.id !== input.leaseId ||
+        account.lease.owner !== actor ||
+        !collection ||
+        collection.archived ||
+        !(yield* visible(account, binding))
+      )
+        return yield* denied();
+      const destination = vaultTestAccountLoginDestination(collection.id, input.origin);
+      const allowed = yield* access.explain(
+        { threadId: binding.threadId, itemId: account.itemId, action: "use", destination },
+        true,
+      );
+      if (!allowed.decision.allowed) return yield* denied();
+      const deadline = account.lease.expiresAt;
+      const checkLease = Effect.gen(function* () {
+        const latest = yield* accounts.snapshot(actor);
+        const selected = latest.accounts.find((a) => a.id === account.id);
+        const scope = latest.collections.find((c) => c.id === collection.id);
+        if (
+          !selected?.lease ||
+          selected.lease.id !== input.leaseId ||
+          selected.lease.owner !== actor ||
+          selected.itemId !== account.itemId ||
+          selected.itemVersion !== account.itemVersion ||
+          selected.collectionId !== account.collectionId ||
+          !scope ||
+          scope.archived ||
+          scope.application !== collection.application ||
+          scope.target !== collection.target ||
+          (yield* Clock.currentTimeMillis) >= deadline
+        )
+          return yield* denied();
+        return selected;
+      });
+      const revalidate = Effect.gen(function* () {
+        yield* current(binding);
+        const selected = yield* checkLease;
+        if (!(yield* visible(selected, binding))) return yield* denied();
+        yield* access.require(binding.threadId, selected.itemId, "use", destination);
+        // Authorization waits can overlap release/retirement. The saved callback is not a token.
+        yield* checkLease;
+        if (!(yield* visible(selected, binding))) return yield* denied();
+        yield* current(binding);
+        if ((yield* Clock.currentTimeMillis) >= Math.min(deadline, selected.lease!.expiresAt))
+          return yield* denied();
+      });
+      yield* current(binding);
+      const { lease: _lease, state: _state, ...definition } = account;
+      return {
+        report: {
+          account: definition,
+          collection,
+          leaseId: input.leaseId,
+          expiresAt: deadline,
+          origin: input.origin,
+          destination,
+          canDeliver: false as const,
+          automaticResumption: false as const,
+          allowOnceConsumption: false as const,
+        },
+        revalidate,
+      };
     }),
     reconcile: accounts.quarantineLeases((account) =>
       Effect.gen(function* () {

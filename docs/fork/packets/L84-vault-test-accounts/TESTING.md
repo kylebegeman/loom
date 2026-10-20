@@ -5,7 +5,7 @@ packet acceptance remains unfinished. Implementation base is current fork main `
 
 ## Authenticated workload evidence
 
-Four focused suites pass **27 tests**: the existing 13 manager cases, 12 real-service workload
+Four focused suites pass **33 tests**: the existing 13 manager cases, 18 real-service workload
 cases, one MCP authorization case and real startup registration. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
@@ -15,6 +15,14 @@ write checks; lost replies; restart reconciliation; durable expiry; corrupt owne
 outage refusal; and cleanup CAS loss preserving a newer reservation. Agent administration and
 injected owner fields refuse. The MCP case drains toolkit result streams, verifies trusted caller
 identity and refuses external clients or a runtime lowered before mutation. No login is delivered.
+
+Six login-admission cases prove the separate exact-origin grant, canonical origin refusal,
+wrong-run/lease refusal, fixed deadlines despite renewal, replacement lease refusal, grant loss
+before a synthetic callback with exactly one fixture cleanup and no continuation, changed-run
+refusal, and lease release while the login access audit is committing. Preparation writes no
+state and exposes no password. The scoped OpenBao integration also prepares/revalidates that
+guard with existing rights. This does not prove a live provider adapter, logout, unknown mint
+outcome recovery or restart-safe cleanup; those remain gated and all execution flags stay false.
 
 ```sh
 ./node_modules/.bin/vp test run \

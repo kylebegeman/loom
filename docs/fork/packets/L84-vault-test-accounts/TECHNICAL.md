@@ -91,7 +91,7 @@ Discovery requires both `inspect` and `use` through the existing grant evaluator
 is `loom:test-accounts:<collectionId>`; existing unscoped grants also match under normal evaluator
 rules. This is a pool scope, not a provider host or login endpoint. Reserve/renew audit and recheck
 those actions, active pinned Account version, workload identity and transport ceiling before CAS.
-The sole mutation tool accepts reserve, renew and release. It cannot mark clean, create, archive,
+The sole mutation tool accepts reserve, renew and release; the CLI aliases use that same boundary. It cannot mark clean, create, archive,
 retire, approve itself or return credentials. Release requires the exact owned lease but remains
 possible after item grant withdrawal. Mutation results pass through the same filtered discovery;
 withdrawal can hide a lease that was already committed. Inspect/reconcile before retrying.
@@ -119,6 +119,30 @@ providers. Discovery is a point-in-time observation; a reservation is not login 
 broker delivery operation must check the current owned lease, its deadline and pinned item,
 exact app/environment and operation-specific destination again, then handle revocation and
 external cleanup. No login, reset, continuation or L86 one-time execution gate is enabled here.
+
+## Login delivery admission boundary
+
+The internal `prepareLogin` method now binds the current owned account lease, pinned item,
+collection app/target, canonical adapter login origin and fixed deadline. It returns safe metadata
+and a revalidation effect, never a bearer token or credential. Both pool inspect/use and a
+separate use scope `loom:test-login:<collectionId>:<origin>` are required. HTTPS origins are
+canonical and contain no path/query/credentials; HTTP is accepted only for explicit loopback
+origins. An application label never selects a destination. The future selected adapter must
+supply its registered origin, rather than using a prompt URL as configuration.
+
+Preparation is observational. Each revalidation checks current run identity, the exact lease,
+Account version and scopes again, audits login use and checks the lease again after that wait.
+A lease renewal cannot extend a prepared deadline; release, replacement, retirement, expiry,
+withdrawal or account rotation invalidates it. All delivery/resumption/allow-once gates are
+literal false, and no MCP/RPC/CLI login endpoint, live adapter, credential reveal or persisted
+login intent is added. The synthetic transport proof opens only a local fixture session and
+cleans it on a rejected callback; it proves no real provider logout or crash recovery.
+
+The revalidation effect is not an atomic transaction with an external provider. Live login must
+wait for a selected test app and a reviewed durable cleanup/unknown-outcome policy. A lost mint
+response cannot be treated as not-started, retried into another session or refunded by lease
+release. The L86 protected-item and temporal-consistency decisions remain separate owner gates;
+this account boundary does not bypass them.
 
 ## Contracts and authorization
 

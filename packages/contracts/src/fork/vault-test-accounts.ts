@@ -119,6 +119,44 @@ export const VaultTestAccountDiscovery = Schema.Struct({
   loginDelivery: Schema.Literal("unsupported"),
 });
 export type VaultTestAccountDiscovery = typeof VaultTestAccountDiscovery.Type;
+const LoginOrigin = Schema.String.check(
+  Schema.isMaxLength(2048),
+  Schema.makeFilter((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        url.origin === value &&
+        !url.username &&
+        !url.password &&
+        (url.protocol === "https:" ||
+          (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+      );
+    } catch {
+      return false;
+    }
+  }),
+);
+export const vaultTestAccountLoginDestination = (collectionId: string, origin: string) =>
+  `loom:test-login:${collectionId}:${origin}`;
+export const VaultTestAccountLoginPrepare = Schema.Struct({
+  accountId: VaultItemId,
+  leaseId: VaultItemId,
+  // Supplied by a selected adapter, never inferred from a collection label.
+  origin: LoginOrigin,
+});
+export type VaultTestAccountLoginPrepare = typeof VaultTestAccountLoginPrepare.Type;
+export const VaultTestAccountLoginAdmission = Schema.Struct({
+  account: VaultTestAccountDefinition,
+  collection: VaultTestCollection,
+  leaseId: VaultItemId,
+  expiresAt: Time,
+  origin: LoginOrigin,
+  destination: Schema.String,
+  canDeliver: Schema.Literal(false),
+  automaticResumption: Schema.Literal(false),
+  allowOnceConsumption: Schema.Literal(false),
+});
+export type VaultTestAccountLoginAdmission = typeof VaultTestAccountLoginAdmission.Type;
 export const VAULT_TEST_ACCOUNT_WS_METHODS = {
   snapshot: "loom.vault-test-accounts.snapshot",
   apply: "loom.vault-test-accounts.apply",

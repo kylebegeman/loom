@@ -15,7 +15,10 @@ import * as Core from "./VaultCore.ts";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
-import { vaultTestAccountDestination } from "@t3tools/contracts/fork";
+import {
+  vaultTestAccountDestination,
+  vaultTestAccountLoginDestination,
+} from "@t3tools/contracts/fork";
 import * as Access from "./VaultAccess.ts";
 import * as Notifications from "./ApprovalNotifications.ts";
 import * as Workloads from "./VaultTestAccountWorkloads.ts";
@@ -285,6 +288,36 @@ it.live.skipIf(!configured || restarted)(
         Effect.void,
       );
       expect(reserved.accounts[0]!.lease!.owner).toContain("account-proof-run");
+      const origin = "https://synthetic-app.example.test";
+      yield* policy.apply(
+        {
+          operationId: "d".repeat(32),
+          expectedRevision: (yield* policy.snapshot).revision,
+          change: {
+            type: "save",
+            grant: {
+              id: "1".repeat(32),
+              label: "Synthetic login origin",
+              principal: { kind: "thread", id: caller.threadId },
+              projectId,
+              itemIds: [itemId],
+              actions: ["use"],
+              destination: vaultTestAccountLoginDestination(collectionId, origin),
+              notBefore: 0,
+              expiresAt: null,
+              parentId: null,
+            },
+          },
+        },
+        "human",
+      );
+      const admission = yield* service.prepareLogin(
+        { accountId: id, leaseId: reserved.accounts[0]!.lease!.id, origin },
+        caller,
+      );
+      expect(admission.report.canDeliver).toBe(false);
+      yield* admission.revalidate;
+
       expect(JSON.stringify(reserved)).not.toContain("plaintext-canary");
       yield* service.reconcile;
       expect((yield* service.discover(caller)).accounts[0]!.lease!.id).toBe("c".repeat(32));

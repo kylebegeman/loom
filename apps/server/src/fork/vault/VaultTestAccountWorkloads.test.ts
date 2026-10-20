@@ -4,6 +4,7 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@
 import {
   VaultError,
   vaultTestAccountDestination,
+  vaultTestAccountLoginDestination,
   type VaultGrantDefinition,
   type VaultTestAccountChange,
 } from "@t3tools/contracts/fork";
@@ -58,6 +59,7 @@ const fixture = () => {
     interactionMode: "default",
     readsFail: false,
     beforeRegistryWrite: null as null | (() => Effect.Effect<void>),
+    beforePolicyWrite: null as null | (() => Effect.Effect<void, VaultError>),
     loseReply: false,
   };
   const dependencies = Layer.mergeAll(
@@ -103,6 +105,8 @@ const fixture = () => {
         ),
       write: (path, value, expected) =>
         Effect.gen(function* () {
+          if (path.endsWith("access-policy") && state.beforePolicyWrite)
+            yield* state.beforePolicyWrite();
           if (path.endsWith("registry-v1") && state.beforeRegistryWrite)
             yield* state.beforeRegistryWrite();
           const version = records.get(path)?.version ?? 0;
@@ -631,4 +635,247 @@ it.effect(
         );
       }),
     ),
+);
+
+const loginOrigin = "https://synthetic-app.example.test";
+it.effect("prepares a reference-only login guard requiring a separate exact-origin grant", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      const reserved = yield* f.reserve(),
+        lease = reserved.accounts[0]!.lease!;
+      const input = { accountId: account.id, leaseId: lease.id, origin: loginOrigin };
+      expect((yield* f.service.prepareLogin(input, caller).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      yield* f.grant({
+        destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+        actions: ["use"],
+      });
+      const before = [...f.records.values()];
+      const prepared = yield* f.service.prepareLogin(input, caller);
+      expect([...f.records.values()]).toEqual(before);
+      expect(prepared.report).toMatchObject({
+        canDeliver: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+        origin: loginOrigin,
+        expiresAt: lease.expiresAt,
+        account,
+        collection,
+      });
+      expect(JSON.stringify(prepared.report)).not.toContain("synthetic-account-secret");
+      yield* prepared.revalidate;
+      expect(
+        (yield* f.access.snapshot).audit.some((a) => a.type === "decision" && a.action === "use"),
+      ).toBe(true);
+      expect(
+        (yield* f.service
+          .prepareLogin({ ...input, origin: "https://other.example.test" }, caller)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(
+        (yield* f.service
+          .prepareLogin(input, { ...caller, threadId: ThreadId.make("other") })
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+    }),
+  ),
+);
+it.effect(
+  "rejects noncanonical login origins, raw credential fields and wrong lease identity",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const reserved = yield* f.reserve(),
+          leaseId = reserved.accounts[0]!.lease!.id;
+        for (const origin of [
+          "http://remote.example.test",
+          "https://synthetic-app.example.test/",
+          "https://user:pass@synthetic-app.example.test",
+          "file:///tmp/test",
+          "https://synthetic-app.example.test/path?token=private",
+        ]) {
+          expect(
+            (yield* f.service
+              .prepareLogin({ accountId: account.id, leaseId, origin }, caller)
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-input");
+        }
+        expect(
+          (yield* f.service
+            .prepareLogin(
+              {
+                accountId: account.id,
+                leaseId,
+                origin: loginOrigin,
+                password: "must-not-be-accepted",
+              } as never,
+              caller,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+        expect(
+          (yield* f.service
+            .prepareLogin({ accountId: account.id, leaseId: f.id(), origin: loginOrigin }, caller)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+it.effect(
+  "keeps the prepared deadline even after lease renewal and refuses released or replaced leases",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        yield* f.grant({
+          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+          actions: ["use"],
+        });
+        const reserved = yield* f.reserve(),
+          leaseId = reserved.accounts[0]!.lease!.id;
+        const prepared = yield* f.service.prepareLogin(
+          { accountId: account.id, leaseId, origin: loginOrigin },
+          caller,
+        );
+        yield* TestClock.adjust("1 minute");
+        yield* f.service.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: reserved.revision,
+            change: { type: "renew", id: account.id, leaseId },
+          },
+          caller,
+          Effect.void,
+        );
+        yield* TestClock.adjust("4 minutes");
+        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+        yield* f.manage({ type: "quarantine", id: account.id });
+        yield* f.manage({ type: "mark-clean", id: account.id, confirmedReset: true });
+        const fresh = yield* f.reserve();
+        expect(fresh.accounts[0]!.lease!.id).not.toBe(leaseId);
+        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+      }),
+    ),
+);
+it.effect(
+  "quarantines and cleans a synthetic login when a callback loses current access, without resuming or reminting",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const loginGrant = yield* f.grant({
+          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+          actions: ["use"],
+        });
+        const reserved = yield* f.reserve(),
+          leaseId = reserved.accounts[0]!.lease!.id;
+        const prepared = yield* f.service.prepareLogin(
+          { accountId: account.id, leaseId, origin: loginOrigin },
+          caller,
+        );
+        let opens = 0,
+          cleanups = 0,
+          callbacks = 0;
+        const result = yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* prepared.revalidate;
+            yield* Effect.acquireRelease(
+              Effect.sync(() => {
+                opens++;
+                return "synthetic-session";
+              }),
+              () =>
+                Effect.sync(() => {
+                  cleanups++;
+                }),
+            );
+            yield* f.access.apply(
+              {
+                operationId: f.id(),
+                expectedRevision: (yield* f.access.snapshot).revision,
+                change: { type: "state", id: loginGrant.definition.id, state: "revoked" },
+              },
+              "human",
+            );
+            yield* prepared.revalidate;
+            callbacks++;
+          }),
+        ).pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+        expect({ opens, cleanups, callbacks }).toEqual({ opens: 1, cleanups: 1, callbacks: 0 });
+        // Origin access is separate from pool use. Explicitly releasing the pool lease needs no login grant.
+        yield* f.service.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: reserved.revision,
+            change: { type: "release", id: account.id, leaseId },
+          },
+          caller,
+          Effect.void,
+        );
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+          "quarantined",
+        );
+      }),
+    ),
+);
+it.effect(
+  "revalidates run identity after a synthetic adapter wait and refuses pre-start after a lost lease",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        yield* f.grant({
+          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+          actions: ["use"],
+        });
+        const reserved = yield* f.reserve(),
+          leaseId = reserved.accounts[0]!.lease!.id;
+        const prepared = yield* f.service.prepareLogin(
+          { accountId: account.id, leaseId, origin: loginOrigin },
+          caller,
+        );
+        yield* prepared.revalidate;
+        f.state.runId = RunId.make("replaced-during-adapter-wait");
+        expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+        yield* f.service.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.lease).toBeNull();
+      }),
+    ),
+);
+
+it.effect("refuses a lease released while the login access audit is committing", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.grant({
+        destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+        actions: ["use"],
+      });
+      const reserved = yield* f.reserve(),
+        leaseId = reserved.accounts[0]!.lease!.id;
+      const prepared = yield* f.service.prepareLogin(
+        { accountId: account.id, leaseId, origin: loginOrigin },
+        caller,
+      );
+      f.state.beforePolicyWrite = () =>
+        Effect.gen(function* () {
+          f.state.beforePolicyWrite = null;
+          yield* f.service.apply(
+            {
+              operationId: f.id(),
+              expectedRevision: reserved.revision,
+              change: { type: "release", id: account.id, leaseId },
+            },
+            caller,
+            Effect.void,
+          );
+        });
+      expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
+      expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("quarantined");
+    }),
+  ),
 );

@@ -10,6 +10,8 @@ Dedicated development/staging/test collection management, searchable existing-ac
 exclusive session-owned leases, bounded renewal, expiry/release quarantine, explicit clean review
 and retire/restore are implemented through a service, guarded RPC, shared client logic and web/
 mobile settings. Account values stay in VaultCore; the registry contains metadata/references only.
+The internal login guard also binds an exact canonical adapter origin, a separate login-use
+grant and the current lease deadline; synthetic callback cleanup passes without enabling login.
 Agents now discover only granted references and their own leases, reserve/renew/release for the
 authenticated live run, and receive no login material. A CAS cleanup reactor quarantines invalid
 run leases on startup and every minute. The existing profiles-subtree policy covers the reserved registry. Real disposable OpenBao proof
@@ -18,7 +20,7 @@ backend restart. TESTING records focused checks and integrated web evidence.
 
 ## Remaining selected work
 
-1. Implement separate broker-delivered login access bound to the current lease, item version,
+1. Finish separate broker-delivered login access bound to the current lease, item version,
    collection app/environment and grant. Include loss/restart/revocation handling before claiming
    parallel worker isolation; raw credential release is not part of this milestone.
 2. Select the first dedicated application/test environment for provision/reset. Add its real
@@ -31,9 +33,9 @@ backend restart. TESTING records focused checks and integrated web evidence.
    acceptance with independently authorized synthetic accounts. Shared-account semantics remain
    open; the first milestone is exclusively reserved.
 
-Suggested next section: a synthetic broker login-delivery contract and failure/revocation proof,
-bound to a current run-owned lease and exact app/environment. Keep delivery unavailable until
-its adapter and cleanup behavior are proven. A live application/reset adapter and test-mail
+The synthetic login-delivery admission contract and failure/revocation proof are implemented.
+The next live section needs the dedicated app/environment and durable cleanup policy. Keep
+delivery unavailable until its adapter, unknown-outcome recovery and cleanup behavior are proven. A live application/reset adapter and test-mail
 domain still need Kyle's selection. L86's execution gates and L75's host-policy park remain unchanged.
 
 ## Before starting

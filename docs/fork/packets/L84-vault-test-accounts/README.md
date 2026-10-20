@@ -22,7 +22,9 @@ new pool reservations but do not revoke credentials or log out an application. C
 an explicit operator attestation, not a successful automated reset. Provisioning and login delivery
 are unavailable. Authenticated agents can discover granted references and reserve/renew/release
 only for their live run. Stopped/replaced or no-longer-authorized run leases are quarantined by
-CAS cleanup; reservations still deliver no credentials. TESTING records the isolated web,
+CAS cleanup; reservations still deliver no credentials. Internal login preparation now binds the
+current lease and a separately granted canonical origin, with synthetic failure/cleanup proof
+and every live-delivery gate closed. TESTING records the isolated web,
 service/OpenBao proof and remaining native/remote acceptance limits.
 
 ## Scope
