@@ -258,6 +258,7 @@ apps/mobile/src/features/home/HomeRouteScreen.tsx	library	11
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	3
 apps/mobile/src/features/home/HomeScreen.tsx	library	8
 apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
+apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	3
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	8
@@ -291,7 +292,7 @@ apps/server/src/storageCleanup.ts	project-checkout-management	1
 apps/server/src/storageCleanup.ts	project-lifecycle	12
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	7
-apps/web/src/components/CommandPalette.tsx	fleet-connections	31
+apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
 apps/web/src/components/Sidebar.tsx	library-projects	22
 apps/web/src/components/Sidebar.tsx	workspace-handoff	4

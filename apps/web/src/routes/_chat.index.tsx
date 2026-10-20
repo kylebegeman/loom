@@ -2,16 +2,15 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react"; // fork: library-only
 import { primaryServerConfigAtom } from "~/state/server"; // fork: library-only
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon } from "lucide-react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router"; // fork: fleet-connections
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
-import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { LibraryThreadHome } from "~/fork/project-library/LibraryThreadHome"; // fork: library-only
 import { useLibraryAuthority } from "~/fork/project-library/state"; // fork: library-only
 import { Button } from "../components/ui/button";
+import { HostedEmptyState } from "../components/HostedEmptyState";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -24,8 +23,6 @@ import {
 } from "../state/entities";
 import { useConnectedEnvironmentIds, useEnvironments } from "../state/environments"; // fork: fleet-connections
 import { resolveIndexDraftProject } from "../lib/indexDraftLanding"; // fork: fleet-connections
-import { APP_DISPLAY_NAME } from "~/branding";
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -33,7 +30,7 @@ function ChatIndexRouteView() {
 
   if (authGateState.status === "hosted-static") {
     if (!isReady) return null;
-    if (environments.length === 0) return <HostedStaticOnboardingState />;
+    if (environments.length === 0) return <HostedEmptyState />;
   }
 
   return <IndexDraftLanding />;
@@ -64,12 +61,11 @@ function IndexDraftLanding() {
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
-  // One start per attempt; a retry request opens the next attempt.
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const mostRecentProject =
-    bootstrapped && primaryReady && !libraryOnly // fork: library-only
+    primaryReady && !libraryOnly // fork: library-only
       ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
       : null;
   const attempt = startState.retryRequest;
@@ -95,9 +91,6 @@ function IndexDraftLanding() {
       });
   }, [attempt, handleNewThread, mostRecentProject]);
 
-  if (!bootstrapped) {
-    return null;
-  }
   if (mostRecentProject !== null) {
     return startState.failed ? (
       <DraftStartError
@@ -110,6 +103,8 @@ function IndexDraftLanding() {
       />
     ) : null;
   }
+  // A pending environment cannot prove the workspace is empty.
+  if (!bootstrapped) return null;
   // fork: library-only
   return libraryOnly || library.authorityId ? (
     <LibraryThreadHome />
@@ -147,49 +142,3 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 export const Route = createFileRoute("/_chat/")({
   component: ChatIndexRouteView,
 });
-
-function HostedStaticOnboardingState() {
-  const cloudEnabled = hasCloudPublicConfig();
-  const localEnvironmentOff = isLocalEnvironmentDisabled();
-  const description = localEnvironmentOff
-    ? "The local environment is turned off. Connect a remote environment, or turn the local environment back on in Connections."
-    : cloudEnabled
-      ? "Enable T3 Connect on that machine, then open Connections here to sign in with the same account. You can also add the machine using a pairing link."
-      : "Open Connections and add that machine using its pairing link. This app must be able to reach it.";
-
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <WorkspacePageHeader electron={isElectron} className="border-b border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
-              {APP_DISPLAY_NAME}
-            </span>
-          </div>
-        </WorkspacePageHeader>
-
-        <Empty className="flex-1">
-          <div className="w-full max-w-xl rounded-3xl border border-border/55 bg-card/20 px-8 py-12 shadow-sm/5">
-            <EmptyHeader className="max-w-none">
-              <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
-                <LinkIcon className="size-5" />
-              </div>
-              <EmptyTitle>Connect to a computer running T3 Code</EmptyTitle>
-              <EmptyDescription>
-                This app connects to T3 Code running on your computer or a server. Start the T3 Code
-                desktop app or command-line server on that machine and keep it running.
-              </EmptyDescription>
-              <EmptyDescription>{description}</EmptyDescription>
-              <div className="mt-6 flex justify-center">
-                <Button render={<Link to="/settings/connections" />} size="sm">
-                  <PlusIcon className="size-4" />
-                  Open Connections
-                </Button>
-              </div>
-            </EmptyHeader>
-          </div>
-        </Empty>
-      </div>
-    </SidebarInset>
-  );
-}

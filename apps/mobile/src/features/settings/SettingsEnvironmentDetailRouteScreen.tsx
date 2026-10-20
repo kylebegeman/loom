@@ -276,7 +276,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       <Text className="text-sm text-foreground-muted">
                         {OS_MANAGED_RUNTIME_NOTE}
                       </Text> // fork: runtime-owner
-                    ) : !supportsEnvironmentUpdate(config.environment.capabilities) ? ( // fork: runtime-owner
+                    ) : checkedRelease?.targetVersion &&
+                      !supportsEnvironmentUpdate(config.environment.capabilities) ? ( // fork: runtime-owner
                       <Text className="text-sm text-foreground-muted">
                         {capabilities?.serverSelfUpdate === "desktop-managed"
                           ? "Update the desktop app on this machine."

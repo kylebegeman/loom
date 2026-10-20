@@ -148,7 +148,9 @@ describe("turn stream behavior", () => {
       "new.scad": { turn: 6 },
     });
     expect(
-      useRightPanelStore.getState().openProactive(ref, { id: "diff", kind: "diff" }, revision),
+      useRightPanelStore
+        .getState()
+        .openProactive(ref, { kind: "diff", turnId: RunId.make("run") }, revision),
     ).toBe(true);
   });
   it("automatically opens a closed model panel while leaving proactive diff eligible", () => {
@@ -159,7 +161,9 @@ describe("turn stream behavior", () => {
     );
     expect(useAgentModelMarks.getState().marks[key]).toEqual({ "second.scad": { turn: 6 } });
     expect(
-      useRightPanelStore.getState().openProactive(ref, { id: "diff", kind: "diff" }, revision),
+      useRightPanelStore
+        .getState()
+        .openProactive(ref, { kind: "diff", turnId: RunId.make("run") }, revision),
     ).toBe(true);
     expect(useRightPanelStore.getState().byThreadKey[key]!.activeSurfaceId).toBe("diff");
   });

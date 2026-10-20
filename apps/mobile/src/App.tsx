@@ -20,6 +20,9 @@ import {
 } from "./features/settings/appearance/AppearancePreferencesProvider";
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
+import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
+import { environmentThreadShells } from "./state/threads";
+import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { APP_LINKING_CONFIG, shouldHandleAppLink } from "./lib/appLinking"; // fork: project-navigation
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
@@ -66,6 +69,16 @@ function SplashScreenCoordinator() {
 
 export default function App() {
   useUiRuntimeMemoryWarningGc();
+  useEffect(
+    () =>
+      subscribeComposerDraftModelReconciliation({
+        registry: appAtomRegistry,
+        threadShellAtom: environmentThreadShells.threadShellAtom,
+        threadRefsAtom: environmentThreadShells.threadRefsAtom,
+        shellStateAtom: environmentShell.stateAtom,
+      }),
+    [],
+  );
 
   return (
     <RegistryContext.Provider value={appAtomRegistry}>

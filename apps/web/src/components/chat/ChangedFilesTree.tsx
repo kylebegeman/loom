@@ -20,7 +20,7 @@ import { observeResize } from "~/lib/observeResize";
 import { ForkChangedFilesActions } from "~/fork/changedFiles/ForkChangedFilesActions";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
-const VIRTUALIZE_AFTER_FILES = 250;
+const VIRTUALIZE_AFTER_ROWS = 250;
 const ROW_OVERSCAN = 8;
 
 interface ChangedFileRow {
@@ -174,9 +174,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   };
 
   const rows = collectExpandedRows(treeNodes, expandedDirectories, allDirectoriesExpanded);
-  const virtualized =
-    rows.reduce((count, row) => count + (row.node.kind === "file" ? 1 : 0), 0) >
-    VIRTUALIZE_AFTER_FILES;
+  const virtualized = rows.length > VIRTUALIZE_AFTER_ROWS;
 
   const renderRow = ({ node, depth }: ChangedFileRow) => {
     const leftPadding = 8 + depth * 14;
