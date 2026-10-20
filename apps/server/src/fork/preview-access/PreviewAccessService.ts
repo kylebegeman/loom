@@ -1,4 +1,8 @@
-import { AuthOrchestrationOperateScope, type EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type AuthSessionId,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import {
   LOOM_IDENTITY_LOGIN_PATH,
   LibraryError,
@@ -18,6 +22,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import { AuthSessionRepository } from "../../persistence/AuthSessions.ts";
 import { sanitizeEntryPath } from "../preview-links/policy.ts";
 import {
   PREVIEW_TICKET_PATH,
@@ -31,10 +36,12 @@ import {
   verifyPreviewTicket,
   type VerifiedPreviewTicket,
 } from "../preview-links/ticket.ts";
-import { makeStore } from "./store.ts";
+import { makeStore, type PreviewHostRow } from "./store.ts";
 
 /** Where a computer sends a cold browser; served by the Library on its public origin. */
 export const PREVIEW_TICKET_ROUTE = "/api/loom/preview/ticket";
+/** The subject of a computer's own Library publisher session, and the key of its hosts. */
+export const COMPUTER_SUBJECT_PREFIX = "loom-host:";
 /** Its own key: tickets must never verify under the cloud-link or any other signing key. */
 const TICKET_KEY_SECRET = "loom-preview-ticket-ed25519";
 /** PocketId drops a longer `returnTo` and would land the browser on `/` instead of back here. */
@@ -56,10 +63,14 @@ type TicketKey = {
 };
 
 export interface PreviewRegisterInput {
-  readonly subject: string;
   readonly environmentId: EnvironmentId;
+  /**
+   * The Library session the computer registered with. Its hosts get tickets only while that
+   * session lasts, so revoking the session takes the computer out. Null when this Library
+   * registers its own computer in-process, which cannot leave itself.
+   */
+  readonly sessionId: AuthSessionId | null;
   readonly previews: LibraryPreviewRegisterRequest["previews"];
-  readonly requestOrigin: string | null;
 }
 
 /** Raw query values; the service validates every one of them. */
@@ -68,7 +79,6 @@ export interface PreviewTicketInput {
   readonly nonce: string | null;
   readonly path: string | null;
   readonly session: Pick<AuthenticatedSession, "subject" | "scopes"> | null;
-  readonly requestOrigin: string | null;
 }
 
 /** A ticket that came back to a host this Library serves itself. */
@@ -98,9 +108,8 @@ export class PreviewAccessService extends Context.Service<
       input: PreviewTicketInput,
     ) => Effect.Effect<PreviewTicketOutcome, LibraryError>;
     /**
-     * The `iss` every ticket for the pages host carries, or null when this server is not the
-     * authority or has no configured public origin. Without one the ticket route signs with the
-     * request's origin, which a host cannot predict, so pages sign-in is off.
+     * The `iss` every ticket carries, or null when this server is not the authority or has no
+     * configured public origin. Without one it registers no hosts and signs no tickets.
      */
     readonly issuerOrigin: string | null;
     /** Checks a ticket this Library signed. Null on any mismatch, never a failure for bad input. */
@@ -126,13 +135,22 @@ const make = Effect.gen(function* () {
   const identityRedirect = yield* Config.String("LOOM_IDENTITY_REDIRECT_URI").pipe(Config.option);
   const pagesSetting = yield* Config.String("LOOM_PAGES_ORIGIN").pipe(Config.option);
   const secrets = yield* ServerSecretStore.ServerSecretStore;
+  const sessions = yield* AuthSessionRepository;
   const store = yield* makeStore;
+  // Spent pages tickets are memory only, so tickets signed before this run are never accepted.
+  const startedAtMs = yield* Clock.currentTimeMillis;
 
   // Pocket ID accepts a callback on any https port, so the issuer keeps the port too.
   const configuredOrigin = Option.isSome(identityRedirect)
     ? (httpsUrl(identityRedirect.value.trim())?.origin ?? null)
     : null;
   const issuerOrigin = authority ? configuredOrigin : null;
+  // A request's origin only says how that caller reached the Library, which browsers may not
+  // share, so it never stands in for the public origin.
+  if (authority && issuerOrigin === null)
+    yield* Effect.logWarning(
+      "Preview sign-in is off: LOOM_IDENTITY_REDIRECT_URI must name the Library's public https origin, which signs preview sign-ins.",
+    );
   // Tickets land on `https://<host>/__loom/ticket`, which has no room for a port.
   const pagesCandidate = Option.isSome(pagesSetting) ? httpsUrl(pagesSetting.value.trim()) : null;
   const pagesUrl = pagesCandidate?.port === "" ? pagesCandidate : null;
@@ -143,15 +161,10 @@ const make = Effect.gen(function* () {
   const pagesHost = pagesUrl?.hostname.toLowerCase() ?? null;
 
   const io = (cause: unknown) => new LibraryError({ reason: "io", cause });
-  const requireAuthority = authority
-    ? Effect.void
-    : Effect.fail(new LibraryError({ reason: "not-authority" }));
-  const publicOrigin = (requestOrigin: string | null) => {
-    const origin = configuredOrigin ?? requestOrigin;
-    return origin === null
-      ? Effect.fail(new LibraryError({ reason: "invalid" }))
-      : Effect.succeed(origin);
-  };
+  const requireIssuer =
+    issuerOrigin === null
+      ? Effect.fail(new LibraryError({ reason: "not-authority" }))
+      : Effect.succeed(issuerOrigin);
 
   const keyRef = yield* Ref.make<TicketKey | null>(null);
   const keyLock = yield* Semaphore.make(1);
@@ -219,17 +232,18 @@ const make = Effect.gen(function* () {
   const register: PreviewAccessService["Service"]["register"] = Effect.fn(
     "PreviewAccessService.register",
   )(function* (input: PreviewRegisterInput) {
-    yield* requireAuthority;
-    const origin = yield* publicOrigin(input.requestOrigin);
+    const origin = yield* requireIssuer;
     const key = yield* ticketKey;
-    if (input.previews === null) yield* store.remove(input.subject).pipe(Effect.mapError(io));
+    const subject = `${COMPUTER_SUBJECT_PREFIX}${input.environmentId}`;
+    if (input.previews === null) yield* store.remove(subject).pipe(Effect.mapError(io));
     else {
       const updatedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis));
       yield* store
         .put(
           {
-            subject: input.subject,
+            subject,
             environmentId: input.environmentId,
+            sessionId: input.sessionId,
             machine: input.previews.machine,
             suffix: input.previews.suffix.toLowerCase(),
           },
@@ -246,16 +260,37 @@ const make = Effect.gen(function* () {
     } satisfies LibraryPreviewAccess;
   });
 
+  const stillEnrolled = (row: PreviewHostRow, nowMs: number) =>
+    row.sessionId === null
+      ? Effect.succeed(true)
+      : sessions
+          .getById({ sessionId: row.sessionId })
+          .pipe(
+            Effect.mapError(io),
+            Effect.map(
+              Option.exists(
+                (session) =>
+                  session.revokedAt === null && DateTime.toEpochMillis(session.expiresAt) > nowMs,
+              ),
+            ),
+          );
+
   const knownHost = Effect.fn("PreviewAccessService.knownHost")(function* (host: string) {
     if (pagesHost !== null && host === pagesHost) return true;
-    const rows = yield* store.list().pipe(Effect.mapError(io));
-    return rows.some((row) => parsePreviewLinkHost(host, row.suffix)?.machine === row.machine);
+    const nowMs = yield* Clock.currentTimeMillis;
+    for (const row of yield* store.list().pipe(Effect.mapError(io))) {
+      if (parsePreviewLinkHost(host, row.suffix)?.machine !== row.machine) continue;
+      if (yield* stillEnrolled(row, nowMs)) return true;
+      // Its computer left the Library, so its hosts go now rather than at a registration.
+      yield* store.forget(row).pipe(Effect.mapError(io));
+    }
+    return false;
   });
 
   const ticket: PreviewAccessService["Service"]["ticket"] = Effect.fn(
     "PreviewAccessService.ticket",
   )(function* (input: PreviewTicketInput) {
-    yield* requireAuthority;
+    const origin = yield* requireIssuer;
     const host = input.host?.toLowerCase() ?? "";
     if (!HOST_PATTERN.test(host) || !isPreviewNonce(input.nonce))
       return yield* new LibraryError({ reason: "invalid" });
@@ -278,7 +313,6 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "blocked" });
     // Checked after sign-in so a signed-out browser learns nothing about which computers exist.
     if (!(yield* knownHost(host))) return yield* new LibraryError({ reason: "not-found" });
-    const origin = yield* publicOrigin(input.requestOrigin);
     const key = yield* ticketKey;
     const signed = signPreviewTicket({
       privateKey: key.privateKey,
@@ -307,6 +341,7 @@ const make = Effect.gen(function* () {
       audience: previewTicketAudience(input.host),
       nonce: input.nonce,
       nowMs: yield* Clock.currentTimeMillis,
+      notBeforeMs: startedAtMs,
     });
   });
 

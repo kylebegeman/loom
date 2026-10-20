@@ -279,6 +279,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   const sidecarPath = path.join(config.stateDir, "fork", "preview-links", "state.json");
   const now = () => clock.currentTimeMillisUnsafe();
+  // Spent tickets are memory only, so tickets signed before this run are never redeemed.
+  const startedAtMs = now();
   const devPort = config.devUrl === undefined ? null : Number(config.devUrl.port) || null;
 
   const defaults: PreviewLinksSettings = {
@@ -468,6 +470,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         audience: previewTicketAudience(host),
         nonce,
         nowMs,
+        notBeforeMs: startedAtMs,
       });
       if (verified === null) return null;
       for (const [spent, untilMs] of spentTickets) {

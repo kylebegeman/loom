@@ -1,9 +1,12 @@
-import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthLibraryPublishScope,
+  AuthOrchestrationOperateScope,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import { LibraryError, LibraryPreviewRegisterRequest } from "@t3tools/contracts/fork";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   HttpIncomingMessage,
@@ -13,10 +16,13 @@ import {
 } from "effect/http";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
-import { PREVIEW_TICKET_ROUTE, PreviewAccessService } from "./PreviewAccessService.ts";
+import {
+  COMPUTER_SUBJECT_PREFIX,
+  PREVIEW_TICKET_ROUTE,
+  PreviewAccessService,
+} from "./PreviewAccessService.ts";
 
 const PREVIEW_REGISTER_ROUTE = "/api/loom/library/previews/register";
-const HOST_SUBJECT_PREFIX = "loom-host:";
 const REGISTER_MAX_BYTES = 4096;
 
 const decodeRegister = Schema.decodeUnknownEffect(LibraryPreviewRegisterRequest);
@@ -31,12 +37,6 @@ const PAGE_HEADERS = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 } as const;
-
-const requestOrigin = (request: HttpServerRequest.HttpServerRequest) =>
-  Option.match(HttpServerRequest.toURL(request), {
-    onNone: () => null,
-    onSome: (url) => url.origin,
-  });
 
 const registerStatus = (reason: LibraryError["reason"]) => {
   switch (reason) {
@@ -59,12 +59,12 @@ const register = withForkRuntime(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     const session = yield* auth.authenticateHttpRequest(request);
-    // Only a computer's own publisher session, which names the computer it speaks for.
-    if (
-      session.subject === "mcp-client" ||
-      !session.scopes.includes(AuthLibraryPublishScope) ||
-      !session.subject.startsWith(HOST_SUBJECT_PREFIX)
-    )
+    // A computer's own publisher session, or an operator token shared by several computers.
+    const operator = session.scopes.includes(AuthOrchestrationOperateScope);
+    const publisher =
+      session.scopes.includes(AuthLibraryPublishScope) &&
+      session.subject.startsWith(COMPUTER_SUBJECT_PREFIX);
+    if (session.subject === "mcp-client" || (!operator && !publisher))
       return HttpServerResponse.text("Access denied", { status: 403 });
     const length = request.headers["content-length"];
     if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > REGISTER_MAX_BYTES))
@@ -76,15 +76,24 @@ const register = withForkRuntime(
     const input = yield* decodeRegister(body).pipe(
       Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
     );
-    const environmentId = yield* decodeEnvironmentId(
-      session.subject.slice(HOST_SUBJECT_PREFIX.length),
-    ).pipe(Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })));
+    // A publisher session names its computer itself and may only speak for that one; a shared
+    // operator token says in the body which computer is registering.
+    const own = session.subject.startsWith(COMPUTER_SUBJECT_PREFIX)
+      ? yield* decodeEnvironmentId(session.subject.slice(COMPUTER_SUBJECT_PREFIX.length)).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        )
+      : null;
+    const environmentId = own ?? input.environmentId ?? null;
+    if (
+      environmentId === null ||
+      (own !== null && input.environmentId !== undefined && input.environmentId !== own)
+    )
+      return HttpServerResponse.text("Access denied", { status: 403 });
     const access = yield* PreviewAccessService;
     const result = yield* access.register({
-      subject: session.subject,
       environmentId,
+      sessionId: session.sessionId,
       previews: input.previews,
-      requestOrigin: requestOrigin(request),
     });
     return HttpServerResponse.jsonUnsafe(result, { headers: NO_STORE });
   }),
@@ -158,7 +167,6 @@ const ticket = withForkRuntime(
       nonce: query.get("nonce"),
       path: query.get("path"),
       session,
-      requestOrigin: requestOrigin(request),
     });
     return HttpServerResponse.redirect(outcome.location, {
       status: outcome._tag === "SignIn" ? 302 : 303,
