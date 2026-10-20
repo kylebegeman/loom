@@ -1,5 +1,8 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  VAULT_APPROVAL_RETENTION_MS,
+  VaultApprovalCancel,
+  type VaultApprovalRequesterStatus,
   VaultApprovalCreate,
   VaultApprovalRequest,
   VaultApprovalChange,
@@ -30,6 +33,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Schedule from "effect/Schedule";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -45,7 +49,7 @@ const StoredApproval = Schema.Struct({
 });
 const Policy = Schema.Struct({
   approvals: Schema.optionalKey(Schema.Array(StoredApproval).check(Schema.isMaxLength(128))),
-  schemaVersion: Schema.Literals([1, 2]),
+  schemaVersion: Schema.Literals([1, 2, 3]),
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   grants: Schema.Array(VaultGrant).check(Schema.isMaxLength(128)),
   audit: Schema.Array(VaultAuditEvent).check(Schema.isMaxLength(256)),
@@ -55,6 +59,7 @@ const Policy = Schema.Struct({
   ).check(Schema.isMaxLength(32)),
 });
 type Policy = typeof Policy.Type;
+const isApprovalCancel = Schema.is(VaultApprovalCancel);
 const isApprovalCreate = Schema.is(VaultApprovalCreate);
 const isApprovalChange = Schema.is(VaultApprovalChange);
 const encodeApprovalCreate = Schema.encodeEffect(
@@ -85,6 +90,16 @@ const UNKNOWN = [
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
+    readonly approvalRetain: Effect.Effect<number, VaultError>;
+    readonly approvalStatus: (
+      id: string,
+      requester: ThreadId,
+    ) => Effect.Effect<VaultApprovalRequesterStatus, VaultError>;
+    readonly approvalCancel: (
+      input: VaultApprovalCancel,
+      requester: ThreadId,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultApprovalRequest, VaultError>;
     readonly approvalInbox: Effect.Effect<VaultApprovalInbox, VaultError>;
     readonly approvalCreate: (
       input: VaultApprovalCreate,
@@ -158,15 +173,17 @@ const make = Effect.gen(function* () {
     if (
       Option.isNone(value) ||
       new Set(value.value.grants.map((grant) => grant.definition.id)).size !==
-        value.value.grants.length
+        value.value.grants.length ||
+      new Set(value.value.approvals?.map((r) => r.request.id)).size !==
+        (value.value.approvals?.length ?? 0)
     )
       return yield* new VaultError({ reason: "invalid-response" });
     return { policy: value.value, version: record.version };
   });
   const persist = Effect.fnUntraced(function* (policy: Policy, version: number) {
-    const encoded = yield* encodePolicy(policy).pipe(
-      Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
-    );
+    const encoded = yield* encodePolicy(
+      policy.approvals === undefined ? policy : { ...policy, schemaVersion: 3 },
+    ).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));
     yield* store.write(path, Redacted.make(encoded), version);
   });
   const withAudit = (policy: Policy, event: VaultAuditEvent): Policy => ({
@@ -309,7 +326,9 @@ const make = Effect.gen(function* () {
           (r) =>
             r.request.grantId !== null &&
             r.request.itemId === input.itemId &&
-            r.request.itemVersion !== item?.version,
+            (r.request.itemVersion !== item?.version ||
+              (r.request.waitingOperation != null &&
+                r.request.waitingOperation.runId !== workload.thread.activeRunId)),
         )
         .map((r) => r.request.grantId),
     );
@@ -385,6 +404,105 @@ const make = Effect.gen(function* () {
               : request.state,
     };
   };
+  const retainedApprovals = (policy: Policy, now: number) =>
+    (policy.approvals ?? []).filter(
+      (r) => now < r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS,
+    );
+  const trimApprovals = (policy: Policy, now: number) =>
+    Effect.gen(function* () {
+      const approvals = retainedApprovals(policy, now);
+      const removed = (policy.approvals?.length ?? 0) - approvals.length;
+      if (removed === 0) return { policy, removed };
+      const discarded = new Set(
+        (policy.approvals ?? [])
+          .filter((r) => now >= r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS)
+          .map((r) => r.request.grantId),
+      );
+      // Never discard version/run binding for a live grant, even if an inconsistent ledger claims it is old.
+      if (
+        policy.grants.some(
+          (g) =>
+            discarded.has(g.definition.id) &&
+            (g.definition.expiresAt === null || now < g.definition.expiresAt),
+        )
+      )
+        return yield* new VaultError({ reason: "invalid-response" });
+      return {
+        removed,
+        policy: {
+          ...policy,
+          revision: policy.revision + 1,
+          approvals,
+          grants: policy.grants.filter((g) => !discarded.has(g.definition.id)),
+        },
+      };
+    });
+  const approvalRetain = Effect.gen(function* () {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { policy, version } = yield* load();
+      const trimmed = yield* trimApprovals(policy, yield* Clock.currentTimeMillis);
+      if (trimmed.removed === 0) return 0;
+      const saved = yield* persist(trimmed.policy, version).pipe(Effect.result);
+      if (saved._tag === "Success") return trimmed.removed;
+      if (saved.failure.reason !== "conflict") return yield* saved.failure;
+    }
+    return yield* new VaultError({ reason: "conflict" });
+  });
+  const requesterRecord = (policy: Policy, id: string, requester: ThreadId, now: number) => {
+    const record = retainedApprovals(policy, now).find(
+      (r) =>
+        r.request.id === id &&
+        r.request.threadId === requester &&
+        r.request.requestedBy === `thread:${requester}`,
+    );
+    return record ? Effect.succeed(record) : Effect.fail(new VaultError({ reason: "not-found" }));
+  };
+  const approvalStatus = Effect.fn("VaultAccess.approvalStatus")(function* (
+    id: string,
+    requester: ThreadId,
+  ) {
+    const target = yield* subject(requester);
+    const { policy } = yield* load(),
+      now = yield* Clock.currentTimeMillis;
+    const stored = yield* requesterRecord(policy, id, requester, now);
+    const request = approvalView(stored.request, policy, now);
+    let operationState: VaultApprovalRequesterStatus["operationState"];
+    if (request.state !== "pending" && request.state !== "approved") operationState = request.state;
+    else if (!request.waitingOperation) operationState = "unbound";
+    else if (
+      request.waitingOperation.runId !== target.thread.activeRunId ||
+      request.projectId !== target.projectId
+    )
+      operationState = "stale-run";
+    else {
+      const item = yield* core.inspect(request.itemId);
+      if (!item || item.state !== "active" || item.version !== request.itemVersion)
+        operationState = "stale-item";
+      else if (request.state === "pending") operationState = "waiting";
+      else {
+        const evaluated = yield* decision(policy, {
+          threadId: requester,
+          itemId: request.itemId,
+          action: request.action,
+          destination: request.destination,
+        });
+        operationState =
+          evaluated.workload.thread.activeRunId !== request.waitingOperation.runId
+            ? "stale-run"
+            : evaluated.result.allowed
+              ? "retry-requires-explicit-operation"
+              : "access-denied";
+      }
+    }
+    return {
+      request,
+      checkedAt: now,
+      operationState,
+      automaticResumption: false as const,
+      allowOnceConsumption: false as const,
+      canExecute: false as const,
+    };
+  });
   const approvalCreate = Effect.fn("VaultAccess.approvalCreate")(function* (
     input: VaultApprovalCreate,
     actor: string,
@@ -399,7 +517,9 @@ const make = Effect.gen(function* () {
     );
     for (let attempt = 0; attempt < 4; attempt++) {
       yield* authorize;
-      const { policy, version } = yield* load();
+      const loaded = yield* load();
+      const { policy } = yield* trimApprovals(loaded.policy, yield* Clock.currentTimeMillis);
+      const version = loaded.version;
       const old = policy.approvals?.find((r) => r.request.id === input.id);
       if (old) {
         if (old.fingerprint !== fingerprint) return yield* new VaultError({ reason: "conflict" });
@@ -413,9 +533,24 @@ const make = Effect.gen(function* () {
       const target = yield* subject(input.threadId),
         item = yield* core.inspect(input.itemId);
       if (!item || item.state !== "active") return yield* new VaultError({ reason: "not-found" });
+      const waitingOperation =
+        target.thread.activeRunId === null
+          ? null
+          : { operationId: input.waitingOperationId ?? input.id, runId: target.thread.activeRunId };
+      if (
+        waitingOperation &&
+        retainedApprovals(policy, yield* Clock.currentTimeMillis).some(
+          (r) =>
+            r.request.threadId === input.threadId &&
+            r.request.waitingOperation?.runId === waitingOperation.runId &&
+            r.request.waitingOperation.operationId === waitingOperation.operationId,
+        )
+      )
+        return yield* new VaultError({ reason: "conflict" });
       const now = yield* Clock.currentTimeMillis;
       const request: VaultApprovalRequest = {
         ...input,
+        waitingOperation,
         projectId: target.projectId,
         itemVersion: item.version,
         policyRevision: policy.revision,
@@ -430,7 +565,7 @@ const make = Effect.gen(function* () {
       };
       const next: Policy = {
         ...policy,
-        schemaVersion: 2,
+        schemaVersion: 3,
         approvals: [...(policy.approvals ?? []), { request, fingerprint, lastOperation: null }],
       };
       yield* authorize;
@@ -447,10 +582,16 @@ const make = Effect.gen(function* () {
     input: VaultApprovalChange,
     actor: string,
     authorize: Effect.Effect<void, VaultError>,
+    requester?: ThreadId,
   ) {
     if (!isApprovalChange(input) || !actor.trim() || actor.length > 256)
       return yield* new VaultError({ reason: "invalid-input" });
-    if (actor.startsWith("thread:")) return yield* new VaultError({ reason: "denied" });
+    if (
+      requester
+        ? input.decision !== "cancel" || actor !== `thread:${requester}`
+        : actor.startsWith("thread:")
+    )
+      return yield* new VaultError({ reason: "denied" });
     const fingerprint = yield* hash(
       yield* encodeApprovalChange({ input, actor }).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
@@ -459,7 +600,11 @@ const make = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       yield* authorize;
       const { policy, version } = yield* load();
-      const stored = policy.approvals?.find((r) => r.request.id === input.id);
+      const now = yield* Clock.currentTimeMillis;
+      if (requester) yield* subject(requester);
+      const stored = requester
+        ? yield* requesterRecord(policy, input.id, requester, now)
+        : retainedApprovals(policy, now).find((r) => r.request.id === input.id);
       if (!stored) return yield* new VaultError({ reason: "not-found" });
       if (stored.lastOperation?.id === input.operationId) {
         if (stored.lastOperation.fingerprint !== fingerprint)
@@ -468,11 +613,10 @@ const make = Effect.gen(function* () {
       }
       if (
         stored.request.revision !== input.expectedRevision ||
-        policy.revision !== input.expectedPolicyRevision
+        (!requester && policy.revision !== input.expectedPolicyRevision)
       )
         return yield* new VaultError({ reason: "conflict" });
-      const now = yield* Clock.currentTimeMillis,
-        request = stored.request;
+      const request = stored.request;
       let grants = policy.grants;
       let grantId = request.grantId,
         approvedUntil = request.approvedUntil;
@@ -491,6 +635,8 @@ const make = Effect.gen(function* () {
           const target = yield* subject(request.threadId),
             item = yield* core.inspect(request.itemId);
           if (
+            (request.waitingOperation != null &&
+              request.waitingOperation.runId !== target.thread.activeRunId) ||
             target.projectId !== request.projectId ||
             !item ||
             item.state !== "active" ||
@@ -577,6 +723,25 @@ const make = Effect.gen(function* () {
     return yield* new VaultError({ reason: "conflict" });
   });
   return VaultAccess.of({
+    approvalRetain,
+    approvalStatus,
+    approvalCancel: (input, requester, authorize) =>
+      Effect.gen(function* () {
+        if (!isApprovalCancel(input)) return yield* new VaultError({ reason: "invalid-input" });
+        return yield* approvalChange(
+          {
+            id: input.id,
+            operationId: input.operationId,
+            expectedRevision: input.expectedRevision,
+            expectedPolicyRevision: 0,
+            decision: "cancel",
+            durationMs: 300_000,
+          },
+          `thread:${requester}`,
+          authorize,
+          requester,
+        );
+      }),
     approvalCreate,
     approvalChange,
     approvalInbox: Effect.gen(function* () {
@@ -584,7 +749,8 @@ const make = Effect.gen(function* () {
         now = yield* Clock.currentTimeMillis;
       return {
         policyRevision: policy.revision,
-        requests: (policy.approvals ?? [])
+        retention: { maxAgeMs: VAULT_APPROVAL_RETENTION_MS, maxRequests: 128 as const },
+        requests: retainedApprovals(policy, now)
           .map((r) => approvalView(r.request, policy, now))
           .toReversed(),
         notifications: "stubbed" as const,
@@ -824,3 +990,14 @@ const make = Effect.gen(function* () {
   });
 });
 export const layer = Layer.effect(VaultAccess, make);
+
+export const reactor = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const service = yield* VaultAccess;
+    yield* service.approvalRetain.pipe(
+      Effect.catch(() => Effect.void),
+      Effect.repeat(Schedule.spaced("1 minute")),
+      Effect.forkScoped,
+    );
+  }),
+);

@@ -56,9 +56,10 @@ another packet's UI/service internals.
 The existing `VaultAccess` service owns request creation, inbox and decisions. Requests and
 latest decision fingerprints are optional additions to the existing `access-policy` value;
 no new backend paths or policy permissions are needed. Existing records decode with an empty
-queue. The queue retains up to 128 requests, including terminal ones, and refuses overflow.
-There is no pruning or full immutable audit history. The first request sets policy schema version 2; older readers reject it before writing, preventing
-queue loss or edits that bypass approval bounds. Downgrade requires a compatible reader or an
+queue. The current queue retains up to 128 requests for at most 24 hours and refuses overflow.
+There is no full immutable audit history. The first milestone introduced format 2. This requester lifecycle writes format 3 whenever an
+approval ledger is persisted; older readers reject it before writing, preventing loss of correlation
+or edits that bypass approval bounds. New readers accept formats 1/2/3. Downgrade requires a compatible reader or an
 operator-reviewed pre-feature backup with explicit revocation reconciliation. No older runtime
 may share this policy.
 
@@ -88,7 +89,8 @@ already executing external operation. Expiry is enforced by server time at use, 
 background poll or client timer. Inbox derives expired/revoked state; both active and expired
 approvals can be durably revoked. Pending expiry is terminal; submit a new request to ask again.
 
-The request remains thread-scoped, not single-operation or single-run authorization. It does not
+Legacy requests remain thread-scoped. New run-bound requests also require the captured run;
+the opaque operation reference is correlation, not single-operation authorization. It does not
 pause/resume a provider or deliver credentials. After approval, the caller must recheck access
 and explicitly retry through ordinary authorized adapters. One-time consumption, resumable
 workload correlation and step-up authentication remain separate work.
@@ -106,3 +108,66 @@ non-thread callers and provides no decision tool; self explanation is the existi
 All providers use the shared MCP boundary where available. Adapters without MCP do not acquire
 an implicit approval path. Scheduled tasks and brokers continue to use the same evaluator;
 requests do not bypass runtime modes or create special policy exceptions.
+
+## Requester status, cancellation and durable waiting correlation
+
+`loom_vault_access_request_status` and `loom_vault_access_request_cancel` derive the thread
+from trusted MCP invocation context. No caller-supplied target thread is accepted. The service
+checks both thread ID and the original requester actor; an administrator-created request on
+behalf of a thread is not automatically owned by that thread. Another requester and an unknown
+or aged-out ID both produce `not-found`. Administrator inbox/decision RPC rights are unchanged.
+No approval or grant mutation tool is added for requesters.
+
+A new request records `waitingOperation`, containing the optional opaque `waitingOperationId`
+(or the request ID by default) and the active run ID resolved by the server. Caller-provided run
+identities are never trusted. There is no command/argv/prompt payload or arbitrary continuation.
+A retained operation reference is unique within its thread/run; duplicate new request IDs for
+that same operation conflict. A thread with no current run gets an explicitly unbound request.
+Existing requests without correlation remain unbound, never retroactively attached to a run.
+
+The server rechecks the captured run before approval and filters its grant from execution
+when that run changes or stops. Independent grants can still permit access. Requester status
+survives service restart and reports `waiting`, `stale-run`, `stale-item`, terminal outcomes,
+`access-denied`, or `retry-requires-explicit-operation` after a fresh evaluator check. The
+returned `canExecute`, `automaticResumption` and `allowOnceConsumption` are literal false.
+The result is a point-in-time observation, not a bearer token or permission to replay work.
+The normal operation must recheck its complete policy and runtime inputs before an explicit retry.
+
+Requester cancellation accepts only ID, request revision and a stable cancellation-operation ID.
+It does not require or expose a current global policy revision. The private service path fixes
+the action to cancellation, rechecks ownership and authorization, and uses the same request/grant
+CAS as administrator decisions. Races with approval can commit only one transition. Lost replies
+can be reconciled by status or an identical retry; changed operation/actor/revision conflicts.
+An approved/expired request cannot be cancelled through this path; administrator revocation is
+separate. Cancelling a request never terminates an already executing external operation.
+
+## Bounded queue retention and compatibility
+
+Retention is measured from server `requestedAt`, with a fixed 24-hour limit. Inbox and requester
+reads exclude aged entries immediately, without writes. A scoped worker runs a bounded single-
+policy sweep on startup and once per minute, and new-request creation can prune aged entries in
+its own CAS. Cleanup increments the logical policy revision, preserves unrelated concurrent
+changes, and retries backend CAS interference at most four times. Cleanup is not an unbounded
+scan. An unavailable/locked backend defers physical cleanup until a later successful sweep;
+logical age filtering still applies to successful reads. It does not claim offline data erasure.
+
+Aged requests and their expired associated approval grants are removed together so stale
+item/run constraints cannot disappear while a live grant remains usable. If an inconsistent
+ledger contains a still-live associated grant, cleanup refuses it. Unrelated grants are not
+removed. Descendants of a removed parent cannot regain access through a missing lineage. The
+existing 128-entry queue cap applies after safe age cleanup; young entries are never silently
+evicted to make room. This also reclaims expired approval-grant slots, rather than exhausting
+the separate 128-grant cap indefinitely.
+
+Retry/ownership evidence is retained for the same finite window. After it ends, status/cancel
+return `not-found`; callers must use fresh IDs for new work. Reusing a forgotten legacy request
+ID can at most create a fresh pending request, requiring a new current-revision human decision.
+It cannot restore an approval or trigger execution. The monotonic policy revision prevents an
+old administrator decision from becoming current after cleanup. This is bounded idempotency,
+not permanent duplicate suppression.
+
+Only the latest access-policy value is pruned. OpenBao KV version history, backups and the
+separate capped audit retain their operator-owned policies. No delete/destroy permission,
+OpenBao subtree, Library integration or production action is added. Format 3 prevents a format-2
+writer from silently stripping run binding and retention metadata. Downgrade requires a compatible
+reader or reviewed recovery with post-backup revocation reconciliation, never a silent format edit.

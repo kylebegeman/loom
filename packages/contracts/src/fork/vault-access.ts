@@ -2,7 +2,13 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { ThreadId, TrimmedNonEmptyString, NonNegativeInt, PositiveInt } from "../baseSchemas.ts";
+import {
+  RunId,
+  ThreadId,
+  TrimmedNonEmptyString,
+  NonNegativeInt,
+  PositiveInt,
+} from "../baseSchemas.ts";
 import { VaultError, VaultItemId, VaultItemSummary, VaultCoreStatus } from "./vault-core.ts";
 
 const Id = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
@@ -170,6 +176,7 @@ export const VaultAccessCatalog = Schema.Struct({
 export type VaultAccessCatalog = typeof VaultAccessCatalog.Type;
 export const VaultApprovalCreate = Schema.Struct({
   id: VaultItemId,
+  waitingOperationId: Schema.optionalKey(VaultItemId),
   threadId: ThreadId,
   itemId: VaultItemId,
   action: VaultAccessAction,
@@ -178,6 +185,9 @@ export const VaultApprovalCreate = Schema.Struct({
 export type VaultApprovalCreate = typeof VaultApprovalCreate.Type;
 export const VaultApprovalRequest = Schema.Struct({
   ...VaultApprovalCreate.fields,
+  waitingOperation: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ operationId: VaultItemId, runId: RunId })),
+  ),
   projectId: Schema.String,
   itemVersion: PositiveInt,
   policyRevision: NonNegativeInt,
@@ -193,6 +203,8 @@ export const VaultApprovalRequest = Schema.Struct({
   Schema.makeFilter(
     (request) =>
       request.requestExpiresAt > request.requestedAt &&
+      (request.waitingOperation == null ||
+        request.waitingOperation.operationId === (request.waitingOperationId ?? request.id)) &&
       (request.grantId === null) === (request.approvedUntil === null) &&
       (request.grantId === null ||
         (request.grantId === request.id &&
@@ -211,7 +223,41 @@ export const VaultApprovalChange = Schema.Struct({
   durationMs: Schema.Literals([300_000, 900_000]),
 });
 export type VaultApprovalChange = typeof VaultApprovalChange.Type;
+export const VAULT_APPROVAL_RETENTION_MS = 86_400_000;
+export const VaultApprovalStatusInput = Schema.Struct({ id: VaultItemId });
+export const VaultApprovalCancel = Schema.Struct({
+  id: VaultItemId,
+  operationId: VaultItemId,
+  expectedRevision: PositiveInt,
+});
+export type VaultApprovalCancel = typeof VaultApprovalCancel.Type;
+export const VaultApprovalRequesterStatus = Schema.Struct({
+  request: VaultApprovalRequest,
+  checkedAt: Time,
+  operationState: Schema.Literals([
+    "unbound",
+    "waiting",
+    "retry-requires-explicit-operation",
+    "access-denied",
+    "stale-run",
+    "stale-item",
+    "denied",
+    "cancelled",
+    "expired",
+    "revoked",
+  ]),
+  automaticResumption: Schema.Literal(false),
+  allowOnceConsumption: Schema.Literal(false),
+  canExecute: Schema.Literal(false),
+});
+export type VaultApprovalRequesterStatus = typeof VaultApprovalRequesterStatus.Type;
 export const VaultApprovalInbox = Schema.Struct({
+  retention: Schema.optionalKey(
+    Schema.Struct({
+      maxAgeMs: Schema.Literal(VAULT_APPROVAL_RETENTION_MS),
+      maxRequests: Schema.Literal(128),
+    }),
+  ),
   policyRevision: NonNegativeInt,
   requests: Schema.Array(VaultApprovalRequest).check(Schema.isMaxLength(128)),
   notifications: Schema.Literal("stubbed"),

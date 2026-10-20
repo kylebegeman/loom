@@ -190,3 +190,93 @@ it.effect(
       ).toBe(false);
     }).pipe(Effect.scoped),
 );
+
+it.effect(
+  "scopes requester status and cancellation to the invocation identity, ignoring injected target and decision fields",
+  () =>
+    Effect.gen(function* () {
+      let statusCalls = 0,
+        cancelCalls = 0;
+      const serviceContext = yield* Layer.build(
+        Layer.mock(VaultAccess)({
+          approvalStatus: (id, requester) =>
+            Effect.gen(function* () {
+              statusCalls++;
+              expect(id).toBe("e".repeat(32));
+              expect(requester).toBe(threadId);
+              return yield* new VaultError({ reason: "not-found" });
+            }),
+          approvalCancel: (input, requester, authorize) =>
+            Effect.gen(function* () {
+              yield* authorize;
+              cancelCalls++;
+              expect(requester).toBe(threadId);
+              expect(input.id).toBe("e".repeat(32));
+              return yield* new VaultError({ reason: "not-found" });
+            }),
+        }),
+      );
+      const toolkit = yield* VaultAccessToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(vaultAccessHandlers).pipe(
+            Layer.provide(
+              Layer.succeed(ForkRuntime, serviceContext as Context.Context<ForkServices>),
+            ),
+          ),
+        ),
+      );
+      const dependencies = Layer.mock(ThreadManagementService)({
+        getThreadShell: () => Effect.succeed(liveThreadShell(threadId)),
+      });
+      const injected = {
+        id: "e".repeat(32),
+        threadId: "other-thread",
+        decision: "approve",
+        operationId: "f".repeat(32),
+        expectedRevision: 1,
+      };
+      const status = yield* toolkit
+        .handle("loom_vault_access_request_status", injected as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      expect(status).toMatchObject({ _tag: "VaultError", reason: "not-found" });
+      const cancel = yield* toolkit
+        .handle("loom_vault_access_request_cancel", injected as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      expect(cancel).toMatchObject({ _tag: "VaultError", reason: "not-found" });
+      expect(statusCalls).toBe(1);
+      expect(cancelCalls).toBe(1);
+      const outside = {
+        ...scope,
+        thread: undefined,
+        client: { sessionId: "reader", label: "Reader", access: "read-only" as const },
+      };
+      yield* toolkit
+        .handle("loom_vault_access_request_status", injected as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, outside),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      yield* toolkit
+        .handle("loom_vault_access_request_cancel", injected as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, outside),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      expect(statusCalls).toBe(1);
+      expect(cancelCalls).toBe(1);
+    }).pipe(Effect.scoped),
+);

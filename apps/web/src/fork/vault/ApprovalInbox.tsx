@@ -96,6 +96,12 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
           </Button>
         </div>
       ) : null}
+      {data?.retention ? (
+        <p className="text-sm text-muted-foreground">
+          Requests are retained for 24 hours, up to 128 entries. Automatic resumption and allow-once
+          access remain disabled.
+        </p>
+      ) : null}
       {data?.requests.length === 0 ? (
         <p>No access requests. An agent can request access with the Vault request tool.</p>
       ) : null}
@@ -129,6 +135,16 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               <br />
               Destination {r.destination ?? "Any destination (unrestricted)"}
             </p>
+            {r.waitingOperation ? (
+              <p className="break-all text-sm">
+                Waiting operation {r.waitingOperation.operationId}
+                <br />
+                Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
+                required.
+              </p>
+            ) : (
+              <p className="text-sm">No run-bound operation correlation was captured.</p>
+            )}
             <p className="text-sm">
               Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
               Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.

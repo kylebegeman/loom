@@ -102,6 +102,12 @@ function Inbox({
           disabled={!connected || busy || !canWrite}
         />
       ) : null}
+      {data?.retention ? (
+        <Text>
+          Requests are retained for 24 hours, up to 128 entries. Automatic resumption and allow-once
+          access remain disabled.
+        </Text>
+      ) : null}
       {data?.requests.length === 0 ? (
         <Text>No access requests. An agent can request access with the Vault request tool.</Text>
       ) : null}
@@ -135,6 +141,15 @@ function Inbox({
               {"\n"}Record {r.itemId} · version {r.itemVersion}
               {"\n"}Destination {r.destination ?? "Any destination (unrestricted)"}
             </Text>
+            {r.waitingOperation ? (
+              <Text>
+                Waiting operation {r.waitingOperation.operationId}
+                {"\n"}Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
+                required.
+              </Text>
+            ) : (
+              <Text>No run-bound operation correlation was captured.</Text>
+            )}
             <Text>
               Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
               Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.

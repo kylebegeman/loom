@@ -47,6 +47,7 @@ const fixture = () => {
     loseNextReply: false,
     notificationsFail: false,
     failWrites: false,
+    runId: RunId.make("grant-run"),
     active: true,
     deleted: false,
     approvalRequired: false,
@@ -101,7 +102,7 @@ const fixture = () => {
                 projectId,
                 deletedAt: state.deleted ? "2026-10-18T00:00:00Z" : null,
                 archivedAt: null,
-                activeRunId: state.active ? RunId.make("grant-run") : null,
+                activeRunId: state.active ? state.runId : null,
                 runtimeMode: state.approvalRequired ? "approval-required" : "full-access",
                 interactionMode: "default",
                 lineage: {
@@ -751,4 +752,270 @@ it.effect("invalidates approved access when the credential version changes", () 
       ).toBe("denied");
     }),
   ),
+);
+
+const requesterActor = `thread:${threadId}`;
+const cancelInput = { id: approvalInput.id, operationId: "8".repeat(32), expectedRevision: 1 };
+it.effect("returns only the requester's durable operation status without writes or execution", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const created = yield* access.approvalCreate(
+        { ...approvalInput, waitingOperationId: "9".repeat(32) },
+        requesterActor,
+        Effect.void,
+      );
+      expect(created.waitingOperation).toEqual({ operationId: "9".repeat(32), runId: "grant-run" });
+      const versions = [...fixture.records.values()].map((r) => r.version);
+      const status = yield* access.approvalStatus(created.id, threadId);
+      expect(status).toMatchObject({
+        operationState: "waiting",
+        automaticResumption: false,
+        allowOnceConsumption: false,
+        canExecute: false,
+      });
+      expect([...fixture.records.values()].map((r) => r.version)).toEqual(versions);
+      expect((yield* access.approvalStatus(created.id, childId).pipe(Effect.flip)).reason).toBe(
+        "not-found",
+      );
+      expect(
+        (yield* access.approvalStatus("0".repeat(32), threadId).pipe(Effect.flip)).reason,
+      ).toBe("not-found");
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      expect((yield* access.approvalStatus(created.id, threadId)).operationState).toBe(
+        "retry-requires-explicit-operation",
+      );
+      expect((yield* access.approvalStatus(created.id, threadId)).canExecute).toBe(false);
+    }),
+  ),
+);
+it.effect(
+  "rejects another requester's status or cancellation and never turns cancellation into approval",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        expect(
+          (yield* access.approvalCancel(cancelInput, childId, Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("not-found");
+        const cancelled = yield* access.approvalCancel(
+          { ...cancelInput, decision: "approve", durationMs: 900000 } as never,
+          threadId,
+          Effect.void,
+        );
+        expect(cancelled.state).toBe("cancelled");
+        expect((yield* access.snapshot).grants).toHaveLength(0);
+        expect((yield* access.approvalCancel(cancelInput, threadId, Effect.void)).revision).toBe(2);
+        expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+          "cancelled",
+        );
+      }),
+    ),
+);
+it.effect("does not let a thread cancel administrator-created requests on its behalf", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, "administrator", Effect.void);
+      expect(
+        (yield* access.approvalStatus(approvalInput.id, threadId).pipe(Effect.flip)).reason,
+      ).toBe("not-found");
+      expect(
+        (yield* access.approvalCancel(cancelInput, threadId, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("not-found");
+    }),
+  ),
+);
+it.effect(
+  "keeps run correlation across restart, rejects duplicate operations and invalidates new-run access",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(
+          { ...approvalInput, waitingOperationId: "9".repeat(32) },
+          requesterActor,
+          Effect.void,
+        );
+        expect(
+          (yield* access
+            .approvalCreate(
+              { ...approvalInput, id: "1".repeat(32), waitingOperationId: "9".repeat(32) },
+              requesterActor,
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        const reopened = yield* Effect.flatMap(VaultAccess.VaultAccess, (service) =>
+          service.approvalStatus(approvalInput.id, threadId),
+        ).pipe(Effect.provide(fixture.layer));
+        expect(reopened.request.waitingOperation?.runId).toBe("grant-run");
+        yield* access.approvalChange(approveInput, "human", Effect.void);
+        yield* access.require(threadId, itemId, "use", approvalInput.destination);
+        fixture.state.runId = RunId.make("different-run");
+        expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+          "stale-run",
+        );
+        expect(
+          (yield* access
+            .require(threadId, itemId, "use", approvalInput.destination)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+it.effect(
+  "blocks approval after a run change while permitting the owner to cancel its pending request",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        fixture.state.runId = RunId.make("different-run");
+        expect(
+          (yield* access.approvalChange(approveInput, "human", Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("conflict");
+        expect((yield* access.approvalCancel(cancelInput, threadId, Effect.void)).state).toBe(
+          "cancelled",
+        );
+      }),
+    ),
+);
+it.effect("reconciles lost cancellation replies and ignores unrelated policy revisions", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+      yield* access.apply(save, "human");
+      fixture.state.loseNextReply = true;
+      expect(
+        (yield* access.approvalCancel(cancelInput, threadId, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("unavailable");
+      expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+        "cancelled",
+      );
+      expect((yield* access.approvalCancel(cancelInput, threadId, Effect.void)).state).toBe(
+        "cancelled",
+      );
+      expect((yield* access.snapshot).grants).toHaveLength(1);
+    }),
+  ),
+);
+it.effect("permits only one of a requester cancellation and administrator approval race", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+      const outcomes = yield* Effect.all(
+        [
+          access.approvalCancel(cancelInput, threadId, Effect.void).pipe(Effect.result),
+          access.approvalChange(approveInput, "human", Effect.void).pipe(Effect.result),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect(outcomes.filter((r) => r._tag === "Success")).toHaveLength(1);
+      expect((yield* access.snapshot).grants.length).toBe(
+        (yield* access.approvalInbox).requests[0]?.state === "approved" ? 1 : 0,
+      );
+    }),
+  ),
+);
+it.effect("expires requester status and never cancels an already approved or expired request", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      expect(
+        (yield* access
+          .approvalCancel({ ...cancelInput, expectedRevision: 2 }, threadId, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      yield* TestClock.adjust("5 minutes");
+      expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+        "expired",
+      );
+      expect(
+        (yield* access
+          .approvalCancel({ ...cancelInput, expectedRevision: 2 }, threadId, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+    }),
+  ),
+);
+it.effect(
+  "retains requests for exactly 24 hours and reclaims only expired approval grants in one policy CAS",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        yield* access.approvalChange(approveInput, "human", Effect.void);
+        const paths = [...fixture.records.keys()];
+        yield* TestClock.adjust("23 hours");
+        expect((yield* access.approvalInbox).requests).toHaveLength(1);
+        expect(yield* access.approvalRetain).toBe(0);
+        yield* TestClock.adjust("1 hour");
+        expect((yield* access.approvalInbox).requests).toHaveLength(0);
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, threadId).pipe(Effect.flip)).reason,
+        ).toBe("not-found");
+        fixture.state.failWrites = true;
+        expect((yield* access.approvalRetain.pipe(Effect.flip)).reason).toBe("unavailable");
+        fixture.state.failWrites = false;
+        expect(yield* access.approvalRetain).toBe(1);
+        expect((yield* access.snapshot).grants).toHaveLength(0);
+        expect(yield* access.approvalRetain).toBe(0);
+        expect([...fixture.records.keys()]).toEqual(paths);
+        const policy = [...fixture.records.entries()].find(([path]) =>
+          path.endsWith("/access-policy"),
+        )![1];
+        expect(Redacted.value(policy.value)).toMatchObject({ schemaVersion: 3, approvals: [] });
+      }),
+    ),
+);
+it.effect(
+  "keeps the 128-entry cap and trims aged entries atomically before accepting a new request",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        for (let i = 0; i < 128; i++)
+          yield* access.approvalCreate(
+            { ...approvalInput, id: i.toString(16).padStart(32, "0") },
+            requesterActor,
+            Effect.void,
+          );
+        expect((yield* access.approvalInbox).requests).toHaveLength(128);
+        expect(
+          (yield* access
+            .approvalCreate(approvalInput, requesterActor, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        yield* TestClock.adjust("24 hours");
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        expect((yield* access.approvalInbox).requests).toHaveLength(1);
+        expect((yield* access.approvalInbox).policyRevision).toBe(1);
+      }),
+    ),
+);
+
+it.effect(
+  "blocks cancellation if permission disappears before commit and reports a changed item without probing it",
+  () =>
+    withAccess(({ access, core }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        let checks = 0;
+        const authorize = Effect.suspend(() =>
+          ++checks > 1 ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+        );
+        expect(
+          (yield* access.approvalCancel(cancelInput, threadId, authorize).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+          "waiting",
+        );
+        yield* core.change(
+          { id: itemId, operationId: "a1".repeat(16), expectedVersion: 1, action: "archive" },
+          "human",
+        );
+        expect((yield* access.approvalStatus(approvalInput.id, threadId)).operationState).toBe(
+          "stale-item",
+        );
+      }),
+    ),
 );

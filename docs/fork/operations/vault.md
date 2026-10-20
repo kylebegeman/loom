@@ -627,13 +627,19 @@ older runtime rewrites may omit fields they do not recognize.
 
 ## Temporary approval policy compatibility
 
-The first saved remote-approval request upgrades the existing environment access-policy value
-to schema version 2. Older runtimes reject that policy and cannot serve its Vault grant checks.
-Use a runtime with `vault-approvals` support for every writer sharing it. Downgrading requires a
-compatible reader or an explicitly reviewed pre-feature backup, including reconciliation of
-revocations after that backup. Never silently strip the request queue or restore old access.
+The first approval milestone introduced access-policy format 2. Requester lifecycle and retention
+writes use format 3 whenever an approval ledger is present. Readers accept formats 1/2/3, but
+0.0.97 and earlier cannot read format 3. Use a compatible runtime for every policy writer.
+Downgrade requires a compatible reader or an explicitly reviewed pre-feature backup, including
+reconciliation of revocations after that backup. Never silently strip correlation, the request
+queue or restore old access by changing a version number.
 
-This milestone uses existing policy read/write permissions; it adds no OpenBao paths, policy
-rules or Library rollout. Migration/replacement subtree rollout remains deferred to the host
-owner behind L79. Notification delivery is stubbed. The request queue retains at most 128 entries;
-capacity/retention management remains follow-up work rather than an automatic deletion job.
+The current queue has a fixed 24-hour age limit and 128-entry cap. The scoped server worker
+sweeps on startup and each minute; creation also safely prunes aged entries. Status/inbox hide
+aged entries immediately on a successful read. Cleanup removes aged entries and their expired
+approval grants in one CAS and refuses inconsistent live bindings. Outages defer physical
+cleanup until a successful sweep. It does not erase KV history, backups or the separate audit.
+Existing policy write rights suffice; no new OpenBao paths, destroy permissions or Library
+rollout are introduced. Migration/replacement rollout remains deferred to the host owner behind
+L79. Notification delivery remains stubbed; automatic resumption and one-time consumption are
+still disabled. Kyle owns native acceptance and the Threads-screen render defect.

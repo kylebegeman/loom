@@ -46,8 +46,13 @@ expired approvals visibly. Other independent grants may still permit access. Pen
 expire after ten minutes; ask again with a new request if needed. If a decision response is
 uncertain, retry the same decision or refresh its status before deciding again.
 
-Agents request access using the Vault access request tool, then recheck their access before
-explicitly retrying work. There are no external notifications or automatic restarts yet. Approval
+Agents request access using the Vault access request tool and can inspect or cancel their own
+pending request with its status/cancellation tools. A waiting-operation reference is linked to
+the server's current run. If that run changes, request new access for the new work. An approval
+never resumes a command or consumes a one-time permission; recheck access before explicitly
+retrying work. Queue entries and retry evidence last 24 hours, with a 128-entry cap. Use fresh
+request/operation IDs after that window. Encrypted backend history follows its separate retention
+policy. There are no external notifications or automatic restarts yet. Approval
 does not verify an external login or override runner permissions. Older servers without approval
 support do not show this inbox.
 

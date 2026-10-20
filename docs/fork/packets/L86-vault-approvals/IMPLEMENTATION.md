@@ -1,19 +1,29 @@
 # L86 implementation plan
 
-Status: In progress; local pending inbox and timed-grant milestone implemented. The sequence below describes the full packet outcome;
+Status: In progress; timed approvals, requester lifecycle and bounded queue retention implemented. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered milestone and next work
 
 The existing access service now atomically stores bounded durable requests, reviewed timed
 decisions and grants in its existing policy. Web/desktop and mobile inboxes expose approve,
-deny, cancel, expired status and revoke. MCP can create an authenticated thread request but
-cannot decide it. Notification transport is a supplied stub. Existing grant enforcement applies.
+deny, cancel, expired status and revoke. MCP can create, inspect or cancel its authenticated requester's own pending request, but cannot decide it. Notification transport is a supplied stub. Existing grant enforcement applies.
 
-Next selected work: current native-client acceptance when the no-install constraint permits,
-explicit requester status/cancellation and durable waiting-operation correlation/resumption.
-Allow-once, step-up authentication, notification transports/retries, queue retention and remote
-relay/tunnel acceptance remain unfinished. Do not mark the full packet done.
+Requester status and cancellation now use the trusted invocation identity. Durable correlation
+stores a caller's opaque operation reference and the server's current run, without command
+payloads. Approval and access reject a different captured run. Status is read-only and has no
+execution token. Automatic resumption and allow-once consumption remain literal-false gates.
+
+The current queue has a 24-hour age limit and the existing 128 cap. A scoped one-minute worker
+and atomic creation cleanup reclaim aged requests plus expired approval grants; cleanup refuses
+to discard a live grant's binding. Backend history/audit retention remains separate. Existing
+policy writes with an approval ledger use format 3 to prevent older writers dropping correlation.
+
+Next selected work: operation-specific safe retry/resumption design and notification delivery
+adapters with durable delivery outcomes. Automatic resumption and one-time consumption remain
+gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
+simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
+Do not mark the full packet done.
 
 ## Before starting
 

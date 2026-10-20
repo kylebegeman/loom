@@ -1,5 +1,8 @@
 import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
 import {
+  VaultApprovalStatusInput,
+  VaultApprovalCancel,
+  VaultApprovalRequesterStatus,
   VaultApprovalCreate,
   VaultApprovalRequest,
   VaultError,
@@ -31,9 +34,25 @@ const ownReadiness = Schema.Struct({
 });
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultAccessToolkit = Toolkit.make(
+  Tool.make("loom_vault_access_request_status", {
+    description:
+      "Read only your authenticated thread's own Vault request and durable waiting-operation correlation. Unknown, other-requester and aged-out IDs return not-found. A retry-ready status is not an execution token: automatic resumption and allow-once consumption remain disabled. Recheck normal access before explicitly retrying an operation.",
+    parameters: VaultApprovalStatusInput,
+    success: VaultApprovalRequesterStatus,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_access_request_cancel", {
+    description:
+      "Cancel only your authenticated thread's own pending Vault request, using a stable operation ID and the displayed request revision. This cannot approve, deny or revoke an approved grant. After a race, inspect status before trying again.",
+    parameters: VaultApprovalCancel,
+    success: VaultApprovalRequest,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_vault_access_request", {
     description:
-      "Request temporary Vault access for the authenticated thread. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals. After approval, recheck access before explicitly retrying the operation; no automatic resumption or notification transport is provided.",
+      "Request temporary Vault access for the authenticated thread. An optional waitingOperationId is an opaque correlation reference; the server binds its own current run. Entries and retry evidence are retained for 24 hours; use new IDs after that window. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals. After approval, recheck access before explicitly retrying the operation; no automatic resumption or notification transport is provided.",
     parameters: Schema.Struct({
       ...VaultApprovalCreate.fields,
       threadId: Schema.optional(ThreadId),
@@ -103,6 +122,34 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_access_request_status: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
+              access.approvalStatus(input.id, caller.thread!.threadId),
+            ),
+          );
+        }),
+      ),
+      loom_vault_access_request_cancel: McpToolAccess.writesEnvironment((input, check) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          const context = yield* Effect.context<Effect.Services<typeof check>>();
+          const authorize = check.pipe(
+            Effect.provide(context),
+            Effect.asVoid,
+            Effect.mapError(() => new VaultError({ reason: "denied" })),
+          );
+          return yield* onHost(
+            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
+              access.approvalCancel(input, caller.thread!.threadId, authorize),
+            ),
+          );
+        }),
+      ),
       loom_vault_access_request: McpToolAccess.writesEnvironment((input, check) =>
         Effect.gen(function* () {
           const caller = yield* McpInvocationContext;

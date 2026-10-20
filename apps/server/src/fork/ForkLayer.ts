@@ -215,6 +215,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultWorkloads,
   layerVaultCore,
   layerVaultAccess,
+  VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(
     Layer.provide(FetchHttpClient.layer),

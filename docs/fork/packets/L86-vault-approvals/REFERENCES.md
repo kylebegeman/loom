@@ -30,3 +30,7 @@ this packet adds no application dependency.
 - [Notification adapter](../../../../apps/server/src/fork/vault/ApprovalNotifications.ts): explicit runtime stub.
 - [MCP boundary](../../../../apps/server/src/fork/vault/access-mcp.ts): authenticated requests without self-approval.
 - [Service acceptance](../../../../apps/server/src/fork/vault/VaultAccess.test.ts): expiry, races and failures.
+
+- Requester identity, cancellation, run binding and retention use the same
+  [access service](../../../../apps/server/src/fork/vault/VaultAccess.ts) and
+  [MCP boundary](../../../../apps/server/src/fork/vault/access-mcp.ts); no resumable command payload is stored.
