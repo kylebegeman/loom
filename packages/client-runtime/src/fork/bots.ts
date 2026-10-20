@@ -3,6 +3,7 @@ import {
   type BotDefinition,
   type BotRun,
   type BotsChange,
+  type BotVerdictValue,
 } from "@t3tools/contracts/fork";
 import * as Stream from "effect/Stream";
 import type { Atom } from "effect/reactivity";
@@ -52,12 +53,17 @@ const newestFirst = (left: BotRun, right: BotRun) =>
 
 /**
  * A page of runs with watched progress applied. Runs started after the page was fetched join it
- * when they match its bot; older pages only update the runs they already hold.
+ * when they match its bot; older pages only update the runs they already hold. A page filtered by
+ * verdict keeps only runs that still carry that verdict.
  */
 export const applyRunChanges = (
   listed: ReadonlyArray<BotRun>,
   changes: BotsChanges,
-  options: { readonly botId?: string | undefined; readonly includeNew: boolean },
+  options: {
+    readonly botId?: string | undefined;
+    readonly verdict?: BotVerdictValue | undefined;
+    readonly includeNew: boolean;
+  },
 ): ReadonlyArray<BotRun> => {
   const merged = new Map(listed.map((run) => [run.id, run]));
   for (const [id, run] of changes.runs) {
@@ -65,7 +71,11 @@ export const applyRunChanges = (
     else if (options.includeNew && (options.botId === undefined || run.botId === options.botId))
       merged.set(id, run);
   }
-  return [...merged.values()].sort(newestFirst);
+  const runs = [...merged.values()];
+  const { verdict } = options;
+  return (
+    verdict === undefined ? runs : runs.filter((run) => run.verdict?.verdict === verdict)
+  ).sort(newestFirst);
 };
 
 /** Bots live on one environment, which runs them; every request stays on that host. */

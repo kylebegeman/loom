@@ -6,7 +6,12 @@ import {
   type ModelSelection,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import type { BotRun, BotStarterId, BotsSaveInput } from "@t3tools/contracts/fork";
+import {
+  BOTS_RESULT_MAX_BYTES,
+  type BotRun,
+  type BotStarterId,
+  type BotsSaveInput,
+} from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -401,7 +406,7 @@ describe("BotsService starters", () => {
             version: 1,
             createdBy: "user",
             modelSelection: model,
-            origin: { kind: "starter", starterId: bot.id, revision: 1 },
+            origin: { kind: "starter", starterId: bot.id, revision: starterById(bot.id)!.revision },
           });
 
         yield* bots.delete("reviewer");
@@ -500,7 +505,7 @@ describe("BotsService starters", () => {
         yield* bots.delete("verifier");
         expect(yield* bots.restoreStarter("verifier", USER_CALLER)).toMatchObject({
           version: 8,
-          origin: { starterId: "verifier", revision: 1 },
+          origin: { starterId: "verifier", revision: 2 },
         });
       }),
     ),
@@ -523,6 +528,71 @@ describe("BotsService starters", () => {
         expect(
           yield* Effect.flip(bots.restoreStarter("nope" as BotStarterId, USER_CALLER)),
         ).toMatchObject({ reason: "not_found" });
+      }),
+    ),
+  );
+});
+
+describe("BotsService verdicts", () => {
+  it.effect("asks for a verdict, records it, and filters runs by it", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ output: "verdict", maxConcurrentRuns: 4 }), USER_CALLER);
+        const input = { botId: "reviewer", inputs: { file: "a.ts" }, projectId };
+
+        const failing = yield* bots.run(input, USER_CALLER);
+        const launch = yield* harness.nextLaunch;
+        expect(launch.initialMessage?.text).toMatch(/^Review a\.ts\.\n\n## Reply format\n/);
+        yield* harness.end(failing.threadId, {
+          status: "completed",
+          reply:
+            '{"verdict":"fail","summary":"One bug.","findings":[{"title":"Off by one","detail":"","path":"a.ts","line":3}]}',
+        });
+        expect(yield* bots.awaitRun(failing.id, 60_000)).toMatchObject({
+          status: "completed",
+          verdict: { verdict: "fail", summary: "One bug.", source: "decoded" },
+        });
+
+        const prose = yield* bots.run(input, USER_CALLER);
+        yield* harness.end(prose.threadId, { status: "completed", reply: "Seems fine." });
+        expect(yield* bots.awaitRun(prose.id, 60_000)).toMatchObject({
+          result: "Seems fine.",
+          verdict: { verdict: "needs_attention", source: "invalid" },
+        });
+
+        const broken = yield* bots.run(input, USER_CALLER);
+        yield* harness.end(broken.threadId, { status: "failed", reply: '{"verdict":"pass"}' });
+        expect((yield* bots.awaitRun(broken.id, 60_000)).verdict).toBeUndefined();
+
+        // The verdict is read from the whole reply, past the stored cap.
+        const long = yield* bots.run(input, USER_CALLER);
+        yield* harness.end(long.threadId, {
+          status: "completed",
+          reply: `${"x".repeat(BOTS_RESULT_MAX_BYTES)}\n{"verdict":"pass","summary":"Fine."}`,
+        });
+        expect(yield* bots.awaitRun(long.id, 60_000)).toMatchObject({
+          resultTruncated: true,
+          verdict: { verdict: "pass", source: "decoded" },
+        });
+
+        // A run keeps the reply format of the version it started with.
+        const switched = yield* bots.run(input, USER_CALLER);
+        yield* bots.save(reviewer({ maxConcurrentRuns: 4 }), USER_CALLER);
+        yield* harness.end(switched.threadId, {
+          status: "completed",
+          reply: '{"verdict":"pass","summary":"Fine."}',
+        });
+        expect((yield* bots.awaitRun(switched.id, 60_000)).verdict).toMatchObject({
+          verdict: "pass",
+        });
+
+        const failed = yield* bots.listRuns({ verdict: "fail", limit: 10 });
+        expect(failed.runs.map((run) => run.id)).toEqual([failing.id]);
+        expect(failed.runs[0]!.verdict?.findings).toEqual([
+          { title: "Off by one", detail: "", path: "a.ts", line: 3 },
+        ]);
+        expect((yield* bots.listRuns({ limit: 10 })).runs).toHaveLength(5);
       }),
     ),
   );

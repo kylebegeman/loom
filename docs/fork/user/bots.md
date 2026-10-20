@@ -28,6 +28,8 @@ Choose **New bot** and fill in:
 - **Time limit and Runs at once.** A run that passes its time limit is stopped and marked
   **Timed out**, keeping what it had written. Extra runs wait in a queue.
 - **Available in.** Limit the bot to one project, or leave it available everywhere.
+- **Reply.** Text keeps the bot's own words. Verdict asks for a structured answer; see
+  [Verdicts](#verdicts).
 
 Editing a bot changes later runs only. Each run records the version it used.
 
@@ -39,9 +41,11 @@ Loom adds three ready-made bots the first time it starts with Bots:
   It runs in the checkout it is run for: the thread of the agent that starts it, or the checkout
   you pick when you run it yourself.
 - **Reviewer** reviews a path, branch, commit range or pull request through one lens:
-  correctness, surfaces or fidelity. It plans only and changes nothing.
-- **Verifier** runs the smallest check that proves or disproves one claim and answers true,
-  false or undetermined.
+  correctness, surfaces or fidelity. It plans only and changes nothing, and answers with a
+  verdict: fail with a finding per problem, or pass.
+- **Verifier** runs the smallest check that proves or disproves one claim. Its verdict is pass
+  when the claim holds, fail when it does not, and needs attention when the check could not
+  decide.
 
 Edit a starter like any other bot; its chip then reads **Starter, edited**. When a later Loom
 ships better instructions, the chip reads **Newer starter available**. **Restore starter** in the
@@ -59,6 +63,21 @@ running runs can be cancelled.
 
 Bot runs stay out of the thread list and do not send completion notifications. **All runs** on
 the Bots page lists every bot's recent runs.
+
+## Verdicts
+
+A bot whose **Reply** is set to Verdict ends every completed run with one of **Pass**, **Fail**
+or **Needs attention**, a short summary and a list of findings, each with an optional file and
+line. Loom asks the bot for this format, so its instructions only need to say what counts as a
+pass or a failure.
+
+The verdict shows next to the run's status. **Show findings** lists them with a copy button for
+each file and line, followed by the raw reply. Use **All**, **Pass**, **Fail** and **Needs
+attention** above the runs to show only runs with that verdict.
+
+A reply Loom cannot read as a verdict is marked **Needs attention** and shows the raw reply in
+full, so nothing the bot said is lost. Runs that fail, time out or are cancelled have no verdict.
+Agents get the verdict with the run's reply, and a result posted to a thread leads with it.
 
 ## Run a bot from a thread
 

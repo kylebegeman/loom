@@ -90,4 +90,21 @@ describe("bots changes", () => {
       ["old", "completed"],
     ]);
   });
+
+  it("keeps a verdict page to runs that end with that verdict", () => {
+    const at = "2026-10-20T10:00:00.000Z";
+    const withVerdict = (id: string, verdict: "pass" | "fail"): BotRun => ({
+      ...run(id, "x", at, "completed"),
+      verdict: { verdict, summary: "", findings: [], findingsTruncated: false, source: "decoded" },
+    });
+    const listed = [withVerdict("a", "fail"), withVerdict("b", "fail")];
+    const changes = fold(
+      { _tag: "run", run: withVerdict("a", "pass") },
+      { _tag: "run", run: withVerdict("c", "fail") },
+      { _tag: "run", run: run("d", "x", at, "running") },
+    );
+    expect(
+      applyRunChanges(listed, changes, { verdict: "fail", includeNew: true }).map(({ id }) => id),
+    ).toEqual(["c", "b"]);
+  });
 });

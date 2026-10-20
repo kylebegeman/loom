@@ -4,6 +4,7 @@ import type {
   BotInputValue,
   BotParameter,
 } from "@t3tools/contracts/fork";
+import { VERDICT_REPLY_REQUEST } from "./verdict.ts";
 
 const TEXT_MAX = 20_000;
 const STRING_MAX = 2_000;
@@ -117,4 +118,15 @@ export const renderInstructions = (
     const value = values[name];
     return value === undefined ? "" : String(value);
   });
+};
+
+/** The run's first message: the rendered instructions, plus the reply format a verdict bot asks for. */
+export const renderPrompt = (
+  definition: Pick<BotDefinitionInput, "instructions" | "parameters" | "output">,
+  values: Readonly<Record<string, BotInputValue>>,
+): string => {
+  const instructions = renderInstructions(definition, values);
+  return definition.output === "verdict"
+    ? `${instructions}\n\n${VERDICT_REPLY_REQUEST}`
+    : instructions;
 };

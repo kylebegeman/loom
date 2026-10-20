@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { BotParameter } from "@t3tools/contracts/fork";
 import { capReply } from "./BotsService.ts";
-import { checkParameters, renderInstructions, validateInputs } from "./render.ts";
+import { checkParameters, renderInstructions, renderPrompt, validateInputs } from "./render.ts";
+import { VERDICT_REPLY_REQUEST } from "./verdict.ts";
 
 const parameters: ReadonlyArray<BotParameter> = [
   { name: "file", label: "File", type: "string", required: true },
@@ -69,5 +70,17 @@ describe("capReply", () => {
     expect(new TextEncoder().encode(capped.text).length).toBeLessThanOrEqual(16 * 1024);
     expect(capped.text).not.toContain("�");
     expect(capReply("short")).toEqual({ text: "short", truncated: false });
+  });
+});
+
+describe("renderPrompt", () => {
+  const definition = { instructions: "Review {{file}}.", parameters };
+
+  it("asks a verdict bot for the reply format after its instructions", () => {
+    expect(renderPrompt({ ...definition, output: "verdict" }, { file: "a.ts" })).toBe(
+      `Review a.ts.\n\n${VERDICT_REPLY_REQUEST}`,
+    );
+    expect(renderPrompt(definition, { file: "a.ts" })).toBe("Review a.ts.");
+    expect(renderPrompt({ ...definition, output: "text" }, { file: "a.ts" })).toBe("Review a.ts.");
   });
 });

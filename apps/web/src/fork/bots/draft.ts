@@ -5,6 +5,7 @@ import {
   type BotDefinition,
   type BotInputs,
   type BotParameter,
+  type BotOutput,
   type BotParameterType,
 } from "@t3tools/contracts/fork";
 import type {
@@ -47,6 +48,7 @@ export interface BotDraft {
   readonly timeoutMinutes: string;
   readonly maxConcurrentRuns: string;
   readonly scopeProjectId: string;
+  readonly output: BotOutput;
 }
 
 let parameterKeys = 0;
@@ -75,6 +77,7 @@ export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft =
   timeoutMinutes: "20",
   maxConcurrentRuns: "2",
   scopeProjectId: "",
+  output: "text",
 });
 
 export const botDraft = (bot: BotDefinition): BotDraft => ({
@@ -107,6 +110,7 @@ export const botDraft = (bot: BotDefinition): BotDraft => ({
   timeoutMinutes: String(bot.timeoutMinutes),
   maxConcurrentRuns: String(bot.maxConcurrentRuns),
   scopeProjectId: bot.scopeProjectId ?? "",
+  output: bot.output ?? "text",
 });
 
 /** A readable id from the name, for new bots. */
@@ -167,6 +171,8 @@ export const saveInputFromDraft = (
     timeoutMinutes: Number(draft.timeoutMinutes),
     maxConcurrentRuns: Number(draft.maxConcurrentRuns),
     scopeProjectId: draft.scopeProjectId === "" ? null : draft.scopeProjectId,
+    // Text is the default, and an older server would refuse a key it does not know.
+    ...(draft.output === "verdict" ? { output: "verdict" } : {}),
     ...(expectedVersion === undefined ? {} : { expectedVersion }),
   });
   if (Option.isSome(decoded)) return { ok: true, input: decoded.value };

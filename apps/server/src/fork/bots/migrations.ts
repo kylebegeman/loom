@@ -35,5 +35,16 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN notified_at TEXT`;
       }),
     ],
+    [
+      4,
+      "RunVerdicts",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // `verdict` repeats `verdict_json.verdict` so filters and counts use the index.
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN verdict TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN verdict_json TEXT`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_verdict ON fork_bots_runs (bot_id, verdict, created_at DESC)`;
+      }),
+    ],
   ],
 };

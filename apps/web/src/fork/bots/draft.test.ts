@@ -97,6 +97,14 @@ describe("bot drafts", () => {
     expect(saved.ok && saved.input.workspace).toEqual(checkoutBot.workspace);
   });
 
+  it("sends a verdict reply and leaves the text default unsaid", () => {
+    const verdictBot: BotDefinition = { ...bot, output: "verdict" };
+    const saved = saveInputFromDraft(botDraft(verdictBot), verdictBot.version);
+    expect(saved.ok && saved.input.output).toBe("verdict");
+    const text = saveInputFromDraft({ ...botDraft(verdictBot), output: "text" }, 4);
+    expect(text.ok && "output" in text.input).toBe(false);
+  });
+
   it("offers one checkout per live worktree of the project, newest first", () => {
     const shell = (id: string, worktreePath: string | null, updatedAt: string, extra = {}) => ({
       id: ThreadId.make(id),

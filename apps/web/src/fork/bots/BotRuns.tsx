@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { isTerminalBotRunStatus, type BotRun, type BotRunStatus } from "@t3tools/contracts/fork";
+import {
+  isTerminalBotRunStatus,
+  type BotRun,
+  type BotRunStatus,
+  type BotVerdictValue,
+} from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { BotFindings, RawReply } from "./BotFindings";
 import { bots } from "./state";
+import { VERDICT_LABELS, VerdictChip } from "./VerdictChip";
 
 const STATUS: Record<
   BotRunStatus,
@@ -45,6 +52,7 @@ function RunRow({
   const status = STATUS[run.status];
   const active = !isTerminalBotRunStatus(run.status);
   const summary = inputSummary(run);
+  const verdict = run.verdict ?? null;
 
   const stop = async () => {
     setBusy(true);
@@ -64,6 +72,7 @@ function RunRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant={status.variant}>{status.label}</Badge>
+          {verdict ? <VerdictChip verdict={verdict.verdict} /> : null}
           {showBot ? <span className="font-medium">{run.botName}</span> : null}
           <span className="text-xs text-muted-foreground">
             {time(run.finishedAt) ?? time(run.startedAt) ?? time(run.createdAt)}
@@ -85,9 +94,15 @@ function RunRow({
               Open thread
             </Button>
           )}
-          {run.result ? (
+          {verdict || run.result ? (
             <Button size="xs" variant="ghost" onClick={() => setExpanded((open) => !open)}>
-              {expanded ? "Hide reply" : "Show reply"}
+              {verdict
+                ? expanded
+                  ? "Hide findings"
+                  : "Show findings"
+                : expanded
+                  ? "Hide reply"
+                  : "Show reply"}
             </Button>
           ) : null}
           {active ? (
@@ -103,19 +118,46 @@ function RunRow({
         </div>
       </div>
       {summary ? <p className="truncate text-xs text-muted-foreground">{summary}</p> : null}
+      {verdict && !expanded ? <p className="line-clamp-2 text-sm">{verdict.summary}</p> : null}
       {run.error ? <p className="text-sm text-destructive-foreground">{run.error}</p> : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}
         </p>
       ) : null}
-      {expanded && run.result ? (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs">
-          {run.result}
-          {run.resultTruncated ? "\n\n[Reply shortened. Open the thread for the full text.]" : ""}
-        </pre>
+      {expanded && verdict ? (
+        <BotFindings run={run} verdict={verdict} />
+      ) : expanded && run.result ? (
+        <RawReply run={run} />
       ) : null}
     </li>
+  );
+}
+
+const FILTERS: ReadonlyArray<BotVerdictValue | null> = [null, "pass", "fail", "needs_attention"];
+
+/** Narrows the run list to one verdict; runs without a verdict only show under All. */
+export function VerdictFilter({
+  value,
+  onChange,
+}: {
+  readonly value: BotVerdictValue | null;
+  readonly onChange: (value: BotVerdictValue | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Filter runs by verdict">
+      {FILTERS.map((filter) => (
+        <Button
+          key={filter ?? "all"}
+          size="xs"
+          variant={value === filter ? "secondary" : "ghost"}
+          aria-pressed={value === filter}
+          onClick={() => onChange(filter)}
+        >
+          {filter === null ? "All" : VERDICT_LABELS[filter]}
+        </Button>
+      ))}
+    </div>
   );
 }
 

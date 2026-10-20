@@ -101,6 +101,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "bots",
   "bots-starters",
   "bots-invocation",
+  "bots-verdicts",
   DIRECTORY_REPORTING_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),

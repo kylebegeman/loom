@@ -18,7 +18,9 @@ import {
   type BotCreator,
   type BotDefinition,
   type BotDefinitionInput,
+  type BotFinding,
   type BotOrigin,
+  type BotOutput,
   type BotRun,
   type BotRunStatus,
   type BotsChange,
@@ -28,6 +30,7 @@ import {
   type BotStarterId,
   type BotStarterState,
   type BotStarterStatus,
+  type BotVerdict,
 } from "@t3tools/contracts/fork";
 import {
   fallbackTextGenerationModelSelection,
@@ -49,7 +52,8 @@ import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT } from "./BotsStore.ts";
-import { checkParameters, renderInstructions, validateInputs } from "./render.ts";
+import { checkParameters, renderPrompt, validateInputs } from "./render.ts";
+import { decodeVerdictReply } from "./verdict.ts";
 import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
 
 /** Who asked for a bot operation. */
@@ -90,6 +94,8 @@ interface LiveRun {
   started: boolean;
   cancelRequested: boolean;
   threadRunId: RunId | null;
+  /** From the version that ran; a restarted server reads the current one. */
+  output: BotOutput;
 }
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
@@ -118,6 +124,24 @@ const formatDuration = (ms: number) => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 
+const VERDICT_LABELS = { pass: "pass", fail: "fail", needs_attention: "needs attention" } as const;
+
+/** `fail (3 findings)`, the verdict as a run's headline. */
+export const verdictLabel = (verdict: BotVerdict): string => {
+  const count = verdict.findings.length;
+  const label = VERDICT_LABELS[verdict.verdict];
+  if (count === 0) return label;
+  return `${label} (${count}${verdict.findingsTruncated ? "+" : ""} finding${count === 1 && !verdict.findingsTruncated ? "" : "s"})`;
+};
+
+const findingLine = (finding: BotFinding): string => {
+  const where =
+    finding.path === undefined
+      ? ""
+      : ` (${finding.path}${finding.line === undefined ? "" : `:${finding.line}`})`;
+  return `${finding.title}${where}${finding.detail === "" ? "" : `: ${finding.detail}`}`;
+};
+
 /** What a finished run posts to the thread it was started from. */
 export const runResultMessage = (run: BotRun): string => {
   const started = run.startedAt ?? run.createdAt;
@@ -126,14 +150,25 @@ export const runResultMessage = (run: BotRun): string => {
       ? null
       : formatDuration(Date.parse(run.finishedAt) - Date.parse(started));
   const status = run.status.replaceAll("_", " ");
-  const header = `Bot run finished: ${run.botName} (${duration === null ? status : `${status}, ${duration}`})`;
-  const body =
-    run.status === "completed"
-      ? (run.result ?? "The bot gave no reply.")
-      : (run.error ?? `The run ended as ${status}.`);
+  const verdict = run.verdict ?? null;
+  const outcome = verdict === null ? status : verdictLabel(verdict);
+  const header = `Bot run finished: ${run.botName} (${duration === null ? outcome : `${outcome}, ${duration}`})`;
   const truncated =
     run.status === "completed" && run.resultTruncated ? "\n\n(Reply cut short.)" : "";
-  return `${header}\nRun id: ${run.id}\n\n${body}${truncated}`;
+  const reply = `${run.result ?? "The bot gave no reply."}${truncated}`;
+  const body =
+    run.status !== "completed"
+      ? (run.error ?? `The run ended as ${status}.`)
+      : verdict === null
+        ? reply
+        : [
+            verdict.summary,
+            ...(verdict.findings.length === 0
+              ? []
+              : [verdict.findings.map((finding) => `- ${findingLine(finding)}`).join("\n")]),
+            ...(verdict.source === "invalid" ? [reply] : []),
+          ].join("\n\n");
+  return `${header}\nRun id: ${run.id}\n\n${body}`;
 };
 
 const deliveryFailure = (error: unknown) =>
@@ -438,6 +473,11 @@ export const make = Effect.gen(function* () {
   ) {
     if (isTerminalBotRunStatus(entry.run.status)) return;
     const reply = outcome.reply == null ? null : capReply(outcome.reply);
+    // Decoded from the whole reply, so a verdict past the stored cap still counts.
+    const verdict =
+      outcome.status === "completed" && entry.output === "verdict"
+        ? decodeVerdictReply(outcome.reply ?? "")
+        : null;
     entry.run = {
       ...entry.run,
       status: outcome.status,
@@ -445,6 +485,7 @@ export const make = Effect.gen(function* () {
       result: reply?.text ?? null,
       resultTruncated: reply?.truncated ?? false,
       error: outcome.error ?? null,
+      ...(verdict === null ? {} : { verdict }),
     };
     live.delete(entry.run.id);
     yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
@@ -689,6 +730,7 @@ export const make = Effect.gen(function* () {
       started: false,
       cancelRequested: false,
       threadRunId: null,
+      output: bot.output ?? "text",
     };
     yield* store.insertRun(entry.run).pipe(Effect.catch(storageError));
     live.set(runId, entry);
@@ -702,7 +744,7 @@ export const make = Effect.gen(function* () {
       interactionMode: bot.interactionMode,
       workspaceStrategy,
       initialMessage: {
-        text: renderInstructions(bot, checked.values),
+        text: renderPrompt(bot, checked.values),
         attachments: [],
         ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
       },
@@ -773,12 +815,14 @@ export const make = Effect.gen(function* () {
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     for (const stored of unfinished) {
       if (live.has(stored.id)) continue;
+      const bot = yield* store.getDefinition(stored.botId).pipe(Effect.orElseSucceed(() => null));
       const entry: LiveRun = {
         run: stored,
         fiber: null,
         started: stored.status === "running",
         cancelRequested: false,
         threadRunId: null,
+        output: bot?.output ?? "text",
       };
       if (stored.status === "queued") {
         yield* finish(entry, {
@@ -788,7 +832,6 @@ export const make = Effect.gen(function* () {
         continue;
       }
       live.set(stored.id, entry);
-      const bot = yield* store.getDefinition(stored.botId).pipe(Effect.orElseSucceed(() => null));
       const limitMs = (bot?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES) * 60_000;
       const startedMs = stored.startedAt === null ? nowMs : Date.parse(stored.startedAt);
       const remainingMs = Math.max(1, limitMs - (nowMs - startedMs));

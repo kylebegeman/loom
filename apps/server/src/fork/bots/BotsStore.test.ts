@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotRun } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
-import type * as SqlClient from "effect/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { makeBotsStore, type BotsStore } from "./BotsStore.ts";
@@ -84,6 +84,33 @@ describe("BotsStore", () => {
           ["r3"],
         );
         expect((yield* store.listUnfinishedRuns()).map((run) => run.id)).toEqual(["r2"]);
+      }),
+    ),
+  );
+
+  it.effect("stores verdicts, filters by them, and keeps a run whose verdict it cannot read", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const verdict = {
+          verdict: "fail",
+          summary: "One bug.",
+          findings: [{ title: "Off by one", detail: "", path: "a.ts", line: 3 }],
+          findingsTruncated: false,
+          source: "decoded",
+        } as const;
+        yield* store.insertRun(testRun("r1", "2026-10-20T10:00:00.000Z"));
+        yield* store.saveRun(testRun("r1", "2026-10-20T10:00:00.000Z", { verdict }));
+        yield* store.insertRun(testRun("r2", "2026-10-20T11:00:00.000Z"));
+        expect(yield* store.listRuns({ verdict: "fail", limit: 5 })).toEqual({
+          runs: [testRun("r1", "2026-10-20T10:00:00.000Z", { verdict })],
+          hasMore: false,
+        });
+
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE fork_bots_runs SET verdict_json = '{"verdict":"maybe"}' WHERE id = 'r1'`;
+        expect(yield* store.getRun("r1")).toEqual(
+          testRun("r1", "2026-10-20T10:00:00.000Z", { verdict: null }),
+        );
       }),
     ),
   );

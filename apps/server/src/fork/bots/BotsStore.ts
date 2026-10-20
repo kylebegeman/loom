@@ -4,6 +4,7 @@ import {
   BotInputs,
   BotOrigin,
   BotRunStatus,
+  BotVerdict,
   type BotDefinition,
   type BotRun,
 } from "@t3tools/contracts/fork";
@@ -43,6 +44,7 @@ interface RunRow {
   readonly result_truncated: number;
   readonly error: string | null;
   readonly notify: number;
+  readonly verdict_json: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -58,6 +60,9 @@ const decodeDefinition = Schema.decodeUnknownOption(definitionJson);
 const decodeInputs = Schema.decodeUnknownOption(inputsJson);
 const encodeDefinition = Schema.encodeSync(definitionJson);
 const encodeInputs = Schema.encodeSync(inputsJson);
+const verdictJson = Schema.fromJsonString(BotVerdict);
+const decodeVerdict = Schema.decodeUnknownOption(verdictJson);
+const encodeVerdict = Schema.encodeSync(verdictJson);
 const isStatus = Schema.is(BotRunStatus);
 
 // A row written by a future version this one cannot read is skipped, not fatal.
@@ -96,6 +101,10 @@ const toRun = (row: RunRow): BotRun | null => {
     resultTruncated: Number(row.result_truncated) === 1,
     error: row.error,
     ...(Number(row.notify) === 1 ? { notify: true } : {}),
+    // A verdict this version cannot read leaves the run without one; the run itself still stands.
+    ...(row.verdict_json === null
+      ? {}
+      : { verdict: Option.getOrNull(decodeVerdict(row.verdict_json)) }),
   };
 };
 
@@ -179,7 +188,7 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
     saveRun: Effect.fn("BotsStore.saveRun")(function* (run: BotRun) {
-      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error} WHERE id = ${run.id}`;
+      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)} WHERE id = ${run.id}`;
     }),
 
     /** Records that the result was posted, or why it was not, so it is attempted once. */
@@ -207,10 +216,12 @@ export const makeBotsStore = Effect.gen(function* () {
     listRuns: Effect.fn("BotsStore.listRuns")(function* (input: {
       readonly botId?: string | undefined;
       readonly before?: string | undefined;
+      readonly verdict?: string | undefined;
       readonly limit: number;
     }) {
       const conditions = [
         ...(input.botId === undefined ? [] : [sql`bot_id = ${input.botId}`]),
+        ...(input.verdict === undefined ? [] : [sql`verdict = ${input.verdict}`]),
         ...(input.before === undefined ? [] : [sql`created_at < ${input.before}`]),
       ];
       const rows =

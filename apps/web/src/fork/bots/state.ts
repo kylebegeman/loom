@@ -12,6 +12,7 @@ import {
   BOTS_FEATURE,
   BOTS_INVOCATION_FEATURE,
   BOTS_STARTERS_FEATURE,
+  BOTS_VERDICTS_FEATURE,
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
@@ -30,6 +31,7 @@ export function useBotsHost() {
     supported: supportsLoomFeature(capabilities, BOTS_FEATURE),
     startersSupported: supportsLoomFeature(capabilities, BOTS_STARTERS_FEATURE),
     invocationSupported: supportsLoomFeature(capabilities, BOTS_INVOCATION_FEATURE),
+    verdictsSupported: supportsLoomFeature(capabilities, BOTS_VERDICTS_FEATURE),
   };
 }
 

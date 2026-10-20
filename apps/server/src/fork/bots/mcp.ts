@@ -31,14 +31,14 @@ const AgentBot = Schema.Struct({ ...BotDefinition.fields, activeRuns: Schema.Int
 export const BotsToolkit = Toolkit.make(
   Tool.make("loom_bots_list", {
     description:
-      "List the bots this thread's project can run: each one's brief, typed parameters, pinned model and modes, timeout, and how many runs are active. A bot with an origin is a Loom starter. Prefer running a bot over briefing a new thread for the same job.",
+      "List the bots this thread's project can run: each one's brief, typed parameters, pinned model and modes, timeout, and how many runs are active. A bot with an origin is a Loom starter. A bot whose output is verdict ends each completed run with a structured verdict you can branch on. Prefer running a bot over briefing a new thread for the same job.",
     success: Schema.Struct({ bots: Schema.Array(AgentBot) }),
     failure,
     dependencies: callerDependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_bots_define", {
     description:
-      "Create or replace a bot: a reusable job with fixed instructions, {{name}} placeholders filled from typed parameters, and pinned model, modes, workspace, timeout and concurrency. Pass expectedVersion from loom_bots_list to avoid overwriting someone else's edit. A bot cannot run in a broader runtime mode than this thread.",
+      "Create or replace a bot: a reusable job with fixed instructions, {{name}} placeholders filled from typed parameters, and pinned model, modes, workspace, timeout and concurrency. Set output to verdict to have each completed run return pass, fail or needs_attention with a summary and findings. Pass expectedVersion from loom_bots_list to avoid overwriting someone else's edit. A bot cannot run in a broader runtime mode than this thread.",
     parameters: Schema.Struct({
       ...BotDefinitionInput.fields,
       expectedVersion: Schema.optionalKey(Schema.Int),
@@ -49,7 +49,7 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_run", {
     description:
-      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply; otherwise returns the queued run at once. With notify:true, returns at once and posts the bot's result to this thread when the run ends, waking it. Do not combine wait and notify. A bot run cannot start another bot. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
+      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply and, for a verdict bot, its decoded verdict; otherwise returns the queued run at once. With notify:true, returns at once and posts the bot's result to this thread when the run ends, waking it. Do not combine wait and notify. A bot run cannot start another bot. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
     parameters: Schema.Struct({
       botId: BotId,
       inputs: BotInputs,
@@ -71,7 +71,8 @@ export const BotsToolkit = Toolkit.make(
     dependencies: callerDependencies,
   }),
   Tool.make("loom_bots_run_status", {
-    description: "Read one bot run by id, including its status, final reply and error.",
+    description:
+      'Read one bot run by id, including its status, final reply, verdict and error. A verdict with source "invalid" means the reply was not a verdict; read the reply.',
     parameters: Schema.Struct({ runId: BotRunId }),
     success: BotRun,
     failure,

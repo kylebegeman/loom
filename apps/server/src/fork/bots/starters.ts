@@ -24,7 +24,7 @@ Lenses:
 - surfaces: whether the change reaches every place it should. Walk the "Hit every surface" list in AGENTS.md when the repository has one: entry points, clients, providers, agents, contracts, reverse states, connection modes and docs.
 - fidelity: whether the change does what its packet, issue or request asked, no more and no less. Find that request first and quote the parts that are missing or exceeded.
 
-Report only findings you checked against the code. Order them by severity. For each give the path and line, what is wrong, and the smallest fix. If nothing survives checking, say so plainly.`;
+Report only findings you checked against the code, ordered by severity. Each finding names what is wrong, its path and line, and the smallest fix in its detail. The verdict is "fail" when any finding survives checking, "pass" when none does, and "needs_attention" when you could not judge the change.`;
 
 const VERIFIER_INSTRUCTIONS = `Verify this claim about {{target}}:
 
@@ -34,7 +34,7 @@ const VERIFIER_INSTRUCTIONS = `Verify this claim about {{target}}:
 2. Run the smallest such check. Prefer an existing test or a short script over reading at length. Do not fix anything and do not widen the scope beyond the claim.
 3. If the time runs short or the check cannot decide it, stop and answer "undetermined" with what would decide it.
 
-Reply with the answer first (true, false or undetermined), then exactly what you ran and the evidence.`;
+The verdict is "pass" when the claim is true, "fail" when it is false, and "needs_attention" when it is undetermined. The summary says exactly what you ran and what it showed; add a finding for each piece of evidence that points at a file.`;
 
 /** Seeded once per environment; Kyle edits them like any other bot. */
 export const BOT_STARTERS: ReadonlyArray<BotStarter> = [
@@ -64,7 +64,7 @@ export const BOT_STARTERS: ReadonlyArray<BotStarter> = [
   },
   {
     starterId: "reviewer",
-    revision: 1,
+    revision: 2,
     definition: {
       id: "reviewer",
       name: "Reviewer",
@@ -92,11 +92,12 @@ export const BOT_STARTERS: ReadonlyArray<BotStarter> = [
       workspace: { type: "project", projectId: null, worktree: false },
       timeoutMinutes: 15,
       maxConcurrentRuns: 4,
+      output: "verdict",
     },
   },
   {
     starterId: "verifier",
-    revision: 1,
+    revision: 2,
     definition: {
       id: "verifier",
       name: "Verifier",
@@ -117,6 +118,7 @@ export const BOT_STARTERS: ReadonlyArray<BotStarter> = [
       workspace: { type: "project", projectId: null, worktree: false },
       timeoutMinutes: 10,
       maxConcurrentRuns: 4,
+      output: "verdict",
     },
   },
 ];
@@ -147,6 +149,7 @@ const shippedShape = (definition: BotStarter["definition"] | BotDefinitionInput)
       workspace: definition.workspace,
       timeoutMinutes: definition.timeoutMinutes,
       maxConcurrentRuns: definition.maxConcurrentRuns,
+      output: definition.output ?? "text",
     }),
   );
 

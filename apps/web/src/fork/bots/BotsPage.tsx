@@ -5,6 +5,7 @@ import {
   type BotDefinition,
   type BotStarterState,
   type BotStarterStatus,
+  type BotVerdictValue,
 } from "@t3tools/contracts/fork";
 import { applyRunChanges } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -21,7 +22,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryPermission } from "../project-library/state";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotRunForm } from "./BotRunForm";
-import { BotRuns } from "./BotRuns";
+import { BotRuns, VerdictFilter } from "./BotRuns";
 import { botDraft } from "./draft";
 import { bots, useBots } from "./state";
 
@@ -82,6 +83,8 @@ export function BotsPage() {
   const navigate = useNavigate();
   const environmentId = host.environmentId;
   const selectedId = search.bot;
+  const [verdictFilter, setVerdictFilter] = useState<BotVerdictValue | null>(null);
+  const verdict = host.verdictsSupported ? (verdictFilter ?? undefined) : undefined;
   const runsQuery = useEnvironmentQuery(
     environmentId && live
       ? bots.listRuns({
@@ -89,6 +92,7 @@ export function BotsPage() {
           input: {
             limit: BOTS_LIST_RUNS_MAX_LIMIT,
             ...(selectedId === undefined ? {} : { botId: selectedId }),
+            ...(verdict === undefined ? {} : { verdict }),
           },
         })
       : null,
@@ -139,6 +143,7 @@ export function BotsPage() {
   const selected = selectedId === undefined ? null : allBots.find((bot) => bot.id === selectedId);
   const runs = applyRunChanges(runsQuery.data?.runs ?? [], changes, {
     botId: selectedId,
+    verdict,
     includeNew: true,
   });
   const runTarget =
@@ -356,6 +361,9 @@ export function BotsPage() {
                 <section className="space-y-3" aria-label="Runs">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="font-medium">{selected ? "Runs" : "Recent runs"}</h3>
+                    {host.verdictsSupported ? (
+                      <VerdictFilter value={verdictFilter} onChange={setVerdictFilter} />
+                    ) : null}
                     <Button
                       size="xs"
                       variant="ghost"
@@ -384,7 +392,11 @@ export function BotsPage() {
                       showBot={selected === null || selected === undefined}
                       canCancel={canCancel}
                       emptyMessage={
-                        selected ? `${selected.name} has not run yet.` : "No bot has run yet."
+                        verdict !== undefined
+                          ? "No run matches this verdict."
+                          : selected
+                            ? `${selected.name} has not run yet.`
+                            : "No bot has run yet."
                       }
                     />
                   )}
@@ -405,6 +417,7 @@ export function BotsPage() {
           bot={editing.bot}
           canSave={canSave}
           startersSupported={host.startersSupported}
+          verdictsSupported={host.verdictsSupported}
           onClose={() => setEditing(null)}
           onSaved={(bot) => {
             setEditing(null);

@@ -7,7 +7,12 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
-import type { BotDefinition, BotParameterType, BotStarterId } from "@t3tools/contracts/fork";
+import type {
+  BotDefinition,
+  BotOutput,
+  BotParameterType,
+  BotStarterId,
+} from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -67,6 +72,11 @@ export const WORKSPACE_LABELS: Record<BotWorkspaceChoice, string> = {
 };
 
 const WORKSPACE_CHOICES = Object.keys(WORKSPACE_LABELS) as BotWorkspaceChoice[];
+
+const OUTPUT_LABELS: Record<BotOutput, string> = {
+  text: "Text",
+  verdict: "Verdict",
+};
 
 const PARAMETER_TYPE_LABELS: Record<BotParameterType, string> = {
   string: "Short text",
@@ -183,6 +193,7 @@ export function BotEditor({
   bot,
   canSave,
   startersSupported,
+  verdictsSupported,
   onSaved,
   onClose,
 }: {
@@ -192,6 +203,8 @@ export function BotEditor({
   readonly canSave: boolean;
   /** Older servers know neither checkout bots nor starters. */
   readonly startersSupported: boolean;
+  /** Older servers keep every reply as text. */
+  readonly verdictsSupported: boolean;
   readonly onSaved: (bot: BotDefinition) => void;
   readonly onClose: () => void;
 }) {
@@ -473,6 +486,21 @@ export function BotEditor({
               update({ scopeProjectId }),
             )}
           </LibraryField>
+          {verdictsSupported || draft.output === "verdict" ? (
+            <LibraryField label="Reply">
+              <Choice
+                id="bot-output"
+                value={draft.output}
+                labels={OUTPUT_LABELS}
+                onChange={(output) => update({ output })}
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                {draft.output === "verdict"
+                  ? "Each run ends with pass, fail or needs attention, a summary and findings."
+                  : "Each run ends with the bot's own words."}
+              </span>
+            </LibraryField>
+          ) : null}
         </div>
         {error ? (
           <p role="alert" className="text-sm text-destructive-foreground">

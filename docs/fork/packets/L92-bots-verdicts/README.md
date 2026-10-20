@@ -1,6 +1,7 @@
 # L92: Structured verdicts
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build
+differs from this plan.
 
 A bot can promise a structured answer instead of free text: pass, fail or needs attention, a
 one-paragraph summary and a list of findings with optional file and line. Loom asks for that

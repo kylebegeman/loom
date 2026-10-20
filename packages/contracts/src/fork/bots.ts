@@ -10,6 +10,7 @@ import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
 export const BOTS_FEATURE = "bots";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
 export const BOTS_INVOCATION_FEATURE = "bots-invocation";
+export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -28,6 +29,11 @@ export const BOTS_MAX_PARAMETERS = 12;
 export const BOTS_MAX_ACTIVE_RUNS = 20;
 export const BOTS_RESULT_MAX_BYTES = 16 * 1024;
 export const BOTS_LIST_RUNS_MAX_LIMIT = 50;
+export const BOTS_VERDICT_MAX_FINDINGS = 50;
+export const BOTS_VERDICT_SUMMARY_MAX = 2000;
+export const BOTS_FINDING_TITLE_MAX = 200;
+export const BOTS_FINDING_DETAIL_MAX = 4000;
+export const BOTS_FINDING_PATH_MAX = 1000;
 
 /** Every bot run thread id starts with this, which keeps runs out of thread lists. */
 export const BOT_RUN_THREAD_PREFIX = "bot-run-";
@@ -87,6 +93,10 @@ export const BotWorkspace = Schema.Union([
 ]);
 export type BotWorkspace = typeof BotWorkspace.Type;
 
+/** `verdict` asks for a pass, fail or needs-attention answer that Loom decodes and stores. */
+export const BotOutput = Schema.Literals(["text", "verdict"]);
+export type BotOutput = typeof BotOutput.Type;
+
 export const BotDefinitionInput = Schema.Struct({
   id: BotId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
@@ -103,6 +113,8 @@ export const BotDefinitionInput = Schema.Struct({
   ),
   /** Null for a bot every project can use. */
   scopeProjectId: Schema.NullOr(ProjectId),
+  /** Absent means `text`. */
+  output: Schema.optionalKey(BotOutput),
 });
 export type BotDefinitionInput = typeof BotDefinitionInput.Type;
 
@@ -168,6 +180,28 @@ export const isTerminalBotRunStatus = (status: BotRunStatus): boolean =>
 
 export const BotRunId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
 
+export const BotVerdictValue = Schema.Literals(["pass", "fail", "needs_attention"]);
+export type BotVerdictValue = typeof BotVerdictValue.Type;
+
+export const BotFinding = Schema.Struct({
+  title: shortText(BOTS_FINDING_TITLE_MAX),
+  detail: shortText(BOTS_FINDING_DETAIL_MAX),
+  path: Schema.optionalKey(shortText(BOTS_FINDING_PATH_MAX)),
+  line: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+});
+export type BotFinding = typeof BotFinding.Type;
+
+export const BotVerdict = Schema.Struct({
+  verdict: BotVerdictValue,
+  summary: shortText(BOTS_VERDICT_SUMMARY_MAX),
+  findings: Schema.Array(BotFinding).check(Schema.isMaxLength(BOTS_VERDICT_MAX_FINDINGS)),
+  /** More findings were given than are kept. */
+  findingsTruncated: Schema.Boolean,
+  /** `invalid`: the reply was not a verdict, so the run needs a person and keeps the raw reply. */
+  source: Schema.Literals(["decoded", "invalid"]),
+});
+export type BotVerdict = typeof BotVerdict.Type;
+
 export const BotRun = Schema.Struct({
   id: BotRunId,
   botId: BotId,
@@ -188,6 +222,8 @@ export const BotRun = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   /** Whether the result is posted to the calling thread when the run ends. Absent means no. */
   notify: Schema.optionalKey(Schema.Boolean),
+  /** Set for a completed run of a verdict bot. */
+  verdict: Schema.optionalKey(Schema.NullOr(BotVerdict)),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -227,6 +263,7 @@ export const BotsListRunsInput = Schema.Struct({
   botId: Schema.optionalKey(BotId),
   /** Returns runs created strictly before this ISO timestamp. */
   before: Schema.optionalKey(Schema.String),
+  verdict: Schema.optionalKey(BotVerdictValue),
   limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
 });
 export type BotsListRunsInput = typeof BotsListRunsInput.Type;
