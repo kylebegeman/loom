@@ -3,7 +3,6 @@ import {
   PreviewLink,
   PreviewLinksError,
   PreviewLinksSettings,
-  DEFAULT_PREVIEW_GATEWAY_PORT,
   PREVIEW_CONTAINER_DEFAULT_MINUTES,
   isCurrentPreviewHost,
   type PreviewContainerShareInput,
@@ -45,7 +44,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
-import { forkParked } from "../../serverActivation.ts";
+import { forkParked, forkParkedFiber } from "../../serverActivation.ts";
 import { isContained } from "../model-preview-3d/signedFiles.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
@@ -62,6 +61,7 @@ import { startPreviewGateway } from "./gateway.ts";
 import {
   PREVIEW_COOKIE_MAX_AGE_SECONDS,
   PREVIEW_ENTRY_CODE_TTL_MS,
+  defaultPreviewGatewayPort,
   endPreviewLink,
   formatPreviewHost,
   isLanePort,
@@ -198,6 +198,11 @@ const PREVIEW_COOKIE_MAX_AGE_MS = PREVIEW_COOKIE_MAX_AGE_SECONDS * 1000;
  * seconds the reconnect takes.
  */
 const DPOP_RENEWAL_GRACE_MS = 5 * 60 * 1000;
+/**
+ * A revoke from another process, such as `t3 auth session revoke`, sends this server no change,
+ * so the store is listed again this often. That also lets sessions in after a failed list.
+ */
+const SESSION_RELIST_INTERVAL = Duration.minutes(1);
 
 /** Access keys of browsers that signed in through the Library rather than a Loom session. */
 const LIBRARY_KEY_PREFIX = "library:";
@@ -231,6 +236,8 @@ interface OpenRoute {
 interface GatewayRuntime {
   readonly scope: Scope.Closeable;
   readonly port: number;
+  /** Ends once the gateway listens or has failed to. */
+  starting: Fiber.Fiber<void> | null;
   handle: PreviewGatewayHandle | null;
   failure: string | null;
 }
@@ -286,7 +293,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     suffix: null,
     machine: previewMachineSlug(hostname),
     defaultLifetime: "12h",
-    gatewayPort: DEFAULT_PREVIEW_GATEWAY_PORT,
+    gatewayPort: defaultPreviewGatewayPort(config.devUrl === undefined ? null : config.port),
   };
   const fresh = {
     settings: defaults,
@@ -627,7 +634,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const startGateway = (port: number) =>
     Effect.gen(function* () {
       const scope = yield* Scope.fork(rootScope, "sequential");
-      const runtime: GatewayRuntime = { scope, port, handle: null, failure: null };
+      const runtime: GatewayRuntime = { scope, port, starting: null, handle: null, failure: null };
       gateway = runtime;
       const report = (update: () => void) =>
         Effect.suspend(() => {
@@ -635,7 +642,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           update();
           return publish;
         });
-      yield* forkParked(
+      runtime.starting = yield* forkParkedFiber(
         dependencies.startGateway({ port, view }).pipe(
           Effect.flatMap((handle) =>
             report(() => {
@@ -1003,10 +1010,19 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     lock.withPermit,
   );
 
-  // Waits briefly, so a browser can sign in as soon as the save returns; a slow Library still
+  // The bind waits for this server to become the active one, so it runs apart from the save.
+  const gatewayStarted = Effect.suspend(() => {
+    const starting = gateway?.starting ?? null;
+    return starting === null ? Effect.void : Fiber.await(starting);
+  });
+
+  // Waits for the gateway, so a port that cannot listen comes back from the save itself. Also
+  // waits briefly, so a browser can sign in as soon as the save returns; a slow Library still
   // finishes in the background.
   const configure = (input: PreviewLinksConfigureInput) =>
     saveSettings(input).pipe(
+      Effect.andThen(gatewayStarted),
+      Effect.map(() => currentSetup()),
       Effect.tap(() =>
         Effect.forkIn(refreshLibraryAccess, rootScope).pipe(
           Effect.flatMap((fiber) =>
@@ -1442,7 +1458,11 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     }),
   );
 
-  const lanesSeen = new Set<string>();
+  // A saved open link's lane existed when it was shared, and the first status lists every lane
+  // still stored, so one missing from it was released while this server was down.
+  const lanesSeen = new Set(
+    links.flatMap((link) => (link.state === "open" && link.laneId !== null ? [link.laneId] : [])),
+  );
   yield* forkParked(
     Stream.runForEach(lifecycle.changes, (status) => {
       // Lanes being off hides them without removing them, so it ends nothing.
@@ -1603,6 +1623,29 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     ),
   );
   for (const each of activeSessions) admitSession(each, now());
+
+  const relistSessions = Effect.gen(function* () {
+    // Only sessions known before the list was read can be missing from it; one that signs in
+    // meanwhile is not on it yet.
+    const known = new Set(sessionKeys.keys());
+    const listed = yield* sessions.listActive();
+    // Read after the list, so a session it left out for running out counts as expired here too.
+    const nowMs = now();
+    const listedIds = new Set<string>(listed.map((each) => each.sessionId));
+    let revoked = false;
+    for (const sid of known) {
+      if (!listedIds.has(sid) && removeSession(sid, nowMs)) revoked = true;
+    }
+    for (const each of listed) if (!sessionKeys.has(each.sessionId)) admitSession(each, nowMs);
+    if (revoked) yield* saveRevocations;
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not list Loom sessions for preview links", { cause }),
+    ),
+  );
+  yield* forkParked(
+    Effect.forever(Effect.sleep(SESSION_RELIST_INTERVAL).pipe(Effect.andThen(relistSessions))),
+  );
 
   if (swept.changed) yield* persist({ settings, links }).pipe(Effect.ignore);
   yield* reconcileRuntime;
