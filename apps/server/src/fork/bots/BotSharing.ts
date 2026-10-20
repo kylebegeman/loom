@@ -511,6 +511,16 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     return yield* storage(store.remoteSettings());
   });
 
+  /**
+   * Whether to read requests from the Library: while this computer takes runs, and after it stops,
+   * until the runs it already took end, so their requesters can still cancel them.
+   */
+  const readsRequests = Effect.fn("BotSharing.readsRequests")(function* () {
+    if ((yield* storage(store.remoteSettings())).acceptRemote) return true;
+    const unfinished = yield* storage(store.listUnfinishedRuns());
+    return unfinished.some((run) => run.requestedBy != null);
+  });
+
   const setRemoteSettings = Effect.fn("BotSharing.setRemoteSettings")(function* (
     settings: BotRemoteSettings,
   ) {
@@ -716,6 +726,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     setRemoteSettings,
     hooks,
     reportStatus,
+    readsRequests,
     handleDelivery,
     reportRuns,
     applyResults,
@@ -821,12 +832,11 @@ const make = Effect.gen(function* () {
     "Reporting bot status to the Library failed",
     whenAvailable(sharing.reportStatus).pipe(Effect.andThen(Effect.sleep(STATUS_INTERVAL))),
   );
-  // Asks for work only while this computer accepts it.
   yield* keepGoing(
     "Reading remote bot runs from the Library failed",
     Effect.gen(function* () {
-      const accepting = (yield* available) && (yield* sharing.remoteSettings()).acceptRemote;
-      if (!accepting) return yield* Effect.sleep(IDLE_POLL);
+      const reading = (yield* available) && (yield* sharing.readsRequests());
+      if (!reading) return yield* Effect.sleep(IDLE_POLL);
       const deliveries = yield* client.nextRequests(LONG_POLL_MS);
       for (const delivery of deliveries) yield* sharing.handleDelivery(delivery);
     }),

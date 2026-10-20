@@ -403,6 +403,33 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("still takes cancels for runs it accepted after it stops taking runs", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* studioPublishes(library);
+        yield* sharing.sync();
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: studioRequest("taken"),
+        });
+        for (const received of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(received);
+        yield* harness.nextLaunch;
+
+        yield* sharing.setRemoteSettings({ acceptRemote: false, runtimeModeCeiling: "auto" });
+        expect(yield* sharing.readsRequests()).toBe(true);
+        yield* library.cancel(studio, "taken");
+        for (const received of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(received);
+        expect(yield* bots.awaitRun("taken", 60_000)).toMatchObject({ status: "cancelled" });
+        expect(yield* sharing.readsRequests()).toBe(false);
+      }),
+    ),
+  );
+
   it.effect("records a pinned remote run as the revision the other computer runs", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
