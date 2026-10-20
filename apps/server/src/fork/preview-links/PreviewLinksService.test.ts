@@ -109,7 +109,10 @@ const laneRow = (id: string, portBase: number): LaneRow => ({
   portBase,
 });
 
-const laneStatus = (id: string): ProjectLifecycleLane => ({
+/** Each test lane's first port, matching the `laneRow` its thread gets. */
+const LANE_PORT_BASES: Readonly<Record<string, number>> = { "lane-a": 41000, "lane-b": 41020 };
+
+const laneStatus = (id: string, portBase = LANE_PORT_BASES[id]): ProjectLifecycleLane => ({
   id,
   projectId: ProjectId.make("project"),
   projectName: "Project",
@@ -129,14 +132,14 @@ const laneStatus = (id: string): ProjectLifecycleLane => ({
   running: false,
   createdAt: isoAt(0),
   message: null,
-  ports: null,
+  ports: portBase === undefined ? null : { first: portBase, last: portBase + 19 },
   leases: [],
   helpers: { run: "lane-run", slot: "lane-slot" },
 });
 
 const lifecycleStatus = (
   enabled: boolean,
-  laneIds: ReadonlyArray<string>,
+  lanes: ReadonlyArray<string | ProjectLifecycleLane>,
 ): ProjectLifecycleStatus => ({
   enabled,
   lanesRoot: "/lanes",
@@ -146,7 +149,7 @@ const lifecycleStatus = (
   reserveBytes: 0,
   belowReserve: false,
   shell: { installed: false, profilePath: "/profile" },
-  lanes: laneIds.map(laneStatus),
+  lanes: lanes.map((lane) => (typeof lane === "string" ? laneStatus(lane) : lane)),
   buildSlots: { count: 1, holders: [] },
 });
 
@@ -431,6 +434,8 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   const folders = {
     open: new Map<number, string>(),
     events: yield* Queue.unbounded<string>(),
+    /** Holds each bind, after `bind <port>` goes out, until completed. */
+    gate: null as Deferred.Deferred<void> | null,
   };
   /** Ports something outside Loom listens on. */
   const busyPorts = new Set<number>();
@@ -441,6 +446,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   const ipv6Ports = new Set<number>(options.ipv6Ports);
   const serveFolder: ServePreviewFolder = ({ root, port }) =>
     Effect.gen(function* () {
+      if (folders.gate !== null) {
+        Queue.offerUnsafe(folders.events, `bind ${port}`);
+        yield* Deferred.await(folders.gate);
+      }
       if (busyPorts.has(port) || folders.open.has(port)) {
         return yield* Effect.fail(new PreviewFolderListenError(port, `Port ${port} is in use.`));
       }
@@ -593,8 +602,9 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         Effect.ensuring(Effect.sync(() => void (pendingMarker = null))),
       );
     }),
-    setLanes: (enabled: boolean, laneIds: ReadonlyArray<string>) =>
-      SubscriptionRef.set(lifecycleChanges, lifecycleStatus(enabled, laneIds)),
+    /** Lanes by id get the ports their `laneRow` has. */
+    setLanes: (enabled: boolean, lanes: ReadonlyArray<string | ProjectLifecycleLane>) =>
+      SubscriptionRef.set(lifecycleChanges, lifecycleStatus(enabled, lanes)),
   };
 });
 
@@ -1487,15 +1497,27 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* harness.service.configure({ settings: ready });
       yield* harness.setLanes(true, ["lane-a"]);
       const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      const restoreAndEnd = (lanes: ReadonlyArray<ProjectLifecycleLane>) =>
+        Effect.gen(function* () {
+          yield* harness.service.restore({ linkId: link.id });
+          yield* nextEvent(harness.folders.events, "start 41000");
+          yield* harness.setLanes(true, lanes);
+          yield* harness.waitFor((snapshot) => snapshot.links[0]?.state === "revoked");
+          yield* nextEvent(harness.folders.events, "stop 41000");
+        });
       yield* harness.service.revoke(link.id, owner);
       yield* nextEvent(harness.folders.events, "stop 41000");
-      yield* harness.service.restore({ linkId: link.id });
-      yield* nextEvent(harness.folders.events, "start 41000");
 
-      // The lane owns the port, so the restored link still ends when the lane goes.
-      yield* harness.setLanes(true, []);
-      yield* harness.waitFor((snapshot) => snapshot.links[0]?.state === "revoked");
-      yield* nextEvent(harness.folders.events, "stop 41000");
+      // The lane owns the port, so the restored link still ends when the lane moves to another
+      // block or goes.
+      yield* restoreAndEnd([laneStatus("lane-a", 41040)]);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message:
+          "The lane this folder was shared from no longer uses port 41000, so it may belong to something else now. Share the folder again.",
+      });
+      yield* harness.setLanes(true, ["lane-a"]);
+      yield* restoreAndEnd([]);
       expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
         reason: "not-restorable",
         message:
@@ -1509,6 +1531,29 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
           "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
       });
       expect(harness.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect("ends a folder link whose lane goes while it is being restored", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      yield* harness.setLanes(true, ["lane-a"]);
+      const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      yield* harness.service.revoke(link.id, owner);
+      yield* nextEvent(harness.folders.events, "stop 41000");
+
+      // The restore checked the lane and is binding the port when the lane goes.
+      const binding = yield* Deferred.make<void>();
+      harness.folders.gate = binding;
+      const restoring = yield* Effect.forkChild(harness.service.restore({ linkId: link.id }));
+      yield* nextEvent(harness.folders.events, "bind 41000");
+      yield* harness.setLanes(true, []);
+      yield* Deferred.succeed(binding, undefined);
+      expect((yield* Fiber.join(restoring)).state).toBe("open");
+      yield* harness.waitFor((snapshot) => snapshot.links[0]?.state === "revoked");
+      yield* nextEvent(harness.folders.events, "stop 41000");
     }),
   );
 
@@ -1712,6 +1757,35 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
 
       harness.docker.failRun = null;
       expect((yield* harness.service.shareContainer(input, threadA)).port).toBe(41000);
+    }),
+  );
+
+  it.effect("has nothing to clean up after a share that fails or is cancelled while pulling", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const input = { image: "nginx", containerPort: 80 };
+      harness.docker.down = DOCKER_DOWN;
+      expect(yield* Effect.flip(harness.service.shareContainer(input, threadA))).toMatchObject({
+        reason: "invalid",
+        message:
+          "Docker is not running. Start Docker Desktop or OrbStack, then share the container again.",
+      });
+      // No container can exist, so there is none to look for by label now or every minute after.
+      expect(yield* Queue.takeAll(harness.docker.commands)).toEqual([
+        "image inspect --format {{.Id}} nginx",
+        "pull nginx",
+      ]);
+
+      harness.docker.down = null;
+      harness.docker.missingImages.add("nginx");
+      harness.docker.gates.set("pull", yield* Deferred.make<void>());
+      const pulling = yield* Effect.forkChild(harness.service.shareContainer(input, threadA));
+      yield* nextEvent(harness.docker.commands, "pull nginx");
+      yield* Fiber.interrupt(pulling);
+      expect(Option.isNone(yield* Queue.poll(harness.docker.commands))).toBe(true);
+      expect(harness.docker.runs).toEqual([]);
+      expect((yield* harness.service.snapshot).links).toEqual([]);
     }),
   );
 

@@ -1149,56 +1149,58 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           }),
         ),
       ),
-      (port) =>
-        Effect.gen(function* () {
-          const containerId = yield* containers.run(docker, {
-            laneId: lane.id,
-            linkId: id,
-            port,
-            input,
-          });
-          return yield* lock.withPermit(
+      (port) => {
+        const start = { laneId: lane.id, linkId: id, port, input };
+        // A pull that fails or is cancelled leaves no container, so it has nothing to clean up.
+        return containers.pull(docker, start).pipe(
+          Effect.andThen(
             Effect.gen(function* () {
-              const suffix = yield* requireReady;
-              const nowMs = now();
-              const minutes = input.minutes ?? PREVIEW_CONTAINER_DEFAULT_MINUTES;
-              const stopsAtMs = nowMs + Duration.toMillis(Duration.minutes(minutes));
-              const link = newLink({
-                id,
-                suffix,
-                port,
-                actor: { _tag: "Agent", threadId },
-                laneId: lane.id,
-                // Never extended, so this only has to cover the container's time.
-                lifetime: minutes <= 60 ? "1h" : "12h",
-                nowMs,
-                expiresAtMs: stopsAtMs,
-                backing: {
-                  kind: "container",
-                  image: input.image,
-                  containerId,
-                  containerPort: input.containerPort,
-                  stopsAt: isoAt(stopsAtMs),
-                },
-              });
-              yield* commit({ settings, links: [...links, link] });
-              return link;
-            }),
-          );
-        }).pipe(
-          // Removing by label also catches a container Docker created before it failed or was cut
-          // off. One whose create was still landing shows up later, so the minute check removes by
-          // label again. An interruption can land after the commit too, when the container is the
-          // link's.
-          Effect.onError(() =>
-            findLink(id) === undefined
-              ? Effect.suspend(() => {
-                  addFailedStart(id);
-                  return containers.removeLabelled(docker, id);
-                })
-              : Effect.void,
+              const containerId = yield* containers.run(docker, start);
+              return yield* lock.withPermit(
+                Effect.gen(function* () {
+                  const suffix = yield* requireReady;
+                  const nowMs = now();
+                  const minutes = input.minutes ?? PREVIEW_CONTAINER_DEFAULT_MINUTES;
+                  const stopsAtMs = nowMs + Duration.toMillis(Duration.minutes(minutes));
+                  const link = newLink({
+                    id,
+                    suffix,
+                    port,
+                    actor: { _tag: "Agent", threadId },
+                    laneId: lane.id,
+                    // Never extended, so this only has to cover the container's time.
+                    lifetime: minutes <= 60 ? "1h" : "12h",
+                    nowMs,
+                    expiresAtMs: stopsAtMs,
+                    backing: {
+                      kind: "container",
+                      image: input.image,
+                      containerId,
+                      containerPort: input.containerPort,
+                      stopsAt: isoAt(stopsAtMs),
+                    },
+                  });
+                  yield* commit({ settings, links: [...links, link] });
+                  return link;
+                }),
+              );
+            }).pipe(
+              // Removing by label also catches a container Docker created before it failed or was
+              // cut off. One whose create was still landing shows up later, so the minute check
+              // removes by label again. An interruption can land after the commit too, when the
+              // container is the link's.
+              Effect.onError(() =>
+                findLink(id) === undefined
+                  ? Effect.suspend(() => {
+                      addFailedStart(id);
+                      return containers.removeLabelled(docker, id);
+                    })
+                  : Effect.void,
+              ),
+            ),
           ),
-        ),
+        );
+      },
       (port) => Effect.sync(() => pendingPorts.delete(port)),
     );
   });
@@ -1291,7 +1293,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       }
     });
 
-  /** A folder link's port is its lane's, so it can come back only while that lane is there. */
+  /** A folder link's port is its lane's, so it can come back only while that lane still owns it. */
   const requireFolderLane = (link: PreviewLink) =>
     Effect.gen(function* () {
       const status = Option.getOrNull(yield* Stream.runHead(lifecycle.changes));
@@ -1301,10 +1303,17 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
           "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
         );
       }
-      if (link.laneId === null || !status?.lanes.some((lane) => lane.id === link.laneId)) {
+      const lane = status?.lanes.find((each) => each.id === link.laneId);
+      if (lane === undefined) {
         return yield* fail(
           "not-restorable",
           "The lane this folder was shared from is gone, so its port may belong to something else now. Share the folder again.",
+        );
+      }
+      if (!isLanePort(link.port, lane.ports?.first ?? null)) {
+        return yield* fail(
+          "not-restorable",
+          `The lane this folder was shared from no longer uses port ${link.port}, so it may belong to something else now. Share the folder again.`,
         );
       }
     });
@@ -1500,16 +1509,19 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     Stream.runForEach(lifecycle.changes, (status) => {
       // Lanes being off hides them without removing them, so it ends nothing.
       if (!status.enabled) return Effect.void;
-      const current = new Set(status.lanes.map((lane) => lane.id));
-      for (const id of current) lanesSeen.add(id);
+      const portBases = new Map(status.lanes.map((lane) => [lane.id, lane.ports?.first ?? null]));
+      for (const id of portBases.keys()) lanesSeen.add(id);
+      // A lane gives up a link's port by going, or by moving to a new block at startup when
+      // another server claimed its old one.
       const isGone = (link: PreviewLink) =>
         link.state === "open" &&
         link.laneId !== null &&
         lanesSeen.has(link.laneId) &&
-        !current.has(link.laneId);
-      if (!links.some(isGone)) return Effect.void;
+        !isLanePort(link.port, portBases.get(link.laneId) ?? null);
+      // Checked under the lock, so a share or restore still finishing ends here too.
       return lock.withPermit(
         Effect.suspend(() => {
+          if (!links.some(isGone)) return Effect.void;
           const nowMs = now();
           return commitBackground(
             links.map((link) => (isGone(link) ? endPreviewLink(link, "revoked", nowMs) : link)),

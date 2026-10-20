@@ -4,10 +4,8 @@ import * as NodeHttp from "node:http";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
@@ -18,6 +16,7 @@ import {
   previewByteRange,
   previewContainerRunArgs,
   previewContentType,
+  type PreviewContainerOps,
   previewPortFree,
   resolveFolderRequest,
   servePreviewFolder,
@@ -95,13 +94,9 @@ const request = (
 
 type DockerReply =
   | { readonly code: number; readonly stdout?: string; readonly stderr?: string }
-  | ProcessRunner.ProcessRunError
-  | "hang";
+  | ProcessRunner.ProcessRunError;
 
-/**
- * Records each docker command line and answers from `respond`; no docker ever runs. A command
- * that hangs runs until it is interrupted.
- */
+/** Records each docker command line and answers from `respond`; no docker ever runs. */
 const scriptedDocker = (respond: (line: string) => DockerReply) => {
   const calls: Array<ProcessRunner.ProcessRunInput> = [];
   const runner = ProcessRunner.ProcessRunner.of({
@@ -109,7 +104,6 @@ const scriptedDocker = (respond: (line: string) => DockerReply) => {
       Effect.suspend(() => {
         calls.push(input);
         const reply = respond([input.command, ...input.args].join(" "));
-        if (reply === "hang") return Effect.never;
         if ("_tag" in reply) return Effect.fail(reply);
         return Effect.succeed({
           stdout: reply.stdout ?? "",
@@ -387,6 +381,9 @@ const startInput = (image: string) => ({
   input: { image, containerPort: 80 },
 });
 
+const pullAndRun = (ops: PreviewContainerOps, image: string) =>
+  ops.pull(DOCKER, startInput(image)).pipe(Effect.andThen(ops.run(DOCKER, startInput(image))));
+
 it.layer(NodeServices.layer)("preview container backing", (it) => {
   it.effect("pulls an image only when it is not here, then starts it and keeps its short id", () =>
     Effect.gen(function* () {
@@ -407,35 +404,16 @@ it.layer(NodeServices.layer)("preview container backing", (it) => {
       const ops = yield* docker.ops;
       const subcommands = () => docker.calls.map((call) => call.args.slice(0, 2).join(" "));
 
-      expect(yield* ops.run(DOCKER, startInput("nginx"))).toBe("0123456789ab");
+      expect(yield* pullAndRun(ops, "nginx")).toBe("0123456789ab");
       expect(subcommands()).toEqual(["image inspect", "run -d"]);
       expect(docker.calls[1]).toMatchObject({ command: DOCKER, timeout: "2 minutes" });
       expect(docker.calls[1]?.args.slice(2, 4)).toEqual(["--pull", "never"]);
       expect(docker.calls[1]?.env?.LC_ALL).toBe("C");
 
       docker.calls.length = 0;
-      expect(yield* ops.run(DOCKER, startInput("redis"))).toBe("0123456789ab");
+      expect(yield* pullAndRun(ops, "redis")).toBe("0123456789ab");
       expect(subcommands()).toEqual(["image inspect", "pull redis", "run -d"]);
       expect(docker.calls[1]).toMatchObject({ timeout: "10 minutes" });
-    }),
-  );
-
-  it.effect("creates nothing when a start is cancelled during its pull", () =>
-    Effect.gen(function* () {
-      const pulling = yield* Deferred.make<void>();
-      const docker = scriptedDocker((line) => {
-        if (line.includes(" image inspect ")) return { code: 1, stderr: "No such image: nginx" };
-        if (line.includes(" pull ")) {
-          Deferred.doneUnsafe(pulling, Exit.void);
-          return "hang";
-        }
-        return { code: 0, stdout: `${FULL_ID}\n` };
-      });
-      const ops = yield* docker.ops;
-      const starting = yield* Effect.forkChild(ops.run(DOCKER, startInput("nginx")));
-      yield* Deferred.await(pulling);
-      yield* Fiber.interrupt(starting);
-      expect(docker.lines().some((line) => line.includes(" run "))).toBe(false);
     }),
   );
 
@@ -518,7 +496,7 @@ it.layer(NodeServices.layer)("preview container backing", (it) => {
         const ops = yield* scriptedDocker((line) =>
           line.includes(" image inspect ") ? notHere : line.includes(" pull ") ? pull : run,
         ).ops;
-        const error = yield* Effect.flip(ops.run(DOCKER, startInput("nope")));
+        const error = yield* Effect.flip(pullAndRun(ops, "nope"));
         expect(error, message).toMatchObject({ reason: "invalid", message });
       }
     }),

@@ -457,23 +457,30 @@ export const makePreviewContainerOps = Effect.gen(function* () {
         ),
       );
 
-  /** Pulls the image if it is not here yet, then starts the container detached. */
-  const run = (docker: string, start: PreviewContainerStart) =>
+  /**
+   * Pulls the image if it is not here yet. Nothing a failed or cancelled pull leaves behind is a
+   * container, so only `run` needs cleaning up after.
+   */
+  const pull = (docker: string, start: PreviewContainerStart) =>
     Effect.gen(function* () {
       const { image } = start.input;
       const local = yield* query(docker, ["image", "inspect", "--format", "{{.Id}}", image]);
-      if (local?.code !== 0) {
-        // Cancelling here stops the pull, and no container exists yet to clean up.
-        const pulled = yield* command(
-          docker,
-          ["pull", image],
-          DOCKER_PULL_TIMEOUT,
-          `Docker took more than 10 minutes to pull the image ${image}. Check the image name and the network, then try again.`,
-        );
-        if (pulled.code !== 0) {
-          return yield* startFailure(pulled, { image, port: start.port, step: "pull" });
-        }
+      if (local?.code === 0) return;
+      const pulled = yield* command(
+        docker,
+        ["pull", image],
+        DOCKER_PULL_TIMEOUT,
+        `Docker took more than 10 minutes to pull the image ${image}. Check the image name and the network, then try again.`,
+      );
+      if (pulled.code !== 0) {
+        return yield* startFailure(pulled, { image, port: start.port, step: "pull" });
       }
+    });
+
+  /** Starts the container detached from an image `pull` made sure is here. */
+  const run = (docker: string, start: PreviewContainerStart) =>
+    Effect.gen(function* () {
+      const { image } = start.input;
       const output = yield* command(
         docker,
         previewContainerRunArgs(start),
@@ -526,7 +533,7 @@ export const makePreviewContainerOps = Effect.gen(function* () {
       }),
     );
 
-  return { run, running, remove, removeLabelled };
+  return { pull, run, running, remove, removeLabelled };
 });
 
 export type PreviewContainerOps = Effect.Success<typeof makePreviewContainerOps>;
