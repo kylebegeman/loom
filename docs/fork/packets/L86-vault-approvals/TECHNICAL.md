@@ -499,23 +499,102 @@ reviewed request, never by resetting evidence.
 | Completion write/reply is lost                  | Saved completion is historical; unsaved outcome becomes unknown. Neither permits replay.                     |
 | Outage/corruption/age-out or disabled gate      | Refuse. Storage recovery does not regenerate an opportunity or restart work.                                 |
 
-### One-time grant enforcement remains an explicit decision
+### One-time intent, evaluator enforcement and downgrade readers
 
-The attempt protocol is a prerequisite, not the full allow-once feature. Before enabling it,
-choose a downgrade-safe way to distinguish one-time intent from timed access within the existing
-approved storage boundary, and make the evaluator plus **every** SSH/Git/GitHub, CLI/MCP,
-scheduled-run, provider and broker credential-delivery entry point enforce that intent. Alternate
-grants must not silently satisfy a request advertised as one-time. Decide whether consumption
-means one adapter start, one credential release or one provider-acknowledged operation, including
-SSH multi-sign/connection attempts, Git fetch writes and HTTP/provider retries. The proposed safe
-unit is one adapter start with no transparent replay of uncertain effects; provider idempotency
-or independently verified results can improve recovery later.
+This is a design boundary with executable synthetic counterexamples, not a persisted intent
+contract or a proposal to open a gate. Access-policy stays format 3 and journal stays version 1.
+Today's approvals remain ordinary five/fifteen-minute grants. Neither a journal entry nor a
+successful admission changes their meaning. The current evaluator takes no operation intent
+and returns the first matching allowed grant; adding an unknown intent field cannot restrict it.
+The actual format-3 reader accepts hypothetical intent fields on the policy, approval request
+and grant definition, then its audited writer discards those fields. A minimum-reader field
+inside that same document is equally ineffective. The proof uses synthetic records only.
 
-Those eligibility/enforcement and downgrade decisions are open. Safe default: refuse the
-one-time/resumption paths and preserve existing timed-grant behavior. No mode field, format bump,
-new path or policy right is selected or written here. A future strategy needing one requires
-Kyle's explicit approval. Cross-client/evaluator acceptance and live-adapter crash/revocation
-proofs are required before asking to open a gate; the abstract model alone cannot justify it.
+The intended future unit is **at most one request-bound adapter start** for an exact human-reviewed
+proposal, not one SSH signature, credential release, HTTP response or confirmed external effect.
+One command may require several signatures or network exchanges. A start may fail before any
+remote effect, and an unknown outcome never refunds it. An approval currently reviews
+item/version/action/destination, not a command digest. A requester choosing a digest during
+preparation therefore cannot turn today's approval into human authorization for that exact
+operation. Future intent must bind a human review to the environment, request, waiting operation,
+thread/run, item/version, action/destination, proposal digest, request/grant revisions and bounded
+expiry. Labels are display context only. Eligibility and the consumption unit still need Kyle's
+review before a persisted contract is proposed.
+
+#### Compatibility strategies
+
+| Strategy                                                                                                   | Reader and writer behavior                                                                                                                                                                                                            | Disposition                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Add optional intent/minimum-reader fields to format 3                                                      | Current readers allow the timed grant and writers erase the fields.                                                                                                                                                                   | Rejected by real-service counterexample.                                                                                                |
+| Put intent only in the version-1 journal or a sidecar                                                      | Older readers ignore that independent record; ordinary grants still allow direct use. Missing/aged evidence cannot establish unused intent.                                                                                           | Useful recovery evidence only; insufficient enforcement. No sidecar or new field is introduced.                                         |
+| Revoke the approval grant before dispatch                                                                  | Another thread/project/delegated grant can still authorize use. Policy and journal CAS cannot atomically revoke authority and start a remote effect. A crash may burn an attempt without an effect.                                   | Refusal on uncertainty remains useful, but revocation is not a one-time protocol.                                                       |
+| Store no ordinary active grant for one-time intent and use a separately understood, non-authorizing record | Legacy evaluators cannot gain authority from that record alone, but concurrent broad grants and old approval writers can still defeat a stronger global claim. It needs a trusted mandatory intent boundary and writer compatibility. | Possible future design; not a format-3 shortcut.                                                                                        |
+| Require an unsupported policy version plus a reader/writer rollout barrier                                 | Current reader/writer refuses an unsupported policy before authorization or mutation. Incompatible older versions must also be checked; replacing the document with a legacy backup remains a host recovery risk.                     | Preferred compatibility direction for further design, conditional on Kyle's separate schema approval. No version bump is selected here. |
+
+The preferred direction is an explicit, non-authorizing intent recognized by every eligible
+reader/writer, with fail-closed policy compatibility rather than optional metadata. This does
+not select fields, change a format, establish a new path or authorize implementation. The
+synthetic unsupported-version fixture tests the current reader only; it is not evidence that
+all historical binaries are safe. A rollout must prevent mixed incompatible writers, pin the
+minimum compatible server/broker set, and verify that stale runtimes cannot use an old active
+grant copy. Client capability advertisement alone cannot enforce that boundary. These are
+future host-owner/Kyle dependencies, not production actions in this slice.
+
+#### Enforcement across entry points
+
+A future one-time operation must choose that intent explicitly through a trusted service,
+require the human-reviewed binding, fresh current evaluator authority and fresh journal
+acquisition, then perform the normal adapter checks. The combined evaluator must return an
+intent-specific refusal on consumed, missing, unsupported, expired, mismatched or unreadable
+intent/evidence. It must not retry the decision against ordinary timed, project, parent or
+delegated grants. The real evaluator counterexamples cover these alternate-grant bypasses.
+Existing timed entry points retain their timed semantics until a separately approved change.
+
+The enforcement review must include SSH launch/signing and broker delivery, Git-over-SSH,
+GitHub API/token minting, direct credential delivery and workload sessions, CLI/MCP/RPC,
+provider continuations and scheduled work. Thin transports cannot mint a permit or choose a
+weaker fallback. If an entry point cannot carry and revalidate the bound intent, one-time use
+must be unsupported there. A future generic credential-use call lacking an intent reference
+cannot be marketed as one-time just because a matching request exists. Stronger restrictions
+on all use by a principal/item require mandatory enforcement even on calls that omit the
+reference, plus resolution of overlapping ordinary grants. Otherwise the claim remains limited
+to the explicitly bound operation. Full-access host processes and external credential copies
+remain outside that claim.
+
+Normal authorization must continue at the adapter's final handoff and at subsequent credential
+callbacks where supported. Policy/journal records have separate CAS domains; no ordering turns
+them into an atomic remote transaction. Revoke/expiry/context change observed before handoff
+refuses; changes after a remote start cannot recall that effect. An uncertain reservation or
+completion reconciles to unknown. No reserve replay, replacement reservation ID, copied result,
+process restart, queue pruning or bounded mutation-receipt eviction proves an opportunity unused.
+A fresh human-reviewed request is a new authorization, never a reset or refund of the old one.
+
+#### Downgrade and recovery design
+
+With today's formats, old policy readers ignore the journal safely only because all dispatch,
+resumption and allow-once gates stay false. They still permit ordinary timed use. They cannot
+safely host a future enabled one-time workflow based on an ignored sidecar or optional field.
+Before such a workflow exists, downgrade design must cover reads **and writes**: incompatible
+runtimes refuse protected policy, never rewrite it without intent, and never recreate an active
+timed grant from a retained approval or old receipt. Unknown/missing/corrupt/aged intent or
+journal evidence fails closed independently of ordinary grants.
+
+A downgrade must quiesce protected operations, retain policy/journal evidence and reconcile
+in-flight/unknown outcomes plus revocation before selecting a compatible reader. Restoring an
+older backup that predates consumption must not re-enable spent authority. A host-controlled
+recovery barrier or equivalent rollback protection remains an explicit open design dependency;
+CAS version checks alone do not protect against historical backup restoration. It requires
+host-owner review before live use. No backup is restored, capability changed, legacy binary
+started or production policy inspected here.
+
+`OperationIntent.proof.test.ts` exercises the current reader/writer and evaluator and a
+**design-only** eligibility model across 672 intent/reader/binding/review/evidence/authority
+combinations, each with and without an alternate ordinary grant. Only an aware reader, explicit
+one-time human-reviewed exact binding, fresh prepared evidence and current authority pass the
+abstract eligibility check. That is not acquisition, dispatch permission or an implemented
+runtime evaluator. The existing acquisition/dispatcher proofs remain responsible for the later
+CAS/handle/crash boundaries. All runtime gates remain literal false. Persisted intent, schema
+selection, cross-entry-point enforcement and live acceptance remain unfinished.
 
 ### Implemented internal acquisition contract
 

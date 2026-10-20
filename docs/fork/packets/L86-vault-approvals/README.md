@@ -73,7 +73,9 @@ now compares local adapter metadata with fresh authority/journal checks; it mint
 opens no workload, invokes no command/probe and returns no execution permit. Synthetic recovery
 acceptance covers lost results, service reconstruction, duplicate handles, restored storage and
 aged evidence without recreating an opportunity. Durable resumption/consumption and
-live-provider acceptance remain open.
+live-provider acceptance remain open. One-time intent and downgrade-reader design now rejects
+optional format-3 metadata and alternate-grant fallback using real-service counterexamples;
+its eligibility model is synthetic only. No persisted intent or gate change is selected.
 
 ## Scope
 

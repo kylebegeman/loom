@@ -110,11 +110,18 @@ results, reconstructed journal/admission services, copied results, concurrent us
 backend outage/restoration, still-approved requests with aged evidence and withdrawal after a
 successful observation. It creates no runtime delta or new execution capability.
 
-Next selected work: one-time intent, evaluator enforcement and downgrade-reader design with
-synthetic counterexamples. Compare safe compatibility strategies before proposing a persisted
-intent contract; do not change format 3, journal version 1, paths or gates. Keep decisions needing
-Kyle or the host owner explicit. Real adapter/provider/host verification remains owner-gated. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
-design prerequisites before any gate can be enabled.
+One-time intent/evaluator and downgrade-reader design now includes real format-3 reader/writer
+counterexamples, alternate-grant bypasses and an abstract eligibility proof. Optional intent
+metadata and journal-only enforcement cannot constrain today's timed grants. A future exact
+human-reviewed intent needs mandatory entry-point enforcement and fail-closed reader/writer
+compatibility; a schema change, persisted contract and gate proposal are not selected. Backup
+rollback protection and historical-reader coverage remain explicit host-owner dependencies.
+
+Next unblocked synthetic work: review the adapter-start consumption unit against SSH signing,
+Git subprocesses and GitHub retries, with failure/replay counterexamples. No live transport,
+persisted intent, format/path/policy change or gate proposal is authorized by that proof.
+Real adapter/provider/host verification remains owner-gated. True one-time eligibility,
+cross-adapter enforcement and downgrade safety remain prerequisites before any gate can open.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome

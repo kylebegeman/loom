@@ -51,3 +51,5 @@ Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 - [Fresh acquisition service races](../../../../apps/server/src/fork/vault/OperationAcquisition.test.ts): acknowledged CAS, replay, interruption, single-use validation and handle isolation with no dispatch.
 
 - [Internal adapter admission](../../../../apps/server/src/fork/vault/OperationAdmission.ts) and [synthetic adapter acceptance](../../../../apps/server/src/fork/vault/OperationAdmission.test.ts): metadata-only checks, fresh revalidation and closed gates; no live dispatch.
+
+- [One-time intent counterexamples](../../../../apps/server/src/fork/vault/OperationIntent.proof.test.ts): current evaluator bypasses, actual format-3 reader/writer behavior and a design-only eligibility model. No persisted intent or gate change.

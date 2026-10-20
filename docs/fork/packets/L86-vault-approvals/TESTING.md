@@ -496,3 +496,28 @@ passes and the unchanged real OpenBao persistence proof were not repeated. No pr
 Library, host-owner, SSH, install, release, surface, policy/path/format or gate action is included.
 L86 remains partial; full one-time intent/enforcement and compatibility design, actual adapter
 admission/execution, fresh human authentication and broader surface acceptance are still open.
+
+## One-time intent and downgrade-reader design proof
+
+The new `OperationIntent.proof.test.ts` passes seven tests. Real current-service counterexamples
+show that format-3 policy, request and grant-definition intent fields are accepted, authorization
+remains repeatable, and the normal audited writer removes those fields. A separate synthetic
+unsupported-policy-version fixture is refused by the actual reader and audited authorization
+without rewriting it. This is not a persisted format bump or historical-binary acceptance.
+The real pure evaluator still permits an alternate thread, project or delegated grant after
+removing/revoking the approval grant. No external operation or credential delivery runs.
+
+A design-only eligibility model checks 672 intent/reader/binding/human-review/evidence/authority
+combinations, each with and without an ordinary matching grant. Only a supported explicit
+one-time intent, aware reader, exact human-reviewed binding, prepared evidence and current
+authority are eligible in that model; an ordinary grant never repairs missing authority. It is
+not the production evaluator, a fresh acquisition or dispatch permission. The existing journal,
+access and dispatcher proofs remain green.
+
+Server typecheck and focused lint pass after correcting a nonexistent schema helper in the new
+test harness and hoisting its decoders. Changed-document links, seam manifest and whitespace are
+checked before landing. No runtime, contract, client, MCP or backend format/path/policy changes
+are included, so no browser/native or unchanged real OpenBao proof is repeated. Access-policy
+format 3, journal version 1 and all literal-false gates remain unchanged. L86 is partial. Future
+persisted intent/schema and host-controlled downgrade/backup rollback protection need separate
+Kyle/host-owner review; live providers and broader client/remote acceptance remain open.
