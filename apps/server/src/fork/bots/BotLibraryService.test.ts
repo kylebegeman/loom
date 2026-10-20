@@ -208,7 +208,7 @@ describe("BotLibraryService", () => {
       Effect.gen(function* () {
         yield* library.reportStatus(studio, report());
         yield* library.submit(laptop, { targetEnvironmentId: studio, request: request() });
-        yield* library.cancel(laptop, "run-1");
+        expect(yield* library.cancel(laptop, "run-1")).toBe(true);
         expect(yield* library.nextRequests(studio, 0)).toEqual([]);
         const [result] = yield* library.nextResults(laptop, 0);
         expect(result?.update).toMatchObject({ _tag: "terminal", status: "cancelled" });
@@ -263,12 +263,23 @@ describe("BotLibraryService", () => {
         yield* library.submit(laptop, { targetEnvironmentId: studio, request: request() });
         yield* library.nextRequests(studio, 0);
 
-        yield* library.cancel(laptop, "run-1");
+        expect(yield* library.cancel(laptop, "run-1")).toBe(false);
         expect(yield* library.nextResults(laptop, 0)).toEqual([]);
         const deliveries = yield* library.nextRequests(studio, 0);
         expect(deliveries.map((delivery) => delivery.message)).toEqual([
           { _tag: "cancel", requestId: "run-1" },
         ]);
+      }),
+    ),
+  );
+
+  it.effect("keeps a submit that arrives after its cancel from reaching the target", () =>
+    withLibrary((library) =>
+      Effect.gen(function* () {
+        yield* library.reportStatus(studio, report());
+        expect(yield* library.cancel(laptop, "run-1")).toBe(true);
+        yield* library.submit(laptop, { targetEnvironmentId: studio, request: request() });
+        expect(yield* library.nextRequests(studio, 0)).toEqual([]);
       }),
     ),
   );

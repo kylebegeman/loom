@@ -444,11 +444,17 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
         Effect.catch((error) =>
           error.reason !== "io"
             ? Effect.fail(fail("launch", error.message))
-            : // The Library may have queued the run anyway. Withdrawing it makes the failure true;
-              // if that fails too, the run stays queued until a result or its deadline settles it.
+            : // The Library may have queued the run anyway. Withdrawing it makes the failure true.
+              // When the target already took it, or the cancel fails too, the run stays queued until
+              // the target's report or its deadline settles it.
               client.cancel(run.id).pipe(
                 Effect.matchEffect({
-                  onSuccess: () => Effect.fail(fail("launch", error.message)),
+                  onSuccess: (withdrawn) =>
+                    withdrawn
+                      ? Effect.fail(fail("launch", error.message))
+                      : Effect.logWarning("The Library had already handed a bot run on", {
+                          runId: run.id,
+                        }),
                   onFailure: () =>
                     Effect.logWarning("Could not tell whether the Library took a bot run", {
                       runId: run.id,

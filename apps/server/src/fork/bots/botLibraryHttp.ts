@@ -186,7 +186,7 @@ const ack = botsRoute((library, environmentId, request) =>
 const cancel = botsRoute((library, environmentId, request) =>
   readBody(request, SMALL_MAX_BYTES, decodeCancel).pipe(
     Effect.flatMap((input) => library.cancel(environmentId, input.requestId)),
-    Effect.as(done),
+    Effect.map((withdrawn) => json({ withdrawn })),
   ),
 );
 

@@ -148,10 +148,11 @@ export class BotLibraryService extends Context.Service<
       environmentId: EnvironmentId,
       ack: BotLibraryAckRequest,
     ) => Effect.Effect<void, BotLibraryError>;
+    /** True when the run was withdrawn before its target took it, so it never runs. */
     readonly cancel: (
       environmentId: EnvironmentId,
       requestId: string,
-    ) => Effect.Effect<void, BotLibraryError>;
+    ) => Effect.Effect<boolean, BotLibraryError>;
     readonly postResult: (
       environmentId: EnvironmentId,
       post: BotLibraryResultPost,
@@ -474,7 +475,14 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const row = (yield* sql<RequestRow>`SELECT * FROM fork_bots_library_requests
         WHERE id = ${requestId} AND from_env = ${environmentId}`)[0];
-      if (row === undefined) return;
+      if (row === undefined) {
+        // A submit still on its way after the requester gave up on it then finds this and stops.
+        yield* sql`INSERT INTO fork_bots_library_requests (id, from_env, target_env, message_json, state, created_at)
+          VALUES (${requestId}, ${environmentId}, '', '{}', 'cancelled', ${isoAt(now)})
+          ON CONFLICT (id) DO NOTHING`;
+        return true;
+      }
+      if (row.state === "cancelled" && row.leased_until === null) return true;
       if (row.state === "pending")
         yield* sql`UPDATE fork_bots_library_requests SET state = 'cancelled' WHERE id = ${row.id}`;
       if (row.state === "pending" && row.leased_until === null) {
@@ -498,7 +506,7 @@ const make = Effect.gen(function* () {
           },
           now,
         );
-        return;
+        return true;
       }
       // The target may have started the run without acking it yet, so it hears of the cancel and
       // reports the ending.
@@ -507,6 +515,7 @@ const make = Effect.gen(function* () {
         VALUES (${`${requestId}:cancel`}, ${environmentId}, ${row.target_env}, ${json}, 'pending', ${isoAt(now)})
         ON CONFLICT (id) DO NOTHING`;
       yield* requestSignals.wake(row.target_env);
+      return false;
     },
     lock.withPermit,
     Effect.catchTags({ SqlError: storageFailure, SchemaError: storageFailure }),

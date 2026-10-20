@@ -4,6 +4,7 @@ import {
   BOTS_ANYWHERE_FEATURE,
   BotLibraryAckRequest,
   BotLibraryCancelRequest,
+  BotLibraryCancelResult,
   BotLibraryDeliveries,
   BotLibraryError,
   BotLibraryListRequest,
@@ -58,6 +59,7 @@ const encodeSubmit = bodyOf(BotLibrarySubmitRequest);
 const encodeWait = bodyOf(BotLibraryWaitRequest);
 const encodeAck = bodyOf(BotLibraryAckRequest);
 const encodeCancel = bodyOf(BotLibraryCancelRequest);
+const decodeCancelResult = Schema.decodeUnknownEffect(BotLibraryCancelResult);
 const encodeResult = bodyOf(BotLibraryResultPost);
 const encodeResultAck = bodyOf(BotLibraryResultAck);
 
@@ -91,7 +93,8 @@ export class BotLibraryClient extends Context.Service<
       waitMs: number,
     ) => Effect.Effect<ReadonlyArray<BotLibraryDelivery>, BotLibraryError>;
     readonly ack: (ack: BotLibraryAckRequest) => Effect.Effect<void, BotLibraryError>;
-    readonly cancel: (requestId: string) => Effect.Effect<void, BotLibraryError>;
+    /** Whether the Library withdrew the run before any computer took it. */
+    readonly cancel: (requestId: string) => Effect.Effect<boolean, BotLibraryError>;
     readonly postResult: (post: BotLibraryResultPost) => Effect.Effect<void, BotLibraryError>;
     readonly nextResults: (
       waitMs: number,
@@ -266,7 +269,12 @@ const make = Effect.gen(function* () {
     cancel: (requestId) =>
       encoded(encodeCancel({ requestId })).pipe(
         Effect.flatMap((body) => post("/requests/cancel", body)),
-        Effect.asVoid,
+        // A Library from before the answer existed sends none; the target may have the run then.
+        Effect.flatMap((response) =>
+          response.status === 204
+            ? Effect.succeed(false)
+            : readJson(response, decodeCancelResult).pipe(Effect.map((result) => result.withdrawn)),
+        ),
       ),
     postResult: (input) =>
       encoded(encodeResult(input)).pipe(

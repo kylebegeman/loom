@@ -1915,6 +1915,8 @@ export const BOT_LIBRARY_STATUS_FRESH_MS = 2 * 60_000;
 
 export const BotLibraryUnpublishRequest = Schema.Struct({ libraryBotId: BotId });
 export const BotLibraryCancelRequest = Schema.Struct({ requestId: BotRunId });
+/** `withdrawn` is false when the target may already have the run and reports how it ends. */
+export const BotLibraryCancelResult = Schema.Struct({ withdrawn: Schema.Boolean });
 export const BotLibraryTargets = Schema.Struct({ targets: Schema.Array(BotLibraryTargetStatus) });
 export const BotLibraryDeliveries = Schema.Struct({ deliveries: Schema.Array(BotLibraryDelivery) });
 export const BotLibraryResults = Schema.Struct({ results: Schema.Array(BotLibraryResultPost) });
