@@ -596,6 +596,47 @@ runtime evaluator. The existing acquisition/dispatcher proofs remain responsible
 CAS/handle/crash boundaries. All runtime gates remain literal false. Persisted intent, schema
 selection, cross-entry-point enforcement and live acceptance remain unfinished.
 
+### Adapter-start consumption unit and transport limits
+
+The proposed attempt boundary must precede **all credential-bearing adapter work**, not just
+command spawn. Local metadata admission can precede it because admission performs no signing,
+session allocation or provider probe. After a future fresh acquisition is burned for an admitted
+attempt, session/token acquisition, authorization callbacks, command start and cleanup belong
+to that attempt. A failure before command start may already have changed provider state. It
+cannot automatically refund the attempt or restart session acquisition. This refines the
+handoff design; no runtime dispatcher or permit is added.
+
+| Adapter             | Current boundary and evidence                                                                                                                                                                                          | Constraint for a future one-time path                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SSH                 | `SshTransport` authorizes before process spawn and on agent frames, limits signing to one response for the entire invocation and sets one connection attempt. Local workload proof/agent setup precedes transport use. | Preserve existing signing and host-binding limits. One signature is not proof a command ran; timeout/interruption leaves effects uncertain. No automatic relaunch or renewed workload after refusal.                                       |
+| Git-over-SSH        | One explicit Git child uses the scoped SSH command, exact repository and cwd. Fetch disables recursive submodules and auto-maintenance; the shared transport retains its one-signature bound.                          | A Git command can write local refs/objects and have multiple protocol exchanges. One child does not prove one remote request, and host Git behavior still needs owner acceptance. No repeat fetch after unknown outcome.                   |
+| GitHub token/App    | Session acquisition precedes `GitHubCli.run`. App acquisition reads installation metadata and issues an installation token by POST. Cleanup revokes a known temporary token.                                           | Burn before session acquisition, not after mint or at CLI spawn. A lost/malformed mint response may leave an unknown active token; do not remint automatically. Known-session cleanup remains necessary even after authority is withdrawn. |
+| GitHub CLI workload | One CLI child can perform multiple HTTP/GraphQL exchanges. Current authorization occurs at its start; Loom does not inspect every internal CLI retry or pagination step.                                               | Claim at most one bound logical command, never one HTTP request or exactly-once write. One-time eligibility for a real CLI adapter stays unsupported until retry/redirect/idempotency behavior is controlled or explicitly accepted.       |
+
+`GitHubTransport.test.ts` uses the real transport with an in-memory HTTP client. Its synthetic
+provider records a successful token issuance, then loses the body or returns invalid expiry.
+The service returns invalid-response after one mint, without retrying or inventing a releasable
+session. A deliberate second caller invocation issues another token: the first failure is not
+proof that nothing happened. With no returned token, targeted cleanup cannot run. This does not
+claim to revoke a real unknown token or establish how long one would remain active.
+`VaultApprovalRetry.test.ts` covers both SSH and Git-over-SSH timeout responses with synthetic
+transports: each explicit invocation reaches transport once, and recovery requires outcome
+review with no new execution or workload session.
+
+A cleanup request is an effect, but not another workload start. It must be restricted to the
+known session already created by that attempt, never reacquire credentials, refund intent or
+run another workload. Failure to revoke is reported as remaining exposure until provider expiry;
+this is separate from the workload's completion classification. A lost issuance response is
+unknown exposure even when the workload definitely never started. Journal version 1 has one
+bounded outcome classification and cannot express a durable provider-cleanup obligation; no
+cleanup ledger/field/path is introduced here. Selecting such persistence would need separate
+review before any live one-time design relies on restart-safe cleanup.
+
+These tests prove existing timed-service behavior with synthetic external boundaries only.
+They do not test the real SSH/Git/gh binaries, signing callbacks on a host, live GitHub, hidden
+provider retries, cleanup across crash or one-time intent enforcement. The adapter-start unit
+remains a design recommendation. All gates, schemas, paths and rights remain unchanged.
+
 ### Implemented internal acquisition contract
 
 `OperationJournal.acquire` accepts a typed proposal, prepared revision and reservation identity,

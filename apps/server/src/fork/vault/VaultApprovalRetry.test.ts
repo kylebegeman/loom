@@ -175,44 +175,60 @@ it.effect.each(["run", "mode", "item", "expiry"] as const)(
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
-it.effect("does not repeat uncertain SSH writes and requires outcome review for recovery", () =>
-  Effect.gen(function* () {
-    let calls = 0;
-    const f = yield* launchFixture(
-      Layer.succeed(SshTransport.SshTransport, {
-        execute: (input) =>
-          input.authorize.pipe(
-            Effect.andThen(
-              Effect.suspend(() => {
-                calls++;
-                return Effect.fail(new VaultSshError({ reason: "timeout" }));
-              }),
+it.effect.each(["ssh", "git-ssh"] as const)(
+  "does not repeat uncertain %s writes and requires outcome review for recovery",
+  (kind) =>
+    Effect.gen(function* () {
+      let calls = 0;
+      const f = yield* launchFixture(
+        Layer.succeed(SshTransport.SshTransport, {
+          execute: (input) =>
+            input.authorize.pipe(
+              Effect.andThen(
+                Effect.suspend(() => {
+                  calls++;
+                  return Effect.fail(new VaultSshError({ reason: "timeout" }));
+                }),
+              ),
             ),
-          ),
-      }),
-    );
-    const { decision, input } = yield* requestedRetry(f);
-    yield* approve(f, decision);
-    const prepared = yield* f.access.approvalPrepareRetry(input, f.threadId);
-    expect(
-      (yield* f.launch.ssh({ id: f.itemId, command }, f.threadId).pipe(Effect.flip)).reason,
-    ).toBe("timeout");
-    const recovery = {
-      ...input,
-      previousOutcome: "unknown" as const,
-      previousOperationDigest: prepared.operationDigest,
-    };
-    expect(yield* f.access.approvalPrepareRetry(recovery, f.threadId)).toMatchObject({
-      retryState: "requires-outcome-review",
-      nextStep: "inspect-outcome",
-      canExecute: false,
-      automaticResumption: false,
-      allowOnceConsumption: false,
-    });
-    yield* f.access.approvalStatus(input.id, f.threadId);
-    expect(calls).toBe(1);
-    expect(yield* f.workloads.list(f.threadId)).toEqual([]);
-  }).pipe(Effect.scoped, Effect.provide(dependencies)),
+        }),
+      );
+      const { decision, input: proposed } = yield* requestedRetry(f, kind);
+      const input: VaultApprovalRetryInput =
+        proposed.operation.kind === "git-ssh"
+          ? {
+              ...proposed,
+              operation: {
+                ...proposed.operation,
+                input: { ...proposed.operation.input, action: "fetch" },
+              },
+            }
+          : proposed;
+      yield* approve(f, decision);
+      const prepared = yield* f.access.approvalPrepareRetry(input, f.threadId);
+      const execute =
+        input.operation.kind === "ssh"
+          ? f.launch.ssh(input.operation.input, f.threadId)
+          : input.operation.kind === "git-ssh"
+            ? f.launch.git(input.operation.input, f.threadId)
+            : Effect.die("fixture");
+      expect((yield* execute.pipe(Effect.flip)).reason).toBe("timeout");
+      const recovery = {
+        ...input,
+        previousOutcome: "unknown" as const,
+        previousOperationDigest: prepared.operationDigest,
+      };
+      expect(yield* f.access.approvalPrepareRetry(recovery, f.threadId)).toMatchObject({
+        retryState: "requires-outcome-review",
+        nextStep: "inspect-outcome",
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      });
+      yield* f.access.approvalStatus(input.id, f.threadId);
+      expect(calls).toBe(1);
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
 it.effect("rechecks revocation at the transport boundary after an explicit attempt starts", () =>

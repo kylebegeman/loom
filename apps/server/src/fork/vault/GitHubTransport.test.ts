@@ -135,3 +135,64 @@ it.effect("rejects invalid credential structure and malformed identity responses
     ).toBe("invalid-response");
   }).pipe(Effect.scoped),
 );
+
+it.effect.each(["lost-body", "invalid-body"] as const)(
+  "does not retry an App token mint with an uncertain %s acknowledgement",
+  (failure) =>
+    Effect.gen(function* () {
+      const key = NodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
+        .privateKey.export({ type: "pkcs1", format: "pem" })
+        .toString();
+      const paths: string[] = [];
+      let issued = 0;
+      const client = HttpClient.make((request) => {
+        paths.push(`${request.method} ${request.url}`);
+        if (request.url.endsWith("/app/installations/42"))
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json({ app_id: 7, account: { login: "loom-org" } }),
+            ),
+          );
+        if (request.method !== "POST" || !request.url.endsWith("/access_tokens"))
+          return Effect.die("Unexpected synthetic provider request");
+        // The synthetic provider commits, but the caller cannot recover a usable session.
+        issued++;
+        const response =
+          failure === "lost-body"
+            ? new Response(
+                new ReadableStream({
+                  start(controller) {
+                    controller.error(new Error("synthetic response loss"));
+                  },
+                }),
+              )
+            : Response.json({ token: "synthetic-unknown-token", expires_at: "invalid" });
+        return Effect.succeed(HttpClientResponse.fromWeb(request, response));
+      });
+      const service = yield* Transport.GitHubTransport.pipe(
+        Effect.provide(Transport.layer),
+        Effect.provideService(HttpClient.HttpClient, client),
+      );
+      const credential = {
+        type: "app" as const,
+        appId: "7",
+        installationId: "42",
+        privateKey: Redacted.make(key),
+      };
+      const first = yield* service.session(credential, ["loom-org/repo"]).pipe(Effect.flip);
+      expect(first.reason).toBe("invalid-response");
+      expect(JSON.stringify(first)).not.toContain("synthetic-unknown-token");
+      expect(issued).toBe(1);
+      expect(paths).toEqual([
+        "GET https://api.github.com/app/installations/42",
+        "POST https://api.github.com/app/installations/42/access_tokens",
+      ]);
+      // A separate caller invocation demonstrates why absence of a session cannot refund intent.
+      const second = yield* service.session(credential, ["loom-org/repo"]).pipe(Effect.flip);
+      expect(second.reason).toBe("invalid-response");
+      expect(issued).toBe(2);
+      expect(paths).toHaveLength(4);
+      expect(paths.some((path) => path.startsWith("DELETE"))).toBe(false);
+    }).pipe(Effect.scoped),
+);

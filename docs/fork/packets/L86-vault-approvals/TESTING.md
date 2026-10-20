@@ -521,3 +521,24 @@ are included, so no browser/native or unchanged real OpenBao proof is repeated. 
 format 3, journal version 1 and all literal-false gates remain unchanged. L86 is partial. Future
 persisted intent/schema and host-controlled downgrade/backup rollback protection need separate
 Kyle/host-owner review; live providers and broader client/remote acceptance remain open.
+
+## Adapter-start unit and uncertain token-mint counterexamples
+
+The real GitHub transport with a synthetic in-memory HTTP client covers lost response bodies
+and invalid expiry after provider-side token issuance. Each call makes one installation lookup
+and one mint POST, returns invalid-response without exposing synthetic token/error bodies, and
+performs no automatic retry or guessed-token cleanup. A deliberately separate caller invocation
+issues a second token, demonstrating that missing session evidence cannot refund the first
+attempt. No live provider or host credential is used.
+
+The explicit-retry suite now tests both SSH and Git-over-SSH timeout outcomes. A synthetic
+transport is reached once per explicit invocation; requester recovery requires outcome review,
+keeps every gate false and creates no additional execution or retained workload session. These
+are existing timed-service tests, not a one-time executor. The transport-start design preserves
+the current one-signature limit and does not infer subprocess retry behavior from fake transports.
+
+The two focused transport/retry suites pass 17 tests after correcting the new write fixture
+to use fetch rather than read-only ls-remote. Server typecheck, focused lint/format, documentation
+links, 392 seam rows and whitespace pass. No runtime/MCP/client, policy3/journal1, path, rights,
+Library or gate change is included. Real adapter retry behavior, unknown-token cleanup and
+restart-safe cleanup evidence remain open; no UI/device or real OpenBao proof is repeated.

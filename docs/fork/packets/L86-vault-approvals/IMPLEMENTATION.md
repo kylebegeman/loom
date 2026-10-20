@@ -117,9 +117,16 @@ human-reviewed intent needs mandatory entry-point enforcement and fail-closed re
 compatibility; a schema change, persisted contract and gate proposal are not selected. Backup
 rollback protection and historical-reader coverage remain explicit host-owner dependencies.
 
-Next unblocked synthetic work: review the adapter-start consumption unit against SSH signing,
-Git subprocesses and GitHub retries, with failure/replay counterexamples. No live transport,
-persisted intent, format/path/policy change or gate proposal is authorized by that proof.
+The adapter-start consumption-unit review now covers pre-command token-mint effects, unknown
+provider exposure, known-session cleanup and subprocess-internal retry limits. Synthetic real
+transport counterexamples show an uncertain App mint is not retried internally, while a separate
+invocation can issue another token. SSH/Git-over-SSH recovery tests retain outcome review after
+timeout. This is test/design only; no permit, persisted intent or dispatcher is implemented.
+
+Next design work is the mandatory intent boundary for omitted references, delegation and
+alternative entry points, including how a human-reviewed exact proposal differs from today's
+timed approvals. Keep it synthetic and non-persistent. Any persisted intent/schema choice,
+restart-safe cleanup record or host rollback barrier needs separate Kyle/host-owner review.
 Real adapter/provider/host verification remains owner-gated. True one-time eligibility,
 cross-adapter enforcement and downgrade safety remain prerequisites before any gate can open.
 The journal must
