@@ -143,3 +143,8 @@ client coverage; their interactive states were not seeded in this pass. Mobile s
 formatter and passed its package typecheck; native interaction remains pending because its
 installed client is stale and Kyle's no-install restriction remains in force. No live SSH command,
 provider validation, schema migration or production action was performed.
+
+After merging fork main `e970ee0c25`, 71 tests passed in eight focused coverage/MCP/feature,
+Directory service/HTTP and utility registry/runtime files. All five affected package typechecks,
+scoped Vault lint and the documentation/seam check passed on the merged tree. Main's Directory
+and utilities work was preserved. This Vault slice adds no Library deployment requirement.
