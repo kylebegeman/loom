@@ -1,3 +1,4 @@
+import { referencesCompleteCommand } from "./references-cli.ts";
 import { sshAgentExecCommand } from "./ssh-agent-cli.ts";
 import { githubExecCommand } from "./terminal-cli.ts";
 import { brokerCommand } from "./broker-cli.ts";
@@ -6,6 +7,13 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "test-accounts": "loom_vault_test_accounts_discover",
+  "test-account-apply": "loom_vault_test_accounts_apply",
+  "access-request": "loom_vault_access_request",
+  "access-request-status": "loom_vault_access_request_status",
+  "access-request-cancel": "loom_vault_access_request_cancel",
+  "access-retry-prepare": "loom_vault_access_retry_prepare",
+  "access-recovery-status": "loom_vault_access_recovery_status",
   "migration-original-status": "loom_vault_migration_original_verification",
   "migration-recovery-preview": "loom_vault_migration_recovery_preview",
   "migration-typed-plans": "loom_vault_migration_typed_plans",
@@ -67,6 +75,7 @@ export const vaultCommand = Command.make("vault").pipe(
     "Inspect Loom Vault or change item lifecycle through the authenticated Loom connection. Enter secret values privately in Loom.",
   ),
   Command.withSubcommands([
+    referencesCompleteCommand,
     sshAgentExecCommand,
     brokerCommand,
     githubExecCommand,
