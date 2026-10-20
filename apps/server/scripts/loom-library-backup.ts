@@ -70,8 +70,9 @@ export const LibraryBackupFreeSpace = Context.Reference<
     }),
 });
 const REPLICA_SYNCING = "syncing";
-// A hung sync must end well before its marker counts as stale and a later run takes over.
-const REPLICA_SYNC_TIMEOUT_MS = STALE_SNAPSHOT_MS / 2;
+// Well inside the nightly cron's time limit, so a hung sync ends here and the run still removes
+// its marker, instead of being killed with a marker that blocks reruns for six hours.
+const REPLICA_SYNC_TIMEOUT_MS = 45 * 60 * 1000;
 const SQLITE_RSYNC_FAILED = "Databases were not synced due to errors";
 // sqlite3_rsync spawns its replica side as `argv[0] --replica` through /bin/sh, so the
 // command must be on PATH or absolute. Its exit status is its error count modulo 256, so
@@ -198,8 +199,12 @@ const syncObjects = Effect.fnUntraced(function* (input: {
     for (const [digest, bytes] of wanted) {
       const target = path.join(input.directory, "objects", "project-library", kind, digest);
       if (yield* fs.exists(target)) {
-        const saved = yield* fingerprint(target);
-        if (saved.digest === digest && saved.bytes === bytes) continue;
+        // An unreadable object, or anything else left under its name, is replaced like a
+        // damaged one. Failing here would stop every later run from repairing it.
+        const saved = yield* fingerprint(target).pipe(Effect.option);
+        if (Option.isSome(saved) && saved.value.digest === digest && saved.value.bytes === bytes)
+          continue;
+        yield* fs.remove(target, { recursive: true, force: true });
       }
       missing.push({ source: path.join(input.stateDir, "project-library", kind, digest), target });
       missingBytes += bytes;
@@ -332,6 +337,19 @@ export const createLibraryReplica = Effect.fnUntraced(function* (input: {
       cause: `Another Library replica sync started at ${DateTime.formatIso(DateTime.makeUnsafe(started))} in ${input.replicaDir}. If it was interrupted, a run six hours after it started takes over.`,
     });
   if (started !== null) yield* fs.remove(marker, { force: true });
+  // sqlite3_rsync has no such check, and syncing the live database onto itself would write
+  // its read snapshot back over newer commits.
+  const origin = yield* fs.realPath(input.database);
+  if (
+    yield* fs.realPath(replica).pipe(
+      Effect.map((resolved) => resolved === origin),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+    )
+  )
+    return yield* new LibraryError({
+      reason: "invalid",
+      cause: `--replica-dir ${input.replicaDir} holds the live database ${input.database}.`,
+    });
   // The rollback journal can hold every page a sync replaces, so allow for a full copy.
   yield* ensureFreeSpace(
     input.replicaDir,
@@ -369,7 +387,14 @@ export const createLibraryReplica = Effect.fnUntraced(function* (input: {
       ),
     ),
     () => build,
-    () => fs.remove(marker, { force: true }).pipe(Effect.ignore),
+    // A run that outlived its marker leaves the marker of the run that took over.
+    () =>
+      replicaSyncStarted(input.replicaDir).pipe(
+        Effect.flatMap((current) =>
+          current === now ? fs.remove(marker, { force: true }) : Effect.void,
+        ),
+        Effect.ignore,
+      ),
   );
 });
 export const verifyLibraryBackup = Effect.fnUntraced(function* (directory: string) {
@@ -380,10 +405,17 @@ export const verifyLibraryBackup = Effect.fnUntraced(function* (directory: strin
       reason: "invalid",
       cause: `${directory} has no complete marker, so its snapshot never finished.`,
     });
+  const started = yield* replicaSyncStarted(directory);
+  if (started !== null && DateTime.toEpochMillis(yield* DateTime.now) - started < STALE_SNAPSHOT_MS)
+    return yield* new LibraryError({
+      reason: "request-conflict",
+      cause: `${directory} is being synced; check it again once the sync finishes.`,
+    });
   // A killed sync can leave a hot journal, which a read-only restore cannot roll back. The
-  // next snapshot run rolls it back.
+  // next snapshot run rolls it back. Reading a WAL-mode copy, as every dated backup of the live
+  // database is, leaves an empty -wal that holds nothing.
   for (const suffix of ["-journal", "-wal"])
-    if (yield* fs.exists(path.join(directory, `statev2.sqlite${suffix}`)))
+    if ((yield* fileBytes(path.join(directory, `statev2.sqlite${suffix}`))) > 0)
       return yield* new LibraryError({
         reason: "invalid",
         cause: `${directory} holds statev2.sqlite${suffix} from an interrupted sync; the next snapshot run repairs it.`,
@@ -430,6 +462,14 @@ export const restoreLibraryBackup = Effect.fnUntraced(function* (input: {
     return yield* new LibraryError({ reason: "blocked" });
   const backup = yield* verifyLibraryBackup(input.directory);
   yield* sqliteCopy(backup.database, destination);
+  // A replica sync that committed after verification would have changed what was copied.
+  if ((yield* fingerprint(backup.database)).digest !== backup.manifest.database.digest) {
+    yield* fs.remove(destination, { force: true });
+    return yield* new LibraryError({
+      reason: "request-conflict",
+      cause: `${input.directory} changed during the restore; run it again.`,
+    });
+  }
   const requestId = `restore-${yield* randomUuidV4}`;
   const next = yield* Maintenance.LibraryMaintenance.use((service) =>
     service.rotateAuthorityEpoch({
@@ -605,7 +645,7 @@ const restore = Command.make(
     restoreLibraryBackup(input).pipe(
       Effect.flatMap((result) =>
         Console.log(
-          `Restored isolated database: ${result.destination}. Authority epoch ${result.authority.epoch}.`,
+          `Restored isolated database: ${result.destination}. Authority epoch ${result.authority.epoch}.${result.objectsDir === null ? "" : ` Copy its attachments and recovery archives out of ${result.objectsDir} before a replica's next sync changes them.`}`,
         ),
       ),
     ),

@@ -136,7 +136,7 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   );
 type Fixture = Effect.Success<typeof fixture>;
 // Stands in for sqlite3_rsync: the replica takes the origin's committed state and, as
-// sqlite3_rsync does with a WAL origin, WAL mode.
+// sqlite3_rsync does with a WAL origin, WAL mode and the umask's file mode.
 const copySync = (f: Fixture) => (origin: string, replica: string) =>
   Effect.gen(function* () {
     const staged = `${replica}.sync`;
@@ -145,6 +145,7 @@ const copySync = (f: Fixture) => (origin: string, replica: string) =>
     yield* SqlClient.SqlClient.use((sql) => sql`PRAGMA journal_mode=WAL`).pipe(
       Effect.provide(NodeSqliteClient.layer({ filename: staged })),
     );
+    yield* f.fs.chmod(staged, 0o644);
     yield* f.fs.rename(staged, replica);
     return "sent 4,114 bytes, received 53,248 bytes";
   }).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
@@ -211,6 +212,38 @@ describe("cold Library backup and recovery commands", () => {
         expect(yield* f.fs.readFileString(destination)).toBe("preserve");
         yield* f.fs.writeFileString(f.path.join(backup.directory, "statev2.sqlite"), "corrupt");
         expect(yield* verifyLibraryBackup(backup.directory).pipe(Effect.flip)).toMatchObject({
+          reason: "invalid",
+        });
+      }),
+    ),
+  );
+  it.effect("verifies, restores, and prunes dated backups of a live WAL-mode database", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const [older, newer] = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`PRAGMA journal_mode=WAL`;
+          yield* sql`CREATE TABLE replica_test(value INTEGER)`;
+          yield* sql`INSERT INTO replica_test VALUES (1)`;
+          const first = yield* createLibraryBackup(f);
+          yield* TestClock.adjust("1 minute");
+          return [first, yield* createLibraryBackup(f)] as const;
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: f.database })));
+        // Reading each WAL-mode copy left an empty -wal beside it, as in production.
+        const wal = f.path.join(newer.directory, "statev2.sqlite-wal");
+        expect(Number((yield* f.fs.stat(wal)).size)).toBe(0);
+        const destination = f.path.join(f.base, "restored.sqlite");
+        yield* restoreLibraryBackup({ directory: newer.directory, destination });
+        const rows = yield* SqlClient.SqlClient.use(
+          (sql) => sql<{ value: number }>`SELECT value FROM replica_test`,
+        ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: destination, readonly: true })));
+        expect(rows).toEqual([{ value: 1 }]);
+        yield* TestClock.adjust("3 days");
+        expect(
+          yield* pruneLibraryBackups({ backupsDir: f.backupsDir, keep: 1, days: 1 }),
+        ).toMatchObject({ removed: [older.directory], retained: 1, unverified: [] });
+        yield* f.fs.writeFileString(wal, "frames");
+        expect(yield* verifyLibraryBackup(newer.directory).pipe(Effect.flip)).toMatchObject({
           reason: "invalid",
         });
       }),
@@ -428,14 +461,14 @@ describe("Library replica", () => {
         const objects = f.path.join(input.replicaDir, "objects", "project-library");
         const asset = f.path.join(objects, "objects", first.manifest.assets[0]!.digest);
         const stray = f.path.join(objects, "objects", "stray");
-        const partial = f.path.join(
-          objects,
-          "recovery",
-          `${first.manifest.recovery[0]!.digest}.partial`,
-        );
+        const archive = f.path.join(objects, "recovery", first.manifest.recovery[0]!.digest);
+        const partial = `${archive}.partial`;
         yield* f.fs.writeFileString(stray, "stray");
         yield* f.fs.writeFileString(partial, "half");
         yield* f.fs.writeFile(asset, new Uint8Array([9, 9, 9]));
+        // Unreadable as a file, like an object on a failing disk.
+        yield* f.fs.remove(archive);
+        yield* f.fs.makeDirectory(f.path.join(archive, "left-behind"), { recursive: true });
         yield* changeOrigin(f);
         const second = yield* createLibraryReplica(input).pipe(
           Effect.provideService(LibraryReplicaSync, copySync(f)),
@@ -451,6 +484,7 @@ describe("Library replica", () => {
         expect(yield* f.fs.exists(stray)).toBe(false);
         expect(yield* f.fs.exists(partial)).toBe(false);
         expect([...(yield* f.fs.readFile(asset))]).toEqual([1, 2, 3]);
+        expect((yield* f.fs.stat(archive)).type).toBe("File");
         expect(yield* journalMode(f.path.join(input.replicaDir, "statev2.sqlite"))).toBe("delete");
         const database = yield* f.fs.stat(f.path.join(input.replicaDir, "statev2.sqlite"));
         expect(database.mode & 0o777).toBe(0o600);
@@ -477,6 +511,23 @@ describe("Library replica", () => {
       }),
     ),
   );
+  it.effect("refuses a replica directory that holds the live database", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const synced: string[] = [];
+        expect(
+          yield* createLibraryReplica({ ...f, replicaDir: f.stateDir }).pipe(
+            Effect.provideService(LibraryReplicaSync, (origin) =>
+              Effect.sync(() => synced.push(origin)).pipe(Effect.as("")),
+            ),
+            Effect.flip,
+          ),
+        ).toMatchObject({ reason: "invalid" });
+        expect(synced).toEqual([]);
+        expect(yield* f.fs.exists(f.path.join(f.stateDir, "syncing"))).toBe(false);
+      }),
+    ),
+  );
   it.effect("refuses a second sync while one runs and takes over one that died", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -497,6 +548,15 @@ describe("Library replica", () => {
         );
         expect(yield* f.fs.exists(marker)).toBe(false);
         yield* verifyLibraryBackup(input.replicaDir);
+        // A run that outlives its marker leaves the marker of the run that took over.
+        yield* createLibraryReplica(input).pipe(
+          Effect.provideService(LibraryReplicaSync, (origin, replica) =>
+            f.fs
+              .writeFileString(marker, "999")
+              .pipe(Effect.orDie, Effect.andThen(copySync(f)(origin, replica))),
+          ),
+        );
+        expect(yield* f.fs.readFileString(marker)).toBe("999");
       }),
     ),
   );
@@ -573,12 +633,19 @@ describe("Library replica", () => {
           const marker = f.path.join(input.replicaDir, "syncing");
           yield* f.fs.writeFileString(marker, String(2 * 86_400_000 + 3_600_000));
           expect(yield* prune).toMatchObject({ removed: [], replica: { state: "syncing" } });
+          expect(yield* verifyLibraryBackup(input.replicaDir).pipe(Effect.flip)).toMatchObject({
+            reason: "request-conflict",
+          });
           yield* f.fs.remove(marker);
+          yield* TestClock.adjust("1 minute");
+          const newer = yield* createLibraryBackup(f);
+          yield* TestClock.adjust("2 days");
 
           const pruned = yield* prune;
           expect(pruned.replica).toMatchObject({ state: "verified" });
           expect(pruned.removed.toSorted()).toEqual([one.directory, two.directory].toSorted());
-          expect(pruned.retained).toBe(0);
+          expect(pruned.retained).toBe(1);
+          yield* verifyLibraryBackup(newer.directory);
           yield* verifyLibraryBackup(input.replicaDir);
         }),
       ),
@@ -603,41 +670,66 @@ describe("Library replica", () => {
       }),
     ),
   );
-  it.effect("treats sqlite3_rsync's failure line as a failure even when it exits 0", () =>
-    run((f) =>
-      Effect.gen(function* () {
-        const script = f.path.join(f.base, "fake-rsync");
-        yield* f.fs.writeFileString(
-          script,
-          "#!/bin/sh\necho 'database is locked'\necho 'Databases were not synced due to errors'\n",
-          { mode: 0o755 },
-        );
-        expect(yield* sqliteRsync(script)("origin", "replica").pipe(Effect.flip)).toMatchObject({
-          reason: "io",
-          cause: expect.stringContaining("database is locked"),
-        });
-      }),
-    ),
+  it.effect(
+    "runs sqlite3_rsync origin first and fails on a non-zero exit or its failure line",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const fake = Effect.fnUntraced(function* (name: string, body: string) {
+            const script = f.path.join(f.base, name);
+            yield* f.fs.writeFileString(script, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+            return yield* sqliteRsync(script)("origin.sqlite", "replica.sqlite").pipe(
+              Effect.result,
+            );
+          });
+          const args = f.path.join(f.base, "args");
+          expect(
+            yield* fake("records", `printf '%s\\n' "$@" > '${args}'\necho 'sent 1 bytes'`),
+          ).toMatchObject({ success: "sent 1 bytes" });
+          expect(yield* f.fs.readFileString(args)).toBe("-v\norigin.sqlite\nreplica.sqlite\n");
+          expect(
+            yield* fake(
+              "reports",
+              "echo 'database is locked'\necho 'Databases were not synced due to errors'",
+            ),
+          ).toMatchObject({
+            failure: { reason: "io", cause: expect.stringContaining("database is locked") },
+          });
+          expect(yield* fake("exits", "echo 'missing REPLICA' >&2\nexit 1")).toMatchObject({
+            failure: { reason: "io", cause: expect.stringContaining("missing REPLICA") },
+          });
+        }),
+      ),
   );
   // Set LOOM_TEST_SQLITE3_RSYNC to a sqlite3_rsync binary to run the replica against it.
   const realRsync = process.env.LOOM_TEST_SQLITE3_RSYNC;
-  it.effect.skipIf(!realRsync)("syncs, updates, and restores a replica with sqlite3_rsync", () =>
-    run((f) =>
-      Effect.gen(function* () {
-        const input = replicaInput(f);
-        const sync = Effect.provideService(LibraryReplicaSync, sqliteRsync(realRsync));
-        const first = yield* createLibraryReplica(input).pipe(sync);
-        yield* changeOrigin(f);
-        const second = yield* createLibraryReplica(input).pipe(sync);
-        expect(second.manifest.database.digest).not.toBe(first.manifest.database.digest);
-        expect(yield* journalMode(f.path.join(input.replicaDir, "statev2.sqlite"))).toBe("delete");
-        const destination = f.path.join(f.base, "restored.sqlite");
-        yield* restoreLibraryBackup({ directory: input.replicaDir, destination });
-        const rows = yield* SqlClient.SqlClient.use(
-          (sql) => sql<{ value: number }>`SELECT value FROM replica_test`,
-        ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: destination, readonly: true })));
-        expect(rows).toEqual([{ value: 1 }]);
-      }),
-    ),
+  it.effect.skipIf(!realRsync)(
+    "syncs a live WAL-mode database into a replica with sqlite3_rsync",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const input = replicaInput(f);
+          const replica = f.path.join(input.replicaDir, "statev2.sqlite");
+          const sync = Effect.provideService(LibraryReplicaSync, sqliteRsync(realRsync));
+          // The writer stays open with uncheckpointed frames, as the live server does.
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`PRAGMA journal_mode=WAL`;
+            const first = yield* createLibraryReplica(input).pipe(sync);
+            yield* sql`CREATE TABLE replica_test(value INTEGER)`;
+            yield* sql`INSERT INTO replica_test VALUES (1)`;
+            const second = yield* createLibraryReplica(input).pipe(sync);
+            expect(second.manifest.database.digest).not.toBe(first.manifest.database.digest);
+          }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: f.database })));
+          expect(yield* journalMode(replica)).toBe("delete");
+          expect((yield* f.fs.stat(replica)).mode & 0o777).toBe(0o600);
+          const destination = f.path.join(f.base, "restored.sqlite");
+          yield* restoreLibraryBackup({ directory: input.replicaDir, destination });
+          const rows = yield* SqlClient.SqlClient.use(
+            (sql) => sql<{ value: number }>`SELECT value FROM replica_test`,
+          ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: destination, readonly: true })));
+          expect(rows).toEqual([{ value: 1 }]);
+        }),
+      ),
   );
 });
