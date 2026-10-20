@@ -80,7 +80,9 @@ const PUBLISH_BATCH_BYTES = 8 * 1024 * 1024;
 // compresses again. A conversation is snapshotted at most once a second for every 256 KiB it
 // holds: a small one at every milestone, a 200 MB one about every 13 minutes.
 const SNAPSHOT_SPACING_BYTES_PER_SECOND = 256 * 1024;
-const MILESTONE_EVENTS = `event_type IN ('thread.created','thread.metadata-updated','thread.archived','thread.unarchived','thread.deleted','thread.settled','thread.unsettled','thread.snoozed','thread.unsnoozed','thread.provider-switched','thread.model-selection-updated','thread.runtime-mode-updated','thread.interaction-mode-updated','run.created','checkpoint.captured','checkpoint.rollback-requested','runtime-request.updated','context-handoff.updated','context-transfer.created','context-transfer.updated','thread.pinned','thread.unpinned','thread.auto-settle-set','thread.pull-request-synced')
+// A pull-request link update is a milestone because compaction deletes it once a later reorder
+// carries the whole thread, and navigation alone never uploads.
+const MILESTONE_EVENTS = `event_type IN ('thread.created','thread.metadata-updated','thread.archived','thread.unarchived','thread.deleted','thread.settled','thread.unsettled','thread.snoozed','thread.unsnoozed','thread.provider-switched','thread.model-selection-updated','thread.runtime-mode-updated','thread.interaction-mode-updated','run.created','checkpoint.captured','checkpoint.rollback-requested','runtime-request.updated','context-handoff.updated','context-transfer.created','context-transfer.updated','thread.pinned','thread.unpinned','thread.auto-settle-set','thread.pull-request-synced','thread.pull-request-link-updated')
   OR (event_type='run.updated' AND json_extract(payload_json,'$.status') NOT IN ('preparing','starting','running'))
   OR (event_type='message.updated' AND json_extract(payload_json,'$.streaming')=0)`;
 // Navigation changes nothing a reader of the history sees.
@@ -128,9 +130,10 @@ const make = Effect.gen(function* () {
   // storage limit reported while they wait, and retry as soon as that size fits.
   const oversized = new Map<ThreadId, number>();
   let reconciled = false;
+  // octet_length reads each payload's size from its record header, not its pages.
   const outboxBytes = sql<{
     bytes: number;
-  }>`SELECT COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))),0) AS bytes FROM fork_library_source_outbox`.pipe(
+  }>`SELECT COALESCE(SUM(octet_length(payload_json)),0) AS bytes FROM fork_library_source_outbox`.pipe(
     Effect.map((rows) => rows[0]?.bytes ?? 0),
   );
   const readState = sql<{

@@ -800,6 +800,53 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  it.effect(
+    "keeps a pull-request link update pending after compaction replaces it with a reorder",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* Ref.update(f.archive, (archive) => withText(archive, longText));
+          yield* f.event(1, "thread.created", "{}");
+          yield* f.service.drain;
+          // The spaced link update waits in the background, then compaction keeps only the reorder.
+          yield* f.event(2, "thread.pull-request-link-updated", "{}");
+          yield* f.service.drain;
+          yield* f.event(3, "thread.pin-reordered", "{}");
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 3 },
+          }));
+          yield* f.sql`DELETE FROM orchestration_events WHERE sequence=2`;
+          expect(yield* Ref.get(f.snapshots)).toBe(1);
+          expect((yield* f.service.status).threads[0]?.pending).toBe(true);
+          yield* f.service.flush;
+          expect(yield* Ref.get(f.snapshots)).toBe(2);
+          expect((yield* f.service.status).threads[0]).toMatchObject({
+            acknowledgedSequence: 3,
+            pending: false,
+          });
+        }),
+      ),
+  );
+  it.effect("does not snapshot a saved conversation again on flush for navigation alone", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.service.drain;
+        yield* f.event(2, "thread.visited", "{}");
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* f.service.flush;
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        expect((yield* f.service.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 1,
+          pending: false,
+        });
+      }),
+    ),
+  );
   it.effect("keeps a conversation deferred when its snapshot fails", () =>
     run((f) =>
       Effect.gen(function* () {
