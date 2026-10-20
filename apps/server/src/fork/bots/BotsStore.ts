@@ -541,6 +541,16 @@ export const makeBotsStore = Effect.gen(function* () {
       yield* sql`UPDATE fork_bots_batch_items SET run_id = ${newRunId}, previous_run_ids_json = json_insert(previous_run_ids_json, '$[#]', ${oldRunId}) WHERE batch_id = ${batchId} AND run_id = ${oldRunId}`;
     }),
 
+    batchItemHoldsRun: Effect.fn("BotsStore.batchItemHoldsRun")(function* (
+      batchId: string,
+      runId: string,
+    ) {
+      const rows = yield* sql<{
+        readonly found: number;
+      }>`SELECT 1 AS found FROM fork_bots_batch_items WHERE batch_id = ${batchId} AND run_id = ${runId} LIMIT 1`;
+      return rows.length > 0;
+    }),
+
     /**
      * What counts against a bot's budget since `since`, oldest first: runs that started or wait to
      * start (refused and never-launched runs do not), and the tokens of runs that finished.

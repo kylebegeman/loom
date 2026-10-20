@@ -1405,6 +1405,12 @@ export const make = Effect.gen(function* () {
       const bot = yield* requireBot(old.botId);
       yield* checkRunnable(bot, caller);
       const { batchId } = old;
+      // A restart requeues an item whose run never started; its batch reruns it, not a retry.
+      if (
+        batchId != null &&
+        !(yield* store.batchItemHoldsRun(batchId, old.id).pipe(Effect.catch(storageError)))
+      )
+        return yield* fail("invalid", "Its batch already runs this item again.");
       return yield* start(
         bot,
         {

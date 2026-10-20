@@ -321,6 +321,10 @@ describe("BotBatches", () => {
         yield* batches.recover();
         // The feeder reruns the item, so the inbox offers no retry of the run that never started.
         expect((yield* bots.inbox({ limit: 10 })).runs).toEqual([]);
+        // Even put back from the dismissed view, it cannot run the item a second time.
+        yield* bots.dismiss({ runIds: [queued.id], dismissed: false });
+        const retried = yield* bots.retry({ runId: queued.id }, USER_CALLER).pipe(Effect.flip);
+        expect(retried.message).toBe("Its batch already runs this item again.");
 
         expect(yield* endNext(harness, "completed", "Fine.")).toBe("Review a.ts.");
         expect(yield* batches.awaitBatch("batch-1", WAIT_MS)).toMatchObject({
