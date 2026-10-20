@@ -85,7 +85,7 @@ describe("BotsStore", () => {
         );
         for (const hour of [10, 11, 12])
           yield* store.insertRun(testRun(`r${hour}`, `2026-10-20T${hour}:00:00.000Z`));
-        yield* store.pruneRuns("reviewer", 2);
+        yield* store.pruneRuns("reviewer", 2, true);
         expect((yield* store.listRuns({ limit: 10 })).runs.map((run) => run.id)).toEqual([
           "r12",
           "r11",
@@ -127,13 +127,19 @@ describe("BotsStore", () => {
         );
         expect(yield* counted).toEqual({ runsInWindow: 2, tokensInWindow: 200 });
 
-        yield* store.pruneRuns("reviewer", 1);
+        yield* store.pruneRuns("reviewer", 1, true);
         expect((yield* store.listRuns({ limit: 10 })).runs.map((run) => run.id)).toEqual([
           "skipped-5",
           "counted-20",
           "counted-30",
         ]);
         expect(yield* counted).toEqual({ runsInWindow: 2, tokensInWindow: 200 });
+
+        // A bot with no budget has no window to keep, so only the newest runs stay.
+        yield* store.pruneRuns("reviewer", 1, false);
+        expect((yield* store.listRuns({ limit: 10 })).runs.map((run) => run.id)).toEqual([
+          "skipped-5",
+        ]);
       }),
     ),
   );

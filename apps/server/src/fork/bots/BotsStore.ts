@@ -700,12 +700,18 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /**
      * Deletes finished runs beyond the newest `keep` of a bot, except those of a running batch or
-     * an active pipeline run, and started runs that finished inside the budget window. Runs that
-     * never started count toward no budget, so they always go first.
+     * an active pipeline run, and, for a bot with a budget, started runs that finished inside the
+     * budget window. Runs that never started count toward no budget, so they always go first.
      */
-    pruneRuns: Effect.fn("BotsStore.pruneRuns")(function* (botId: string, keep: number) {
-      const windowStart = isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS);
-      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (started_at IS NULL OR finished_at <= ${windowStart}) AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+    pruneRuns: Effect.fn("BotsStore.pruneRuns")(function* (
+      botId: string,
+      keep: number,
+      budgeted: boolean,
+    ) {
+      const windowStart = budgeted
+        ? isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS)
+        : null;
+      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (started_at IS NULL OR ${windowStart} IS NULL OR finished_at <= ${windowStart}) AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
     }),
   };
 });

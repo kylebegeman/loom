@@ -307,6 +307,13 @@ export const make = Effect.gen(function* () {
     return existing.semaphore;
   });
 
+  // Only a budget needs the runs of its window kept past RUNS_KEPT_PER_BOT.
+  const pruneRuns = (botId: string) =>
+    store.getDefinition(botId).pipe(
+      Effect.flatMap((bot) => store.pruneRuns(botId, RUNS_KEPT_PER_BOT, bot?.budget !== undefined)),
+      Effect.ignore({ log: true }),
+    );
+
   const requireBot = Effect.fnUntraced(function* (botId: string) {
     const bot = yield* store.getDefinition(botId).pipe(Effect.catch(storageError));
     if (bot === null) return yield* fail("not_found", `There is no bot named ${botId}.`);
@@ -708,7 +715,7 @@ export const make = Effect.gen(function* () {
     };
     live.delete(entry.run.id);
     yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
-    yield* store.pruneRuns(entry.run.botId, RUNS_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
+    yield* pruneRuns(entry.run.botId);
     // Delivered before the terminal event, so that event already says whether it reached the thread.
     entry.run = yield* deliver(entry.run);
     yield* publish({ _tag: "run", run: entry.run });
@@ -1012,7 +1019,7 @@ export const make = Effect.gen(function* () {
         yield* store
           .applyRemoteModel(next.id, next.modelSelection)
           .pipe(Effect.ignore({ log: true }));
-      yield* store.pruneRuns(next.botId, RUNS_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
+      yield* pruneRuns(next.botId);
       const delivered = yield* deliver(next);
       yield* publish({ _tag: "run", run: delivered });
       return delivered;
