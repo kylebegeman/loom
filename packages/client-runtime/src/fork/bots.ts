@@ -72,9 +72,17 @@ export const foldBotsChange = (changes: BotsChanges, change: BotsChange): BotsCh
       runs.delete(change.run.id);
       runs.set(change.run.id, change.run);
       if (runs.size <= BOTS_CHANGES_MAX_RUNS) return { ...changes, runs };
+      // A run still going sends nothing until it ends, and a refetch of the newest runs may not
+      // hold it, so it stays unless the unfinished ones alone fill the watch.
+      const cutoff = runs.size - BOTS_CHANGES_KEPT_RUNS;
+      const kept = [...runs].filter(
+        ([, run], index) => index >= cutoff || !isTerminalBotRunStatus(run.status),
+      );
       return {
         ...changes,
-        runs: new Map([...runs].slice(-BOTS_CHANGES_KEPT_RUNS)),
+        runs: new Map(
+          kept.length > BOTS_CHANGES_MAX_RUNS ? kept.slice(-BOTS_CHANGES_KEPT_RUNS) : kept,
+        ),
         pruned: changes.pruned + 1,
       };
     }

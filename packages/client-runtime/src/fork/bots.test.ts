@@ -163,8 +163,12 @@ describe("bots changes", () => {
   it("drops the least recently changed runs once the watch holds too many", () => {
     const at = "2026-10-20T10:00:00.000Z";
     let changes = fold({ _tag: "run", run: run("first", "x", at, "queued") });
-    for (let index = 1; index < BOTS_CHANGES_MAX_RUNS; index++)
-      changes = foldBotsChange(changes, { _tag: "run", run: run(`r${index}`, "x", at, "queued") });
+    changes = foldBotsChange(changes, { _tag: "run", run: run("going", "x", at, "running") });
+    for (let index = 2; index < BOTS_CHANGES_MAX_RUNS; index++)
+      changes = foldBotsChange(changes, {
+        _tag: "run",
+        run: run(`r${index}`, "x", at, "completed"),
+      });
     changes = foldBotsChange(changes, { _tag: "run", run: run("first", "x", at, "running") });
     expect(changes).toMatchObject({ pruned: 0 });
     expect(changes.runs.size).toBe(BOTS_CHANGES_MAX_RUNS);
@@ -172,8 +176,10 @@ describe("bots changes", () => {
     const pruned = foldBotsChange(changes, { _tag: "run", run: run("latest", "x", at, "queued") });
     expect(pruned.pruned).toBe(1);
     expect(pruned.runs.size).toBeLessThan(BOTS_CHANGES_MAX_RUNS);
-    expect(pruned.runs.has("r1")).toBe(false);
+    expect(pruned.runs.has("r2")).toBe(false);
     expect(pruned.runs.get("first")?.status).toBe("running");
+    // Still going, so it stays though it changed long ago.
+    expect(pruned.runs.get("going")?.status).toBe("running");
     expect([...pruned.runs.keys()].at(-1)).toBe("latest");
   });
 
