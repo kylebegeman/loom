@@ -34,6 +34,14 @@ web and mobile. Use only focused commands:
 ./node_modules/.bin/vp run lint:mobile
 ```
 
+## Main integration
+
+Merged current fork main `9b59eb558d` without conflicts; its Library backup changes are retained.
+The ten-file focused integration run passed **56 tests**, including real fork MCP registration
+and the merged backup suite. One existing live `sqlite3_rsync` test was skipped because
+`LOOM_TEST_SQLITE3_RSYNC` is not configured; no binary was installed. All five consumer package
+typechecks and focused lint passed again after the merge. No repository-wide checks ran.
+
 ## Integrated acceptance
 
 Authorized local Browser-panel checks against isolated state passed:
