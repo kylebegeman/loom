@@ -39,6 +39,10 @@ Recovery design previews reuse fork-owned services, contracts, RPC/scope/client/
 and settings. No snapshot field, capture path, filesystem writer or new OpenBao permission is
 added. Existing metadata inspection is transient; no raw configuration enters a snapshot.
 
+The synthetic recovery model is test-only and imported solely by its adjacent focused suite.
+No production service, contract, client, transport, backend or upstream seam changes for that
+proof. Atomic revision CAS is a model assumption, not a new host adapter.
+
 ## Remaining integration review
 
 Verified cutover must inspect GitHubHostSetup and SSH configuration writers.

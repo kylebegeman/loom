@@ -229,6 +229,43 @@ no live SSH probe or provider login ran, and no Library or production action occ
 Electron shell, remote/relay/tunnel and live-provider acceptance remain pending. No browser
 result establishes native acceptance or a recoverable configuration artifact.
 
+## Synthetic recovery journal proof
+
+The five-file focused suite passes **77 tests**, including **36 synthetic recovery cases** and
+the real fork MCP registration test. One case exhausts all **80 combinations** of five journal
+phases and four observed states for each of the two resources. No repository-wide checks run.
+The server package typecheck, focused lint/format, documentation links, all 390 seam-manifest
+rows and whitespace checks pass. This slice changes test infrastructure and packet documents;
+no client, contract or runtime behavior changes, so no new browser/device run is claimed or
+required. Earlier native, Electron, remote and live-provider acceptance remains outstanding.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/MigrationRecovery.test.ts apps/server/src/fork/vault/VaultMigrationInventory.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts
+./node_modules/.bin/vp run --filter t3 typecheck
+./node_modules/.bin/vp lint apps/server/src/fork/vault/MigrationRecovery.test.ts apps/server/src/fork/vault/MigrationRecovery.testkit.ts
+```
+
+Proof coverage includes ordered duplicate fetch entries and syntax, exact restoration of absence,
+manifest-first apply and Git-first rollback, restart after unacknowledged writes, JSON round-trip,
+no-op refusal, unchanged-resource skipping, ledger/permission/evidence failure before each step,
+fresh rollback evidence, actor/operation/revision conflicts, changed identities, external edits,
+ABA revisions, competing CAS attempts, corrupted snapshot/journal checksums, unavailable
+observations and sticky conflict/unknown outcomes. Rejected payloads include excess fields,
+credential-like values, nonfixture hosts, API scopes, ambiguous paths and over-limit vectors or
+fields. Nothing is truncated. Unrelated sentinel values contribute only to the conflict digest
+and are preserved without being copied into the snapshot.
+
+All configurations are in-memory synthetic structures; endpoints use `.invalid`. The model imports
+no filesystem, process, backend or transport adapter. It creates no host files and contacts no
+provider. Its atomic revision CAS is an assumption, its route token is abstract, and its checksum
+is not authorization. CW-1 remains open with refusal of all host writes as the safe default.
+Byte-preserving real configuration editing, real writer exclusion/atomicity, mid-intent evidence
+refresh, durable multi-process journal CAS and conflict resolution remain unproven. Production
+`captureEngine` stays unimplemented and all three execution gates stay literal false. No Library,
+OpenBao namespace/policy, production or rollout change is included. L75 remains partial and its
+migration/replacement rollout stays with the host owner behind L79; L77's restricted acceptance
+has not changed.
+
 ## Full packet acceptance still required
 
 Live acceptance must confirm the implemented binding between reviewed source, replacement

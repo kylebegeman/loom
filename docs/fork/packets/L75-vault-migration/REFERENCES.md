@@ -34,3 +34,7 @@ dependency, Library deployment or SQL migration. Personal password managers rema
 
 - Explicit source username extraction: [metadata adapter](../../../../apps/server/src/fork/vault/MigrationGitMetadata.ts).
 - Independent evidence and design-only preview: [inventory service](../../../../apps/server/src/fork/vault/VaultMigrationInventory.ts) and [contracts](../../../../packages/contracts/src/fork/vault-migration-inventory.ts).
+
+- Synthetic recovery executable design: [model](../../../../apps/server/src/fork/vault/MigrationRecovery.testkit.ts)
+  and [acceptance suite](../../../../apps/server/src/fork/vault/MigrationRecovery.test.ts).
+  No host capture, filesystem transaction or managed-route writer is implemented by these fixtures.

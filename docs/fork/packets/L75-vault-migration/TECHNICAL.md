@@ -292,9 +292,80 @@ interrupted write. An unavailable ledger blocks new writes. Future retention mus
 last recoverable artifact through conflict/unknown outcomes; backup and revocation semantics
 remain subject to L79/L88 rather than being inferred from a preview.
 
-An advisory file lock does not exclude uncooperative external Git editors. The compare-and-write
-primitive, conflict detection and treatment of worktrees/symlinks must be designed and proven
-with synthetic fixtures before any host capture or writer is authorized. The preview explicitly
-reports `captureEngine: unimplemented` and `concurrentWriterStrategy: unresolved`. It is not a
-promise of atomicity or rollback readiness. All execution gates remain literal false. No new
-OpenBao paths, policy permissions, Library deployment or production action is introduced.
+### Concurrent writers: explicit open decision and safe default
+
+**Open decision CW-1:** no real-host compare-and-write primitive has been selected. The safe
+operating default is **refuse every host configuration write**, including rollback. The wire
+preview keeps `concurrentWriterStrategy: unresolved`; this is deliberate, not implicit permission
+to use a lock. An advisory Git lock, a content hash, a final pre-write reread, or an atomic rename
+alone cannot exclude an uncooperative editor between comparison and replacement. Post-write
+conflict detection cannot undo another editor's lost write safely.
+
+The synthetic proof assumes an atomic compare-and-swap on each resource with a monotonic revision
+that changes on every external modification, including an edit that restores identical bytes
+(ABA). It rejects mismatched identity, content or revision, even for unrelated edits. This is an
+assumption of the executable model, not a property of normal files. A future host proposal must
+prove an equivalent exclusion/transaction boundary against external writers, or retain refusal
+for that configuration class. An environment-wide Loom mutex is insufficient. Worktree/common-Git
+directory resolution, symlinks, file replacement, crash durability and platform-specific behavior
+remain host-design gates. No actual capture or writer is authorized by this proof.
+
+### Bounded synthetic representation
+
+The [executable model](../../../../apps/server/src/fork/vault/MigrationRecovery.testkit.ts) is
+imported only by its focused test suite. It has no filesystem, process, Git, SSH, Vault/backend,
+RPC or client integration. Its input and artifacts are explicitly synthetic; identities use
+`synthetic-` tokens, and SSH endpoint fixtures allow only `.invalid` hosts. Nothing enumerates,
+reads, captures or changes host configuration. The real `captureEngine` remains `unimplemented`;
+`canCutover`, `canRollback` and `configurationWrites` stay literal false.
+
+The model captures the selected fetch **key's bounded ordered vector**, replacing one selected
+ordinal. Capturing only that value cannot restore duplicates and ordering unambiguously. Absence
+is `null`, distinct from a present nonempty vector; empty/ambiguous vectors are refused. There
+are at most eight values; the input also has at most sixteen opaque unrelated-entry sentinels,
+which are included in the whole-resource conflict digest but excluded from the snapshot. Each
+SSH value is structured nonsecret user/host/port/path data with explicit SCP-relative,
+SCP-absolute or SSH-URL syntax. The grammar deliberately excludes authentication, queries,
+fragments, helpers and ambiguous paths; paths are at most 256 ASCII characters. Identifiers and
+individual fields are bounded, unknown fields are rejected recursively, and the canonical
+snapshot has a 16 KiB UTF-8 ceiling. No truncation is allowed. The route manifest contains only
+the selected route/item/version and repository-read operation references.
+
+The postimage uses an abstract `synthetic-route-token`, **not a valid Git URL or an implemented
+Vault route writer**. The proof preserves structured values, absence, duplicate order and exact
+inverse state. It does not prove byte-preserving edits of real Git syntax, comments, includes,
+line endings, ownership or file modes. A real capture codec and managed-route representation
+remain separate open decisions. Before choosing them, prove that the desired representation can
+be installed without copying personal material or silently dropping unsupported configuration.
+
+### Executable journal semantics and proof limits
+
+Snapshot digests bind protocol/mode, identity, source/item binding token, selected ordinal,
+preimage/postimage and both expected resource revisions. Journal integrity digests detect
+accidental corruption; they are not signatures or authorization. The test-only controls and
+receipt facts are synthetic assertions; live receipt/grant validation remains owned by the
+existing service and must be integrated again before any real execution.
+
+Acceptance checks the expected journal revision, actor, operation and fresh independent evidence
+before producing an intent. Identical intent retries do not advance it; changed actors, direction,
+evidence or revision conflict. Durable intent is assumed to exist before the first resource step.
+The apply sequence is **manifest, then Git**; rollback is **Git, then manifest**, so the model
+never switches Git toward a missing route manifest. Each step returns a new immutable synthetic
+image without acknowledging completion, permitting restart after every possible write boundary.
+Reconciliation recognizes only a contiguous completed prefix. An impossible mixed image, any
+unexpected edit/revision or a changed resource identity stops in conflict. Unchanged resources
+are skipped, and a whole-operation no-op cannot create intent.
+
+Unavailable observation becomes `unknown`; conflict/unknown are sticky and preserve preimages
+and accepted intent. A returning original-looking image never resumes mutation automatically.
+Read-only inspection can explain an interrupted completion after evidence expiry, but no further
+step can proceed without valid authorization/evidence and an available ledger. If the ledger is
+unavailable or authorization is denied, observed completion is not recorded as durable journal
+progress. Rollback after expiry requires a new explicit operation and fresh bound receipts.
+Mid-operation evidence refresh, explicit conflict resolution, retention, multi-process durable
+journal CAS and real host crash recovery remain follow-up integration work. The proof does not
+make an interrupted real migration recoverable.
+
+All proof data lives in memory; JSON round-trip acceptance tests use no files. There is no stored
+snapshot field, new OpenBao path/policy permission, Library change, production action or rollout.
+The existing migration/replacement subtree rollout remains a host-owner step behind L79.

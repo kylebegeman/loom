@@ -35,8 +35,14 @@ source user/host/port/path matching and independent expiring receipts. It leaves
 ambient shell authentication unknown. A design-only recovery preview binds both current route
 receipts; no snapshot is captured or stored and no host configuration is written.
 
-Next: prove the proposed journal, conflict rules and bounded capture representation against
-synthetic configurations, then resolve the actual route writer and concurrent-writer strategy.
+A synthetic-only executable model proves the bounded fetch-vector/manifest representation,
+ordered two-resource apply/inverse, interruption decisions, sticky conflict/unknown states and
+revision/content/identity guards under an assumed atomic CAS. It is test infrastructure with no
+host/backend/transport integration. The real concurrent-writer primitive remains explicit open
+decision CW-1; the safe default is refusal of every host write.
+
+Next: design the actual managed route and byte-preserving bounded capture codec using synthetic
+fixtures; evaluate host concurrency options against CW-1 before choosing any capture or writer.
 Keep real capture and cutover/rollback execution disabled until separately selected. Native,
 remote and live acceptance, dedicated replacement provisioning and host rollout remain open.
 Interrupted real configuration recovery and source-specific cleanup remain unfinished.

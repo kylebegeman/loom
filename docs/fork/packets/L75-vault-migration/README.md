@@ -40,7 +40,11 @@ Original development-route verification now uses a separately selected existing 
 explicit development/review/contact attestations, and the source URL's explicit user/host/port/path.
 It does not discover the old shell's key or use a personal agent. Fresh original and replacement
 read receipts can produce a recovery snapshot design preview. No configuration is captured or
-written, and no backup or recovery engine exists. Concurrent-writer protection remains unresolved.
+written, and no backup or recovery engine exists. A test-only executable model now proves bounded
+structured capture, interrupted two-resource journal decisions and guarded inverse restoration
+under an assumed atomic revision CAS. It does not implement a real Git route or filesystem
+transaction. The host concurrency mechanism is explicit open decision CW-1, with refusal of all
+host writes as its safe default. Conflict/unknown outcomes never resume automatically.
 
 Dedicated replacement provisioning, live verification acceptance,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer

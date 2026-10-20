@@ -168,7 +168,8 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- Initial private input is one manually entered development secret or secure note. File/bulk and typed connector formats still need adapter-specific review.
+- Manual secret/note and dedicated typed SSH/GitHub imports are implemented. File/bulk imports and other connector formats still need adapter-specific review.
+- Host concurrent-writer exclusion remains open (CW-1). Refuse every real configuration write until a reviewed mechanism satisfies it; synthetic CAS results do not supply that mechanism.
 - Prefer a fresh dedicated identity; imported records are always newly allocated. Full replacement and cutover orchestration remains unfinished.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
