@@ -49,6 +49,7 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 export const FORK_RPC_REQUIRED_SCOPES = {
   [VH.snapshot]: AuthAccessReadScope,
   [VH.context]: AuthAccessReadScope,
+  [VH.retained]: AuthAccessReadScope,
   [VH.apply]: AuthAccessWriteScope,
   [VH.recheck]: AuthAccessWriteScope,
   [VP.list]: AuthAccessReadScope,

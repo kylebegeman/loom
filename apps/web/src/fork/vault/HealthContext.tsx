@@ -1,3 +1,4 @@
+import { VaultHealthRetained } from "./HealthRetained";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { type EnvironmentId, type ProjectId } from "@t3tools/contracts";
@@ -36,8 +37,8 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
   return (
     <div className="flex flex-col gap-3">
       <p>
-        Current profile and grant references only. These do not prove working access. Retained run
-        selections and external consumers are not listed.
+        Current profile and grant references do not prove working access. Inspect retained run
+        selections separately below. External consumers are not discovered.
       </p>
       <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
         Refresh project references
@@ -55,6 +56,11 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
           {page.projects.length === 0 ? (
             <p>No references in these projects. Continue to the next page if available.</p>
           ) : null}
+          <VaultHealthRetained
+            environmentId={environmentId}
+            itemId={itemId}
+            projects={page.scannedProjects ?? page.projects}
+          />
           {page.projects.map((project) => (
             <section
               key={project.id}

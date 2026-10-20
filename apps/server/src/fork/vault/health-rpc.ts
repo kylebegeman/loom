@@ -1,6 +1,7 @@
 import {
   VAULT_HEALTH_WS_METHODS as V,
   type VaultHealthContextInput,
+  type VaultHealthRetainedInput,
   type VaultHealthMutation,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,8 @@ export const makeVaultHealthRpcHandlers = (auth: ForkRpcAuth, actor: string) =>
       checks = yield* VaultHealthChecks.VaultHealthChecks;
     return {
       [V.snapshot]: () => auth.effect(V.snapshot, health.snapshot),
+      [V.retained]: (input: VaultHealthRetainedInput) =>
+        auth.effect(V.retained, context.retained(input)),
       [V.context]: (input: VaultHealthContextInput) =>
         auth.effect(V.context, context.inspect(input)),
       [V.apply]: (input: VaultHealthMutation) => auth.effect(V.apply, health.apply(input, actor)),

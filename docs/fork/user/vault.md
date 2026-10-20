@@ -520,5 +520,11 @@ From a maintenance issue, choose **Show project references** to inspect current 
 and grants that name the item. **More projects** checks the next ten projects; a page with no
 references does not establish that later projects have none. Review a project's profiles to
 change its bindings, or review grants before changing authority. Archived profiles and inactive
-grants keep their state labels. These references do not prove working access and do not include
-retained run selections or consumers outside Loom.
+grants keep their state labels. These references do not prove working access.
+
+Under **Retained run selections**, choose any project on the current page, including one with
+no current references. Matching selections show the earlier profile and item versions they
+pinned. Continue through pages even when a page has no matches. Retired selections whose
+binding snapshot was removed are counted as unattributable. Review the project's run selections
+to inspect or retire a stopped selection; current backend checks still decide whether retirement
+is allowed. Consumers outside Loom and provider-side credential copies are not discovered.

@@ -2,6 +2,8 @@ import { ThreadId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultHealthContextInput,
+  VaultHealthRetainedInput,
+  type VaultHealthRetainedPage,
   type VaultHealthContextPage,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
@@ -18,12 +20,16 @@ import * as VaultProfiles from "./VaultProfiles.ts";
 export class VaultHealthContext extends Context.Service<
   VaultHealthContext,
   {
+    readonly retained: (
+      input: VaultHealthRetainedInput,
+    ) => Effect.Effect<VaultHealthRetainedPage, VaultError>;
     readonly inspect: (
       input: VaultHealthContextInput,
     ) => Effect.Effect<VaultHealthContextPage, VaultError>;
   }
 >()("t3/fork/vault/VaultHealthContext") {}
 const isInput = Schema.is(VaultHealthContextInput);
+const isRetainedInput = Schema.is(VaultHealthRetainedInput);
 const PAGE_SIZE = 10;
 const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore,
@@ -32,6 +38,43 @@ const make = Effect.gen(function* () {
     projects = yield* ProjectStoreV2,
     threads = yield* ThreadManagementService;
   return VaultHealthContext.of({
+    retained: Effect.fn("VaultHealthContext.retained")(function* (input) {
+      if (!isRetainedInput(input)) return yield* new VaultError({ reason: "invalid-input" });
+      if (!(yield* core.inspect(input.itemId)))
+        return yield* new VaultError({ reason: "not-found" });
+      const page = yield* profiles.pins({ projectId: input.projectId, cursor: input.cursor });
+      return {
+        itemId: input.itemId,
+        projectId: input.projectId,
+        checkedAt: yield* Clock.currentTimeMillis,
+        inspectedSelections: page.items.length,
+        unattributableSelections: page.items.filter((pin) => pin.resolution === null).length,
+        nextCursor: page.nextCursor,
+        items: page.items.flatMap((pin) => {
+          const resolution = pin.resolution;
+          if (!resolution) return [];
+          const bindings = resolution.bindings
+            .filter((binding) => binding.itemId === input.itemId)
+            .map((binding) => ({ name: binding.name, itemVersion: binding.version }));
+          return bindings.length === 0
+            ? []
+            : [
+                {
+                  id: pin.id,
+                  threadId: pin.threadId,
+                  runId: pin.runId,
+                  version: pin.version,
+                  runState: pin.runState,
+                  canRetire: pin.canRetire,
+                  profileId: resolution.profileId,
+                  profileLabel: resolution.label,
+                  profileVersion: resolution.profileVersion,
+                  bindings,
+                },
+              ];
+        }),
+      };
+    }),
     inspect: Effect.fn("VaultHealthContext.inspect")(function* (input) {
       if (!isInput(input)) return yield* new VaultError({ reason: "invalid-input" });
       if (!(yield* core.inspect(input.itemId)))
@@ -112,6 +155,7 @@ const make = Effect.gen(function* () {
         itemId: input.itemId,
         checkedAt: yield* Clock.currentTimeMillis,
         inspectedProjects: page.length,
+        scannedProjects: page.map(({ id, title }) => ({ id, title })),
         nextCursor: remaining.length > PAGE_SIZE ? page.at(-1)!.id : null,
         projects: references.filter(
           (project) => project.profiles.length > 0 || project.grants.length > 0,

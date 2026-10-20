@@ -67,8 +67,8 @@ watch restarts caused transient disconnects; after the server settled, the flow 
 Native iOS interaction verification is pending: `mobile-native-client.ts check` reports the
 installed client stale, and Kyle's current instruction forbids installation. No native build
 or installation was attempted. Electron shell, remote/relay and upstream-server interaction checks are not claimed.
-Current profile/grant project references are implemented in the follow-up below. Retained run
-pins and external consumers remain outside that lookup.
+Current profile/grant references and paged retained selection inspection are implemented below.
+External consumers remain undiscovered.
 
 ## Project reference follow-up
 
@@ -81,8 +81,23 @@ static pass remains applicable.
 
 The integrated web pass reached an empty project-reference page for a synthetic GitHub item,
 including its inspected count, timestamp, caveat and disabled final-page navigation. Matching
-reference cards and project-review navigation have service/static evidence; their integrated
-interaction pass remains incomplete. Native interaction remains pending under the no-install
+reference cards were subsequently verified with a synthetic profile saved through the normal
+service command. Retained-selection project choice and its empty page also passed; project-review
+navigation was exercised with the selected project in the destination URL. Native interaction remains pending under the no-install
 restriction. Source-watch ownership and stale Vite optimization interfered with local QA;
 reusing the existing isolated server and forcing optimization restored the client without
 installation. No production state or Library service changed.
+
+## Retained selection follow-up
+
+Ten tests in the context/profile/MCP files passed, plus 36 permission tests in two files.
+The new regression verifies matching pinned versions after current bindings change, stable page
+cursors, unmatched entries, retired attribution counts and explicit backend failure. Existing
+profile tests cover pin retirement and current run authority. All five affected package
+typechecks and scoped lint passed. No application schema migration or native module changed.
+
+Web acceptance used the existing isolated OpenBao fixture. A normal profile command added a
+synthetic GitHub binding; the inbox displayed its matching profile/requirement card. Choosing a
+scanned project displayed its retained-selection count, empty state and final-page controls.
+The review action carried the selected environment/project to project-profile settings.
+Matched retained selection cards and native interaction retain service/static evidence only.

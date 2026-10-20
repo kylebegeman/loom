@@ -3,6 +3,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { ProjectId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
+import { VaultProfilePinList, VaultProfilePin } from "./vault-profiles.ts";
 import { VaultError, VaultItemId } from "./vault-core.ts";
 const Time = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const VaultHealthClass = Schema.Literals([
@@ -73,6 +74,11 @@ export const VaultHealthContextPage = Schema.Struct({
   itemId: VaultItemId,
   checkedAt: Time,
   inspectedProjects: Schema.Int,
+  scannedProjects: Schema.optional(
+    Schema.Array(Schema.Struct({ id: ProjectId, title: Schema.String })).check(
+      Schema.isMaxLength(10),
+    ),
+  ),
   nextCursor: Schema.NullOr(ProjectId),
   projects: Schema.Array(
     Schema.Struct({
@@ -100,13 +106,49 @@ export const VaultHealthContextPage = Schema.Struct({
   ).check(Schema.isMaxLength(10)),
 });
 export type VaultHealthContextPage = typeof VaultHealthContextPage.Type;
+export const VaultHealthRetainedInput = Schema.Struct({
+  ...VaultProfilePinList.fields,
+  itemId: VaultItemId,
+});
+export type VaultHealthRetainedInput = typeof VaultHealthRetainedInput.Type;
+export const VaultHealthRetainedPage = Schema.Struct({
+  itemId: VaultItemId,
+  projectId: ProjectId,
+  checkedAt: Time,
+  inspectedSelections: Schema.Int,
+  unattributableSelections: Schema.Int,
+  nextCursor: VaultProfilePinList.fields.cursor,
+  items: Schema.Array(
+    Schema.Struct({
+      id: VaultProfilePin.fields.id,
+      threadId: VaultProfilePin.fields.threadId,
+      runId: VaultProfilePin.fields.runId,
+      version: VaultProfilePin.fields.version,
+      runState: VaultProfilePin.fields.runState,
+      canRetire: Schema.Boolean,
+      profileId: VaultItemId,
+      profileLabel: Schema.String,
+      profileVersion: Schema.Int,
+      bindings: Schema.Array(Schema.Struct({ name: Schema.String, itemVersion: Schema.Int })).check(
+        Schema.isMaxLength(16),
+      ),
+    }),
+  ).check(Schema.isMaxLength(25)),
+});
+export type VaultHealthRetainedPage = typeof VaultHealthRetainedPage.Type;
 export const VAULT_HEALTH_WS_METHODS = {
   snapshot: "loom.vault-health.snapshot",
   context: "loom.vault-health.context",
+  retained: "loom.vault-health.retained",
   apply: "loom.vault-health.apply",
   recheck: "loom.vault-health.recheck",
 } as const;
 export const VaultHealthRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_HEALTH_WS_METHODS.retained, {
+    payload: VaultHealthRetainedInput,
+    success: VaultHealthRetainedPage,
+    error: Schema.Union([VaultError, EnvironmentAuthorizationError]),
+  }),
   Rpc.make(VAULT_HEALTH_WS_METHODS.context, {
     payload: VaultHealthContextInput,
     success: VaultHealthContextPage,

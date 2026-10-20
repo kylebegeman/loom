@@ -3,6 +3,8 @@ import {
   VaultError,
   VaultHealthSnapshot,
   VaultHealthContextInput,
+  VaultHealthRetainedInput,
+  VaultHealthRetainedPage,
   VaultHealthContextPage,
   VaultHealthRecheckResult,
   VaultHealthMutation,
@@ -21,6 +23,14 @@ import * as VaultHealthChecks from "./VaultHealthChecks.ts";
 const failure = Schema.Union([VaultError, OrchestratorMcpFailure]),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultHealthToolkit = Toolkit.make(
+  Tool.make("loom_vault_health_retained", {
+    description:
+      "Inspect up to 25 retained selections in one project and show bindings for an item. Administrator clients only. Continue pages even when no matches. Retired snapshots cannot be attributed; external consumers and provider-side copies are unknown. Does not retire selections or revoke access.",
+    parameters: VaultHealthRetainedInput,
+    success: VaultHealthRetainedPage,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_health_context", {
     description:
       "Inspect current project profile and grant references to an item, ten projects per page. Administrator clients only. References are not proof of working access; retained run pins and external consumers are not enumerated.",
@@ -66,6 +76,13 @@ export const vaultHealthHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_health_retained: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(Effect.flatMap(VaultHealthContext.VaultHealthContext, (s) => s.retained(input))),
+          ),
+        ),
+      ),
       loom_vault_health_context: McpToolAccess.reads((input) =>
         admin.pipe(
           Effect.andThen(

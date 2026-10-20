@@ -1,6 +1,11 @@
 import { expect, it } from "@effect/vitest";
-import { ProjectId, ThreadId, type OrchestrationProjectShell } from "@t3tools/contracts";
-import { VaultError, type VaultGrant, type VaultProfile } from "@t3tools/contracts/fork";
+import { ProjectId, ThreadId, RunId, type OrchestrationProjectShell } from "@t3tools/contracts";
+import {
+  VaultError,
+  type VaultGrant,
+  type VaultProfile,
+  type VaultProfilePinPage,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
@@ -57,7 +62,13 @@ const fixture = Effect.sync(() => {
       { name: "unrelated", kind: "ssh", itemId: otherId, repository: null },
     ],
   };
-  const state = { exists: true, fail: false, profiles: [profile] as ReadonlyArray<VaultProfile> };
+  const state = {
+    exists: true,
+    fail: false,
+    profiles: [profile] as ReadonlyArray<VaultProfile>,
+    pins: { items: [], nextCursor: null } as VaultProfilePinPage,
+  };
+  const pinReads: Array<{ projectId: ProjectId; cursor: string | null }> = [];
   const reads: string[] = [];
   const layer = VaultHealthContext.layer.pipe(
     Layer.provide(
@@ -80,6 +91,13 @@ const fixture = Effect.sync(() => {
         }),
         Layer.mock(ProjectStoreV2)({ listShells: () => Effect.succeed(projects) }),
         Layer.mock(VaultProfiles.VaultProfiles)({
+          pins: (input) =>
+            Effect.suspend(() => {
+              pinReads.push(input);
+              return state.fail
+                ? Effect.fail(new VaultError({ reason: "unavailable" }))
+                : Effect.succeed(state.pins);
+            }),
           list: (id) =>
             Effect.suspend(() => {
               reads.push(id);
@@ -115,7 +133,7 @@ const fixture = Effect.sync(() => {
       ),
     ),
   );
-  return { state, reads, layer };
+  return { state, reads, pinReads, layer };
 });
 it.effect(
   "pages profile and project/thread grant references without treating references as usable access",
@@ -126,6 +144,8 @@ it.effect(
         const service = yield* VaultHealthContext.VaultHealthContext;
         const first = yield* service.inspect({ itemId, cursor: null });
         expect(first.inspectedProjects).toBe(10);
+        expect(first.scannedProjects).toHaveLength(10);
+        expect(first.scannedProjects?.[8]?.id).toBe(project(8).id);
         expect(f.reads).toHaveLength(10);
         expect(first.nextCursor).toBe(project(9).id);
         expect(first.projects.map((p) => p.id)).toEqual([
@@ -167,6 +187,96 @@ it.effect(
         expect((yield* service.inspect({ itemId, cursor: null }).pipe(Effect.flip)).reason).toBe(
           "unavailable",
         );
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect(
+  "finds retained item versions after current bindings change, preserves pagination and makes retired attribution unknown",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const pin = {
+        id: "d".repeat(64),
+        projectId: project(8).id,
+        threadId: ThreadId.make("old-thread"),
+        runId: RunId.make("old-run"),
+        version: 1,
+        createdAt: null,
+        retiredAt: null,
+        runState: "completed",
+        canRetire: true,
+        resolution: {
+          projectId: project(8).id,
+          profileId: "e".repeat(32),
+          label: "Previous staging",
+          profileVersion: 3,
+          bindings: [
+            {
+              name: "deploy",
+              kind: "ssh" as const,
+              itemId,
+              version: 4,
+              destination: "ssh://qa.example:22",
+              repository: null,
+            },
+          ],
+        },
+      };
+      f.state.profiles = [];
+      f.state.pins = {
+        items: [
+          pin,
+          {
+            ...pin,
+            id: "e".repeat(64),
+            resolution: null,
+            retiredAt: "2026-01-01T00:00:00Z",
+            canRetire: false,
+          },
+          {
+            ...pin,
+            id: "f".repeat(64),
+            resolution: {
+              ...pin.resolution,
+              bindings: [{ ...pin.resolution.bindings[0]!, itemId: otherId }],
+            },
+          },
+        ],
+        nextCursor: "f".repeat(64),
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* VaultHealthContext.VaultHealthContext;
+        expect(
+          (yield* service.inspect({ itemId, cursor: null })).projects.some(
+            (p) => p.id === project(8).id,
+          ),
+        ).toBe(false);
+        const page = yield* service.retained({ itemId, projectId: project(8).id, cursor: null });
+        expect(page.inspectedSelections).toBe(3);
+        expect(page.unattributableSelections).toBe(1);
+        expect(page.items).toHaveLength(1);
+        expect(page.items[0]?.bindings).toEqual([{ name: "deploy", itemVersion: 4 }]);
+        expect(page.items[0]?.profileVersion).toBe(3);
+        expect(page.items[0]?.canRetire).toBe(true);
+        expect(page.nextCursor).toBe("f".repeat(64));
+        f.state.pins = { items: [], nextCursor: null };
+        const next = yield* service.retained({
+          itemId,
+          projectId: project(8).id,
+          cursor: page.nextCursor,
+        });
+        expect(next.items).toEqual([]);
+        expect(f.pinReads).toEqual([
+          { projectId: project(8).id, cursor: null },
+          { projectId: project(8).id, cursor: "f".repeat(64) },
+        ]);
+        f.state.fail = true;
+        expect(
+          (yield* service
+            .retained({ itemId, projectId: project(8).id, cursor: null })
+            .pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
       }).pipe(Effect.provide(f.layer));
     }),
 );

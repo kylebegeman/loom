@@ -92,5 +92,16 @@ Reads can still race edits; use the actual access inspector and launch checks fo
 The additional `vault-health-context` capability gates clients against older health servers.
 Its protected read RPC, administrator MCP tool and `health-context` CLI command call the same
 service. Clients request context only after expansion, can close/refresh/page it, and can review
-the selected project's profiles or grants. Retained run pins and external consumers remain
-outside this lookup; neither is silently treated as absent.
+the selected project's profiles or grants. The page also returns the ten scanned project identifiers, including those without current
+references, so retained selections can be inspected independently.
+
+`retained` calls the existing profile pin service for one project and one page of at most 25
+selections. It filters matching bindings by item ID and returns their pinned item/profile
+versions and authoritative retirement availability. The cursor advances over every inspected
+selection, including unmatched and retired entries. A retired tombstone has no resolution and
+cannot be attributed to any item; the response reports that uncertainty as a count. Projects
+without current bindings remain selectable. This lookup neither mutates pins nor claims
+current workload authorization. Review and retirement reuse L76's existing controls and checks.
+The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
+optional on older context responses. External consumers and provider-side copies remain
+undiscovered. No field or empty page should be interpreted as proof they do not exist.

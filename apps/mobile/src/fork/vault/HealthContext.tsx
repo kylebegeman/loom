@@ -1,3 +1,4 @@
+import { VaultHealthRetained } from "./HealthRetained";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { AuthAccessWriteScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
@@ -46,8 +47,8 @@ function ContextPage({
   return (
     <View className="gap-3">
       <Text>
-        Current profile and grant references only. These do not prove working access. Retained run
-        selections and external consumers are not listed.
+        Current profile and grant references do not prove working access. Inspect retained run
+        selections separately below. External consumers are not discovered.
       </Text>
       <Button label="Refresh project references" disabled={!connected} onPress={result.refresh} />
       {result.isPending ? <Text>Inspecting project references…</Text> : null}
@@ -65,6 +66,13 @@ function ContextPage({
           {page.projects.length === 0 ? (
             <Text>No references in these projects. Continue to the next page if available.</Text>
           ) : null}
+          <VaultHealthRetained
+            environmentId={environmentId}
+            itemId={itemId}
+            connected={connected}
+            projects={page.scannedProjects ?? page.projects}
+            onReview={setReviewingProject}
+          />
           {page.projects.map((project) => (
             <View key={project.id} className="gap-2 rounded-lg border border-border p-3">
               <Text className="font-semibold">{project.title}</Text>
