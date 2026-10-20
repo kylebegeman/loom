@@ -567,7 +567,14 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
               modelSelection: null,
             },
           })
-          .pipe(Effect.ignore({ log: true }));
+          .pipe(
+            // Unacked, the cancel comes back and the ending is sent again.
+            Effect.catchIf(
+              (error) => error.reason === "not_found",
+              () => Effect.void,
+            ),
+            Effect.mapError(fromLibrary),
+          );
       return yield* ack(null);
     }
     const request = message.request;

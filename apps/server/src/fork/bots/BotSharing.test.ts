@@ -394,7 +394,14 @@ describe("BotSharing", () => {
   it.effect("tells the requester a run it cancelled before this computer started it ended", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
-        const { library, sharing } = yield* setup(harness);
+        const postFails = { value: true };
+        const { library, sharing } = yield* setup(harness, (client) => ({
+          ...client,
+          postResult: (input) =>
+            postFails.value
+              ? Effect.fail(new BotLibraryError({ reason: "io", message: "The Library timed out." }))
+              : client.postResult(input),
+        }));
         yield* studioPublishes(library);
         yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
         yield* library.submit(studio, {
@@ -405,8 +412,11 @@ describe("BotSharing", () => {
         yield* library.nextRequests(laptop, 0);
 
         yield* library.cancel(studio, "unstarted");
-        for (const received of yield* library.nextRequests(laptop, 0))
-          yield* sharing.handleDelivery(received);
+        const [cancel] = yield* library.nextRequests(laptop, 0);
+        // The ending did not reach the Library, so the cancel stays unacked to come back.
+        yield* sharing.handleDelivery(cancel!).pipe(Effect.flip);
+        postFails.value = false;
+        yield* sharing.handleDelivery(cancel!);
         const [result] = yield* library.nextResults(studio, 0);
         expect(result?.update).toMatchObject({ _tag: "terminal", status: "cancelled" });
       }),
