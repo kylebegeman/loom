@@ -132,6 +132,11 @@ interface LiveRun {
   /** Set once the run holds its permits and is launching or waiting. */
   started: boolean;
   cancelRequested: boolean;
+  /**
+   * Set once the run thread exists. A run recovered after a restart has one but no known thread
+   * run id, so it is interrupted by thread.
+   */
+  launched: boolean;
   threadRunId: RunId | null;
   /** From the version that ran; a restarted server reads the current one. */
   output: BotOutput;
@@ -804,6 +809,7 @@ export const make = Effect.gen(function* () {
           threadId: entry.run.threadId,
         });
         entry.threadRunId = ThreadManagement.latestRun(result.projection)?.id ?? null;
+        entry.launched = true;
         if (entry.cancelRequested) yield* interruptThread(entry, "The bot run was cancelled.");
         yield* awaitThread(entry, bot.timeoutMinutes * 60_000);
       }).pipe(
@@ -1181,6 +1187,7 @@ export const make = Effect.gen(function* () {
       fiber: null,
       started: false,
       cancelRequested: false,
+      launched: false,
       threadRunId: null,
       output: bot.output ?? "text",
     };
@@ -1361,9 +1368,8 @@ export const make = Effect.gen(function* () {
     }
     entry.cancelRequested = true;
     if (!entry.started && entry.fiber !== null) yield* Fiber.interrupt(entry.fiber);
-    // Before launch returns there is no thread run yet; the launch path interrupts it after.
-    else if (entry.threadRunId !== null)
-      yield* interruptThread(entry, "The bot run was cancelled.");
+    // Before launch returns there is no thread yet; the launch path interrupts it after.
+    else if (entry.launched) yield* interruptThread(entry, "The bot run was cancelled.");
     return entry.run;
   });
 
@@ -1538,6 +1544,7 @@ export const make = Effect.gen(function* () {
         fiber: null,
         started: stored.status === "running",
         cancelRequested: false,
+        launched: stored.status === "running",
         threadRunId: null,
         output: bot?.output ?? "text",
       };

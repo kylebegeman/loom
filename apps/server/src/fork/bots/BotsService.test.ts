@@ -198,6 +198,29 @@ describe("BotsService", () => {
       }),
     ),
   );
+
+  it.effect("cancels a run recovered after a restart by interrupting its thread", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* store.insertRun({
+          ...storedRun("running-run", "reviewer", 1),
+          status: "running",
+          finishedAt: null,
+        });
+
+        yield* bots.recover();
+        yield* bots.cancel("running-run");
+        expect(harness.interrupted).toEqual(["bot-run-running-run"]);
+        expect(yield* bots.awaitRun("running-run", 60_000)).toMatchObject({
+          status: "cancelled",
+          result: "Partial notes.",
+        });
+      }),
+    ),
+  );
 });
 
 const storedRun = (id: string, botId: string, botVersion: number): BotRun => ({
