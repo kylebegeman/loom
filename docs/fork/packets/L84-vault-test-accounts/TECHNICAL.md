@@ -65,8 +65,8 @@ cancels the local lease; restore returns to quarantine. Archiving/restoring coll
 while they have active reservations. Nothing terminates an external login, resets app data,
 revokes an upstream token or promises isolation of a full-access process. Reset/provision/mail
 and browser/native login adapters remain unavailable. Kyle selected an isolated Loom target
-and Migadu; the proposed dedicated mailbox is `vault@begam.in`. Selection does not enable those
-adapters or prove that mailbox exists.
+and Migadu. Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests.
+That confirmation does not enable the adapters or prove reader access or live delivery.
 
 Web and mobile use a shared action/expiry helper, bounded metadata snapshots and explicit
 refresh. A deadline timer updates visible expiry without continuous polling. All changes have
@@ -202,11 +202,20 @@ uses the existing auth CLI and authenticated HTTP API against its fixed worktree
 configured providers, suppresses root `.env` loading and excludes inherited identity, Vault,
 relay, SSH-agent and provider variables. Child HOME, XDG and gh configuration live in a private
 `sandbox-home`; provider dotfiles are resolved there. Git uses sandboxed global configuration,
-no system configuration, no prompts and a fixture-parent discovery ceiling. This is configuration
-isolation, not an OS sandbox against full-access host programs. The sample workspace gets its own local Git repository
-with no remotes. An isolated `rev-parse --show-toplevel` must resolve to that exact workspace at
-prepare, start and proof; empty metadata, missing HEAD and escapes refuse. Global/system config
-is disabled during this probe. Canonical fixture guards permit a dedicated descendant
+no system configuration, no prompts, file-only Git transport and a fixture-parent discovery
+ceiling. Git cannot invoke SSH and its passwd-based personal configuration through this target.
+This is configuration isolation, not an OS sandbox against full-access host programs. The sample
+workspace gets its own local Git repository with no remotes. Isolated `rev-parse` checks require
+the exact workspace toplevel and its own absolute Git and common directories at prepare, start
+and proof. Symlinked metadata and object alternates refuse. Start/proof refuse incomplete Git
+metadata; preparation may re-run init for an empty or HEAD-less directory only with a prior
+harness ownership stamp and no redirected/shared layout. Existing valid fixtures need no new
+stamp until creation/repair is needed. Global/system config is disabled during the probe.
+Private JSON is published by owner-only temporary file and rename. Initial home-marker staging
+stays outside the new home so an interrupted publication leaves an empty, retryable home.
+Malformed/wrong seed markers count as incomplete. Unmarked published databases are preserved
+before reseeding, and incomplete unmarked settings can be repaired without adopting unrelated
+state. A live runtime refuses both preparation and start before writes or exec. Canonical fixture guards permit a dedicated descendant
 of the recognized worktree home while refusing installed state or escapes from that descendant.
 The target accepts loopback traffic only. Proof requests refuse proxies and redirects, bind to
 the persisted environment identity, and mint only five-minute `orchestration:read` sessions.
@@ -221,9 +230,14 @@ account provisioning, browser-session revocation, application data reset or work
 No Vault store, policy, journal, schema, execution flag or public transport is changed.
 
 Migadu is selected independently of Loom runtime pairing, which has no email verification step.
-The proposed `vault@begam.in` mailbox and per-run plus recipients need a dedicated read credential
-and a real delivery check. Use IMAP for message reads; Migadu's management API manages mailboxes
-and aliases and is not the inbox transport. Keep management credentials out of worker access.
+Kyle confirmed `vault@begam.in` exists and is dedicated to Vault tests. A dedicated read
+credential and real delivery check are still required. Migadu plus recipients normally route to
+auto-created `loom-<run-id>` folders, unless the mail owner applies the reviewed Pattern Rewrite
+to Inbox. Reader correlation, retention and cleanup must cover the chosen routing. Use IMAP for
+message reads; Migadu's management API manages mailboxes and aliases and is not the inbox
+transport. Live credential custody remains Kyle-only in 1Password until L79 backend/custody/audit
+approval. Never put that credential into the disposable OpenBao proof backend, fixtures, chat or
+git. Keep management credentials out of worker access.
 The [mail handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) records the
 remaining external setup. No personal mailbox, DNS or production identity was accessed.
 

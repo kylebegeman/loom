@@ -22,20 +22,49 @@ runtime session provisioning/reset, not an email/password account, browser logou
 provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
 session until the five-minute TTL. No execution, resumption or allow-once flag changes.
 
-Twenty-seven focused Python cases now pass from `apps/server`, also rerun with `TMPDIR=/var/tmp`
-to exercise macOS's `/var` symlink. They include real Git repositories under resolved temporary paths, empty/missing-HEAD refusal at prepare and start, the actual child exec
-environment with sandboxed HOME/XDG/gh/Git config, and independent negative proof cases for
-unauthenticated access, admin scope, thread count, active runs, revoked originals and final
-replacement cleanup. Recovery cases cover empty userdata, leftover temporary seed files,
-published fixtures missing settings and preservation/reseeding of an unmarked database. A live
-target refuses preparation before settings can change. Earlier origin, environment identity,
-private-output, lost mint, reset/revocation, cleanup and real redirect/proxy cases remain.
+Forty-six focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
+to exercise macOS's `/var` symlink. Cases cover independent Git metadata, core.worktree escapes,
+foreign common/absolute Git directories, symlinked objects/refs, alternates, owned interrupted-init
+repair and unowned-init refusal. Start refuses a live PID and creates the HOME/XDG/gh sandbox;
+its environment restricts Git transport to file. Atomic JSON publication preserves existing
+settings on interrupted writes and leaves a new home retryable. Invalid seed markers are
+preserved with unmarked databases before reseeding; incomplete unmarked settings recover.
+
+The proof's negative cases separately refuse replacement HTTP failure, overbroad issued scopes,
+foreign subjects, non-string token/session IDs, reused replacement IDs and a cleanup revoke that
+appears successful while re-list still retains the session. Earlier unauthenticated/admin access,
+thread count, active runs, revoked originals, final replacement cleanup, lost mint, origin,
+environment identity, private-output and redirect/proxy cases remain.
+
+An in-memory mutation pass removed or weakened each review safeguard without changing the
+worktree source. All **22 mutants were killed** by the named regressions below; these are
+synthetic tests, not additional live target or mail acceptance.
+
+| Re-review item | Removed/weakened behavior caught by the tests                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1              | Replacement-session HTTP 200 requirement.                                                                                             |
+| 2              | Exact read-only scopes, invocation subject, token type and session-ID type, each separately.                                          |
+| 3              | Distinct replacement-session identity.                                                                                                |
+| 4              | Post-cleanup re-list must contain no session for the invocation.                                                                      |
+| 5              | Common-directory equality, absolute-Git-directory equality, symlinked storage refusal and object-alternates refusal, each separately. |
+| 6              | Exact toplevel equality with a real core.worktree escape.                                                                             |
+| 7              | File-only Git transport in the child environment.                                                                                     |
+| 8              | Valid version/scenario seed marker rather than marker existence.                                                                      |
+| 9              | Atomic settings publication and incomplete-settings retry, each separately.                                                           |
+| 10             | Owned interrupted-init repair and foreign-init refusal, each separately.                                                              |
+| 11             | Empty-home retry and atomic ownership-marker publication, each separately.                                                            |
+| 12             | Start's live-PID refusal and sandbox creation, each separately.                                                                       |
+
+Item 13 is documentation reconciliation: the mailbox is confirmed, plus-folder routing is
+explicit, and live credentials remain Kyle-only in 1Password until L79 approval.
 
 A fresh real seed uses sandboxed child HOME while explicitly passing the actual account's `.t3`
 to the exported seeder's shared-home guard. The old target was stopped before replacing its
 synthetic QA state and kept separately for review. The current target was relaunched with the
 new environment. Actual server-process inspection confirms sandboxed HOME, XDG, gh, global Git,
-system-config suppression, prompt suppression and the fixture-parent Git ceiling. The fresh
+system-config suppression, prompt suppression and the fixture-parent Git ceiling at that earlier
+tip. File-only transport and the subsequent recovery fixes are regression-tested in this
+follow-up; no new live-process or browser pass is claimed for them. The fresh
 session issue/access/revoke/replacement/final-cleanup proof also passes. No real userdata,
 credentials or production services were changed. Prior
 seven server fixture/seed tests, package typecheck and TypeScript lint are earlier evidence;
@@ -46,7 +75,11 @@ this follow-up changes only Python and docs, so they are not claimed as new runs
 PYTHONDONTWRITEBYTECODE=1 python3 -W error::ResourceWarning -m unittest discover \
   -s apps/server/src/fork/vault/testkit -p test_loom_test_instance.py -v
 PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prove
-# From apps/server:
+# Current Python follow-up, from apps/server (repeat with TMPDIR=/var/tmp):
+PYTHONPATH=src/fork/vault/testkit PYTHONDONTWRITEBYTECODE=1 \
+  python3 -W error::ResourceWarning -m unittest -q \
+  test_loom_test_instance test_migadu_inbox test_migadu_imap
+# Earlier TypeScript seed milestone, not rerun for the Python/docs follow-up:
 ../../node_modules/.bin/vp test run src/fork/dev-fixtures/fixtureHome.test.ts scripts/seed-dev-db.test.ts
 ../../node_modules/.bin/vp run typecheck
 ```
@@ -70,7 +103,7 @@ records the dedicated-mail setup and remaining live acceptance.
 
 Twenty-five focused Python tests pass from `apps/server`: 23 message/selection/failure cases
 and two real stdlib IMAP-over-TLS cases against a disposable loopback server. The combined
-local-target and Migadu suites pass 52 tests at this tip. A temporary
+local-target and Migadu suites pass 71 tests at this tip, also with `TMPDIR=/var/tmp`. A temporary
 certificate is trusted only in the positive synthetic test. An untrusted certificate fails
 before LOGIN. The connector keeps the fixed Migadu hostname/SNI while its socket is redirected
 to loopback for this proof. The wire transcript exercises EXAMINE, UID SEARCH/FETCH with

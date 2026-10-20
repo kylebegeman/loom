@@ -9,6 +9,7 @@ import pwd
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any
 import urllib.error
 import urllib.parse
@@ -35,7 +36,7 @@ def isolated_environment(source: dict[str, str], home: Path) -> dict[str, str]:
     env.update(HOME=str(sandbox), XDG_CONFIG_HOME=str(sandbox / ".config"),
                GH_CONFIG_DIR=str(sandbox / ".config" / "gh"),
                GIT_CONFIG_GLOBAL=str(sandbox / ".gitconfig"), GIT_CONFIG_NOSYSTEM="1",
-               GIT_TERMINAL_PROMPT="0", GIT_CEILING_DIRECTORIES=str(home / "fixtures"),
+               GIT_TERMINAL_PROMPT="0", GIT_ALLOW_PROTOCOL="file", GIT_CEILING_DIRECTORIES=str(home / "fixtures"),
                T3CODE_RELEASE_PUBLIC_CONFIG="1", T3CODE_DEV_INSTANCE="1940",
                PYTHONDONTWRITEBYTECODE="1")
     return env
@@ -50,13 +51,23 @@ def instance_home(repository: Path) -> Path:
     return home
 
 
-def private_json(path: Path, value: object) -> None:
-    # Never follow an existing symlink when writing fixture settings or markers.
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "w") as stream:
-        os.fchmod(stream.fileno(), 0o600)
-        json.dump(value, stream, indent=2)
-        stream.write("\n")
+def private_json(path: Path, value: object, *, staging_directory: Path | None = None) -> None:
+    # Rename never exposes a truncated marker/settings file or follows the old destination.
+    if path.is_symlink():
+        raise OSError("A fixture write must not replace a symlink.")
+    descriptor, name = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".tmp",
+                                       dir=staging_directory or path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            json.dump(value, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def read_json(path: Path) -> Any:
@@ -95,15 +106,30 @@ def require_stopped(home: Path) -> None:
     raise InstanceError("Stop the dedicated test instance before preparing or starting it again.")
 
 
+def require_git_layout(workspace: Path) -> None:
+    git_directory = workspace / ".git"
+    # Git also shares storage through alternates and symlinks, outside rev-parse's common-dir.
+    if (git_directory.is_symlink() or not git_directory.is_dir()
+            or any(path.is_symlink() for path in git_directory.rglob("*"))
+            or (git_directory / "objects" / "info" / "alternates").exists()):
+        raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
+
+
 def require_git_boundary(home: Path) -> None:
     workspace = home / "fixtures" / "sample-project"
+    require_git_layout(workspace)
     env = isolated_environment(dict(os.environ), home)
     env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
                GIT_CEILING_DIRECTORIES=str(workspace.parent))
     try:
-        result = subprocess.run(["git", "-C", str(workspace), "rev-parse", "--show-toplevel"],
+        result = subprocess.run(["git", "-C", str(workspace), "rev-parse", "--show-toplevel",
+                                 "--absolute-git-dir", "--git-common-dir"],
                                 env=env, capture_output=True, text=True, timeout=15, check=False)
-        valid = result.returncode == 0 and Path(result.stdout.strip()).resolve() == workspace.resolve()
+        paths = result.stdout.splitlines()
+        valid = (result.returncode == 0 and len(paths) == 3
+                 and Path(paths[0]).resolve() == workspace.resolve()
+                 and Path(paths[1]).resolve() == (workspace / ".git").resolve()
+                 and (workspace / paths[2]).resolve() == (workspace / ".git").resolve())
     except (OSError, subprocess.TimeoutExpired, ValueError):
         valid = False
     if not valid:
@@ -130,14 +156,23 @@ def run_node(repository: Path, args: list[str]) -> str:
 
 def initialize_git_fixture(home: Path) -> None:
     workspace = home / "fixtures" / "sample-project"
-    for path in (home / "fixtures", workspace, workspace / ".git"):
+    git_directory = workspace / ".git"
+    ownership = home / "git-fixture-owner.json"
+    owner = {"version": 1, "workspace": "fixtures/sample-project"}
+    for path in (home / "fixtures", workspace, git_directory):
         if path.is_symlink():
             raise InstanceError("The synthetic workspace must not redirect to another location.")
-    if (workspace / ".git").exists():
-        if not (workspace / ".git").is_dir():
-            raise InstanceError("The synthetic workspace must have its own Git directory.")
-        require_git_boundary(home)
-        return
+    if git_directory.exists():
+        require_git_layout(workspace)
+        if (git_directory / "HEAD").exists():
+            require_git_boundary(home)
+            return
+        # Only a stamped creation may recover an interrupted init, never an adopted layout.
+        if (not ownership.exists() or read_json(ownership) != owner
+                or (git_directory / "commondir").exists()):
+            raise InstanceError("Refusing to repair Git metadata not created by this harness.")
+    else:
+        private_json(ownership, owner)
     env = isolated_environment(dict(os.environ), home)
     env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     try:
@@ -153,12 +188,13 @@ def initialize_git_fixture(home: Path) -> None:
 
 def prepare(repository: Path) -> Path:
     home = instance_home(repository)
-    if home.exists():
+    if home.exists() and any(home.iterdir()):
         if read_json(home / "vault-test-instance.json") != MARKER:
             raise InstanceError("Refusing an unrelated test directory.")
     else:
-        home.mkdir(parents=True, mode=0o700)
-        private_json(home / "vault-test-instance.json", MARKER)
+        home.mkdir(parents=True, mode=0o700, exist_ok=True)
+        # Staging outside the home leaves it empty/adoptable if initial publication is interrupted.
+        private_json(home / "vault-test-instance.json", MARKER, staging_directory=home.parent)
     userdata = home / "userdata"
     for path in (userdata, home / "fixtures", home / "fixtures" / "sample-project"):
         if path.is_symlink():
@@ -170,7 +206,11 @@ def prepare(repository: Path) -> Path:
     marker = userdata / "dev-fixture.json"
     if marker.is_symlink():
         raise InstanceError("The seed completion marker must not redirect elsewhere.")
-    if not marker.exists() and (userdata / "statev2.sqlite").exists():
+    try:
+        seed_complete = read_json(marker) == {"version": 1, "scenario": "sample"}
+    except InstanceError:
+        seed_complete = False
+    if not seed_complete and (userdata / "statev2.sqlite").exists():
         # Keep a published-but-unmarked seed intact rather than adopt or delete an unknown database.
         recovery = home / "incomplete-seeds"
         if recovery.is_symlink():
@@ -179,15 +219,22 @@ def prepare(repository: Path) -> Path:
         userdata.rename(recovery / uuid.uuid4().hex)
     userdata.mkdir(mode=0o700, exist_ok=True)
     settings = userdata / "settings.json"
+    if settings.is_symlink():
+        raise InstanceError("The test settings must not redirect elsewhere.")
     if not settings.exists():
-        # Defaults precede publication of the seeder's completion marker, including interrupted retries.
         private_json(settings, SETTINGS)
-    current_settings = read_json(settings)
+    try:
+        current_settings = read_json(settings)
+    except InstanceError:
+        if seed_complete:
+            raise
+        private_json(settings, SETTINGS)
+        current_settings = SETTINGS
     if (current_settings.get("providerInstances") != SETTINGS["providerInstances"]
             or current_settings.get("projectSettingsOverrides")):
         raise InstanceError("The isolated target settings changed; providers must remain disabled.")
     ensure_sandbox(home)
-    if not marker.exists():
+    if not seed_complete:
         # Child HOME is sandboxed. Pin the seeder's live-state guard to the account's actual home.
         shared_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve() / ".t3"
         script = '''import { createRequire } from "node:module";

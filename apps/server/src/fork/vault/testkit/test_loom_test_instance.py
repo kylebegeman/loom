@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 from pathlib import Path
 import shutil
@@ -102,24 +103,78 @@ class TestLoomInstance(unittest.TestCase):
             target.validate_home(self.root)
         self.assertEqual(git_directory.read_text(), "gitdir: /unrelated/checkout")
 
-    def test_partial_git_directory_and_missing_head_refuse_prepare_and_start_validation(self) -> None:
-        env = target.isolated_environment(dict(target.os.environ), self.home)
-        subprocess.run(["git", "init", "--initial-branch=outer"], cwd=self.root,
-                       env=env, capture_output=True, check=True)
+    def test_owned_interrupted_git_init_is_repaired_only_on_prepare(self) -> None:
         git_directory = self.workspace / ".git"
         for partial in ("empty", "missing-head"):
-            shutil.rmtree(git_directory)
-            if partial == "empty":
-                git_directory.mkdir()
-            else:
-                subprocess.run(["git", "init", "--initial-branch=partial"], cwd=self.workspace,
-                               env=env, capture_output=True, check=True)
-                (git_directory / "HEAD").unlink()
             with self.subTest(partial=partial):
-                with self.assertRaisesRegex(target.InstanceError, "Git boundary"):
-                    target.prepare(self.root)
-                with self.assertRaisesRegex(target.InstanceError, "Git boundary"):
+                if partial == "empty":
+                    shutil.rmtree(git_directory)
+                    git_directory.mkdir()
+                else:
+                    (git_directory / "HEAD").unlink()
+                with self.assertRaises(target.InstanceError):
                     target.validate_home(self.root)
+                self.assertEqual(target.prepare(self.root), self.home)
+                target.require_git_boundary(self.home)
+                self.assertTrue((git_directory / "HEAD").is_file())
+
+    def test_unowned_interrupted_git_init_is_not_adopted(self) -> None:
+        (self.home / "git-fixture-owner.json").unlink()
+        (self.workspace / ".git" / "HEAD").unlink()
+        with self.assertRaises(target.InstanceError):
+            target.initialize_git_fixture(self.home)
+        self.assertFalse((self.workspace / ".git" / "HEAD").exists())
+
+    def test_git_boundary_refuses_core_worktree_escape(self) -> None:
+        escaped = self.root / "other-worktree"
+        escaped.mkdir()
+        with (self.workspace / ".git" / "config").open("a") as config:
+            config.write("\n[core]\n\tworktree = " + str(escaped) + "\n")
+        for check in (lambda: target.prepare(self.root), lambda: target.validate_home(self.root)):
+            with self.assertRaises(target.InstanceError):
+                check()
+
+    def test_git_boundary_refuses_foreign_git_directory_result(self) -> None:
+        result = subprocess.CompletedProcess(["git"], 0,
+            "\n".join((str(self.workspace), str(self.root / "foreign-git"), str(self.workspace / ".git"))) + "\n", "")
+        with patch.object(target.subprocess, "run", return_value=result):
+            with self.assertRaises(target.InstanceError):
+                target.require_git_boundary(self.home)
+
+    def test_git_boundary_refuses_foreign_common_directory(self) -> None:
+        foreign = self.root / "foreign"
+        foreign.mkdir()
+        subprocess.run(["git", "init", "--initial-branch=outer", str(foreign)],
+                       env=target.isolated_environment(dict(target.os.environ), self.home),
+                       capture_output=True, check=True)
+        (self.workspace / ".git" / "commondir").write_text(str(foreign / ".git") + "\n")
+        with self.assertRaises(target.InstanceError):
+            target.validate_home(self.root)
+        with self.assertRaises(target.InstanceError):
+            target.prepare(self.root)
+
+    def test_git_boundary_refuses_shared_objects_and_refs(self) -> None:
+        for name in ("objects", "refs"):
+            with self.subTest(name=name):
+                local = self.workspace / ".git" / name
+                foreign = self.root / ("foreign-" + name)
+                local.rename(foreign)
+                local.symlink_to(foreign, target_is_directory=True)
+                with self.assertRaises(target.InstanceError):
+                    target.validate_home(self.root)
+                with self.assertRaises(target.InstanceError):
+                    target.prepare(self.root)
+                local.unlink()
+                foreign.rename(local)
+
+    def test_git_boundary_refuses_object_alternates(self) -> None:
+        alternates = self.workspace / ".git" / "objects" / "info" / "alternates"
+        alternates.parent.mkdir(exist_ok=True)
+        alternates.write_text(str(self.root / "foreign-objects") + "\n")
+        with self.assertRaises(target.InstanceError):
+            target.validate_home(self.root)
+        with self.assertRaises(target.InstanceError):
+            target.prepare(self.root)
 
     def test_start_child_env_is_sandboxed_without_changing_the_parent_home(self) -> None:
         source_home = target.os.environ.get("HOME")
@@ -135,8 +190,86 @@ class TestLoomInstance(unittest.TestCase):
         self.assertEqual(env["GIT_CONFIG_GLOBAL"], str(sandbox / ".gitconfig"))
         self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
         self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(env["GIT_ALLOW_PROTOCOL"], "file")
+        self.assertTrue(sandbox.is_dir())
+        self.assertTrue((sandbox / ".config").is_dir())
+        self.assertTrue((sandbox / ".config" / "gh").is_dir())
         self.assertEqual(env["GIT_CEILING_DIRECTORIES"], str(self.workspace.parent))
         self.assertEqual(target.os.environ.get("HOME"), source_home)
+
+    def test_start_refuses_a_live_instance_before_exec(self) -> None:
+        target.private_json(self.userdata / "server-runtime.json", {"pid": target.os.getpid()})
+        with patch.object(target, "REPOSITORY", self.root), \
+             patch.object(target.sys, "argv", ["loom_test_instance.py", "start"]), \
+             patch.object(target.sys, "stderr", io.StringIO()), \
+             patch.object(target.os, "chdir"), patch.object(target.os, "execve") as execute:
+            with self.assertRaises(SystemExit) as error:
+                target.main()
+            self.assertEqual(error.exception.code, 1)
+            execute.assert_not_called()
+
+    def test_empty_home_before_marker_publication_is_retryable(self) -> None:
+        shutil.rmtree(self.home)
+        self.home.mkdir()
+
+        def seed(repository: Path, args: list[str]) -> str:
+            self.workspace.mkdir(parents=True)
+            target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
+            return ""
+        with patch.object(target, "run_node", side_effect=seed):
+            self.assertEqual(target.prepare(self.root), self.home)
+        self.assertEqual(target.read_json(self.home / "vault-test-instance.json"), target.MARKER)
+
+    def test_interrupted_marker_publication_leaves_home_retryable(self) -> None:
+        shutil.rmtree(self.home)
+        with patch.object(target.os, "replace", side_effect=OSError("synthetic interrupted publication")), \
+             patch.object(target, "run_node"):
+            with self.assertRaises(OSError):
+                target.prepare(self.root)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.test_empty_home_before_marker_publication_is_retryable()
+
+    def test_invalid_seed_markers_are_archived_and_reseeded(self) -> None:
+        for payload in ("", "{", '{"version":1,"scenario":"other"}',
+                        '{"version":2,"scenario":"sample"}', "null"):
+            with self.subTest(payload=payload):
+                (self.userdata / "dev-fixture.json").write_text(payload)
+                (self.userdata / "statev2.sqlite").write_bytes(b"interrupted-seed-canary")
+
+                def seed(repository: Path, args: list[str]) -> str:
+                    target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
+                    (self.userdata / "statev2.sqlite").write_bytes(b"complete-synthetic-seed")
+                    return ""
+                with patch.object(target, "run_node", side_effect=seed) as run:
+                    self.assertEqual(target.prepare(self.root), self.home)
+                    run.assert_called_once()
+        archives = list((self.home / "incomplete-seeds").glob("*/statev2.sqlite"))
+        self.assertEqual(len(archives), 5)
+        self.assertTrue(all(path.read_bytes() == b"interrupted-seed-canary" for path in archives))
+
+    def test_private_write_failure_keeps_existing_json_intact(self) -> None:
+        path = self.userdata / "settings.json"
+        original = path.read_bytes()
+
+        def interrupt(value, stream, **kwargs):
+            stream.write('{"partial":')
+            raise OSError("synthetic interrupted write")
+        with patch.object(target.json, "dump", side_effect=interrupt):
+            with self.assertRaises(OSError):
+                target.private_json(path, {"replacement": True})
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(list(self.userdata.glob(".settings.json.*.tmp")), [])
+
+    def test_unmarked_partial_settings_can_be_retried(self) -> None:
+        (self.userdata / "dev-fixture.json").unlink()
+        (self.userdata / "settings.json").write_text('{"providerInstances":')
+
+        def seed(repository: Path, args: list[str]) -> str:
+            self.assertEqual(target.read_json(self.userdata / "settings.json"), target.SETTINGS)
+            target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
+            return ""
+        with patch.object(target, "run_node", side_effect=seed):
+            self.assertEqual(target.prepare(self.root), self.home)
 
     def test_empty_userdata_and_leftover_seed_files_are_retryable(self) -> None:
         for child in self.userdata.iterdir():
@@ -308,6 +441,82 @@ class TestLoomInstance(unittest.TestCase):
         self.rejected_proof(lambda path, token, response, issued, revoked:
                             (200, {}) if path.endswith("/shell") and token == "secret-canary-0"
                             and "s0" in revoked and len(issued) == 1 else response)
+
+    def test_proof_rejects_a_replacement_that_cannot_read(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (401, None) if path.endswith("/shell") and token == "secret-canary-1"
+                            and "s1" not in revoked else response)
+
+    def rejected_issue(self, change) -> None:
+        cli, http, sessions, _, _ = self.auth_fixture()
+
+        def malformed(repository, args):
+            result = cli(repository, args)
+            if args[3] == "issue":
+                value = json.loads(result)
+                change(value)
+                return json.dumps(value)
+            return result
+        with patch.object(target, "run_node", side_effect=malformed), patch.object(target, "request", side_effect=http):
+            with self.assertRaisesRegex(target.InstanceError, "Unexpected test session"):
+                target.prove(self.root)
+        self.assertEqual(set(sessions), {"unrelated"})
+
+    def test_proof_rejects_issue_with_write_scope(self) -> None:
+        self.rejected_issue(lambda value: value.update(scopes=["orchestration:read", "orchestration:write"]))
+
+    def test_proof_rejects_issue_with_foreign_subject(self) -> None:
+        self.rejected_issue(lambda value: value.update(subject="another-invocation"))
+
+    def test_proof_rejects_non_string_token(self) -> None:
+        for token in (None, 123, ["synthetic"], {"synthetic": True}):
+            with self.subTest(token=token):
+                self.rejected_issue(lambda value: value.update(token=token))
+
+    def test_proof_rejects_non_string_session_id(self) -> None:
+        for session_id in (None, 123, ["synthetic"], {"synthetic": True}):
+            with self.subTest(session_id=session_id):
+                self.rejected_issue(lambda value: value.update(sessionId=session_id))
+
+    def test_proof_rejects_reused_session_id(self) -> None:
+        cli, http, sessions, issued, _ = self.auth_fixture()
+
+        def reused(repository, args):
+            result = cli(repository, args)
+            if args[3] == "issue" and len(issued) == 2:
+                value = json.loads(result)
+                sessions.pop(str(value["sessionId"]))
+                value["sessionId"] = issued[0]["sessionId"]
+                sessions[str(value["sessionId"])] = value
+                return json.dumps(value)
+            return result
+        with patch.object(target, "run_node", side_effect=reused), patch.object(target, "request", side_effect=http):
+            with self.assertRaisesRegex(target.InstanceError, "Reset reused"):
+                target.prove(self.root)
+        self.assertEqual(set(sessions), {"unrelated"})
+
+    def test_proof_rejects_silent_cleanup_failure_on_relist(self) -> None:
+        cli, http, sessions, _, _ = self.auth_fixture()
+
+        def no_op_revoke(repository, args):
+            if args[3:5] == ["revoke", "s1"]:
+                return "revoked"
+            return cli(repository, args)
+
+        replacement_reads = 0
+
+        def expire_after_first_read(origin, path, token=None):
+            nonlocal replacement_reads
+            if path.endswith("/shell") and token == "secret-canary-1":
+                replacement_reads += 1
+                if replacement_reads > 1:
+                    return 401, None
+            return http(origin, path, token)
+        with patch.object(target, "run_node", side_effect=no_op_revoke), \
+             patch.object(target, "request", side_effect=expire_after_first_read):
+            with self.assertRaisesRegex(target.InstanceError, "cleanup is incomplete"):
+                target.prove(self.root)
+        self.assertIn("s1", sessions)
 
     def test_proof_rejects_replacement_access_after_final_cleanup(self) -> None:
         self.rejected_proof(lambda path, token, response, issued, revoked:
