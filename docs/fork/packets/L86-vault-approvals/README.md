@@ -50,6 +50,9 @@ returns actionable repair guidance. Lost approval replies reconcile without dupl
 The internal digest-only operation journal now persists bounded crash/reconciliation evidence
 through the existing OpenBao adapter. It adds no public execution path; no operation resumes
 or consumes an allow-once approval. See TECHNICAL.md for its reserved path and downgrade behavior.
+Requester-scoped recovery observations expose only owned digest/state summaries without
+reconciling or writing them. Reserved or unknown outcomes need external review; missing evidence
+does not prove an operation never ran. Project retirement preserves the reserved journal.
 Policy format remains 3. The inbox shows current record/thread/project names with stable ID fallback and accessible
 decision context. Changed or unavailable pending context requires refreshed review; deny/cancel
 remain reachable. Names do not replace server-side decision checks.

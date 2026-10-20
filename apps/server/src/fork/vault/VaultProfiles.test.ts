@@ -9,6 +9,10 @@ import {
   type VaultProfileDefinition,
   type VaultProfileMutation,
 } from "@t3tools/contracts/fork";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
+import * as Redacted from "effect/Redacted";
+import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SshTransport from "./SshTransport.ts";
@@ -327,6 +331,30 @@ it.effect(
       yield* f.grant(f.key.destination);
       yield* f.apply({ type: "save", profile: f.definition });
       const resolution = yield* f.profiles.resolve(f.threadId, f.definition.id);
+      const store = yield* OpenBaoStore.OpenBaoStore;
+      const crypto = yield* Crypto.Crypto;
+      const hash = (value: string) =>
+        crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(Effect.map(Hex.encode));
+      const prefix = `environments/${yield* hash(f.environmentId)}/profiles`;
+      const journalPath = `${prefix}/_operations/approval-journal-v1`;
+      yield* store.write(journalPath, Redacted.make({ schemaVersion: 1, entries: [] }), 0);
+      const otherProject = ProjectId.make("other");
+      const otherBefore = yield* f.profiles.apply(
+        {
+          projectId: otherProject,
+          operationId: yield* f.id,
+          expectedRevision: 0,
+          change: { type: "save", profile: f.definition },
+        },
+        "admin",
+      );
+      const protectedPaths = [
+        journalPath,
+        `${prefix}/${yield* hash(otherProject)}/registry`,
+        `${prefix}/${yield* hash(f.projectId)}/registry`,
+      ];
+      const protectedRecords = yield* Effect.forEach(protectedPaths, (path) => store.read(path));
+      expect(protectedRecords.every((record) => record !== null)).toBe(true);
       const runId = f.state.thread.activeRunId!;
       const input = { projectId: f.projectId, cursor: null };
       const first = (yield* f.profiles.pins(input)).items[0]!;
@@ -377,6 +405,11 @@ it.effect(
       const retired = yield* f.profiles.retirePin(retire, "admin");
       expect(retired.resolution).toBeNull();
       expect(retired.retiredAt).not.toBeNull();
+      expect(yield* Effect.forEach(protectedPaths, (path) => store.read(path))).toEqual(
+        protectedRecords,
+      );
+      expect(yield* f.profiles.list(otherProject)).toEqual(otherBefore);
+      expect((yield* f.profiles.pins(input)).items[0]?.resolution).toBeNull();
       expect(yield* f.profiles.retirePin(retire, "admin")).toEqual(retired);
       expect((yield* f.profiles.retirePin(retire, "other").pipe(Effect.flip)).reason).toBe(
         "conflict",

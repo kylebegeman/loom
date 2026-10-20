@@ -65,8 +65,16 @@ ID fallback for older servers, changed/unavailable-context warnings, named web r
 and contextual native action hints. Stable IDs/version/destination remain visible and server
 decisions stay authoritative. Native acceptance of these additions remains owner-led.
 
-Next selected work: requester-safe journal recovery status and explicit outcome-review guidance,
-without a journal mutation tool or dispatcher. The journal must
+Requester-safe journal recovery status is implemented as a read-only authenticated-thread MCP
+service call. Reserved/unknown entries require outcome review, missing/aged evidence never proves
+non-execution, and current request authority is returned separately. Ownership precedes journal
+reads; corrupt or unavailable evidence does not block ordinary approvals. Project cleanup
+regression coverage protects the reserved journal and sibling registries.
+
+Next selected work: incorporate durable recovery observations into explicit retry preparation,
+so a caller cannot overlook a retained reservation or unknown outcome when preparing a proposal.
+Keep it observational, fail closed on unavailable evidence, and add no dispatcher or mutation tool.
+The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome
 reconciliation remain unfinished. Policy stays at format 3.

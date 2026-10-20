@@ -279,3 +279,24 @@ acceptance remain open rather than inferred from DOM semantics or typechecks.
 This additive response metadata changes no policy/journal format, path, grant scope, execution
 or resumption gate. The previously accepted native milestone remains documented above; it is
 not claimed as acceptance of these later UI additions.
+
+## Requester recovery observation and project cleanup isolation
+
+Five focused suites pass **32 tests**: operation journal, profile cleanup, authenticated access
+MCP handlers, real fork MCP registration and feature registry. New cases cover read-only
+missing/prepared/reserved/unknown/completed/cancelled observations, reconstruction, safe summary
+projection, revoked approval alongside historical completion, owner checks before journal reads,
+corruption/outage isolation, age-out without writes and mismatched request correlation. The MCP
+boundary ignores injected identity/reconcile/execute fields and rejects outside-thread clients
+before touching the service. Synthetic transports still fail if execution is attempted.
+
+The existing real profile retirement case now saves a reserved journal sentinel and a second
+project registry, verifies their payloads and backend versions remain unchanged, and confirms
+only the stopped run becomes a tombstone. Both project registries remain readable. The profiles
+prefix documents that future enumeration must skip the reserved `_operations/` branch.
+
+Server, contracts, client-runtime, web and mobile typechecks pass, as do focused lint/format,
+changed documentation links, 392 seam rows and whitespace. No client UI changed, so no browser
+or simulator pass was run for this slice. Policy format 3, journal version 1, existing paths and
+policy capabilities are unchanged. All execution/resumption/consumption gates remain false;
+L86 stays partial and no Library or production rollout is included.

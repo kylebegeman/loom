@@ -3,6 +3,7 @@ import {
   VaultApprovalRetryInput,
   VaultApprovalRetryReport,
   VaultApprovalStatusInput,
+  VaultApprovalRecoveryStatus,
   VaultApprovalCancel,
   VaultApprovalRequesterStatus,
   VaultApprovalCreate,
@@ -25,6 +26,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+import * as OperationJournal from "./OperationJournal.ts";
 const failure = Schema.Union([VaultError, OrchestratorMcpFailure]);
 const explainInput = Schema.Struct({
   ...VaultOwnDecisionInput.fields,
@@ -36,6 +38,14 @@ const ownReadiness = Schema.Struct({
 });
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultAccessToolkit = Toolkit.make(
+  Tool.make("loom_vault_access_recovery_status", {
+    description:
+      "Read only your authenticated thread's retained Vault request and safe operation-journal recovery summary. Reservations and uncertain outcomes require external review, never replay. Missing journal evidence does not prove an operation never ran. This read never writes, reconciles, dispatches or resumes anything. All execution, automatic-resumption and allow-once gates stay closed. Corrupt or unavailable journal evidence fails closed without blocking ordinary approvals.",
+    parameters: VaultApprovalStatusInput,
+    success: VaultApprovalRecoveryStatus,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_access_retry_prepare", {
     description:
       "Read-only preparation/recovery validation for your own run-bound approved request and a typed SSH, Git-over-SSH or GitHub API proposal. Supply the waiting operation ID, current request revision and previous outcome. Retain the returned operationDigest to detect changed proposals on recovery; it is not an authenticated receipt or execution token. Unknown write outcomes require external review, never blind replay. The original request approved scope, not this command. No commands are stored or run. Normal adapter validation and fresh access checks remain required. No automatic resumption, allow-once consumption or self-approval.",
@@ -132,6 +142,17 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_access_recovery_status: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(OperationJournal.OperationJournal, (journal) =>
+              journal.status(input.id, caller.thread!.threadId),
+            ),
+          );
+        }),
+      ),
       loom_vault_access_retry_prepare: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const caller = yield* McpInvocationContext;

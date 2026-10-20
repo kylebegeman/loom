@@ -2,6 +2,7 @@ import { ThreadId, RunId, NonNegativeInt, PositiveInt } from "@t3tools/contracts
 import {
   VAULT_APPROVAL_RETENTION_MS,
   VaultApprovalRetryInput,
+  type VaultApprovalRecoveryStatus,
   VaultError,
   VaultItemId,
 } from "@t3tools/contracts/fork";
@@ -93,6 +94,10 @@ const observe = (entry: Entry): Observation => ({
 export class OperationJournal extends Context.Service<
   OperationJournal,
   {
+    readonly status: (
+      id: string,
+      requester: ThreadId,
+    ) => Effect.Effect<VaultApprovalRecoveryStatus, VaultError>;
     readonly prepare: (
       input: VaultApprovalRetryInput,
       requester: ThreadId,
@@ -260,6 +265,62 @@ const make = Effect.gen(function* () {
     return yield* new VaultError({ reason: "conflict" });
   });
   return OperationJournal.of({
+    status: Effect.fn("OperationJournal.status")(function* (id, requester) {
+      // Authorize before touching the shared journal, even if it is corrupt or unavailable.
+      yield* access.approvalStatus(id, requester);
+      const { value } = yield* load();
+      const status = yield* access.approvalStatus(id, requester);
+      const entry = retained(value, status.checkedAt).find((e) => e.requestId === id);
+      if (
+        entry &&
+        (entry.threadId !== requester ||
+          entry.operationId !== status.request.waitingOperation?.operationId ||
+          entry.runId !== status.request.waitingOperation?.runId ||
+          entry.itemId !== status.request.itemId ||
+          entry.itemVersion !== status.request.itemVersion)
+      )
+        return yield* new VaultError({ reason: "invalid-response" });
+      const recoveryState = !entry
+        ? ("no-retained-evidence" as const)
+        : entry.state === "prepared"
+          ? ("prepared-only" as const)
+          : entry.state === "reserved" || entry.state === "unknown"
+            ? ("requires-outcome-review" as const)
+            : entry.state;
+      const nextStep =
+        recoveryState === "requires-outcome-review"
+          ? ("inspect-outcome" as const)
+          : recoveryState === "prepared-only" &&
+              status.operationState === "retry-requires-explicit-operation"
+            ? ("prepare-explicit-operation" as const)
+            : ("review-history" as const);
+      return {
+        status,
+        journal: entry
+          ? {
+              state: entry.state,
+              revision: entry.revision,
+              operationDigest: entry.digest,
+              updatedAt: entry.updatedAt,
+              retireAt: entry.retireAt,
+              outcome: entry.outcome,
+            }
+          : null,
+        recoveryState,
+        nextStep,
+        guidance:
+          recoveryState === "requires-outcome-review"
+            ? "Inspect the external outcome before proposing another operation. A reservation can outlive a lost reply; do not replay it. This read does not reconcile or execute."
+            : recoveryState === "no-retained-evidence"
+              ? "No retained journal evidence is available. Missing or aged evidence does not prove that an external operation never ran. Review history before a new explicit proposal."
+              : recoveryState === "prepared-only"
+                ? "Preparation records intent only. Review current request status and prepare a separately explicit operation with fresh access and adapter checks. Execution remains disabled."
+                : "This is historical evidence, not current access or permission to retry. Review the outcome and current request before proposing new work.",
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      };
+    }),
     prepare,
     reserve: (raw, input, requester) =>
       Effect.gen(function* () {

@@ -135,6 +135,7 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => fail("unavailable")),
     );
+  // _operations/ is reserved; any future enumeration of profiles/ must skip it.
   const prefix = `environments/${yield* hash(environmentId)}/profiles`;
   const project = Effect.fnUntraced(function* (id: ProjectId) {
     const found = yield* projects.get(id).pipe(Effect.mapError(() => fail("unavailable")));

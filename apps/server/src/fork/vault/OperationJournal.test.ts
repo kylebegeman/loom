@@ -2,23 +2,34 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadId } from "@t3tools/contracts";
-import { VaultError, type VaultApprovalRetryInput } from "@t3tools/contracts/fork";
+import {
+  VaultApprovalRecoveryStatus,
+  VaultError,
+  type VaultApprovalRetryInput,
+} from "@t3tools/contracts/fork";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as OperationJournal from "./OperationJournal.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as SshTransport from "./SshTransport.ts";
 import { launchFixture } from "./VaultLaunch.testkit.ts";
 
+const isRecoveryStatus = Schema.is(VaultApprovalRecoveryStatus);
 const withJournal = <A, E>(
   use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Crypto.Crypto>,
 ) => Effect.flatMap(fixture, use).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 const fixture = Effect.gen(function* () {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
-  const faults = { write: "none" as "none" | "before" | "after", conflict: false, reads: false };
+  const faults = {
+    write: "none" as "none" | "before" | "after",
+    conflict: false,
+    reads: false,
+    journalReads: 0,
+  };
   const store = Layer.succeed(OpenBaoStore.OpenBaoStore, {
     status: Effect.succeed({ backend: "openbao" as const, state: "ready" as const, origin: null }),
     keys: (prefix: string) =>
@@ -28,11 +39,12 @@ const fixture = Effect.gen(function* () {
           .map((k) => k.slice(prefix.length + 1)),
       ),
     read: (path: string) =>
-      Effect.suspend(() =>
-        faults.reads && path.endsWith("approval-journal-v1")
+      Effect.suspend(() => {
+        if (path.endsWith("approval-journal-v1")) faults.journalReads++;
+        return faults.reads && path.endsWith("approval-journal-v1")
           ? Effect.fail(new VaultError({ reason: "unavailable" }))
-          : Effect.succeed(records.get(path) ?? null),
-      ),
+          : Effect.succeed(records.get(path) ?? null);
+      }),
     write: (path: string, value: Redacted.Redacted<unknown>, expected: number) =>
       Effect.suspend(() => {
         const journal = path.endsWith("approval-journal-v1");
@@ -400,6 +412,195 @@ it.effect("refuses to reserve after approval withdrawal despite retained prepare
           .pipe(Effect.flip)).reason,
       ).toBe("denied");
       expect((yield* f.journal.reconcile(f.input.id, f.threadId)).entry.state).toBe("prepared");
+    }),
+  ),
+);
+
+it.effect(
+  "observes recovery without writes, reservations or external effects, including after restart",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        const before = [...f.records.entries()];
+        expect(yield* f.journal.status(f.input.id, f.threadId)).toMatchObject({
+          journal: null,
+          recoveryState: "no-retained-evidence",
+          nextStep: "review-history",
+          canExecute: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect([...f.records.entries()]).toEqual(before);
+        yield* f.journal.prepare(f.input, f.threadId);
+        const prepared = f.records.get(f.path());
+        expect(yield* f.journal.status(f.input.id, f.threadId)).toMatchObject({
+          journal: { state: "prepared", revision: 1, outcome: null },
+          recoveryState: "prepared-only",
+          nextStep: "prepare-explicit-operation",
+        });
+        expect(f.records.get(f.path())).toEqual(prepared);
+        const reservationId = yield* f.id;
+        yield* f.journal.reserve(
+          f.input,
+          { id: f.input.id, expectedRevision: 1, reservationId },
+          f.threadId,
+        );
+        const reserved = f.records.get(f.path());
+        const rebuilt = yield* f.rebuild;
+        const status = yield* rebuilt.status(f.input.id, f.threadId);
+        expect(status).toMatchObject({
+          journal: { state: "reserved", revision: 2 },
+          recoveryState: "requires-outcome-review",
+          nextStep: "inspect-outcome",
+          canExecute: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect(isRecoveryStatus(status)).toBe(true);
+        expect(status.journal).not.toHaveProperty("reservationId");
+        expect(status.journal).not.toHaveProperty("threadId");
+        expect(f.records.get(f.path())).toEqual(reserved);
+        yield* rebuilt.reconcile(f.input.id, f.threadId);
+        expect(yield* rebuilt.status(f.input.id, f.threadId)).toMatchObject({
+          journal: { state: "unknown" },
+          recoveryState: "requires-outcome-review",
+        });
+      }),
+    ),
+);
+
+it.effect("reports cancelled preparation without implying the approval itself was withdrawn", () =>
+  withJournal((f) =>
+    Effect.gen(function* () {
+      yield* f.journal.prepare(f.input, f.threadId);
+      yield* f.journal.cancel(f.input.id, 1, f.threadId);
+      expect(yield* f.journal.status(f.input.id, f.threadId)).toMatchObject({
+        status: { request: { state: "approved" } },
+        journal: { state: "cancelled" },
+        recoveryState: "cancelled",
+        nextStep: "review-history",
+      });
+    }),
+  ),
+);
+it.effect.each(["failed", "succeeded"] as const)(
+  "keeps completed %s evidence distinct from current approval authority",
+  (outcome) =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        const reservationId = yield* f.id;
+        yield* f.journal.reserve(
+          f.input,
+          { id: f.input.id, expectedRevision: 1, reservationId },
+          f.threadId,
+        );
+        yield* f.journal.finish(
+          { id: f.input.id, expectedRevision: 2, reservationId, outcome },
+          f.threadId,
+        );
+        yield* f.access.approvalChange(
+          {
+            ...f.decision,
+            expectedRevision: 2,
+            expectedPolicyRevision: 1,
+            operationId: yield* f.id,
+            decision: "revoke",
+          },
+          "human",
+          Effect.void,
+        );
+        expect(yield* f.journal.status(f.input.id, f.threadId)).toMatchObject({
+          status: { request: { state: "revoked" } },
+          journal: { state: "completed", outcome },
+          recoveryState: "completed",
+          nextStep: "review-history",
+          canExecute: false,
+        });
+      }),
+    ),
+);
+
+it.effect(
+  "checks requester ownership before reading a corrupt journal and preserves approval availability",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        f.records.set(f.path(), { value: Redacted.make({ schemaVersion: 99 }), version: 2 });
+        const reads = f.faults.journalReads;
+        expect(
+          (yield* f.journal.status(f.input.id, ThreadId.make("not-owner")).pipe(Effect.flip))
+            .reason,
+        ).toBe("denied");
+        expect(f.faults.journalReads).toBe(reads);
+        expect((yield* f.journal.status(f.input.id, f.threadId).pipe(Effect.flip)).reason).toBe(
+          "invalid-response",
+        );
+        f.faults.reads = true;
+        const failedReads = f.faults.journalReads;
+        expect(
+          (yield* f.journal.status(f.input.id, ThreadId.make("not-owner")).pipe(Effect.flip))
+            .reason,
+        ).toBe("denied");
+        expect(f.faults.journalReads).toBe(failedReads);
+        expect((yield* f.journal.status(f.input.id, f.threadId).pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+        expect((yield* f.access.approvalInbox).requests[0]?.state).toBe("approved");
+      }),
+    ),
+);
+
+it.effect(
+  "hides aged journal entries without erasing evidence or implying no external effect",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        const record = f.records.get(f.path())!;
+        const value = Redacted.value(record.value) as { entries: Array<{ retireAt: number }> };
+        f.records.set(f.path(), {
+          ...record,
+          value: Redacted.make({
+            ...value,
+            entries: value.entries.map((entry) => ({ ...entry, retireAt: 100 })),
+          }),
+        });
+        yield* TestClock.adjust("100 millis");
+        const before = f.records.get(f.path());
+        expect(yield* f.journal.status(f.input.id, f.threadId)).toMatchObject({
+          journal: null,
+          recoveryState: "no-retained-evidence",
+          nextStep: "review-history",
+          canExecute: false,
+        });
+        expect(f.records.get(f.path())).toEqual(before);
+        yield* TestClock.adjust("24 hours");
+        expect((yield* f.journal.status(f.input.id, f.threadId).pipe(Effect.flip)).reason).toBe(
+          "not-found",
+        );
+      }),
+    ),
+);
+
+it.effect("rejects a journal entry that no longer matches the owned request correlation", () =>
+  withJournal((f) =>
+    Effect.gen(function* () {
+      yield* f.journal.prepare(f.input, f.threadId);
+      const record = f.records.get(f.path())!;
+      const value = Redacted.value(record.value) as { entries: Array<{ operationId: string }> };
+      f.records.set(f.path(), {
+        ...record,
+        value: Redacted.make({
+          ...value,
+          entries: value.entries.map((entry) => ({ ...entry, operationId: "0".repeat(32) })),
+        }),
+      });
+      expect((yield* f.journal.status(f.input.id, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "invalid-response",
+      );
+      expect((yield* f.access.approvalInbox).requests).toHaveLength(1);
     }),
   ),
 );

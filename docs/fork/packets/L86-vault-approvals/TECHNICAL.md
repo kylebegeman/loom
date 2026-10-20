@@ -300,7 +300,9 @@ minimal service policy already permits read/create/update on `profiles/*`, but d
 new sibling at the environment root. Use the reserved non-project branch
 `environments/<sha256(environmentId)>/profiles/_operations/approval-journal-v1`. Project profile
 readers resolve only SHA-256 project IDs and their registry/run children; they never enumerate
-or open `_operations`. This reuse needs no new capability, mount or list/delete/destroy right.
+or open `_operations`. The prefix carries a reserved-branch comment: future root enumeration
+must skip `_operations/`. Run retirement stays inside the hashed project root; a regression
+protects the reserved journal, the project registry and a sibling project registry. This reuse needs no new capability, mount or list/delete/destroy right.
 An isolated OpenBao proof must use that existing narrow policy, demonstrate successful CAS
 read/create/update, and prove a sibling outside it is denied. No production policy is read.
 
@@ -323,16 +325,16 @@ background worker calls these journal mutations in this milestone. There is no e
 setting that opens a gate. Synthetic tests exercise reservation and result recording directly
 through this internal journal service.
 
-| Crash boundary                                                          | Recovery behavior                                                                                                                                  |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Before prepare commits                                                  | No journal entry; fresh explicit preparation still needs the retained approved request.                                                            |
-| Prepare commits, reply lost                                             | Same ID/digest reconciles to the prepared entry; changed context conflicts.                                                                        |
-| Before reservation commits                                              | Remains prepared; no dispatch is authorized by a failed write.                                                                                     |
-| Reservation commits, reply lost, or process dies before/during dispatch | Treat reservation as unknown and never redispatch automatically, even if an external effect probably never started.                                |
-| External result arrives but completion write/reply is lost              | A saved completed entry is readable; an unsaved result remains unknown. No journal state proves an external write did not occur.                   |
-| Competing reservations                                                  | One CAS winner; a losing or repeated reservation never creates another dispatch opportunity.                                                       |
-| Approval revoked, run/item changes, or request expires                  | New preparation/reservation is refused. Existing outcome evidence cannot restore access.                                                           |
-| Missing/corrupt/unsupported journal, outage or age-out                  | Journal operation fails closed; ordinary approval inbox and policy readers remain usable. Missing evidence cannot recreate an execution allowance. |
+| Crash boundary                                                          | Recovery behavior                                                                                                                                                            |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Before prepare commits                                                  | No journal entry; fresh explicit preparation still needs the retained approved request.                                                                                      |
+| Prepare commits, reply lost                                             | Same ID/digest reconciles to the prepared entry; changed context conflicts.                                                                                                  |
+| Before reservation commits                                              | Remains prepared; no dispatch is authorized by a failed write.                                                                                                               |
+| Reservation commits, reply lost, or process dies before/during dispatch | Treat reservation as unknown and never redispatch automatically, even if an external effect probably never started.                                                          |
+| External result arrives but completion write/reply is lost              | A saved completed entry is readable; an unsaved result remains unknown. No journal state proves an external write did not occur.                                             |
+| Competing reservations                                                  | One CAS winner; a losing or repeated reservation never creates another dispatch opportunity.                                                                                 |
+| Approval revoked, run/item changes, or request expires                  | New preparation/reservation is refused. Existing outcome evidence cannot restore access.                                                                                     |
+| Missing/corrupt/unsupported journal, outage or age-out                  | Journal mutations fail closed; the observer reports missing evidence or an error. Ordinary approvals remain usable. Missing evidence cannot recreate an execution allowance. |
 
 Reconciliation of a retained reserved entry conservatively commits `unknown`. Completion accepts
 only the exact retained reservation identity and expected entry revision. Completed, unknown or
@@ -371,3 +373,27 @@ record/thread/project names and request ID, retaining distinct five/fifteen-minu
 Native cards have accessible headings and contextual action hints. Pending counts use polite
 status semantics. No control is hidden inside an accessible group that would swallow its child
 buttons. Native/screen-reader interaction acceptance for these additions is still owner-led.
+
+## Requester recovery observation
+
+`loom_vault_access_recovery_status` derives requester identity from the authenticated thread,
+checks retained request ownership before opening the journal, then refreshes request status after
+the read. It returns a bounded summary of that request's retained entry, without reservation IDs
+or other requesters' metadata. Journal/request operation, run, item and version bindings must
+match; a mismatched record fails closed. It never calls mutating reconciliation or writes,
+prunes, reserves, consumes or dispatches work. The existing inbox and decision paths do not
+depend on this read and remain usable if the journal is corrupt or unavailable.
+
+A reservation or unknown outcome always requires external outcome review. Prepared evidence
+records intent only; current policy/run/item status remains separate and adapter checks still
+apply. A completed receipt or cancelled preparation is historical evidence, not current authority.
+No retained entry means evidence is missing or aged, never proof that an operation did not run.
+Aged requests remain not-found; no status read resurrects them. Every recovery result keeps the
+three execution/resumption/consumption gates false. This additive MCP response changes neither
+journal version 1 nor access-policy format 3 and needs no new path or policy capability.
+
+The transport is shared by provider adapters and remote authenticated thread sessions. This
+milestone adds no client UI or separate desktop/mobile entry point. Existing requester status
+and explicit retry preparation remain available; preparation does not consume journal evidence
+and cannot authorize execution. Future dispatch must consult durable recovery state as well as
+fresh access and adapter validation.

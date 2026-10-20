@@ -40,6 +40,8 @@ Local explicit-retry acceptance composes the existing services in
 and [`VaultGitHub.test.ts`](../../../../apps/server/src/fork/vault/VaultGitHub.test.ts).
 Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 
-- [Internal operation journal](../../../../apps/server/src/fork/vault/OperationJournal.ts): independent CAS state and closed execution gates.
+- [Internal operation journal](../../../../apps/server/src/fork/vault/OperationJournal.ts): independent CAS state, requester-safe read-only recovery and closed execution gates.
 - [Journal crash acceptance](../../../../apps/server/src/fork/vault/OperationJournal.test.ts): lost replies, races, corruption and retention.
 - [Isolated policy/restart proof](../../../../apps/server/src/fork/vault/testkit/journal_proof.py): scoped synthetic OpenBao only.
+
+- [Profile cleanup regression](../../../../apps/server/src/fork/vault/VaultProfiles.test.ts): reserved journal and sibling-project isolation during retirement.

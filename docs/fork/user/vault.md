@@ -679,6 +679,13 @@ If saving a request loses its reply, look it up by the original ID before retryi
 request may have no recorded delivery attempt; replaying creation returns that request without
 sending an alert. Status remains available only during the request's retention window.
 
+For an operation with uncertain history, an agent can use `loom_vault_access_recovery_status`
+with its original request ID. It shows only that thread's retained journal summary alongside
+current request status. A reservation or unknown outcome means inspect what happened before
+proposing more work. Missing evidence does not prove nothing ran. This check never runs or
+resumes an operation, changes a reservation or grants access. Journal errors leave ordinary
+approval review available.
+
 The inbox starts with pending requests. Choose **Show all requests** to review retained decisions
 or revoke an active or expired approval, then **Show pending requests** to return. Counts and
 visible pending work update at expiry; server-side checks remain authoritative.

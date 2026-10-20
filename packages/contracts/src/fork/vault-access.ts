@@ -272,6 +272,32 @@ export const VaultApprovalRequesterStatus = Schema.Struct({
   canExecute: Schema.Literal(false),
 });
 export type VaultApprovalRequesterStatus = typeof VaultApprovalRequesterStatus.Type;
+export const VaultApprovalRecoveryStatus = Schema.Struct({
+  status: VaultApprovalRequesterStatus,
+  journal: Schema.NullOr(
+    Schema.Struct({
+      state: Schema.Literals(["prepared", "reserved", "completed", "unknown", "cancelled"]),
+      revision: PositiveInt,
+      operationDigest: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      updatedAt: Time,
+      retireAt: Time,
+      outcome: Schema.NullOr(Schema.Literals(["succeeded", "failed", "unknown"])),
+    }),
+  ),
+  recoveryState: Schema.Literals([
+    "no-retained-evidence",
+    "prepared-only",
+    "requires-outcome-review",
+    "completed",
+    "cancelled",
+  ]),
+  nextStep: Schema.Literals(["review-history", "prepare-explicit-operation", "inspect-outcome"]),
+  guidance: Schema.String,
+  canExecute: Schema.Literal(false),
+  automaticResumption: Schema.Literal(false),
+  allowOnceConsumption: Schema.Literal(false),
+});
+export type VaultApprovalRecoveryStatus = typeof VaultApprovalRecoveryStatus.Type;
 // Typed proposals describe a new explicit attempt, never a stored executable continuation.
 export const VaultApprovalRetryOperation = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("ssh"), input: VaultSshRun, target: VaultSshTarget }),
