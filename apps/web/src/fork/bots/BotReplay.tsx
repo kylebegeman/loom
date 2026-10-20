@@ -18,7 +18,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog } from "../project-library/LibraryControls";
 import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
-import { defaultReplaySelection, replayCandidates } from "./replay";
+import { defaultReplaySelection, replayCandidates, replayRunsById } from "./replay";
 import { bots, useBotsChanges, useRefreshWhenBotsChangesPruned } from "./state";
 import { VerdictChip } from "./VerdictChip";
 
@@ -95,6 +95,7 @@ export function BotReplayDialog({
   const [selected, setSelected] = useState<ReadonlyArray<string> | null>(null);
   const chosen = selected ?? (runsQuery.data ? defaultReplaySelection(candidates) : []);
   const [started, setStarted] = useState<BotReplay | null>(null);
+  const [originals, setOriginals] = useState<ReadonlyArray<BotRun>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const replay = useAtomCommand(bots.replay, { reportFailure: false });
@@ -103,7 +104,7 @@ export function BotReplayDialog({
     started ? bots.getReplay({ environmentId, input: { replayId: started.id } }) : null,
   );
   const current = replayQuery.data ?? started;
-  const runById = new Map(runs.map((run) => [run.id, run]));
+  const runById = replayRunsById(originals, runs, changes.runs.values());
 
   // The replay itself is not watched; its runs are, so each of their changes refetches it.
   const replayId = started?.id;
@@ -137,6 +138,7 @@ export function BotReplayDialog({
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      setOriginals(runs.filter((run) => chosen.includes(run.id)));
       setStarted(result.value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start the replay.");

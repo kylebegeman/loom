@@ -15,3 +15,13 @@ export const defaultReplaySelection = (
   const picked = rated.length > 0 ? rated : candidates.slice(0, fallback);
   return picked.slice(0, BOTS_REPLAY_MAX_RUNS).map((run) => run.id);
 };
+
+/**
+ * The runs a replay's rows show, by id. The originals are kept as chosen, since the replay's own
+ * runs push them off the capped list; any run seen since is newer than both.
+ */
+export const replayRunsById = (
+  originals: ReadonlyArray<BotRun>,
+  listed: ReadonlyArray<BotRun>,
+  changed: Iterable<BotRun>,
+) => new Map([...originals, ...listed, ...changed].map((run) => [run.id, run]));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
 import type { BotRun } from "@t3tools/contracts/fork";
-import { defaultReplaySelection, replayCandidates } from "./replay";
+import { defaultReplaySelection, replayCandidates, replayRunsById } from "./replay";
 
 const run = (id: string, patch: Partial<BotRun> = {}): BotRun => ({
   id,
@@ -40,5 +40,16 @@ describe("replay selection", () => {
     expect(defaultReplaySelection(unrated, 2)).toEqual(["a", "b"]);
     const rated = [run("a"), run("b", { rating: "down" }), run("c", { rating: "up" })];
     expect(defaultReplaySelection(rated, 2)).toEqual(["b", "c"]);
+  });
+});
+
+describe("replay rows", () => {
+  it("still finds an original after the replay's runs push it off the list", () => {
+    const original = run("old", { result: "Before." });
+    const byId = replayRunsById([original], [run("replay-1", { status: "queued" })], [
+      run("replay-1", { status: "running" }),
+    ]);
+    expect(byId.get("old")).toBe(original);
+    expect(byId.get("replay-1")?.status).toBe("running");
   });
 });
