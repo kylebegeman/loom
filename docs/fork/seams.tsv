@@ -159,6 +159,7 @@ apps/mobile/src/state/remote-environment-projections.test.ts	computer-naming	1
 apps/mobile/src/state/remote-environment-projections.ts	computer-naming	4
 apps/server/src/environment/ServerEnvironment.ts	computer-naming	5
 apps/server/src/ws.ts	computer-naming	3
+apps/server/src/ws.test.ts	computer-naming	2
 apps/web/src/cloud/publicConfig.ts	connect-compat	2
 apps/web/src/components/settings/ConnectionsSettings.tsx	fleet-connections	34
 apps/web/src/components/settings/settingsSearch.ts	fleet-connections	6
@@ -259,7 +260,7 @@ apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	3
 apps/mobile/src/features/home/HomeScreen.tsx	library	8
 apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
 apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
-apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	3
+apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	8
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	2

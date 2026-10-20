@@ -4,7 +4,6 @@ import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { NavigationRow } from "../../components/ui/NavigationRow";
-import { Button } from "../../components/ui/Button"; // fork: fleet-connections
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { shouldCheckoutNewTaskBranch } from "./new-task-context-presentation";
 import type { VcsRef } from "@t3tools/client-runtime/state/vcs";

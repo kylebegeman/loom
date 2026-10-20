@@ -1,5 +1,4 @@
 // fork: mini-native-retention
-import * as Option from "effect/Option";
 import * as GitWorkflow from "./git/GitWorkflowService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";

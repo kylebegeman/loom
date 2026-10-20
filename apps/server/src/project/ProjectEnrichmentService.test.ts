@@ -201,6 +201,7 @@ it.effect("reruns invalidated pending identity work without publishing its super
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         resolvePath: () => Effect.succeed(null),
+        invalidate: () => Effect.void,
       }),
     );
     yield* Effect.gen(function* () {

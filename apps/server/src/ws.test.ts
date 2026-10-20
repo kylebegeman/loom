@@ -85,6 +85,7 @@ import * as SessionStore from "./auth/SessionStore.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as ComputerNaming from "./fork/computer-naming/ComputerNaming.ts"; // fork: computer-naming
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
@@ -512,6 +513,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({}),
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
+  Layer.mock(ComputerNaming.ComputerNaming)({ changes: Stream.empty }), // fork: computer-naming
 );
 
 const layerConfigSources = Layer.mergeAll(
