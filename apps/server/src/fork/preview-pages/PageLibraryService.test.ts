@@ -123,6 +123,7 @@ describe("PageLibraryService", () => {
                 pages.ackReply(dorothy, { replyId: replyId(1), outcome: "delivered" }),
               ),
             ).toBe("unavailable");
+            expect(yield* reasonOf(pages.signOutReaders(dorothy))).toBe("unavailable");
           }),
         );
       }
@@ -330,8 +331,11 @@ describe("PageLibraryService", () => {
         yield* pages.update(dorothy, { pageId: first.id, action: "end" });
         const replacement = yield* pages.publish(dorothy, publishRequest());
         expect(
-          yield* reasonOf(pages.update(dorothy, { pageId: first.id, action: "restore" })),
-        ).toBe("blocked");
+          yield* Effect.flip(pages.update(dorothy, { pageId: first.id, action: "restore" })),
+        ).toMatchObject({
+          reason: "blocked",
+          message: "This computer already has 500 open pages. End one before restoring another.",
+        });
         expect(yield* reasonOf(pages.publish(dorothy, publishRequest({ pageId: first.id })))).toBe(
           "blocked",
         );
@@ -339,6 +343,107 @@ describe("PageLibraryService", () => {
         expect((yield* pages.update(dorothy, { pageId: first.id, action: "restore" })).state).toBe(
           "open",
         );
+      }),
+    ),
+  );
+
+  it.effect("bounds stored pages, dropping the longest closed once its replies have arrived", () =>
+    run(ENV, (pages) =>
+      Effect.gen(function* () {
+        const closedWithReply = (index: number) =>
+          Effect.gen(function* () {
+            const page = yield* pages.publish(dorothy, publishRequest());
+            yield* pages.addReply({
+              pageId: page.id,
+              replyId: replyId(index),
+              text: "note",
+              viewer: "owner",
+            });
+            yield* pages.update(dorothy, { pageId: page.id, action: "end" });
+            return page;
+          });
+        const longest = yield* closedWithReply(0);
+        yield* TestClock.adjust(MINUTE);
+        const later = yield* closedWithReply(1);
+        yield* TestClock.adjust(MINUTE);
+        yield* Effect.forEach(Array.from({ length: 499 }), (_, index) =>
+          closedWithReply(index + 2),
+        );
+        yield* Effect.forEach(Array.from({ length: 499 }), () =>
+          pages.publish(dorothy, publishRequest()),
+        );
+        expect((yield* rows).pages).toHaveLength(1000);
+
+        // Every closed page still has a reply on its way, so none can make room.
+        expect(yield* Effect.flip(pages.publish(dorothy, publishRequest()))).toMatchObject({
+          reason: "blocked",
+          message:
+            "This computer already keeps 1000 pages, counting closed ones whose replies have not reached it yet. Try again once those replies arrive.",
+        });
+        yield* pages.publish(nora, publishRequest());
+
+        for (const index of [1, 0])
+          yield* pages.ackReply(dorothy, { replyId: replyId(index), outcome: "delivered" });
+        yield* pages.publish(dorothy, publishRequest());
+        const stored = (yield* rows).pages;
+        expect(stored).toHaveLength(1001);
+        expect(stored).not.toContain(longest.id);
+        expect(stored).toContain(later.id);
+        expect(
+          yield* reasonOf(pages.update(dorothy, { pageId: longest.id, action: "restore" })),
+        ).toBe("not-found");
+      }),
+    ),
+  );
+
+  it.effect("lists open pages before closed ones", () =>
+    run(ENV, (pages) =>
+      Effect.gen(function* () {
+        yield* pages.publish(dorothy, publishRequest({ title: "Open" }));
+        yield* TestClock.adjust(MINUTE);
+        const ended = yield* pages.publish(dorothy, publishRequest({ title: "Ended" }));
+        yield* pages.update(dorothy, { pageId: ended.id, action: "end" });
+        yield* TestClock.adjust(MINUTE);
+        yield* pages.publish(dorothy, publishRequest({ title: "Newest" }));
+        expect((yield* pages.list(dorothy)).map((page) => page.title)).toEqual([
+          "Newest",
+          "Open",
+          "Ended",
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("keeps the latest pages sign-out from any computer", () =>
+    run(ENV, (pages) =>
+      Effect.gen(function* () {
+        expect(yield* pages.readersSignedOutAt).toBe(0);
+        yield* pages.signOutReaders(dorothy);
+        expect(yield* pages.readersSignedOutAt).toBe(START);
+        yield* TestClock.adjust(HOUR);
+        yield* pages.signOutReaders(nora);
+        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR);
+        // A browser signed in after a sign-out holds a cookie from just past it, so a second
+        // sign-out in the same millisecond, or after the clock stepped back, must still pass it.
+        yield* pages.signOutReaders(dorothy);
+        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 1);
+        yield* TestClock.setTime(START + MINUTE);
+        yield* pages.signOutReaders(nora);
+        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 2);
+      }),
+    ),
+  );
+
+  it.effect("reports storage it cannot use as io", () =>
+    run(ENV, (pages) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DROP TABLE fork_preview_page_signouts`;
+        expect(yield* reasonOf(pages.readersSignedOutAt)).toBe("io");
+        expect(yield* reasonOf(pages.signOutReaders(dorothy))).toBe("io");
+        yield* sql`DROP TABLE fork_preview_page_replies`;
+        yield* sql`DROP TABLE fork_preview_pages`;
+        expect(yield* reasonOf(pages.list(dorothy))).toBe("io");
       }),
     ),
   );

@@ -189,6 +189,8 @@ const makePages = () => {
             )
           : Effect.succeed({ ...page, kept: input.action === "keep" });
       }),
+    revisions: Stream.never,
+    signOutReaders: Effect.void,
   };
   return { service, calls };
 };

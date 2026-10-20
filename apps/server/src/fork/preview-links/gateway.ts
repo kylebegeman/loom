@@ -382,7 +382,10 @@ const decide = (
   return { _tag: "Proxy", host, port: route.port, session };
 };
 
-/** A proxied request or upgrade that is still running, so losing access can end it at once. */
+/**
+ * A proxied request or upgrade that is still running, or a browser-side keep-alive socket whose
+ * last proxied request was for this host and key, so losing access can end it at once.
+ */
 interface LiveConnection {
   readonly host: string;
   readonly key: string;
@@ -390,8 +393,45 @@ interface LiveConnection {
   readonly destroy: () => void;
 }
 
+/** What a browser-side socket is doing between requests. */
+interface SocketUse {
+  running: number;
+  last: { readonly host: string; readonly key: string } | null;
+  idle: LiveConnection | null;
+}
+
 const makeGatewayServer = (view: PreviewGatewayView) => {
   const connections = new Set<LiveConnection>();
+  const socketUses = new WeakMap<NodeStream.Duplex, SocketUse>();
+  const setIdle = (use: SocketUse, idle: LiveConnection | null) => {
+    if (use.idle !== null) connections.delete(use.idle);
+    use.idle = idle;
+    if (idle !== null) connections.add(idle);
+  };
+  const useOf = (socket: NodeStream.Duplex) => {
+    const known = socketUses.get(socket);
+    if (known !== undefined) return known;
+    const use: SocketUse = { running: 0, last: null, idle: null };
+    socketUses.set(socket, use);
+    socket.once("close", () => setIdle(use, null));
+    return use;
+  };
+  /**
+   * Every request is authorized again, so an idle socket grants nothing by itself. It is still
+   * cut when its access ends, so no connection outlives the link or key that last used it.
+   */
+  const trackRequest = (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
+    const socket = request.socket;
+    const use = useOf(socket);
+    use.running += 1;
+    setIdle(use, null);
+    response.once("close", () => {
+      use.running -= 1;
+      if (use.running > 0 || use.last === null || socket.destroyed) return;
+      setIdle(use, { ...use.last, destroy: () => socket.destroy() });
+    });
+    return use;
+  };
   // Dev servers such as Vite may bind only ::1 or only 127.0.0.1, so "localhost" tries both.
   const agent = new NodeHttp.Agent({ autoSelectFamily: true, keepAlive: true });
 
@@ -606,6 +646,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
   const server = guardHttpResponseWriteErrors(NodeHttp.createServer());
 
   server.on("request", (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
+    const use = trackRequest(request, response);
     try {
       const decision = decide(view, request, false);
       switch (decision._tag) {
@@ -627,6 +668,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
             (href) => (href === null ? openFromLoomPage : signInPage(href)),
           );
         case "Proxy":
+          use.last = { host: decision.host, key: decision.session.key };
           return proxyRequest(request, response, decision.host, decision.port, decision.session);
       }
     } catch {
@@ -639,6 +681,10 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
   server.on(
     "upgrade",
     (request: NodeHttp.IncomingMessage, client: NodeStream.Duplex, head: Buffer) => {
+      // The upgrade owns the socket from here, so it never goes back to idle.
+      const use = useOf(client);
+      use.running += 1;
+      setIdle(use, null);
       try {
         const decision = decide(view, request, true);
         switch (decision._tag) {

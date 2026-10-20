@@ -132,9 +132,9 @@ say what to do when those commits are or are not on the base.
 
 Kyle selected hosted previews on 2026-10-18 and approved the later slices on 2026-10-19:
 
-| Order | Packet                                    | Status                                                          | Decision                                                                              |
-| ----- | ----------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; Library deploy and client checks pending | Slices 1 to 5 are built. Slice 6, guest links, is parked under the one-operator rule. |
+| Order | Packet                                    | Status                                                          | Decision                                                                                                                                                                              |
+| ----- | ----------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; Library deploy and client checks pending | Slices 1 to 5 and the gap fixes are built. The Library side waits on the `pages.bagels.top` record and the LP-22 deploy. Slice 6, guest links, is parked under the one-operator rule. |
 
 Kyle selected all Vault packets; stable V identifiers map to these collision-free packet IDs:
 

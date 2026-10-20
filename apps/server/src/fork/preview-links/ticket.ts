@@ -161,6 +161,11 @@ export function verifyPreviewTicket(
     readonly audience: string;
     readonly nonce: string;
     readonly nowMs: number;
+    /**
+     * When the verifying process started. Spent tickets are remembered in memory only, so a
+     * ticket signed before then may already have been redeemed by the previous process.
+     */
+    readonly notBeforeMs?: number;
   },
 ): VerifiedPreviewTicket | null {
   if (token.length > MAX_TICKET_LENGTH) return null;
@@ -201,5 +206,8 @@ export function verifyPreviewTicket(
   if (exp <= iat || exp - iat > PREVIEW_TICKET_TTL_SECONDS) return null;
   const now = Math.floor(expected.nowMs / 1000);
   if (iat > now + CLOCK_SKEW_SECONDS || exp < now - CLOCK_SKEW_SECONDS) return null;
+  // Compared in whole seconds like `iat`, so a ticket signed just after start still counts.
+  if (expected.notBeforeMs !== undefined && iat < Math.floor(expected.notBeforeMs / 1000))
+    return null;
   return { subject: sub, ticketId: jti, expiresAtMs: exp * 1000 };
 }

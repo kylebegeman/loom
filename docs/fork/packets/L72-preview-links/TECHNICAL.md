@@ -130,13 +130,14 @@ contracts file.
 
 ### Library sign-in
 
-When `publisher.enabled`, the computer registers `{machine, suffix}` with its Library at
-start, after every settings change and every 30 minutes, or `null` when previews are off,
-which deletes its row. The answer, `LibraryPreviewAccess`, names the Library's issuer origin,
-ticket path, key id and Ed25519 public key; the computer keeps it in memory and accepts it
-only when `parseLibraryPreviewAccess` finds an https origin it can check tickets against. A
-failed refresh keeps the last answer, so a Library blip signs nobody out. `not-found` means
-an older Library, or a server that is its own Library, and turns sign-in off.
+When `publisher.enabled`, the computer registers `{environmentId, machine, suffix}` with its
+Library at start, after every settings change and every 30 minutes, or `null` when previews
+are off, which deletes its row. The answer, `LibraryPreviewAccess`, names the Library's issuer
+origin, ticket path, key id and Ed25519 public key; the computer keeps it in memory and
+accepts it only when `parseLibraryPreviewAccess` finds an https origin it can check tickets
+against. A failed refresh keeps the last answer, so a Library blip signs nobody out.
+`not-found` means an older Library or one without a public origin, and turns sign-in off. A
+server that is its own Library registers in process instead, with no session.
 
 1. A request without a valid cookie that is a document navigation (`GET` with
    `Sec-Fetch-Mode: navigate`, or `text/html` in `Accept` without fetch metadata) gets the
@@ -159,15 +160,18 @@ an older Library, or a server that is its own Library, and turns sign-in off.
 4. The host checks the signature, issuer, audience and that the nonce matches its nonce
    cookie, then spends the `jti` until 31 seconds past `exp` (the skew plus one) and the
    nonce for 10 minutes, in a memory map of at most 1,024 entries; a full map refuses new
-   tickets. It answers `303` to the path with the preview cookie under the access key
-   `library:<sub>`, clears the nonce cookie and sends `Referrer-Policy: no-referrer`. A
-   refused ticket gets a fresh sign-in link, or the open-from-Loom page once no Library is
-   known.
+   tickets. Because that map does not survive a restart, a ticket issued before the host's
+   process started is refused outright. It answers `303` to the path with the preview cookie
+   under the access key `library:<sub>`, clears the nonce cookie and sends
+   `Referrer-Policy: no-referrer`. A refused ticket gets a fresh sign-in link, or the
+   open-from-Loom page once no Library is known.
 
 The ticket key is the secret `loom-preview-ticket-ed25519`, separate from every other
 signing key. An unreadable stored key turns sign-in off until the secret is removed rather
 than minting a new one under it. The issuer is the origin of `LOOM_IDENTITY_REDIRECT_URI`,
-port included because Pocket ID accepts a callback on any https port.
+port included because Pocket ID accepts a callback on any https port. It is never taken from
+a request's `Host`: without the variable the Library logs one warning at start, and its
+register and ticket routes answer 404.
 
 ### Access keys
 
@@ -180,7 +184,10 @@ sign-in's key is `library:<sub>`. It is live until the last cookie minted for it
 survives restarts in the sidecar and ends with **Sign out preview browsers**.
 
 - A session key is live while any of its sessions still counts, using the sessions the store
-  lists at start and the changes it sends after. A session counts until it expires, and a
+  lists at start, the changes it sends after and a fresh list once a minute. The store sends
+  no change when another process, such as `t3 auth session revoke`, writes it, so a known
+  session missing from the list counts as removed; a list that fails at start recovers at
+  the next one. A session counts until it expires, and a
   DPoP session for 5 minutes more: its client asks for the next session only once the server
   closes its socket at expiry, so without the grace its browsers would lose their sockets and
   streams and get 401 for the seconds every hourly reconnect takes.
@@ -194,8 +201,9 @@ survives restarts in the sidecar and ends with **Sign out preview browsers**.
 
 ### Gateway
 
-A raw `node:http` server bound to `127.0.0.1:<gatewayPort>` (default 3779), because it routes
-by host before parsing and pipes raw upgrade sockets, which Effect's HTTP server cannot.
+A raw `node:http` server bound to `127.0.0.1:<gatewayPort>`, because it routes by host before
+parsing and pipes raw upgrade sockets, which Effect's HTTP server cannot. The default port is 3779. A dev server defaults to its own port plus 10,000 (minus 10,000 above 55535), so it
+stays off the installed app's port and off other worktrees'. Saved settings keep their port.
 Requests and upgrades pass one decision, in order:
 
 1. Host not a link label under this computer's suffix and machine name: 404 "Not found". A
@@ -229,15 +237,22 @@ a socket of its own, and nothing the browser sends is relayed until the upstream
 Any other answer is sent with the response rewrites and `Connection: close`, then both
 sockets close, because `cloudflared` pools gateway connections across visitors and a
 connection left open to the upstream would skip every check. Running requests and upgrades
-are tracked by host and access key, so ending a link, signing out, removing a client or its
-key expiring closes them, event streams included. A view that throws costs one 500 response.
-Listen failures report "Port N is already in use on this computer." or "Loom is not allowed
-to listen on port N." and retry on the next save.
+are tracked by host and access key, and so is each idle keep-alive socket, under the host and
+key of the last request it carried. Ending a link, signing out, removing a client or its key
+expiring closes them all, event streams included. A view that throws costs one 500 response.
+`configure` waits for the bind, which itself waits for server activation, so a listen failure
+comes back in its own result as "Port N is already in use on this computer." or "Loom is not
+allowed to listen on port N.", and the next save retries.
 
 ### Tunnel supervision
 
 `runPreviewTunnel` resolves `cloudflared` through `@t3tools/shared/relayClient`, installing it
-when missing, and runs `cloudflared tunnel --no-autoupdate --loglevel info --output default
+when missing. A binary on `PATH` or an older managed one below the pinned `CLOUDFLARED_VERSION`
+starts an install of the pinned release in the background; the tunnel waits up to 30 seconds
+for it, then runs the older binary and switches at its next start. A failed install is tried
+again after 10 minutes, and a `T3CODE_CLOUDFLARED_PATH` override is never replaced. This
+differs on purpose from the cloud connector, which leaves a `PATH` binary alone. It runs
+`cloudflared tunnel --no-autoupdate --loglevel info --output default
 --metrics 127.0.0.1:0 run` with `TUNNEL_TOKEN` in the environment and no shell. It reads log
 lines for the metrics port (added to the denylist) and counts "Registered" and
 "Unregistered tunnel connection" lines; connected means at least one registration. `ERR`,
@@ -253,7 +268,11 @@ from setup, then `starting`, `connected` and `error` from the supervisor.
 including lanes being off, means no lane ports. Otherwise `PortDiscovery.scan()` must show a
 server on that port whose terminal belongs to the caller's thread. Else `port-not-in-lane`.
 `revoke` by an agent on another thread's or the owner's link is `not-found`. The lane watcher
-ends a lane link only after it has seen that lane present and then gone.
+ends a lane link once its lane no longer covers the link's port: the lane went, or moved to a
+new port block at startup because another server claimed its old one. It counts only lanes
+it has seen, seeded from the saved open links, so a lane released while the server was down
+ends its links at the first status. It checks under the service lock, so a share or restore
+finishing as its lane goes still ends, and with lanes off it ends nothing.
 
 Folder and container shares need the thread's lane, and fail with "Folder and container links
 need lanes on" without one. They claim the first lane port that is not denied, not held by a
@@ -275,27 +294,41 @@ folder server is an in-process `node:http` server on `127.0.0.1` only:
 - Files open with `O_NOFOLLOW | O_NONBLOCK`, so a symlink swapped in after the check or a FIFO
   named `index.html` cannot hold the server. `Content-Length` is fixed at `fstat`, and a
   short read destroys the connection rather than sending a truncated body.
+- A single `bytes=` range answers 206 with `Content-Range`, an unsatisfiable one 416 with
+  `bytes */<size>`, and every answer carries `Accept-Ranges: bytes`, so media can seek.
+  Several ranges, or any `If-Range`, get the whole file, because no validator is sent.
 - Every answer carries `nosniff` and `no-store`; types come from a table by extension.
 
-A container runs as one argv, never through a shell:
+A container starts in two steps, each one argv, never through a shell. If
+`docker image inspect` (30 seconds) does not find the image, `docker pull <image>` fetches it
+with 10 minutes. Then:
 
 ```
-docker run -d --pull missing --label loom.lane=<lane id> --label loom.preview-link=<link id>
+docker run -d --pull never --label loom.lane=<lane id> --label loom.preview-link=<link id>
   -p 127.0.0.1:<lane port>:<container port> [-e NAME=value ...] <image> [command ...]
 ```
 
 `docker` is found with the lane leases' locator, so Docker Desktop and OrbStack both work.
-The run, pull included, has 10 minutes; queries 30 seconds. While it runs the port is held
-so no other share or restore takes it, and a cancelled or failed start removes the container
-by its link label. The `loom.lane` label lets lane release remove it with the lane's other
-containers. A container link lives 2 hours by default and 4 at most; its `expiresAt` is the
-container's stop time, and it cannot be extended or restored.
+The run has 2 minutes. While a start runs the port is held so no other share or restore takes
+it. A start that fails or is cancelled during the pull has created nothing. One that reached
+`docker run` is removed by its link label at once and becomes a stray: a container that may
+still exist without a link. The `loom.lane` label lets lane release remove it with the lane's
+other containers. A container link lives 5 to 240 minutes, 120 by default; its `expiresAt` is
+the container's stop time, and it cannot be extended or restored.
 
 One reconcile runs at startup and after every committed change. It restarts the folder
 server of every open folder link (ending a link whose folder is gone or whose port answers
 to something else), stops servers whose link ended, removes containers whose link ended and
-ends links whose container stopped. Containers are also checked every minute. Restoring a
-folder link needs its folder and its own port free, and leaves it without a lane.
+ends links whose container stopped. Containers and strays are also checked every minute, so
+a removal that failed while Docker was down is retried: strays for 24 hours, and an ended
+link's container while the link is listed. A failed start counts as cleared only after a
+removal at least a minute later, which catches a create that landed late. Strays are memory
+only. On shutdown a finalizer removes every watched and stray container and gives up after 5
+seconds, leaving the links saved; the next start finds the containers gone and ends them.
+
+Restoring a folder link needs its folder, its own port free, lanes on, and the lane it was
+shared from still covering that port. It keeps that lane, so it still ends with it. A link
+saved without a lane by an older build is refused.
 
 ## Library side
 
@@ -307,11 +340,23 @@ The same server code runs on every computer; the Library parts answer only where
 
 `PreviewAccessService` and
 [`preview-access/http.ts`](../../../../apps/server/src/fork/preview-access/http.ts).
-Registration needs a session with `loom:library:publish` whose subject is a computer
-(`loom-host:`), else 403, and a body under 4 KiB. It upserts or deletes that computer's
-`fork_preview_hosts` row and answers the ticket key, plus `pagesOrigin` when pages are on.
-The ticket route is described above; it signs only for hosts a computer registered or for
-its own pages host.
+Registration takes a body under 4 KiB from one of two sessions:
+
+- A computer's own publisher session (`loom:library:publish`, subject `loom-host:<id>`). An
+  `environmentId` in the body, if any, must be its own.
+- An operator session (`orchestration:operate`), which is what the shared enrollment token
+  signs in as. The body must name the computer in `environmentId`.
+
+Anything else, MCP clients included, is 403. The route upserts or deletes that computer's
+`fork_preview_hosts` row, recording the session that registered it, and answers the ticket
+key, plus `pagesOrigin` when pages are on.
+
+The ticket route is described above. It signs only for its own pages host or a host whose row
+is still enrolled: the row's session exists, is not revoked and has not expired. A dead row is
+deleted when one of its hosts next asks, unless a newer session re-registered it meanwhile,
+so revoking or expiring a computer's session ends sign-in to its previews. A row without a
+session counts only for the Library's own computer, which registers in process; any other
+such row is treated as unenrolled and deleted.
 
 ### Pages
 
@@ -321,8 +366,11 @@ publishing computer's subject:
 
 - A page id is 16 random bytes in base64url. The HTML, at most 8 MiB of UTF-8, is stored in
   the row, not in object storage, so purging the row deletes it.
-- A computer may hold 500 open pages ("End some before publishing more"); lists stop at 500.
-  Republishing with `pageId` replaces the HTML in place only from the same thread; another
+- A computer may hold 500 open pages, counted on publish, republish and restore, and 1,000
+  stored pages in all. At 1,000 a publish first deletes the longest-closed pages that have no
+  waiting replies, with their replies, in one transaction, or is refused when none can go.
+  Lists return open pages first and stop at 500.
+- Republishing with `pageId` replaces the HTML in place only from the same thread; another
   computer's page, or one past its restore window, reads as `not-found`.
 - `keep` clears the expiry; `release` sets it 30 days from now; `end` closes it; `restore`
   reopens a closed page within 7 days for a fresh 30 days, when there is room.
@@ -349,7 +397,17 @@ route answers there.
 - Sign-in is the same ticket flow with audience `https://pages.<domain>`, verified against
   the Library's own key. The cookie is `__Host-loom_pv` for the pages host with key
   `library:<sub>`, signed with its own secret `loom-preview-pages-cookie-key`. Signed out, a
-  navigation to a page gets the sign-in page and a nonce; anything else gets a bare 401.
+  navigation to a page gets the sign-in page and a nonce; anything else gets a bare 401. If
+  that secret cannot be read or created, the host signs no one in: one logged error, then 503
+  "Sign-in is unavailable" on every pages route. It never falls back to a random key.
+- `POST /api/loom/library/pages/sign-out`, from a computer's publisher session only, records
+  a sign-out in `fork_preview_page_signouts` at one past the latest from any computer. The
+  host refuses every cookie issued at or before the latest sign-out on page, raw and reply
+  requests, and mints new cookies one past it, so a clock step cannot keep a reader out. It
+  is global, because every reader is the Library's one user, and it does not end Library
+  sessions, so a reader can sign straight back in. **Sign out preview browsers** calls it
+  after signing out link browsers, best effort with 10 seconds; an older Library's 404 is
+  skipped, and any other failure only logs.
 - Every answer is private: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex,
 nofollow`, `nosniff` and `Referrer-Policy: no-referrer`. Status pages add
   `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'` and
@@ -421,10 +479,13 @@ libraryKeys, folderRoots }`, written with `writeFileStringAtomically`. Missing g
   (rebuilt from the session store's active sessions at every start), sessions removed while
   running (12 hours), running requests and upgrades, and folder servers.
 - Library tables, in the fork migration sets every server runs: `fork_preview_hosts` (one row
-  per computer subject: its environment, machine and suffix), `fork_preview_pages` (the
-  page, its HTML, owner thread and lifecycle) and `fork_preview_page_replies` (each reply
-  with its lease and outcome). Library secrets: `loom-preview-ticket-ed25519` and
-  `loom-preview-pages-cookie-key`.
+  per computer subject: its environment, machine, suffix and registering session),
+  `fork_preview_pages` (the page, its HTML, owner thread and lifecycle),
+  `fork_preview_page_replies` (each reply with its lease and outcome) and
+  `fork_preview_page_signouts` (each computer's latest pages sign-out). Migration 2 of
+  `preview-access` added the session column and dropped every older row once, since none
+  had a session to check; computers register again within 30 minutes. Library secrets:
+  `loom-preview-ticket-ed25519` and `loom-preview-pages-cookie-key`.
 
 Link state is a sidecar file instead of fork tables: the data is small, per computer, and read
 whole. Pages and replies are tables because they live in the Library, outlive the computer
@@ -554,7 +615,10 @@ The snapshot is small and bounded by the sweep; it is pushed only on change. The
 re-renders once a minute (`useNowMinute`), and mobile every 30 seconds while the screen is
 open. The gateway and folder server stream bodies and keep no per-request state beyond one
 set entry per running request or upgrade, removed when it closes. The pages list is fetched
-when the section mounts and after each change, never polled. The reply relay holds one long
+when the section mounts and when the links snapshot's optional `pagesRevision` moves, never
+polled. The revision starts at the computer's boot time and counts this computer's own page
+changes; a server without it leaves clients refetching after their own changes. The session
+store is listed once a minute, one query. The reply relay holds one long
 poll per computer, and the Library wakes it with one signal per subject instead of polling
 the table. Containers are checked once a minute, not per request.
 
@@ -576,53 +640,46 @@ the table. Containers are checked once a minute, not per request.
 ## Known gaps
 
 - A session revoked with `t3 auth session revoke` while the server runs keeps preview access
-  until the server restarts or its cookies expire (at most 12 hours), because the CLI writes
-  the session store from another process and the running server gets no change event. The
-  same holds for a session revoked while the server is down. For a DPoP session the restart
-  does not help while another session of its subject is still listed.
-- If the session store cannot be listed at start, every preview cookie from a Loom session is
-  refused until its Loom client reconnects. A DPoP session removed before this server knew it
-  (the list failed, or it was removed between subscribing to changes and reading the list)
-  revokes nothing, because a removal carries only the session id. Its browsers stay in while
-  another session of its subject is live.
+  for up to a minute, until the next list of the session store. A DPoP session revoked while
+  the server is down revokes nothing, because the server never knew it, so its browsers stay
+  in while another session of its subject is listed.
+- A DPoP session removed before this server knew it (the list failed, or it was removed
+  between subscribing to changes and reading the list) revokes nothing, because a removal
+  carries only the session id. Its browsers stay in while another session of its subject is
+  live. If the list fails at start, every preview cookie from a Loom session is refused until
+  the next list a minute later.
 - Removing one T3 Connect device signs out the browsers opened from every T3 Connect device,
   because they share one access key. A T3 Connect device that just stops connecting keeps its
   browsers in for 5 minutes after its last session runs out, and while another one stays
   signed in, up to the cookie's 12 hours.
 - Restarting the desktop app replaces its session on its own computer, and the store reports
   that as a removal, so browsers it opened that computer's links in have to enter again.
-- Idle keep-alive connections are not cut when a link ends; running requests on them are.
-  Each request is re-authorized, so the next request on them fails.
-- `configure` returns before the gateway binds; a bind failure shows up in the next snapshot.
-- Lanes released while the server was down are not ended at startup.
-- Readiness comes only from log lines. "Registered tunnel connection" is confirmed with a
-  `cloudflared` 2026.9.1 found on `PATH`; "Unregistered tunnel connection" has not been seen,
-  and neither line is checked against the 2026.10.0 that Loom installs. An outdated binary is
-  not upgraded.
-- The default gateway port 3779 collides when a dev server and the live install both enable
-  previews on one computer.
-- `fork_preview_hosts` rows are not deleted when a computer unenrolls, so the Library keeps
-  signing tickets for its hosts.
-- Computers that enrolled with the shared enrollment token get 403 from registration, because
-  their session does not name the computer, so their browsers enter from Loom only.
-- A server that is its own Library has no Library sign-in: registration answers `not-found`.
+- Readiness comes only from log lines, and both lines are confirmed only in `cloudflared`
+  2026.9.1, not in the pinned 2026.10.0. On a platform with no release asset, an older binary
+  on `PATH` starts an install that fails at once; it logs a warning at most every 10 minutes
+  and keeps running.
+- A dev server on a hand-picked port from 55536 takes its default gateway port 10,000 below,
+  which can land in the lane port range. The dev runner's own ports never do.
+- A computer enrolled with the shared enrollment token cannot be dropped on its own: its row
+  is tied to the token's session, so revoking that ends preview sign-in for every computer
+  that used it. Give a computer its own publisher credential to make it removable alone. A
+  computer on the shared token from before this registration change still gets 403 until it
+  upgrades.
+- After the Library takes `preview-access` migration 2, a browser without a cookie cannot
+  sign in to a computer's previews until that computer registers again, up to 30 minutes
+  (or its restart).
+- A computer judges "issued before I started" on the Library's clock. If the Library runs
+  ahead, a ticket signed up to that skew (at most the 30 seconds allowed) before a restart
+  can still be spent once, and only by the browser holding its nonce cookie. Closing it needs
+  spent tickets on disk.
 - The Library's identity login answers 503 without Pocket ID configured, so sign-in needs it.
-- When `LOOM_IDENTITY_REDIRECT_URI` is unset, the issuer a computer is told is taken from the
-  request's `Host` header. The pages host refuses to start without a fixed issuer.
-- Spent tickets and nonces are memory only, on computers and on the pages host, so a ticket
-  can be replayed once across a restart within its minute.
-- If the secret store fails, the pages host signs cookies with a random key for that run, so
-  every pages sign-in ends at the next restart.
-- A pages cookie lasts 12 hours and cannot be revoked short of rotating
-  `loom-preview-pages-cookie-key`. **Sign out preview browsers** does not reach it.
-- The 500-page cap counts only open pages; closed pages within their restore window add to
-  the Library's storage on top.
-- The pages list is not polled, so a page an agent publishes appears after the section
-  remounts or the user acts on a page.
-- Containers outlive a Loom shutdown until the next start's reconcile removes them.
-- A `docker run` cancelled mid-pull may still create its container after Loom removed it by
-  label; it carries the lane label and goes with its lane.
-- A restored folder link has no lane, so it no longer ends with the lane it was shared from.
-- The folder server has no `Range` requests, so media cannot seek, and hides every dotfile
-  but `.well-known`.
-- Containers survive lane release when Docker is not running at that moment.
+- **Sign out preview browsers** reaches pages best effort: when the Library does not answer
+  within 10 seconds, pages readers stay signed in and only a warning is logged. If the
+  Library's clock steps back below a cookie it already minted, a later pages sign-out can land
+  under that cookie's `iat` and miss it.
+- The pages revision moves only for this computer's own changes. A page that expires in the
+  Library, or changes from another computer, shows up on the next list read.
+- Container strays are memory only, so a Docker outage that outlasts a Loom restart leaves
+  any container a failed start created until its lane is released. Shutdown waits about 5
+  seconds for removals, plus up to a second to stop a `docker` command already running.
+- The folder server hides every dotfile but `.well-known`.

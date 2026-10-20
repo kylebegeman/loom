@@ -69,6 +69,14 @@ describe("preview tickets", () => {
     expect(verifyPreviewTicket("not.a.ticket", expected)).toBeNull();
   });
 
+  it("refuses a ticket signed before the verifier started, which it may have spent already", () => {
+    const token = sign();
+    expect(verifyPreviewTicket(token, { ...expected, notBeforeMs: now + 1_000 })).toBeNull();
+    // `iat` has whole seconds, so a ticket from the second the verifier started still counts.
+    expect(verifyPreviewTicket(token, { ...expected, notBeforeMs: now + 999 })).not.toBeNull();
+    expect(verifyPreviewTicket(token, { ...expected, notBeforeMs: now - 5_000 })).not.toBeNull();
+  });
+
   it("only accepts well-formed keys and nonces", () => {
     expect(previewTicketPublicKey("short")).toBeNull();
     expect(previewTicketPrivateKey("bm9wZQ")).toBeNull();

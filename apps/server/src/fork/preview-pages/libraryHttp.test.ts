@@ -157,6 +157,25 @@ describe("Library page routes", () => {
         });
         expect(oversized.status).toBe(404);
         expect(oversized.headers.get("cache-control")).toBe("no-store");
+        // A computer reads this as a Library whose pages browsers it need not sign out.
+        expect((yield* f.post("/sign-out", {})).status).toBe(404);
+      }),
+    ),
+  );
+
+  it.effect("sign every pages browser out for a computer's publisher session only", () =>
+    run(ENV, (f) =>
+      Effect.gen(function* () {
+        yield* Ref.set(f.caller, sessionFor("owner", [AuthOrchestrationOperateScope]));
+        expect((yield* f.post("/sign-out", {})).status).toBe(403);
+        expect(yield* f.pages.readersSignedOutAt).toBe(0);
+
+        yield* Ref.set(f.caller, sessionFor(COMPUTER, [AuthLibraryPublishScope]));
+        const signedOut = yield* f.post("/sign-out", {});
+        expect(signedOut.status).toBe(204);
+        expect(signedOut.headers.get("cache-control")).toBe("no-store");
+        // The handler runs on its own runtime's live clock, so only the change is certain.
+        expect(yield* f.pages.readersSignedOutAt).toBeGreaterThan(0);
       }),
     ),
   );

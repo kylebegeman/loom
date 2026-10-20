@@ -7,6 +7,7 @@ import {
   type PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import { PreviewPagesService } from "../preview-pages/PreviewPagesService.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
@@ -21,7 +22,17 @@ export const makePreviewLinksRpcHandlers = (auth: ForkRpcAuth, session: Authenti
     const service = yield* PreviewLinksService;
     const pages = yield* PreviewPagesService;
     return {
-      [PL.watch]: () => auth.stream(PL.watch, service.changes),
+      // The pages revision rides on the links snapshot so the pages list needs no polling.
+      [PL.watch]: () =>
+        auth.stream(
+          PL.watch,
+          service.changes.pipe(
+            Stream.zipLatestWith(pages.revisions, (snapshot, pagesRevision) => ({
+              ...snapshot,
+              pagesRevision,
+            })),
+          ),
+        ),
       [PL.configure]: (input: PreviewLinksConfigureInput) =>
         auth.effect(PL.configure, service.configure(input)),
       [PL.share]: (input: PreviewLinkShareInput) =>
@@ -35,7 +46,12 @@ export const makePreviewLinksRpcHandlers = (auth: ForkRpcAuth, session: Authenti
       [PL.restore]: (input: PreviewLinkLifetimeInput) =>
         auth.effect(PL.restore, service.restore(input)),
       [PL.revokeAll]: () => auth.effect(PL.revokeAll, service.revokeAll),
-      [PL.signOutBrowsers]: () => auth.effect(PL.signOutBrowsers, service.signOutBrowsers),
+      // Links sign out first; the pages half is best effort and never fails the request.
+      [PL.signOutBrowsers]: () =>
+        auth.effect(
+          PL.signOutBrowsers,
+          service.signOutBrowsers.pipe(Effect.andThen(pages.signOutReaders)),
+        ),
       [PL.pagesList]: () => auth.effect(PL.pagesList, pages.list()),
       [PL.pagesUpdate]: (input: PreviewPageUpdateInput) =>
         auth.effect(PL.pagesUpdate, pages.update(input)),

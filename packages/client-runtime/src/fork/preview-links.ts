@@ -5,8 +5,10 @@ import {
   type PreviewPageAction,
   type PreviewPageKind,
 } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type { Atom } from "effect/reactivity";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
@@ -18,16 +20,34 @@ import {
 export function createPreviewLinksAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
-  // Pages live in the Library and the computer only relays, so there is nothing to subscribe to.
+  const snapshot = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "loom:preview-links",
+    tag: P.watch,
+  });
+  const pagesRevisionOf = (result: AsyncResult.AsyncResult<{ pagesRevision?: number }, unknown>) =>
+    Option.getOrUndefined(AsyncResult.value(result))?.pagesRevision;
+  // How far the computer's pages revision moved since this registry first saw it. Starting from
+  // zero rather than the raw revision keeps the snapshot's first arrival from reading the list a
+  // second time. Servers without a revision hold this at zero.
+  const pagesChanges = Atom.family((environmentId: EnvironmentId) => {
+    const firstSeen = new WeakMap<AtomRegistry.AtomRegistry, number>();
+    return Atom.make((get) => {
+      const revision = pagesRevisionOf(get(snapshot({ environmentId, input: {} })));
+      if (revision === undefined) return 0;
+      const first = firstSeen.get(get.registry) ?? revision;
+      firstSeen.set(get.registry, first);
+      return revision - first;
+    });
+  });
+  // Pages live in the Library and the computer only relays, so the computer's links snapshot
+  // carries a revision that moves when this computer publishes or changes a page.
   const pages = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:preview-pages",
     tag: P.pagesList,
+    refreshTrigger: ({ environmentId }) => pagesChanges(environmentId),
   });
   return {
-    snapshot: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "loom:preview-links",
-      tag: P.watch,
-    }),
+    snapshot,
     configure: createEnvironmentRpcCommand(runtime, {
       label: "loom:preview-links-configure",
       tag: P.configure,
@@ -62,9 +82,13 @@ export function createPreviewLinksAtoms<R, E>(
       label: "loom:preview-pages-update",
       tag: P.pagesUpdate,
       // A refused change usually means the page moved on elsewhere (it expired, or another
-      // client ended it), so the list refetches after failures too.
+      // client ended it), so the list refetches after failures too. A server that pushes a pages
+      // revision already brings the list back, so only older ones need the refetch here.
       onSettled: ({ environmentId }, registry) =>
-        Effect.sync(() => registry.refresh(pages({ environmentId, input: {} }))),
+        Effect.sync(() => {
+          if (pagesRevisionOf(registry.get(snapshot({ environmentId, input: {} }))) === undefined)
+            registry.refresh(pages({ environmentId, input: {} }));
+        }),
     }),
   };
 }

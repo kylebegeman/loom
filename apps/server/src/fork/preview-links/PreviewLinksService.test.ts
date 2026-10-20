@@ -23,6 +23,7 @@ import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -31,11 +32,16 @@ import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { TestClock } from "effect/testing";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { SessionStore, type SessionCredentialChange } from "../../auth/SessionStore.ts";
+import {
+  ActiveSessionsListError,
+  SessionStore,
+  type SessionCredentialChange,
+} from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
@@ -107,7 +113,10 @@ const laneRow = (id: string, portBase: number): LaneRow => ({
   portBase,
 });
 
-const laneStatus = (id: string): ProjectLifecycleLane => ({
+/** Each test lane's first port, matching the `laneRow` its thread gets. */
+const LANE_PORT_BASES: Readonly<Record<string, number>> = { "lane-a": 41000, "lane-b": 41020 };
+
+const laneStatus = (id: string, portBase = LANE_PORT_BASES[id]): ProjectLifecycleLane => ({
   id,
   projectId: ProjectId.make("project"),
   projectName: "Project",
@@ -127,14 +136,14 @@ const laneStatus = (id: string): ProjectLifecycleLane => ({
   running: false,
   createdAt: isoAt(0),
   message: null,
-  ports: null,
+  ports: portBase === undefined ? null : { first: portBase, last: portBase + 19 },
   leases: [],
   helpers: { run: "lane-run", slot: "lane-slot" },
 });
 
 const lifecycleStatus = (
   enabled: boolean,
-  laneIds: ReadonlyArray<string>,
+  lanes: ReadonlyArray<string | ProjectLifecycleLane>,
 ): ProjectLifecycleStatus => ({
   enabled,
   lanesRoot: "/lanes",
@@ -144,7 +153,7 @@ const lifecycleStatus = (
   reserveBytes: 0,
   belowReserve: false,
   shell: { installed: false, profilePath: "/profile" },
-  lanes: laneIds.map(laneStatus),
+  lanes: lanes.map((lane) => (typeof lane === "string" ? laneStatus(lane) : lane)),
   buildSlots: { count: 1, holders: [] },
 });
 
@@ -251,6 +260,90 @@ const nextEvent = (events: Queue.Queue<string>, prefix: string): Effect.Effect<s
     ),
   );
 
+const DOCKER_DOWN =
+  "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+
+/**
+ * A docker that runs nothing. Each command's arguments land in `commands`, and containers report
+ * the state in `states`, keyed by short id, until removed.
+ */
+const makeDocker = Effect.gen(function* () {
+  const docker = {
+    path: DOCKER as string | null,
+    runs: [] as Array<ReadonlyArray<string>>,
+    commands: yield* Queue.unbounded<string>(),
+    states: new Map<string, "true" | "false">(),
+    /** Each container's link label, which `ps` filters by. */
+    labels: new Map<string, string>(),
+    /** Images this computer lacks, so a start pulls them first. */
+    missingImages: new Set<string>(),
+    /** Stderr for `docker run` to fail with. */
+    failRun: null as string | null,
+    /** Stderr for every command to fail with, as while Docker is not running. */
+    down: null as string | null,
+    /** Holds each command, by its first argument, after it lands in `commands` until completed. */
+    gates: new Map<string, Deferred.Deferred<void>>(),
+  };
+  const reply = (args: ReadonlyArray<string>) => {
+    const target = args.at(-1) ?? "";
+    switch (args[0]) {
+      case "image":
+        return docker.missingImages.has(target)
+          ? dockerReply(1, "", `Error: No such image: ${target}`)
+          : dockerReply(0, "sha256:0123\n");
+      case "pull":
+        docker.missingImages.delete(target);
+        return dockerReply(0);
+      case "run": {
+        docker.runs.push(args);
+        if (docker.failRun !== null) return dockerReply(125, "", docker.failRun);
+        const id = String(docker.runs.length).padStart(12, "0");
+        docker.states.set(id, "true");
+        const label = args.find((arg) => arg.startsWith("loom.preview-link="));
+        if (label !== undefined) docker.labels.set(id, label);
+        return dockerReply(0, `${id.padEnd(64, "f")}\n`);
+      }
+      case "inspect": {
+        const state = docker.states.get(target);
+        return state === undefined
+          ? dockerReply(1, "", `Error: No such object: ${target}`)
+          : dockerReply(0, `${state}\n`);
+      }
+      case "rm":
+        return docker.states.delete(target)
+          ? dockerReply(0, `${target}\n`)
+          : dockerReply(1, "", `Error: No such container: ${target}`);
+      case "ps": {
+        const label = target.replace(/^label=/, "");
+        const ids = [...docker.states.keys()].filter((id) => docker.labels.get(id) === label);
+        return dockerReply(0, ids.map((id) => `${id}\n`).join(""));
+      }
+      default:
+        return dockerReply(1, "", "unknown command");
+    }
+  };
+  const runner = ProcessRunner.ProcessRunner.of({
+    run: (input) =>
+      Effect.suspend(() => {
+        if (input.command !== docker.path) {
+          return Effect.succeed(dockerReply(127, "", "not docker"));
+        }
+        // Read before the event goes out, so a test that brings Docker back after seeing a command
+        // changes only the ones after it.
+        const down = docker.down;
+        Queue.offerUnsafe(docker.commands, input.args.join(" "));
+        const gate = docker.gates.get(input.args[0] ?? "");
+        return (gate === undefined ? Effect.void : Deferred.await(gate)).pipe(
+          Effect.andThen(
+            Effect.sync(() => (down === null ? reply(input.args) : dockerReply(1, "", down))),
+          ),
+        );
+      }),
+  });
+  return Object.assign(docker, { runner });
+});
+type FakeDocker = Effect.Success<typeof makeDocker>;
+
 const makeHarness = Effect.fn("makeHarness")(function* (
   options: {
     readonly baseDir?: string;
@@ -262,8 +355,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     /** Ports something listens on over ::1 only, from the start. */
     readonly ipv6Ports?: ReadonlyArray<number>;
     readonly servers?: ReadonlyArray<DiscoveredLocalServer>;
-    /** Sessions the store lists at start. One given by id is valid for 30 days. */
+    /** Sessions in the store at start. One given by id is valid for 30 days. */
     readonly activeSessions?: ReadonlyArray<string | AuthClientSession>;
+    /** Listing the store fails until `listWorks`. */
+    readonly listFails?: boolean;
     /** A session revoked after the service subscribes to changes but before the list is read. */
     readonly removedWhileListing?: string;
     /** Runs after each secret is stored, before the write returns. */
@@ -272,6 +367,8 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     readonly library?: {
       readonly registerPreviews: LibraryPublisher["Service"]["registerPreviews"];
     };
+    /** Docker outlives a restart, so a reopened harness can be given the one before it. */
+    readonly docker?: FakeDocker;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -284,12 +381,32 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   // Like the real store, a change reaches only those already subscribed.
   const sessionChanges = yield* PubSub.unbounded<SessionCredentialChange>();
   const sessionsExpireAt = (yield* Clock.currentTimeMillis) + 30 * DAY;
+  /** The store's sessions by id. Changing it publishes nothing on its own. */
+  const storedSessions = new Map(
+    (options.activeSessions ?? ["session-1", "session-2"]).map((each) => {
+      const stored = typeof each === "string" ? clientSession(each, sessionsExpireAt) : each;
+      return [stored.sessionId as string, stored];
+    }),
+  );
+  let listFails = options.listFails ?? false;
+  let removeWhileListing = options.removedWhileListing;
+  /** Each list of the store, as it starts. */
+  const sessionLists = yield* Queue.unbounded<void>();
   const removeSession = (sessionId: string) =>
-    PubSub.publish(sessionChanges, {
-      type: "clientRemoved",
-      sessionId: AuthSessionId.make(sessionId),
+    Effect.suspend(() => {
+      storedSessions.delete(sessionId);
+      return PubSub.publish(sessionChanges, {
+        type: "clientRemoved",
+        sessionId: AuthSessionId.make(sessionId),
+      });
     });
-  const lifecycleChanges = yield* SubscriptionRef.make(lifecycleStatus(true, []));
+  // Like the real service, the first status lists every stored lane.
+  const lifecycleChanges = yield* SubscriptionRef.make(
+    lifecycleStatus(
+      true,
+      [...(options.lanes?.values() ?? [])].map((lane) => lane.id),
+    ),
+  );
 
   const gateway = {
     starts: [] as Array<number>,
@@ -343,6 +460,8 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   const folders = {
     open: new Map<number, string>(),
     events: yield* Queue.unbounded<string>(),
+    /** Holds each bind, after `bind <port>` goes out, until completed. */
+    gate: null as Deferred.Deferred<void> | null,
   };
   /** Ports something outside Loom listens on. */
   const busyPorts = new Set<number>();
@@ -353,6 +472,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   const ipv6Ports = new Set<number>(options.ipv6Ports);
   const serveFolder: ServePreviewFolder = ({ root, port }) =>
     Effect.gen(function* () {
+      if (folders.gate !== null) {
+        Queue.offerUnsafe(folders.events, `bind ${port}`);
+        yield* Deferred.await(folders.gate);
+      }
       if (busyPorts.has(port) || folders.open.has(port)) {
         return yield* Effect.fail(new PreviewFolderListenError(port, `Port ${port} is in use.`));
       }
@@ -367,59 +490,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
       return { port };
     });
 
-  /**
-   * A docker that runs nothing. Each command's arguments land in `commands`, and containers report
-   * the state in `states`, keyed by short id, until removed.
-   */
-  const docker = {
-    path: DOCKER as string | null,
-    runs: [] as Array<ReadonlyArray<string>>,
-    commands: yield* Queue.unbounded<string>(),
-    states: new Map<string, "true" | "false">(),
-    /** Stderr for `docker run` to fail with. */
-    failRun: null as string | null,
-    /** Holds each `docker run` after it is recorded in `commands`, until it completes. */
-    runGate: null as Deferred.Deferred<void> | null,
-  };
-  const reply = (args: ReadonlyArray<string>) => {
-    const target = args.at(-1) ?? "";
-    switch (args[0]) {
-      case "run": {
-        docker.runs.push(args);
-        if (docker.failRun !== null) return dockerReply(125, "", docker.failRun);
-        const id = String(docker.runs.length).padStart(12, "0");
-        docker.states.set(id, "true");
-        return dockerReply(0, `${id.padEnd(64, "f")}\n`);
-      }
-      case "inspect": {
-        const state = docker.states.get(target);
-        return state === undefined
-          ? dockerReply(1, "", `Error: No such object: ${target}`)
-          : dockerReply(0, `${state}\n`);
-      }
-      case "rm":
-        return docker.states.delete(target)
-          ? dockerReply(0, `${target}\n`)
-          : dockerReply(1, "", `Error: No such container: ${target}`);
-      case "ps":
-        return dockerReply(0);
-      default:
-        return dockerReply(1, "", "unknown command");
-    }
-  };
-  const runner = ProcessRunner.ProcessRunner.of({
-    run: (input) =>
-      Effect.suspend(() => {
-        if (input.command !== docker.path) {
-          return Effect.succeed(dockerReply(127, "", "not docker"));
-        }
-        Queue.offerUnsafe(docker.commands, input.args.join(" "));
-        const gate = input.args[0] === "run" ? docker.runGate : null;
-        return (gate === null ? Effect.void : Deferred.await(gate)).pipe(
-          Effect.andThen(Effect.sync(() => reply(input.args))),
-        );
-      }),
-  });
+  const docker = options.docker ?? (yield* makeDocker);
 
   const service = yield* makePreviewLinksService({
     startGateway,
@@ -461,12 +532,19 @@ const makeHarness = Effect.fn("makeHarness")(function* (
           legacyCookieName: undefined,
           listActive: () =>
             Effect.gen(function* () {
-              if (options.removedWhileListing !== undefined) {
-                yield* removeSession(options.removedWhileListing);
+              yield* Queue.offer(sessionLists, undefined);
+              if (listFails) {
+                return yield* new ActiveSessionsListError({ cause: "The database is locked." });
               }
-              return (options.activeSessions ?? ["session-1", "session-2"]).map((each) =>
-                typeof each === "string" ? clientSession(each, sessionsExpireAt) : each,
+              const nowMs = yield* Clock.currentTimeMillis;
+              const listed = [...storedSessions.values()].filter(
+                (each) => each.expiresAt.epochMilliseconds > nowMs,
               );
+              if (removeWhileListing !== undefined) {
+                yield* removeSession(removeWhileListing);
+                removeWhileListing = undefined;
+              }
+              return listed;
             }),
           streamChanges: Stream.fromPubSub(sessionChanges),
         }),
@@ -504,10 +582,13 @@ const makeHarness = Effect.fn("makeHarness")(function* (
             : { enabled: true, registerPreviews: options.library.registerPreviews },
         ),
         Layer.succeed(HostProcess.Hostname, "Dorothy.local"),
-        Layer.succeed(ProcessRunner.ProcessRunner, runner),
+        Layer.succeed(ProcessRunner.ProcessRunner, docker.runner),
       ),
     ),
   );
+
+  // The list read while starting.
+  yield* Queue.take(sessionLists);
 
   const waitFor = (predicate: (snapshot: PreviewLinksSnapshot) => boolean) =>
     service.changes.pipe(Stream.filter(predicate), Stream.runHead, Effect.map(Option.getOrThrow));
@@ -536,10 +617,18 @@ const makeHarness = Effect.fn("makeHarness")(function* (
       ),
     removeSession,
     upsertSession: (sessionId: string, expiresAtMs: number, dpopSubject?: string) =>
-      PubSub.publish(sessionChanges, {
-        type: "clientUpserted",
-        clientSession: clientSession(sessionId, expiresAtMs, dpopSubject),
+      Effect.suspend(() => {
+        const upserted = clientSession(sessionId, expiresAtMs, dpopSubject);
+        storedSessions.set(sessionId, upserted);
+        return PubSub.publish(sessionChanges, { type: "clientUpserted", clientSession: upserted });
       }),
+    /** Like `t3 auth session revoke`: the store loses the session, but this server hears nothing. */
+    revokeElsewhere: (sessionId: string) => {
+      storedSessions.delete(sessionId);
+    },
+    listWorks: () => {
+      listFails = false;
+    },
     /**
      * Session changes are handled in order, so once a marker session signs in and its removal
      * drops its connections, every change published before it has landed. Needs a running gateway.
@@ -557,8 +646,18 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         Effect.ensuring(Effect.sync(() => void (pendingMarker = null))),
       );
     }),
-    setLanes: (enabled: boolean, laneIds: ReadonlyArray<string>) =>
-      SubscriptionRef.set(lifecycleChanges, lifecycleStatus(enabled, laneIds)),
+    /**
+     * Moves the clock to the next periodic list, then to the one after it. Lists run one at a
+     * time, so the first has been handled once the second starts.
+     */
+    sessionsListedAgain: TestClock.adjust("1 minute").pipe(
+      Effect.andThen(Queue.take(sessionLists)),
+      Effect.andThen(TestClock.adjust("1 minute")),
+      Effect.andThen(Queue.take(sessionLists)),
+    ),
+    /** Lanes by id get the ports their `laneRow` has. */
+    setLanes: (enabled: boolean, lanes: ReadonlyArray<string | ProjectLifecycleLane>) =>
+      SubscriptionRef.set(lifecycleChanges, lifecycleStatus(enabled, lanes)),
   };
 });
 
@@ -690,6 +789,23 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(view.portAllowed(4100)).toBe(false);
       expect(view.portAllowed(20241)).toBe(false);
       expect(view.portAllowed(5173)).toBe(true);
+    }),
+  );
+
+  it.effect("gives a dev server its own default gateway port, and keeps a saved one", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const devServer = { serverPort: 13800, devUrl: new URL("http://localhost:5760/") };
+      const first = yield* makeHarness({ baseDir, secrets, ...devServer });
+      expect((yield* first.service.snapshot).setup.settings.gatewayPort).toBe(23800);
+      const installed = yield* makeHarness();
+      expect((yield* installed.service.snapshot).setup.settings.gatewayPort).toBe(3779);
+
+      yield* first.service.configure({ settings: ready });
+      const reopened = yield* makeHarness({ baseDir, secrets, ...devServer });
+      expect((yield* reopened.service.snapshot).setup.settings.gatewayPort).toBe(3779);
     }),
   );
 
@@ -832,6 +948,50 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
           .pipe(Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))));
       expect(yield* enter("session-1")).toBeNull();
       expect(yield* enter("session-2")).not.toBeNull();
+    }),
+  );
+
+  it.effect("ends a session revoked by another process once the store stops listing it", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      const enter = (sessionId: string) =>
+        harness.service
+          .open({ link: link.id }, cookieSession(sessionId))
+          .pipe(
+            Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))?.cookieValue ?? ""),
+          );
+      const revoked = yield* enter("session-1");
+      const kept = yield* enter("session-2");
+
+      harness.revokeElsewhere("session-1");
+      yield* TestClock.adjust("1 minute");
+      const dropped = yield* Queue.take(harness.gateway.destroyed);
+      expect(dropped({ host: link.host, key: "session-1" })).toBe(true);
+      expect(dropped({ host: link.host, key: "session-2" })).toBe(false);
+      expect(view.authorize(link.host, revoked)).toBeNull();
+      expect(view.authorize(link.host, kept)).toEqual({ key: "session-2", sub: "owner" });
+    }),
+  );
+
+  it.effect("lets sessions in once the store lists them after a failed list at start", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ listFails: true });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.share({ port: 5173 }, owner);
+      const view = yield* harness.view;
+      const enter = harness.service
+        .open({ link: link.id }, session)
+        .pipe(Effect.map((entry) => view.redeem(link.host, codeOf(entry.url))));
+      expect(yield* enter).toBeNull();
+
+      yield* harness.sessionsListedAgain;
+      expect(yield* enter).toBeNull();
+      harness.listWorks();
+      yield* harness.sessionsListedAgain;
+      expect(yield* enter).toMatchObject({ path: "/" });
     }),
   );
 
@@ -1091,6 +1251,32 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     }),
   );
 
+  it.effect("ends lane links at start whose lane was released while the server was down", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const laneA = laneRow("lane-a", 41000);
+      const first = yield* makeHarness({
+        baseDir,
+        secrets,
+        lanes: new Map([
+          [threadA, laneA],
+          [threadB, laneRow("lane-b", 41020)],
+        ]),
+      });
+      yield* first.service.configure({ settings: ready });
+      const linkA = yield* first.service.share({ port: 41005 }, agentA);
+      const linkB = yield* first.service.share({ port: 41025 }, agentB);
+
+      const reopened = yield* makeHarness({ baseDir, secrets, lanes: new Map([[threadA, laneA]]) });
+      const snapshot = yield* reopened.waitFor((next) =>
+        next.links.some((link) => link.id === linkB.id && link.state === "revoked"),
+      );
+      expect(snapshot.links.find((link) => link.id === linkA.id)?.state).toBe("open");
+    }),
+  );
+
   it.effect("starts and stops the gateway and tunnel only for what changed", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();
@@ -1124,9 +1310,9 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
   it.effect("reports a gateway that cannot listen and retries on the next save", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ failGatewayPort: 3779 });
-      yield* harness.service.configure({ settings: ready });
-      const failed = yield* harness.waitFor((snapshot) => snapshot.setup.gateway.state === "error");
-      expect(failed.setup.gateway.message).toBe("Port 3779 is in use.");
+      const failed = { state: "error", message: "Port 3779 is in use." };
+      expect((yield* harness.service.configure({ settings: ready })).gateway).toEqual(failed);
+      expect((yield* harness.service.snapshot).setup.gateway).toEqual(failed);
 
       yield* harness.service.configure({ settings: { ...ready, gatewayPort: 4100 } });
       yield* harness.view;
@@ -1234,6 +1420,31 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(dropped({ host: link.host, key: "library:pocket-kyle" })).toBe(true);
       expect(view.authorize(link.host, cookie)).toBeNull();
       expect((yield* reopened.savedState).libraryKeys).toEqual([]);
+    }),
+  );
+
+  it.effect("never redeems a ticket from before a restart, which only memory knew was spent", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const library = yield* makeLibrary;
+      const first = yield* makeHarness({ baseDir, secrets, library });
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.share({ port: 5173 }, owner);
+      const nonce = randomPreviewNonce();
+      const ticket = library.ticket(link.host, nonce, yield* Clock.currentTimeMillis);
+      expect((yield* first.view).redeemTicket(link.host, ticket, nonce, "/")).not.toBeNull();
+
+      // Still inside the ticket's minute, so only the restart can refuse it.
+      yield* TestClock.adjust("1 second");
+      const reopened = yield* makeHarness({ baseDir, secrets, library });
+      yield* reopened.service.configure({ settings: ready });
+      const view = yield* reopened.view;
+      expect(view.redeemTicket(link.host, ticket, nonce, "/")).toBeNull();
+      const freshNonce = randomPreviewNonce();
+      const fresh = library.ticket(link.host, freshNonce, yield* Clock.currentTimeMillis);
+      expect(view.redeemTicket(link.host, fresh, freshNonce, "/")).not.toBeNull();
     }),
   );
 
@@ -1407,6 +1618,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const { workspace, site } = yield* makeSite;
       const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
       yield* harness.service.configure({ settings: ready });
+      yield* harness.setLanes(true, ["lane-a"]);
       const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
       const endLink = harness.service
         .revoke(link.id, owner)
@@ -1417,7 +1629,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         host: link.host,
         port: 41000,
         state: "open",
-        laneId: null,
+        laneId: "lane-a",
       });
       yield* nextEvent(harness.folders.events, "start 41000");
       expect(harness.folders.open.get(41000)).toBe(site);
@@ -1443,6 +1655,73 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     }),
   );
 
+  it.effect("keeps a restored folder link on its lane and will not restore it without one", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      yield* harness.setLanes(true, ["lane-a"]);
+      const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      const restoreAndEnd = (lanes: ReadonlyArray<ProjectLifecycleLane>) =>
+        Effect.gen(function* () {
+          yield* harness.service.restore({ linkId: link.id });
+          yield* nextEvent(harness.folders.events, "start 41000");
+          yield* harness.setLanes(true, lanes);
+          yield* harness.waitFor((snapshot) => snapshot.links[0]?.state === "revoked");
+          yield* nextEvent(harness.folders.events, "stop 41000");
+        });
+      yield* harness.service.revoke(link.id, owner);
+      yield* nextEvent(harness.folders.events, "stop 41000");
+
+      // The lane owns the port, so the restored link still ends when the lane moves to another
+      // block or goes.
+      yield* restoreAndEnd([laneStatus("lane-a", 41040)]);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message:
+          "The lane this folder was shared from no longer uses port 41000, so it may belong to something else now. Share the folder again.",
+      });
+      yield* harness.setLanes(true, ["lane-a"]);
+      yield* restoreAndEnd([]);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message:
+          "The lane this folder was shared from is gone, so its port may belong to something else now. Share the folder again.",
+      });
+
+      yield* harness.setLanes(false, ["lane-a"]);
+      expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
+        reason: "not-restorable",
+        message:
+          "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
+      });
+      expect(harness.folders.open.size).toBe(0);
+    }),
+  );
+
+  it.effect("ends a folder link whose lane goes while it is being restored", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      yield* harness.setLanes(true, ["lane-a"]);
+      const link = yield* harness.service.shareFolder({ path: "dist" }, threadA);
+      yield* harness.service.revoke(link.id, owner);
+      yield* nextEvent(harness.folders.events, "stop 41000");
+
+      // The restore checked the lane and is binding the port when the lane goes.
+      const binding = yield* Deferred.make<void>();
+      harness.folders.gate = binding;
+      const restoring = yield* Effect.forkChild(harness.service.restore({ linkId: link.id }));
+      yield* nextEvent(harness.folders.events, "bind 41000");
+      yield* harness.setLanes(true, []);
+      yield* Deferred.succeed(binding, undefined);
+      expect((yield* Fiber.join(restoring)).state).toBe("open");
+      yield* harness.waitFor((snapshot) => snapshot.links[0]?.state === "revoked");
+      yield* nextEvent(harness.folders.events, "stop 41000");
+    }),
+  );
+
   it.effect("serves open folder links again after a restart, and ends one whose folder went", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1453,13 +1732,13 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* first.service.configure({ settings: ready });
       const link = yield* first.service.shareFolder({ path: "dist" }, threadA);
 
-      const reopened = yield* makeHarness({ baseDir, secrets });
+      const reopened = yield* makeHarness({ baseDir, secrets, lanes: siteLanes(workspace) });
       yield* nextEvent(reopened.folders.events, "start 41000");
       expect(reopened.folders.open.get(41000)).toBe(site);
       expect((yield* reopened.service.snapshot).links).toEqual([link]);
 
       yield* fs.remove(site, { recursive: true });
-      const withoutFolder = yield* makeHarness({ baseDir, secrets });
+      const withoutFolder = yield* makeHarness({ baseDir, secrets, lanes: siteLanes(workspace) });
       yield* withoutFolder.waitFor((snapshot) => snapshot.links[0]?.state === "expired");
       expect(withoutFolder.folders.open.size).toBe(0);
     }),
@@ -1476,7 +1755,12 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       yield* first.service.shareFolder({ path: "dist" }, threadA);
 
       // A 127.0.0.1 bind succeeds beside it, but it would win the gateway's connections.
-      const reopened = yield* makeHarness({ baseDir, secrets, ipv6Ports: [41000] });
+      const reopened = yield* makeHarness({
+        baseDir,
+        secrets,
+        lanes: siteLanes(workspace),
+        ipv6Ports: [41000],
+      });
       yield* reopened.waitFor((snapshot) => snapshot.links[0]?.state === "expired");
       expect(reopened.folders.open.size).toBe(0);
     }),
@@ -1489,11 +1773,12 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         const { workspace } = yield* makeSite;
         const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
         yield* harness.service.configure({ settings: ready });
+        yield* harness.setLanes(true, ["lane-a"]);
         const folder = yield* harness.service.shareFolder({ path: "dist" }, threadA);
         yield* harness.service.revoke(folder.id, owner);
         yield* nextEvent(harness.folders.events, "stop 41000");
 
-        harness.docker.runGate = yield* Deferred.make<void>();
+        harness.docker.gates.set("run", yield* Deferred.make<void>());
         const starting = yield* Effect.forkChild(
           harness.service.shareContainer({ image: "nginx", containerPort: 80 }, threadA),
         );
@@ -1538,7 +1823,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
           "run",
           "-d",
           "--pull",
-          "missing",
+          "never",
           "--label",
           "loom.lane=lane-a",
           "--label",
@@ -1645,6 +1930,35 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     }),
   );
 
+  it.effect("has nothing to clean up after a share that fails or is cancelled while pulling", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const input = { image: "nginx", containerPort: 80 };
+      harness.docker.down = DOCKER_DOWN;
+      expect(yield* Effect.flip(harness.service.shareContainer(input, threadA))).toMatchObject({
+        reason: "invalid",
+        message:
+          "Docker is not running. Start Docker Desktop or OrbStack, then share the container again.",
+      });
+      // No container can exist, so there is none to look for by label now or every minute after.
+      expect(yield* Queue.takeAll(harness.docker.commands)).toEqual([
+        "image inspect --format {{.Id}} nginx",
+        "pull nginx",
+      ]);
+
+      harness.docker.down = null;
+      harness.docker.missingImages.add("nginx");
+      harness.docker.gates.set("pull", yield* Deferred.make<void>());
+      const pulling = yield* Effect.forkChild(harness.service.shareContainer(input, threadA));
+      yield* nextEvent(harness.docker.commands, "pull nginx");
+      yield* Fiber.interrupt(pulling);
+      expect(Option.isNone(yield* Queue.poll(harness.docker.commands))).toBe(true);
+      expect(harness.docker.runs).toEqual([]);
+      expect((yield* harness.service.snapshot).links).toEqual([]);
+    }),
+  );
+
   it.effect("will not extend or restore a container link", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ lanes: containerLanes });
@@ -1662,6 +1976,134 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         reason: "not-restorable",
         message,
       });
+    }),
+  );
+
+  it.effect("keeps trying to remove an ended link's container while Docker is down", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      const link = yield* harness.service.shareContainer(
+        { image: "nginx", containerPort: 80 },
+        threadA,
+      );
+      harness.docker.down = DOCKER_DOWN;
+      yield* harness.service.revoke(link.id, agentA);
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000001");
+      yield* TestClock.adjust("1 minute");
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000001");
+      expect(harness.docker.states.size).toBe(1);
+
+      harness.docker.down = null;
+      yield* TestClock.adjust("1 minute");
+      yield* nextEvent(harness.docker.commands, "rm -f 000000000001");
+      expect(harness.docker.states.size).toBe(0);
+    }),
+  );
+
+  it.effect("removes a container that a cancelled start left behind", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ lanes: containerLanes });
+      yield* harness.service.configure({ settings: ready });
+      harness.docker.gates.set("run", yield* Deferred.make<void>());
+      const starting = yield* Effect.forkChild(
+        harness.service.shareContainer({ image: "nginx", containerPort: 80 }, threadA),
+      );
+      yield* nextEvent(harness.docker.commands, "run");
+      yield* Fiber.interrupt(starting);
+      // The cancelled call and the backing loop each look for it by label once.
+      const search = yield* nextEvent(harness.docker.commands, "ps -aq --filter label=");
+      yield* nextEvent(harness.docker.commands, search);
+
+      // Docker finishes creating it after both looked.
+      harness.docker.states.set("0000000000aa", "true");
+      harness.docker.labels.set("0000000000aa", search.replace("ps -aq --filter label=", ""));
+      yield* TestClock.adjust("1 minute");
+      yield* nextEvent(harness.docker.commands, "rm -f 0000000000aa");
+      expect(harness.docker.states.size).toBe(0);
+      expect((yield* harness.service.snapshot).links).toEqual([]);
+    }),
+  );
+
+  it.effect("removes its containers when it stops, and ends their links at the next start", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const docker = yield* makeDocker;
+      const running = yield* Scope.make();
+      const first = yield* makeHarness({ baseDir, secrets, docker, lanes: containerLanes }).pipe(
+        Scope.provide(running),
+      );
+      yield* first.service.configure({ settings: ready });
+      const link = yield* first.service.shareContainer(
+        { image: "nginx", containerPort: 80 },
+        threadA,
+      );
+      yield* Scope.close(running, Exit.void);
+      expect(docker.states.size).toBe(0);
+
+      // The lane outlives the restart, so only the missing container ends the link.
+      const reopened = yield* makeHarness({ baseDir, secrets, docker, lanes: containerLanes });
+      yield* reopened.waitFor((snapshot) =>
+        snapshot.links.some((each) => each.id === link.id && each.state === "expired"),
+      );
+    }),
+  );
+
+  it.effect("stops without waiting more than a few seconds on Docker", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const docker = yield* makeDocker;
+      const running = yield* Scope.make();
+      const harness = yield* makeHarness({ baseDir, docker, lanes: containerLanes }).pipe(
+        Scope.provide(running),
+      );
+      yield* harness.service.configure({ settings: ready });
+      yield* harness.service.shareContainer({ image: "nginx", containerPort: 80 }, threadA);
+
+      // Docker takes the removal and never answers.
+      docker.gates.set("rm", yield* Deferred.make<void>());
+      const stopping = yield* Effect.forkChild(Scope.close(running, Exit.void));
+      yield* nextEvent(docker.commands, "rm -f 000000000001");
+      yield* TestClock.adjust("5 seconds");
+      yield* Fiber.join(stopping);
+      expect(docker.states.has("000000000001")).toBe(true);
+    }),
+  );
+
+  it.effect("removes a container left past its time while Loom and Docker were off", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const secrets = new Map<string, Uint8Array>();
+      const docker = yield* makeDocker;
+      const running = yield* Scope.make();
+      const first = yield* makeHarness({ baseDir, secrets, docker, lanes: containerLanes }).pipe(
+        Scope.provide(running),
+      );
+      yield* first.service.configure({ settings: ready });
+      const start = yield* Clock.currentTimeMillis;
+      const link = yield* first.service.shareContainer(
+        { image: "nginx", containerPort: 80 },
+        threadA,
+      );
+      expect(link.expiresAt).toBe(isoAt(start + 120 * 60 * 1000));
+      docker.down = DOCKER_DOWN;
+      yield* Scope.close(running, Exit.void);
+      yield* nextEvent(docker.commands, "rm -f 000000000001");
+      expect(docker.states.size).toBe(1);
+
+      // Past the container's two hours and the week its ended link is kept, so the next start
+      // drops the link before it ever checks the container.
+      yield* TestClock.adjust("8 days");
+      docker.down = null;
+      const reopened = yield* makeHarness({ baseDir, secrets, docker });
+      expect((yield* reopened.service.snapshot).links).toEqual([]);
+      yield* nextEvent(docker.commands, `ps -aq --filter label=loom.preview-link=${link.id}`);
+      yield* nextEvent(docker.commands, "rm -f 000000000001");
+      expect(docker.states.size).toBe(0);
     }),
   );
 });

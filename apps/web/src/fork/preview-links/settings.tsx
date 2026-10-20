@@ -131,7 +131,7 @@ function EnvironmentPreviewLinks({
     void action.act("Unable to sign out preview browsers", async () => {
       if (
         !(await ensureLocalApi().dialogs.confirm(
-          `Sign out every browser that opened a preview link on ${label}? They can get back in by opening a link from Loom or signing in to your Library again.`,
+          `Sign out every browser that opened a preview link on ${label}, and every browser reading pages published to your Library? They can get back in by opening a link from Loom or signing in to your Library again.`,
         ))
       ) {
         return;

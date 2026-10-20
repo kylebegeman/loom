@@ -154,6 +154,12 @@ const ackReply = pagesRoute((pages, computer, request) =>
   ),
 );
 
+const signOutReaders = pagesRoute((pages, computer) =>
+  pages
+    .signOutReaders(computer)
+    .pipe(Effect.as(HttpServerResponse.empty({ status: 204, headers: NO_STORE }))),
+);
+
 export const PageLibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
@@ -168,6 +174,7 @@ export const PageLibraryHttpRoutes = Layer.unwrap(
       route("POST", `${PAGES_ROUTE}/update`, update),
       route("POST", `${PAGES_ROUTE}/replies/next`, nextReplies),
       route("POST", `${PAGES_ROUTE}/replies/ack`, ackReply),
+      route("POST", `${PAGES_ROUTE}/sign-out`, signOutReaders),
     );
   }),
 );
