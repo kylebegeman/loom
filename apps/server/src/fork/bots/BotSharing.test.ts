@@ -252,6 +252,30 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("refuses a request for a revision this computer cannot get", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, sharing } = yield* setup(harness);
+        yield* studioPublishes(library);
+        yield* sharing.sync();
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: { ...studioRequest("ahead"), revision: 2 },
+        });
+        for (const delivery of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(delivery);
+
+        const [refusal] = yield* library.nextResults(studio, 0);
+        expect(refusal?.update).toMatchObject({
+          status: "failed",
+          error: "Laptop could not get the version of Reviewer this run was sent with.",
+        });
+        expect(harness.launches).toHaveLength(0);
+      }),
+    ),
+  );
+
   it.effect("refuses a request that needs a broader mode than this computer allows", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
