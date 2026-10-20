@@ -92,7 +92,7 @@ the repository's explicit-authorization rule. This selection leaves non-Vault pr
 | 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Complete; Loom `0.0.46-nightly.20261008.2801` | Full packet plus eight editor features, 3D, library/reuse and MCP/CLI approved in this thread.  |
 | 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Complete; merged in PR #13                    | Kyle confirmed the full packet on 2026-09-27.                                                   |
 | 4     | [L09 Device QA](./L09-device-qa/)                     | Complete; merged in PR #14                    | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
-| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                 | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
+| 5     | [L27 Utilities](./L27-utilities/)                     | Complete; on main since 2026-10-20            | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
 | 6     | [L05 File outline](./L05-file-outline/)               | Complete; on main in `1daaebb2b9`             | Kyle included the complete selected language coverage on 2026-09-27.                            |
 
 Order reflects product priority, not dependencies. An agent asked to choose the next item
@@ -100,7 +100,7 @@ starts with the first incomplete, unclaimed packet. Closing L23 does not start a
 
 All candidate dispositions are settled for the 2026-09-27 review. The comparison below retains
 the reasons for selection or deferral; only the selected queue is available for implementation.
-L27 is the only original 2026-09-27 selection not yet implemented. Later selections appear below.
+Every original 2026-09-27 selection is now implemented; L27 was the last. Later selections appear below.
 
 Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 
@@ -164,7 +164,7 @@ This is a suitability review, not a claim that every implementation sketch has b
 
 | Packet                                                | Complete outcome                                                                          | Why consider it now                                                                | Readiness work before selection is final                                                                                                                           |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut          | Client-only; required dependencies and shared UI extension points already exist    | Selected; worker lifecycle requirements and focused test cases clarified in the packet                                                                             |
+| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut          | Client-only; required dependencies and shared UI extension points already exist    | Complete on main since 2026-10-20; the manual client pass in TESTING.md is not yet run                                                                             |
 | [L05 File outline](./L05-file-outline/)               | Search and navigate symbols in the open file across all selected languages                | Client-only; current file surface exposes loaded text and existing line navigation | Selected; current editor updates the file query on each edit, and existing openFile supports line navigation; language fixtures are required during implementation |
 | [L01 Snippets](./L01-snippets/)                       | Saved library, fill-in fields, aliases, revisions, import/export and terminal insertion   | Owns prompt preparation, not agent execution                                       | Parked by Kyle's conditional decision: existing composer skill invocation covers named predefined workflows; see the packet README                                 |
 | [L23 3D preview](./L23-model-preview-3d/)             | Mesh/OpenSCAD previews, live reload, parameters, captures and agent render tool           | Owns file rendering; does not replace orchestration or depend on Fabrication       | Complete, including settings/MCP integrations and real CLI/client verification; see L23 TESTING.md for limits                                                      |

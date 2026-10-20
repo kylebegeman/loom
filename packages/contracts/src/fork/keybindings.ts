@@ -16,6 +16,7 @@ export const FORK_KEYBINDING_COMMANDS = [
   "loom.panel-picker.open",
   "loom.library.goToProject",
   "loom.library.newConversationIn",
+  "loom.utilities.open",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];
 

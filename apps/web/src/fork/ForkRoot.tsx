@@ -8,6 +8,7 @@ import { AppleBuildToolingShortcuts } from "./apple-build-tooling/Shortcuts";
 import { DeviceQaShortcuts } from "./device-qa/Shortcuts";
 import { CodeGraphOpenWatcher } from "./code-graph/CodeGraphOpenWatcher";
 import { PreviewLinksHost } from "./preview-links/LinksSheet";
+import { UtilitiesDialogHost } from "./utilities/UtilitiesDialogHost";
 import type { ComponentType } from "react";
 
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
@@ -31,6 +32,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "panel-picker-commands", Component: PanelPickerCommandHost },
   { id: "code-graph-open-watcher", Component: CodeGraphOpenWatcher },
   { id: "preview-links-host", Component: PreviewLinksHost },
+  { id: "utilities-dialog", Component: UtilitiesDialogHost },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];
