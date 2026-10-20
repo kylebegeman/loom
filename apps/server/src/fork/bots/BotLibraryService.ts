@@ -78,6 +78,7 @@ interface RequestRow {
   readonly message_json: string;
   readonly state: string;
   readonly created_at: string;
+  readonly leased_until: string | null;
 }
 
 interface ResultRow {
@@ -474,9 +475,10 @@ const make = Effect.gen(function* () {
       const row = (yield* sql<RequestRow>`SELECT * FROM fork_bots_library_requests
         WHERE id = ${requestId} AND from_env = ${environmentId}`)[0];
       if (row === undefined) return;
-      if (row.state === "pending") {
-        // Never delivered, so the target never hears of it.
+      if (row.state === "pending")
         yield* sql`UPDATE fork_bots_library_requests SET state = 'cancelled' WHERE id = ${row.id}`;
+      if (row.state === "pending" && row.leased_until === null) {
+        // Never handed out, so the target never hears of it.
         yield* insertResult(
           requestId,
           2,
@@ -498,6 +500,8 @@ const make = Effect.gen(function* () {
         );
         return;
       }
+      // The target may have started the run without acking it yet, so it hears of the cancel and
+      // reports the ending.
       const json = yield* encodeMessage({ _tag: "cancel", requestId });
       yield* sql`INSERT INTO fork_bots_library_requests (id, from_env, target_env, message_json, state, created_at)
         VALUES (${`${requestId}:cancel`}, ${environmentId}, ${row.target_env}, ${json}, 'pending', ${isoAt(now)})

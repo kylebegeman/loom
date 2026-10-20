@@ -215,6 +215,23 @@ describe("BotLibraryService", () => {
     ),
   );
 
+  it.effect("forwards a cancel for a run its target picked up but has not acked", () =>
+    withLibrary((library) =>
+      Effect.gen(function* () {
+        yield* library.reportStatus(studio, report());
+        yield* library.submit(laptop, { targetEnvironmentId: studio, request: request() });
+        yield* library.nextRequests(studio, 0);
+
+        yield* library.cancel(laptop, "run-1");
+        expect(yield* library.nextResults(laptop, 0)).toEqual([]);
+        const deliveries = yield* library.nextRequests(studio, 0);
+        expect(deliveries.map((delivery) => delivery.message)).toEqual([
+          { _tag: "cancel", requestId: "run-1" },
+        ]);
+      }),
+    ),
+  );
+
   it.effect("forwards a cancel for a delivered run and only takes results from its target", () =>
     withLibrary((library) =>
       Effect.gen(function* () {

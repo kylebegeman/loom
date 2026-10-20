@@ -338,6 +338,28 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("tells the requester a run it cancelled before this computer started it ended", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, sharing } = yield* setup(harness);
+        yield* studioPublishes(library);
+        yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: studioRequest("unstarted"),
+        });
+        // Picked up, then lost before this computer started it.
+        yield* library.nextRequests(laptop, 0);
+
+        yield* library.cancel(studio, "unstarted");
+        for (const received of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(received);
+        const [result] = yield* library.nextResults(studio, 0);
+        expect(result?.update).toMatchObject({ _tag: "terminal", status: "cancelled" });
+      }),
+    ),
+  );
+
   it.effect("records a pinned remote run as the revision the other computer runs", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

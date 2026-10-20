@@ -515,6 +515,27 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
       const run = yield* storage(store.getRunForRequest(message.requestId));
       if (run !== null && !isTerminalBotRunStatus(run.status))
         yield* bots.cancel(run.id).pipe(Effect.ignore({ log: true }));
+      // A run cancelled before this computer started it will never start, so say it ended here.
+      if (run === null)
+        yield* client
+          .postResult({
+            requestId: message.requestId,
+            seq: 2,
+            update: {
+              _tag: "terminal",
+              label: yield* client.label,
+              status: "cancelled",
+              startedAt: null,
+              finishedAt: yield* nowIso,
+              result: null,
+              resultTruncated: false,
+              error: null,
+              verdict: null,
+              usage: null,
+              modelSelection: null,
+            },
+          })
+          .pipe(Effect.ignore({ log: true }));
       return yield* ack(null);
     }
     const request = message.request;
