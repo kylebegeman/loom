@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import type { ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
+  DEFAULT_PREVIEW_GATEWAY_PORT,
   PREVIEW_LINK_LIFETIME_MS,
   PREVIEW_LINK_RESTORE_WINDOW_MS,
   type LibraryPreviewAccess,
@@ -37,6 +38,19 @@ export function isPreviewPortDenied(
 
 export function isLanePort(port: number, portBase: number | null): boolean {
   return portBase !== null && port >= portBase && port < portBase + PORT_BLOCK;
+}
+
+/**
+ * Dev servers listen from 13773 up, one per worktree, so each takes the gateway port this far
+ * above its own. That keeps them off the installed app's 3779 and off each other.
+ */
+const DEV_GATEWAY_PORT_OFFSET = 10_000;
+
+/** The gateway port before settings are saved. Saved settings keep whatever port they hold. */
+export function defaultPreviewGatewayPort(devServerPort: number | null): number {
+  if (devServerPort === null) return DEFAULT_PREVIEW_GATEWAY_PORT;
+  const above = devServerPort + DEV_GATEWAY_PORT_OFFSET;
+  return above <= 65535 ? above : devServerPort - DEV_GATEWAY_PORT_OFFSET;
 }
 
 /** `Dorothy.local` becomes `dorothy`. Falls back to `loom` when nothing usable is left. */
