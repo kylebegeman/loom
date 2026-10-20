@@ -30,6 +30,8 @@ export class LibraryReplication extends Context.Service<
   LibraryReplication,
   {
     readonly drain: Effect.Effect<void, LibraryError>;
+    /** Uploads every conversation's latest history now, without waiting for snapshot spacing. */
+    readonly flush: Effect.Effect<void, LibraryError>;
     /** Publishes this computer's copy health now, if it changed since the last report. */
     readonly reportCopyHealth: Effect.Effect<void, LibraryError>;
     readonly status: Effect.Effect<
@@ -81,6 +83,7 @@ const make = Effect.gen(function* () {
   if (!publisher.enabled)
     return LibraryReplication.of({
       drain: Effect.void,
+      flush: Effect.void,
       reportCopyHealth: Effect.void,
       status: Effect.succeed({
         enabled: false,
@@ -111,6 +114,9 @@ const make = Effect.gen(function* () {
   // A restart forgets them, so the first capture finds them again in the event log.
   const deferred = new Set<ThreadId>();
   const spacedUntil = new Map<ThreadId, number>();
+  // Deferred threads whose last snapshot did not fit the outbox keep the storage limit reported
+  // while they wait.
+  const oversized = new Set<ThreadId>();
   let reconciled = false;
   const readState = sql<{
     journal_id: string;
@@ -163,7 +169,10 @@ const make = Effect.gen(function* () {
       queued_sequence: number;
     }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
     const snapshot = yield* source.snapshotThread({ threadId });
-    if (current[0] !== undefined && current[0].queued_sequence >= snapshot.summary.sequence) return;
+    if (current[0] !== undefined && current[0].queued_sequence >= snapshot.summary.sequence) {
+      oversized.delete(threadId);
+      return true;
+    }
     const payload = yield* encodeArchive(snapshot);
     const bytes = new TextEncoder().encode(payload).length;
     // Spacing also follows a snapshot that did not fit, so an oversized one is not encoded again
@@ -178,87 +187,97 @@ const make = Effect.gen(function* () {
         bytes: number;
       }>`SELECT COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))),0) AS bytes FROM fork_library_source_outbox`)[0]
         ?.bytes ?? 0;
-    if (pendingBytes + bytes > maxPendingBytes)
-      return yield* new LibraryError({ reason: "storage-limit" });
+    if (pendingBytes + bytes > maxPendingBytes) {
+      oversized.add(threadId);
+      return false;
+    }
+    oversized.delete(threadId);
     yield* sql`INSERT INTO fork_library_source_outbox (thread_id,source_sequence,payload_json) VALUES (${threadId},${snapshot.summary.sequence},${payload})`;
     yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence) VALUES (${threadId},${snapshot.summary.sequence}) ON CONFLICT(thread_id) DO UPDATE SET queued_sequence=excluded.queued_sequence`;
+    return true;
   });
-  const capture = mapIo(
-    Effect.gen(function* () {
-      const current = yield* state;
-      const bindings = yield* workspaces.bindings;
-      const bound = new Set(bindings.map((entry) => entry.threadId));
-      const queued = new Set(
-        (yield* sql<{
-          thread_id: string;
-        }>`SELECT thread_id FROM fork_library_source_threads`).map((entry) => entry.thread_id),
-      );
-      // A new binding needs an initial snapshot even when no later execution event arrives.
-      for (const entry of bindings) {
-        if (queued.has(entry.threadId)) continue;
-        const imported = entry.importedHistory;
-        if (
-          imported &&
-          imported.authorityId === current.authority_id &&
-          imported.authorityEpoch === current.authority_epoch
-        ) {
-          // Activation verified these exact bytes against this authority before staging the
-          // host binding. Seed acknowledgements without replaying the entire source history.
-          yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
-        } else deferred.add(entry.threadId);
-      }
-      if (!reconciled) {
-        const unsnapshotted = yield* sql<{ thread_id: string }>`
+  // Untraced like queueThread: the background drain captures every five seconds.
+  const capture = Effect.fnUntraced(function* (force: boolean) {
+    const current = yield* state;
+    const bindings = yield* workspaces.bindings;
+    const bound = new Set(bindings.map((entry) => entry.threadId));
+    const queued = new Set(
+      (yield* sql<{
+        thread_id: string;
+      }>`SELECT thread_id FROM fork_library_source_threads`).map((entry) => entry.thread_id),
+    );
+    // A new binding needs an initial snapshot even when no later execution event arrives.
+    for (const entry of bindings) {
+      if (queued.has(entry.threadId)) continue;
+      const imported = entry.importedHistory;
+      if (
+        imported &&
+        imported.authorityId === current.authority_id &&
+        imported.authorityEpoch === current.authority_epoch
+      ) {
+        // Activation verified these exact bytes against this authority before staging the
+        // host binding. Seed acknowledgements without replaying the entire source history.
+        yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
+      } else deferred.add(entry.threadId);
+    }
+    if (!reconciled) {
+      // Compaction keeps only a thread's newest whole-thread event, so a later reorder can
+      // replace the milestone that made it dirty. A reorder after the queued snapshot therefore
+      // counts too, at the cost of one extra snapshot per restart.
+      const unsnapshotted = yield* sql<{ thread_id: string }>`
         SELECT thread_id FROM fork_library_source_threads t WHERE EXISTS (
           SELECT 1 FROM orchestration_events
           WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=t.thread_id
-            AND sequence>t.queued_sequence AND sequence<=${current.scan_sequence} AND (${milestone}))`;
-        for (const row of unsnapshotted) {
-          const threadId = ThreadId.make(row.thread_id);
-          if (bound.has(threadId)) deferred.add(threadId);
-        }
-        reconciled = true;
+            AND sequence>t.queued_sequence
+            AND ((${milestone}) OR event_type IN ('thread.pin-reordered','thread.active-reordered')))`;
+      for (const row of unsnapshotted) {
+        const threadId = ThreadId.make(row.thread_id);
+        if (bound.has(threadId)) deferred.add(threadId);
       }
-      const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
+      reconciled = true;
+    }
+    const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
       SELECT sequence,stream_id,CASE WHEN ${milestone} THEN 1 ELSE 0 END AS milestone
       FROM orchestration_events
       WHERE application_event_version=2 AND aggregate_kind='thread' AND sequence>${current.scan_sequence}
       ORDER BY sequence LIMIT ${EVENT_SCAN_LIMIT}`;
-      const dirty = new Map<ThreadId, number>();
-      for (const event of events) {
-        const threadId = ThreadId.make(event.stream_id);
-        if (event.milestone === 1 && bound.has(threadId)) dirty.set(threadId, event.sequence);
-      }
-      for (const [threadId, sequence] of dirty) {
-        const rows = yield* sql<{
-          queued_sequence: number;
-        }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
-        if ((rows[0]?.queued_sequence ?? -1) < sequence) deferred.add(threadId);
-      }
-      const last = events.at(-1);
-      if (last !== undefined)
-        yield* sql`UPDATE fork_library_source_state SET scan_sequence=${last.sequence} WHERE key='host'`;
-      const now = yield* Clock.currentTimeMillis;
-      for (const threadId of deferred) {
-        if (!bound.has(threadId)) {
-          deferred.delete(threadId);
-          continue;
-        }
-        if ((spacedUntil.get(threadId) ?? 0) > now) continue;
-        // The Library accepts a journal only in order, so a queued snapshot is never replaced.
-        // Later milestones wait for its acknowledgement and then share one fresh snapshot.
-        const outstanding =
-          (yield* sql<{
-            count: number;
-          }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
-            ?.count ?? 0;
-        if (outstanding > 0) continue;
-        // A failure, such as a full journal, ends this pass and keeps the conversation deferred.
-        yield* sql.withTransaction(queueThread(threadId));
+    const dirty = new Map<ThreadId, number>();
+    for (const event of events) {
+      const threadId = ThreadId.make(event.stream_id);
+      if (event.milestone === 1 && bound.has(threadId)) dirty.set(threadId, event.sequence);
+    }
+    for (const [threadId, sequence] of dirty) {
+      const rows = yield* sql<{
+        queued_sequence: number;
+      }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
+      if ((rows[0]?.queued_sequence ?? -1) < sequence) deferred.add(threadId);
+    }
+    const last = events.at(-1);
+    if (last !== undefined)
+      yield* sql`UPDATE fork_library_source_state SET scan_sequence=${last.sequence} WHERE key='host'`;
+    const now = yield* Clock.currentTimeMillis;
+    for (const threadId of deferred) {
+      if (!bound.has(threadId)) {
         deferred.delete(threadId);
+        oversized.delete(threadId);
+        continue;
       }
-    }),
-  );
+      if (!force && (spacedUntil.get(threadId) ?? 0) > now) continue;
+      // The Library accepts a journal only in order, so a queued snapshot is never replaced.
+      // Later milestones wait for its acknowledgement and then share one fresh snapshot.
+      const outstanding =
+        (yield* sql<{
+          count: number;
+        }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
+          ?.count ?? 0;
+      if (outstanding > 0) continue;
+      // A snapshot that does not fit stays deferred without holding back smaller ones. Any
+      // other failure ends this pass and keeps the conversation deferred.
+      if (yield* sql.withTransaction(queueThread(threadId))) deferred.delete(threadId);
+    }
+    if ([...deferred].some((threadId) => oversized.has(threadId)))
+      return yield* new LibraryError({ reason: "storage-limit" });
+  }, mapIo);
   const publish = mapIo(
     Effect.gen(function* () {
       const current = yield* state;
@@ -329,21 +348,31 @@ const make = Effect.gen(function* () {
       );
     }),
   );
+  const pass = Effect.fnUntraced(function* (force: boolean) {
+    const initialized = (yield* readState)[0] !== undefined;
+    if (!initialized) yield* ensureAuthority(yield* publisher.info);
+    const captured = yield* capture(force).pipe(Effect.result);
+    if (captured._tag === "Failure" && captured.failure.reason !== "storage-limit")
+      return yield* captured.failure;
+    // Keep capturing committed milestones during an outage once this journal is established.
+    if (initialized) yield* ensureAuthority(yield* publisher.info);
+    yield* publish;
+    if (captured._tag === "Failure") return yield* captured.failure;
+    yield* Ref.set(failure, null);
+  }, mapIo);
   const drain = lock
+    .withPermit(pass(false))
+    .pipe(Effect.tapError((error) => Ref.set(failure, error.reason)));
+  // The second pass snapshots conversations whose earlier snapshot the first pass acknowledged.
+  // It also runs after a snapshot that did not fit, which it reports again.
+  const flush = lock
     .withPermit(
-      mapIo(
-        Effect.gen(function* () {
-          const initialized = (yield* readState)[0] !== undefined;
-          if (!initialized) yield* ensureAuthority(yield* publisher.info);
-          const captured = yield* capture.pipe(Effect.result);
-          if (captured._tag === "Failure" && captured.failure.reason !== "storage-limit")
-            return yield* captured.failure;
-          // Keep capturing committed milestones during an outage once this journal is established.
-          if (initialized) yield* ensureAuthority(yield* publisher.info);
-          yield* publish;
-          if (captured._tag === "Failure") return yield* captured.failure;
-          yield* Ref.set(failure, null);
-        }),
+      pass(true).pipe(
+        Effect.catchIf(
+          (error) => error.reason === "storage-limit",
+          () => Effect.void,
+        ),
+        Effect.andThen(pass(true)),
       ),
     )
     .pipe(Effect.tapError((error) => Ref.set(failure, error.reason)));
@@ -418,6 +447,6 @@ const make = Effect.gen(function* () {
     ),
   });
   yield* ServerActivation.forkParked(copyHealth.run);
-  return LibraryReplication.of({ drain, status, reportCopyHealth: copyHealth.report });
+  return LibraryReplication.of({ drain, flush, status, reportCopyHealth: copyHealth.report });
 });
 export const layer = Layer.effect(LibraryReplication, make);

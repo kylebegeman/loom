@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryCopyHealth,
@@ -175,6 +176,7 @@ const fixture = Effect.gen(function* () {
   return {
     service,
     restart,
+    publisher,
     sql,
     archive,
     snapshots,
@@ -561,6 +563,169 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  it.effect("keeps reporting a snapshot over the journal limit while it waits", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+          },
+        }));
+        yield* f.event(1, "thread.created", "{}");
+        expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
+        expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        expect(yield* f.service.status).toMatchObject({ lastFailure: "storage-limit" });
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "shorter" }],
+          },
+        }));
+        yield* TestClock.adjust("2 seconds");
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+        expect(yield* f.service.status).toMatchObject({ lastFailure: null });
+      }),
+    ).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_MAX_PENDING_BYTES: "300000" } }),
+        ),
+      ),
+    ),
+  );
+  it.effect(
+    "publishes and flushes conversations that fit while another waits for journal space",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const other = ThreadId.make("other-thread");
+          const small = yield* Ref.get(f.archive);
+          const large = {
+            ...small,
+            projection: {
+              ...small.projection,
+              messages: [{ ...small.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+            },
+          };
+          const settle = (sequence: number) =>
+            f.event(sequence, "thread.settled", "{}").pipe(
+              Effect.andThen(
+                Ref.update(f.archive, (archive) => ({
+                  ...archive,
+                  summary: { ...archive.summary, sequence },
+                })),
+              ),
+            );
+          const service = yield* Replication.LibraryReplication.pipe(
+            Effect.provide(Replication.layer),
+            Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+            Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+              ...workspace,
+              bindings: Effect.succeed([
+                { threadId: other, resolved },
+                { threadId, resolved },
+              ]),
+            }),
+            Effect.provideService(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(source),
+            }),
+            Effect.provideService(HistorySource.LibraryHistorySource, {
+              snapshotThread: (input) =>
+                input.threadId === other ? Effect.succeed(large) : Ref.get(f.archive),
+            }),
+          );
+          expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
+          const status = yield* service.status;
+          expect(status).toMatchObject({ pendingEntries: 0, lastFailure: "storage-limit" });
+          expect(status.threads).toMatchObject([
+            { threadId: other, pending: true },
+            { threadId, acknowledgedSequence: 1, pending: false },
+          ]);
+          yield* Ref.set(f.failAck, true);
+          yield* settle(2);
+          expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("io");
+          yield* settle(3);
+          yield* Ref.set(f.failAck, false);
+          expect((yield* service.flush.pipe(Effect.flip)).reason).toBe("storage-limit");
+          expect((yield* service.status).threads[1]).toMatchObject({
+            acknowledgedSequence: 3,
+            pending: false,
+          });
+        }),
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_MAX_PENDING_BYTES: "300000" } }),
+          ),
+        ),
+      ),
+  );
+  it.effect("finds a milestone again after a restart when compaction replaced it", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+          },
+        }));
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.service.drain;
+        yield* f.event(2, "thread.settled", "{}");
+        yield* f.event(3, "thread.active-reordered", "{}");
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 3 },
+        }));
+        yield* f.service.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(1);
+        // Compaction keeps only the newest whole-thread event.
+        yield* f.sql`DELETE FROM orchestration_events WHERE sequence=2`;
+        const restarted = yield* f.restart;
+        yield* restarted.drain;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+        expect((yield* restarted.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 3,
+          pending: false,
+        });
+      }),
+    ),
+  );
+  it.effect("flushes a spaced conversation and one with an unacknowledged snapshot at once", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          projection: {
+            ...archive.projection,
+            messages: [{ ...archive.projection.messages[0]!, text: "x".repeat(600 * 1024) }],
+          },
+        }));
+        yield* Ref.set(f.failAck, true);
+        yield* f.event(1, "thread.created", "{}");
+        expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("io");
+        yield* f.event(2, "thread.settled", "{}");
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* Ref.set(f.failAck, false);
+        yield* f.service.flush;
+        expect(yield* Ref.get(f.snapshots)).toBe(2);
+        expect(yield* f.service.status).toMatchObject({ pendingEntries: 0, lastFailure: null });
+        expect((yield* f.service.status).threads[0]).toMatchObject({
+          acknowledgedSequence: 2,
+          pending: false,
+        });
+      }),
+    ),
+  );
   it.effect("does not report a pending conversation after navigation-only events", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -601,6 +766,7 @@ describe("durable Library history replication", () => {
         Effect.provideService(Publisher.LibraryPublisher, publisher),
       );
       yield* disabled.drain;
+      yield* disabled.flush;
       expect(yield* disabled.status).toMatchObject({ enabled: false, pendingEntries: 0 });
     }).pipe(
       Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),

@@ -230,7 +230,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history_flush", {
     description:
-      "Upload committed bound conversation snapshots and referenced assets from this computer. Never retries an ambiguous provider dispatch.",
+      "Upload the latest committed snapshot of every bound conversation and its referenced assets from this computer now, without waiting for snapshot spacing. Never retries an ambiguous provider dispatch.",
     success: Library.LibraryReplicationStatus,
     failure,
     dependencies,
@@ -368,7 +368,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_history_flush: McpToolAccess.writesEnvironment(() =>
         onHost(
           Effect.flatMap(Replication.LibraryReplication, (service) =>
-            service.drain.pipe(Effect.andThen(service.status)),
+            service.flush.pipe(Effect.andThen(service.status)),
           ),
         ),
       ),

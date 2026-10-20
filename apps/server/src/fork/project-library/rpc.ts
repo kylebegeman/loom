@@ -31,7 +31,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.subscribeRefreshes]: () => auth.stream(L.subscribeRefreshes, library.subscribeRefreshes),
     [L.replicationStatus]: () => auth.effect(L.replicationStatus, replication.status),
     [L.flushHistory]: () =>
-      auth.effect(L.flushHistory, replication.drain.pipe(Effect.andThen(replication.status))),
+      auth.effect(L.flushHistory, replication.flush.pipe(Effect.andThen(replication.status))),
     [L.preparation]: (input: { readonly requestId: string }) =>
       auth.effect(L.preparation, workspace.preparation(input)),
     [L.snapshotThread]: (input: Parameters<typeof history.snapshotThread>[0]) =>
