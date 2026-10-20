@@ -121,3 +121,9 @@ stored option; disabling and saving also passed. No explicit probe was clicked a
 command ran. Live SSH acceptance and native interaction remain unverified under Kyle's current
 no-SSH/no-install restrictions. The existing fixed probe remains responsible for actual target,
 version and trusted-host revalidation. Production policy and deployment remain with the host owner.
+
+After merging current fork main's runtime-owner/update changes, 36 tests in seven affected
+merge/health/MCP files passed. The real fork MCP registration check is included in that run.
+All five affected package typechecks and scoped Vault lint passed on the merged tree.
+`vp run lint:mobile` also passed, including SwiftLint, ktlint and detekt. No live installation,
+SSH execution or production check was performed.
