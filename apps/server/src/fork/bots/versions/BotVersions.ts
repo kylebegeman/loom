@@ -68,6 +68,15 @@ const rerunInput = (original: BotRun): BotsRunInput => ({
   ...(original.checkoutThreadId == null ? {} : { checkoutThreadId: original.checkoutThreadId }),
 });
 
+/**
+ * A run a trigger or pipeline started framed its inputs as untrusted, so its replay does too. The
+ * original names are not stored, so every input is framed; extra framing only wraps trusted text.
+ */
+const rerunFraming = (original: BotRun) =>
+  original.triggerId == null && original.pipelineRunId == null
+    ? undefined
+    : { names: Object.keys(original.inputs), origin: "the run this replays" };
+
 export const make = Effect.gen(function* () {
   const store = yield* makeBotReplaysStore;
   const bots = yield* BotsService;
@@ -140,6 +149,7 @@ export const make = Effect.gen(function* () {
     const started = yield* bots
       .startRunWith(definition, rerunInput(original.value), callerOf(stored), {
         replayId,
+        untrusted: rerunFraming(original.value),
         onInserted: (run) => store.setItemRun(replayId, item.originalRunId, run.id),
       })
       .pipe(

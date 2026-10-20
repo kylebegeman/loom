@@ -75,6 +75,32 @@ describe("BotVersions replay", () => {
     ),
   );
 
+  it.effect("frames a replayed trigger run's inputs as the original run did", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, versions } = yield* makeVersions(harness);
+        const bot = yield* bots.save(reviewer(), USER_CALLER);
+        const triggered = yield* bots.startRunWith(
+          bot,
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+          { triggerId: "on-push" },
+        );
+        expect((yield* endNext(harness, "Fine.")).initialMessage?.text).toContain("<event-data-");
+        yield* bots.awaitRun(triggered.id, WAIT_MS);
+
+        const replay = yield* versions.replay(
+          { botId: "reviewer", runIds: [triggered.id], version: 1 },
+          USER_CALLER,
+        );
+        const rerun = yield* endNext(harness, "Fine.");
+        expect(rerun.initialMessage?.text).toContain("<event-data-");
+        expect(rerun.initialMessage?.text).toContain("came from the run this replays.");
+        yield* versions.awaitReplay(replay.id);
+      }),
+    ),
+  );
+
   it.effect("runs an unsaved draft without changing the bot", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
