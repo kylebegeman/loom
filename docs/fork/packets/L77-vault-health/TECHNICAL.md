@@ -63,7 +63,8 @@ Snooze expiry is evaluated against the clock; clients use deadline timers rather
 15-minute interval per item. Explicit rechecks also enforce a 30-second burst limit. Read-only
 snapshot calls perform no login. Claim CAS is committed before a provider probe. Completion
 rechecks the item version, claim deadline and newer observations, so removed rules, replacements
-or newer resolutions cannot be overwritten by an older probe. A sealed/unreachable backend
+or newer resolutions cannot be overwritten by an older probe. The claim accompanies nested
+connector observations; ordinary operations use their start timestamp for the same stale-result check. A sealed/unreachable backend
 leaves the worker unable to check rather than authorizing credential use.
 
 Default expiry warning is seven days; the typed rule supports one to ninety. The initial

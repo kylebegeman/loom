@@ -74,8 +74,10 @@ No live backend conversion, credential registration, service installation or dep
 Kyle authorized completing all remaining Vault sections and landing the branch on 2026-10-20.
 No additional section approvals are required. Native Codex/Claude terminal setup is implemented
 with session-owned private connection files; focused native adapter/lifecycle checks cover
-rotation, cleanup and readiness. All complete packet scopes remain tracked below. The runtime publication gate is cleared: 0.0.85-nightly.20261019.3348 ships the MCP
-startup correction from main `cc05b69aed`, with archive smoke passing on all three platforms. Kyle alone owns nightly release cuts; this thread must not run `loom.sh land`.
+rotation, cleanup and readiness. All complete packet scopes remain tracked below. The runtime
+publication gate is cleared: 0.0.85-nightly.20261019.3348 ships the MCP startup correction from
+main `cc05b69aed`, with archive smoke passing on all three platforms. Kyle alone owns nightly
+release cuts; this thread must not run `loom.sh land`.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and

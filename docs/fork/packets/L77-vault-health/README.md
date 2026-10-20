@@ -1,6 +1,6 @@
 # L77: Credential health and maintenance inbox
 
-Status: **In progress** on `feat/loom-vault-health`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented locally.
+Status: **In progress** on `feat/loom-vault-health`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
 
 Collect expiration and authentication maintenance into one actionable inbox.
 
@@ -41,8 +41,8 @@ Uses item metadata, usage events and optional validation adapters. Can work with
 
 ## Packet seams
 
-No new upstream seams were added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+No new upstream seams were added. [SEAMS.md](./SEAMS.md) records fork-owned integration
+and the required host policy change. Reviewed against fork main `cc05b69aed`.
 
 ## Documents
 

@@ -209,7 +209,6 @@ it.live(
       expect(calls).toBe(1);
     }).pipe(
       Effect.scoped,
-      Effect.provide(McpProviderSessions.layer.pipe(Layer.provide(NodeServices.layer))),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(McpProviderSessions.layer.pipe(Layer.provideMerge(NodeServices.layer))),
     ),
 );
