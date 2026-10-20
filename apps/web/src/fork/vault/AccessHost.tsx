@@ -30,10 +30,10 @@ export function VaultAccessHost() {
   );
   useEffect(
     () =>
-      onOpenVaultProfiles(({ environmentId, projectId, section }) => {
+      onOpenVaultProfiles(({ environmentId, section }) => {
         void navigate({
           to: "/settings/loom",
-          search: { machine: environmentId, project: projectId, checkout: undefined },
+          search: { machine: environmentId, project: undefined, checkout: undefined },
           hash: `loom-vault-${section}`,
         });
       }),

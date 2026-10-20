@@ -1,6 +1,7 @@
 import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
+import { vaultProfileTarget } from "./profile-navigation";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -50,6 +51,12 @@ const failure = <A, E>(r: AsyncResult.AsyncResult<A, E>) =>
 export function VaultProfileSettingsSection() {
   const { environment, target } = useSettingsScope(),
     configs = useServerConfigs();
+  const requested = useAtomValue(vaultProfileTarget);
+  const initialProject =
+    target?.projectId ??
+    (requested?.environmentId === environment?.environmentId && requested?.section === "profiles"
+      ? (requested.projectId ?? null)
+      : null);
   const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope),
     canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
   if (
@@ -64,9 +71,9 @@ export function VaultProfileSettingsSection() {
     return <p className="text-sm">Your connection does not include Vault inspection.</p>;
   return (
     <ProfileProjects
-      key={`${environment.environmentId}:${target?.projectId}:${canWrite}`}
+      key={`${environment.environmentId}:${initialProject}:${canWrite}`}
       environmentId={environment.environmentId}
-      initialProject={target?.projectId ?? null}
+      initialProject={initialProject}
       canWrite={canWrite}
     />
   );

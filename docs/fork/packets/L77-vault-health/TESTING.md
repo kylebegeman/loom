@@ -82,8 +82,8 @@ static pass remains applicable.
 The integrated web pass reached an empty project-reference page for a synthetic GitHub item,
 including its inspected count, timestamp, caveat and disabled final-page navigation. Matching
 reference cards were subsequently verified with a synthetic profile saved through the normal
-service command. Retained-selection project choice and its empty page also passed; project-review
-navigation was exercised with the selected project in the destination URL. Native interaction remains pending under the no-install
+service command. Retained-selection project choice and its empty page also passed. Project-review
+navigation now opens the selected Vault profile and focuses its section. Native interaction remains pending under the no-install
 restriction. Source-watch ownership and stale Vite optimization interfered with local QA;
 reusing the existing isolated server and forcing optimization restored the client without
 installation. No production state or Library service changed.
@@ -99,5 +99,8 @@ typechecks and scoped lint passed. No application schema migration or native mod
 Web acceptance used the existing isolated OpenBao fixture. A normal profile command added a
 synthetic GitHub binding; the inbox displayed its matching profile/requirement card. Choosing a
 scanned project displayed its retained-selection count, empty state and final-page controls.
-The review action carried the selected environment/project to project-profile settings.
+The first review attempt exposed a global-settings scope mismatch. The corrected handoff
+retains the requested project in the Vault navigation atom and routes by environment. A fresh
+web pass opened the selected profile, displayed its saved requirement and focused the profile
+section. The web typecheck and scoped lint passed after this correction.
 Matched retained selection cards and native interaction retain service/static evidence only.

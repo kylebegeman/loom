@@ -102,6 +102,8 @@ selection, including unmatched and retired entries. A retired tombstone has no r
 cannot be attributed to any item; the response reports that uncertainty as a count. Projects
 without current bindings remain selectable. This lookup neither mutates pins nor claims
 current workload authorization. Review and retirement reuse L76's existing controls and checks.
+Web handoff stores the requested project in the Vault navigation atom and routes by environment,
+so the profile picker owns project selection rather than the global settings scope.
 The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
 optional on older context responses. External consumers and provider-side copies remain
 undiscovered. No field or empty page should be interpreted as proof they do not exist.
