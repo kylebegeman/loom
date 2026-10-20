@@ -8,6 +8,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeZlib from "node:zlib";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   MiniOffloadError,
@@ -34,12 +35,37 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as Ssh from "./MiniSshTransport.ts";
+import * as WorkerSource from "./MiniWorkerSource.ts";
+import { atomicJson, disk, readJson } from "./storage.ts";
 
 const jsonBytes = (value: object) => Buffer.byteLength(JSON.stringify(value)) + 1;
-const MAX_BYTES = 64 * 1024 * 1024;
-const Stored = Schema.Struct({ receipt: MiniReceipt, worker: MiniWorker });
+// Matches the LoomOS worker's receive limit. Patches travel inside JSON, so they stay smaller.
+const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
+const MAX_PATCH_BYTES = 64 * 1024 * 1024;
+class ArchiveTooLarge extends Error {}
+// Receipts saved before compression have no encoding and replay their plain tar unchanged.
+const Stored = Schema.Struct({
+  receipt: MiniReceipt,
+  worker: MiniWorker,
+  archiveEncoding: Schema.optional(Schema.Literal("gzip")),
+});
 type Stored = typeof Stored.Type;
-const Workers = Schema.Array(MiniWorker);
+const archiveName = (stored: Pick<Stored, "archiveEncoding">) =>
+  stored.archiveEncoding === "gzip" ? "source.tar.gz" : "source.tar";
+const receiveSpec = ({ receipt, archiveEncoding }: Stored) => ({
+  schema_version: 1,
+  request_id: receipt.request.requestId,
+  source_revision: receipt.sourceRevision,
+  label: receipt.request.label,
+  argv: receipt.request.argv,
+  memory_mib: receipt.request.memoryMiB,
+  cpu_percent: receipt.request.cpuPercent,
+  timeout_seconds: receipt.request.timeoutSeconds,
+  archive_bytes: receipt.archiveBytes,
+  archive_sha256: receipt.archiveSha256,
+  ...(archiveEncoding ? { archive_encoding: archiveEncoding } : {}),
+  ...(receipt.request.outputs?.length ? { outputs: receipt.request.outputs } : {}),
+});
 const Received = Schema.Struct({
   request_id: Schema.String,
   source_revision: Schema.String,
@@ -92,44 +118,19 @@ const decode = <S extends Schema.Top>(schema: S, value: unknown) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError((cause) => new MiniOffloadError({ reason: "response", cause })),
   );
-const disk = <A>(action: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: action,
-    catch: (cause) => new MiniOffloadError({ reason: "storage", cause }),
-  });
-const readJson = async (path: string): Promise<unknown | null> => {
-  try {
-    return JSON.parse(await NodeFSP.readFile(path, "utf8"));
-  } catch (cause) {
-    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT")
-      return null;
-    throw cause;
-  }
-};
-const atomicJson = async (path: string, value: unknown) => {
-  const temporary = path + "." + NodeCrypto.randomUUID() + ".tmp";
-  const file = await NodeFSP.open(temporary, "wx", 0o600);
-  try {
-    await file.writeFile(JSON.stringify(value));
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await NodeFSP.rename(temporary, path);
-  const directory = await NodeFSP.open(NodePath.dirname(path), "r");
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
-  }
-};
 const sha256File = async (path: string) => {
   const hash = NodeCrypto.createHash("sha256");
   for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 };
-// Bound bytes before writing, rather than filling the host disk before checking size.
-const archiveRepository = (cwd: string, revision: string, archive: string) =>
+// Bound bytes before writing, rather than filling the host disk before checking size. Like the
+// worker, bound both the uncompressed tar and the compressed transfer, which can be larger.
+export const archiveRepository = (
+  cwd: string,
+  revision: string,
+  archive: string,
+  maxBytes = MAX_ARCHIVE_BYTES,
+) =>
   Effect.suspend(() => {
     let completion: Promise<void> | undefined;
     return Effect.tryPromise({
@@ -149,13 +150,17 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
             { cwd, stdio: ["ignore", "pipe", "pipe"] },
           );
           const output = NodeFS.createWriteStream(archive, { flags: "w", mode: 0o600 });
-          let bytes = 0;
-          const limit = new NodeStream.Transform({
-            transform(chunk: Buffer, _encoding, callback) {
-              bytes += chunk.length;
-              callback(bytes > MAX_BYTES ? new Error("Archive exceeds limit") : null, chunk);
-            },
-          });
+          let oversized = false;
+          const limit = () => {
+            let bytes = 0;
+            return new NodeStream.Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                bytes += chunk.length;
+                if (bytes > maxBytes) oversized = true;
+                callback(oversized ? new ArchiveTooLarge() : null, chunk);
+              },
+            });
+          };
           const abort = () => {
             child.kill("SIGKILL");
           };
@@ -169,7 +174,14 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
           });
           try {
             await Promise.all([
-              NodeStreamPromises.pipeline(child.stdout, limit, output, { signal }),
+              NodeStreamPromises.pipeline(
+                child.stdout,
+                limit(),
+                NodeZlib.createGzip(),
+                limit(),
+                output,
+                { signal },
+              ),
               exited,
             ]);
           } catch (cause) {
@@ -178,18 +190,23 @@ const archiveRepository = (cwd: string, revision: string, archive: string) =>
             // Wait for the file descriptor to close before unlinking on every platform.
             await Promise.allSettled([exited, NodeStreamPromises.finished(output)]);
             await NodeFSP.rm(archive, { force: true });
-            throw cause;
+            // Git can report the closed pipe before the limit error reaches the pipeline.
+            throw oversized ? new ArchiveTooLarge() : cause;
           } finally {
             signal.removeEventListener("abort", abort);
           }
         })()),
-      catch: (cause) => new MiniOffloadError({ reason: "storage", cause }),
+      catch: (cause) =>
+        new MiniOffloadError({
+          reason: cause instanceof ArchiveTooLarge ? "too_large" : "storage",
+          cause,
+        }),
     }).pipe(
       // A cancelled request keeps its lock until the child and partial file are gone.
       Effect.ensuring(Effect.promise(() => completion?.catch(() => {}) ?? Promise.resolve())),
     );
   }).pipe(
-    Effect.timeout("60 seconds"),
+    Effect.timeout("5 minutes"),
     Effect.mapError((cause) =>
       cause._tag === "MiniOffloadError"
         ? cause
@@ -245,15 +262,12 @@ const make = Effect.gen(function* () {
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const ssh = yield* Ssh.MiniSshTransport;
-  // Protect specification creation and registry changes. Each request has a separate transfer lock.
+  const source = yield* WorkerSource.MiniWorkerSource;
+  // Order worker lookups with registry changes. Each request has a separate transfer lock.
   const registryLock = yield* Semaphore.make(1);
   const requestLocks = new Map<string, { lock: Semaphore.Semaphore; count: number }>();
   const root = NodePath.join(config.stateDir, "fork", "mini-offload");
   const pathFor = (rid: string) => NodePath.join(root, rid);
-  const loadWorkers = Effect.gen(function* () {
-    const value = yield* disk(() => readJson(NodePath.join(root, "workers.json")));
-    return value === null ? [] : yield* decode(Workers, value);
-  });
   const summary = (worker: MiniWorker) => ({
     id: worker.id,
     name: worker.name,
@@ -327,29 +341,16 @@ const make = Effect.gen(function* () {
   const send = Effect.fn("MiniOffload.send")(function* (stored: Stored) {
     const receipt = stored.receipt;
     const request = receipt.request;
-    const archive = NodePath.join(pathFor(request.requestId), "source.tar");
+    const archive = NodePath.join(pathFor(request.requestId), archiveName(stored));
     const valid = yield* disk(
       async () =>
         (await NodeFSP.stat(archive)).size === receipt.archiveBytes &&
         (await sha256File(archive)) === receipt.archiveSha256,
     );
     if (!valid) return yield* fail("storage");
-    const spec = {
-      schema_version: 1,
-      request_id: request.requestId,
-      source_revision: receipt.sourceRevision,
-      label: request.label,
-      argv: request.argv,
-      memory_mib: request.memoryMiB,
-      cpu_percent: request.cpuPercent,
-      timeout_seconds: request.timeoutSeconds,
-      archive_bytes: receipt.archiveBytes,
-      archive_sha256: receipt.archiveSha256,
-      ...(request.outputs?.length ? { outputs: request.outputs } : {}),
-    };
     const response = yield* decode(
       Received,
-      yield* ssh.request(stored.worker, "receive", spec, archive),
+      yield* ssh.request(stored.worker, "receive", receiveSpec(stored), archive),
     );
     if (
       response.request_id !== request.requestId ||
@@ -362,6 +363,8 @@ const make = Effect.gen(function* () {
       receipt: { ...receipt, state: "submitted", job: response.job },
     };
     yield* save(next);
+    // The worker keeps its own copy, and a submitted receipt never sends the archive again.
+    yield* disk(() => NodeFSP.rm(archive, { force: true })).pipe(Effect.ignore);
     return next.receipt;
   });
   const rpc = (stored: Stored, action: "show" | "cancel" | "logs" | "patch" | "artifacts") => {
@@ -388,7 +391,7 @@ const make = Effect.gen(function* () {
     prepare = false,
   ) {
     yield* decode(MiniWorkerRef, input);
-    const worker = (yield* loadWorkers).find((worker) => worker.id === input.workerId);
+    const worker = (yield* source.list).find((worker) => worker.id === input.workerId);
     if (!worker || (prepare && !worker.enabled)) return yield* fail("worker");
     const result = yield* ssh
       .request(worker, "rpc", {
@@ -477,43 +480,10 @@ const make = Effect.gen(function* () {
   return MiniOffloadService.of({
     check: (input) => readiness(input),
     prepare: (input) => readiness(input, true),
-    workers: loadWorkers.pipe(Effect.map((workers) => workers.map(summary))),
-    register: (input) =>
-      registryLock.withPermit(
-        Effect.gen(function* () {
-          const worker = yield* decode(MiniWorker, input);
-          if (worker.sshConfig !== null && !NodePath.isAbsolute(worker.sshConfig))
-            return yield* fail("worker");
-          const workers = yield* loadWorkers;
-          const old = workers.find((row) => row.id === worker.id);
-          if (old && (old.target !== worker.target || old.sshConfig !== worker.sshConfig))
-            return yield* fail("worker");
-          yield* disk(async () => {
-            await NodeFSP.mkdir(root, { recursive: true, mode: 0o700 });
-            await atomicJson(NodePath.join(root, "workers.json"), [
-              ...workers.filter((row) => row.id !== worker.id),
-              worker,
-            ]);
-          });
-          return summary(worker);
-        }),
-      ),
+    workers: source.list.pipe(Effect.map((workers) => workers.map(summary))),
+    register: (input) => registryLock.withPermit(source.register(input)).pipe(Effect.map(summary)),
     setEnabled: (input) =>
-      registryLock.withPermit(
-        Effect.gen(function* () {
-          const workers = yield* loadWorkers;
-          const worker = workers.find((row) => row.id === input.workerId);
-          if (!worker) return yield* fail("worker");
-          const next = { ...worker, enabled: input.enabled };
-          yield* disk(() =>
-            atomicJson(
-              NodePath.join(root, "workers.json"),
-              workers.map((row) => (row.id === next.id ? next : row)),
-            ),
-          );
-          return summary(next);
-        }),
-      ),
+      registryLock.withPermit(source.setEnabled(input)).pipe(Effect.map(summary)),
     submit: (input) =>
       decode(MiniSubmit, input).pipe(
         Effect.flatMap((request) =>
@@ -530,72 +500,73 @@ const make = Effect.gen(function* () {
                 // Submitted requests return their receipt; pending requests replay the immutable archive.
                 return stored.receipt.state === "submitted" ? stored.receipt : yield* send(stored);
               }
-              const stored = yield* registryLock.withPermit(
-                Effect.gen(function* () {
-                  const worker = (yield* loadWorkers).find(
-                    (row) => row.id === request.workerId && row.enabled,
-                  );
-                  if (!worker) return yield* fail("worker");
-                  const cwd = yield* workspace(request.threadId);
-                  const top = yield* git(cwd, ["rev-parse", "--show-toplevel"]);
-                  if (
-                    yield* disk(
-                      async () => (await NodeFSP.realpath(cwd)) !== (await NodeFSP.realpath(top)),
-                    )
-                  )
-                    return yield* fail("workspace");
-                  const revision = yield* git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
-                  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision))
-                    return yield* fail("workspace");
-                  const dirty = (yield* git(cwd, ["status", "--porcelain"])) !== "";
-                  if (dirty && !request.committedOnly) return yield* fail("dirty");
-                  const directory = pathFor(request.requestId);
-                  yield* disk(() => NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 }));
-                  const archive = NodePath.join(directory, "source.tar");
-                  yield* archiveRepository(cwd, revision, archive);
-                  const bytes = yield* disk(async () => {
-                    await NodeFSP.chmod(archive, 0o600);
-                    const file = await NodeFSP.open(archive, "r");
-                    try {
-                      await file.sync();
-                      return (await file.stat()).size;
-                    } finally {
-                      await file.close();
-                    }
-                  });
-                  if (bytes <= 0 || bytes > MAX_BYTES) return yield* fail("storage");
-                  const checksum = yield* disk(() => sha256File(archive));
-                  const initial: Stored = {
-                    worker,
-                    receipt: {
-                      request,
-                      workerName: worker.name,
-                      sourceRevision: revision,
-                      archiveSha256: checksum,
-                      archiveBytes: bytes,
-                      localEditsExcluded: dirty,
-                      createdAt: DateTime.formatIso(yield* DateTime.now),
-                      state: "transfer_pending",
-                      job: null,
-                    },
-                  };
-                  const headerBytes = jsonBytes({
-                    schema_version: 1,
-                    request_id: request.requestId,
-                    source_revision: revision,
-                    label: request.label,
-                    argv: request.argv,
-                    memory_mib: request.memoryMiB,
-                    cpu_percent: request.cpuPercent,
-                    timeout_seconds: request.timeoutSeconds,
-                    archive_bytes: bytes,
-                    archive_sha256: checksum,
-                    ...(request.outputs?.length ? { outputs: request.outputs } : {}),
-                  });
-                  if (headerBytes > 65536) return yield* fail("response");
-                  yield* save(initial);
-                  return initial;
-                }),
+              // Archiving can take minutes, so it must not hold up other submissions or registry changes.
+              const worker = yield* registryLock
+                .withPermit(source.list)
+                .pipe(
+                  Effect.map((rows) =>
+                    rows.find((row) => row.id === request.workerId && row.enabled),
+                  ),
+                );
+              if (!worker) return yield* fail("worker");
+              const cwd = yield* workspace(request.threadId);
+              const top = yield* git(cwd, ["rev-parse", "--show-toplevel"]);
+              if (
+                yield* disk(
+                  async () => (await NodeFSP.realpath(cwd)) !== (await NodeFSP.realpath(top)),
+                )
+              )
+                return yield* fail("workspace");
+              const revision = yield* git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
+              if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision))
+                return yield* fail("workspace");
+              const dirty = (yield* git(cwd, ["status", "--porcelain"])) !== "";
+              if (dirty && !request.committedOnly) return yield* fail("dirty");
+              const directory = pathFor(request.requestId);
+              yield* disk(() => NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 }));
+              const archive = NodePath.join(directory, archiveName({ archiveEncoding: "gzip" }));
+              const stored = yield* Effect.gen(function* () {
+                yield* archiveRepository(cwd, revision, archive);
+                const bytes = yield* disk(async () => {
+                  await NodeFSP.chmod(archive, 0o600);
+                  const file = await NodeFSP.open(archive, "r");
+                  try {
+                    await file.sync();
+                    return (await file.stat()).size;
+                  } finally {
+                    await file.close();
+                  }
+                });
+                if (bytes > MAX_ARCHIVE_BYTES) return yield* fail("too_large");
+                if (bytes <= 0) return yield* fail("storage");
+                const checksum = yield* disk(() => sha256File(archive));
+                const initial: Stored = {
+                  worker,
+                  archiveEncoding: "gzip",
+                  receipt: {
+                    request,
+                    workerName: worker.name,
+                    sourceRevision: revision,
+                    archiveSha256: checksum,
+                    archiveBytes: bytes,
+                    localEditsExcluded: dirty,
+                    createdAt: DateTime.formatIso(yield* DateTime.now),
+                    state: "transfer_pending",
+                    job: null,
+                  },
+                };
+                if (jsonBytes(receiveSpec(initial)) > 65536) return yield* fail("response");
+                // Settle the write before any cleanup decides whether the receipt exists.
+                yield* Effect.uninterruptible(save(initial));
+                return initial;
+              }).pipe(
+                // Without a receipt nothing would send or remove the archive. With one, recovery needs it.
+                Effect.onError(() =>
+                  disk(async () => {
+                    if ((await readJson(NodePath.join(directory, "receipt.json"))) === null)
+                      await NodeFSP.rm(archive, { force: true });
+                  }).pipe(Effect.ignore),
+                ),
               );
               return yield* send(stored);
             }),
@@ -711,7 +682,7 @@ const make = Effect.gen(function* () {
         if (
           response.job_id !== stored.receipt.job?.id ||
           response.source_revision !== stored.receipt.sourceRevision ||
-          bytes.length > MAX_BYTES ||
+          bytes.length > MAX_PATCH_BYTES ||
           bytes.toString("base64") !== response.patch_base64 ||
           NodeCrypto.createHash("sha256").update(bytes).digest("hex") !== response.sha256
         )
@@ -725,4 +696,6 @@ const make = Effect.gen(function* () {
       }),
   });
 });
-export const layer = Layer.effect(MiniOffloadService, make);
+export const layer = Layer.effect(MiniOffloadService, make).pipe(
+  Layer.provide(WorkerSource.layerFile),
+);

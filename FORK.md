@@ -131,6 +131,12 @@ The lockfile changes are limited to those packages and their required dependenci
 dropped it in `v0.0.46-nightly.20261010.2935`; a seam row keeps the next merge from
 removing it again.
 
+`apps/web` keeps `jsdom` ^30.0.1, `react-test-renderer` 19.3.0 and
+`@types/react-test-renderer` 19.1.0 for the fork's component tests in `src/fork/`.
+Upstream moved its own DOM tests to the browser test project and dropped them in
+`v0.1.1-nightly.20261018.3302`; seam rows keep the next merge from removing them again.
+The renderer follows the web app's React version, which comes from the workspace catalog.
+
 ### Packet seams
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
@@ -273,6 +279,45 @@ this task. Package-runner examples keep the actual upstream npm package name; do
 | `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
 | `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
 | `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx` | `brand` | Loom account and connection labels in native pairing/management. |
+
+`LOOM_SERVER_SELF_UPDATE=false` stops the server from updating its own runtime
+(`fork: runtime-owner`; `apps/server/src/cloud/selfUpdate.ts`, 4 marker lines,
+`apps/server/src/environment/ServerEnvironment.ts`, 3 marker lines, and
+`apps/server/src/cli/update.ts`, 2 marker lines). LoomOS sets it because its signed releases
+ship the runtime, and a second updater would replace it. The server then omits
+`serverSelfUpdate` from its descriptor and refuses a direct update request, and `t3 update`
+refuses too, both with a reason that names the operating system. Clients still show the
+manual update fallback for a server they cannot update. `false`, `no`, `off` and `0` turn it
+off; any spelling effect's `Config.Boolean` rejects stops the server from starting. The
+service launcher does not read the switch: an operating system's `t3 service install`
+rewrites the launcher state, which clears any update accepted earlier. The setting lives in
+`apps/server/src/fork/runtime-owner/selfUpdateSwitch.ts`.
+
+L72 shares dev server ports as preview links (`fork: preview-links`). The web preview
+resolves a URL through `navigablePreviewUrlFor` before loading it, so a loopback port the
+client cannot reach becomes a link and a link becomes a fresh single-use entry:
+`apps/web/src/browser/browserTargetResolver.ts` (5 marker lines) and its test (15),
+`apps/web/src/browser/openFileInPreview.ts` (4),
+`apps/web/src/components/preview/openPreviewSession.ts` (5),
+`apps/web/src/components/preview/openTerminalLinkInPreview.ts` (5) and
+`apps/web/src/components/preview/PreviewView.tsx` (9).
+`apps/web/src/components/preview/PreviewLocalServerCard.tsx` (3) adds the copy and open
+buttons to each server, and `apps/web/src/localApi.ts` (3) opens a link in the system browser
+through a fresh entry. A thread's links that leave for the system browser open a port this
+client cannot reach through a link: `apps/web/src/browser/useOpenLink.ts` (2),
+`apps/web/src/components/ChatMarkdown.tsx` (4) and
+`apps/web/src/components/ThreadTerminalDrawer.tsx` (2). On mobile,
+`apps/mobile/src/Stack.tsx` (2),
+`apps/mobile/src/features/settings/components/settings-sheet-targets.ts` (1) and
+`apps/mobile/src/features/settings/SettingsRouteScreen.tsx` (1) add the Previews screen,
+`apps/mobile/src/lib/openExternalUrl.ts` (2) opens preview links leaving the app through a
+fresh entry, and a thread's links open the same way from chat
+(`apps/mobile/src/native/useOpenPullRequest.ts`, 2), an html_render page
+(`apps/mobile/src/features/threads/HtmlRenderWebView.tsx`, 4), an MCP app
+(`apps/mobile/src/features/threads/McpAppWebView.tsx`, 2) and the Files markdown preview
+(`apps/mobile/src/features/files/FileMarkdownPreview.tsx`, 2). See the
+[L72 packet](docs/fork/packets/L72-preview-links/SEAMS.md) and
+[user help](docs/fork/user/preview-links.md).
 
 ## Identifiers kept on purpose
 

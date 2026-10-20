@@ -175,11 +175,12 @@ const make = Effect.gen(function* () {
         createdAt: row.created_at,
       }));
       const references = new Map<string, { sourceEnvironmentId: string; attachmentId: string }>();
+      // Versions keep only digests, so the attachments a backup must cover are the ones the saved
+      // conversations still show.
       for (const row of yield* sql<{
         library_id: string;
-        source_sequence: number;
-      }>`SELECT library_id,source_sequence FROM fork_library_thread_versions`) {
-        const payload = yield* store.threadVersion(row.library_id, row.source_sequence);
+      }>`SELECT library_id FROM fork_library_threads ORDER BY library_id`) {
+        const payload = yield* store.history(row.library_id);
         if (!payload) return yield* new LibraryError({ reason: "not-found" });
         const archive = yield* decodeArchive(payload);
         for (const attachment of libraryAttachments(archive))

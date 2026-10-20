@@ -2,6 +2,7 @@ import {
   ServerSelfUpdateError,
   type ServerSelfUpdateCapability,
   type ServerSelfUpdateInput,
+  type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
   type ThreadId,
@@ -18,6 +19,8 @@ import * as Ref from "effect/Ref";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
@@ -25,6 +28,10 @@ import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import {
+  OS_MANAGED_RUNTIME_REASON,
+  serverSelfUpdateEnabled,
+} from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
@@ -183,9 +190,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     yield* Config.String(CLI_RELEASE_BASE_URL_ENV).pipe(Config.option),
   );
   const inFlight = yield* Ref.make(false);
+  const selfUpdateEnabled = yield* serverSelfUpdateEnabled; // fork: runtime-owner
 
-  const capability: ServerSelfUpdateCapability | null =
-    serverConfig.mode === "desktop" ? "desktop-managed" : launcher.managed ? "boot-service" : null;
+  const capability = resolveServerSelfUpdateCapability({
+    desktopManaged: serverConfig.mode === "desktop",
+    launcherManaged: launcher.managed && selfUpdateEnabled, // fork: runtime-owner
+  });
   const failWith = (reason: string, cause?: unknown) =>
     cause === undefined
       ? new ServerSelfUpdateError({ reason })
@@ -201,6 +211,9 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       return yield* failWith(
         "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
       );
+    }
+    if (capability === null && launcher.managed) {
+      return yield* failWith(OS_MANAGED_RUNTIME_REASON); // fork: runtime-owner
     }
     if (capability === null) {
       return yield* failWith(
@@ -339,3 +352,26 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
 export const layer = Layer.effect(ServerSelfUpdate, make()).pipe(
   Layer.provide(ProcessRunner.layer),
 );
+
+// The RPC stream used to own this fiber, so a dropped client socket interrupted
+// the download. Offers after the queue shuts down are ignored; the update
+// still finishes, and the in-flight guard stays as it was.
+export const updateProgressStream = (
+  selfUpdate: ServerSelfUpdate["Service"],
+  input: ServerSelfUpdateInput,
+) =>
+  Stream.callback<ServerSelfUpdateProgressEvent, ServerSelfUpdateError>((queue) => {
+    const offer = (event: ServerSelfUpdateProgressEvent) =>
+      Queue.offer(queue, event).pipe(Effect.ignore);
+
+    return selfUpdate
+      .update(input, (stage) => offer({ type: "progress", stage }))
+      .pipe(
+        Effect.flatMap((result) => offer({ type: "complete", result })),
+        Effect.catchTags({
+          ServerSelfUpdateError: (error) => Queue.fail(queue, error).pipe(Effect.ignore),
+        }),
+        Effect.andThen(Queue.end(queue).pipe(Effect.ignore)),
+        Effect.forkDetach,
+      );
+  });

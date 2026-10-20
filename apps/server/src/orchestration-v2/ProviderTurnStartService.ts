@@ -25,7 +25,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
+import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
@@ -36,6 +38,8 @@ import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import {
@@ -104,6 +108,8 @@ export const layer: Layer.Layer<
   | Path.Path
   | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | WorktreeSetupTracker.WorktreeSetupTracker
+  | ServerConfig.ServerConfig
+  | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
   | GitVcsDriver.GitVcsDriver
   | ProjectService.ProjectService
@@ -127,6 +133,8 @@ export const layer: Layer.Layer<
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const path = yield* Path.Path;
+    const serverConfig = yield* ServerConfig.ServerConfig;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -135,6 +143,7 @@ export const layer: Layer.Layer<
     const libraryWorkspaces = yield* Effect.serviceOption(
       LibraryWorkspaceStore.LibraryWorkspaceStore,
     );
+    const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
     // These callbacks outlive startup while a run drains background work. Build
     // them outside start's scope so they cannot retain its full thread history.
@@ -533,13 +542,19 @@ export const layer: Layer.Layer<
           }
           if (worktreePath === null) return;
           if (branch !== null) {
-            yield* restoreWorktree({
-              threadId: projection.thread.id,
-              projectId: projection.thread.projectId,
-              worktreePath,
-              branch,
-              workspaceLeaseHeld: true,
-            });
+            // A thread's path can come from a client, so a missing worktree is
+            // only recreated where the server would have put it.
+            const exists = yield* fileSystem
+              .exists(worktreePath)
+              .pipe(Effect.orElseSucceed(() => true));
+            if (exists || (yield* isManagedWorktreePath(worktreePath)))
+              yield* restoreWorktree({
+                threadId: projection.thread.id,
+                projectId: projection.thread.projectId,
+                worktreePath,
+                branch,
+                workspaceLeaseHeld: true,
+              });
           } else {
             const project = yield* projects
               .getById(projection.thread.projectId)

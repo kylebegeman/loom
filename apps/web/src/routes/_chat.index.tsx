@@ -4,7 +4,7 @@ import { primaryServerConfigAtom } from "~/state/server"; // fork: library-only
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
@@ -53,14 +53,10 @@ function IndexDraftLanding() {
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const { environments } = useEnvironments();
   // fork: fleet-connections Only connected computers that can run agents start a draft.
-  const executionEnvironments = useMemo(
-    () =>
-      connectedEnvironmentIds.filter(
-        (id) =>
-          environments.find((entry) => entry.environmentId === id)?.serverConfig?.environment
-            .capabilities.supportsExecution !== false,
-      ),
-    [environments, connectedEnvironmentIds],
+  const executionEnvironments = connectedEnvironmentIds.filter(
+    (id) =>
+      environments.find((entry) => entry.environmentId === id)?.serverConfig?.environment
+        .capabilities.supportsExecution !== false,
   );
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
@@ -68,46 +64,51 @@ function IndexDraftLanding() {
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
-  const startingRef = useRef(false);
-  const [startFailed, setStartFailed] = useState(false);
-  const [retryRequest, setRetryRequest] = useState(0);
+  // One start per attempt; a retry request opens the next attempt.
+  const startedAttemptRef = useRef<number | null>(null);
+  const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
-  const mostRecentProject = useMemo(
-    () =>
-      bootstrapped && primaryReady && !libraryOnly // fork: library-only
-        ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
-        : null,
-    [bootstrapped, primaryReady, libraryOnly, projects, threads, executionEnvironments],
-  );
+  const mostRecentProject =
+    bootstrapped && primaryReady && !libraryOnly // fork: library-only
+      ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
+      : null;
+  const attempt = startState.retryRequest;
 
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
-    if (startFailed || mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
+    if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
       return;
     }
     const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
     if (readProject(projectRef) === null) {
       return;
     }
-    startingRef.current = true;
+    startedAttemptRef.current = attempt;
     void handleNewThread(projectRef, { replace: true })
       .then((opened) => {
         if (opened === null) {
-          startingRef.current = false;
-          setRetryRequest((request) => request + 1);
+          setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));
         }
       })
       .catch(() => {
-        startingRef.current = false;
-        setStartFailed(true);
+        setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [handleNewThread, mostRecentProject, startFailed, retryRequest]);
+  }, [attempt, handleNewThread, mostRecentProject]);
 
   if (!bootstrapped) {
     return null;
   }
   if (mostRecentProject !== null) {
-    return startFailed ? <DraftStartError onRetry={() => setStartFailed(false)} /> : null;
+    return startState.failed ? (
+      <DraftStartError
+        onRetry={() => {
+          setStartState((state) => ({
+            failed: false,
+            retryRequest: state.retryRequest + 1,
+          }));
+        }}
+      />
+    ) : null;
   }
   // fork: library-only
   return libraryOnly || library.authorityId ? (

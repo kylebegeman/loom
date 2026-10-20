@@ -30,6 +30,10 @@ import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
 import type { SwitchboardStatus } from "./switchboard/SwitchboardStatus.ts";
+import type { PreviewLinksService } from "./preview-links/PreviewLinksService.ts";
+import type { PreviewAccessService } from "./preview-access/PreviewAccessService.ts";
+import type { PageLibraryService } from "./preview-pages/PageLibraryService.ts";
+import type { PreviewPagesService } from "./preview-pages/PreviewPagesService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -66,7 +70,11 @@ export type ForkServices =
   | CodeGraphService
   | WorkspaceHandoffService
   | SwitchboardStatus
-  | LibraryBriefSuggestions;
+  | LibraryBriefSuggestions
+  | PreviewLinksService
+  | PreviewAccessService
+  | PageLibraryService
+  | PreviewPagesService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

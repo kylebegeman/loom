@@ -977,7 +977,7 @@ const make = Effect.gen(function* () {
         yield* assertScratchUnmounted(realPath);
         yield* cleanupGit(
           project.workspaceRoot,
-          ["-c", "status.showUntrackedFiles=normal", "worktree", "remove", worktreePath],
+          ["-c", "status.showUntrackedFiles=normal", "worktree", "remove", "--", worktreePath],
           "git worktree remove",
         );
         entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });

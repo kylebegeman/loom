@@ -24,8 +24,11 @@ import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
 import { makeAppleBuildToolingRpcHandlers } from "./apple-build-tooling/rpc.ts";
 import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
+import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import {
+  PreviewLinksRpcGroup,
+  PREVIEW_LINKS_WS_METHODS,
   VaultProfileRpcGroup,
   VaultReferenceRpcGroup,
   VAULT_PROFILE_WS_METHODS,
@@ -45,6 +48,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(PREVIEW_LINKS_WS_METHODS),
   ...Object.values(VAULT_GITHUB_WS_METHODS),
   ...Object.values(VAULT_SSH_WS_METHODS),
   ...Object.values(VAULT_PROFILE_WS_METHODS),
@@ -55,6 +59,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
 export const makeForkRpcLayer = (
   session: AuthenticatedSession,
 ): Layer.Layer<
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof PreviewLinksRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultGitHubRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof otherForkRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultSshRpcGroup>>
@@ -62,6 +67,9 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
 > =>
   Layer.mergeAll(
+    PreviewLinksRpcGroup.toLayer(
+      withForkRuntime(makePreviewLinksRpcHandlers(makeForkRpcAuth(session), session)),
+    ),
     VaultGitHubRpcGroup.toLayer(
       withForkRuntime(makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),

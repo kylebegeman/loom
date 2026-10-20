@@ -18,7 +18,11 @@ import {
   PREVIEW_ZOOM_LEVELS,
   type PreviewAdjustInput,
 } from "@t3tools/contracts";
-import { normalizePreviewUrl, resolveAddressBarInput } from "@t3tools/shared/preview";
+import {
+  normalizePreviewUrl,
+  resolveAddressBarInput,
+  previewPdfAssetUrl,
+} from "@t3tools/shared/preview";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
@@ -37,6 +41,10 @@ import {
   useThreadPreviewState,
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
+import {
+  navigablePreviewUrlFor,
+  openPreviewInSystemBrowser,
+} from "~/fork/preview-links/navigation"; // fork: preview-links
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
   useEnvironment,
@@ -133,7 +141,7 @@ function ServerTabFileNotShown(props: {
             )
           : null
       }
-      onOpen={() => void localApi?.shell.openExternal(props.url).catch(() => undefined)}
+      onOpen={() => void openPreviewInSystemBrowser(props.threadRef, props.url)} // fork: preview-links
     />
   );
 }
@@ -254,12 +262,16 @@ export function PreviewView({
   const navigateToResolvedUrl = async (resolvedUrl: string) => {
     if (isServerTab && serverSurfaceRef.current) {
       if (serverInputDisabled) return false;
-      serverSurfaceRef.current.navigate(resolvedUrl);
+      const target = await navigablePreviewUrlFor(threadRef, resolvedUrl, "server"); // fork: preview-links
+      if (target === null) return false; // fork: preview-links
+      serverSurfaceRef.current?.navigate(target); // fork: preview-links
       rememberPreviewUrl(threadRef, resolvedUrl);
       return true;
     }
     if (runtimeTabId && previewBridge) {
-      await previewBridge.navigate(runtimeTabId, resolvedUrl);
+      const target = await navigablePreviewUrlFor(threadRef, resolvedUrl, "desktop"); // fork: preview-links
+      if (target === null) return false; // fork: preview-links
+      await previewBridge.navigate(runtimeTabId, target); // fork: preview-links
       rememberPreviewUrl(threadRef, resolvedUrl);
       return true;
     }
@@ -410,7 +422,7 @@ export function PreviewView({
 
   const handleOpenInBrowser = () => {
     if (!localApi || !url) return;
-    void localApi.shell.openExternal(url).catch(() => undefined);
+    void openPreviewInSystemBrowser(threadRef, url); // fork: preview-links
   };
 
   const moveTarget = alternatePreviewRuntime(
@@ -997,6 +1009,11 @@ export function PreviewView({
                 environmentId={threadRef.environmentId}
                 threadId={threadRef.threadId}
                 tabId={snapshot.tabId}
+                pdfUrl={
+                  navStatus._tag === "Success"
+                    ? previewPdfAssetUrl(url, environmentHttpBaseUrl)
+                    : null
+                }
                 visible={visible}
                 onFirstFrame={() => setServerFrameTabId(runtimeTabId)}
                 onControl={(control) =>

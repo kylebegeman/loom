@@ -207,7 +207,11 @@ export function mergeNetlist(inspection: PcbInspection, source: string): PcbInsp
   const definitions = new Map(
     children(child(root, "libparts"), "libpart").map((lib) => [
       `${atom(child(lib, "lib"))}:${atom(child(lib, "part"))}`,
-      children(child(lib, "pins"), "pin"),
+      children(child(lib, "pins"), "pin").reduce((pins, pin) => {
+        const number = atom(child(pin, "num"));
+        if (!pins.has(number)) pins.set(number, pin);
+        return pins;
+      }, new Map<string, Sexp[]>()),
     ]),
   );
   const connections = children(child(root, "nets"), "net").map((n) => ({
@@ -219,6 +223,16 @@ export function mergeNetlist(inspection: PcbInspection, source: string): PcbInsp
       type: atom(child(p, "pintype")),
     })),
   }));
+  const byReference = new Map<
+    string,
+    { net: string; member: (typeof connections)[number]["members"][number] }[]
+  >();
+  for (const net of connections)
+    for (const member of net.members) {
+      const members = byReference.get(member.reference) ?? [];
+      members.push({ net: net.name, member });
+      byReference.set(member.reference, members);
+    }
   return {
     ...inspection,
     nets: connections
@@ -229,30 +243,31 @@ export function mergeNetlist(inspection: PcbInspection, source: string): PcbInsp
       })),
     components: inspection.components.map((c) => {
       const symbol = symbols.get(c.reference) ?? c.symbol;
-      const definitionsForPart = definitions.get(symbol ?? "") ?? [];
+      const definitionsForPart = definitions.get(symbol ?? "");
       const pins = [...c.pins];
-      for (const net of connections)
-        for (const p of net.members)
-          if (p.reference === c.reference) {
-            const i = pins.findIndex((v) => v.number === p.pin),
-              existing = i >= 0 ? pins[i] : undefined;
-            const base = definitionsForPart.find((pin) => atom(child(pin, "num")) === p.pin);
-            const baseName = base
-              ? atom(child(base, "name"))
-              : (existing?.baseName ?? existing?.name);
-            const name = p.name || existing?.name || baseName || "";
-            // Netlists may report assigned alternates. Keep the library name to recover port identity.
-            const pin = {
-              ...existing,
-              number: p.pin,
-              name,
-              net: net.name,
-              ...(p.type ? { type: p.type } : {}),
-              ...(baseName && baseName !== name ? { baseName } : {}),
-            };
-            if (i >= 0) pins[i] = pin;
-            else pins.push(pin);
-          }
+      const pinIndexes = new Map<string, number>();
+      for (const [i, pin] of pins.entries())
+        if (!pinIndexes.has(pin.number)) pinIndexes.set(pin.number, i);
+      for (const { net, member: p } of byReference.get(c.reference) ?? []) {
+        const i = pinIndexes.get(p.pin),
+          existing = i === undefined ? undefined : pins[i];
+        const base = definitionsForPart?.get(p.pin);
+        const baseName = base ? atom(child(base, "name")) : (existing?.baseName ?? existing?.name);
+        const name = p.name || existing?.name || baseName || "";
+        // Netlists may report assigned alternates. Keep the library name to recover port identity.
+        const pin = {
+          ...existing,
+          number: p.pin,
+          name,
+          net,
+          ...(p.type ? { type: p.type } : {}),
+          ...(baseName && baseName !== name ? { baseName } : {}),
+        };
+        if (i === undefined) {
+          pinIndexes.set(p.pin, pins.length);
+          pins.push(pin);
+        } else pins[i] = pin;
+      }
       return { ...c, ...(symbol && symbol !== ":" ? { symbol } : {}), pins };
     }),
   };

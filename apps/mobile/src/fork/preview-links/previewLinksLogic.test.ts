@@ -1,0 +1,265 @@
+import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId } from "@t3tools/contracts";
+import type { PreviewLink, PreviewLinksSettings, PreviewLinksSetup } from "@t3tools/contracts/fork";
+import {
+  connectionReachesLoopback,
+  previewComputers,
+  previewLinkActions,
+  previewLinkTiming,
+  previewSetupStatus,
+  privateNetworkPortUrl,
+  visiblePreviewLinks,
+  type PreviewComputerSource,
+} from "./previewLinksLogic";
+
+const NOW = Date.parse("2026-10-18T12:00:00.000Z");
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const at = (offset: number) => new Date(NOW + offset).toISOString();
+
+function computer(
+  id: string,
+  label: string,
+  overrides: Partial<PreviewComputerSource> & { readonly features?: string[] } = {},
+): PreviewComputerSource {
+  return {
+    environmentId: EnvironmentId.make(id),
+    label,
+    entry: { enabled: true },
+    connection: { phase: "connected" },
+    serverConfig: {
+      environment: {
+        capabilities: {
+          repositoryIdentity: false,
+          loomFeatures: overrides.features ?? ["preview-links"],
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
+const SETTINGS: PreviewLinksSettings = setup({}).settings;
+
+function link(overrides: Partial<PreviewLink> = {}): PreviewLink {
+  return {
+    id: "link",
+    kind: "port",
+    port: 5173,
+    host: "5173-k3f9x2-dorothy.bagels.top",
+    url: "https://5173-k3f9x2-dorothy.bagels.top/",
+    createdBy: "owner",
+    threadId: null,
+    laneId: null,
+    state: "open",
+    lifetime: "12h",
+    createdAt: at(-HOUR),
+    expiresAt: at(11 * HOUR),
+    endedAt: null,
+    restorableUntil: null,
+    ...overrides,
+  };
+}
+
+function setup(overrides: {
+  readonly enabled?: boolean;
+  readonly suffix?: string | null;
+  readonly tunnel?: PreviewLinksSetup["tunnel"];
+  readonly gateway?: PreviewLinksSetup["gateway"];
+}): PreviewLinksSetup {
+  const enabled = overrides.enabled ?? true;
+  const suffix = overrides.suffix === undefined ? "bagels.top" : overrides.suffix;
+  return {
+    settings: { enabled, suffix, machine: "dorothy", defaultLifetime: "12h", gatewayPort: 3779 },
+    tokenStored: true,
+    ready: enabled && suffix !== null,
+    tunnel: overrides.tunnel ?? { state: "connected", message: null },
+    gateway: overrides.gateway ?? { state: "listening", message: null },
+  };
+}
+
+describe("previewComputers", () => {
+  it("keeps connected, enabled computers that offer previews, sorted by name", () => {
+    const result = previewComputers([
+      computer("z", "Zelda"),
+      computer("old", "Old Mac", { features: ["sites"] }),
+      computer("off", "Paused", { entry: { enabled: false } }),
+      computer("away", "Away", { connection: { phase: "reconnecting" } }),
+      computer("upstream", "Upstream", { serverConfig: null }),
+      computer("a", "Dorothy"),
+    ]);
+    expect(result.map((entry) => entry.label)).toEqual(["Dorothy", "Zelda"]);
+  });
+
+  it("notes which computers relay the pages they published", () => {
+    const result = previewComputers([
+      computer("a", "Dorothy", { features: ["preview-links", "preview-pages"] }),
+      computer("b", "Zelda"),
+    ]);
+    expect(result.map((entry) => entry.pages)).toEqual([true, false]);
+  });
+});
+
+describe("previewSetupStatus", () => {
+  it("reports why links cannot be shared yet", () => {
+    expect(previewSetupStatus(setup({ enabled: false })).label).toBe("Previews off");
+    expect(previewSetupStatus(setup({ suffix: null })).label).toBe("Needs a domain");
+    expect(
+      previewSetupStatus(setup({ tunnel: { state: "needs-token", message: null } })).label,
+    ).toBe("Needs a tunnel token");
+  });
+
+  it("surfaces gateway errors before tunnel state, with their message", () => {
+    expect(
+      previewSetupStatus(
+        setup({
+          tunnel: { state: "error", message: "Tunnel exited." },
+          gateway: { state: "error", message: "Port 3779 is in use." },
+        }),
+      ),
+    ).toEqual({ label: "Gateway error", detail: "Port 3779 is in use.", ready: false });
+  });
+
+  it("is ready only once the tunnel connects", () => {
+    expect(previewSetupStatus(setup({}))).toEqual({
+      label: "Ready on bagels.top",
+      detail: null,
+      ready: true,
+    });
+    expect(previewSetupStatus(setup({ tunnel: { state: "starting", message: null } })).ready).toBe(
+      false,
+    );
+  });
+});
+
+describe("visiblePreviewLinks", () => {
+  it("lists open links newest first, then restorable ended links, and hides the rest", () => {
+    const older = link({ id: "older", createdAt: at(-2 * HOUR) });
+    const newer = link({ id: "newer", createdAt: at(-MINUTE) });
+    const endedRecently = link({
+      id: "ended-recently",
+      state: "revoked",
+      endedAt: at(-MINUTE),
+      restorableUntil: at(7 * 24 * HOUR),
+    });
+    const expiredEarlier = link({
+      id: "expired-earlier",
+      state: "expired",
+      expiresAt: at(-HOUR),
+      endedAt: at(-HOUR),
+      restorableUntil: at(6 * 24 * HOUR),
+    });
+    const lapsed = link({
+      id: "lapsed",
+      state: "expired",
+      endedAt: at(-8 * 24 * HOUR),
+      restorableUntil: at(-MINUTE),
+    });
+    expect(
+      visiblePreviewLinks([expiredEarlier, older, lapsed, endedRecently, newer], SETTINGS, NOW).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["newer", "older", "ended-recently", "expired-earlier"]);
+  });
+
+  it("hides ended links from another computer name or domain until settings change back", () => {
+    const ended = link({ state: "revoked", endedAt: at(-HOUR), restorableUntil: at(HOUR) });
+    const ids = (settings: PreviewLinksSettings) =>
+      visiblePreviewLinks([ended], settings, NOW).map((entry) => entry.id);
+    expect(ids({ ...SETTINGS, machine: "laptop" })).toEqual([]);
+    expect(ids({ ...SETTINGS, suffix: "example.com" })).toEqual([]);
+    expect(ids(SETTINGS)).toEqual(["link"]);
+  });
+});
+
+describe("previewLinkTiming", () => {
+  it("counts down an open link and says when it ended", () => {
+    expect(previewLinkTiming(link({ expiresAt: at(3 * HOUR + 12 * MINUTE + 30_000) }), NOW)).toBe(
+      "Ends in 3h 12m",
+    );
+    expect(previewLinkTiming(link({ expiresAt: at(30_000) }), NOW)).toBe("Ends in under a minute");
+    expect(previewLinkTiming(link({ expiresAt: at(-1) }), NOW)).toBe("Ending now");
+    expect(previewLinkTiming(link({ state: "revoked", endedAt: at(-5 * MINUTE) }), NOW)).toBe(
+      "Ended 5m ago",
+    );
+    expect(
+      previewLinkTiming(link({ state: "expired", endedAt: null, expiresAt: at(-26 * HOUR) }), NOW),
+    ).toBe("Expired 1d 2h ago");
+  });
+});
+
+describe("previewLinkActions", () => {
+  const all = { open: true, extend: true, end: true, restore: true };
+
+  it("offers open, copy, extend and end on an open link, gated by permission", () => {
+    expect(previewLinkActions(link(), { ...all, extend: false }, SETTINGS, NOW)).toEqual([
+      { action: "open", enabled: true },
+      { action: "copy", enabled: true },
+      { action: "extend", enabled: false },
+      { action: "end", enabled: true },
+    ]);
+  });
+
+  it("offers restore on an ended link only within its restore window and at its address", () => {
+    const restorable = link({ state: "revoked", restorableUntil: at(HOUR) });
+    const lapsed = link({ state: "expired", restorableUntil: at(-HOUR) });
+    const restore = (entry: PreviewLink, permissions = all, settings = SETTINGS) =>
+      previewLinkActions(entry, permissions, settings, NOW)[0];
+    expect(restore(restorable)).toEqual({ action: "restore", enabled: true });
+    expect(restore(lapsed)).toEqual({ action: "restore", enabled: false });
+    expect(restore(restorable, { ...all, restore: false })?.enabled).toBe(false);
+    expect(restore(restorable, all, { ...SETTINGS, machine: "laptop" })?.enabled).toBe(false);
+  });
+
+  it("offers neither extend nor restore on a container link, which ends with its container", () => {
+    const backing = {
+      kind: "container" as const,
+      image: "nginx:alpine",
+      containerId: "0123456789ab",
+      containerPort: 80,
+      stopsAt: at(HOUR),
+    };
+    expect(
+      previewLinkActions(link({ backing }), all, SETTINGS, NOW).map((each) => each.action),
+    ).toEqual(["open", "copy", "end"]);
+    const ended = link({ backing, state: "revoked", restorableUntil: at(HOUR) });
+    expect(previewLinkActions(ended, all, SETTINGS, NOW)[0]).toEqual({
+      action: "restore",
+      enabled: false,
+    });
+  });
+});
+
+describe("connectionReachesLoopback", () => {
+  it("is true only for a simulator talking to its own Mac", () => {
+    expect(connectionReachesLoopback("http://localhost:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://127.0.0.1:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://[::1]:3773")).toBe(true);
+    expect(connectionReachesLoopback("http://192.168.1.25:3773")).toBe(false);
+    expect(connectionReachesLoopback("https://dorothy.tail1dab34.ts.net:6949")).toBe(false);
+    expect(connectionReachesLoopback("https://relay.example.com/env/abc")).toBe(false);
+  });
+
+  it("leaves the URL alone until there is a connection to judge", () => {
+    expect(connectionReachesLoopback(null)).toBe(true);
+    expect(connectionReachesLoopback("not a url")).toBe(true);
+  });
+});
+
+describe("privateNetworkPortUrl", () => {
+  const port = new URL("http://localhost:5173/app?x=1#top");
+
+  it("moves the port onto the computer's private network address", () => {
+    expect(privateNetworkPortUrl("http://192.168.1.25:3773", port)).toBe(
+      "http://192.168.1.25:5173/app?x=1#top",
+    );
+    expect(privateNetworkPortUrl("http://[fd7a:115c:a1e0::1]:3773", port)).toBe(
+      "http://[fd7a:115c:a1e0::1]:5173/app?x=1#top",
+    );
+  });
+
+  it("does not apply to a public address or a missing connection", () => {
+    expect(privateNetworkPortUrl("https://relay.example.com/env/abc", port)).toBeNull();
+    expect(privateNetworkPortUrl(null, port)).toBeNull();
+  });
+});

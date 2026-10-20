@@ -502,6 +502,10 @@
     "./fork/library-launch": {
       "types": "./src/fork/library-launch.ts",
       "import": "./src/fork/library-launch.ts"
+    },
+    "./fork/directory": {
+      "types": "./src/fork/directory.ts",
+      "import": "./src/fork/directory.ts"
     }
   },
   "scripts": {

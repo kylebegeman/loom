@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { isSqlError } from "effect/sql/SqlError";
 import * as SqlClient from "effect/sql/SqlClient";
+import type { Fragment } from "effect/sql/Statement";
 
 export class LibraryStoreError extends Schema.TaggedError<LibraryStoreError>()(
   "LibraryStoreError",
@@ -117,16 +118,25 @@ export class LibraryStore extends Context.Service<
       journalId: string,
       sequence: number,
       digest: string,
-      payload: string,
     ) => Effect.Effect<void, LibraryStoreError>;
+    /** Versions record a digest. Ones saved by earlier releases still return their archive. */
     readonly threadVersion: (
       id: string,
       sourceSequence: number,
-    ) => Effect.Effect<string | null, LibraryStoreError>;
+    ) => Effect.Effect<
+      { readonly digest: string } | { readonly payload: string } | null,
+      LibraryStoreError
+    >;
     readonly putThreadVersion: (
       id: string,
       sourceSequence: number,
-      payload: string,
+      digest: string,
+    ) => Effect.Effect<void, LibraryStoreError>;
+    /** Replaces an earlier release's retained version archive with its digest and frees the archive. */
+    readonly compactThreadVersion: (
+      id: string,
+      sourceSequence: number,
+      digest: string,
     ) => Effect.Effect<void, LibraryStoreError>;
     readonly importProof: (requestId: string) => Effect.Effect<string | null, LibraryStoreError>;
     readonly putImportProof: (
@@ -159,7 +169,11 @@ export class LibraryStore extends Context.Service<
 const compress = NodeUtil.promisify(NodeZlib.gzip);
 const decompress = NodeUtil.promisify(NodeZlib.gunzip);
 const BLOB_PREFIX = "loom:gzip:";
+type PackedRow = { readonly payload_json: string; readonly bytes: Uint8Array | null };
+const VERSION_DIGEST_PREFIX = "loom:sha256:";
 const HISTORY_PAGE_BYTES = 2 * 1024 * 1024;
+// Three bindings per row keep each insert below SQLite's conservative 999-variable limit.
+const HISTORY_INSERT_BATCH_ROWS = 256;
 const ArchiveJson = Schema.fromJsonString(
   Schema.Struct({
     summary: Schema.Unknown,
@@ -205,16 +219,25 @@ const make = Effect.gen(function* () {
     }
     return BLOB_PREFIX + digest;
   });
-  const unpack = Effect.fnUntraced(function* (payload: string | null) {
-    if (payload === null || !payload.startsWith(BLOB_PREFIX)) return payload;
-    const digest = payload.slice(BLOB_PREFIX.length);
-    const row = (yield* sql<{
-      bytes: Uint8Array;
-    }>`SELECT bytes FROM fork_library_history_blobs WHERE digest=${digest}`)[0];
-    if (!row)
+  // Blob content embeds its conversation's Library id, so only that conversation's versions can
+  // share an archive with it. Ingested entries no longer reference archives.
+  const release = (payload: string, libraryId: string) =>
+    payload.startsWith(BLOB_PREFIX)
+      ? sql`DELETE FROM fork_library_history_blobs WHERE digest=${payload.slice(BLOB_PREFIX.length)} AND NOT EXISTS (SELECT 1 FROM fork_library_threads WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_thread_versions WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_import_proofs WHERE payload_json=${payload})`.pipe(
+          Effect.asVoid,
+        )
+      : Effect.void;
+  // Saves free superseded blobs, so a row and its blob are read in one statement. Two reads could
+  // straddle a save that commits in between and find the blob already gone.
+  const packed = (table: string, where: Fragment) =>
+    sql<PackedRow>`SELECT r.payload_json, b.bytes FROM ${sql(table)} r LEFT JOIN fork_library_history_blobs b ON b.digest = substr(r.payload_json, ${BLOB_PREFIX.length + 1}) WHERE ${where}`;
+  const unpack = Effect.fnUntraced(function* (row: PackedRow | null) {
+    if (row === null || !row.payload_json.startsWith(BLOB_PREFIX)) return row?.payload_json ?? null;
+    const { bytes } = row;
+    if (bytes === null)
       return yield* new LibraryStoreError({ operation: "missing-history-blob", cause: null });
-    const text = (yield* Effect.tryPromise(() => decompress(row.bytes))).toString("utf8");
-    if ((yield* hash(text)) !== digest)
+    const text = (yield* Effect.tryPromise(() => decompress(bytes))).toString("utf8");
+    if ((yield* hash(text)) !== row.payload_json.slice(BLOB_PREFIX.length))
       return yield* new LibraryStoreError({ operation: "corrupt-history-blob", cause: null });
     return text;
   });
@@ -234,18 +257,36 @@ const make = Effect.gen(function* () {
     );
     const header = yield* encodeJson({ ...archive, projection });
     yield* sql`INSERT INTO fork_library_history_headers(library_id,payload_json,field,total_items) VALUES (${id},${header},${field},${items.length}) ON CONFLICT(library_id) DO UPDATE SET payload_json=excluded.payload_json,field=excluded.field,total_items=excluded.total_items`;
-    yield* sql`DELETE FROM fork_library_history_items WHERE library_id=${id}`;
+    yield* sql`DELETE FROM fork_library_history_items WHERE library_id=${id} AND position>=${items.length}`;
+    const batch: { library_id: string; position: number; payload_json: string }[] = [];
+    let batchBytes = 0;
     for (const [position, item] of items.entries()) {
       const full = yield* encodeJson(item);
+      const fullBytes = Buffer.byteLength(full);
       // Large displayed text is shortened only in the browsing index, never in retained history.
       const encoded =
-        Buffer.byteLength(full) <= HISTORY_PAGE_BYTES
-          ? full
-          : yield* encodeJson(shortenDisplayText(item));
-      if (Buffer.byteLength(encoded) > HISTORY_PAGE_BYTES)
+        fullBytes <= HISTORY_PAGE_BYTES ? full : yield* encodeJson(shortenDisplayText(item));
+      const encodedBytes = encoded === full ? fullBytes : Buffer.byteLength(encoded);
+      if (encodedBytes > HISTORY_PAGE_BYTES)
         return yield* new LibraryStoreError({ operation: "history-item-too-large", cause: null });
-      yield* sql`INSERT INTO fork_library_history_items(library_id,position,payload_json) VALUES (${id},${position},${encoded})`;
+      if (
+        batch.length > 0 &&
+        (batch.length === HISTORY_INSERT_BATCH_ROWS ||
+          batchBytes + encodedBytes > HISTORY_PAGE_BYTES)
+      ) {
+        yield* sql`INSERT INTO fork_library_history_items ${sql.insert(batch)}
+          ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
+          WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;
+        batch.length = 0;
+        batchBytes = 0;
+      }
+      batch.push({ library_id: id, position, payload_json: encoded });
+      batchBytes += encodedBytes;
     }
+    if (batch.length > 0)
+      yield* sql`INSERT INTO fork_library_history_items ${sql.insert(batch)}
+          ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
+          WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;
   });
   return LibraryStore.of({
     transaction: (effect) =>
@@ -377,23 +418,17 @@ const make = Effect.gen(function* () {
         }),
       ),
     history: (id) =>
-      run(
-        "history",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_threads WHERE library_id = ${id}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
+      run("history", packed("fork_library_threads", sql`r.library_id = ${id}`)).pipe(
+        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)))),
       ),
     thread: (environmentId, threadId) =>
       run(
         "thread",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
-      ),
+        packed(
+          "fork_library_threads",
+          sql`r.source_environment_id = ${environmentId} AND r.source_thread_id = ${threadId}`,
+        ),
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
     threads: (projectId, limit, offset) =>
       run(
         "threads",
@@ -421,10 +456,16 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const packed = yield* pack(input.payload);
           yield* indexHistory(input.id, input.payload);
-          return yield* run(
+          const previous = first(
+            yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_threads WHERE source_environment_id = ${input.environmentId} AND source_thread_id = ${input.threadId}`,
+          )?.payload_json;
+          yield* run(
             "put-thread",
             sql`INSERT INTO fork_library_threads (library_id, source_environment_id, source_thread_id, project_id, working_copy_id, source_sequence, summary_json, payload_json, updated_at) VALUES (${input.id}, ${input.environmentId}, ${input.threadId}, ${input.projectId}, ${input.workingCopyId}, ${input.sourceSequence}, ${input.summary}, ${packed}, ${input.updatedAt}) ON CONFLICT(source_environment_id, source_thread_id) DO UPDATE SET working_copy_id = excluded.working_copy_id, source_sequence = excluded.source_sequence, summary_json = excluded.summary_json, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
-          ).pipe(Effect.asVoid);
+          );
+          if (previous !== undefined && previous !== packed) yield* release(previous, input.id);
         }),
       ),
     cursor: (environmentId, journalId) =>
@@ -446,46 +487,54 @@ const make = Effect.gen(function* () {
           payload_digest: string;
         }>`SELECT payload_digest FROM fork_library_ingested_entries WHERE environment_id = ${environmentId} AND journal_id = ${journalId} AND sequence = ${sequence}`,
       ).pipe(Effect.map((rows) => first(rows)?.payload_digest ?? null)),
-    putIngestedDigest: (environmentId, journalId, sequence, digest, payload) =>
+    // Replays are checked against the digest alone, so the archive is never kept for them.
+    putIngestedDigest: (environmentId, journalId, sequence, digest) =>
       run(
-        "save-history",
-        Effect.gen(function* () {
-          const packed = yield* pack(payload);
-          return yield* run(
-            "put-ingested-digest",
-            sql`INSERT INTO fork_library_ingested_entries (environment_id, journal_id, sequence, payload_digest, payload_json) VALUES (${environmentId}, ${journalId}, ${sequence}, ${digest}, ${packed})`,
-          ).pipe(Effect.asVoid);
-        }),
-      ),
+        "put-ingested-digest",
+        sql`INSERT INTO fork_library_ingested_entries (environment_id, journal_id, sequence, payload_digest, payload_json) VALUES (${environmentId}, ${journalId}, ${sequence}, ${digest}, '')`,
+      ).pipe(Effect.asVoid),
     threadVersion: (id, sourceSequence) =>
       run(
         "thread-version",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
+        packed(
+          "fork_library_thread_versions",
+          sql`r.library_id = ${id} AND r.source_sequence = ${sourceSequence}`,
+        ),
       ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
+        Effect.flatMap(
+          Effect.fnUntraced(function* (rows) {
+            const saved = first(rows);
+            if (saved === null) return null;
+            if (saved.payload_json.startsWith(VERSION_DIGEST_PREFIX))
+              return { digest: saved.payload_json.slice(VERSION_DIGEST_PREFIX.length) };
+            return { payload: (yield* run("unpack-history", unpack(saved))) ?? saved.payload_json };
+          }),
+        ),
       ),
-    putThreadVersion: (id, sourceSequence, payload) =>
+    putThreadVersion: (id, sourceSequence, digest) =>
       run(
-        "save-history",
+        "put-thread-version",
+        sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${id}, ${sourceSequence}, ${VERSION_DIGEST_PREFIX + digest})`,
+      ).pipe(Effect.asVoid),
+    compactThreadVersion: (id, sourceSequence, digest) =>
+      run(
+        "compact-thread-version",
         Effect.gen(function* () {
-          const packed = yield* pack(payload);
-          return yield* run(
-            "put-thread-version",
-            sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${id}, ${sourceSequence}, ${packed})`,
-          ).pipe(Effect.asVoid);
+          const saved = first(
+            yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_thread_versions WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`,
+          )?.payload_json;
+          if (saved === undefined || saved.startsWith(VERSION_DIGEST_PREFIX)) return;
+          yield* sql`UPDATE fork_library_thread_versions SET payload_json = ${VERSION_DIGEST_PREFIX + digest} WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`;
+          yield* release(saved, id);
         }),
       ),
     importProof: (requestId) =>
       run(
         "import-proof",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_import_proofs WHERE request_id = ${requestId}`,
-      ).pipe(
-        Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)?.payload_json ?? null))),
-      ),
+        packed("fork_library_import_proofs", sql`r.request_id = ${requestId}`),
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
     putImportProof: (requestId, payload) =>
       run(
         "save-history",

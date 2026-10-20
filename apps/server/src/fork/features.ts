@@ -75,6 +75,10 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "library-launch-candidates",
   "library-timeline-activity",
   "library-brief-suggestions",
+  "preview-links",
+  "preview-tickets",
+  "preview-pages",
+  "preview-backings",
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
 ];

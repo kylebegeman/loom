@@ -230,6 +230,8 @@ function SettingsIndexSections() {
           target="SettingsEnvironmentMaintenance"
           disabled={noServerTargets}
         />
+        {/* fork: preview-links */}
+        <SettingsRow icon="globe" label="Previews" target="PreviewLinks" />
       </SettingsSection>
 
       <SettingsSection title="App">

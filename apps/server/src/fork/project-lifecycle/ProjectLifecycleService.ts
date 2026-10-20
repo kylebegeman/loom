@@ -27,6 +27,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -46,15 +47,18 @@ import {
   makeLeaseOps,
   parseLedger,
   parseSlotHolder,
+  partitionListeners,
   withDescendants,
   type DockerResource,
   type LedgerEntry,
+  type Listener,
   type ProcessInfo,
   type SlotHolder,
 } from "./leases.ts";
 import {
   GB,
   PORT_BLOCK,
+  PORT_RANGE,
   allocatePortBase,
   autoBuildSlots,
   formatGb,
@@ -84,7 +88,14 @@ import {
   shimsDir,
   slotsDir,
 } from "./shell.ts";
-import { SPACE_FOLDERS, imageBackendAvailable, makeSpaceOps, type LanePaths } from "./space.ts";
+import {
+  SPACE_FOLDERS,
+  imageBackendAvailable,
+  makeSpaceOps,
+  type LanePaths,
+  type SpaceOps,
+} from "./space.ts";
+import { makePortClaims, portClaimsDir } from "./portClaims.ts";
 import { makeStore, type LaneRow } from "./store.ts";
 
 const WATCHDOG_INTERVAL = "30 seconds";
@@ -96,6 +107,7 @@ const FOLDER_MEASURE_INTERVAL_MS = 5 * 60 * 1000;
 const STATUS_ROUNDING_BYTES = 100_000_000;
 /** Simulators, Docker and port listeners are listed this often; processes every tick. */
 const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
+const BUSY_PORT_LOOKUP_TIMEOUT = "5 seconds";
 
 type Thread = OrchestrationV2ThreadShell;
 
@@ -111,6 +123,16 @@ interface LaneLive {
   message: string | null;
   failed: boolean;
   leases: ReadonlyArray<LaneLease>;
+  /**
+   * A release attempt already stopped the listeners on the lane's ports. Listeners are matched
+   * by port alone, so whatever listens there during a retry started after the lane was let go.
+   */
+  portsReleased: boolean;
+}
+
+interface SpaceBackends {
+  readonly image: SpaceOps;
+  readonly folder: SpaceOps;
 }
 
 export interface ProjectLifecycleOptions {
@@ -120,6 +142,8 @@ export interface ProjectLifecycleOptions {
   readonly xcrunPath?: string;
   readonly lsofPath?: string;
   readonly dockerPath?: string;
+  /** Tests wrap the space backends, for example to keep an unmount busy. */
+  readonly wrapSpaces?: (spaces: SpaceBackends) => SpaceBackends;
   /** Free and total bytes on the volume holding `path`. Tests pin it; by default statfs. */
   readonly hostSpace?: (path: string) => Promise<{ readonly free: number; readonly total: number }>;
 }
@@ -214,7 +238,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const platform = yield* HostProcess.Platform;
     const runner = yield* ProcessRunner.ProcessRunner;
     const store = yield* makeStore;
-    const spaces = yield* makeSpaceOps;
+    const madeSpaces = yield* makeSpaceOps;
+    const spaces = options.wrapSpaces?.(madeSpaces) ?? madeSpaces;
     const leaseOps = yield* makeLeaseOps({
       homeDir: options.homeDir,
       xcrunPath: options.xcrunPath ?? "xcrun",
@@ -249,19 +274,87 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     const lanes = new Map<string, LaneRow>();
     for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
-    const nextPortBase = () =>
-      allocatePortBase(
-        new Set(
-          [...lanes.values()].flatMap((lane) => (lane.portBase === null ? [] : [lane.portBase])),
+    const claims = makePortClaims(portClaimsDir(options.homeDir), config.stateDir);
+    const ownBases = (except?: string) =>
+      [...lanes.values()].flatMap((lane) =>
+        lane.portBase === null || lane.id === except ? [] : [lane.portBase],
+      );
+    /**
+     * Ports already in use across the lane range. Docker's published ports cover forwarders
+     * lsof cannot see, such as a root-owned docker-proxy. A lookup that fails or outlasts
+     * `BUSY_PORT_LOOKUP_TIMEOUT` adds nothing, so a Docker that is still starting cannot hold up
+     * a new lane.
+     */
+    const busyPorts = Effect.gen(function* () {
+      const busy = new Set<number>();
+      const [listening, published] = yield* Effect.all(
+        [
+          leaseOps
+            .listeners(PORT_RANGE.first, PORT_RANGE.last)
+            .pipe(Effect.timeoutOption(BUSY_PORT_LOOKUP_TIMEOUT)),
+          leaseOps.publishedPorts.pipe(Effect.timeoutOption(BUSY_PORT_LOOKUP_TIMEOUT)),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (Option.isSome(listening))
+        for (const listener of listening.value.values())
+          for (const port of listener.ports) busy.add(port);
+      if (Option.isSome(published)) for (const port of published.value ?? []) busy.add(port);
+      return busy;
+    });
+    /**
+     * A free block claimed for the lane, skipping this server's lanes, other servers' claims and
+     * blocks where something already listens.
+     */
+    const claimPortBase = (laneId: string) =>
+      busyPorts.pipe(
+        Effect.flatMap((busy) =>
+          node("claim lane ports", async () => {
+            const taken = await claims.heldByOthers();
+            for (const base of ownBases(laneId)) taken.add(base);
+            for (;;) {
+              const base = allocatePortBase(taken, busy);
+              if (base === null || (await claims.claim(base, laneId))) return base;
+              taken.add(base);
+            }
+          }).pipe(
+            // Without the shared claims, ports are still unique among this server's lanes.
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not claim lane ports", { cause }).pipe(
+                Effect.as(allocatePortBase(new Set(ownBases(laneId)), busy)),
+              ),
+            ),
+          ),
         ),
       );
-    // Lanes made before ports existed get a block on first load.
+    yield* node("prune lane port claims", () =>
+      claims.prune(
+        new Map(
+          [...lanes.values()].flatMap((lane) =>
+            lane.portBase === null ? [] : [[lane.portBase, lane.id] as const],
+          ),
+        ),
+      ),
+    ).pipe(Effect.ignore({ log: true }));
+    // Lanes made before ports existed, or whose block another server claimed first, move.
     for (const lane of lanes.values()) {
-      if (lane.portBase !== null) continue;
-      const portBase = nextPortBase();
-      if (portBase === null) break;
+      const current = lane.portBase;
+      if (current !== null) {
+        const held = yield* node("claim lane ports", () => claims.claim(current, lane.id)).pipe(
+          Effect.orElseSucceed(() => true),
+        );
+        if (held) continue;
+      }
+      const portBase = yield* claimPortBase(lane.id);
+      if (portBase === null) continue;
       yield* store.setPortBase(lane.id, portBase).pipe(Effect.orDie);
-      lanes.set(lane.id, { ...lane, portBase });
+      const moved = { ...lane, portBase };
+      lanes.set(lane.id, moved);
+      if (current !== null)
+        yield* writeAtomically(
+          `${lane.laneDir}/LANE.md`,
+          laneMarkdown(moved, rootOf(yield* getSettings)),
+        ).pipe(Effect.ignore({ log: true }));
     }
     const live = new Map<string, LaneLive>();
     const liveOf = (id: string) => {
@@ -277,6 +370,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           message: null,
           failed: false,
           leases: [],
+          portsReleased: false,
         };
         live.set(id, entry);
       }
@@ -296,8 +390,17 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       simulators: ReadonlyMap<string, { readonly name: string }> | null;
       docker: ReadonlyArray<DockerResource> | null;
       listeners: ReadonlyMap<string, ReadonlySet<number>>;
+      /** Lane port listeners a container runtime owns; never offered or stopped as leases. */
+      runtime: ReadonlySet<number>;
       slowAt: number;
-    } = { table: null, simulators: null, docker: null, listeners: new Map(), slowAt: 0 };
+    } = {
+      table: null,
+      simulators: null,
+      docker: null,
+      listeners: new Map(),
+      runtime: new Set(),
+      slowAt: 0,
+    };
     let slotHolders: ReadonlyArray<SlotHolder> = [];
 
     const loadThreads = Effect.gen(function* () {
@@ -533,19 +636,30 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         const wantsSimulators = [...ledgers.values()].some((ledger) =>
           ledger.some((entry) => entry.kind === "simulator"),
         );
-        const listeners = new Map<string, ReadonlySet<number>>();
-        const self = table === null ? new Set([process.pid]) : ancestorsOf(table, process.pid);
+        const found = new Map<string, ReadonlyMap<number, Listener>>();
         for (const lane of lanes.values()) {
           const ports = portsOf(lane);
-          if (ports === null) continue;
-          const pids = yield* leaseOps.listeners(ports.first, ports.last);
-          listeners.set(lane.id, new Set([...pids].filter((pid) => !self.has(pid))));
+          if (ports !== null)
+            found.set(lane.id, yield* leaseOps.listeners(ports.first, ports.last));
+        }
+        // Docker is asked for its ports only when something listens on a lane port.
+        const published = [...found.values()].some((pids) => pids.size > 0)
+          ? yield* leaseOps.publishedPorts
+          : null;
+        const self = table === null ? new Set([process.pid]) : ancestorsOf(table, process.pid);
+        const listeners = new Map<string, ReadonlySet<number>>();
+        const runtime = new Set<number>();
+        for (const [laneId, pids] of found) {
+          const owners = partitionListeners(pids, published);
+          listeners.set(laneId, new Set([...owners.lane].filter((pid) => !self.has(pid))));
+          for (const pid of owners.runtime) runtime.add(pid);
         }
         scan = {
           table,
           simulators: wantsSimulators ? yield* leaseOps.simulators : null,
           docker: yield* leaseOps.dockerResources,
           listeners,
+          runtime,
           slowAt: now,
         };
       }
@@ -565,13 +679,29 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       slotHolders = holders;
     });
 
-    /** Stops processes and their children; never this server or anything above it. */
-    const stopProcesses = (roots: ReadonlyArray<number>) =>
+    /** Lane port listeners on published ports from the last scan, and runtimes known by name. */
+    const runtimeProcesses = leaseOps.runtimeProcesses.pipe(
+      Effect.map((named) => new Set([...scan.runtime, ...(named ?? [])])),
+    );
+
+    /**
+     * Stops processes and their children; never this server or anything above it, and never a
+     * spared process, a container runtime or their children. A root above the server would take
+     * the server's own children with it, so such roots are dropped before descendants are
+     * gathered. Runtimes are checked here as well because a ledger entry can name one, and
+     * Docker closes its forwarder's lane port once the container is gone.
+     */
+    const stopProcesses = (roots: ReadonlyArray<number>, spare: ReadonlySet<number> = new Set()) =>
       Effect.gen(function* () {
+        if (roots.length === 0) return [];
         const table = yield* leaseOps.processTable;
-        if (table === null) return roots.length === 0 ? [] : ["Could not list processes."];
+        const named = yield* leaseOps.runtimeProcesses;
+        // Without names a runtime could be among the targets, so nothing is stopped.
+        if (table === null || named === null) return ["Could not list processes."];
         const self = ancestorsOf(table, process.pid);
-        const targets = new Set([...withDescendants(table, roots)].filter((pid) => !self.has(pid)));
+        const spared = withDescendants(table, [...spare, ...named]);
+        const kept = (pid: number) => !self.has(pid) && !spared.has(pid);
+        const targets = new Set([...withDescendants(table, roots.filter(kept))].filter(kept));
         const stuck = yield* leaseOps.terminate(targets);
         return stuck.length === 0 ? [] : [`Processes ${stuck.join(", ")} did not stop.`];
       });
@@ -607,22 +737,33 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     /** Releases everything the lane owns outside its space. Returns what could not be released. */
     const releaseLeases = Effect.fn("ProjectLifecycle.releaseLeases")(function* (lane: LaneRow) {
       const ledger = yield* readLedger(lane);
-      const table = yield* leaseOps.processTable;
       const ports = portsOf(lane);
-      const listening =
-        ports === null ? [] : [...(yield* leaseOps.listeners(ports.first, ports.last))];
-      const recorded = ledger
-        .filter((entry) => table !== null && liveProcess(table, entry))
-        .map((entry) => Number(entry.ref));
-      const problems = [...(yield* stopProcesses([...recorded, ...listening]))];
+      const state = liveOf(lane.id);
+      const sweepPorts = ports !== null && !state.portsReleased;
+      // Read before removal: Docker can drop a forwarder's listener after `docker rm` returns.
+      const published = sweepPorts ? yield* leaseOps.publishedPorts : null;
+      const problems: Array<string> = [];
       const docker = (yield* leaseOps.dockerResources) ?? [];
-      // Containers go first; a volume in use cannot be removed.
+      // Containers go before listeners, since a published port's listener is the runtime's own
+      // forwarder, and before volumes, since a volume in use cannot be removed.
       for (const kind of ["container", "volume"] as const)
         for (const resource of docker)
           if (resource.laneId === lane.id && resource.kind === kind) {
             const problem = yield* leaseOps.removeDocker(resource);
             if (problem !== null) problems.push(problem);
           }
+      const table = yield* leaseOps.processTable;
+      const owners = partitionListeners(
+        sweepPorts
+          ? yield* leaseOps.listeners(ports.first, ports.last)
+          : new Map<number, Listener>(),
+        published,
+      );
+      const recorded = ledger
+        .filter((entry) => table !== null && liveProcess(table, entry))
+        .map((entry) => Number(entry.ref));
+      problems.push(...(yield* stopProcesses([...recorded, ...owners.lane], owners.runtime)));
+      if (table !== null) state.portsReleased = true;
       const simulators = ledger.filter((entry) => entry.kind === "simulator");
       if (simulators.length > 0) {
         const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
@@ -737,7 +878,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         capBytes,
         device: null,
         createdAt: DateTime.formatIso(yield* DateTime.now),
-        portBase: nextPortBase(),
+        portBase: yield* claimPortBase(id),
       };
       yield* node("create lane", () => NodeFSP.mkdir(lane.laneDir, { recursive: true }));
       if (rootIsNew && platform === "darwin")
@@ -935,6 +1076,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* store.deleteLane(lane.id).pipe(Effect.orDie);
       lanes.delete(lane.id);
       live.delete(lane.id);
+      const { portBase } = lane;
+      if (portBase !== null)
+        yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
+          Effect.ignore({ log: true }),
+        );
       yield* writeShellFiles;
       return true;
     });
@@ -1058,6 +1204,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
             Effect.gen(function* () {
               const holders = holdersOf(lane, view);
               if (holders.length === 0) return yield* removeLane(lane).pipe(Effect.asVoid);
+              liveOf(lane.id).portsReleased = false;
               let entry = yield* measure(lane);
               if (!entry.mounted && lane.backend === "image") {
                 yield* attach(lane);
@@ -1228,6 +1375,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
               return yield* error("not-found", `No process ${ref} is running.`);
             if (ancestorsOf(table, process.pid).has(pid))
               return yield* error("unsupported", "Loom's own processes cannot be leased.");
+            if ((yield* runtimeProcesses).has(pid))
+              return yield* error(
+                "unsupported",
+                `Process ${pid} forwards ports for containers, so a lane cannot own it. Label the container ${DOCKER_LABEL}=${lane.id} instead.`,
+              );
             try {
               process.kill(pid, 0);
             } catch {
@@ -1283,9 +1435,14 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           );
           if (lease === undefined)
             return yield* error("not-found", "This lane no longer holds that lease.");
+          if (kind === "process" && (yield* runtimeProcesses).has(Number(ref)))
+            return yield* error(
+              "unsupported",
+              `Process ${ref} forwards ports for containers, so stopping it would cut off every container. Remove the container instead.`,
+            );
           const problems =
             kind === "process"
-              ? yield* stopProcesses([Number(ref)])
+              ? yield* stopProcesses([Number(ref)], scan.runtime)
               : kind === "simulator"
                 ? [
                     yield* releaseSimulator(

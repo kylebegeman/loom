@@ -5,7 +5,7 @@ import {
   UserProfileView,
 } from "@clerk/expo/native-components";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
 
 import { hasCloudPublicConfig, hasNativeCloudAuthConfig } from "../cloud/publicConfig";
@@ -40,11 +40,13 @@ function ConfiguredSettingsAuthRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const navigation = useNavigation();
   // fork: fleet-connect - Return to the Connections entry point that opened account access.
-  const handleHostBack = useCallback(() => {
+  const handleHostBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(StackActions.replace("SettingsContent"));
-  }, [navigation]);
-  const [hasBeenSignedIn, setHasBeenSignedIn] = useState(Boolean(isSignedIn));
+  };
+  // Once signed in, stay on the profile view so signing out pops back instead of
+  // flashing the sign-in form.
+  const [hasBeenSignedIn, setHasBeenSignedIn] = useState(isSignedIn === true);
   if (isSignedIn && !hasBeenSignedIn) setHasBeenSignedIn(true);
 
   useEffect(() => {

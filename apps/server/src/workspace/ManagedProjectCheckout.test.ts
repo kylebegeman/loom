@@ -9,6 +9,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
+import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as PlatformError from "effect/PlatformError";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -248,6 +249,7 @@ describe("Managed primary project checkouts", () => {
             Effect.provide(
               Layer.mergeAll(
                 WorkspacePaths.layer,
+                Layer.mock(KnownWorkspaces.KnownWorkspaces)({ assertContains: () => Effect.void }),
                 Layer.mock(WorkspaceEntries.WorkspaceEntries)({ refresh: () => Effect.void }),
               ),
             ),

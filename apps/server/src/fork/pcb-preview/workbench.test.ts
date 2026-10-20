@@ -239,3 +239,30 @@ it("recovers library pin names and types alongside netlist alternates", () => {
     ).components[0]?.pins[0]?.baseName,
   ).toBeUndefined();
 });
+
+it("preserves duplicate pad identity and netlist order when merging repeated nodes", () => {
+  const inspection = inspectBoard(
+    '(kicad_pcb (footprint "QFN" (property "Reference" "U1") (pad "2" smd rect (pinfunction "UNCHANGED")) (pad "1" smd rect (at 1 0) (pinfunction "GPIO1") (net 1 "old")) (pad "1" smd rect (at 2 0) (pinfunction "SECOND_PAD") (net 2 "old2"))) (footprint "R" (property "Reference" "R1") (pad "1" smd rect (pinfunction "UNCHANGED"))))',
+    "source",
+  );
+  const original = structuredClone(inspection);
+  const result = mergeNetlist(
+    inspection,
+    '(export (components (comp (ref "U1") (libsource (lib "MCU") (part "Test")))) (libparts (libpart (lib "MCU") (part "Test") (pins (pin (num "3") (name "GPIO3")) (pin (num "3") (name "IGNORED_DUPLICATE"))))) (nets (net (name "first") (node (ref "U1") (pin "3") (pinfunction "FIRST") (pintype "output")) (node (ref "U1") (pin "1") (pinfunction "EARLY"))) (net (name "last") (node (ref "U1") (pin "4")) (node (ref "U1") (pin "3") (pinfunction "LAST")) (node (ref "U1") (pin "1") (pinfunction "FINAL")) (node (ref "U99") (pin "1")))))',
+  );
+  expect(inspection).toEqual(original);
+  expect(result.components[0]?.pins).toMatchObject([
+    { number: "2", name: "UNCHANGED", net: "" },
+    { number: "1", name: "FINAL", baseName: "GPIO1", net: "last", pcb: { x: 1, y: 0 } },
+    { number: "1", name: "SECOND_PAD", net: "old2", pcb: { x: 2, y: 0 } },
+    { number: "3", name: "LAST", baseName: "GPIO3", net: "last", type: "output" },
+    { number: "4", name: "", net: "last" },
+  ]);
+  expect(result.components[1]).toEqual(inspection.components[1]);
+  expect(result.nets[1]?.members).toEqual([
+    { reference: "U1", pin: "4" },
+    { reference: "U1", pin: "3" },
+    { reference: "U1", pin: "1" },
+    { reference: "U99", pin: "1" },
+  ]);
+});

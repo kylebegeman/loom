@@ -5,18 +5,21 @@ import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryThreadArchive } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
+import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryStore from "./LibraryStore.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
   source,
@@ -58,6 +61,17 @@ const create = (service: LibraryService.LibraryService["Service"], requestId = "
   service.createProject({ requestId, title: "AspectAvy", resources: [resource] });
 const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive));
 const encodeArchive = Schema.encodeEffect(archiveCodec);
+const VERSION_EPOCH = "1970-01-01T00:00:00.000Z";
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value === null || typeof value !== "object"
+      ? value
+      : Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, item]) => [key, canonical(item)]),
+        );
 
 describe("independent Library catalog and durable history", () => {
   it.effect(
@@ -172,11 +186,11 @@ describe("independent Library catalog and durable history", () => {
           expect(older.projection.messages.map((m) => m.id)).toEqual(["large-0", "large-1"]);
           expect(older.window?.hasMore).toBe(false);
           const sql = yield* SqlClient.SqlClient;
-          const rows = yield* sql<{
-            payload_json: string;
-          }>`SELECT payload_json FROM fork_library_threads UNION ALL SELECT payload_json FROM fork_library_thread_versions`;
-          expect(rows.every((row) => row.payload_json.startsWith("loom:gzip:"))).toBe(true);
-          expect(new Set(rows.map((row) => row.payload_json)).size).toBe(1);
+          expect(
+            (yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_threads`)[0]!.payload_json,
+          ).toMatch(/^loom:gzip:/);
           const stats = (yield* sql<{
             count: number;
             bytes: number;
@@ -223,6 +237,79 @@ describe("independent Library catalog and durable history", () => {
         expect(
           (yield* Effect.result(service.history({ id: archive.summary.id, limit: 101 })))._tag,
         ).toBe("Failure");
+      }),
+    ),
+  );
+  it.effect("preserves history order and removes obsolete items across archive rewrites", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        const initial = yield* archiveFor(project);
+        const makeArchive = (count: number, sequence: number, token: string) => ({
+          ...initial,
+          summary: { ...initial.summary, workingCopyId: null, sequence },
+          projection: {
+            ...initial.projection,
+            visibleTurnItems: [],
+            turnItems: [],
+            messages: Array.from({ length: count }, (_, index) => ({
+              ...initial.projection.messages[0]!,
+              id: MessageId.make(`message-${index}`),
+              text: `${token} ${index}`,
+            })),
+          },
+        });
+        const original = makeArchive(600, 1, "uniqueobsolete");
+        yield* service.registerThread({ requestId: "rewrite-original", thread: original });
+        expect(
+          (yield* service.history({
+            id: original.summary.id,
+            offset: 240,
+            limit: 100,
+          })).projection.messages.map((message) => message.text),
+        ).toEqual(original.projection.messages.slice(260, 360).map((message) => message.text));
+
+        const appended = makeArchive(620, 2, "uniqueobsolete");
+        yield* service.registerThread({ requestId: "rewrite-append", thread: appended });
+        const appendedPage = yield* service.history({ id: appended.summary.id, limit: 100 });
+        expect(appendedPage.projection.messages.map((message) => message.text)).toEqual(
+          appended.projection.messages.slice(520).map((message) => message.text),
+        );
+        expect(appendedPage.window?.totalItems).toBe(620);
+
+        const rewritten = makeArchive(270, 3, "uniquereplacement");
+        yield* service.registerThread({ requestId: "rewrite-replacement", thread: rewritten });
+        const newest = yield* service.history({ id: rewritten.summary.id, limit: 100 });
+        expect(newest.projection.messages.map((message) => message.text)).toEqual(
+          rewritten.projection.messages.slice(170).map((message) => message.text),
+        );
+        expect(newest.window?.totalItems).toBe(270);
+        const oldest = yield* service.history({
+          id: rewritten.summary.id,
+          offset: 200,
+          limit: 100,
+        });
+        expect(oldest.projection.messages.map((message) => message.text)).toEqual(
+          rewritten.projection.messages.slice(0, 70).map((message) => message.text),
+        );
+        expect((yield* service.history({ id: rewritten.summary.id })).projection.messages).toEqual(
+          rewritten.projection.messages,
+        );
+        expect(
+          (yield* service.search({ query: "uniqueobsolete", limit: 20, semantic: false })).hits,
+        ).toEqual([]);
+        expect(
+          (yield* service.search({ query: "uniquereplacement", limit: 20, semantic: false })).hits,
+        ).toHaveLength(20);
+
+        const empty = makeArchive(0, 4, "empty");
+        yield* service.registerThread({ requestId: "rewrite-empty", thread: empty });
+        const page = yield* service.history({ id: empty.summary.id, limit: 100 });
+        expect(page.projection.messages).toEqual([]);
+        expect(page.window?.totalItems).toBe(0);
+        expect(
+          (yield* service.search({ query: "uniquereplacement", limit: 20, semantic: false })).hits,
+        ).toEqual([]);
       }),
     ),
   );
@@ -722,6 +809,47 @@ describe("independent Library catalog and durable history", () => {
         const receipt = yield* service.importShadow(input);
         expect(receipt).toMatchObject({ projects: 1, copies: 1, threads: 1, verified: true });
         expect(yield* service.verifyImport({ requestId: "import" })).toEqual(receipt);
+        const sql = yield* SqlClient.SqlClient;
+        // The current conversation is compared directly, so a digest from an earlier contract is
+        // harmless while it is current.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json='loom:sha256:stale'`;
+        expect(yield* service.verifyImport({ requestId: "import" })).toEqual(receipt);
+        // A version kept whole by an earlier release is reduced to a digest of its own archive.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+        yield* service.registerThread({
+          requestId: "later",
+          thread: { ...thread, summary: { ...thread.summary, sequence: 10 } },
+        });
+        expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+          logicalRecordsVerified: true,
+          verified: true,
+        });
+        // An importing release that predates a defaulted field wrote the proof and its version
+        // without it. Today's contract fills the field in, but the proof still verifies.
+        const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+        const proof = JSON.parse((yield* store.importProof("import"))!);
+        delete proof.threads[0].projection.thread.settledOverride;
+        yield* sql`DELETE FROM fork_library_import_proofs WHERE request_id='import'`;
+        yield* store.putImportProof("import", JSON.stringify(proof));
+        const archived = proof.threads[0];
+        const marker = Hex.encode(
+          yield* (yield* Crypto.Crypto).digest(
+            "SHA-256",
+            new TextEncoder().encode(
+              JSON.stringify(
+                canonical({
+                  ...archived,
+                  summary: { ...archived.summary, syncedAt: VERSION_EPOCH },
+                }),
+              ),
+            ),
+          ),
+        );
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=${`loom:sha256:${marker}`} WHERE source_sequence=9`;
+        expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+          logicalRecordsVerified: true,
+          verified: true,
+        });
         expect((yield* service.history({ id: thread.summary.id })).projection.thread.id).toBe(
           threadId,
         );
@@ -819,6 +947,212 @@ describe("independent Library catalog and durable history", () => {
         expect((yield* service.threads({ projectId: project.id }))[0]?.sequence).toBe(2);
       }),
     ),
+  );
+  it.effect("keeps one compressed archive per conversation as its history advances", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const first = yield* archiveFor(project, 1);
+        const edit = (sequence: number, text: string) => ({
+          ...first,
+          summary: { ...first.summary, sequence },
+          projection: {
+            ...first.projection,
+            messages: [{ ...first.projection.messages[0]!, text }],
+          },
+        });
+        const second = edit(2, "Second turn");
+        const ingest = (
+          requestId: string,
+          fromSequence: number,
+          entries: ReadonlyArray<typeof first>,
+        ) =>
+          service.ingestHistory({
+            requestId,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence,
+            entries: entries.map((thread, index) => ({
+              sequence: fromSequence + index + 1,
+              thread,
+            })),
+          });
+        yield* ingest("first", 0, [first]);
+        yield* ingest("second", 1, [second]);
+        expect((yield* ingest("replay", 1, [second])).applied).toBe(0);
+        yield* service.registerThread({ requestId: "same-again", thread: second });
+        const sql = yield* SqlClient.SqlClient;
+        expect(yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`).toEqual([
+          { count: 1 },
+        ]);
+        expect(
+          yield* sql`SELECT payload_json FROM fork_library_ingested_entries ORDER BY sequence`,
+        ).toEqual([{ payload_json: "" }, { payload_json: "" }]);
+        const versions = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM fork_library_thread_versions ORDER BY source_sequence`;
+        expect(versions).toHaveLength(2);
+        expect(versions.every((row) => row.payload_json.startsWith("loom:sha256:"))).toBe(true);
+        expect(
+          (yield* service.history({ id: first.summary.id })).projection.messages[0]!.text,
+        ).toBe("Second turn");
+        expect(
+          (yield* service
+            .registerThread({ requestId: "rewritten", thread: edit(2, "Rewritten") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+      }),
+    ),
+  );
+  it.effect("keeps the saved conversation when a replay matches it under today's contract", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const thread = yield* archiveFor(project, 2);
+        const saved = yield* service.registerThread({ requestId: "first", thread });
+        const sql = yield* SqlClient.SqlClient;
+        const stored = yield* sql`SELECT payload_json FROM fork_library_threads`;
+        // A digest taken before a contract gained a defaulted field no longer matches the archive.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json='loom:sha256:stale'`;
+        yield* TestClock.adjust("1 hour");
+        expect(yield* service.registerThread({ requestId: "again", thread })).toEqual(saved);
+        expect(yield* sql`SELECT payload_json FROM fork_library_threads`).toEqual(stored);
+        expect(
+          (yield* service
+            .registerThread({
+              requestId: "rewritten",
+              thread: { ...thread, projection: { ...thread.projection, messages: [] } },
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+      }),
+    ),
+  );
+  it.effect("frees archives kept by versions saved before versions held only digests", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const first = yield* archiveFor(project, 1);
+        yield* service.registerThread({ requestId: "first", thread: first });
+        const sql = yield* SqlClient.SqlClient;
+        // Earlier releases pointed each version at its first compressed archive, then rewrote the
+        // conversation's own archive with a new syncedAt on every replay.
+        yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+        const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+        const row = (yield* sql<{
+          summary_json: string;
+          working_copy_id: string | null;
+        }>`SELECT summary_json, working_copy_id FROM fork_library_threads`)[0]!;
+        yield* store.putThread({
+          id: first.summary.id,
+          environmentId: source,
+          threadId: first.summary.threadId,
+          projectId: project.id,
+          workingCopyId: row.working_copy_id,
+          sourceSequence: 1,
+          summary: row.summary_json,
+          payload: yield* encodeArchive({
+            ...first,
+            summary: { ...first.summary, syncedAt: "2026-02-01T00:00:00.000Z" },
+          }),
+          updatedAt: first.summary.updatedAt,
+        });
+        const blobs = sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs`;
+        expect(yield* blobs).toEqual([{ count: 2 }]);
+        yield* service.registerThread({
+          requestId: "second",
+          thread: { ...first, summary: { ...first.summary, sequence: 2 } },
+        });
+        expect(yield* blobs).toEqual([{ count: 1 }]);
+        const versions = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM fork_library_thread_versions ORDER BY source_sequence`;
+        expect(versions.every((row) => row.payload_json.startsWith("loom:sha256:"))).toBe(true);
+        expect((yield* service.history({ id: first.summary.id })).summary.sequence).toBe(2);
+      }),
+    ),
+  );
+  it.effect(
+    "reduces an imported version kept whole to a digest of the encoding it was saved in",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = { ...(yield* create(service)), id: "imported" };
+          const copy = copyFor(project);
+          const thread = yield* archiveFor(project, 9);
+          yield* service.importShadow({
+            requestId: "import",
+            sourceEnvironmentId: source,
+            journalId: "import-journal",
+            projects: [project],
+            copies: [copy],
+            threads: [thread],
+            throughSequence: 9,
+          });
+          // An importing release that predates a defaulted field wrote the proof, the conversation
+          // and its version without it, with the version sharing the conversation's archive.
+          const sql = yield* SqlClient.SqlClient;
+          const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+          const proof = JSON.parse((yield* store.importProof("import"))!);
+          delete proof.threads[0].projection.thread.settledOverride;
+          yield* sql`DELETE FROM fork_library_import_proofs WHERE request_id='import'`;
+          yield* store.putImportProof("import", JSON.stringify(proof));
+          const archived = proof.threads[0];
+          const row = (yield* sql<{
+            summary_json: string;
+          }>`SELECT summary_json FROM fork_library_threads`)[0]!;
+          yield* store.putThread({
+            id: thread.summary.id,
+            environmentId: source,
+            threadId: thread.summary.threadId,
+            projectId: project.id,
+            workingCopyId: copy.id,
+            sourceSequence: 9,
+            summary: row.summary_json,
+            payload: JSON.stringify({
+              ...archived,
+              summary: { ...archived.summary, syncedAt: "2026-02-01T00:00:00.000Z" },
+            }),
+            updatedAt: thread.summary.updatedAt,
+          });
+          yield* sql`UPDATE fork_library_thread_versions SET payload_json=(SELECT payload_json FROM fork_library_threads)`;
+          const shared = (yield* sql<{
+            payload_json: string;
+          }>`SELECT payload_json FROM fork_library_threads`)[0]!.payload_json;
+          yield* service.registerThread({
+            requestId: "later",
+            thread: { ...thread, summary: { ...thread.summary, sequence: 10 } },
+          });
+          // Re-encoding would fill in the field, and the proof would stop matching once a later
+          // contract fills in another.
+          const stored = Hex.encode(
+            yield* (yield* Crypto.Crypto).digest(
+              "SHA-256",
+              new TextEncoder().encode(
+                JSON.stringify(
+                  canonical({
+                    ...archived,
+                    summary: { ...archived.summary, syncedAt: VERSION_EPOCH },
+                  }),
+                ),
+              ),
+            ),
+          );
+          expect(
+            yield* sql`SELECT payload_json FROM fork_library_thread_versions WHERE source_sequence=9`,
+          ).toEqual([{ payload_json: `loom:sha256:${stored}` }]);
+          expect(
+            yield* sql`SELECT COUNT(*) AS count FROM fork_library_history_blobs WHERE digest=${shared.slice("loom:gzip:".length)}`,
+          ).toEqual([{ count: 0 }]);
+          expect(yield* service.verifyImport({ requestId: "import" })).toMatchObject({
+            logicalRecordsVerified: true,
+            verified: true,
+          });
+        }),
+      ),
   );
   it.effect(
     "hides retired borrowed registrations while preserving their historical association and pinned revision",

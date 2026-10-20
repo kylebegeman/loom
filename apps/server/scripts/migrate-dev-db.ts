@@ -17,7 +17,7 @@ import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 // fork: dev-db
-import { FORK_LIVE_RESOURCE_TABLES } from "../src/fork/devDb.ts";
+import { FORK_LIVE_RESOURCE_TABLES, createDevDbFullTextTables } from "../src/fork/devDb.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -247,7 +247,11 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
 
   yield* sql.withTransaction(
     Effect.gen(function* () {
-      for (const table of tables) yield* sql.unsafe(table.sql).unprepared;
+      const fullText = yield* createDevDbFullTextTables(tables); // fork: dev-db
+      for (const table of tables) {
+        if (fullText.created.has(table.name)) continue; // fork: dev-db
+        yield* sql.unsafe(table.sql).unprepared;
+      }
       if (filtered) {
         yield* sql`CREATE TEMP TABLE copied_threads (thread_id TEXT PRIMARY KEY)`;
         yield* sql`INSERT OR IGNORE INTO copied_threads
@@ -259,6 +263,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       for (const { name } of tables) {
         if (CLEARED_TABLES.includes(name)) continue;
         if (FORK_LIVE_RESOURCE_TABLES.includes(name)) continue; // fork: dev-db
+        if (fullText.created.has(name)) continue; // fork: dev-db
         const nullable = threadIdNullable.get(name);
         const filter = !filtered
           ? ""
@@ -273,6 +278,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
         yield* sql.unsafe(`INSERT INTO main."${name}" SELECT * FROM src."${name}" ${filter}`)
           .unprepared;
       }
+      yield* fullText.rebuild; // fork: dev-db
       yield* sql`DELETE FROM main.sqlite_sequence`;
       yield* sql`INSERT INTO main.sqlite_sequence SELECT name, seq FROM src.sqlite_sequence`;
       for (const entry of schema) {

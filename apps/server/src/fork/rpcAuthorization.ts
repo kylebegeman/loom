@@ -29,10 +29,12 @@ import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
 import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "@t3tools/contracts/fork";
 import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import { CODE_GRAPH_WS_METHODS as G } from "@t3tools/contracts/fork";
+import { PREVIEW_LINKS_WS_METHODS as PL } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
   AuthOrchestrationOperateScope,
+  AuthPreviewOperateScope,
   EnvironmentAuthorizationError,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
@@ -300,6 +302,18 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [G.setAgentTool]: AuthOrchestrationOperateScope,
   // The command setting chooses an executable the server runs.
   [G.updateSettings]: AuthTerminalOperateScope,
+  [PL.watch]: AuthOrchestrationReadScope,
+  // Settings carry the tunnel token, which decides where this computer's previews are served.
+  [PL.configure]: AuthSettingsWriteScope,
+  [PL.share]: AuthPreviewOperateScope,
+  [PL.open]: AuthPreviewOperateScope,
+  [PL.extend]: AuthPreviewOperateScope,
+  [PL.revoke]: AuthPreviewOperateScope,
+  [PL.restore]: AuthPreviewOperateScope,
+  [PL.revokeAll]: AuthPreviewOperateScope,
+  [PL.signOutBrowsers]: AuthPreviewOperateScope,
+  [PL.pagesList]: AuthOrchestrationReadScope,
+  [PL.pagesUpdate]: AuthPreviewOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

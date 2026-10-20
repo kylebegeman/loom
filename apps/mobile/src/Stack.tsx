@@ -1,4 +1,5 @@
 import { SitesRouteScreen } from "./fork/sites/SitesScreen";
+import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen"; // fork: preview-links
 // fork: library
 import {
   LibraryRouteScreen,
@@ -55,6 +56,7 @@ import {
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/ui/AppText";
+import { androidWorkspaceDestinationAnimation } from "./lib/android-workspace-navigation";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { WorkspaceRootScreen } from "./features/workspace/WorkspaceRootScreen";
 import { AndroidWorkspaceTabsProvider } from "./features/workspace/AndroidWorkspaceTabsProvider";
@@ -91,6 +93,7 @@ import { GitBranchesSheet } from "./features/threads/git/GitBranchesSheet";
 import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
+import { ThreadPullRequestsSheet } from "./features/threads/ThreadPullRequestsSheet";
 import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
@@ -235,6 +238,12 @@ const SettingsContentStack = createV5SheetStackNavigator({
     unstable_navigationItemStyle: undefined,
   },
   screens: {
+    // fork: preview-links
+    PreviewLinks: createNativeStackScreen({
+      screen: PreviewLinksRouteScreen,
+      linking: "previews",
+      options: { title: "Previews" },
+    }),
     Settings: createNativeStackScreen({
       screen: SettingsRouteScreen,
       linking: "",
@@ -574,6 +583,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "SettingsLegal",
   "SettingsSheet",
   "ThreadAgents",
+  "ThreadPullRequests",
   "ThreadQueue",
   "ThreadReviewComment",
   "ThreadDevicePreview",
@@ -695,7 +705,9 @@ function NotFoundScreen() {
 
 const RootStackConfig = createWorkspaceStackNavigator({
   initialRouteName: APP_LINKING_CONFIG.initialRouteName, // fork: project-navigation
-  layout: RootStackLayout,
+  // React Navigation calls layouts as plain functions inside its own render. Passing a
+  // compiled component directly would put its memo cache among the navigator's hooks.
+  layout: (props) => <RootStackLayout {...props} />,
   screenOptions: {
     headerShown: false,
   },
@@ -986,6 +998,15 @@ const RootStackConfig = createWorkspaceStackNavigator({
         sheetGrabberVisible: true,
       },
     }),
+    ThreadPullRequests: createNativeStackScreen({
+      screen: ThreadPullRequestsSheet,
+      linking: `${THREAD_LINKING_PREFIX}/pull-requests`,
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.55, 0.92],
+        sheetGrabberVisible: true,
+      },
+    }),
     GitCommit: createNativeStackScreen({
       screen: GitCommitSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/commit`,
@@ -1128,15 +1149,17 @@ function ScreenRenderFallback(props: RenderFailureProps & { readonly routeName: 
 export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navigator }) {
   const { width, height } = useWindowDimensions();
   const nativeMetrics = useNativeLayoutMetrics();
-  const usesWorkspaceFlowScreens =
-    Platform.OS === "android" || deriveLayout({ width, height, nativeMetrics }).usesSplitView;
+  const usesSplitView = deriveLayout({ width, height, nativeMetrics }).usesSplitView;
+  const usesWorkspaceFlowScreens = Platform.OS === "android" || usesSplitView;
 
   return (
     <Navigator
-      screenLayout={GuardedScreenLayout}
+      screenLayout={(props) => <GuardedScreenLayout {...props} />}
       screenOptions={({ route }) => {
         if (route.name !== "SettingsSheet" && route.name !== "NewTaskSheet") {
-          return {};
+          return Platform.OS === "android"
+            ? { animation: androidWorkspaceDestinationAnimation(route.name, usesSplitView) }
+            : {};
         }
 
         return usesWorkspaceFlowScreens

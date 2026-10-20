@@ -192,14 +192,21 @@ release behavior on 2026-10-08 (see PRODUCT).
 | Kind              | Recorded by                                                           | Alive while                  | Released by                                       |
 | ----------------- | --------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
 | Process           | `lane-run` writes `process, pid, label, start time` and execs         | same pid has same start time | SIGTERM to it and its descendants, SIGKILL at 5 s |
-| Port listener     | Nothing; `lsof` on the lane's 20 ports                                | listening                    | same as a process                                 |
+| Port listener     | Nothing; `lsof` on the lane's 20 ports                                | listening                    | same as a process, except runtime forwarders      |
 | Simulator         | The `xcrun` shim records `simctl create` and `clone` output in a lane | `simctl list` still has it   | close device panels, `simctl shutdown`, `delete`  |
 | Container, volume | Nothing; Docker label `loom.lane=<lane id>`                           | `docker ps -a`, `volume ls`  | `docker rm -f`, then `docker volume rm -f`        |
 
 - **Identity.** macOS `ps` cannot read another process's environment, so processes cannot be
   tagged by env. `lane-run` records its own pid and start time and then execs, so the pair
   names exactly the command; a reused pid has a different start time and is ignored. Nothing
-  is ever matched by name, and the server and its ancestors are never signalled.
+  is ever signalled because of its name, and the server, its ancestors and pids 0 and 1 are
+  never signalled.
+- **Container runtimes.** With Docker Desktop, OrbStack or rootless Podman, the listener on a
+  container's published port is the runtime's forwarder (`com.docker.backend` on Dorothy), and
+  stopping it takes every container on the computer down. A listener on a port any running
+  container publishes, or whose command is a known forwarder, is never listed as a lease or
+  stopped, and neither are its children. Names only ever spare a process. Adoption and
+  single-lease release refuse forwarders; label the container `loom.lane=<lane id>` instead.
 - **Detaching.** Agent harnesses kill a command's process group when the command returns
   (Codex does), so `nohup lane-run ... &` dies with the agent's command. `lane-run --detach`
   starts itself again under `set -m` and `nohup` so the job gets its own process group, logs
@@ -208,19 +215,32 @@ release behavior on 2026-10-08 (see PRODUCT).
   are filtered by liveness, and the file goes with the lane.
 - **Scanning.** Each watchdog tick reads the ledgers and one `ps -Ao pid=,ppid=,lstart=`.
   Simulators (only when a ledger has one), Docker (when found on PATH, `~/.docker/bin`,
-  `/usr/local/bin` or `/opt/homebrew/bin`) and port listeners are listed every two minutes or
+  `/usr/local/bin`, `/opt/homebrew/bin`, Docker.app's bundled `bin` or `~/.orbstack/bin`; a
+  miss is looked up again after a minute) and port listeners are listed every two minutes or
   when an action needs fresh state, including every lane status the agent asks for.
 - **Release order.** Removing a lane releases its leases first, then detaches the space, so
-  a stopped server's open files no longer block the unmount. If a release fails the lane is
+  a stopped server's open files no longer block the unmount. Within a release, the published
+  ports are read, then the lane's containers and volumes are removed, and only then are port
+  listeners and recorded processes stopped. If a release fails the lane is
   still removed and the failure is logged; if the unmount is still busy, the next tick tries
-  both again.
+  both again. Only the first attempt stops port listeners. They are matched by port alone, so
+  a retry would stop whatever took the port after the lane was let go, every 30 seconds while
+  the lane stays stuck (seen 2026-10-19: a VM process and a 1Password agent whose working
+  folder was the lane's `tmp` kept two lanes busy). Retries still stop recorded processes. A
+  lane a thread holds again sweeps its ports on its next release.
 - **Devices.** On `thread.settled`, `archived` and `deleted`, the released thread's device
   panels close (L09's `DeviceService`). A device another active thread shows stays on; any
   other is shut down. Lane simulators are deleted only with their lane, and not while a thread
   from another lane has them open.
 - **Ports.** Each lane gets 20 ports from 41000 to 48999, below the macOS ephemeral range and
   away from dev runner ports. Lanes made before migration 2 get a block on first load.
-  `LOOM_LANE_PORT` and `LOOM_LANE_PORTS` are exported by the hook.
+  `LOOM_LANE_PORT` and `LOOM_LANE_PORTS` are exported by the hook. Every Loom server on the
+  computer (the app, dev servers, other homes) draws from this one range and a release stops
+  listeners on the lane's ports, so blocks are claimed in `~/.loom/lane-ports/<base>`, one
+  file per block created exclusively and naming the owner's state folder. A claim lives as
+  long as the lane; a server drops its own claims for lanes it no longer has on start, and a
+  claim whose owner's state folder is gone is free. A lane whose block another server claimed
+  first moves to a free one when its server starts, and its `LANE.md` is rewritten.
 - **Build slots.** `lane-slot` takes one of `slots/count` slots with `lockf -k -t 0` (Linux:
   `flock -n -E 75`) around the command; the lock is released when the command exits, and
   background children do not hold it, so Xcode's build service cannot keep a slot. A marker

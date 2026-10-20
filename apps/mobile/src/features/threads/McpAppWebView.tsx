@@ -30,7 +30,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { AppText as Text } from "../../components/ui/AppText";
 import { shareGeneratedAttachment } from "../../lib/attachmentDownload";
 import { mobileHtmlRenderTheme } from "../../lib/htmlRenderTheme";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { openThreadUrlExternally } from "../../fork/preview-links/navigation"; // fork: preview-links
 import { uuidv4 } from "../../lib/uuid";
 import { useAssetUrlState } from "../../state/assets";
 import { useThreadShell } from "../../state/entities";
@@ -327,7 +327,8 @@ export function ThreadMcpApp(props: {
         if (!(await confirm(`Open a link from ${app.server}?`, url, "Open"))) {
           throw new McpAppHostRefusal("Declined by the user.");
         }
-        if (!(await tryOpenExternalUrl(url, "mcp-app"))) {
+        // fork: preview-links
+        if (!(await openThreadUrlExternally(scope().environmentId, url, "mcp-app"))) {
           throw new McpAppHostRefusal("The link could not be opened.");
         }
       },

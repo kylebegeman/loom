@@ -10,6 +10,7 @@ import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
 import { codeGraphPaletteSource } from "../code-graph/palette";
+import { previewLinksPaletteSource } from "../preview-links/palette";
 import {
   libraryPaletteSource,
   useLibraryPaletteContext,
@@ -74,6 +75,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   deviceQaPaletteSource,
   panelPickerPaletteSource,
   codeGraphPaletteSource,
+  previewLinksPaletteSource,
   libraryPaletteSource,
 ];
 

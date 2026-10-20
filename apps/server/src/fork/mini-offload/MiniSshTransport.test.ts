@@ -5,6 +5,8 @@ import * as NodeStream from "node:stream";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import { TestClock } from "effect/testing";
 import * as Ssh from "./MiniSshTransport.ts";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 const worker = { id: "pi", name: "Pi", target: "pi", sshConfig: null, enabled: true };
@@ -62,6 +64,29 @@ describe("Mini SSH transport", () => {
       ).toBe("transfer");
       expect(child.kill).toHaveBeenCalledWith("SIGKILL");
       expect(child.stdin.destroyed).toBe(true);
+    }).pipe(Effect.provide(Ssh.layer)),
+  );
+  it.effect("waits for a slow snapshot upload as long as the worker accepts one", () =>
+    Effect.gen(function* () {
+      const ssh = yield* Ssh.MiniSshTransport;
+      const upload = childWith("", false);
+      const receive = yield* ssh
+        .request(worker, "receive", { archive_bytes: 900 * 1024 * 1024 })
+        .pipe(Effect.asVoid, Effect.flip, Effect.forkChild);
+      yield* Effect.yieldNow;
+      const query = childWith("", false);
+      const rpc = yield* ssh
+        .request(worker, "rpc", { action: "show" })
+        .pipe(Effect.asVoid, Effect.flip, Effect.forkChild);
+      yield* TestClock.adjust("121 seconds");
+      expect((yield* Fiber.join(rpc)).reason).toBe("transfer");
+      expect(query.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(upload.kill).not.toHaveBeenCalled();
+      yield* TestClock.adjust("1680 seconds");
+      expect(upload.kill).not.toHaveBeenCalled();
+      yield* TestClock.adjust("120 seconds");
+      expect((yield* Fiber.join(receive)).reason).toBe("transfer");
+      expect(upload.kill).toHaveBeenCalledWith("SIGKILL");
     }).pipe(Effect.provide(Ssh.layer)),
   );
   it.effect("refuses malformed JSON without exposing remote stderr", () =>

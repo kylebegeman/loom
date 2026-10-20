@@ -184,6 +184,20 @@ describe("lane ports", () => {
     // Blocks stay below the macOS ephemeral range.
     expect(PORT_RANGE.last).toBeLessThan(49152);
   });
+
+  it("skips blocks holding a busy port, at either edge of the block", () => {
+    const first = PORT_RANGE.first;
+    // The first block's last port and the second block's first port are in use.
+    const busy = new Set([first + PORT_BLOCK - 1, first + PORT_BLOCK]);
+    expect(allocatePortBase(new Set(), busy)).toBe(first + 2 * PORT_BLOCK);
+    expect(allocatePortBase(new Set([first + 2 * PORT_BLOCK]), busy)).toBe(first + 3 * PORT_BLOCK);
+    // Ports outside the range, such as Docker publishing 5432, block nothing.
+    expect(allocatePortBase(new Set(), new Set([5432, PORT_RANGE.last + 1]))).toBe(first);
+    const everyBlock = new Set<number>();
+    for (let base = first; base + PORT_BLOCK - 1 <= PORT_RANGE.last; base += PORT_BLOCK)
+      everyBlock.add(base + 7);
+    expect(allocatePortBase(new Set(), everyBlock)).toBeNull();
+  });
 });
 
 describe("build slots", () => {

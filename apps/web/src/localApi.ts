@@ -1,8 +1,10 @@
 import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import { needsPreviewLinkEntry } from "@t3tools/contracts/fork"; // fork: preview-links
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
+import { openPreviewLinkExternally } from "./fork/preview-links/systemBrowser"; // fork: preview-links
 
 let cachedApi: LocalApi | undefined;
 
@@ -19,6 +21,7 @@ function createBrowserLocalApi(): LocalApi {
     },
     shell: {
       openExternal: async (url) => {
+        if (needsPreviewLinkEntry(url)) return openPreviewLinkExternally(url); // fork: preview-links
         if (window.desktopBridge) {
           const opened = await window.desktopBridge.openExternal(url);
           if (!opened) {

@@ -20,6 +20,7 @@ import {
   type LibraryTimelineFilter,
   type LibraryTimelineLink,
   groupTimelineByDay,
+  timelineNewestFirst,
 } from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
 import {
@@ -174,7 +175,7 @@ export function TimelinePreview({
       : null,
   );
   if (!supported) return null;
-  const entries = latest.data?.entries ?? [];
+  const entries = timelineNewestFirst(latest.data?.entries ?? []);
   return (
     <LibrarySection
       title="Lately"

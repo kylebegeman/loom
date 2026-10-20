@@ -31,8 +31,15 @@ const KNOWN_SHARED_DIRECTORIES = [
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
 // Codex can create these in an active shadow home before they exist in the shared home.
 // Keep their contents (and any existing links) when preparing the overlay again.
+// Finder maintains metadata separately for each directory, including shadow homes.
 // fork: codex-shadow-images
-const SHADOW_LOCAL_ENTRY_NAMES = new Set(["generated_images", "log", "memories", "tmp"]);
+const SHADOW_LOCAL_ENTRY_NAMES = new Set([
+  "generated_images",
+  "log",
+  "memories",
+  "tmp",
+  ".DS_Store",
+]);
 // Codex creates these runtime locks itself when it starts in a shadow home before the shared
 // home has one. They guard shared state, so a local copy is replaced with the shared link.
 const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set(["mcp-oauth-locks", ".sqlite-maintenance.lock"]);

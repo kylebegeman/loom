@@ -101,6 +101,88 @@ describe("search", () => {
     expect(labels.every((label) => label.toLowerCase().includes("parse"))).toBe(true);
   });
 
+  it("ranks subsequences after name and file matches and rejects incomplete matches", () => {
+    const index = load({
+      nodes: [
+        { id: "fuzzy", label: "readRemoteConfig()", source_file: "a.ts" },
+        { id: "prefix", label: "rrcOptions()", source_file: "b.ts" },
+        { id: "substring", label: "parse_rrc_value()", source_file: "c.ts" },
+        { id: "path", label: "other", source_file: "rrc.ts" },
+        { id: "exact", label: "rrc()", source_file: "d.ts" },
+        { id: "too-short", label: "rc()", source_file: "e.ts" },
+      ],
+      links: [],
+    });
+    expect(search(index, "rrc()").nodes.map((node) => node.id)).toEqual([
+      "exact",
+      "prefix",
+      "substring",
+      "path",
+      "fuzzy",
+    ]);
+    expect(search(index, "readRemoteConfigurationWithAnUnmatchedSuffix")).toEqual({
+      nodes: [],
+      truncated: false,
+    });
+  });
+
+  it("keeps the best capped matches and stable ties when better matches arrive late", () => {
+    const index = load({
+      nodes: [
+        ...Array.from({ length: 100 }, (_, i) => {
+          const number = 99 - i;
+          return {
+            id: `noise-${number}`,
+            label: "myTargetTool",
+            source_file: `z/${String(number).padStart(3, "0")}.ts`,
+          };
+        }),
+        { id: "prefix-long", label: "targetLonger", source_file: "a.ts" },
+        { id: "path", label: "other", source_file: "target.ts" },
+        { id: "subsequence", label: "t_a_r_g_e_t", source_file: "b.ts" },
+        { id: "tied-first", label: "target()", source_file: "b.ts", source_location: "L5" },
+        { id: "tied-second", label: "target()", source_file: "b.ts", source_location: "L5" },
+        { id: "exact-short", label: "target", source_file: "z.ts" },
+        { id: "prefix-short", label: "targetA", source_file: "a.ts" },
+      ],
+      links: [],
+    });
+    const first = ["exact-short", "tied-first", "tied-second", "prefix-short", "prefix-long"];
+    expect(search(index, "target", 5)).toMatchObject({
+      nodes: first.map((id) => ({ id })),
+      truncated: true,
+    });
+    expect(search(index, "target").nodes.map((node) => node.id)).toEqual([
+      ...first,
+      ...Array.from({ length: 45 }, (_, i) => `noise-${i}`),
+    ]);
+    expect(search(index, "target", 105).nodes.map((node) => node.id)).toEqual([
+      ...first,
+      ...Array.from({ length: 100 }, (_, i) => `noise-${i}`),
+    ]);
+    expect(resolveNode(index, "target")).toBe(index.byId.get("exact-short"));
+  });
+
+  it.each([
+    { limit: 0, ids: [], truncated: true },
+    { limit: 1, ids: ["a"], truncated: true },
+    { limit: 1.9, ids: ["a"], truncated: true },
+    { limit: -1, ids: ["a", "b"], truncated: true },
+    { limit: Number.POSITIVE_INFINITY, ids: ["a", "b", "c"], truncated: false },
+  ])("preserves slice and truncation behavior for limit $limit", ({ limit, ids, truncated }) => {
+    const index = load({
+      nodes: ["c", "b", "a"].map((id) => ({
+        id,
+        label: "needle()",
+        source_file: `${id}.ts`,
+      })),
+      links: [],
+    });
+    const result = search(index, "needle", limit);
+    expect(result.nodes.map((node) => node.id)).toEqual(ids);
+    expect(result.truncated).toBe(truncated);
+  });
+
   it("matches file paths, skips external nodes and caps the results", () => {
     const index = load();
     expect(search(index, "hostDevices.test").nodes.map((node) => node.file)).toContain(
@@ -236,6 +318,67 @@ describe("impact", () => {
 });
 
 describe("summary", () => {
+  it("keeps the highest-degree hubs and stable label ties at the cap", () => {
+    const index = load({
+      nodes: Array.from({ length: 25 }, (_, i) => ({
+        id: `node-${i}`,
+        label: i === 24 ? "aHub()" : i === 23 ? "zHub()" : "same()",
+        source_file: `node-${i}.ts`,
+      })),
+      links: [
+        ...Array.from({ length: 25 }, (_, i) => ({
+          source: `node-${i}`,
+          target: `node-${(i + 1) % 25}`,
+          relation: "calls",
+        })),
+        { source: "node-24", target: "node-23", relation: "references" },
+        { source: "node-0", target: "node-1", relation: "contains" },
+        { source: "node-0", target: "node-1", relation: "method" },
+      ],
+    });
+    expect(summary(index).hubs.map(({ node, degree }) => [node.id, degree])).toEqual([
+      ["node-24", 3],
+      ["node-23", 3],
+      ...Array.from({ length: 18 }, (_, i) => [`node-${i}`, 2]),
+    ]);
+  });
+
+  it("uses the rebuilt graph's counts and hubs without changing an earlier graph's overview", () => {
+    const nodes = ["a", "b"].map((id) => ({
+      id,
+      label: `${id}()`,
+      source_file: `${id}.ts`,
+      community: 1,
+    }));
+    const links = [{ source: "a", target: "b", relation: "calls" }];
+    const original = load({ nodes, links });
+    const before = summary(original);
+    const rebuilt = load({
+      nodes: [...nodes, { id: "c", label: "c()", source_file: "c.ts", community: 2 }],
+      links: [...links, { source: "a", target: "c", relation: "imports" }],
+    });
+    expect(summary(rebuilt)).toMatchObject({
+      nodeCount: 3,
+      edgeCount: 2,
+      fileCount: 3,
+      hubs: [
+        { node: { id: "a" }, degree: 2 },
+        { node: { id: "b" }, degree: 1 },
+        { node: { id: "c" }, degree: 1 },
+      ],
+      relations: [
+        { relation: "calls", count: 1 },
+        { relation: "imports", count: 1 },
+      ],
+      communities: [
+        { community: 1, size: 2 },
+        { community: 2, size: 1 },
+      ],
+    });
+    expect(summary(original)).toEqual(before);
+    expect(before).toMatchObject({ nodeCount: 2, edgeCount: 1, fileCount: 2 });
+  });
+
   it("counts the graph and lists communities and hubs without external nodes", () => {
     const index = load();
     const result = summary(index);

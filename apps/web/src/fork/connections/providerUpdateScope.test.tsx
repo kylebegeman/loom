@@ -23,6 +23,13 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock("~/state/environments", () => ({
   useEnvironments: () => ({ environments: fixture.environments }),
+  useEnvironmentProviders: () =>
+    new Map(
+      fixture.environments.map((environment) => [
+        environment.environmentId,
+        environment.serverConfig.providers,
+      ]),
+    ),
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => fixture.update }));
 vi.mock("~/state/server", async () => {

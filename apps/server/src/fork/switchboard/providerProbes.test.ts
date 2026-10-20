@@ -269,17 +269,17 @@ it.layer(NodeServices.layer)("routed Claude readiness", (it) => {
       );
       yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
       const settings = decodeClaudeSettings({});
-      const capabilities = yield* probeClaudeCapabilities(
+      const probe = probeClaudeCapabilities(
         settings,
         undefined,
         undefined,
         true,
         switchboardSettings,
       );
-      assert.equal(capabilities, undefined);
+      const failure = yield* Effect.flip(probe);
       const status = yield* checkClaudeProviderStatus(
         settings,
-        () => Effect.succeed(capabilities),
+        () => Effect.fail(failure),
         undefined,
         undefined,
         undefined,

@@ -1,7 +1,7 @@
 import { useClerk, useSignIn, useUser } from "@clerk/expo";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Platform, View } from "react-native";
-import { NativeHeaderToolbar } from "../../native/StackHeader";
+import { NativeHeaderToolbar } from "../../native/NativeHeaderToolbar";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText, AppTextInput } from "../../components/ui/AppText";

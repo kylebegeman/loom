@@ -40,7 +40,7 @@ export const MiniOffloadToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_mini_submit", {
     description:
-      "Offload this thread's committed repository snapshot to a registered Mini worker. Supply a stable 32-character lowercase hex requestId. Save it before calling. Local changes need a commit or explicit committedOnly. Use recover after uncertain acceptance, never a different worker or request ID. SDKs and provider credentials must already exist on the worker. Optional outputs lists up to 32 exact repository-relative files to retain, including ignored build files, up to 60 MiB total.",
+      "Offload this thread's committed repository snapshot, up to 1 GiB, to a registered Mini worker. Supply a stable 32-character lowercase hex requestId. Save it before calling. Local changes need a commit or explicit committedOnly. Use recover after uncertain acceptance, never a different worker or request ID. SDKs and provider credentials must already exist on the worker. Optional outputs lists up to 32 exact repository-relative files to retain, including ignored build files, up to 60 MiB total.",
     parameters: Schema.Struct({
       workerId: MiniSubmit.fields.workerId,
       requestId: MiniSubmit.fields.requestId,
