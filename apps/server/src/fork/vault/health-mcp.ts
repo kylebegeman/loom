@@ -2,6 +2,8 @@ import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
   VaultHealthSnapshot,
+  VaultHealthContextInput,
+  VaultHealthContextPage,
   VaultHealthRecheckResult,
   VaultHealthMutation,
   VaultItemId,
@@ -13,11 +15,20 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as VaultHealthContext from "./VaultHealthContext.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultHealthChecks from "./VaultHealthChecks.ts";
 const failure = Schema.Union([VaultError, OrchestratorMcpFailure]),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultHealthToolkit = Toolkit.make(
+  Tool.make("loom_vault_health_context", {
+    description:
+      "Inspect current project profile and grant references to an item, ten projects per page. Administrator clients only. References are not proof of working access; retained run pins and external consumers are not enumerated.",
+    parameters: VaultHealthContextInput,
+    success: VaultHealthContextPage,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_health", {
     description:
       "Inspect the administrator maintenance inbox and declared expiry rules. Full-access administrator clients only, not agent threads. Does not contact providers or return credentials.",
@@ -55,6 +66,13 @@ export const vaultHealthHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_health_context: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(Effect.flatMap(VaultHealthContext.VaultHealthContext, (s) => s.inspect(input))),
+          ),
+        ),
+      ),
       loom_vault_health: McpToolAccess.reads(() =>
         admin.pipe(
           Effect.andThen(onHost(Effect.flatMap(VaultHealth.VaultHealth, (s) => s.snapshot))),

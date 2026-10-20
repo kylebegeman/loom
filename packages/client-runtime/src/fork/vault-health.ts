@@ -9,6 +9,10 @@ export function createVaultHealthAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    context: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:health-context",
+      tag: V.context,
+    }),
     snapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:health",
       tag: V.snapshot,

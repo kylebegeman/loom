@@ -7,6 +7,7 @@ import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
   health: "loom_vault_health",
+  "health-context": "loom_vault_health_context",
   "health-apply": "loom_vault_health_apply",
   "health-recheck": "loom_vault_health_recheck",
   "terminal-readiness": "loom_vault_terminal_readiness",

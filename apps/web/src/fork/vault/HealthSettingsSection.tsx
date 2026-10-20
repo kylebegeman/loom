@@ -1,3 +1,4 @@
+import { VaultHealthContext } from "./HealthContext";
 import { openVaultAccess } from "./access-navigation";
 import { useVaultTime } from "./useVaultTime";
 import { useState } from "react";
@@ -51,6 +52,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
   const atom = atoms.snapshot({ environmentId, input: {} }),
     result = useAtomValue(atom),
     snapshot = Option.getOrNull(AsyncResult.value(result));
+  const [contextIssue, setContextIssue] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null),
     [itemId, setItemId] = useState(""),
     [expires, setExpires] = useState(""),
@@ -152,6 +154,16 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
             >
               Review access
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
+            >
+              {contextIssue === issue.id ? "Hide project references" : "Show project references"}
+            </Button>
+            {contextIssue === issue.id ? (
+              <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
+            ) : null}
             <p className="text-sm">
               {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences · Last seen{" "}
               {new Date(issue.lastSeenAt).toLocaleString()}

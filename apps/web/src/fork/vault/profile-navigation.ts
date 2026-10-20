@@ -1,5 +1,9 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-type Target = { environmentId: EnvironmentId | undefined; section: "profiles" | "references" };
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+type Target = {
+  environmentId: EnvironmentId | undefined;
+  projectId?: ProjectId;
+  section: "profiles" | "references";
+};
 const listeners = new Set<(target: Target) => void>();
 export const onOpenVaultProfiles = (listener: (target: Target) => void) => {
   listeners.add(listener);

@@ -78,4 +78,19 @@ Operation observation is diagnostic. A health-store failure never converts a com
 write into a failure that could cause duplicate retries. Nonzero child exits do not resolve
 credential health. Network/timeouts remain separate from authentication; generic SSH connection
 failures become review issues without claiming that the key was revoked. Account/provider revocation
-is never performed by this service. Broader affected-project discovery remains selected work.
+is never performed by this service.
+
+`VaultHealthContext` inspects current profile bindings and grant references for one item. It
+uses the environment's project store and existing profile/access services, sorted by project ID,
+with ten projects per page and two concurrent profile reads. Thread grants resolve to the
+thread's current project; deleted or unknown threads are omitted. Suspended/revoked grants and
+archived profiles retain their labels and state, without being represented as usable authority.
+The response contains only metadata. Project and registry failures return an error rather than
+an empty-success result. Each page is a current inspection, not a transaction across registries.
+Reads can still race edits; use the actual access inspector and launch checks for authorization.
+
+The additional `vault-health-context` capability gates clients against older health servers.
+Its protected read RPC, administrator MCP tool and `health-context` CLI command call the same
+service. Clients request context only after expansion, can close/refresh/page it, and can review
+the selected project's profiles or grants. Retained run pins and external consumers remain
+outside this lookup; neither is silently treated as absent.

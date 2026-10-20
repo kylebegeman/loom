@@ -182,7 +182,7 @@ export function VaultProfileSettingsSection({
       </SettingsSection>
       <SettingsSection title="Vault project profiles">
         {canRead ? (
-          <ProfileProjects
+          <VaultProjectProfiles
             key={`${environmentId}:${connected}:${canWrite}`}
             environmentId={environmentId}
             connected={connected}
@@ -195,19 +195,21 @@ export function VaultProfileSettingsSection({
     </>
   );
 }
-function ProfileProjects({
+export function VaultProjectProfiles({
   environmentId,
   connected,
   canWrite,
+  initialProject = null,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   canWrite: boolean;
+  initialProject?: ProjectId | null;
 }) {
   const catalog = useEnvironmentQuery(
     connected ? access.catalog({ environmentId, input: {} }) : null,
   );
-  const [project, setProject] = useState<ProjectId | null>(null),
+  const [project, setProject] = useState<ProjectId | null>(initialProject),
     [choosing, setChoosing] = useState(false),
     [filter, setFilter] = useState("");
   const projects = catalog.data?.subjects.filter((s) => s.principal.kind === "project") ?? [];

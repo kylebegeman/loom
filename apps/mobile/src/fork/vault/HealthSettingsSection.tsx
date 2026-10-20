@@ -1,3 +1,4 @@
+import { VaultHealthContext } from "./HealthContext";
 import { VaultAccessCheckSheet } from "./AccessSettingsSection";
 import { useVaultTime } from "./useVaultTime";
 import { useState } from "react";
@@ -67,6 +68,7 @@ function Inbox({
   const apply = useAtomCommand(atoms.apply, { reportFailure: false }),
     recheck = useAtomCommand(atoms.recheck, { reportFailure: false });
   const canApply = useAtomValue(atoms.apply.permissionAtom(environmentId));
+  const [contextIssue, setContextIssue] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null),
     [itemId, setItemId] = useState(""),
     [itemLabel, setItemLabel] = useState("Choose an item"),
@@ -160,6 +162,19 @@ function Inbox({
             </Text>
             <Text>{vaultHealthMessage(issue)}</Text>
             <Button label="Review access" onPress={() => setReviewing(issue.itemId)} />
+            <Button
+              label={
+                contextIssue === issue.id ? "Hide project references" : "Show project references"
+              }
+              onPress={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
+            />
+            {contextIssue === issue.id ? (
+              <VaultHealthContext
+                environmentId={environmentId}
+                itemId={issue.itemId}
+                connected={connected}
+              />
+            ) : null}
             <Text>
               {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences
             </Text>

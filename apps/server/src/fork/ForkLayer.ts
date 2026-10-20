@@ -1,3 +1,4 @@
+import * as VaultHealthContext from "./vault/VaultHealthContext.ts";
 import * as VaultHealth from "./vault/VaultHealth.ts";
 import * as VaultHealthChecks from "./vault/VaultHealthChecks.ts";
 import * as GitHubTerminal from "./vault/GitHubTerminal.ts";
@@ -132,6 +133,11 @@ const layerVaultProfiles = VaultProfiles.layer.pipe(
     ),
   ),
 );
+const layerVaultHealthContext = VaultHealthContext.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultCore, layerVaultProfiles, layerVaultAccess, ProjectStore.layer),
+  ),
+);
 const layerVaultReferences = VaultReferences.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess)),
 );
@@ -159,6 +165,7 @@ const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   layerVaultHealth,
+  layerVaultHealthContext,
   VaultHealthChecks.reactor.pipe(Layer.provideMerge(layerVaultHealthChecks)),
   layerVaultGitHub,
   VaultPromptContext.layer.pipe(

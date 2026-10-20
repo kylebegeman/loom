@@ -515,3 +515,10 @@ for validation. Enable automatic checks explicitly; otherwise checks run only wh
 Warnings begin seven days before declared expiry. Recent checks can be rate limited, and an
 item without a rule must be configured before rechecking. Removing a rule stops future automatic
 checks. Health actions never sign into personal accounts, rotate credentials or retry writes.
+
+From a maintenance issue, choose **Show project references** to inspect current project profiles
+and grants that name the item. **More projects** checks the next ten projects; a page with no
+references does not establish that later projects have none. Review a project's profiles to
+change its bindings, or review grants before changing authority. Archived profiles and inactive
+grants keep their state labels. These references do not prove working access and do not include
+retained run selections or consumers outside Loom.

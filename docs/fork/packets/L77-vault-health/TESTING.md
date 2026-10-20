@@ -67,4 +67,22 @@ watch restarts caused transient disconnects; after the server settled, the flow 
 Native iOS interaction verification is pending: `mobile-native-client.ts check` reports the
 installed client stale, and Kyle's current instruction forbids installation. No native build
 or installation was attempted. Electron shell, remote/relay and upstream-server interaction checks are not claimed.
-Affected-project aggregation remains incomplete.
+Current profile/grant project references are implemented in the follow-up below. Retained run
+pins and external consumers remain outside that lookup.
+
+## Project reference follow-up
+
+The context/service/health/profile/permission/registry/MCP check passed 52 tests in eight files.
+The service test covers ten-project pagination, matching requirement names, project/thread
+grants with explicit inactive states, changed bindings, missing items and unavailable registries.
+Server, web, mobile, contracts and client-runtime typechecks passed; web/mobile were rerun
+after capability gating. Scoped lint passed. No native module changed; the preceding native
+static pass remains applicable.
+
+The integrated web pass reached an empty project-reference page for a synthetic GitHub item,
+including its inspected count, timestamp, caveat and disabled final-page navigation. Matching
+reference cards and project-review navigation have service/static evidence; their integrated
+interaction pass remains incomplete. Native interaction remains pending under the no-install
+restriction. Source-watch ownership and stale Vite optimization interfered with local QA;
+reusing the existing isolated server and forcing optimization restored the client without
+installation. No production state or Library service changed.

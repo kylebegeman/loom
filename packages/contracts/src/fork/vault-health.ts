@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
+import { ProjectId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { VaultError, VaultItemId } from "./vault-core.ts";
 const Time = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -63,12 +64,54 @@ export const VaultHealthMutation = Schema.Struct({
   ]),
 });
 export type VaultHealthMutation = typeof VaultHealthMutation.Type;
+export const VaultHealthContextInput = Schema.Struct({
+  itemId: VaultItemId,
+  cursor: Schema.NullOr(ProjectId),
+});
+export type VaultHealthContextInput = typeof VaultHealthContextInput.Type;
+export const VaultHealthContextPage = Schema.Struct({
+  itemId: VaultItemId,
+  checkedAt: Time,
+  inspectedProjects: Schema.Int,
+  nextCursor: Schema.NullOr(ProjectId),
+  projects: Schema.Array(
+    Schema.Struct({
+      id: ProjectId,
+      title: Schema.String,
+      profiles: Schema.Array(
+        Schema.Struct({
+          id: VaultItemId,
+          label: Schema.String,
+          state: Schema.Literals(["active", "archived"]),
+          isDefault: Schema.Boolean,
+          requirements: Schema.Array(Schema.String),
+        }),
+      ),
+      grants: Schema.Array(
+        Schema.Struct({
+          id: VaultItemId,
+          label: Schema.String,
+          principalKind: Schema.Literals(["project", "thread"]),
+          state: Schema.Literals(["active", "suspended", "revoked"]),
+          expiresAt: Schema.NullOr(Time),
+        }),
+      ),
+    }),
+  ).check(Schema.isMaxLength(10)),
+});
+export type VaultHealthContextPage = typeof VaultHealthContextPage.Type;
 export const VAULT_HEALTH_WS_METHODS = {
   snapshot: "loom.vault-health.snapshot",
+  context: "loom.vault-health.context",
   apply: "loom.vault-health.apply",
   recheck: "loom.vault-health.recheck",
 } as const;
 export const VaultHealthRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_HEALTH_WS_METHODS.context, {
+    payload: VaultHealthContextInput,
+    success: VaultHealthContextPage,
+    error: Schema.Union([VaultError, EnvironmentAuthorizationError]),
+  }),
   Rpc.make(VAULT_HEALTH_WS_METHODS.snapshot, {
     payload: Schema.Struct({}),
     success: VaultHealthSnapshot,
