@@ -63,7 +63,11 @@ of unknown outcome and approval revocation. No production policy was inspected o
 Approver-context labels and accessible review are implemented with bounded current metadata,
 ID fallback for older servers, changed/unavailable-context warnings, named web regions/headings
 and contextual native action hints. Stable IDs/version/destination remain visible and server
-decisions stay authoritative. Native acceptance of these additions remains owner-led.
+decisions stay authoritative. Kyle's approver-context iOS pass accepted current/changed/missing
+context, counts and UI denial/cancellation. The fixtures were direct synthetic policy CAS writes,
+not request-tool creations. The follow-up's disabled hints, header roles and actual VoiceOver
+speech are source-verified only; deleted-project handling is unit-test-only. TESTING.md records
+the evidence and remaining surface limits.
 
 Requester-safe journal recovery status is implemented as a read-only authenticated-thread MCP
 service call. Reserved/unknown entries require outcome review, missing/aged evidence never proves
@@ -78,10 +82,19 @@ reopen, and current denials remain authoritative. Lookup failures fail closed; o
 creates or consumes nothing. The isolated existing-policy OpenBao proof covers the public
 composition and read-only reservation observation across restart.
 
-Next selected work: design the gated dispatcher and one-time consumption boundary, with a
-synthetic race/crash proof before wiring any external effect. Resolve the ordering between
-request authority, journal reservation and consumption, and keep all public gates false. No
-Library, new path/capability or policy-format change is implied.
+The gated dispatcher/consumption design and synthetic proof are recorded in TECHNICAL.md.
+Fresh CAS acknowledgement, a non-serializable single-use in-process opportunity, mandatory
+reconciliation of every replay and final adapter authorization define the proposed boundary.
+The model explores both contenders and failure placement; real services prove that reserve
+replays are indistinguishable and that reservation does not consume a timed grant. No runtime
+dispatcher, acquisition contract, one-time approval discriminator or evaluator enforcement has
+been implemented. All public gates stay false; schema, paths and policy capabilities stay put.
+
+Next selected work: an internal fresh-acquisition contract and race tests behind the closed
+gates, using the existing journal record and no adapter dispatch. Distinguish fresh acknowledged
+CAS from replay/uncertainty in the service; replay must reconcile, and no serialized observation
+may become a permit. True one-time eligibility, cross-adapter enforcement and downgrade safety
+remain open design prerequisites before any gate can be enabled.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome

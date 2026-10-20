@@ -272,13 +272,43 @@ stable IDs, distinct five/fifteen-minute decision accessible names, pending/all 
 390-pixel layout without horizontal overflow. One synthetic request was created with a matching
 waiting-operation reference through the authenticated service and cancelled using its labelled
 control; no approval grant or pending QA request was left. Existing terminal requests were not
-modified. Browser pairing was recovered only against this lane's isolated backend; no simulator
-pass or production service was touched. Full keyboard/screen-reader and new native interaction
-acceptance remain open rather than inferred from DOM semantics or typechecks.
+modified. Browser pairing was recovered only against this lane's isolated backend; this lane
+ran no simulator pass and touched no production service. Kyle's later native acceptance is
+recorded below; full keyboard/screen-reader acceptance remains open.
 
 This additive response metadata changes no policy/journal format, path, grant scope, execution
-or resumption gate. The previously accepted native milestone remains documented above; it is
-not claimed as acceptance of these later UI additions.
+or resumption gate. The earlier timed-approval native milestone remains documented above.
+
+### Owner-run approver-context native acceptance
+
+Kyle reports **PASS** for `54fa8d66af` plus the `8715558dc0` follow-up. Setup used Loom Dev on an
+iOS simulator, an isolated backend on a copied development DB and disposable loopback OpenBao.
+Four pending requests were seeded by a **direct synthetic CAS write** to the access-policy
+record with a 45-minute request expiry. None came from the request MCP tool; this is fixture
+acceptance, not evidence that the normal request path accepts that duration.
+
+| Fixture/result                                                                                                                                                                                          | Device QA evidence                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `c1` current: record “SSH health settings QA”, thread “Summarize Four Repository READMEs”, project “AspectAvy QA”; no warning and approval enabled                                                      | `dqe_ba743d23-37c1-488c-b0d8-051b46fb198e` |
+| `c2` record version bumped to 2: “Context has changed. Deny or cancel this request and ask for a fresh one.” Both Approve buttons disabled; Deny and Cancel enabled                                     | `dqe_afc8179c-ee4a-43b8-8058-9fe8e0d0af84` |
+| `c4` missing thread/project: fallback “Thread qa:missing-thread · Project qa:missing-project”, record name retained; “Some request context is unavailable. Refresh before approving.” Approval disabled | `dqe_bb6cd31a-53ad-44f9-a7c5-2cfbfb4420d7` |
+| Show all: decided cancelled/denied/revoked headers, no context warning or action buttons                                                                                                                | `dqe_8d324ba8-0bd6-43d9-9946-0f4219c170f3` |
+
+These are Device QA captures in [Loom Projects Updates](t3-thread://v1/3f336eb2-b30f-401c-ad42-241fa4b12bb5), stored as `<evidence-id>.png` under `/Users/kyle/.t3/userdata/fork/device-qa/evidence/3f336eb2-b30f-401c-ad42-241fa4b12bb5/`. `c3` was originally intended as unavailable but reused the existing `fixture:thread:2`/`fixture:project` records; it correctly resolved current with approval enabled. `c4` supplies the actual missing-reference case.
+The count line changed from “3 pending of 9” to “4 of 10” after Refresh, then “0 of 10” after
+UI decisions. Kyle cancelled `c1`/`c4` and denied `c2`/`c3`. OpenBao read-back showed request
+revision 2, `grantId: null` and no new grant for every fixture. `decidedBy: one-time-token` is the
+pairing session label, not an attested personal account identity. No approval grant was created
+in this context-specific pass. The deleted-project case is unit-test-only because this copied
+DB had no soft-deleted projects.
+
+Source-only verification, **not observable through agent-device or a VoiceOver interaction pass**:
+header `accessibilityRole`, disabled Approve `accessibilityHint`, and iOS count announcements.
+`accessibilityLiveRegion` reaches TalkBack only; iOS calls
+`AccessibilityInfo.announceForAccessibility` on count changes after the first loaded count and
+is silent on first load. Both web and mobile render context warnings only for pending requests.
+This lane did not rerun the simulator. Android, Electron, remote/relay/tunnel and full
+keyboard/screen-reader interaction acceptance remain open.
 
 ## Requester recovery observation and project cleanup isolation
 
@@ -325,3 +355,41 @@ version stays 1, and L86 remains partial behind the same closed gates. After int
 concurrent deleted-project/VoiceOver fixes from main, 78 tests pass across access, journal,
 requester MCP and real MCP registration; server/web/mobile typechecks, affected lint and mobile
 native static checks also pass. Native interaction acceptance remains owner-led.
+
+## Gated dispatcher design and synthetic consumption proof
+
+Four focused files pass **44 tests**: the dispatcher proof, real journal behavior,
+operation-specific retry integration and real MCP startup registration. The design model explores
+all 70 order-preserving interleavings of two callers' read/claim/handoff/finish steps, plus a
+second handoff attempt. It inserts withdrawal, expiry, context change, outage, corruption,
+age-out and prepared cancellation at every position (4,410 fault schedules), and process loss
+for either caller at every position (1,260 crash/recovery schedules). Separate traces cover lost
+reservation acknowledgement, pre-commit write failure, completion-write outage/restoration,
+unknown external outcomes and closed gates. No sleeps, polling, host commands or adapters run.
+The counter models a possible future adapter handoff; it does not measure real external effects.
+
+The model asserts at most one simulated start, no start when the final authorization boundary
+observes denied/unreadable/aged context, no terminal reopening, no restored/replayed opportunity,
+and no start with closed gates. It also demonstrates a successful no-fault path, so refusal of
+every candidate is not the safety proof. These are bounded synthetic schedules, not a proof of
+distributed exactly-once behavior or revocation of an already-authorized remote operation.
+
+Two real-service cases use the shared synthetic journal fixture. An identical reserve replay
+after service reconstruction returns exactly the first observation, including false gates;
+mandatory reconciliation records unknown and subsequent reserve/retry is refused or requires
+review. The existing evaluator still allows the timed grant after journal reservation, proving
+that request-bound opportunity consumption cannot be advertised as one-time grant enforcement.
+The fixture's transport dies if invoked. No runtime acquisition/dispatcher was added.
+
+The digest-only storage assertion now recursively checks persisted object fields, including
+inside entries, and excludes the proposal's command value. The cancellation/age case now seeds
+an existing entry with an elapsed retirement deadline while its request is still approved and
+retained; reconcile returns not-found without changing the stored evidence. It no longer relies
+on request age-out to reach not-found.
+
+Server typecheck, focused lint/format, documentation links, 392 seam rows and whitespace pass.
+No client code changed, so no additional client typechecks, browser or native pass was run.
+The prior real OpenBao policy/restart proof is not rerun because persistence/runtime code is
+unchanged; its accepted scope remains above. Access-policy format 3, journal version 1, paths,
+policy capabilities and all gates are unchanged. L86 remains partial. No Library, production,
+install, SSH, tag or release action is included.

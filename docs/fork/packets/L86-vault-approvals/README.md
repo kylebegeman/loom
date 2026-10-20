@@ -63,7 +63,11 @@ The inbox opens with pending work first and shows retained/pending counts. Show 
 restores decision review and revocation. Expiry and age-out update the client view without
 changing the authoritative server checks. Kyle's native iOS acceptance passed on `0.0.99`; TESTING.md records evidence and remaining
 surfaces. Local retry integration through existing SSH/Git/GitHub services also passes with
-synthetic transports. Durable resumption/consumption and live-provider acceptance remain open.
+synthetic transports. Kyle's later approver-context native pass accepted current/changed/missing
+context and UI deny/cancel; accessibility speech/hints remain source-only. The gated dispatcher
+and consumption design now has a synthetic race/crash proof, including reserve replay, but no
+runtime dispatcher or true one-time grant enforcement. Durable resumption/consumption and
+live-provider acceptance remain open.
 
 ## Scope
 

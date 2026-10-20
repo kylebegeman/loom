@@ -371,8 +371,13 @@ server-enforced decisions. A mismatched response request ID cannot relabel anoth
 Web cards have named regions and record headings; decision accessible names include current
 record/thread/project names and request ID, retaining distinct five/fifteen-minute actions.
 Native cards have accessible headings and contextual action hints. Pending counts use polite
-status semantics. No control is hidden inside an accessible group that would swallow its child
-buttons. Native/screen-reader interaction acceptance for these additions is still owner-led.
+status semantics on TalkBack via `accessibilityLiveRegion`. iOS uses
+`AccessibilityInfo.announceForAccessibility` when the pending/retained count changes after the
+first loaded value; first load is silent. No control is hidden inside an accessible group that
+would swallow its child buttons. Both clients show context warnings only while the request is
+pending; decided cards show neither warnings nor decision actions. Kyle's native interaction
+acceptance covers current/changed/unavailable context and decisions. Header roles, disabled
+approval hints and actual VoiceOver count speech remain source-verified only; see TESTING.md.
 
 ## Requester recovery observation
 
@@ -407,3 +412,105 @@ service dependency. The optional response field is absent on older runtimes, who
 does not inspect durable journal evidence. Downgrade never enables continuation of journal-bound
 work. Future dispatch must consult durable recovery state as well as fresh access and adapter
 validation; an observation cannot close an external effect race or authorize execution.
+
+## Gated dispatcher and consumption boundary
+
+This is an approved design and synthetic proof, not a registered dispatcher. Every public
+`canExecute`, `automaticResumption` and `allowOnceConsumption` gate stays false. No production
+service, policy, schema, path, mount, capability or adapter changes in this milestone. Candidate
+state transitions live only in `OperationDispatch.proof.test.ts`; its counter represents a
+simulated adapter handoff, not an external effect.
+
+### What is consumed
+
+Use the existing retained request as the attempt scope: environment, request/grant ID, requester,
+run, opaque waiting-operation ID, item/version, request revision and canonical proposal digest.
+The `prepared -> reserved` CAS consumes one dispatch opportunity for that scope. Completion,
+refusal, cancellation, crash or uncertain outcome never refunds it. A new reservation ID or
+changed proposal cannot create another opportunity on the same request. The original 24-hour
+retirement and 128 cap remain; no young entry is evicted. Once the request ages out, refuse
+continuation even if the journal has been pruned. Missing evidence is not proof of non-execution.
+
+This is **at-most-one request-bound dispatch attempt**, not exactly-once external effects or
+consumption of today's timed grant. The existing evaluator can still authorize normal adapter
+operations with that timed grant after journal reservation. The real-service proof demonstrates
+that fact without executing anything. There is no one-time approval mode in the current
+format-3 grant definition, and a journal entry must never silently convert a timed approval.
+Full-access agents can also use credentials or tools outside a Loom dispatcher; this feature
+does not claim to isolate a full-access process.
+
+### Fresh acquisition and replay
+
+A future dispatcher needs a dedicated acquisition boundary. **The existing `reserve` response
+is insufficient**: an identical replay returns the same observation as the first CAS winner.
+Never branch from `entry.state === reserved` or a caller-supplied reservation ID to execution.
+It is not a capability, even in the same process.
+
+The proposed boundary performs these steps in the same invocation:
+
+1. Require a new explicit typed operation, trusted requester identity and matching retained
+   request. Run the existing evaluator and operation-specific preparation; validate broker,
+   destination, host key/repository, item version and provider workload through the normal adapter.
+2. Observe the journal and bind the exact digest and prepared revision. Only a freshly
+   acknowledged `prepared -> reserved` CAS may create an opaque, process-local, single-use
+   opportunity. It must come directly from the successful CAS branch, never a cached response,
+   read-back, transport reply or serialized token. No worker/outbox event stores it.
+3. If CAS fails, its reply is uncertain, or any lookup/replayed reserve observes `reserved`,
+   run reconciliation before any further attempt: `reserved -> unknown`. If reconciliation
+   fails or conflicts, refuse and require recovery inspection. Unknown/completed/cancelled
+   observations never create an opportunity. This applies even when a lost reply probably
+   preceded any effect. A competing replay may conservatively suppress a live winner.
+4. Immediately before adapter handoff, recheck current evaluator authority, requester/run,
+   item/digest/destination, broker readiness, reservation identity/revision and readable evidence.
+   Burn the process-local opportunity before invoking the synthetic/external adapter, including
+   when these checks refuse. No timeout, cancellation, restored connection or process restart
+   regenerates it. It may be checked repeatedly for authorization, but may start at most one
+   adapter operation. SSH signing callbacks and pre-dispatch token refresh are not new starts.
+   Adapters must not transparently retry uncertain writes without proven provider idempotency;
+   otherwise report unknown. A logical-start bound alone does not bound remote side effects.
+5. Record only bounded outcome classification with the exact reservation/revision. A lost
+   completion write leaves reserved evidence for reconciliation to unknown. A confirmed receipt
+   can be read repeatedly but cannot dispatch. Late completion cannot reopen unknown state.
+
+Neither existing `reserve` nor the production adapter implements that process-local acquisition
+contract yet. The proof models the proposed CAS distinction and uses real journal services to
+verify the replay hazard. There is no promise that an old reserve receipt can later be upgraded
+into a dispatch opportunity.
+
+### Authority and concurrency limits
+
+Policy and journal CAS are separate records, so they cannot atomically consume authority and
+start an external effect. Validation before reservation plus fresh adapter checks narrow that
+race. The model's handoff is the final authorization boundary: withdrawal observed before it
+prevents a start; withdrawal after it cannot undo an in-flight/remote operation. Real adapters
+must retain their repeated authorization checks where available. Do not claim a global
+transaction, a lock against direct host access, or strict cancellation of already-started work.
+A journal opportunity may be consumed without any effect; recover by inspection and a new human
+reviewed request, never by resetting evidence.
+
+| Boundary                                        | Safe result                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Competing prepared readers                      | Only a fresh acknowledged CAS winner can hold an opportunity; a loser/replay reconciles and never gains one. |
+| Reservation commits but acknowledgement is lost | No process-local opportunity; reconciliation records unknown, even if nothing ran.                           |
+| Crash before handoff or after remote start      | The process-local opportunity is gone. Reconcile retained reserved evidence before considering new work.     |
+| Current authority or context fails at handoff   | Refuse and burn the opportunity. No retry on the same reservation.                                           |
+| Completion write/reply is lost                  | Saved completion is historical; unsaved outcome becomes unknown. Neither permits replay.                     |
+| Outage/corruption/age-out or disabled gate      | Refuse. Storage recovery does not regenerate an opportunity or restart work.                                 |
+
+### One-time grant enforcement remains an explicit decision
+
+The attempt protocol is a prerequisite, not the full allow-once feature. Before enabling it,
+choose a downgrade-safe way to distinguish one-time intent from timed access within the existing
+approved storage boundary, and make the evaluator plus **every** SSH/Git/GitHub, CLI/MCP,
+scheduled-run, provider and broker credential-delivery entry point enforce that intent. Alternate
+grants must not silently satisfy a request advertised as one-time. Decide whether consumption
+means one adapter start, one credential release or one provider-acknowledged operation, including
+SSH multi-sign/connection attempts, Git fetch writes and HTTP/provider retries. The proposed safe
+unit is one adapter start with no transparent replay of uncertain effects; provider idempotency
+or independently verified results can improve recovery later.
+
+Those eligibility/enforcement and downgrade decisions are open. Safe default: refuse the
+one-time/resumption paths and preserve existing timed-grant behavior. No mode field, format bump,
+new path or policy right is selected or written here. A future strategy needing one requires
+Kyle's explicit approval. Cross-client/evaluator acceptance and live-adapter crash/revocation
+proofs are required before asking to open a gate; the abstract model alone cannot justify it.

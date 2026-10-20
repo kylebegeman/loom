@@ -1,124 +1,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadId } from "@t3tools/contracts";
-import {
-  VaultApprovalRecoveryStatus,
-  VaultApprovalRetryReport,
-  VaultError,
-  type VaultApprovalRetryInput,
-} from "@t3tools/contracts/fork";
+import { VaultApprovalRecoveryStatus, VaultApprovalRetryReport } from "@t3tools/contracts/fork";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import * as OperationJournal from "./OperationJournal.ts";
-import * as OpenBaoStore from "./OpenBaoStore.ts";
-import * as SshTransport from "./SshTransport.ts";
-import { launchFixture } from "./VaultLaunch.testkit.ts";
+
+import { journalFixture as fixture } from "./OperationJournal.testkit.ts";
 
 const isRecoveryStatus = Schema.is(VaultApprovalRecoveryStatus);
 const isRetryReport = Schema.is(VaultApprovalRetryReport);
 const withJournal = <A, E>(
   use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Crypto.Crypto>,
 ) => Effect.flatMap(fixture, use).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
-const fixture = Effect.gen(function* () {
-  const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
-  const faults = {
-    write: "none" as "none" | "before" | "after",
-    conflict: false,
-    reads: false,
-    journalReads: 0,
-    onJournalRead: null as null | (() => void),
-  };
-  const store = Layer.succeed(OpenBaoStore.OpenBaoStore, {
-    status: Effect.succeed({ backend: "openbao" as const, state: "ready" as const, origin: null }),
-    keys: (prefix: string) =>
-      Effect.sync(() =>
-        [...records.keys()]
-          .filter((k) => k.startsWith(prefix + "/"))
-          .map((k) => k.slice(prefix.length + 1)),
-      ),
-    read: (path: string) =>
-      Effect.suspend(() => {
-        if (path.endsWith("approval-journal-v1")) {
-          faults.journalReads++;
-          faults.onJournalRead?.();
-        }
-        return faults.reads && path.endsWith("approval-journal-v1")
-          ? Effect.fail(new VaultError({ reason: "unavailable" }))
-          : Effect.succeed(records.get(path) ?? null);
-      }),
-    write: (path: string, value: Redacted.Redacted<unknown>, expected: number) =>
-      Effect.suspend(() => {
-        const journal = path.endsWith("approval-journal-v1");
-        if (journal && faults.write === "before")
-          return Effect.fail(new VaultError({ reason: "unavailable" }));
-        const version = records.get(path)?.version ?? 0;
-        if (version !== expected || (journal && faults.conflict))
-          return Effect.fail(new VaultError({ reason: "conflict" }));
-        records.set(path, { value, version: version + 1 });
-        if (journal && faults.write === "after") {
-          faults.write = "none";
-          return Effect.fail(new VaultError({ reason: "unavailable" }));
-        }
-        return Effect.succeed(version + 1);
-      }),
-  });
-  const f = yield* launchFixture(
-    Layer.succeed(SshTransport.SshTransport, {
-      execute: () => Effect.die("The journal must never invoke an execution adapter"),
-    }),
-  ).pipe(Effect.provide(store));
-  const rebuild = OperationJournal.OperationJournal.pipe(
-    Effect.provide(
-      Layer.fresh(
-        OperationJournal.layer.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              Layer.succeedContext(f.context),
-              store,
-              Layer.succeed(ServerEnvironmentIdentity, {
-                getEnvironmentId: Effect.succeed(f.environmentId),
-              }),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-  const journal = yield* rebuild;
-  const id = yield* f.id;
-  yield* f.access.approvalCreate(
-    { id, threadId: f.threadId, itemId: f.itemId, action: "use", destination: f.key.destination },
-    `thread:${f.threadId}`,
-    Effect.void,
-  );
-  const decision = {
-    id,
-    operationId: yield* f.id,
-    expectedRevision: 1,
-    expectedPolicyRevision: 0,
-    decision: "approve" as const,
-    durationMs: 300_000 as const,
-  };
-  yield* f.access.approvalChange(decision, "human", Effect.void);
-  const input: VaultApprovalRetryInput = {
-    id,
-    waitingOperationId: id,
-    expectedRevision: 2,
-    previousOutcome: "not-started",
-    operation: {
-      kind: "ssh",
-      target: f.key.target,
-      input: { id: f.itemId, command: { expectedVersion: 1, argv: ["true"], timeoutMs: 1000 } },
-    },
-  };
-  const path = () => [...records.keys()].find((k) => k.endsWith("approval-journal-v1"))!;
-  return { ...f, journal, input, decision, rebuild, records, faults, path };
-});
 
 it.effect(
   "writes a bounded digest-only independent journal without changing the format-3 policy",
@@ -140,7 +36,39 @@ it.effect(
         expect(Redacted.value(policy[1].value)).toMatchObject({ schemaVersion: 3 });
         expect((yield* f.access.approvalInbox).requests).toHaveLength(1);
         const stored = Redacted.value(f.records.get(f.path())!.value);
-        expect(stored).not.toHaveProperty("argv");
+        const allowedFields = new Set([
+          "schemaVersion",
+          "environmentId",
+          "revision",
+          "entries",
+          "requestId",
+          "operationId",
+          "threadId",
+          "runId",
+          "itemId",
+          "itemVersion",
+          "requestRevision",
+          "digest",
+          "createdAt",
+          "updatedAt",
+          "retireAt",
+          "state",
+          "reservationId",
+          "outcome",
+        ]);
+        const inspect = (value: unknown): void => {
+          if (Array.isArray(value)) {
+            value.forEach(inspect);
+            return;
+          }
+          if (value !== null && typeof value === "object") {
+            for (const [field, child] of Object.entries(value)) {
+              expect(allowedFields.has(field), `unexpected persisted field: ${field}`).toBe(true);
+              inspect(child);
+            }
+          } else expect(value).not.toBe("true");
+        };
+        inspect(stored);
         expect(stored).toMatchObject({
           schemaVersion: 1,
           entries: [{ digest: prepared.entry.digest }],
@@ -310,7 +238,7 @@ it.effect("makes cancellation terminal, refuses revoked reservations and hides a
   withJournal((f) =>
     Effect.gen(function* () {
       yield* f.journal.prepare(f.input, f.threadId);
-      yield* f.journal.cancel(f.input.id, 1, f.threadId);
+      const cancelled = yield* f.journal.cancel(f.input.id, 1, f.threadId);
       expect((yield* f.journal.cancel(f.input.id, 1, f.threadId)).entry.state).toBe("cancelled");
       expect(
         (yield* f.journal
@@ -321,10 +249,25 @@ it.effect("makes cancellation terminal, refuses revoked reservations and hides a
           )
           .pipe(Effect.flip)).reason,
       ).toBe("conflict");
-      yield* TestClock.adjust("24 hours");
+      const record = f.records.get(f.path())!;
+      f.records.set(f.path(), {
+        ...record,
+        value: Redacted.make({
+          schemaVersion: 1,
+          environmentId: f.environmentId,
+          revision: 2,
+          entries: [{ ...cancelled.entry, retireAt: 100 }],
+        }),
+      });
+      yield* TestClock.adjust("100 millis");
+      expect((yield* f.access.approvalStatus(f.input.id, f.threadId)).request.state).toBe(
+        "approved",
+      );
+      const aged = f.records.get(f.path());
       expect((yield* f.journal.reconcile(f.input.id, f.threadId).pipe(Effect.flip)).reason).toBe(
         "not-found",
       );
+      expect(f.records.get(f.path())).toEqual(aged);
     }),
   ),
 );
