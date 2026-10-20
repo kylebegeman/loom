@@ -123,8 +123,7 @@ export function ToolView({ tool }: { readonly tool: UtilityTool }) {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 p-3">
-      <h2 className="font-medium text-sm">{tool.label}</h2>
+    <>
       {tool.options.length > 0 && (
         <div className="flex flex-wrap items-end gap-3">
           {tool.options.map((option) => (
@@ -229,7 +228,7 @@ export function ToolView({ tool }: { readonly tool: UtilityTool }) {
           <ResultView result={generated.result} />
         </div>
       )}
-    </div>
+    </>
   );
 }
 

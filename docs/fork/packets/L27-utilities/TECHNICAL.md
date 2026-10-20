@@ -287,7 +287,10 @@ vanish on reload. The only persisted value is recent tool ids,
 
 - **Layout.** At panel widths under 480 px the list and the tool view stack: the list shows
   until a tool is picked, and a back button returns to it. At 480 px and wider, list on the
-  left (180 px), tool on the right. The dialog uses the wide layout at a fixed 760 px.
+  left (180 px), tool on the right. The rule follows the container's width, so the dialog,
+  up to 768 px wide, stacks only on narrow screens.
+  Stacked, switching panes hides the focused control, so focus moves to the tool's heading
+  or back to that tool in the list.
 
 ## Agent-facing tools
 
@@ -357,6 +360,12 @@ reason:
 - **Dialog host.** It reads the thread through `useRouteThread()` rather than
   `useHandleNewThread`, which re-renders on streamed thread events; the root host must not.
   The dialog is `sm:max-w-3xl` (768 px) wide and 640 px tall instead of a fixed 760 px.
+  The popup picks its initial focus once, as it mounts, so while the view's chunk loads the
+  frame shows a loading line with focus on the popup itself, and `FocusToolOnLoad` moves it
+  to the tool's heading when the view arrives, unless the user has moved it. The heading
+  sits outside the keyed tool view so a tool switch keeps it: the command palette, closing
+  over the dialog, returns focus to the element it found focused, and if that element is
+  gone focus lands behind the modal.
 - **Diff.** `parseDiffFromFile` plus `FileDiff` from `@pierre/diffs`, inside upstream's
   diff worker pool context when one is mounted.
 

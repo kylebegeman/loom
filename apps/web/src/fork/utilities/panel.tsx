@@ -2,9 +2,11 @@ import { WrenchIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 import type { ForkPanelDefinition } from "../panels/types";
-import { UTILITIES_PANEL_ID } from "./open";
 
 const UtilitiesView = lazy(() => import("./UtilitiesView"));
+
+// Here, not in open.ts: open.ts imports the panel registry, which imports this file.
+export const UTILITIES_PANEL_ID = "utilities";
 
 export const utilitiesPanel: ForkPanelDefinition = {
   id: UTILITIES_PANEL_ID,
