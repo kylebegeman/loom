@@ -178,3 +178,8 @@ A concurrent fixture-version change rejected retirement with a conflict; refresh
 mutation error and its confirmation without retiring the second selection. Native interaction
 remains pending under the no-install restriction. Production, relay/tunnel, live providers and
 other validation adapters are not established by this evidence.
+
+After merging fork main `967d8875d8`, 80 tests passed in ten focused history/context/profile,
+shared-client, MCP registration, preview MCP/gateway/host and Library publisher files. All five
+affected package typechecks, scoped Vault lint and documentation/seam checks passed. Main's
+preview and Library changes were preserved; this Vault slice adds no Library deployment work.
