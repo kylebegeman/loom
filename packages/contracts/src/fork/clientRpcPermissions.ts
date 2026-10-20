@@ -208,4 +208,5 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [BOT.delete]: AuthOrchestrationOperateScope,
   [BOT.run]: AuthOrchestrationOperateScope,
   [BOT.cancel]: AuthOrchestrationOperateScope,
+  [BOT.restoreStarter]: AuthOrchestrationOperateScope,
 } as const;

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import type { BotRun, BotsSaveInput } from "@t3tools/contracts/fork";
+import {
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  type ModelSelection,
+  type OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
+import type { BotRun, BotStarterId, BotsSaveInput } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -10,12 +16,22 @@ import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { makeBotsStore } from "./BotsStore.ts";
 import { make, USER_CALLER } from "./BotsService.ts";
 import { BotsMigrations } from "./migrations.ts";
+import { starterById } from "./starters.ts";
 
 const projectId = ProjectId.make("project-a");
+const model: ModelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
+
+/** Settings where no provider a starter could fall back to is enabled. */
+const NO_PROVIDERS = Object.fromEntries(
+  ["codex", "claudeAgent", "cursor", "grok", "muse", "pi", "opencode", "antigravity"].map(
+    (driver) => [driver, { driver, enabled: false, config: {} }],
+  ),
+);
 
 const reviewer = (fields: Partial<BotsSaveInput> = {}): BotsSaveInput => ({
   id: "reviewer",
@@ -23,7 +39,7 @@ const reviewer = (fields: Partial<BotsSaveInput> = {}): BotsSaveInput => ({
   description: "Reviews one file.",
   instructions: "Review {{file}}.",
   parameters: [{ name: "file", label: "File", type: "string", required: true }],
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+  modelSelection: model,
   runtimeMode: "auto",
   interactionMode: "default",
   workspace: { type: "project", projectId: null, worktree: false },
@@ -45,7 +61,11 @@ const makeHarness = Effect.gen(function* () {
   const interrupted: Array<string> = [];
   const outcomes = new Map<string, Deferred.Deferred<ThreadOutcome>>();
   const replies = new Map<string, string>();
-  const state = { timeOut: false };
+  const state = {
+    timeOut: false,
+    settings: { defaultModelSelection: model as ModelSelection | null, providerInstances: {} },
+  };
+  const shells = new Map<string, Partial<OrchestrationV2ThreadShell>>();
   const outcomeFor = (threadId: string) => {
     const existing = outcomes.get(threadId);
     if (existing !== undefined) return existing;
@@ -59,6 +79,11 @@ const makeHarness = Effect.gen(function* () {
     }).pipe(Effect.andThen(Deferred.succeed(outcomeFor(threadId), outcome)), Effect.asVoid);
 
   const threads = {
+    getThreadShell: (threadId: string) =>
+      Effect.sync(() => {
+        const shell = shells.get(threadId);
+        return shell === undefined ? null : { deletedAt: null, ...shell };
+      }),
     waitForThread: (input: ThreadManagement.ThreadManagementWaitInput) =>
       Effect.gen(function* () {
         if (state.timeOut && !interrupted.includes(input.threadId))
@@ -102,8 +127,13 @@ const makeHarness = Effect.gen(function* () {
     ensureScratchProject: Effect.succeed({ projectId: ProjectId.make("scratch") }),
   } as unknown as ManagedProjectFolders.ManagedProjectFolders["Service"];
 
+  const settingsService = {
+    getSettings: Effect.sync(() => state.settings),
+  } as unknown as ServerSettings.ServerSettingsService["Service"];
+
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
+      Effect.provideService(ServerSettings.ServerSettingsService, settingsService),
       Effect.provideService(ThreadManagement.ThreadManagementService, threads),
       Effect.provideService(ThreadLaunch.ThreadLaunchService, launchService),
       Effect.provideService(ManagedProjectFolders.ManagedProjectFolders, folders),
@@ -113,6 +143,7 @@ const makeHarness = Effect.gen(function* () {
     launches,
     interrupted,
     state,
+    shells,
     end,
     nextLaunch: Queue.take(launched),
     service: provide(make),
@@ -315,6 +346,283 @@ describe("BotsService", () => {
           result: "Done.",
         });
         expect(harness.launches).toEqual([]);
+      }),
+    ),
+  );
+});
+
+const storedRun = (id: string, botId: string, botVersion: number): BotRun => ({
+  id,
+  botId,
+  botVersion,
+  botName: botId,
+  threadId: ThreadId.make(`bot-run-${id}`),
+  projectId,
+  inputs: {},
+  status: "completed",
+  startedBy: "user",
+  callerThreadId: null,
+  createdAt: "2026-10-20T10:00:00.000Z",
+  startedAt: "2026-10-20T10:00:01.000Z",
+  finishedAt: "2026-10-20T10:01:00.000Z",
+  result: null,
+  resultTruncated: false,
+  error: null,
+});
+
+describe("BotsService starters", () => {
+  it.effect("offers each starter once and never brings back a deleted one", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.seedStarters();
+        const seeded = yield* bots.list();
+        expect(seeded.map((bot) => bot.id).sort()).toEqual([
+          "merge-conflict-resolver",
+          "reviewer",
+          "verifier",
+        ]);
+        for (const bot of seeded)
+          expect(bot).toMatchObject({
+            version: 1,
+            createdBy: "user",
+            modelSelection: model,
+            origin: { kind: "starter", starterId: bot.id, revision: 1 },
+          });
+
+        yield* bots.delete("reviewer");
+        yield* bots.seedStarters();
+        expect((yield* bots.list()).map((bot) => bot.id).sort()).toEqual([
+          "merge-conflict-resolver",
+          "verifier",
+        ]);
+        expect(
+          (yield* bots.listStarters()).map(({ starterId, state }) => [starterId, state]),
+        ).toEqual([
+          ["merge-conflict-resolver", "present"],
+          ["reviewer", "removed"],
+          ["verifier", "present"],
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("leaves a person's bot that already owns a starter id alone", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ id: "verifier", name: "Mine" }), USER_CALLER);
+        yield* bots.seedStarters();
+        expect(yield* bots.list()).toContainEqual(
+          expect.objectContaining({ id: "verifier", name: "Mine", version: 1 }),
+        );
+        expect((yield* bots.list()).find((bot) => bot.id === "verifier")?.origin).toBeUndefined();
+        expect((yield* bots.listStarters()).find((s) => s.starterId === "verifier")).toMatchObject({
+          state: "removed",
+        });
+      }),
+    ),
+  );
+
+  it.effect("postpones seeding until a provider can run the starters", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        harness.state.settings = { defaultModelSelection: null, providerInstances: NO_PROVIDERS };
+        yield* bots.seedStarters();
+        expect(yield* bots.list()).toEqual([]);
+        expect(yield* bots.listStarters()).toEqual([]);
+
+        harness.state.settings = { defaultModelSelection: model, providerInstances: {} };
+        yield* bots.seedStarters();
+        expect(yield* bots.list()).toHaveLength(3);
+      }),
+    ),
+  );
+
+  it.effect("restores the shipped text over edits, keeping the model and unarchiving", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.seedStarters();
+        const shipped = starterById("reviewer")!.definition;
+        const current = (yield* bots.list()).find((bot) => bot.id === "reviewer")!;
+        const otherModel = { ...model, model: "other" };
+        const edited = yield* bots.save(
+          {
+            ...current,
+            instructions: "Just look at {{target}} with {{lens}}.",
+            modelSelection: otherModel,
+          },
+          USER_CALLER,
+        );
+        expect(edited.origin).toMatchObject({ starterId: "reviewer" });
+        yield* bots.archive("reviewer", true);
+        expect((yield* bots.listStarters()).find((s) => s.starterId === "reviewer")).toMatchObject({
+          state: "edited",
+        });
+
+        const restored = yield* bots.restoreStarter("reviewer", USER_CALLER);
+        expect(restored).toMatchObject({
+          version: 3,
+          instructions: shipped.instructions,
+          modelSelection: otherModel,
+          archivedAt: null,
+        });
+        expect((yield* bots.listStarters()).find((s) => s.starterId === "reviewer")).toMatchObject({
+          state: "present",
+        });
+      }),
+    ),
+  );
+
+  it.effect("recreates a deleted starter above every version its runs recorded", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        yield* bots.seedStarters();
+        yield* store.insertRun(storedRun("old-run", "verifier", 7));
+        yield* bots.delete("verifier");
+        expect(yield* bots.restoreStarter("verifier", USER_CALLER)).toMatchObject({
+          version: 8,
+          origin: { starterId: "verifier", revision: 1 },
+        });
+      }),
+    ),
+  );
+
+  it.effect("reports a starter whose shipped text is newer, and refuses unknown starters", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        yield* bots.seedStarters();
+        const resolver = (yield* bots.list()).find((bot) => bot.id === "merge-conflict-resolver")!;
+        yield* store.putDefinition({
+          ...resolver,
+          origin: { kind: "starter", starterId: "merge-conflict-resolver", revision: 0 },
+        });
+        expect(
+          (yield* bots.listStarters()).find((s) => s.starterId === "merge-conflict-resolver"),
+        ).toMatchObject({ state: "outdated" });
+        expect(
+          yield* Effect.flip(bots.restoreStarter("nope" as BotStarterId, USER_CALLER)),
+        ).toMatchObject({ reason: "not_found" });
+      }),
+    ),
+  );
+});
+
+describe("BotsService caller checkouts", () => {
+  const otherProject = ProjectId.make("project-b");
+  const inCheckout = reviewer({
+    workspace: { type: "project", projectId: null, worktree: false, checkout: "caller" },
+  });
+  const agentIn = (threadId: string) => ({
+    actor: "agent" as const,
+    threadId: ThreadId.make(threadId),
+    projectId,
+    runtimeMode: "full-access" as const,
+  });
+
+  it.effect("runs in the calling or chosen thread's checkout", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(inCheckout, USER_CALLER);
+        harness.shells.set("integration", {
+          projectId,
+          worktreePath: "/work/integration",
+          branch: "integration",
+        });
+        harness.shells.set("main-thread", { projectId, worktreePath: null, branch: null });
+
+        const first = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" } },
+          agentIn("integration"),
+        );
+        expect(yield* harness.nextLaunch).toMatchObject({
+          projectId,
+          workspaceStrategy: {
+            type: "existing_worktree",
+            worktreePath: "/work/integration",
+            branch: "integration",
+          },
+        });
+
+        yield* harness.end(first.threadId, { status: "completed", reply: "Done." });
+        yield* bots.run(
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            checkoutThreadId: ThreadId.make("main-thread"),
+          },
+          agentIn("integration"),
+        );
+        expect(yield* harness.nextLaunch).toMatchObject({ workspaceStrategy: { type: "root" } });
+      }),
+    ),
+  );
+
+  it.effect("refuses a checkout from another project or no checkout at all", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(inCheckout, USER_CALLER);
+        harness.shells.set("elsewhere", {
+          projectId: otherProject,
+          worktreePath: "/w",
+          branch: null,
+        });
+        expect(
+          yield* Effect.flip(
+            bots.run(
+              {
+                botId: "reviewer",
+                inputs: { file: "a.ts" },
+                projectId,
+                checkoutThreadId: ThreadId.make("elsewhere"),
+              },
+              USER_CALLER,
+            ),
+          ),
+        ).toMatchObject({ reason: "invalid" });
+        expect(
+          yield* Effect.flip(
+            bots.run({ botId: "reviewer", inputs: { file: "a.ts" } }, USER_CALLER),
+          ),
+        ).toMatchObject({ reason: "invalid" });
+        expect(
+          yield* Effect.flip(
+            bots.run({ botId: "reviewer", inputs: { file: "a.ts" } }, agentIn("missing")),
+          ),
+        ).toMatchObject({ reason: "invalid" });
+        expect(harness.launches).toEqual([]);
+
+        // A person who picks a project without a checkout gets its root.
+        yield* bots.run({ botId: "reviewer", inputs: { file: "a.ts" }, projectId }, USER_CALLER);
+        expect(yield* harness.nextLaunch).toMatchObject({ workspaceStrategy: { type: "root" } });
+      }),
+    ),
+  );
+
+  it.effect("ignores a chosen checkout for a bot that runs in the project root", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        harness.shells.set("integration", { projectId, worktreePath: "/w", branch: null });
+        yield* bots.run(
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            checkoutThreadId: ThreadId.make("integration"),
+          },
+          USER_CALLER,
+        );
+        expect(yield* harness.nextLaunch).toMatchObject({ workspaceStrategy: { type: "root" } });
       }),
     ),
   );

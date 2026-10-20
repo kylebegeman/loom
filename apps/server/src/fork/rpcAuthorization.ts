@@ -334,6 +334,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [BOT.delete]: AuthOrchestrationOperateScope,
   [BOT.run]: AuthOrchestrationOperateScope,
   [BOT.cancel]: AuthOrchestrationOperateScope,
+  [BOT.listStarters]: AuthOrchestrationReadScope,
+  [BOT.restoreStarter]: AuthOrchestrationOperateScope,
   [G.status]: AuthOrchestrationReadScope,
   [G.subscribeStatus]: AuthOrchestrationReadScope,
   [G.list]: AuthOrchestrationReadScope,

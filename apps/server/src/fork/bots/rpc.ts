@@ -3,6 +3,7 @@ import {
   type BotsListRunsInput,
   type BotsRunInput,
   type BotsSaveInput,
+  type BotStarterId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
@@ -22,5 +23,12 @@ export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
       [B.cancel]: (input: { runId: string }) => auth.effect(B.cancel, service.cancel(input.runId)),
       [B.listRuns]: (input: BotsListRunsInput) => auth.effect(B.listRuns, service.listRuns(input)),
       [B.watch]: () => auth.stream(B.watch, service.changes),
+      [B.listStarters]: () =>
+        auth.effect(
+          B.listStarters,
+          service.listStarters().pipe(Effect.map((starters) => ({ starters }))),
+        ),
+      [B.restoreStarter]: (input: { starterId: BotStarterId }) =>
+        auth.effect(B.restoreStarter, service.restoreStarter(input.starterId, USER_CALLER)),
     };
   });

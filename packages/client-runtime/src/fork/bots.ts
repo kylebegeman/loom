@@ -86,5 +86,13 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     delete: createEnvironmentRpcCommand(runtime, { label: "loom:bots:delete", tag: B.delete }),
     run: createEnvironmentRpcCommand(runtime, { label: "loom:bots:run", tag: B.run }),
     cancel: createEnvironmentRpcCommand(runtime, { label: "loom:bots:cancel", tag: B.cancel }),
+    listStarters: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:list-starters",
+      tag: B.listStarters,
+    }),
+    restoreStarter: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:restore-starter",
+      tag: B.restoreStarter,
+    }),
   };
 }

@@ -8,7 +8,7 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { BOTS_FEATURE } from "@t3tools/contracts/fork";
+import { BOTS_FEATURE, BOTS_STARTERS_FEATURE } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
@@ -18,14 +18,13 @@ export const bots = createBotsAtoms(connectionAtomRuntime);
 /** Bots live on the primary environment, which runs them. */
 export function useBotsHost() {
   const environment = usePrimaryEnvironment();
+  const capabilities = environment?.serverConfig?.environment.capabilities;
   return {
     environment,
     environmentId: environment?.environmentId ?? null,
     connected: environment?.connection.phase === "connected",
-    supported: supportsLoomFeature(
-      environment?.serverConfig?.environment.capabilities,
-      BOTS_FEATURE,
-    ),
+    supported: supportsLoomFeature(capabilities, BOTS_FEATURE),
+    startersSupported: supportsLoomFeature(capabilities, BOTS_STARTERS_FEATURE),
   };
 }
 

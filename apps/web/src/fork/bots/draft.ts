@@ -1,5 +1,7 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   BotsSaveInput,
+  isBotRunThreadId,
   type BotDefinition,
   type BotInputs,
   type BotParameter,
@@ -10,11 +12,13 @@ import type {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export type BotWorkspaceChoice = "scratch" | "project" | "worktree";
+/** `checkout` runs in the checkout of the thread it is started from or for. */
+export type BotWorkspaceChoice = "scratch" | "project" | "worktree" | "checkout";
 
 export interface BotParameterDraft {
   readonly key: string;
@@ -91,7 +95,13 @@ export const botDraft = (bot: BotDefinition): BotDraft => ({
   runtimeMode: bot.runtimeMode,
   interactionMode: bot.interactionMode,
   workspace:
-    bot.workspace.type === "scratch" ? "scratch" : bot.workspace.worktree ? "worktree" : "project",
+    bot.workspace.type === "scratch"
+      ? "scratch"
+      : bot.workspace.worktree
+        ? "worktree"
+        : bot.workspace.checkout === "caller"
+          ? "checkout"
+          : "project",
   projectId: bot.workspace.type === "project" ? (bot.workspace.projectId ?? "") : "",
   baseRef: bot.workspace.type === "project" ? (bot.workspace.baseRef ?? "") : "",
   timeoutMinutes: String(bot.timeoutMinutes),
@@ -152,6 +162,7 @@ export const saveInputFromDraft = (
             ...(draft.workspace === "worktree" && draft.baseRef.trim() !== ""
               ? { baseRef: draft.baseRef.trim() }
               : {}),
+            ...(draft.workspace === "checkout" ? { checkout: "caller" as const } : {}),
           },
     timeoutMinutes: Number(draft.timeoutMinutes),
     maxConcurrentRuns: Number(draft.maxConcurrentRuns),
@@ -209,3 +220,42 @@ export const needsProject = (bot: BotDefinition) =>
   bot.workspace.type === "project" &&
   bot.workspace.projectId === null &&
   bot.scopeProjectId === null;
+
+/** Whether a run uses the checkout of a thread rather than a fixed place. */
+export const runsInCheckout = (bot: BotDefinition) =>
+  bot.workspace.type === "project" && bot.workspace.checkout === "caller";
+
+export interface BotCheckoutChoice {
+  readonly threadId: ThreadId;
+  readonly label: string;
+}
+
+/**
+ * Worktrees a `checkout` bot can run in: one per worktree path among the project's live threads,
+ * most recently active first.
+ */
+export const checkoutChoices = (
+  shells: ReadonlyArray<
+    Pick<
+      EnvironmentThreadShell,
+      "id" | "projectId" | "title" | "branch" | "worktreePath" | "archivedAt" | "updatedAt"
+    >
+  >,
+  projectId: string,
+): ReadonlyArray<BotCheckoutChoice> => {
+  const byPath = new Map<string, (typeof shells)[number]>();
+  for (const shell of shells) {
+    if (shell.projectId !== projectId || shell.worktreePath === null || shell.archivedAt !== null)
+      continue;
+    if (isBotRunThreadId(shell.id)) continue;
+    const seen = byPath.get(shell.worktreePath);
+    if (seen === undefined || seen.updatedAt < shell.updatedAt)
+      byPath.set(shell.worktreePath, shell);
+  }
+  return [...byPath.values()]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .map((shell) => ({
+      threadId: shell.id,
+      label: `${shell.branch ?? shell.worktreePath} (${shell.title})`,
+    }));
+};

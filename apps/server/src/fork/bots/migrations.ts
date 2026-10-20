@@ -16,5 +16,14 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_status ON fork_bots_runs (status)`;
       }),
     ],
+    [
+      2,
+      "Starters",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // A row means the starter was offered once; deleting the bot keeps it, so it stays deleted.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_starters (starter_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, seeded_at TEXT NOT NULL)`;
+      }),
+    ],
   ],
 };

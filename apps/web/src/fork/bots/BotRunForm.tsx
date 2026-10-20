@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotParameter, BotRun } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
@@ -13,10 +13,16 @@ import {
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
-import { useProjects } from "~/state/entities";
+import { useProjects, useThreadShells } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
-import { initialRunValues, needsProject, runInputs } from "./draft";
+import {
+  checkoutChoices,
+  initialRunValues,
+  needsProject,
+  runInputs,
+  runsInCheckout,
+} from "./draft";
 import { bots } from "./state";
 
 function ParameterField({
@@ -103,6 +109,20 @@ export function BotRunForm({
   const [projectId, setProjectId] = useState<string>(
     bot.scopeProjectId ?? (pickProject ? (projects[0]?.id ?? "") : ""),
   );
+  const inCheckout = runsInCheckout(bot);
+  const effectiveProjectId =
+    (bot.workspace.type === "project" ? bot.workspace.projectId : null) ?? projectId;
+  const shells = useThreadShells(inCheckout);
+  const checkouts = inCheckout
+    ? checkoutChoices(
+        shells.filter((shell) => shell.environmentId === environmentId),
+        effectiveProjectId,
+      )
+    : [];
+  // "" is the project root.
+  const [checkoutThreadId, setCheckoutThreadId] = useState("");
+  const checkout = checkouts.find((choice) => choice.threadId === checkoutThreadId);
+  const sentProjectId = inCheckout ? effectiveProjectId : projectId;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = useAtomCommand(bots.run, { reportFailure: false });
@@ -121,7 +141,9 @@ export function BotRunForm({
         input: {
           botId: bot.id,
           inputs: runInputs(bot, values),
-          ...(projectId === "" ? {} : { projectId: projectId as ProjectId }),
+          // A checkout run without a thread runs in the root of the project it names.
+          ...(sentProjectId === "" ? {} : { projectId: sentProjectId as ProjectId }),
+          ...(checkout === undefined ? {} : { checkoutThreadId: checkout.threadId as ThreadId }),
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -172,7 +194,13 @@ export function BotRunForm({
         ))}
         {pickProject ? (
           <LibraryField label="Project">
-            <Select value={projectId} onValueChange={(next) => setProjectId(next ?? "")}>
+            <Select
+              value={projectId}
+              onValueChange={(next) => {
+                setProjectId(next ?? "");
+                setCheckoutThreadId("");
+              }}
+            >
               <SelectTrigger size="sm">
                 <SelectValue>
                   {projects.find((project) => project.id === projectId)?.title ?? "Choose…"}
@@ -182,6 +210,28 @@ export function BotRunForm({
                 {projects.map((project) => (
                   <SelectItem key={project.id} value={project.id} label={project.title}>
                     <span className="block truncate">{project.title}</span>
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+        ) : null}
+        {inCheckout && effectiveProjectId !== "" ? (
+          <LibraryField label="Checkout">
+            <Select
+              value={checkoutThreadId}
+              onValueChange={(next) => setCheckoutThreadId(next ?? "")}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue>{checkout?.label ?? "Project root"}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="" label="Project root">
+                  Project root
+                </SelectItem>
+                {checkouts.map((choice) => (
+                  <SelectItem key={choice.threadId} value={choice.threadId} label={choice.label}>
+                    <span className="block truncate">{choice.label}</span>
                   </SelectItem>
                 ))}
               </SelectPopup>

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { BOTS_LIST_RUNS_MAX_LIMIT, type BotDefinition } from "@t3tools/contracts/fork";
+import {
+  BOTS_LIST_RUNS_MAX_LIMIT,
+  type BotDefinition,
+  type BotStarterState,
+  type BotStarterStatus,
+} from "@t3tools/contracts/fork";
 import { applyRunChanges } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
@@ -22,6 +27,17 @@ import { bots, useBots } from "./state";
 
 type Editing = { readonly bot: BotDefinition | null } | null;
 
+const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
+  present: "Starter",
+  edited: "Starter, edited",
+  outdated: "Newer starter available",
+};
+
+function StarterBadge({ status }: { readonly status: BotStarterStatus | undefined }) {
+  if (status === undefined || status.state === "removed") return null;
+  return <Badge variant="secondary">{STARTER_LABELS[status.state]}</Badge>;
+}
+
 function BotSummary({ bot }: { readonly bot: BotDefinition }) {
   const projects = useProjects();
   const projectTitle = (id: string | null) =>
@@ -37,7 +53,9 @@ function BotSummary({ bot }: { readonly bot: BotDefinition }) {
       "Runs in",
       `${WORKSPACE_LABELS[draft.workspace]}${
         bot.workspace.type === "project"
-          ? ` of ${workspaceProject ?? "the project chosen at run time"}`
+          ? `${draft.workspace === "checkout" ? ", in" : " of"} ${
+              workspaceProject ?? "the project chosen at run time"
+            }`
           : ""
       }`,
     ],
@@ -80,6 +98,18 @@ export function BotsPage() {
   const canCancel = useLibraryPermission(bots.cancel, environmentId) && host.connected;
   const archive = useAtomCommand(bots.archive, { reportFailure: false });
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
+  const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
+  const startersQuery = useEnvironmentQuery(
+    environmentId && live && host.startersSupported
+      ? bots.listStarters({ environmentId, input: {} })
+      : null,
+  );
+  const starters = startersQuery.data?.starters ?? [];
+  const starterOf = (bot: BotDefinition) =>
+    bot.origin === undefined
+      ? undefined
+      : starters.find((starter) => starter.starterId === bot.origin?.starterId);
+  const removedStarters = starters.filter((starter) => starter.state === "removed");
   const [editing, setEditing] = useState<Editing>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -90,9 +120,20 @@ export function BotsPage() {
     if (host.connected && !wasConnected.current) {
       list.refresh();
       runsQuery.refresh();
+      startersQuery.refresh();
     }
     wasConnected.current = host.connected;
-  }, [host.connected, list, runsQuery]);
+  }, [host.connected, list, runsQuery, startersQuery]);
+
+  // Saving, deleting or restoring a bot can change its starter's state.
+  const refreshStarters = startersQuery.refresh;
+  const botChanges = changes.bots;
+  const seenBotChanges = useRef(botChanges);
+  useEffect(() => {
+    if (seenBotChanges.current === botChanges) return;
+    seenBotChanges.current = botChanges;
+    refreshStarters();
+  }, [botChanges, refreshStarters]);
 
   const visibleBots = allBots.filter((bot) => showArchived || bot.archivedAt === null);
   const selected = selectedId === undefined ? null : allBots.find((bot) => bot.id === selectedId);
@@ -132,6 +173,17 @@ export function BotsPage() {
       const result = await remove({ environmentId, input: { botId: bot.id } });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       go({});
+    });
+
+  const restoreRemoved = (starter: BotStarterStatus) =>
+    act(async () => {
+      if (!environmentId) return;
+      const result = await restoreStarter({
+        environmentId,
+        input: { starterId: starter.starterId },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      go({ bot: result.value.id });
     });
 
   return (
@@ -201,12 +253,36 @@ export function BotsPage() {
                   >
                     <span className="truncate">{bot.name}</span>
                     {bot.archivedAt ? " (archived)" : ""}
+                    <StarterBadge status={starterOf(bot)} />
                   </Button>
                 ))}
                 {list.data && allBots.some((bot) => bot.archivedAt !== null) ? (
                   <Button size="xs" variant="ghost" onClick={() => setShowArchived((on) => !on)}>
                     {showArchived ? "Hide archived" : "Show archived"}
                   </Button>
+                ) : null}
+                {removedStarters.length > 0 ? (
+                  <section aria-label="Starters you removed" className="mt-4 space-y-2 px-2">
+                    <h3 className="text-xs font-medium text-muted-foreground">
+                      Starters you removed
+                    </h3>
+                    {removedStarters.map((starter) => (
+                      <div key={starter.starterId} className="flex items-start gap-2 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">{starter.name}</p>
+                          <p className="text-xs text-muted-foreground">{starter.description}</p>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={!canSave}
+                          onClick={() => void restoreRemoved(starter)}
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    ))}
+                  </section>
                 ) : null}
                 {list.data && allBots.length === 0 ? (
                   <p className="px-2 text-sm text-muted-foreground">
@@ -225,6 +301,7 @@ export function BotsPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <h2 className="text-xl font-semibold">{selected.name}</h2>
                           {selected.archivedAt ? <Badge variant="secondary">Archived</Badge> : null}
+                          <StarterBadge status={starterOf(selected)} />
                           <span className="text-xs text-muted-foreground">
                             Version {selected.version}
                           </span>
@@ -327,6 +404,7 @@ export function BotsPage() {
           environmentId={environmentId}
           bot={editing.bot}
           canSave={canSave}
+          startersSupported={host.startersSupported}
           onClose={() => setEditing(null)}
           onSaved={(bot) => {
             setEditing(null);

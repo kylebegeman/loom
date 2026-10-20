@@ -8,6 +8,7 @@ import { ModelSelection } from "../modelSelection.ts";
 import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
 
 export const BOTS_FEATURE = "bots";
+export const BOTS_STARTERS_FEATURE = "bots-starters";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -18,6 +19,8 @@ export const BOTS_WS_METHODS = {
   cancel: "loom.bots.cancel",
   listRuns: "loom.bots.listRuns",
   watch: "loom.bots.watch",
+  listStarters: "loom.bots.listStarters",
+  restoreStarter: "loom.bots.restoreStarter",
 } as const;
 
 export const BOTS_MAX_PARAMETERS = 12;
@@ -63,6 +66,9 @@ export const BotParameter = Schema.Struct({
 });
 export type BotParameter = typeof BotParameter.Type;
 
+export const BotCheckout = Schema.Literals(["root", "caller"]);
+export type BotCheckout = typeof BotCheckout.Type;
+
 export const BotWorkspace = Schema.Union([
   Schema.Struct({ type: Schema.Literal("scratch") }),
   Schema.Struct({
@@ -71,6 +77,11 @@ export const BotWorkspace = Schema.Union([
     projectId: Schema.NullOr(ProjectId),
     worktree: Schema.Boolean,
     baseRef: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+    /**
+     * `caller` runs in the checkout of the thread the work is in, such as an integration
+     * worktree holding a conflict. Absent means `root`.
+     */
+    checkout: Schema.optionalKey(BotCheckout),
   }),
 ]);
 export type BotWorkspace = typeof BotWorkspace.Type;
@@ -97,6 +108,17 @@ export type BotDefinitionInput = typeof BotDefinitionInput.Type;
 export const BotCreator = Schema.Literals(["user", "agent"]);
 export type BotCreator = typeof BotCreator.Type;
 
+export const BotStarterId = Schema.Literals(["merge-conflict-resolver", "reviewer", "verifier"]);
+export type BotStarterId = typeof BotStarterId.Type;
+
+/** Where a bot came from. Only the server sets it; a save carries it forward. */
+export const BotOrigin = Schema.Struct({
+  kind: Schema.Literal("starter"),
+  starterId: BotStarterId,
+  revision: Schema.Int,
+});
+export type BotOrigin = typeof BotOrigin.Type;
+
 export const BotDefinition = Schema.Struct({
   ...BotDefinitionInput.fields,
   version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
@@ -104,8 +126,25 @@ export const BotDefinition = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   archivedAt: Schema.NullOr(Schema.String),
+  origin: Schema.optionalKey(BotOrigin),
 });
 export type BotDefinition = typeof BotDefinition.Type;
+
+/**
+ * `edited`: differs from the shipped text it came from. `outdated`: a newer shipped text exists.
+ * `removed`: offered once, and no bot with its id carries the starter origin now.
+ */
+export const BotStarterState = Schema.Literals(["present", "edited", "outdated", "removed"]);
+export type BotStarterState = typeof BotStarterState.Type;
+
+export const BotStarterStatus = Schema.Struct({
+  starterId: BotStarterId,
+  revision: Schema.Int,
+  name: Schema.String,
+  description: Schema.String,
+  state: BotStarterState,
+});
+export type BotStarterStatus = typeof BotStarterStatus.Type;
 
 export const BotInputValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 export type BotInputValue = typeof BotInputValue.Type;
@@ -172,6 +211,8 @@ export const BotsRunInput = Schema.Struct({
   botId: BotId,
   inputs: BotInputs,
   projectId: Schema.optionalKey(ProjectId),
+  /** For a `caller` checkout bot: the thread whose checkout the run uses. */
+  checkoutThreadId: Schema.optionalKey(ThreadId),
 });
 export type BotsRunInput = typeof BotsRunInput.Type;
 
@@ -216,5 +257,15 @@ export const BotsRpcGroup = RpcGroup.make(
     success: BotsChange,
     error: errors,
     stream: true,
+  }),
+  Rpc.make(M.listStarters, {
+    payload: Schema.Struct({}),
+    success: Schema.Struct({ starters: Schema.Array(BotStarterStatus) }),
+    error: errors,
+  }),
+  Rpc.make(M.restoreStarter, {
+    payload: Schema.Struct({ starterId: BotStarterId }),
+    success: BotDefinition,
+    error: errors,
   }),
 );

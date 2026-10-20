@@ -7,8 +7,9 @@ import {
   BotRun,
   BotRunId,
   BotsError,
+  BotStarterId,
 } from "@t3tools/contracts/fork";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -30,7 +31,7 @@ const AgentBot = Schema.Struct({ ...BotDefinition.fields, activeRuns: Schema.Int
 export const BotsToolkit = Toolkit.make(
   Tool.make("loom_bots_list", {
     description:
-      "List the bots this thread's project can run: each one's brief, typed parameters, pinned model and modes, timeout, and how many runs are active. Prefer running a bot over briefing a new thread for the same job.",
+      "List the bots this thread's project can run: each one's brief, typed parameters, pinned model and modes, timeout, and how many runs are active. A bot with an origin is a Loom starter. Prefer running a bot over briefing a new thread for the same job.",
     success: Schema.Struct({ bots: Schema.Array(AgentBot) }),
     failure,
     dependencies: callerDependencies,
@@ -48,14 +49,23 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_run", {
     description:
-      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply; otherwise returns the queued run at once. Project workspaces default to this thread's project.",
+      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply; otherwise returns the queued run at once. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
     parameters: Schema.Struct({
       botId: BotId,
       inputs: BotInputs,
       projectId: Schema.optionalKey(ProjectId),
+      checkoutThreadId: Schema.optionalKey(ThreadId),
       wait: Schema.optionalKey(Schema.Boolean),
     }),
     success: BotRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_restore_starter", {
+    description:
+      "Put a Loom starter bot back to its shipped instructions and settings as a new version, keeping its model and project scope. Recreates a deleted starter and unarchives an archived one.",
+    parameters: Schema.Struct({ starterId: BotStarterId }),
+    success: BotDefinition,
     failure,
     dependencies: callerDependencies,
   }),
@@ -131,6 +141,16 @@ export const botsHandlers = McpToolAccess.toLayer(
               const waitMs = Math.min(AGENT_RUN_WAIT_MAX_MS, (bot?.timeoutMinutes ?? 10) * 60_000);
               return yield* service.awaitRun(run.id, waitMs);
             }),
+          );
+        }),
+      ),
+      loom_bots_restore_starter: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotsService, (service) =>
+              service.restoreStarter(input.starterId, caller),
+            ),
           );
         }),
       ),

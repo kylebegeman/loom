@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition } from "@t3tools/contracts/fork";
 import {
   botDraft,
+  checkoutChoices,
   emptyBotDraft,
   initialRunValues,
   newParameterDraft,
@@ -83,5 +84,45 @@ describe("bot drafts", () => {
       depth: 2,
       strict: true,
     });
+  });
+
+  it("keeps a checkout bot running in the checkout it is run for", () => {
+    const checkoutBot: BotDefinition = {
+      ...bot,
+      workspace: { type: "project", projectId: null, worktree: false, checkout: "caller" },
+    };
+    const draft = botDraft(checkoutBot);
+    expect(draft.workspace).toBe("checkout");
+    const saved = saveInputFromDraft(draft, checkoutBot.version);
+    expect(saved.ok && saved.input.workspace).toEqual(checkoutBot.workspace);
+  });
+
+  it("offers one checkout per live worktree of the project, newest first", () => {
+    const shell = (id: string, worktreePath: string | null, updatedAt: string, extra = {}) => ({
+      id: ThreadId.make(id),
+      projectId: ProjectId.make("project-a"),
+      title: id,
+      branch: worktreePath === null ? null : `branch-${worktreePath}`,
+      worktreePath,
+      archivedAt: null,
+      updatedAt,
+      ...extra,
+    });
+    const choices = checkoutChoices(
+      [
+        shell("old", "/wt/a", "2026-10-20T09:00:00.000Z"),
+        shell("new", "/wt/a", "2026-10-20T11:00:00.000Z"),
+        shell("other", "/wt/b", "2026-10-20T10:00:00.000Z"),
+        shell("root", null, "2026-10-20T12:00:00.000Z"),
+        shell("archived", "/wt/c", "2026-10-20T12:00:00.000Z", { archivedAt: "2026-10-20" }),
+        shell("bot-run-1", "/wt/d", "2026-10-20T12:00:00.000Z"),
+        shell("elsewhere", "/wt/e", "2026-10-20T12:00:00.000Z", {
+          projectId: ProjectId.make("project-b"),
+        }),
+      ],
+      "project-a",
+    );
+    expect(choices.map((choice) => choice.threadId)).toEqual(["new", "other"]);
+    expect(choices[0]?.label).toBe("branch-/wt/a (new)");
   });
 });

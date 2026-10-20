@@ -7,7 +7,7 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
-import type { BotDefinition, BotParameterType } from "@t3tools/contracts/fork";
+import type { BotDefinition, BotParameterType, BotStarterId } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -30,6 +30,7 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "~/providerInstances";
+import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -62,7 +63,10 @@ export const WORKSPACE_LABELS: Record<BotWorkspaceChoice, string> = {
   scratch: "Fresh scratch folder",
   project: "Project checkout",
   worktree: "New worktree",
+  checkout: "Checkout it is run for",
 };
+
+const WORKSPACE_CHOICES = Object.keys(WORKSPACE_LABELS) as BotWorkspaceChoice[];
 
 const PARAMETER_TYPE_LABELS: Record<BotParameterType, string> = {
   string: "Short text",
@@ -78,12 +82,14 @@ function Choice<T extends string>({
   id,
   value,
   labels,
+  options = Object.keys(labels) as T[],
   onChange,
   disabled,
 }: {
   readonly id: string;
   readonly value: T;
   readonly labels: Record<T, string>;
+  readonly options?: ReadonlyArray<T>;
   readonly onChange: (value: T) => void;
   readonly disabled?: boolean;
 }) {
@@ -99,7 +105,7 @@ function Choice<T extends string>({
         <SelectValue>{labels[value]}</SelectValue>
       </SelectTrigger>
       <SelectPopup>
-        {(Object.keys(labels) as T[]).map((key) => (
+        {options.map((key) => (
           <SelectItem key={key} value={key} label={labels[key]}>
             {labels[key]}
           </SelectItem>
@@ -176,6 +182,7 @@ export function BotEditor({
   environmentId,
   bot,
   canSave,
+  startersSupported,
   onSaved,
   onClose,
 }: {
@@ -183,6 +190,8 @@ export function BotEditor({
   /** Absent for a new bot. */
   readonly bot: BotDefinition | null;
   readonly canSave: boolean;
+  /** Older servers know neither checkout bots nor starters. */
+  readonly startersSupported: boolean;
   readonly onSaved: (bot: BotDefinition) => void;
   readonly onClose: () => void;
 }) {
@@ -202,6 +211,7 @@ export function BotEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.save, { reportFailure: false });
+  const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
 
   const update = (patch: Partial<BotDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const activeInstanceId =
@@ -233,6 +243,26 @@ export function BotEditor({
       onSaved(result.value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the bot.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const starterId = startersSupported ? bot?.origin?.starterId : undefined;
+  const restore = async (origin: BotStarterId) => {
+    if (busy || !canSave || !bot) return;
+    const confirmed = await ensureLocalApi().dialogs.confirm(
+      `Restore ${bot.name} to its starter? Its instructions, inputs and settings are replaced; the model and where it is available stay.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await restoreStarter({ environmentId, input: { starterId: origin } });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      onSaved(result.value);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not restore the starter.");
     } finally {
       setBusy(false);
     }
@@ -271,6 +301,16 @@ export function BotEditor({
       description="Every run uses these instructions and settings, whoever starts it."
       actions={
         <>
+          {starterId !== undefined ? (
+            <Button
+              variant="outline"
+              className="sm:me-auto"
+              disabled={busy || !canSave}
+              onClick={() => void restore(starterId)}
+            >
+              Restore starter
+            </Button>
+          ) : null}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -390,6 +430,11 @@ export function BotEditor({
               id="bot-workspace"
               value={draft.workspace}
               labels={WORKSPACE_LABELS}
+              options={
+                startersSupported || draft.workspace === "checkout"
+                  ? WORKSPACE_CHOICES
+                  : WORKSPACE_CHOICES.filter((choice) => choice !== "checkout")
+              }
               onChange={(workspace) => update({ workspace })}
             />
           </LibraryField>

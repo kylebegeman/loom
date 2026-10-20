@@ -1,5 +1,7 @@
 import {
   CommandId,
+  resolveProviderInstanceEnabled,
+  type ModelSelection,
   type ProjectId,
   type RunId,
   type RuntimeMode,
@@ -13,13 +15,22 @@ import {
   isTerminalBotRunStatus,
   type BotCreator,
   type BotDefinition,
+  type BotDefinitionInput,
+  type BotOrigin,
   type BotRun,
   type BotRunStatus,
   type BotsChange,
   type BotsListRunsInput,
   type BotsRunInput,
   type BotsSaveInput,
+  type BotStarterId,
+  type BotStarterState,
+  type BotStarterStatus,
 } from "@t3tools/contracts/fork";
+import {
+  fallbackTextGenerationModelSelection,
+  isModelSelectionProviderEnabled,
+} from "@t3tools/shared/serverSettings";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -34,8 +45,10 @@ import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import { forkParked } from "../../serverActivation.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT } from "./BotsStore.ts";
 import { checkParameters, renderInstructions, validateInputs } from "./render.ts";
+import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
 
 /** Who asked for a bot operation. */
 export interface BotCaller {
@@ -100,6 +113,7 @@ export const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunch.ThreadLaunchService;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const serviceScope = yield* Effect.scope;
   const changes = yield* PubSub.unbounded<BotsChange>();
   const environmentPermits = yield* Semaphore.make(BOTS_MAX_ACTIVE_RUNS);
@@ -131,8 +145,16 @@ export const make = Effect.gen(function* () {
 
   const list = () => store.listDefinitions().pipe(Effect.catch(storageError));
 
-  const save = Effect.fn("BotsService.save")(function* (input: BotsSaveInput, caller: BotCaller) {
-    const { expectedVersion, ...definition } = input;
+  /** The one write path for definitions; `origin` is set only by the starter paths. */
+  const write = Effect.fnUntraced(function* (
+    definition: BotDefinitionInput,
+    caller: BotCaller,
+    options: {
+      readonly expectedVersion?: number | undefined;
+      readonly origin?: BotOrigin | undefined;
+      readonly unarchive?: boolean | undefined;
+    },
+  ) {
     const problem = checkParameters(definition);
     if (problem !== null) return yield* fail("invalid", problem);
     if (
@@ -153,23 +175,157 @@ export const make = Effect.gen(function* () {
       (yield* store.hasDefinition(definition.id).pipe(Effect.catch(storageError)))
     )
       return yield* fail("invalid", "A newer version of Loom saved this bot; update to edit it.");
-    if (expectedVersion !== undefined && (existing?.version ?? 0) !== expectedVersion)
+    if (
+      options.expectedVersion !== undefined &&
+      (existing?.version ?? 0) !== options.expectedVersion
+    )
       return yield* fail(
         "invalid",
         "This bot changed since it was opened. Reload it and apply your edits again.",
       );
+    // A bot recreated under a deleted bot's id continues its numbering, so a version its runs
+    // recorded never names two different texts.
+    const previousVersion =
+      existing?.version ??
+      (yield* store.maxRunVersion(definition.id).pipe(Effect.catch(storageError)));
+    const origin = options.origin ?? existing?.origin;
     const now = yield* nowIso;
     const bot: BotDefinition = {
       ...definition,
-      version: (existing?.version ?? 0) + 1,
+      version: previousVersion + 1,
       createdBy: existing?.createdBy ?? caller.actor,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      archivedAt: existing?.archivedAt ?? null,
+      archivedAt: options.unarchive === true ? null : (existing?.archivedAt ?? null),
+      ...(origin === undefined ? {} : { origin }),
     };
     yield* store.putDefinition(bot).pipe(Effect.catch(storageError));
     yield* permitsFor(bot);
     yield* publish({ _tag: "bot", bot });
+    return bot;
+  });
+
+  const save = Effect.fn("BotsService.save")(function* (input: BotsSaveInput, caller: BotCaller) {
+    const { expectedVersion, ...definition } = input;
+    return yield* write(definition, caller, { expectedVersion });
+  });
+
+  /** The environment's default model, or the first enabled provider's; null when none is usable. */
+  const starterModel = settings.getSettings.pipe(
+    Effect.map((current): ModelSelection | null => {
+      const preferred = current.defaultModelSelection;
+      if (preferred != null && isModelSelectionProviderEnabled(current, preferred))
+        return preferred;
+      return fallbackTextGenerationModelSelection(
+        current.providerInstances,
+        (instanceId, driver) =>
+          resolveProviderInstanceEnabled(
+            current.providerInstances[instanceId] ?? { driver, config: {} },
+          ),
+        { defaultModelSelection: preferred ?? null },
+      );
+    }),
+    Effect.orElseSucceed(() => null),
+  );
+
+  const starterDefinition = (
+    starter: BotStarter,
+    modelSelection: ModelSelection,
+    scopeProjectId: ProjectId | null,
+  ): BotDefinitionInput => ({ ...starter.definition, modelSelection, scopeProjectId });
+
+  const starterOrigin = (starter: BotStarter): BotOrigin => ({
+    kind: "starter",
+    starterId: starter.starterId,
+    revision: starter.revision,
+  });
+
+  /**
+   * Offers each shipped starter once. An id a person already uses is left alone; the starter is
+   * still recorded as offered, so it shows as removed and can be restored over that bot.
+   */
+  const seedStarters = Effect.fn("BotsService.seedStarters")(function* () {
+    const offered = new Set(
+      (yield* store.listStarterRows().pipe(Effect.catch(storageError))).map((row) => row.starterId),
+    );
+    const pending = BOT_STARTERS.filter((starter) => !offered.has(starter.starterId));
+    if (pending.length === 0) return;
+    // Without a usable model nothing is recorded, so the next start tries again.
+    const modelSelection = yield* starterModel;
+    if (modelSelection === null) return;
+    for (const starter of pending) {
+      const now = yield* nowIso;
+      const seeded = yield* store
+        .withTransaction(
+          Effect.gen(function* () {
+            const taken = yield* store.hasDefinition(starter.starterId);
+            const bot: BotDefinition | null = taken
+              ? null
+              : {
+                  ...starterDefinition(starter, modelSelection, null),
+                  version: (yield* store.maxRunVersion(starter.starterId)) + 1,
+                  createdBy: "user",
+                  createdAt: now,
+                  updatedAt: now,
+                  archivedAt: null,
+                  origin: starterOrigin(starter),
+                };
+            if (bot !== null) yield* store.putDefinition(bot);
+            yield* store.recordStarter(starter.starterId, starter.revision, now);
+            return bot;
+          }),
+        )
+        .pipe(Effect.catch(storageError));
+      if (seeded !== null) {
+        yield* permitsFor(seeded);
+        yield* publish({ _tag: "bot", bot: seeded });
+      }
+    }
+  });
+
+  const starterState = (starter: BotStarter, bot: BotDefinition | undefined): BotStarterState => {
+    if (bot?.origin?.starterId !== starter.starterId) return "removed";
+    if (bot.origin.revision < starter.revision) return "outdated";
+    return differsFromStarter(bot, starter) ? "edited" : "present";
+  };
+
+  /** Starters this environment has offered, with how each stands now. */
+  const listStarters = Effect.fn("BotsService.listStarters")(function* () {
+    const offered = new Set(
+      (yield* store.listStarterRows().pipe(Effect.catch(storageError))).map((row) => row.starterId),
+    );
+    const bots = new Map((yield* list()).map((bot) => [bot.id, bot]));
+    return BOT_STARTERS.filter((starter) => offered.has(starter.starterId)).map(
+      (starter): BotStarterStatus => ({
+        starterId: starter.starterId,
+        revision: starter.revision,
+        name: starter.definition.name,
+        description: starter.definition.description,
+        state: starterState(starter, bots.get(starter.starterId)),
+      }),
+    );
+  });
+
+  /** Puts the shipped text back as a new version, keeping the bot's model and project scope. */
+  const restoreStarter = Effect.fn("BotsService.restoreStarter")(function* (
+    starterId: BotStarterId,
+    caller: BotCaller,
+  ) {
+    const starter = starterById(starterId);
+    if (starter === undefined)
+      return yield* fail("not_found", `There is no starter bot named ${starterId}.`);
+    const existing = yield* store.getDefinition(starter.starterId).pipe(Effect.catch(storageError));
+    const modelSelection = existing?.modelSelection ?? (yield* starterModel);
+    if (modelSelection === null)
+      return yield* fail("invalid", "Enable a provider in Settings before restoring a starter.");
+    const bot = yield* write(
+      starterDefinition(starter, modelSelection, existing?.scopeProjectId ?? null),
+      caller,
+      { origin: starterOrigin(starter), unarchive: true },
+    );
+    yield* store
+      .recordStarter(starter.starterId, starter.revision, bot.updatedAt)
+      .pipe(Effect.catch(storageError));
     return bot;
   });
 
@@ -343,6 +499,44 @@ export const make = Effect.gen(function* () {
     return projectId;
   });
 
+  /**
+   * A `caller` checkout bot runs where the work is: the chosen thread's checkout, else the calling
+   * thread's. Only checkouts Loom already manages are reachable, since the input is a thread id.
+   * Null for every other bot, and for a person who picked a project without a thread (its root).
+   */
+  const resolveCheckout = Effect.fnUntraced(function* (
+    bot: BotDefinition,
+    input: BotsRunInput,
+    caller: BotCaller,
+  ) {
+    if (bot.workspace.type !== "project" || bot.workspace.checkout !== "caller") return null;
+    const threadId = input.checkoutThreadId ?? caller.threadId;
+    if (threadId === null) {
+      if (input.projectId !== undefined) return null;
+      return yield* fail(
+        "invalid",
+        "This bot runs in the checkout that holds the work; start it from that thread or pick a checkout.",
+      );
+    }
+    const shell = yield* threads
+      .getThreadShell(threadId)
+      .pipe(Effect.mapError(() => fail("invalid", "Loom could not read the thread to run in.")));
+    if (shell === null || shell.deletedAt !== null)
+      return yield* fail("invalid", "The thread whose checkout this run uses no longer exists.");
+    const projectId = bot.workspace.projectId ?? input.projectId ?? shell.projectId;
+    if (shell.projectId !== projectId || (bot.scopeProjectId ?? projectId) !== projectId)
+      return yield* fail("invalid", "The chosen checkout belongs to another project.");
+    const strategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
+      shell.worktreePath === null
+        ? { type: "root" }
+        : {
+            type: "existing_worktree",
+            worktreePath: shell.worktreePath,
+            ...(shell.branch === null ? {} : { branch: shell.branch }),
+          };
+    return { projectId, strategy };
+  });
+
   const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
     const bot = yield* requireBot(input.botId);
     if (bot.archivedAt !== null)
@@ -354,13 +548,16 @@ export const make = Effect.gen(function* () {
       );
     const checked = validateInputs(bot, input.inputs);
     if (!checked.ok) return yield* fail("invalid", checked.message);
-    const projectId = yield* resolveProject(bot, input, caller);
+    const checkout = yield* resolveCheckout(bot, input, caller);
+    const projectId = checkout?.projectId ?? (yield* resolveProject(bot, input, caller));
     const runId = yield* randomUuidV4;
 
     const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
-      bot.workspace.type === "project" && bot.workspace.worktree
-        ? { type: "worktree", baseRef: bot.workspace.baseRef ?? "HEAD" }
-        : { type: "root" };
+      checkout !== null
+        ? checkout.strategy
+        : bot.workspace.type === "project" && bot.workspace.worktree
+          ? { type: "worktree", baseRef: bot.workspace.baseRef ?? "HEAD" }
+          : { type: "root" };
     if (workspaceStrategy.type === "worktree")
       yield* launches
         .checkWorktreeBase({ projectId, workspaceStrategy })
@@ -512,6 +709,9 @@ export const make = Effect.gen(function* () {
     awaitRun,
     activeRunCount,
     recover,
+    seedStarters,
+    listStarters,
+    restoreStarter,
     changes: Stream.fromPubSub(changes),
   };
 });
@@ -522,16 +722,23 @@ export class BotsService extends Context.Service<BotsService, Effect.Success<typ
 
 export const layer = Layer.effect(BotsService, make);
 
-/** Settles runs the previous server left unfinished, once the server is active. */
+/** Settles runs the previous server left unfinished and offers new starters, once active. */
 export const BotsRecoveryLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const bots = yield* BotsService;
     yield* forkParked(
-      bots
-        .recover()
-        .pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Bot run recovery failed", { cause })),
+      bots.recover().pipe(
+        Effect.catchCause((cause) => Effect.logWarning("Bot run recovery failed", { cause })),
+        Effect.andThen(
+          bots
+            .seedStarters()
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Seeding starter bots failed", { cause }),
+              ),
+            ),
         ),
+      ),
     );
   }),
 );

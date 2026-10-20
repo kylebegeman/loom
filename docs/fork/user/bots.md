@@ -23,18 +23,37 @@ Choose **New bot** and fill in:
 - **Inputs.** Each has a name, a label and a type: short text, long text, number, yes or no, or
   a choice from a list. Mark an input required or give it a default.
 - **Model, Permissions and Mode.** Every run uses these, not the settings of whoever starts it.
-- **Runs in.** A fresh scratch folder, the project checkout, or a new worktree. Leave the project
-  empty to choose one each time you run the bot.
+- **Runs in.** A fresh scratch folder, the project checkout, a new worktree, or the checkout it
+  is run for. Leave the project empty to choose one each time you run the bot.
 - **Time limit and Runs at once.** A run that passes its time limit is stopped and marked
   **Timed out**, keeping what it had written. Extra runs wait in a queue.
 - **Available in.** Limit the bot to one project, or leave it available everywhere.
 
 Editing a bot changes later runs only. Each run records the version it used.
 
+## Starter bots
+
+Loom adds three ready-made bots the first time it starts with Bots:
+
+- **Merge conflict resolver** resolves one conflicted file and stages it, without committing.
+  It runs in the checkout it is run for: the thread of the agent that starts it, or the checkout
+  you pick when you run it yourself.
+- **Reviewer** reviews a path, branch, commit range or pull request through one lens:
+  correctness, surfaces or fidelity. It plans only and changes nothing.
+- **Verifier** runs the smallest check that proves or disproves one claim and answers true,
+  false or undetermined.
+
+Edit a starter like any other bot; its chip then reads **Starter, edited**. When a later Loom
+ships better instructions, the chip reads **Newer starter available**. **Restore starter** in the
+editor puts back the shipped instructions, inputs and settings and keeps your model and project.
+A starter you delete is not added again; restore it from **Starters you removed** on the Bots
+page.
+
 ## Running a bot
 
 Select a bot and choose **Run**. The form asks for each input and, when the bot does not name a
-project, which project to run in. The run appears under **Runs** with its status. **Show reply**
+project, which project to run in. A bot that runs in the checkout it is run for also asks which
+checkout: the project root or the worktree of one of the project's threads. The run appears under **Runs** with its status. **Show reply**
 shows the bot's final answer, and **Open thread** shows the whole conversation. Queued and
 running runs can be cancelled.
 

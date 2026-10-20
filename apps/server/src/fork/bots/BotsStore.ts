@@ -2,6 +2,7 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotDefinitionInput,
   BotInputs,
+  BotOrigin,
   BotRunStatus,
   type BotDefinition,
   type BotRun,
@@ -43,7 +44,14 @@ interface RunRow {
   readonly error: string | null;
 }
 
-const definitionJson = Schema.fromJsonString(BotDefinitionInput);
+/** The definition as stored: what a client may send, plus the server-owned origin. */
+const StoredDefinition = Schema.Struct({
+  ...BotDefinitionInput.fields,
+  origin: Schema.optionalKey(BotOrigin),
+});
+type StoredDefinition = typeof StoredDefinition.Type;
+
+const definitionJson = Schema.fromJsonString(StoredDefinition);
 const inputsJson = Schema.fromJsonString(BotInputs);
 const decodeDefinition = Schema.decodeUnknownOption(definitionJson);
 const decodeInputs = Schema.decodeUnknownOption(inputsJson);
@@ -96,7 +104,12 @@ const definitionFields = ({
   updatedAt: _updatedAt,
   archivedAt: _archivedAt,
   ...input
-}: BotDefinition): BotDefinitionInput => input;
+}: BotDefinition): StoredDefinition => input;
+
+export interface StarterRow {
+  readonly starterId: string;
+  readonly revision: number;
+}
 
 export const makeBotsStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -124,6 +137,35 @@ export const makeBotsStore = Effect.gen(function* () {
     putDefinition: Effect.fn("BotsStore.putDefinition")(function* (bot: BotDefinition) {
       yield* sql`INSERT INTO fork_bots_definitions (id,version,definition_json,scope_project_id,created_by,created_at,updated_at,archived_at) VALUES (${bot.id},${bot.version},${encodeDefinition(definitionFields(bot))},${bot.scopeProjectId},${bot.createdBy},${bot.createdAt},${bot.updatedAt},${bot.archivedAt}) ON CONFLICT(id) DO UPDATE SET version = excluded.version, definition_json = excluded.definition_json, scope_project_id = excluded.scope_project_id, updated_at = excluded.updated_at, archived_at = excluded.archived_at`;
     }),
+
+    /** The highest version any run recorded, so a recreated bot never reuses a version. */
+    maxRunVersion: Effect.fn("BotsStore.maxRunVersion")(function* (botId: string) {
+      const rows = yield* sql<{
+        version: number | null;
+      }>`SELECT MAX(bot_version) AS version FROM fork_bots_runs WHERE bot_id = ${botId}`;
+      return Number(rows[0]?.version ?? 0);
+    }),
+
+    listStarterRows: Effect.fn("BotsStore.listStarterRows")(function* () {
+      const rows = yield* sql<{
+        starter_id: string;
+        revision: number;
+      }>`SELECT starter_id, revision FROM fork_bots_starters`;
+      return rows.map((row): StarterRow => ({
+        starterId: row.starter_id,
+        revision: Number(row.revision),
+      }));
+    }),
+
+    recordStarter: Effect.fn("BotsStore.recordStarter")(function* (
+      starterId: string,
+      revision: number,
+      at: string,
+    ) {
+      yield* sql`INSERT INTO fork_bots_starters (starter_id, revision, seeded_at) VALUES (${starterId}, ${revision}, ${at}) ON CONFLICT(starter_id) DO UPDATE SET revision = excluded.revision`;
+    }),
+
+    withTransaction: sql.withTransaction,
 
     deleteDefinition: Effect.fn("BotsStore.deleteDefinition")(function* (id: string) {
       yield* sql`DELETE FROM fork_bots_definitions WHERE id = ${id}`;
