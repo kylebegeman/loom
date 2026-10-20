@@ -760,6 +760,55 @@ describe("preview gateway", () => {
     }),
   );
 
+  it.live("cuts an idle keep-alive connection once the access it last served ends", () =>
+    Effect.gen(function* () {
+      const { gateway } = yield* setup;
+      const agent = new NodeHttp.Agent({ keepAlive: true, maxSockets: 1 });
+      yield* Effect.addFinalizer(() => Effect.sync(() => agent.destroy()));
+      const kept = (path: string) =>
+        Effect.promise(
+          () =>
+            new Promise<{ socket: NodeNet.Socket; body: string }>((resolve, reject) => {
+              let socket: NodeNet.Socket | null = null;
+              const request = NodeHttp.request(
+                {
+                  agent,
+                  host: "127.0.0.1",
+                  port: gateway.port,
+                  path,
+                  headers: { host: LINK_HOST, ...signedIn },
+                },
+                (reply) => {
+                  const chunks: Array<Buffer> = [];
+                  reply.on("data", (chunk: Buffer) => chunks.push(chunk));
+                  reply.on("end", () => {
+                    if (socket === null) return reject(new Error("no socket"));
+                    resolve({ socket, body: Buffer.concat(chunks).toString("utf8") });
+                  });
+                },
+              );
+              request.on("socket", (assigned) => {
+                socket = assigned;
+              });
+              request.on("error", reject);
+              request.end();
+            }),
+        );
+
+      const first = yield* kept("/one");
+      expect(first.body).toBe("echo:");
+      gateway.destroyConnections(({ host }) => host === ENDED_HOST);
+      gateway.destroyConnections(({ key }) => key === "session-2");
+      const second = yield* kept("/two");
+      expect(second.body).toBe("echo:");
+      expect(second.socket).toBe(first.socket);
+
+      const closed = new Promise<void>((resolve) => second.socket.once("close", () => resolve()));
+      gateway.destroyConnections(({ host }) => host === LINK_HOST);
+      yield* Effect.promise(() => closed);
+    }),
+  );
+
   it.live("explains that nothing is listening when the port is closed", () =>
     Effect.gen(function* () {
       const closed = yield* freePort;
