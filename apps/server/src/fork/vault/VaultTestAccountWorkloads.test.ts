@@ -1476,3 +1476,39 @@ it.effect(
       }),
     ),
 );
+
+it.effect("does not reactivate a start fenced by reconciliation before the adapter returns", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const { control, delivery } = yield* syntheticDelivery(f);
+      const started = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      let callbacks = 0;
+      control.afterStart = Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      const operation = yield* delivery
+        .run(() =>
+          Effect.sync(() => {
+            callbacks++;
+          }),
+        )
+        .pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(started);
+      expect(yield* delivery.snapshot).toBe("starting");
+      expect(control.active).toBe(true);
+      yield* delivery.reconcile;
+      expect(yield* delivery.snapshot).toBe("closed");
+      expect(control.fenced).toBe(true);
+      yield* Deferred.succeed(release, undefined);
+      const result = yield* Fiber.join(operation);
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(result.failure.reason).toBe("denied");
+      expect(callbacks).toBe(0);
+      expect(yield* delivery.snapshot).toBe("closed");
+      expect(control.cleanups).toBe(1);
+      expect(control.starts).toBe(1);
+      expect(control.active).toBe(false);
+    }),
+  ),
+);

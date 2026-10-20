@@ -5,7 +5,7 @@ packet acceptance remains unfinished. Implementation base is current fork main `
 
 ## Authenticated workload evidence
 
-Four focused suites pass **65 tests**: 13 manager cases, 50 real-service workload/contract
+Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract
 cases, one MCP authorization case and real startup registration. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
@@ -164,7 +164,7 @@ post-await revalidation refuses each case. These are synthetic service tests, no
 
 ## Synthetic broker contract
 
-The server package-CWD workload suite passes 50 tests, including 24 broker-contract cases.
+The server package-CWD workload suite passes 51 tests, including 25 broker-contract cases.
 It uses the real account/grant admission service and a fake broker, with no credential reveal.
 Cases cover environment/machine/app/target/origin mismatch, offline/expired presence, registered
 origin changes at the adapter boundary, forged return correlation, grant/run/lease/expiry changes,
@@ -189,3 +189,8 @@ The landing-review regression also changes the root run during a reservation aud
 proves the post-require identity check refuses before registry CAS. The final Math.min deadline
 recheck has no isolated mutation proof; expiry during the earlier audit wait is covered, and no
 stronger coverage is claimed for that non-blocking review note.
+
+A Deferred-interleaved start now waits after minting while reconciliation closes and fences the
+operation. Releasing that delayed response must return denied, keep the operation closed, skip
+the callback and perform cleanup only once. The regression fails with the previous unconditional
+activation; starting-to-active now requires an atomic state claim.

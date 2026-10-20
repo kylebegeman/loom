@@ -5,6 +5,7 @@ import { VaultError } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as VaultCore from "./VaultCore.ts";
+import * as VaultBrokers from "./VaultBrokers.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -104,6 +105,17 @@ it.effect(
         });
         expect(JSON.stringify(report)).not.toContain(Redacted.value(f.machine.privateKey));
         expect(JSON.stringify(report)).not.toContain(f.machine.publicKey);
+        const admin = yield* f.inspector.explain(f.input);
+        expect(admin.context!.sessions).toEqual([
+          expect.objectContaining({
+            id: f.session.id,
+            machineId: f.machineId,
+            machineLabel: "Disposable runner",
+            brokerState: "online",
+          }),
+        ]);
+        expect(JSON.stringify(admin)).not.toContain(Redacted.value(f.machine.privateKey));
+        expect(JSON.stringify(admin)).not.toContain(f.machine.publicKey);
         expect(yield* f.access.snapshot).toEqual(before);
         expect(report.context!.freshUntil).toBeGreaterThan(report.context!.checkedAt);
       }),
@@ -701,6 +713,50 @@ it.effect(
         const report = yield* Fiber.join(fiber);
         expect(report.decision.allowed).toBe(true);
         expect(report.context!.state).toBe("unavailable");
+      }),
+    ),
+);
+
+it.effect.each(["offline", "disabled", "foreign-environment"] as const)(
+  "keeps the admin broker join scoped and reports %s safely",
+  (scenario) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const snapshot = yield* f.brokers.snapshot;
+        const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+          Effect.provide(
+            VaultAccessInspector.layer.pipe(
+              Layer.provide(
+                Layer.succeed(VaultBrokers.VaultBrokers, {
+                  ...f.brokers,
+                  snapshot: Effect.succeed({
+                    ...snapshot,
+                    environmentId:
+                      scenario === "foreign-environment"
+                        ? EnvironmentId.make("foreign-environment")
+                        : snapshot.environmentId,
+                    machines: snapshot.machines.map((m) => ({
+                      ...m,
+                      state: scenario === "disabled" ? "disabled" : m.state,
+                      leaseUntil: scenario === "offline" ? 0 : m.leaseUntil,
+                    })),
+                  }),
+                }),
+              ),
+            ),
+          ),
+          Effect.provideContext(f.context),
+        );
+        const report = yield* inspector.explain(f.input);
+        expect(report.context!.sessions).toEqual([
+          expect.objectContaining({
+            id: f.session.id,
+            machineLabel: scenario === "foreign-environment" ? null : "Disposable runner",
+            brokerState: scenario === "foreign-environment" ? "unknown" : scenario,
+          }),
+        ]);
+        expect(JSON.stringify(report)).not.toContain(Redacted.value(f.machine.privateKey));
+        expect(JSON.stringify(report)).not.toContain(f.machine.publicKey);
       }),
     ),
 );

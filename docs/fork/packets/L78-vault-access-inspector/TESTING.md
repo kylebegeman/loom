@@ -62,7 +62,7 @@ integration rehearsal was run.
 ## Related-context milestone
 
 The inspector joins existing authoritative interfaces without a persisted graph or policy change.
-Focused server suites pass 72 tests (inspector, evaluator, RPC, MCP and actual fork registration),
+Focused server suites pass 75 tests (inspector, evaluator, RPC, MCP and actual fork registration),
 and shared display helpers pass three tests. Tests cover metadata denial, requester/provider
 filtering, caps with omitted counts, partial context, and run/profile/policy/item/expiry changes
 across awaited reads. No transport executes, and policy snapshots remain unchanged by inspection.
@@ -73,7 +73,7 @@ The existing isolated Browser-panel setup verifies denied policy plus partial/em
 the explicit external-consumer limits, and a 430-pixel layout without horizontal overflow.
 Desktop-sized capture: browser-screenshot-localhost-mvgzqelf-5795b394.png. Narrow capture:
 browser-screenshot-localhost-mvgzqr9i-c0d25840.png. These are local browser artifacts, not committed
-assets. Matching profile/session/request labels and concurrent drift have service-test evidence;
+assets. Matching profile/session/request labels, administrator broker labels/states and concurrent drift have service-test evidence;
 this browser fixture has a stopped run and does not prove live broker behavior.
 
 Landing-review regressions verify same-thread foreign-requester isolation against the real narrow
@@ -85,3 +85,9 @@ reads and prompt partial results from a slow profile source. Persistent profile 
 healthy context; a run change during policy evaluation withdraws it. Agent output omits broker
 labels/state. Shared rows disambiguate duplicate profile labels and use stable identity keys in
 both clients. Grant-change previews retain their separate untracked-profile warning.
+
+The admin-path broker assertions require the expected label and online state, exercise offline
+and disabled views, and refuse the same machine ID from a different environment. Admin and
+restricted response JSON both exclude the fixture's public and private machine keys. The
+restricted path still returns no broker label and unknown state. These are synthetic service
+observations, not live broker authentication or logout evidence.

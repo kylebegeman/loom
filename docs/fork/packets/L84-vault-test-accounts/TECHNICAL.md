@@ -162,7 +162,8 @@ a prior observation cannot close that race. Returned session metadata must match
 machine, lease and origin before the callback receives the synthetic session handle.
 
 A local atomic claim admits one start per model instance. Concurrent refusals cannot change the
-winning admission. A cleanup finalizer is registered before start, including before a failed or
+winning admission. A returned start activates only if the operation still owns the starting
+state; reconciliation that closes or fences it wins, and the delayed response cannot run a callback. A cleanup finalizer is registered before start, including before a failed or
 interrupted response. Cleanup targets the original operation ID, never an unvalidated returned
 handle. The modeled transitions are:
 

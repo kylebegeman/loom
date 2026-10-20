@@ -117,7 +117,10 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
               session.origin !== prepared.report.origin
             )
               return yield* denied();
-            yield* Ref.set(state, "active");
+            const activated = yield* Ref.modify(state, (current) =>
+              current === "starting" ? [true, "active" as const] : [false, current],
+            );
+            if (!activated) return yield* denied();
             yield* validate;
             yield* callback(session.sessionId);
             yield* validate;
