@@ -29,8 +29,8 @@ export default function UtilitiesView() {
 
   const showPane = (next: "list" | "tool") => {
     flushSync(() => setPane(next));
-    // Stacked, the control that was just used is now hidden and focus would fall to the page.
-    // Side by side it stays visible, and a click that never took focus leaves focus alone.
+    // Focus moves only when it would otherwise be on the page: stacked, the control just used
+    // is now hidden, and in Safari a click never focuses a button.
     const active = document.activeElement;
     if (active && active !== document.body && active.checkVisibility()) return;
     const root = rootRef.current;
@@ -71,7 +71,16 @@ export default function UtilitiesView() {
             All tools
           </Button>
         </div>
-        {tool ? <ToolView key={tool.id} tool={tool} /> : null}
+        {tool ? (
+          <div className="flex min-w-0 flex-col gap-3 p-3">
+            {/* Outside the keyed tool so a switch keeps it: the palette closing over the dialog
+                returns focus to the element it found focused, and that must still exist. */}
+            <h2 data-utility-heading tabIndex={-1} className="font-medium text-sm outline-none">
+              {tool.label}
+            </h2>
+            <ToolView key={tool.id} tool={tool} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

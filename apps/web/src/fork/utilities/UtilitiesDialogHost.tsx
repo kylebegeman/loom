@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, type RefObject } from "react";
 
 import { Dialog, DialogHeader, DialogPopup, DialogTitle } from "~/components/ui/dialog";
 import { onForkCommand } from "../keybindings/forkCommandBus";
@@ -8,6 +8,9 @@ import { useUtilitiesStore } from "./store";
 
 const UtilitiesView = lazy(() => import("./UtilitiesView"));
 
+const toolHeading = (popup: HTMLElement | null) =>
+  popup?.querySelector<HTMLElement>("[data-utility-heading]") ?? null;
+
 /**
  * Owns `loom.utilities.open` and the fallback dialog for when no thread is open. Renders
  * nothing until the dialog opens, so the closed feature costs one store subscription.
@@ -15,7 +18,7 @@ const UtilitiesView = lazy(() => import("./UtilitiesView"));
 export function UtilitiesDialogHost() {
   const threadRef = useRouteThread()?.threadRef ?? null;
   const open = useUtilitiesStore((state) => state.dialogOpen);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(
     () => onForkCommand("loom.utilities.open", () => toggleUtilities(threadRef)),
@@ -24,29 +27,40 @@ export function UtilitiesDialogHost() {
 
   if (!open) return null;
   return (
-    // Suspends the whole dialog, not just its body: the popup picks its initial focus once, as
-    // it mounts, and must find the tool there rather than a loading line and the close button.
-    <Suspense fallback={null}>
-      <Dialog
-        open
-        onOpenChange={(next) => {
-          if (!next) useUtilitiesStore.getState().closeDialog();
-        }}
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) useUtilitiesStore.getState().closeDialog();
+      }}
+    >
+      <DialogPopup
+        ref={popupRef}
+        className="h-160 sm:max-w-3xl"
+        // The popup picks this once, as it mounts. While the view is still loading it waits on
+        // the popup itself, not the close button, and FocusToolOnLoad takes it from there.
+        initialFocus={() => toolHeading(popupRef.current) ?? popupRef.current}
       >
-        <DialogPopup
-          className="h-160 sm:max-w-3xl"
-          initialFocus={() =>
-            contentRef.current?.querySelector<HTMLElement>("[data-utility-heading]") ?? null
-          }
-        >
-          <DialogHeader>
-            <DialogTitle>Utilities</DialogTitle>
-          </DialogHeader>
-          <div ref={contentRef} className="flex min-h-0 flex-1 flex-col border-t">
+        <DialogHeader>
+          <DialogTitle>Utilities</DialogTitle>
+        </DialogHeader>
+        <div className="flex min-h-0 flex-1 flex-col border-t">
+          <Suspense
+            fallback={<p className="p-3 text-muted-foreground text-sm">Loading utilities...</p>}
+          >
             <UtilitiesView />
-          </div>
-        </DialogPopup>
-      </Dialog>
-    </Suspense>
+            <FocusToolOnLoad popupRef={popupRef} />
+          </Suspense>
+        </div>
+      </DialogPopup>
+    </Dialog>
   );
+}
+
+/** Moves focus to the tool once the view arrives, unless the user has moved it meanwhile. */
+function FocusToolOnLoad({ popupRef }: { readonly popupRef: RefObject<HTMLDivElement | null> }) {
+  useEffect(() => {
+    const popup = popupRef.current;
+    if (popup !== null && document.activeElement === popup) toolHeading(popup)?.focus();
+  }, [popupRef]);
+  return null;
 }

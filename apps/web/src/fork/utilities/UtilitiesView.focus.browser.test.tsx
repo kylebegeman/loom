@@ -1,10 +1,11 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
+import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
 import { openUtilities } from "./open";
 import { useUtilitiesStore } from "./store";
 import { UtilitiesDialogHost } from "./UtilitiesDialogHost";
@@ -75,10 +76,54 @@ describe("utilities focus", () => {
     await act(() => before.focus());
 
     await act(() => openUtilities("jwt", null));
+    // The frame shows at once, before the view's chunk resolves.
+    expect(page.getByRole("dialog", { name: "Utilities" }).element()).toBeDefined();
     await vi.waitFor(() => expect(document.activeElement).toBe(heading("JWT decode")));
 
     await userEvent.keyboard("{Escape}");
     await vi.waitFor(() => expect(document.activeElement).toBe(before));
     expect(useUtilitiesStore.getState().dialogOpen).toBe(false);
   });
+
+  it("keeps focus in the dialog when a palette over it switches the tool", async () => {
+    const tree = (palette: boolean) => (
+      <>
+        <button type="button">Before</button>
+        <UtilitiesDialogHost />
+        {palette ? <PaletteStandIn /> : null}
+      </>
+    );
+    await act(() => root.render(tree(false)));
+    await act(() => openUtilities("jwt", null));
+    await vi.waitFor(() => expect(document.activeElement).toBe(heading("JWT decode")));
+
+    // Like the command palette with no composer: on close it returns focus to the element that
+    // was focused when it opened.
+    await act(() => root.render(tree(true)));
+    const command = page.getByRole("textbox", { name: "Command" }).element();
+    await vi.waitFor(() => expect(document.activeElement).toBe(command));
+    await userEvent.keyboard("{Enter}");
+
+    await vi.waitFor(() => expect(command.isConnected).toBe(false));
+    expect(document.activeElement).toBe(heading("UUID"));
+  });
 });
+
+function PaletteStandIn() {
+  const [open, setOpen] = useState(true);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogPopup>
+        <DialogTitle>Palette</DialogTitle>
+        <input
+          aria-label="Command"
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            setOpen(false);
+            openUtilities("uuid", null);
+          }}
+        />
+      </DialogPopup>
+    </Dialog>
+  );
+}

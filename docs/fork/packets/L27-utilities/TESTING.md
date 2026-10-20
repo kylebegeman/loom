@@ -21,7 +21,7 @@ markup; test the tools' behavior and the registry's invariants.
 | `apps/web/src/fork/utilities/tools/chmod.test.ts`                  | `755`, `0644`, `4755`, `1777`, `2750` to symbolic and back; `rwxr-xr-x` and `-rwsr-xr-x` to octal; `S` and `T` for special bits without execute; per-class sentence; invalid input (`8`, `rwxrwxrw`, 5 digits) errors.                                                                                                                                                                                                                                                                                                                      |
 | `apps/web/src/fork/utilities/tools/limits.test.ts`                 | UTF-8 input limit at and above 1 MiB; output at most 2 MiB including the truncation marker; multibyte boundaries remain valid.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `apps/web/src/fork/utilities/registry.test.ts`                     | 29 tools; ids unique and kebab-case; every metadata entry has an implementation and vice versa; every tool with an `example` produces an `ok` result from it; every two-way tool round-trips its example through `swap`; search ranks prefix matches first.                                                                                                                                                                                                                                                                                 |
-| `apps/web/src/fork/utilities/UtilitiesView.focus.browser.test.tsx` | In headless Chromium. Stacked at 380 px: search and Enter moves focus to the tool's heading, and "All tools" moves it to that tool in the list. Side by side at 640 px: clicking a tool leaves focus on it. The no-thread dialog opens with focus on the tool's heading, and Escape closes it and returns focus to the element focused before.                                                                                                                                                                                              |
+| `apps/web/src/fork/utilities/UtilitiesView.focus.browser.test.tsx` | In headless Chromium. Stacked at 380 px: search and Enter moves focus to the tool's heading, and "All tools" moves it to that tool in the list. Side by side at 640 px: clicking a tool leaves focus on it. The no-thread dialog's frame shows before the view's chunk loads, focus then moves to the tool's heading, and Escape closes it and returns focus to the element focused before. A palette-style dialog over it that switches the tool as it closes leaves focus on the new tool's heading, inside the dialog.                   |
 
 Also run the extension point tests this packet adds entries to:
 `apps/web/src/fork/panels/registry.test.ts` (letter U unique and not an upstream letter),
@@ -145,15 +145,21 @@ worktree's ignored `.t3`, seeded with `vp run migrate-dev-db`. By step:
 8. Palette: "jwt" and Enter opened the panel on JWT decode; the submenu listed all 29 tools.
 9. Settings: the palette item opened the dialog and Escape closed it. **Fixed:** the first
    open after a page load focused Close, because the dialog picked its initial focus while
-   the lazy tool view was still loading. The whole dialog now waits for the view and starts
-   on the tool's heading, from the palette and from the shortcut. Escape and the shortcut
-   return focus to where it was.
+   the lazy tool view was still loading. The frame and a loading line now show at once with
+   focus on the dialog, and focus moves to the tool's heading when the view arrives, 347 ms
+   after a first open from Settings. **Fixed after review:** picking another tool from the
+   palette while the dialog was open sent focus behind the modal, because the palette
+   returned it to the old tool's heading, which the switch had removed. The heading now
+   stays mounted across tool switches, and focus lands on the new tool's heading inside the
+   dialog. Escape and the shortcut return focus to where it was.
 10. With `mod+alt+u` bound in the worktree's `.t3/userdata/keybindings.json` (dev data only),
     the shortcut toggled the dialog in Settings and the panel in a thread.
 11. Layout: list and tool side by side at a 539 px panel width and wider, stacked at 383 px
     with no horizontal scroll. **Fixed:** stacked, picking a tool or pressing "All tools"
     hid the focused control and focus fell to the page. Focus now moves to the tool's
-    heading or to that tool in the list. Side by side it stays where it was.
+    heading or to that tool in the list. Side by side it stays where it was. Rechecked at
+    377 px after the heading moved out of the tool view: both moves still land, and the
+    spacing is unchanged.
 12. Remote http: below.
 13. Not run: no upstream T3 server was available. The feature is client-only and has no
     `loomFeatures` gate, so it does not depend on which server it connects to.
@@ -169,10 +175,13 @@ matched their vectors, UUID generated a v4 value, and the regex tester matched. 
 stopped after 1.16 s with a longest main-thread gap of 32 ms, and a flag typed during the
 run applied. This covers plain `http` on a non-loopback origin, not a second device.
 
-Fixes and checks. Besides the two focus fixes, the new test exposed an import cycle:
-`open.ts` and `panel.tsx` imported each other through the panel registry, so importing
-`open.ts` first read `UTILITIES_PANEL_ID` before it was set. The constant now lives in
-`panel.tsx`. `UtilitiesView.focus.browser.test.tsx` covers both focus fixes. With them, the
-commands above ran 21 files and 699 tests, all passing, and lint and the web typecheck pass.
+Fixes and checks. Besides the focus fixes, the new test exposed an import cycle: `open.ts`
+and `panel.tsx` imported each other through the panel registry, so importing `open.ts` first
+read `UTILITIES_PANEL_ID` before it was set. The constant now lives in `panel.tsx`. An
+adversarial review of the fixes found the palette case in step 9, and that the first fix,
+which made the whole dialog wait for the view, delayed its first appearance by at least
+300 ms, React's reveal throttle. Both are fixed as step 9 describes, and their cases in
+`UtilitiesView.focus.browser.test.tsx` failed before the fixes. With them, the commands
+above ran 21 files and 700 tests, all passing, and lint and the web typecheck pass.
 
 Not run: the desktop pass.
