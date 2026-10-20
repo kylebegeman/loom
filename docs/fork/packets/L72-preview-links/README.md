@@ -2,8 +2,8 @@
 
 Status: Slices 1 to 5 are implemented on fork `main`, with the follow-up gap fixes for
 sign-in, pages, the gateway and backings. The Library side waits for the LP-22 deploy (gate
-D4: Kyle adds a DNS-only record for `pages.bagels.top` at the Library host, then the
-Library is deployed). Slice 6, guest links, is parked. The real-client checks in
+D4). Kyle added the DNS-only record for `pages.bagels.top` at the Library host on
+2026-10-20. Slice 6, guest links, is parked. The real-client checks in
 [TESTING.md](./TESTING.md#still-to-check) are pending.
 
 Selection: Hosted previews, Kyle 2026-10-18. Kyle approved slices 2 to 6 and their Library

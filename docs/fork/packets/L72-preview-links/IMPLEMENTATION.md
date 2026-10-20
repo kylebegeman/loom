@@ -46,8 +46,9 @@ packet.
 
 ## Remaining
 
-- The LP-22 Library deploy, gate D4: Kyle adds a DNS-only record for `pages.bagels.top` at
-  the Library host and deploys with `LOOM_PAGES_ORIGIN` set. Until then pages and Library
+- The LP-22 Library deploy, gate D4, with `LOOM_PAGES_ORIGIN` set. The DNS-only record for
+  `pages.bagels.top` at the Library host is live since 2026-10-20; the deploy gets its
+  certificate. Until then pages and Library
   sign-in are untested against the real Library.
 - The real-client checks in [TESTING.md](./TESTING.md#still-to-check), then set the index
   Status.
