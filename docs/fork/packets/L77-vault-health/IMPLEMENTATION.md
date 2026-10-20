@@ -1,6 +1,6 @@
 # L77 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress. Inbox, bounded expiry/GitHub checks and diagnostic observation are implemented locally. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Before starting

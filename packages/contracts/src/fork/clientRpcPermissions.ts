@@ -1,3 +1,4 @@
+import { VAULT_HEALTH_WS_METHODS as VH } from "./vault-health.ts";
 import { VAULT_GITHUB_WS_METHODS as VG } from "./vault-github.ts";
 import { VAULT_PROFILE_WS_METHODS as VP } from "./vault-profiles.ts";
 import { VAULT_SSH_WS_METHODS as VS } from "./vault-ssh.ts";
@@ -29,6 +30,8 @@ import { AuthPreviewOperateScope } from "../auth.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [VH.apply]: AuthAccessWriteScope,
+  [VH.recheck]: AuthAccessWriteScope,
   [VG.save]: AuthAccessWriteScope,
   [VG.test]: AuthAccessWriteScope,
   [VG.readiness]: AuthAccessWriteScope,

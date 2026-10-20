@@ -1,3 +1,6 @@
+import * as VaultHealthContext from "./vault/VaultHealthContext.ts";
+import * as VaultHealth from "./vault/VaultHealth.ts";
+import * as VaultHealthChecks from "./vault/VaultHealthChecks.ts";
 import * as GitHubTerminal from "./vault/GitHubTerminal.ts";
 import * as VaultGitHub from "./vault/VaultGitHub.ts";
 import * as GitHubTransport from "./vault/GitHubTransport.ts";
@@ -101,10 +104,15 @@ const layerVaultSsh = VaultSsh.layer.pipe(
   ),
 );
 
+const layerVaultHealth = VaultHealth.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultStore, layerVaultCore)),
+);
+
 const layerVaultGitHub = VaultGitHub.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerVaultCore,
+      layerVaultHealth,
       layerVaultAccess,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       GitHubCli.layer,
@@ -123,6 +131,11 @@ const layerVaultProfiles = VaultProfiles.layer.pipe(
       layerVaultGitHub,
       ProjectStore.layer,
     ),
+  ),
+);
+const layerVaultHealthContext = VaultHealthContext.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultCore, layerVaultProfiles, layerVaultAccess, ProjectStore.layer),
   ),
 );
 const layerVaultReferences = VaultReferences.layer.pipe(
@@ -145,8 +158,15 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 );
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
+const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultHealth, layerVaultGitHub)),
+);
+
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  layerVaultHealth,
+  layerVaultHealthContext,
+  VaultHealthChecks.reactor.pipe(Layer.provideMerge(layerVaultHealthChecks)),
   layerVaultGitHub,
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),

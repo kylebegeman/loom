@@ -2666,8 +2666,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.notInclude(JSON.stringify(env), "synthetic-terminal-only");
       }).pipe(
         Effect.scoped,
-        Effect.provide(McpProviderSessions.layer.pipe(Layer.provide(NodeServices.layer))),
-        Effect.provide(Layer.mergeAll(IdAllocator.layer, NodeServices.layer)),
+        Effect.provide(
+          Layer.merge(
+            IdAllocator.layer,
+            McpProviderSessions.layer.pipe(Layer.provideMerge(NodeServices.layer)),
+          ),
+        ),
       ),
   );
 

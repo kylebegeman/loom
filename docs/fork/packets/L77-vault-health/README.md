@@ -1,10 +1,25 @@
 # L77: Credential health and maintenance inbox
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress** on `feat/loom-vault-health-retained`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
 
 Collect expiration and authentication maintenance into one actionable inbox.
 
 V05 | Minor improvement | Complexity: Medium | Impact: High
+
+## Delivered and remaining scope
+
+Encrypted per-environment expiry rules and deduplicated issues now cover declared expiry,
+GitHub validation and safe GH/mediated SSH/Git operation outcomes. Web/desktop and mobile have
+inbox/rule management, snooze/unsnooze, dismiss/reopen, recheck and access-review entry points.
+Administrator CLI/MCP use the same services. Reads never initiate provider login.
+
+Current project profile bindings and project/thread grant references are available on demand,
+ten projects per page, with review links. Each scanned project can inspect retained selections
+in pages of 25, including projects with no current references. Earlier item/profile versions
+remain visible; retired selections with removed snapshots are counted as unattributable.
+External consumers and provider-side copies are not discovered. These references do not prove usable access. The current validation adapter targets explicitly configured
+GitHub repositories. Additional adapters and native interaction acceptance remain incomplete.
+This is not a full packet completion or a production rollout. See TESTING for exact evidence.
 
 ## Scope
 
@@ -30,8 +45,8 @@ Uses item metadata, usage events and optional validation adapters. Can work with
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
-claiming an approved seam inventory. Source baseline: `2f385ee835`.
+No new upstream seams were added. [SEAMS.md](./SEAMS.md) records fork-owned integration
+and the required host policy change. Reviewed against fork main `cc05b69aed`.
 
 ## Documents
 

@@ -1,3 +1,4 @@
+import { observeVaultHealth } from "./health-observation.ts";
 import { type ThreadId } from "@t3tools/contracts";
 import {
   VaultError,
@@ -232,64 +233,75 @@ const make = Effect.gen(function* () {
       );
       return (yield* load(input.id)).info;
     }, Effect.scoped),
-    test: Effect.fn("VaultGitHub.test")(function* (input, authorize) {
-      yield* authorize;
-      const record = yield* check(input),
-        current = yield* session(record, input.repository);
-      yield* authorize;
-      yield* check(input);
-      yield* transport.probe(current, input.repository.toLowerCase());
-      return {
-        account: current.account,
-        repository: input.repository.toLowerCase(),
-        checkedAt: DateTime.formatIso(yield* DateTime.now),
-        tokenExpiresAt: current.expiresAt,
-        api: "ready" as const,
-      };
-    }, Effect.scoped),
+    test: Effect.fn("VaultGitHub.test")(
+      function* (input, authorize) {
+        yield* authorize;
+        const record = yield* check(input),
+          current = yield* session(record, input.repository);
+        yield* authorize;
+        yield* check(input);
+        yield* transport.probe(current, input.repository.toLowerCase());
+        return {
+          account: current.account,
+          repository: input.repository.toLowerCase(),
+          checkedAt: DateTime.formatIso(yield* DateTime.now),
+          tokenExpiresAt: current.expiresAt,
+          api: "ready" as const,
+        };
+      },
+      Effect.scoped,
+      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+    ),
     change: Effect.fn("VaultGitHub.change")(function* (input, actor, authorize) {
       yield* authorize;
       yield* load(input.id);
       return yield* core.change(input, actor, authorize);
     }),
-    terminal: Effect.fn("VaultGitHub.terminal")(function* (input, threadId) {
-      if (!isTerminal(input) || !githubTerminalArgs(input.repository.toLowerCase(), input.command))
-        return yield* new VaultGitHubError({ reason: "invalid-command" });
-      const authorize = yield* runAuthorization(input, threadId);
-      yield* authorize;
-      const thread = yield* threads
-        .getThreadShell(threadId)
-        .pipe(Effect.mapError(() => fail("denied")));
-      if (!thread) return yield* fail("denied");
-      const project = yield* projects
-        .get(thread.projectId)
-        .pipe(Effect.mapError(() => fail("denied")));
-      if (Option.isNone(project) || project.value.deletedAt) return yield* fail("denied");
-      const cwd = thread.worktreePath ?? project.value.workspaceRoot;
-      if (!cwd.startsWith("/")) return yield* new VaultGitHubError({ reason: "unsupported" });
-      return yield* permits.withPermits(1)(
-        Effect.gen(function* () {
-          yield* authorize;
-          const record = yield* check(input),
-            current = yield* session(record, input.repository);
-          yield* authorize;
-          const result = yield* terminal.execute({
-            token: current.token,
-            repository: input.repository.toLowerCase(),
-            command: input.command,
-            cwd,
-            authorize: authorize.pipe(
-              Effect.mapError(() => new VaultGitHubError({ reason: "unauthorized" })),
-            ),
-          });
-          return {
-            account: current.account,
-            repository: input.repository.toLowerCase(),
-            ...result,
-          };
-        }),
-      );
-    }, Effect.scoped),
+    terminal: Effect.fn("VaultGitHub.terminal")(
+      function* (input, threadId) {
+        if (
+          !isTerminal(input) ||
+          !githubTerminalArgs(input.repository.toLowerCase(), input.command)
+        )
+          return yield* new VaultGitHubError({ reason: "invalid-command" });
+        const authorize = yield* runAuthorization(input, threadId);
+        yield* authorize;
+        const thread = yield* threads
+          .getThreadShell(threadId)
+          .pipe(Effect.mapError(() => fail("denied")));
+        if (!thread) return yield* fail("denied");
+        const project = yield* projects
+          .get(thread.projectId)
+          .pipe(Effect.mapError(() => fail("denied")));
+        if (Option.isNone(project) || project.value.deletedAt) return yield* fail("denied");
+        const cwd = thread.worktreePath ?? project.value.workspaceRoot;
+        if (!cwd.startsWith("/")) return yield* new VaultGitHubError({ reason: "unsupported" });
+        return yield* permits.withPermits(1)(
+          Effect.gen(function* () {
+            yield* authorize;
+            const record = yield* check(input),
+              current = yield* session(record, input.repository);
+            yield* authorize;
+            const result = yield* terminal.execute({
+              token: current.token,
+              repository: input.repository.toLowerCase(),
+              command: input.command,
+              cwd,
+              authorize: authorize.pipe(
+                Effect.mapError(() => new VaultGitHubError({ reason: "unauthorized" })),
+              ),
+            });
+            return {
+              account: current.account,
+              repository: input.repository.toLowerCase(),
+              ...result,
+            };
+          }),
+        );
+      },
+      Effect.scoped,
+      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+    ),
     readiness: Effect.fn("VaultGitHub.readiness")(function* (input, adminAuthorize) {
       let providerInstanceId: string | null = null;
       const authorize = input.threadId
@@ -414,31 +426,35 @@ const make = Effect.gen(function* () {
         }),
       );
     }, Effect.scoped),
-    run: Effect.fn("VaultGitHub.run")(function* (input, threadId, guard = Effect.void) {
-      if (!isRun(input)) return yield* fail("invalid-input");
-      const authorize = yield* runAuthorization(input, threadId, guard);
-      return yield* permits.withPermits(1)(
-        Effect.gen(function* () {
-          yield* authorize;
-          const record = yield* check(input),
-            current = yield* session(record, input.repository);
-          yield* authorize;
-          const result = yield* cli.run({
-            token: current.token,
-            repository: input.repository.toLowerCase(),
-            operation: input.operation,
-            authorize: authorize.pipe(
-              Effect.mapError(() => new VaultGitHubError({ reason: "unauthorized" })),
-            ),
-          });
-          return {
-            account: current.account,
-            repository: input.repository.toLowerCase(),
-            ...result,
-          };
-        }),
-      );
-    }, Effect.scoped),
+    run: Effect.fn("VaultGitHub.run")(
+      function* (input, threadId, guard = Effect.void) {
+        if (!isRun(input)) return yield* fail("invalid-input");
+        const authorize = yield* runAuthorization(input, threadId, guard);
+        return yield* permits.withPermits(1)(
+          Effect.gen(function* () {
+            yield* authorize;
+            const record = yield* check(input),
+              current = yield* session(record, input.repository);
+            yield* authorize;
+            const result = yield* cli.run({
+              token: current.token,
+              repository: input.repository.toLowerCase(),
+              operation: input.operation,
+              authorize: authorize.pipe(
+                Effect.mapError(() => new VaultGitHubError({ reason: "unauthorized" })),
+              ),
+            });
+            return {
+              account: current.account,
+              repository: input.repository.toLowerCase(),
+              ...result,
+            };
+          }),
+        );
+      },
+      Effect.scoped,
+      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
+    ),
   });
 });
 export const layer = Layer.effect(VaultGitHub, make);
