@@ -26,7 +26,7 @@ interface DefinitionRow {
   readonly archived_at: string | null;
 }
 
-interface RunRow {
+export interface RunRow {
   readonly id: string;
   readonly bot_id: string;
   readonly bot_version: number;
@@ -45,6 +45,7 @@ interface RunRow {
   readonly error: string | null;
   readonly notify: number;
   readonly verdict_json: string | null;
+  readonly batch_id: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -79,7 +80,7 @@ const toDefinition = (row: DefinitionRow): BotDefinition | null => {
   };
 };
 
-const toRun = (row: RunRow): BotRun | null => {
+export const toRun = (row: RunRow): BotRun | null => {
   const inputs = decodeInputs(row.inputs_json);
   const { status } = row;
   if (Option.isNone(inputs) || !isStatus(status)) return null;
@@ -105,6 +106,7 @@ const toRun = (row: RunRow): BotRun | null => {
     ...(row.verdict_json === null
       ? {}
       : { verdict: Option.getOrNull(decodeVerdict(row.verdict_json)) }),
+    ...(row.batch_id == null ? {} : { batchId: row.batch_id }),
   };
 };
 
@@ -183,7 +185,7 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
@@ -238,9 +240,9 @@ export const makeBotsStore = Effect.gen(function* () {
       return rows.flatMap((row) => toRun(row) ?? []);
     }),
 
-    /** Deletes finished runs beyond the newest `keep` of a bot. */
+    /** Deletes finished runs beyond the newest `keep` of a bot, except those of a running batch. */
     pruneRuns: Effect.fn("BotsStore.pruneRuns")(function* (botId: string, keep: number) {
-      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
     }),
   };
 });

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BotIcon, PlayIcon } from "lucide-react";
+import { BotIcon, LayersIcon, PlayIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ADDON_ICON_CLASS,
@@ -20,6 +20,8 @@ export interface BotsPaletteContext {
   }>;
   readonly openBots: () => Promise<void>;
   readonly runBot: (botId: string) => Promise<void>;
+  /** Null while the server cannot run batches. */
+  readonly runBotOnMany: ((botId: string) => Promise<void>) | null;
 }
 
 const icon = (Icon: typeof BotIcon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -39,6 +41,19 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
       icon: icon(BotIcon),
       run: () => context.runBot(bot.id),
     }));
+    const runOnMany = context.runBotOnMany;
+    const manyItems: CommandPaletteActionItem[] =
+      runOnMany === null
+        ? []
+        : context.runnable.map((bot) => ({
+            kind: "action",
+            value: `action:loom:bots:run-many:${bot.id}`,
+            title: bot.name,
+            ...(bot.description ? { description: bot.description } : {}),
+            searchTerms: [bot.name, bot.id],
+            icon: icon(BotIcon),
+            run: () => runOnMany(bot.id),
+          }));
     return [
       {
         kind: "action",
@@ -61,6 +76,19 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
               groups: [{ value: "bots-run", label: "Bots", items: runItems }],
             },
           ]),
+      ...(manyItems.length === 0
+        ? []
+        : [
+            {
+              kind: "submenu" as const,
+              value: "action:loom:bots:run-many",
+              title: "Run bot on many...",
+              searchTerms: ["bots", "batch", "many", "files", "conflicts", "each"],
+              icon: icon(LayersIcon),
+              addonIcon: icon(LayersIcon, ADDON_ICON_CLASS),
+              groups: [{ value: "bots-run-many", label: "Bots", items: manyItems }],
+            },
+          ]),
     ];
   },
 };
@@ -75,5 +103,8 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
     runnable: canRun ? listed.filter((bot) => bot.archivedAt === null) : [],
     openBots: () => navigate({ to: "/loom/bots" }),
     runBot: (botId) => navigate({ to: "/loom/bots", search: { bot: botId, run: botId } }),
+    runBotOnMany: host.batchesSupported
+      ? (botId) => navigate({ to: "/loom/bots", search: { bot: botId, many: botId } })
+      : null,
   };
 }

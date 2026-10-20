@@ -1,6 +1,7 @@
 # L93: Batches
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build
+differs from this plan.
 
 Run one bot over many inputs as a single action. Kyle picks a bot and a source (pasted lines, a
 file glob, the current merge conflicts, open pull requests, or search results), sees how many
@@ -36,7 +37,7 @@ None new (L89's): `ext-core`, persistence, background work under `forkParked`, `
 
 ## Packet seams
 
-None.
+One line in `apps/server/src/server.ts`: `ForkLayer` is given the pull request service.
 
 ## Documents
 

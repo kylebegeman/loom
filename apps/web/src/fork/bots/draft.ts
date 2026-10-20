@@ -2,6 +2,8 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import {
   BotsSaveInput,
   isBotRunThreadId,
+  type BotBatchSource,
+  type BotBatchSourceType,
   type BotDefinition,
   type BotInputs,
   type BotParameter,
@@ -265,3 +267,63 @@ export const checkoutChoices = (
       label: `${shell.branch ?? shell.worktreePath} (${shell.title})`,
     }));
 };
+
+export type BatchSourceType = Exclude<BotBatchSourceType, "inputs">;
+
+/** What the "Run on many" form holds; the fields of other source types are kept while switching. */
+export interface BatchSourceDraft {
+  readonly type: BatchSourceType;
+  readonly lines: string;
+  readonly pattern: string;
+  readonly query: string;
+  readonly searchMode: "files" | "contents";
+  /** "" is the project root. */
+  readonly checkoutThreadId: string;
+}
+
+export const emptyBatchSourceDraft: BatchSourceDraft = {
+  type: "lines",
+  lines: "",
+  pattern: "",
+  query: "",
+  searchMode: "files",
+  checkoutThreadId: "",
+};
+
+/** Whether a source reads files, so it needs a project and may use a thread's checkout. */
+export const readsFiles = (type: BatchSourceType) =>
+  type === "glob" || type === "conflicts" || type === "search";
+
+/** Whether a source is read from a project; pull requests are listed per project too. */
+export const sourceNeedsProject = (type: BatchSourceType) =>
+  readsFiles(type) || type === "pullRequests";
+
+/** The source to send, or null while the form is not filled in enough to preview. */
+export const batchSourceFromDraft = (draft: BatchSourceDraft): BotBatchSource | null => {
+  const checkout =
+    draft.checkoutThreadId === "" ? {} : { checkoutThreadId: draft.checkoutThreadId as ThreadId };
+  const query = draft.query.trim();
+  switch (draft.type) {
+    case "lines":
+      return draft.lines.trim() === "" ? null : { type: "lines", text: draft.lines };
+    case "glob":
+      return draft.pattern.trim() === ""
+        ? null
+        : { type: "glob", pattern: draft.pattern.trim(), ...checkout };
+    case "conflicts":
+      return { type: "conflicts", ...checkout };
+    case "pullRequests":
+      return query === "" ? { type: "pullRequests" } : { type: "pullRequests", query };
+    case "search":
+      return query === "" ? null : { type: "search", mode: draft.searchMode, query, ...checkout };
+  }
+};
+
+/** The input each item fills by default: the first required text input, else the first input. */
+export const defaultItemParameter = (bot: BotDefinition): string =>
+  (
+    bot.parameters.find(
+      (parameter) =>
+        parameter.required && (parameter.type === "string" || parameter.type === "text"),
+    ) ?? bot.parameters[0]
+  )?.name ?? "";

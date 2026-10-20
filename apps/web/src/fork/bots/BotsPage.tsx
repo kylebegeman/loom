@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  BOTS_LIST_BATCHES_MAX_LIMIT,
   BOTS_LIST_RUNS_MAX_LIMIT,
   type BotDefinition,
   type BotStarterState,
   type BotStarterStatus,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
-import { applyRunChanges } from "@t3tools/client-runtime/fork";
+import { applyBatchChanges, applyRunChanges } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -20,11 +21,13 @@ import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryPermission } from "../project-library/state";
+import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
 import { botDraft } from "./draft";
-import { bots, useBots } from "./state";
+import { RunOnManyDialog } from "./RunOnManyDialog";
+import { bots, useBotBatchChanges, useBots } from "./state";
 
 type Editing = { readonly bot: BotDefinition | null } | null;
 
@@ -103,6 +106,20 @@ export function BotsPage() {
   const archive = useAtomCommand(bots.archive, { reportFailure: false });
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
+  const batchesLive = live && host.batchesSupported;
+  const tab = batchesLive ? (search.tab ?? "runs") : "runs";
+  const batchChanges = useBotBatchChanges(environmentId, batchesLive);
+  const batchesQuery = useEnvironmentQuery(
+    environmentId && batchesLive && tab === "batches"
+      ? bots.listBatches({
+          environmentId,
+          input: {
+            limit: BOTS_LIST_BATCHES_MAX_LIMIT,
+            ...(selectedId === undefined ? {} : { botId: selectedId }),
+          },
+        })
+      : null,
+  );
   const startersQuery = useEnvironmentQuery(
     environmentId && live && host.startersSupported
       ? bots.listStarters({ environmentId, input: {} })
@@ -124,10 +141,11 @@ export function BotsPage() {
     if (host.connected && !wasConnected.current) {
       list.refresh();
       runsQuery.refresh();
+      batchesQuery.refresh();
       startersQuery.refresh();
     }
     wasConnected.current = host.connected;
-  }, [host.connected, list, runsQuery, startersQuery]);
+  }, [host.connected, list, runsQuery, batchesQuery, startersQuery]);
 
   // Saving, deleting or restoring a bot can change its starter's state.
   const refreshStarters = startersQuery.refresh;
@@ -146,10 +164,20 @@ export function BotsPage() {
     verdict,
     includeNew: true,
   });
+  const batches = applyBatchChanges(batchesQuery.data?.batches ?? [], batchChanges, {
+    botId: selectedId,
+    includeNew: true,
+  });
   const runTarget =
     search.run === undefined ? null : (allBots.find((bot) => bot.id === search.run) ?? null);
+  const manyTarget =
+    search.many === undefined || !host.batchesSupported
+      ? null
+      : (allBots.find((bot) => bot.id === search.many) ?? null);
+  const latestVersionOf = (botId: string) =>
+    allBots.find((bot) => bot.id === botId && bot.archivedAt === null)?.version ?? null;
 
-  const go = (next: { bot?: string | undefined; run?: string | undefined }) =>
+  const go = (next: typeof search) =>
     void navigate({ to: "/loom/bots", search: next, replace: true });
 
   const act = async (work: () => Promise<void>) => {
@@ -240,9 +268,9 @@ export function BotsPage() {
                 <Button
                   variant={selectedId === undefined ? "secondary" : "ghost"}
                   aria-pressed={selectedId === undefined}
-                  onClick={() => go({})}
+                  onClick={() => go({ tab: search.tab })}
                 >
-                  All runs
+                  {tab === "batches" ? "All batches" : "All runs"}
                 </Button>
                 {list.isPending && !list.data ? (
                   <p role="status" className="px-2 text-sm text-muted-foreground">
@@ -254,7 +282,7 @@ export function BotsPage() {
                     key={bot.id}
                     variant={bot.id === selectedId ? "secondary" : "ghost"}
                     aria-pressed={bot.id === selectedId}
-                    onClick={() => go({ bot: bot.id })}
+                    onClick={() => go({ bot: bot.id, tab: search.tab })}
                   >
                     <span className="truncate">{bot.name}</span>
                     {bot.archivedAt ? " (archived)" : ""}
@@ -323,6 +351,18 @@ export function BotsPage() {
                         >
                           Run
                         </Button>
+                        {host.batchesSupported ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canRun || selected.archivedAt !== null}
+                            onClick={() =>
+                              go({ bot: selected.id, tab: search.tab, many: selected.id })
+                            }
+                          >
+                            Run on many
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="outline"
@@ -358,54 +398,125 @@ export function BotsPage() {
                     </details>
                   </div>
                 ) : null}
-                <section className="space-y-3" aria-label="Runs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-medium">{selected ? "Runs" : "Recent runs"}</h3>
-                    {host.verdictsSupported ? (
-                      <VerdictFilter value={verdictFilter} onChange={setVerdictFilter} />
-                    ) : null}
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      disabled={!host.connected || runsQuery.isPending}
-                      onClick={() => {
-                        list.refresh();
-                        runsQuery.refresh();
-                      }}
-                    >
-                      Refresh
-                    </Button>
+                {batchesLive ? (
+                  <div className="flex gap-1" role="group" aria-label="Show">
+                    {(["runs", "batches"] as const).map((value) => (
+                      <Button
+                        key={value}
+                        size="sm"
+                        variant={tab === value ? "secondary" : "ghost"}
+                        aria-pressed={tab === value}
+                        onClick={() => go({ bot: search.bot, tab: value })}
+                      >
+                        {value === "runs" ? "Runs" : "Batches"}
+                      </Button>
+                    ))}
                   </div>
-                  {runsQuery.error ? (
-                    <p role="alert" className="text-sm text-destructive-foreground">
-                      {runsQuery.error}
-                    </p>
-                  ) : null}
-                  {runsQuery.isPending && !runsQuery.data ? (
-                    <p role="status" className="text-sm text-muted-foreground">
-                      Loading runs…
-                    </p>
-                  ) : (
-                    <BotRuns
-                      environmentId={environmentId}
-                      runs={runs}
-                      showBot={selected === null || selected === undefined}
-                      canCancel={canCancel}
-                      emptyMessage={
-                        verdict !== undefined
-                          ? "No run matches this verdict."
-                          : selected
-                            ? `${selected.name} has not run yet.`
-                            : "No bot has run yet."
-                      }
-                    />
-                  )}
-                  {runsQuery.data?.hasMore ? (
-                    <p className="text-xs text-muted-foreground">
-                      Showing the {BOTS_LIST_RUNS_MAX_LIMIT} most recent runs.
-                    </p>
-                  ) : null}
-                </section>
+                ) : null}
+                {tab === "batches" ? (
+                  <section className="space-y-3" aria-label="Batches">
+                    {search.batch !== undefined ? (
+                      <BatchView
+                        key={search.batch}
+                        environmentId={environmentId}
+                        batchId={search.batch}
+                        changes={batchChanges}
+                        latestVersionOf={latestVersionOf}
+                        canRun={canRun}
+                        canCancel={canCancel}
+                        onClose={() => go({ bot: search.bot, tab: "batches" })}
+                      />
+                    ) : null}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-medium">{selected ? "Batches" : "Recent batches"}</h3>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        disabled={!host.connected || batchesQuery.isPending}
+                        onClick={batchesQuery.refresh}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                    {batchesQuery.error ? (
+                      <p role="alert" className="text-sm text-destructive-foreground">
+                        {batchesQuery.error}
+                      </p>
+                    ) : batchesQuery.isPending && !batchesQuery.data ? (
+                      <p role="status" className="text-sm text-muted-foreground">
+                        Loading batches…
+                      </p>
+                    ) : (
+                      <BatchList
+                        batches={batches}
+                        selectedId={search.batch}
+                        showBot={selected === null || selected === undefined}
+                        onSelect={(batch) =>
+                          go({ bot: search.bot, tab: "batches", batch: batch.id })
+                        }
+                        emptyMessage={
+                          selected
+                            ? `${selected.name} has not run on many items yet.`
+                            : "No batch has run yet."
+                        }
+                      />
+                    )}
+                    {batchesQuery.data?.hasMore ? (
+                      <p className="text-xs text-muted-foreground">
+                        Showing the {BOTS_LIST_BATCHES_MAX_LIMIT} most recent batches.
+                      </p>
+                    ) : null}
+                  </section>
+                ) : (
+                  <section className="space-y-3" aria-label="Runs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-medium">{selected ? "Runs" : "Recent runs"}</h3>
+                      {host.verdictsSupported ? (
+                        <VerdictFilter value={verdictFilter} onChange={setVerdictFilter} />
+                      ) : null}
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        disabled={!host.connected || runsQuery.isPending}
+                        onClick={() => {
+                          list.refresh();
+                          runsQuery.refresh();
+                        }}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                    {runsQuery.error ? (
+                      <p role="alert" className="text-sm text-destructive-foreground">
+                        {runsQuery.error}
+                      </p>
+                    ) : null}
+                    {runsQuery.isPending && !runsQuery.data ? (
+                      <p role="status" className="text-sm text-muted-foreground">
+                        Loading runs…
+                      </p>
+                    ) : (
+                      <BotRuns
+                        environmentId={environmentId}
+                        runs={runs}
+                        showBot={selected === null || selected === undefined}
+                        canCancel={canCancel}
+                        emptyMessage={
+                          verdict !== undefined
+                            ? "No run matches this verdict."
+                            : selected
+                              ? `${selected.name} has not run yet.`
+                              : "No bot has run yet."
+                        }
+                      />
+                    )}
+                    {runsQuery.data?.hasMore ? (
+                      <p className="text-xs text-muted-foreground">
+                        Showing the {BOTS_LIST_RUNS_MAX_LIMIT} most recent runs.
+                      </p>
+                    ) : null}
+                  </section>
+                )}
               </section>
             </div>
           ) : null}
@@ -433,6 +544,16 @@ export function BotsPage() {
           canRun={canRun}
           onClose={() => go({ bot: search.bot })}
           onStarted={(run) => go({ bot: run.botId })}
+        />
+      ) : null}
+      {manyTarget && environmentId ? (
+        <RunOnManyDialog
+          key={manyTarget.id}
+          environmentId={environmentId}
+          bot={manyTarget}
+          canRun={canRun}
+          onClose={() => go({ bot: search.bot, tab: search.tab })}
+          onStarted={(batch) => go({ bot: batch.botId, tab: "batches", batch: batch.id })}
         />
       ) : null}
     </SidebarInset>

@@ -64,6 +64,24 @@ running runs can be cancelled.
 Bot runs stay out of the thread list and do not send completion notifications. **All runs** on
 the Bots page lists every bot's recent runs.
 
+## Running a bot on many items
+
+**Run on many** runs one bot once per item. Choose where the items come from: pasted lines (one
+item per line), tracked files matching a pattern such as `apps/web/src/**/*.tsx`, the files with
+merge conflicts in a checkout, open pull requests, or a search of file names or contents. Pick
+which input each item fills; the other inputs are shared by every item. The form shows how many
+items it found and the first of them before anything starts. A batch holds at most 200 items.
+
+The items run within the bot's **Runs at once** limit, using the bot as it was saved when the
+batch started. Open the batch under **Batches** to see one square per item, colored by outcome;
+select a square to open that run's thread. **Cancel batch** stops the items that have not
+started. Once a batch ends, **Retry failed** reruns only the items that failed, timed out or
+were marked Fail, and a verdict bot can also retry the items that need attention. Each item runs
+at most five times. **Report** collects every outcome in one Markdown summary you can copy.
+
+Batches also appear in the command palette under **Run bot on many...**, and agents can start
+one with a list of inputs.
+
 ## Verdicts
 
 A bot whose **Reply** is set to Verdict ends every completed run with one of **Pass**, **Fail**

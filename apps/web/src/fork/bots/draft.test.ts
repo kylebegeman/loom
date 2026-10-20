@@ -2,8 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition } from "@t3tools/contracts/fork";
 import {
+  batchSourceFromDraft,
   botDraft,
   checkoutChoices,
+  defaultItemParameter,
+  emptyBatchSourceDraft,
   emptyBotDraft,
   initialRunValues,
   newParameterDraft,
@@ -132,5 +135,51 @@ describe("bot drafts", () => {
     );
     expect(choices.map((choice) => choice.threadId)).toEqual(["new", "other"]);
     expect(choices[0]?.label).toBe("branch-/wt/a (new)");
+  });
+});
+
+describe("batch source drafts", () => {
+  it("sends nothing until the source is filled in, and trims what it sends", () => {
+    expect(batchSourceFromDraft(emptyBatchSourceDraft)).toBeNull();
+    expect(
+      batchSourceFromDraft({ ...emptyBatchSourceDraft, type: "glob", pattern: "  " }),
+    ).toBeNull();
+    expect(
+      batchSourceFromDraft({
+        ...emptyBatchSourceDraft,
+        type: "glob",
+        pattern: " src/**/*.ts ",
+        checkoutThreadId: "thread-a",
+      }),
+    ).toEqual({
+      type: "glob",
+      pattern: "src/**/*.ts",
+      checkoutThreadId: ThreadId.make("thread-a"),
+    });
+    expect(batchSourceFromDraft({ ...emptyBatchSourceDraft, type: "conflicts" })).toEqual({
+      type: "conflicts",
+    });
+    expect(batchSourceFromDraft({ ...emptyBatchSourceDraft, type: "pullRequests" })).toEqual({
+      type: "pullRequests",
+    });
+    expect(
+      batchSourceFromDraft({
+        ...emptyBatchSourceDraft,
+        type: "search",
+        searchMode: "contents",
+        query: " TODO ",
+      }),
+    ).toEqual({ type: "search", mode: "contents", query: "TODO" });
+  });
+
+  it("fills the first required text input with each item", () => {
+    expect(defaultItemParameter(bot)).toBe("file");
+    expect(
+      defaultItemParameter({
+        ...bot,
+        parameters: bot.parameters.filter((parameter) => parameter.name !== "file"),
+      }),
+    ).toBe("depth");
+    expect(defaultItemParameter({ ...bot, parameters: [] })).toBe("");
   });
 });

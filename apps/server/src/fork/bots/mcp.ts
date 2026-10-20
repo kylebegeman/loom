@@ -1,13 +1,20 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
+  BotBatch,
+  BotBatchReport,
+  BotBatchRetryResult,
+  BotBatchSource,
+  BotBatchId,
   BotDefinition,
   BotDefinitionInput,
   BotId,
   BotInputs,
+  BotParameterName,
   BotRun,
   BotRunId,
   BotsError,
   BotStarterId,
+  BotsRetryBatchInput,
 } from "@t3tools/contracts/fork";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -18,6 +25,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { loadCaller } from "../../mcp/threadAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
 
 /** A waiting run call returns the run as it stands after this, even if it is still going. */
@@ -27,6 +35,7 @@ const failure = Schema.Union([BotsError, OrchestratorMcpFailure]);
 const callerDependencies = [McpInvocationContext, ThreadManagementService];
 
 const AgentBot = Schema.Struct({ ...BotDefinition.fields, activeRuns: Schema.Int });
+const BatchWithReport = Schema.Struct({ batch: BotBatch, report: BotBatchReport });
 
 export const BotsToolkit = Toolkit.make(
   Tool.make("loom_bots_list", {
@@ -81,6 +90,44 @@ export const BotsToolkit = Toolkit.make(
     description: "Cancel a queued or running bot run.",
     parameters: Schema.Struct({ runId: BotRunId }),
     success: BotRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_run_batch", {
+    description:
+      "Run one bot over many items, up to 200, as a batch. Pass source {type:'inputs', items:[...]} with one inputs record per item, or a source Loom resolves: lines (one item per line), glob (tracked files), conflicts (conflicted files in the checkout), pullRequests (open pull requests) or search (files by name or content). Every source but inputs needs itemParameter, the input each item fills; sharedInputs fill the rest. Items run under the bot's concurrency limit, and the whole batch is refused if any item is invalid. With wait:true, returns once the batch finishes or after 10 minutes with its report, which lists every item that did not pass; otherwise returns the batch at once. Read it later with loom_bots_batch_status.",
+    parameters: Schema.Struct({
+      botId: BotId,
+      source: BotBatchSource,
+      itemParameter: Schema.optionalKey(BotParameterName),
+      sharedInputs: Schema.optionalKey(BotInputs),
+      projectId: Schema.optionalKey(ProjectId),
+      wait: Schema.optionalKey(Schema.Boolean),
+    }),
+    success: Schema.Struct({ batch: BotBatch, report: Schema.optionalKey(BotBatchReport) }),
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_batch_status", {
+    description:
+      "Read a bot batch by id: its status, counts, and a report naming every item that failed or needs attention, with each run's thread id.",
+    parameters: Schema.Struct({ batchId: BotBatchId }),
+    success: BatchWithReport,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_batch_retry", {
+    description:
+      "Run a finished or cancelled batch's failed and timed-out items again; include failed_and_attention to also rerun verdict items that need attention. useLatest reruns with the bot as saved now instead of the version the batch started with. An item runs at most 5 times in all; items past that are listed in exhausted.",
+    parameters: BotsRetryBatchInput,
+    success: BotBatchRetryResult,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_batch_cancel", {
+    description:
+      "Cancel a running batch: waiting items are skipped and runs in flight are cancelled.",
+    parameters: Schema.Struct({ batchId: BotBatchId }),
+    success: BotBatch,
     failure,
     dependencies: callerDependencies,
   }),
@@ -166,6 +213,40 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_cancel: McpToolAccess.writes((input) =>
         onHost(Effect.flatMap(BotsService, (service) => service.cancel(input.runId))),
+      ),
+      loom_bots_run_batch: McpToolAccess.writes(({ wait, ...input }) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.gen(function* () {
+              const batches = yield* BotBatches;
+              const batch = yield* batches.runBatch(input, caller);
+              if (wait !== true) return { batch };
+              const settled = yield* batches.awaitBatch(batch.id, AGENT_RUN_WAIT_MAX_MS);
+              return { batch: settled, report: yield* batches.report(batch.id) };
+            }),
+          );
+        }),
+      ),
+      loom_bots_batch_status: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.gen(function* () {
+            const batches = yield* BotBatches;
+            const { batch } = yield* batches.get(input.batchId);
+            return { batch, report: yield* batches.report(input.batchId) };
+          }),
+        ),
+      ),
+      loom_bots_batch_retry: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotBatches, (batches) => batches.retry(input, caller)),
+          );
+        }),
+      ),
+      loom_bots_batch_cancel: McpToolAccess.writes((input) =>
+        onHost(Effect.flatMap(BotBatches, (batches) => batches.cancel(input.batchId))),
       ),
     };
   }),

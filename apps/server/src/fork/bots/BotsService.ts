@@ -39,11 +39,13 @@ import {
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Semaphore from "effect/Semaphore";
+import type { SqlError } from "effect/sql/SqlError";
 import * as Stream from "effect/Stream";
 
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
@@ -84,6 +86,8 @@ export const outranks = (mode: RuntimeMode, than: RuntimeMode) =>
 
 /** After a timeout interrupt, how long to wait for the run to stop so its reply can be read. */
 const INTERRUPT_GRACE_MS = 30_000;
+/** A queued run the previous server never started; a batch puts its item back to wait. */
+export const RESTARTED_BEFORE_START = "The server restarted before this run started.";
 /** Used for a recovered run whose bot was deleted meanwhile. */
 const FALLBACK_TIMEOUT_MINUTES = 30;
 
@@ -191,6 +195,7 @@ export const make = Effect.gen(function* () {
   const environmentPermits = yield* Semaphore.make(BOTS_MAX_ACTIVE_RUNS);
   const botPermits = new Map<string, { readonly semaphore: Semaphore.Semaphore; size: number }>();
   const live = new Map<string, LiveRun>();
+  const recovered = yield* Deferred.make<void>();
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -557,13 +562,15 @@ export const make = Effect.gen(function* () {
   const recordFailure = (entry: LiveRun) => (error: unknown) =>
     finish(entry, { status: "failed", error: errorMessage(error) });
 
+  /** `permitBot` is the stored definition, whose limit holds even for a run of an older version. */
   const execute = (
     entry: LiveRun,
     bot: BotDefinition,
     launch: Omit<ThreadLaunch.ThreadLaunchInput, "commandId" | "threadId">,
+    permitBot: BotDefinition,
   ) =>
     Effect.gen(function* () {
-      const botSemaphore = yield* permitsFor(bot);
+      const botSemaphore = yield* permitsFor(permitBot);
       // The bot's own permit comes first, so a run queued behind its bot holds no shared permit.
       yield* Effect.gen(function* () {
         entry.started = true;
@@ -675,20 +682,59 @@ export const make = Effect.gen(function* () {
     } satisfies BotCaller;
   });
 
-  const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
+  /** Refuses a start from inside a bot run, and a result post with no thread to post to. */
+  const checkCaller = (input: BotsRunInput, caller: BotCaller) => {
     // Until pipelines bring explicit limits, a bot run may not fan out into more bot runs.
     if (caller.threadId !== null && isBotRunThreadId(caller.threadId))
-      return yield* fail("permission", "A bot run cannot start another bot.");
+      return Effect.fail(fail("permission", "A bot run cannot start another bot."));
     if (input.notify === true && caller.threadId === null)
-      return yield* fail("invalid", "Only a run started from a thread can post its result there.");
-    const bot = yield* requireBot(input.botId);
-    if (bot.archivedAt !== null)
-      return yield* fail("archived", `${bot.name} is archived. Restore it to run it.`);
-    if (caller.runtimeMode !== null && outranks(bot.runtimeMode, caller.runtimeMode))
-      return yield* fail(
-        "permission",
-        `${bot.name} runs in ${bot.runtimeMode} mode, broader than this agent's ${caller.runtimeMode} mode.`,
+      return Effect.fail(
+        fail("invalid", "Only a run started from a thread can post its result there."),
       );
+    return Effect.void;
+  };
+
+  /** Refuses a bot an agent could not run itself, since the run would outrank the agent. */
+  const checkRunnable = (bot: BotDefinition, caller: BotCaller) => {
+    if (bot.archivedAt !== null)
+      return Effect.fail(fail("archived", `${bot.name} is archived. Restore it to run it.`));
+    if (caller.runtimeMode !== null && outranks(bot.runtimeMode, caller.runtimeMode))
+      return Effect.fail(
+        fail(
+          "permission",
+          `${bot.name} runs in ${bot.runtimeMode} mode, broader than this agent's ${caller.runtimeMode} mode.`,
+        ),
+      );
+    return Effect.void;
+  };
+
+  interface StartOptions {
+    readonly batchId?: string | undefined;
+    /** Written in the same transaction as the queued run row. */
+    readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
+  }
+
+  const insertRun = (run: BotRun, options: StartOptions) =>
+    store
+      .withTransaction(
+        store
+          .insertRun(run)
+          .pipe(
+            Effect.andThen(
+              options.onInserted === undefined ? Effect.void : options.onInserted(run),
+            ),
+          ),
+      )
+      .pipe(Effect.catch(storageError));
+
+  /** Validates the inputs, writes the queued run and starts it under `permitBot`'s limits. */
+  const start = Effect.fnUntraced(function* (
+    bot: BotDefinition,
+    input: BotsRunInput,
+    caller: BotCaller,
+    permitBot: BotDefinition,
+    options: StartOptions,
+  ) {
     const checked = validateInputs(bot, input.inputs);
     if (!checked.ok) return yield* fail("invalid", checked.message);
     const checkout = yield* resolveCheckout(bot, input, caller);
@@ -725,6 +771,7 @@ export const make = Effect.gen(function* () {
         resultTruncated: false,
         error: null,
         ...(input.notify === true ? { notify: true } : {}),
+        ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
       },
       fiber: null,
       started: false,
@@ -732,26 +779,86 @@ export const make = Effect.gen(function* () {
       threadRunId: null,
       output: bot.output ?? "text",
     };
-    yield* store.insertRun(entry.run).pipe(Effect.catch(storageError));
+    yield* insertRun(entry.run, options);
     live.set(runId, entry);
     yield* publish({ _tag: "run", run: entry.run });
-    entry.fiber = yield* execute(entry, bot, {
-      projectId,
-      title: bot.name,
-      generateTitle: false,
-      modelSelection: bot.modelSelection,
-      runtimeMode: bot.runtimeMode,
-      interactionMode: bot.interactionMode,
-      workspaceStrategy,
-      initialMessage: {
-        text: renderPrompt(bot, checked.values),
-        attachments: [],
-        ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
+    entry.fiber = yield* execute(
+      entry,
+      bot,
+      {
+        projectId,
+        title: bot.name,
+        generateTitle: false,
+        modelSelection: bot.modelSelection,
+        runtimeMode: bot.runtimeMode,
+        interactionMode: bot.interactionMode,
+        workspaceStrategy,
+        initialMessage: {
+          text: renderPrompt(bot, checked.values),
+          attachments: [],
+          ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
+        },
+        createdBy: caller.actor,
+        creationSource: "server",
       },
-      createdBy: caller.actor,
-      creationSource: "server",
-    }).pipe(Effect.forkIn(serviceScope));
+      permitBot,
+    ).pipe(Effect.forkIn(serviceScope));
     return entry.run;
+  });
+
+  const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
+    yield* checkCaller(input, caller);
+    const bot = yield* requireBot(input.botId);
+    yield* checkRunnable(bot, caller);
+    return yield* start(bot, input, caller, bot, {});
+  });
+
+  /**
+   * Starts one batch item with the definition the batch pinned. The bot must still exist and be
+   * active; its stored limit, not the pinned one, holds the run back. A run that cannot start is
+   * recorded as failed, so the item shows why and can be retried.
+   */
+  const startRunWith = Effect.fn("BotsService.startRunWith")(function* (
+    definition: BotDefinition,
+    input: BotsRunInput,
+    caller: BotCaller,
+    options: StartOptions & { readonly batchId: string },
+  ) {
+    const current = yield* requireBot(definition.id);
+    if (current.archivedAt !== null)
+      return yield* fail("archived", `${current.name} is archived. Restore it to run it.`);
+    return yield* start(definition, input, caller, current, options).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "invalid",
+        (error) =>
+          Effect.gen(function* () {
+            const runId = yield* randomUuidV4;
+            const now = yield* nowIso;
+            const failed: BotRun = {
+              id: runId,
+              botId: definition.id,
+              botVersion: definition.version,
+              botName: definition.name,
+              threadId: botRunThreadId(runId),
+              projectId: input.projectId ?? null,
+              inputs: input.inputs,
+              status: "failed",
+              startedBy: caller.actor,
+              callerThreadId: caller.threadId,
+              createdAt: now,
+              startedAt: null,
+              finishedAt: now,
+              result: null,
+              resultTruncated: false,
+              error: error.message,
+              batchId: options.batchId,
+            };
+            yield* insertRun(failed, options);
+            yield* publish({ _tag: "run", run: failed });
+            return failed;
+          }),
+      ),
+    );
   });
 
   const getRun = Effect.fn("BotsService.getRun")(function* (runId: string) {
@@ -782,8 +889,8 @@ export const make = Effect.gen(function* () {
       Effect.catch(storageError),
     );
 
-  /** Waits up to `timeoutMs` for a run to finish and returns it as it stands then. */
-  const awaitRun = (runId: string, timeoutMs: number) =>
+  /** Waits up to `timeoutMs`, or until it ends when omitted, and returns the run as it stands. */
+  const awaitRun = (runId: string, timeoutMs?: number) =>
     Effect.scoped(
       Effect.gen(function* () {
         // Subscribe before reading so a finish between the two is not missed.
@@ -801,7 +908,8 @@ export const make = Effect.gen(function* () {
               return;
           }
         });
-        yield* finished.pipe(Effect.timeoutOption(timeoutMs));
+        if (timeoutMs === undefined) yield* finished;
+        else yield* finished.pipe(Effect.timeoutOption(timeoutMs));
         return yield* getRun(runId);
       }),
     );
@@ -827,7 +935,7 @@ export const make = Effect.gen(function* () {
       if (stored.status === "queued") {
         yield* finish(entry, {
           status: "failed",
-          error: "The server restarted before this run started.",
+          error: RESTARTED_BEFORE_START,
         });
         continue;
       }
@@ -851,10 +959,14 @@ export const make = Effect.gen(function* () {
 
   return {
     list,
+    get: requireBot,
     save,
     archive,
     delete: remove,
     run,
+    startRunWith,
+    checkCaller,
+    checkRunnable,
     threadCaller,
     cancel,
     getRun,
@@ -862,12 +974,17 @@ export const make = Effect.gen(function* () {
     awaitRun,
     activeRunCount,
     recover,
+    /** Marks recovery done, whatever its outcome, so work that depends on it can go ahead. */
+    markRecovered: Deferred.succeed(recovered, undefined).pipe(Effect.asVoid),
+    whenRecovered: Deferred.await(recovered),
     seedStarters,
     listStarters,
     restoreStarter,
     changes: Stream.fromPubSub(changes),
   };
 });
+
+export type BotsServiceShape = Effect.Success<typeof make>;
 
 export class BotsService extends Context.Service<BotsService, Effect.Success<typeof make>>()(
   "t3/fork/bots/BotsService",
@@ -882,6 +999,7 @@ export const BotsRecoveryLive = Layer.effectDiscard(
     yield* forkParked(
       bots.recover().pipe(
         Effect.catchCause((cause) => Effect.logWarning("Bot run recovery failed", { cause })),
+        Effect.ensuring(bots.markRecovered),
         Effect.andThen(
           bots
             .seedStarters()

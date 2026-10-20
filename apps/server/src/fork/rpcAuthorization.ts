@@ -34,7 +34,7 @@ import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import { CODE_GRAPH_WS_METHODS as G } from "@t3tools/contracts/fork";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "@t3tools/contracts/fork";
 import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
-import { BOTS_WS_METHODS as BOT } from "@t3tools/contracts/fork";
+import { BOTS_BATCH_WS_METHODS as BATCH, BOTS_WS_METHODS as BOT } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
@@ -336,6 +336,14 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [BOT.cancel]: AuthOrchestrationOperateScope,
   [BOT.listStarters]: AuthOrchestrationReadScope,
   [BOT.restoreStarter]: AuthOrchestrationOperateScope,
+  [BATCH.previewBatch]: AuthOrchestrationReadScope,
+  [BATCH.listBatches]: AuthOrchestrationReadScope,
+  [BATCH.getBatch]: AuthOrchestrationReadScope,
+  [BATCH.batchReport]: AuthOrchestrationReadScope,
+  [BATCH.watchBatches]: AuthOrchestrationReadScope,
+  [BATCH.runBatch]: AuthOrchestrationOperateScope,
+  [BATCH.cancelBatch]: AuthOrchestrationOperateScope,
+  [BATCH.retryBatch]: AuthOrchestrationOperateScope,
   [G.status]: AuthOrchestrationReadScope,
   [G.subscribeStatus]: AuthOrchestrationReadScope,
   [G.list]: AuthOrchestrationReadScope,

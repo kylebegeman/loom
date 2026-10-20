@@ -11,6 +11,7 @@ export const BOTS_FEATURE = "bots";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
 export const BOTS_INVOCATION_FEATURE = "bots-invocation";
 export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
+export const BOTS_BATCHES_FEATURE = "bots-batches";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -23,6 +24,17 @@ export const BOTS_WS_METHODS = {
   watch: "loom.bots.watch",
   listStarters: "loom.bots.listStarters",
   restoreStarter: "loom.bots.restoreStarter",
+} as const;
+
+export const BOTS_BATCH_WS_METHODS = {
+  previewBatch: "loom.bots.previewBatch",
+  runBatch: "loom.bots.runBatch",
+  listBatches: "loom.bots.listBatches",
+  getBatch: "loom.bots.getBatch",
+  cancelBatch: "loom.bots.cancelBatch",
+  retryBatch: "loom.bots.retryBatch",
+  batchReport: "loom.bots.batchReport",
+  watchBatches: "loom.bots.watchBatches",
 } as const;
 
 export const BOTS_MAX_PARAMETERS = 12;
@@ -179,6 +191,7 @@ export const isTerminalBotRunStatus = (status: BotRunStatus): boolean =>
   status !== "queued" && status !== "running";
 
 export const BotRunId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+export const BotBatchId = BotRunId;
 
 export const BotVerdictValue = Schema.Literals(["pass", "fail", "needs_attention"]);
 export type BotVerdictValue = typeof BotVerdictValue.Type;
@@ -224,6 +237,8 @@ export const BotRun = Schema.Struct({
   notify: Schema.optionalKey(Schema.Boolean),
   /** Set for a completed run of a verdict bot. */
   verdict: Schema.optionalKey(Schema.NullOr(BotVerdict)),
+  /** The batch that started the run. Absent for a run started on its own. */
+  batchId: Schema.optionalKey(Schema.NullOr(BotBatchId)),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -270,6 +285,7 @@ export type BotsListRunsInput = typeof BotsListRunsInput.Type;
 
 const errors = Schema.Union([BotsError, EnvironmentAuthorizationError]);
 const M = BOTS_WS_METHODS;
+const BB = BOTS_BATCH_WS_METHODS;
 const BotRef = Schema.Struct({ botId: BotId });
 
 export const BotsRpcGroup = RpcGroup.make(
@@ -311,5 +327,226 @@ export const BotsRpcGroup = RpcGroup.make(
     payload: Schema.Struct({ starterId: BotStarterId }),
     success: BotDefinition,
     error: errors,
+  }),
+);
+
+export const BOTS_BATCH_MAX_ITEMS = 200;
+export const BOTS_BATCH_LINES_MAX_BYTES = 64 * 1024;
+export const BOTS_LIST_BATCHES_MAX_LIMIT = 50;
+/** A failed item is run at most this many times in all. */
+export const BOTS_BATCH_MAX_ATTEMPTS = 5;
+
+export const BotBatchSource = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("lines"),
+    text: Schema.String.check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(BOTS_BATCH_LINES_MAX_BYTES),
+    ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("glob"),
+    pattern: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+    checkoutThreadId: Schema.optionalKey(ThreadId),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("conflicts"),
+    checkoutThreadId: Schema.optionalKey(ThreadId),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("pullRequests"),
+    query: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("search"),
+    mode: Schema.Literals(["files", "contents"]),
+    query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+    caseSensitive: Schema.optionalKey(Schema.Boolean),
+    useRegex: Schema.optionalKey(Schema.Boolean),
+    checkoutThreadId: Schema.optionalKey(ThreadId),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("inputs"),
+    items: Schema.Array(BotInputs).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(BOTS_BATCH_MAX_ITEMS),
+    ),
+  }),
+]);
+export type BotBatchSource = typeof BotBatchSource.Type;
+export type BotBatchSourceType = BotBatchSource["type"];
+
+/** `started` items have a run; their outcome is that run's, never a copy of it. */
+export const BotBatchItemState = Schema.Literals(["pending", "started", "skipped"]);
+export type BotBatchItemState = typeof BotBatchItemState.Type;
+
+export const BotBatchItem = Schema.Struct({
+  index: Schema.Int,
+  label: Schema.String,
+  inputs: BotInputs,
+  state: BotBatchItemState,
+  runId: Schema.NullOr(BotRunId),
+  previousRunIds: Schema.Array(BotRunId),
+  /** Null for a pending or skipped item, and for a run no longer stored. */
+  run: Schema.NullOr(BotRun),
+});
+export type BotBatchItem = typeof BotBatchItem.Type;
+
+export const BotBatchCounts = Schema.Struct({
+  pending: Schema.Int,
+  queued: Schema.Int,
+  running: Schema.Int,
+  completed: Schema.Int,
+  failed: Schema.Int,
+  timedOut: Schema.Int,
+  cancelled: Schema.Int,
+  skipped: Schema.Int,
+  pass: Schema.Int,
+  fail: Schema.Int,
+  needsAttention: Schema.Int,
+});
+export type BotBatchCounts = typeof BotBatchCounts.Type;
+
+/** "26 pass, 3 fail, 1 needs attention" for verdict bots, "28 completed, 2 failed" otherwise. */
+export const batchCountsLine = (counts: BotBatchCounts): string => {
+  const verdicts = counts.pass + counts.fail + counts.needsAttention > 0;
+  const parts: ReadonlyArray<readonly [number, string]> = [
+    ...(verdicts
+      ? ([
+          [counts.pass, "pass"],
+          [counts.fail, "fail"],
+          [counts.needsAttention, "needs attention"],
+        ] as const)
+      : ([[counts.completed, "completed"]] as const)),
+    [counts.failed, "failed"],
+    [counts.timedOut, "timed out"],
+    [counts.cancelled, "cancelled"],
+    [counts.skipped, "skipped"],
+    [counts.running, "running"],
+    [counts.pending + counts.queued, "waiting"],
+  ];
+  const shown = parts.filter(([count]) => count > 0);
+  return shown.length === 0
+    ? "No items."
+    : shown.map(([count, label]) => `${count} ${label}`).join(", ");
+};
+
+export const BotBatchStatus = Schema.Literals(["running", "finished", "cancelled"]);
+export type BotBatchStatus = typeof BotBatchStatus.Type;
+
+export const BotBatch = Schema.Struct({
+  id: BotBatchId,
+  botId: BotId,
+  botVersion: Schema.Int,
+  botName: Schema.String,
+  projectId: Schema.NullOr(ProjectId),
+  sourceType: Schema.Literals(["lines", "glob", "conflicts", "pullRequests", "search", "inputs"]),
+  /** For example "apps/web/src/**\/*.tsx, 31 files". */
+  sourceSummary: Schema.String,
+  itemParameter: Schema.NullOr(BotParameterName),
+  sharedInputs: BotInputs,
+  status: BotBatchStatus,
+  /** Why a batch stopped early, such as its bot being archived. */
+  note: Schema.NullOr(Schema.String),
+  total: Schema.Int,
+  counts: BotBatchCounts,
+  startedBy: BotCreator,
+  callerThreadId: Schema.NullOr(ThreadId),
+  createdAt: Schema.String,
+  finishedAt: Schema.NullOr(Schema.String),
+});
+export type BotBatch = typeof BotBatch.Type;
+
+/** Its own stream, since an older client fails to decode a tag added to {@link BotsChange}. */
+export const BotBatchChange = Schema.Union([
+  Schema.TaggedStruct("batch", { batch: BotBatch }),
+  Schema.TaggedStruct("batch-item", { batchId: BotBatchId, item: BotBatchItem }),
+]);
+export type BotBatchChange = typeof BotBatchChange.Type;
+
+export const BotsBatchInput = Schema.Struct({
+  botId: BotId,
+  projectId: Schema.optionalKey(ProjectId),
+  source: BotBatchSource,
+  /** The input each item fills. Required for every source except `inputs`. */
+  itemParameter: Schema.optionalKey(BotParameterName),
+  /** Inputs every item shares. */
+  sharedInputs: Schema.optionalKey(BotInputs),
+  /** The thread the batch is started from, for people; agents are always their own thread. */
+  callerThreadId: Schema.optionalKey(ThreadId),
+});
+export type BotsBatchInput = typeof BotsBatchInput.Type;
+
+export const BotBatchPreviewItem = Schema.Struct({ label: Schema.String, inputs: BotInputs });
+export type BotBatchPreviewItem = typeof BotBatchPreviewItem.Type;
+
+export const BotBatchPreview = Schema.Struct({
+  total: Schema.Int,
+  /** The first items, at most 20. */
+  items: Schema.Array(BotBatchPreviewItem),
+  /** The first invalid items, at most 5; a batch with any refuses to start. */
+  invalid: Schema.Array(Schema.Struct({ label: Schema.String, message: Schema.String })),
+  sourceSummary: Schema.String,
+  /** Something worth knowing before starting, such as a capped search. */
+  note: Schema.NullOr(Schema.String),
+});
+export type BotBatchPreview = typeof BotBatchPreview.Type;
+
+export const BotsListBatchesInput = Schema.Struct({
+  botId: Schema.optionalKey(BotId),
+  before: Schema.optionalKey(Schema.String),
+  limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_BATCHES_MAX_LIMIT })),
+});
+export type BotsListBatchesInput = typeof BotsListBatchesInput.Type;
+
+export const BotBatchRetryInclude = Schema.Literals(["failed", "failed_and_attention"]);
+export type BotBatchRetryInclude = typeof BotBatchRetryInclude.Type;
+
+export const BotsRetryBatchInput = Schema.Struct({
+  batchId: BotBatchId,
+  include: BotBatchRetryInclude,
+  /** Rerun with the bot as it is saved now instead of the version the batch started with. */
+  useLatest: Schema.optionalKey(Schema.Boolean),
+});
+export type BotsRetryBatchInput = typeof BotsRetryBatchInput.Type;
+
+export const BotBatchRetryResult = Schema.Struct({
+  batch: BotBatch,
+  retried: Schema.Int,
+  /** Labels of items left out because they reached the attempt limit. */
+  exhausted: Schema.Array(Schema.String),
+});
+export type BotBatchRetryResult = typeof BotBatchRetryResult.Type;
+
+export const BotBatchReport = Schema.Struct({ markdown: Schema.String, truncated: Schema.Boolean });
+export type BotBatchReport = typeof BotBatchReport.Type;
+
+const BatchRef = Schema.Struct({ batchId: BotBatchId });
+
+export const BotBatchesRpcGroup = RpcGroup.make(
+  Rpc.make(BB.previewBatch, { payload: BotsBatchInput, success: BotBatchPreview, error: errors }),
+  Rpc.make(BB.runBatch, { payload: BotsBatchInput, success: BotBatch, error: errors }),
+  Rpc.make(BB.listBatches, {
+    payload: BotsListBatchesInput,
+    success: Schema.Struct({ batches: Schema.Array(BotBatch), hasMore: Schema.Boolean }),
+    error: errors,
+  }),
+  Rpc.make(BB.getBatch, {
+    payload: BatchRef,
+    success: Schema.Struct({ batch: BotBatch, items: Schema.Array(BotBatchItem) }),
+    error: errors,
+  }),
+  Rpc.make(BB.cancelBatch, { payload: BatchRef, success: BotBatch, error: errors }),
+  Rpc.make(BB.retryBatch, {
+    payload: BotsRetryBatchInput,
+    success: BotBatchRetryResult,
+    error: errors,
+  }),
+  Rpc.make(BB.batchReport, { payload: BatchRef, success: BotBatchReport, error: errors }),
+  Rpc.make(BB.watchBatches, {
+    payload: Schema.Struct({}),
+    success: BotBatchChange,
+    error: errors,
+    stream: true,
   }),
 );

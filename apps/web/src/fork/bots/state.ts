@@ -4,11 +4,13 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import {
   applyBotChanges,
   createBotsAtoms,
+  EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOTS_CHANGES,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  BOTS_BATCHES_FEATURE,
   BOTS_FEATURE,
   BOTS_INVOCATION_FEATURE,
   BOTS_STARTERS_FEATURE,
@@ -32,6 +34,7 @@ export function useBotsHost() {
     startersSupported: supportsLoomFeature(capabilities, BOTS_STARTERS_FEATURE),
     invocationSupported: supportsLoomFeature(capabilities, BOTS_INVOCATION_FEATURE),
     verdictsSupported: supportsLoomFeature(capabilities, BOTS_VERDICTS_FEATURE),
+    batchesSupported: supportsLoomFeature(capabilities, BOTS_BATCHES_FEATURE),
   };
 }
 
@@ -43,6 +46,16 @@ export function useBotsChanges(environmentId: EnvironmentId | null, enabled: boo
     environmentId && enabled ? bots.changes({ environmentId, input: {} }) : NO_CHANGES,
   );
   return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOTS_CHANGES);
+}
+
+const NO_BATCH_CHANGES = Atom.make(AsyncResult.success(EMPTY_BOT_BATCH_CHANGES));
+
+/** Batch progress watched while connected, overlaid on batches fetched once. */
+export function useBotBatchChanges(environmentId: EnvironmentId | null, enabled: boolean) {
+  const result = useAtomValue(
+    environmentId && enabled ? bots.batchChanges({ environmentId, input: {} }) : NO_BATCH_CHANGES,
+  );
+  return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOT_BATCH_CHANGES);
 }
 
 /** The host, its watched changes, and its bots with those changes applied. */

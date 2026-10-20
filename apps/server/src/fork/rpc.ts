@@ -32,8 +32,13 @@ import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
 import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
 import { makeAppleBuildToolingRpcHandlers } from "./apple-build-tooling/rpc.ts";
 import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
-import { makeBotsRpcHandlers } from "./bots/rpc.ts";
-import { BOTS_WS_METHODS, BotsRpcGroup } from "@t3tools/contracts/fork";
+import { makeBotBatchesRpcHandlers, makeBotsRpcHandlers } from "./bots/rpc.ts";
+import {
+  BOTS_BATCH_WS_METHODS,
+  BOTS_WS_METHODS,
+  BotBatchesRpcGroup,
+  BotsRpcGroup,
+} from "@t3tools/contracts/fork";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
@@ -78,6 +83,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(VAULT_PROFILE_WS_METHODS),
   ...Object.values(VAULT_REFERENCE_WS_METHODS),
   ...Object.values(BOTS_WS_METHODS),
+  ...Object.values(BOTS_BATCH_WS_METHODS),
 );
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
@@ -97,6 +103,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultProfileRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotBatchesRpcGroup>>
 > =>
   Layer.mergeAll(
     VaultMigrationInventoryRpcGroup.toLayer(
@@ -132,6 +139,9 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
     ),
     BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session)))),
+    BotBatchesRpcGroup.toLayer(
+      withForkRuntime(makeBotBatchesRpcHandlers(makeForkRpcAuth(session))),
+    ),
     VaultSshRpcGroup.toLayer(
       withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),

@@ -1,5 +1,9 @@
 import {
+  BOTS_BATCH_WS_METHODS as BB,
   BOTS_WS_METHODS as B,
+  type BotBatch,
+  type BotBatchChange,
+  type BotBatchItem,
   type BotDefinition,
   type BotRun,
   type BotsChange,
@@ -78,6 +82,60 @@ export const applyRunChanges = (
   ).sort(newestFirst);
 };
 
+/** Batch changes seen since the watch started, keyed by batch id. */
+export interface BotBatchChanges {
+  readonly batches: ReadonlyMap<string, BotBatch>;
+  readonly items: ReadonlyMap<string, ReadonlyMap<number, BotBatchItem>>;
+}
+
+export const EMPTY_BOT_BATCH_CHANGES: BotBatchChanges = { batches: new Map(), items: new Map() };
+
+export const foldBotBatchChange = (
+  changes: BotBatchChanges,
+  change: BotBatchChange,
+): BotBatchChanges => {
+  switch (change._tag) {
+    case "batch":
+      return {
+        ...changes,
+        batches: new Map(changes.batches).set(change.batch.id, change.batch),
+      };
+    case "batch-item": {
+      const items = new Map(changes.items.get(change.batchId)).set(change.item.index, change.item);
+      return { ...changes, items: new Map(changes.items).set(change.batchId, items) };
+    }
+  }
+};
+
+const batchesNewestFirst = (left: BotBatch, right: BotBatch) =>
+  right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
+
+/** A page of batches with watched progress applied; new batches join the first page of their bot. */
+export const applyBatchChanges = (
+  listed: ReadonlyArray<BotBatch>,
+  changes: BotBatchChanges,
+  options: { readonly botId?: string | undefined; readonly includeNew: boolean },
+): ReadonlyArray<BotBatch> => {
+  const merged = new Map(listed.map((batch) => [batch.id, batch]));
+  for (const [id, batch] of changes.batches) {
+    if (merged.has(id)) merged.set(id, batch);
+    else if (options.includeNew && (options.botId === undefined || batch.botId === options.botId))
+      merged.set(id, batch);
+  }
+  return [...merged.values()].sort(batchesNewestFirst);
+};
+
+/** One batch as fetched, with its watched summary and items applied. */
+export const applyBatchItemChanges = (
+  fetched: { readonly batch: BotBatch; readonly items: ReadonlyArray<BotBatchItem> },
+  changes: BotBatchChanges,
+): { readonly batch: BotBatch; readonly items: ReadonlyArray<BotBatchItem> } => {
+  const batch = changes.batches.get(fetched.batch.id) ?? fetched.batch;
+  const watched = changes.items.get(fetched.batch.id);
+  if (watched === undefined) return { batch, items: fetched.items };
+  return { batch, items: fetched.items.map((item) => watched.get(item.index) ?? item) };
+};
+
 /** Bots live on one environment, which runs them; every request stays on that host. */
 export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   return {
@@ -103,6 +161,40 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     restoreStarter: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:restore-starter",
       tag: B.restoreStarter,
+    }),
+    previewBatch: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:preview-batch",
+      tag: BB.previewBatch,
+    }),
+    listBatches: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:list-batches",
+      tag: BB.listBatches,
+    }),
+    getBatch: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:get-batch",
+      tag: BB.getBatch,
+    }),
+    batchReport: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:batch-report",
+      tag: BB.batchReport,
+    }),
+    batchChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:bots:batch-changes",
+      tag: BB.watchBatches,
+      transform: (stream) =>
+        stream.pipe(Stream.scan(() => EMPTY_BOT_BATCH_CHANGES, foldBotBatchChange)),
+    }),
+    runBatch: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:run-batch",
+      tag: BB.runBatch,
+    }),
+    cancelBatch: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:cancel-batch",
+      tag: BB.cancelBatch,
+    }),
+    retryBatch: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:retry-batch",
+      tag: BB.retryBatch,
     }),
   };
 }

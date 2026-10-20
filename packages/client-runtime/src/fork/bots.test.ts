@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import type { BotDefinition, BotRun } from "@t3tools/contracts/fork";
+import type { BotBatch, BotBatchItem, BotDefinition, BotRun } from "@t3tools/contracts/fork";
 import {
+  applyBatchChanges,
+  applyBatchItemChanges,
   applyBotChanges,
   applyRunChanges,
+  EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOTS_CHANGES,
+  foldBotBatchChange,
   foldBotsChange,
   type BotsChanges,
 } from "./bots.ts";
@@ -106,5 +110,82 @@ describe("bots changes", () => {
     expect(
       applyRunChanges(listed, changes, { verdict: "fail", includeNew: true }).map(({ id }) => id),
     ).toEqual(["c", "b"]);
+  });
+});
+
+const batch = (
+  id: string,
+  botId: string,
+  createdAt: string,
+  status: BotBatch["status"],
+): BotBatch => ({
+  id,
+  botId,
+  botVersion: 1,
+  botName: botId,
+  projectId: null,
+  sourceType: "lines",
+  sourceSummary: "Pasted lines, 2 items",
+  itemParameter: "file",
+  sharedInputs: {},
+  status,
+  note: null,
+  startedBy: "user",
+  callerThreadId: null,
+  createdAt,
+  finishedAt: null,
+  total: 2,
+  counts: {
+    pending: 0,
+    queued: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    timedOut: 0,
+    cancelled: 0,
+    skipped: 0,
+    pass: 0,
+    fail: 0,
+    needsAttention: 0,
+  },
+});
+
+const item = (index: number, state: BotBatchItem["state"]): BotBatchItem => ({
+  index,
+  label: `file-${index}`,
+  inputs: {},
+  state,
+  runId: null,
+  previousRunIds: [],
+  run: null,
+});
+
+describe("bot batch changes", () => {
+  it("updates a listed batch and its items, and adds new batches to pages that show them", () => {
+    const at = "2026-10-20T10:00:00.000Z";
+    const listed = batch("old", "x", at, "running");
+    const changes = [
+      { _tag: "batch", batch: batch("old", "x", at, "finished") },
+      { _tag: "batch", batch: batch("new", "y", "2026-10-20T11:00:00.000Z", "running") },
+      { _tag: "batch-item", batchId: "old", item: item(1, "skipped") },
+    ] as const;
+    const folded = changes.reduce(foldBotBatchChange, EMPTY_BOT_BATCH_CHANGES);
+
+    expect(
+      applyBatchChanges([listed], folded, { includeNew: true }).map(({ id, status }) => [
+        id,
+        status,
+      ]),
+    ).toEqual([
+      ["new", "running"],
+      ["old", "finished"],
+    ]);
+    expect(applyBatchChanges([listed], folded, { botId: "x", includeNew: true })).toHaveLength(1);
+    const applied = applyBatchItemChanges(
+      { batch: listed, items: [item(0, "started"), item(1, "pending")] },
+      folded,
+    );
+    expect(applied.batch.status).toBe("finished");
+    expect(applied.items.map(({ state }) => state)).toEqual(["started", "skipped"]);
   });
 });

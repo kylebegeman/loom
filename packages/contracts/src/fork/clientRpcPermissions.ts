@@ -30,7 +30,7 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
 import { AuthPreviewOperateScope } from "../auth.ts";
 import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
-import { BOTS_WS_METHODS as BOT } from "./bots.ts";
+import { BOTS_BATCH_WS_METHODS as BATCH, BOTS_WS_METHODS as BOT } from "./bots.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -209,4 +209,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [BOT.run]: AuthOrchestrationOperateScope,
   [BOT.cancel]: AuthOrchestrationOperateScope,
   [BOT.restoreStarter]: AuthOrchestrationOperateScope,
+  // Batch reads stay unguarded for the same reason; preview is read on every edit of the form.
+  [BATCH.runBatch]: AuthOrchestrationOperateScope,
+  [BATCH.cancelBatch]: AuthOrchestrationOperateScope,
+  [BATCH.retryBatch]: AuthOrchestrationOperateScope,
 } as const;
