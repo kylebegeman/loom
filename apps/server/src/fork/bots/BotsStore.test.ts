@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import type { BotDefinition, BotRun } from "@t3tools/contracts/fork";
+import { isBotInboxRun, type BotDefinition, type BotRun } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
@@ -129,6 +129,54 @@ describe("BotsStore", () => {
           "r11",
           "r0",
         ]);
+      }),
+    ),
+  );
+  it.effect("selects the inbox in SQL exactly as isBotInboxRun does", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const verdict = (value: "pass" | "needs_attention") =>
+          ({
+            verdict: value,
+            summary: "",
+            findings: [],
+            findingsTruncated: false,
+            source: "decoded",
+          }) as const;
+        const fixture = [
+          testRun("failed", "2026-10-20T10:00:00.000Z", { status: "failed" }),
+          testRun("timed", "2026-10-20T11:00:00.000Z", { status: "timed_out" }),
+          testRun("unsure", "2026-10-20T12:00:00.000Z", { verdict: verdict("needs_attention") }),
+          testRun("passed", "2026-10-20T13:00:00.000Z", { verdict: verdict("pass") }),
+          testRun("plain", "2026-10-20T14:00:00.000Z"),
+          testRun("cancelled", "2026-10-20T15:00:00.000Z", { status: "cancelled" }),
+          testRun("running", "2026-10-20T16:00:00.000Z", { status: "running", finishedAt: null }),
+          testRun("retried", "2026-10-20T17:00:00.000Z", { status: "failed" }),
+          testRun("dismissed", "2026-10-20T18:00:00.000Z", { status: "failed" }),
+        ];
+        for (const run of fixture) {
+          yield* store.insertRun(run);
+          if (run.verdict) yield* store.saveRun(run);
+        }
+        yield* store.setRetriedBy("retried", "failed");
+        yield* store.setDismissed(["dismissed"], "2026-10-20T19:00:00.000Z");
+
+        const stored = (yield* store.listRuns({ limit: 20 })).runs;
+        const expected = stored.filter(isBotInboxRun).map((run) => run.id);
+        expect(expected).toEqual(["unsure", "timed", "failed"]);
+        const first = yield* store.inbox({ dismissed: false, limit: 2 });
+        expect(first).toMatchObject({ total: 3, hasMore: true });
+        const rest = yield* store.inbox({
+          dismissed: false,
+          before: first.runs.at(-1)!.createdAt,
+          limit: 2,
+        });
+        expect(rest).toMatchObject({ total: 3, hasMore: false });
+        expect([...first.runs, ...rest.runs].map((run) => run.id)).toEqual(expected);
+
+        const dismissed = yield* store.inbox({ dismissed: true, limit: 5 });
+        expect(dismissed.runs.map((run) => run.id)).toEqual(["dismissed"]);
+        expect(dismissed.runs[0]!.dismissedAt).toBe("2026-10-20T19:00:00.000Z");
       }),
     ),
   );

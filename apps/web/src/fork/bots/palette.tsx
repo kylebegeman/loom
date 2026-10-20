@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BotIcon, LayersIcon, PlayIcon } from "lucide-react";
+import { BotIcon, InboxIcon, LayersIcon, PlayIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ADDON_ICON_CLASS,
@@ -19,6 +19,8 @@ export interface BotsPaletteContext {
     readonly description: string;
   }>;
   readonly openBots: () => Promise<void>;
+  /** Null while the server has no inbox. */
+  readonly openInbox: (() => Promise<void>) | null;
   readonly runBot: (botId: string) => Promise<void>;
   /** Null while the server cannot run batches. */
   readonly runBotOnMany: ((botId: string) => Promise<void>) | null;
@@ -63,6 +65,18 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
         icon: icon(BotIcon),
         run: context.openBots,
       },
+      ...(context.openInbox === null
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              value: "action:loom:bots:inbox",
+              title: "Open bots inbox",
+              searchTerms: ["bots", "inbox", "failed", "attention", "retry"],
+              icon: icon(InboxIcon),
+              run: context.openInbox,
+            },
+          ]),
       ...(runItems.length === 0
         ? []
         : [
@@ -102,6 +116,9 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   return {
     runnable: canRun ? listed.filter((bot) => bot.archivedAt === null) : [],
     openBots: () => navigate({ to: "/loom/bots" }),
+    openInbox: host.inboxSupported
+      ? () => navigate({ to: "/loom/bots", search: { tab: "inbox" } })
+      : null,
     runBot: (botId) => navigate({ to: "/loom/bots", search: { bot: botId, run: botId } }),
     runBotOnMany: host.batchesSupported
       ? (botId) => navigate({ to: "/loom/bots", search: { bot: botId, many: botId } })

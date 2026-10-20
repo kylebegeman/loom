@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  ProviderInstanceId,
-  ProviderInteractionMode,
-  RuntimeMode,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import type {
   BotDefinition,
   BotOutput,
@@ -25,21 +19,12 @@ import {
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
-import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "~/components/settings/settingsLayout";
 import { scheduledTaskDefaultModel } from "~/components/settings/scheduledTasksSettings.logic";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
-import { getCustomModelOptionsByInstance } from "~/modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "~/providerInstances";
 import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
-import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
 import {
   botDraft,
   emptyBotDraft,
@@ -208,14 +193,9 @@ export function BotEditor({
   readonly onSaved: (bot: BotDefinition) => void;
   readonly onClose: () => void;
 }) {
-  const settings = useEnvironmentSettings(environmentId);
-  const providers =
-    useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
+  const { settings, instanceEntries } = useBotModelChoices(environmentId);
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
-  );
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
   );
   const [draft, setDraft] = useState<BotDraft>(() =>
     bot ? botDraft(bot) : emptyBotDraft(scheduledTaskDefaultModel(settings, null, instanceEntries)),
@@ -227,17 +207,6 @@ export function BotEditor({
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
 
   const update = (patch: Partial<BotDraft>) => setDraft((current) => ({ ...current, ...patch }));
-  const activeInstanceId =
-    draft.modelSelection?.instanceId ??
-    instanceEntries[0]?.instanceId ??
-    ("" as ProviderInstanceId);
-  const activeModel = draft.modelSelection?.model ?? "";
-  const modelOptionsByInstance = getCustomModelOptionsByInstance(
-    settings,
-    providers,
-    activeInstanceId,
-    activeModel,
-  );
   const projectTitle = (id: string) =>
     projects.find((project) => project.id === id)?.title ?? (id === ANY_PROJECT ? "" : id);
 
@@ -407,18 +376,10 @@ export function BotEditor({
           ))}
         </section>
         <LibraryField label="Model">
-          <ProviderModelPicker
+          <BotModelPicker
             environmentId={environmentId}
-            activeInstanceId={activeInstanceId}
-            model={activeModel}
-            lockedProvider={null}
-            instanceEntries={instanceEntries}
-            modelOptionsByInstance={modelOptionsByInstance}
-            isComposerOwned={false}
-            triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-            onInstanceModelChange={(instanceId, model) =>
-              update({ modelSelection: { instanceId, model } })
-            }
+            value={draft.modelSelection}
+            onChange={(modelSelection) => update({ modelSelection })}
           />
         </LibraryField>
         <div className="grid gap-4 sm:grid-cols-2">

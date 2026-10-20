@@ -190,8 +190,8 @@ turned off in Settings the upstream list and menu render unchanged. See the
 [user help](docs/fork/user/panel-picker.md).
 
 L89 adds the Bots footer entry after Sites in `apps/web/src/components/sidebar/SidebarChrome.tsx`
-(`fork: bots`, 3 marker lines) and lists `/loom/bots` as a utility page in
-`apps/web/src/components/sidebar/mainAppLocation.ts`. Bot runs are hidden threads: the subagent
+(`fork: bots`, 4 marker lines since L94 added its attention count) and lists `/loom/bots` as a
+utility page in `apps/web/src/components/sidebar/mainAppLocation.ts`. Bot runs are hidden threads: the subagent
 checks in `apps/web/src/components/Sidebar.logic.ts` (2 marker lines),
 `packages/client-runtime/src/state/threadShell.ts` and
 `apps/web/src/components/ThreadNotificationCoordinator.tsx` also skip ids from

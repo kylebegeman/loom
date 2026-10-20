@@ -209,6 +209,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [BOT.run]: AuthOrchestrationOperateScope,
   [BOT.cancel]: AuthOrchestrationOperateScope,
   [BOT.restoreStarter]: AuthOrchestrationOperateScope,
+  [BOT.retry]: AuthOrchestrationOperateScope,
+  [BOT.dismiss]: AuthOrchestrationOperateScope,
+  [BOT.promote]: AuthOrchestrationOperateScope,
   // Batch reads stay unguarded for the same reason; preview is read on every edit of the form.
   [BATCH.runBatch]: AuthOrchestrationOperateScope,
   [BATCH.cancelBatch]: AuthOrchestrationOperateScope,

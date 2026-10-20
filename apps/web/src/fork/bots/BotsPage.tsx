@@ -25,11 +25,20 @@ import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
+import { BotsInbox } from "./BotsInbox";
 import { botDraft } from "./draft";
 import { RunOnManyDialog } from "./RunOnManyDialog";
-import { bots, useBotBatchChanges, useBots } from "./state";
+import {
+  bots,
+  useBotBatchChanges,
+  useBots,
+  useBotsAttentionCount,
+  useWaitingBotRuns,
+} from "./state";
 
 type Editing = { readonly bot: BotDefinition | null } | null;
+
+const TAB_LABELS = { runs: "Runs", batches: "Batches", inbox: "Inbox" } as const;
 
 const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
   present: "Starter",
@@ -107,7 +116,16 @@ export function BotsPage() {
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
   const batchesLive = live && host.batchesSupported;
-  const tab = batchesLive ? (search.tab ?? "runs") : "runs";
+  const inboxLive = live && host.inboxSupported;
+  const tabs = [
+    "runs" as const,
+    ...(batchesLive ? (["batches"] as const) : []),
+    ...(inboxLive ? (["inbox"] as const) : []),
+  ];
+  const tab = tabs.find((value) => value === search.tab) ?? "runs";
+  const attention = useBotsAttentionCount();
+  const waiting = useWaitingBotRuns(inboxLive ? environmentId : null);
+  const canRetry = useLibraryPermission(bots.retry, environmentId) && host.connected;
   const batchChanges = useBotBatchChanges(environmentId, batchesLive);
   const batchesQuery = useEnvironmentQuery(
     environmentId && batchesLive && tab === "batches"
@@ -398,9 +416,9 @@ export function BotsPage() {
                     </details>
                   </div>
                 ) : null}
-                {batchesLive ? (
+                {tabs.length > 1 ? (
                   <div className="flex gap-1" role="group" aria-label="Show">
-                    {(["runs", "batches"] as const).map((value) => (
+                    {tabs.map((value) => (
                       <Button
                         key={value}
                         size="sm"
@@ -408,12 +426,23 @@ export function BotsPage() {
                         aria-pressed={tab === value}
                         onClick={() => go({ bot: search.bot, tab: value })}
                       >
-                        {value === "runs" ? "Runs" : "Batches"}
+                        {TAB_LABELS[value]}
+                        {value === "inbox" && attention > 0 ? (
+                          <Badge variant="warning">{attention}</Badge>
+                        ) : null}
                       </Button>
                     ))}
                   </div>
                 ) : null}
-                {tab === "batches" ? (
+                {tab === "inbox" ? (
+                  <BotsInbox
+                    environmentId={environmentId}
+                    changes={changes}
+                    waiting={waiting}
+                    connected={host.connected}
+                    canAct={canRetry}
+                  />
+                ) : tab === "batches" ? (
                   <section className="space-y-3" aria-label="Batches">
                     {search.batch !== undefined ? (
                       <BatchView

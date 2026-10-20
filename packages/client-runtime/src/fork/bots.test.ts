@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { BotBatch, BotBatchItem, BotDefinition, BotRun } from "@t3tools/contracts/fork";
 import {
   applyBatchChanges,
   applyBatchItemChanges,
   applyBotChanges,
+  applyInboxChanges,
   applyRunChanges,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOTS_CHANGES,
   foldBotBatchChange,
   foldBotsChange,
   type BotsChanges,
+  waitingBotRunThreads,
 } from "./bots.ts";
+import type { EnvironmentThreadShell } from "../state/models.ts";
 
 const bot = (id: string, name: string, version = 1): BotDefinition => ({
   id,
@@ -187,5 +190,61 @@ describe("bot batch changes", () => {
     );
     expect(applied.batch.status).toBe("finished");
     expect(applied.items.map(({ state }) => state)).toEqual(["started", "skipped"]);
+  });
+});
+
+describe("bots inbox", () => {
+  const failed = (id: string, createdAt: string, fields: Partial<BotRun> = {}) => ({
+    ...run(id, "reviewer", createdAt, "failed"),
+    ...fields,
+  });
+
+  it("keeps the first page and its total current as runs cross into and out of the inbox", () => {
+    const page = {
+      runs: [failed("r2", "2026-10-20T12:00:00.000Z"), failed("r1", "2026-10-20T11:00:00.000Z")],
+      total: 5,
+      hasMore: true,
+    };
+    const changes = fold(
+      { _tag: "run", run: failed("r3", "2026-10-20T13:00:00.000Z") },
+      { _tag: "run", run: failed("r2", "2026-10-20T12:00:00.000Z", { retriedBy: "r4" }) },
+      { _tag: "run", run: run("r4", "reviewer", "2026-10-20T14:00:00.000Z", "running") },
+      { _tag: "run", run: failed("r0", "2026-10-20T09:00:00.000Z", { dismissedAt: "x" }) },
+    );
+    const inbox = applyInboxChanges(page, changes, { dismissed: false });
+    expect(inbox.runs.map((entry) => entry.id)).toEqual(["r3", "r1"]);
+    expect(inbox.total).toBe(5);
+
+    const dismissed = applyInboxChanges(
+      { runs: [], total: 0, hasMore: false },
+      fold({ _tag: "run", run: failed("r1", "2026-10-20T11:00:00.000Z", { dismissedAt: "x" }) }),
+      { dismissed: true },
+    );
+    expect(dismissed).toMatchObject({ total: 1, runs: [{ id: "r1" }] });
+  });
+});
+
+describe("waitingBotRunThreads", () => {
+  const shell = (id: string, fields: Partial<EnvironmentThreadShell>) =>
+    ({
+      environmentId: EnvironmentId.make("env"),
+      id: ThreadId.make(id),
+      title: id,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      archivedAt: null,
+      updatedAt: "2026-10-20T10:00:00.000Z",
+      ...fields,
+    }) as EnvironmentThreadShell;
+
+  it("lists bot runs that wait on a person and nothing else", () => {
+    const waiting = waitingBotRunThreads([
+      shell("bot-run-a", { hasPendingApprovals: true }),
+      shell("bot-run-b", { hasPendingUserInput: true, updatedAt: "2026-10-20T11:00:00.000Z" }),
+      shell("bot-run-c", {}),
+      shell("bot-run-d", { hasPendingApprovals: true, archivedAt: "2026-10-20T12:00:00.000Z" }),
+      shell("thread-e", { hasPendingApprovals: true }),
+    ]);
+    expect(waiting.map((thread) => thread.id)).toEqual(["bot-run-b", "bot-run-a"]);
   });
 });

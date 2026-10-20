@@ -2,9 +2,12 @@ import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_WS_METHODS as B,
   type BotsBatchInput,
+  type BotsDismissInput,
   type BotsError,
+  type BotsInboxInput,
   type BotsListBatchesInput,
   type BotsRetryBatchInput,
+  type BotsRetryInput,
   type BotsListRunsInput,
   type BotsRunInput,
   type BotsSaveInput,
@@ -46,6 +49,12 @@ export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
         ),
       [B.restoreStarter]: (input: { starterId: BotStarterId }) =>
         auth.effect(B.restoreStarter, service.restoreStarter(input.starterId, USER_CALLER)),
+      [B.inbox]: (input: BotsInboxInput) => auth.effect(B.inbox, service.inbox(input)),
+      [B.retry]: (input: BotsRetryInput) => auth.effect(B.retry, service.retry(input, USER_CALLER)),
+      [B.dismiss]: (input: BotsDismissInput) =>
+        auth.effect(B.dismiss, service.dismiss(input).pipe(Effect.map((runs) => ({ runs })))),
+      [B.promote]: (input: { runId: string }) =>
+        auth.effect(B.promote, service.promote(input.runId, USER_CALLER)),
     };
   });
 

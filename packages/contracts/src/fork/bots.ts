@@ -12,6 +12,7 @@ export const BOTS_STARTERS_FEATURE = "bots-starters";
 export const BOTS_INVOCATION_FEATURE = "bots-invocation";
 export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
 export const BOTS_BATCHES_FEATURE = "bots-batches";
+export const BOTS_INBOX_FEATURE = "bots-inbox";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -24,6 +25,10 @@ export const BOTS_WS_METHODS = {
   watch: "loom.bots.watch",
   listStarters: "loom.bots.listStarters",
   restoreStarter: "loom.bots.restoreStarter",
+  inbox: "loom.bots.inbox",
+  retry: "loom.bots.retry",
+  dismiss: "loom.bots.dismiss",
+  promote: "loom.bots.promote",
 } as const;
 
 export const BOTS_BATCH_WS_METHODS = {
@@ -41,6 +46,7 @@ export const BOTS_MAX_PARAMETERS = 12;
 export const BOTS_MAX_ACTIVE_RUNS = 20;
 export const BOTS_RESULT_MAX_BYTES = 16 * 1024;
 export const BOTS_LIST_RUNS_MAX_LIMIT = 50;
+export const BOTS_DISMISS_MAX_RUNS = 50;
 export const BOTS_VERDICT_MAX_FINDINGS = 50;
 export const BOTS_VERDICT_SUMMARY_MAX = 2000;
 export const BOTS_FINDING_TITLE_MAX = 200;
@@ -239,8 +245,35 @@ export const BotRun = Schema.Struct({
   verdict: Schema.optionalKey(Schema.NullOr(BotVerdict)),
   /** The batch that started the run. Absent for a run started on its own. */
   batchId: Schema.optionalKey(Schema.NullOr(BotBatchId)),
+  /** Set while the run is dismissed from the inbox. */
+  dismissedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The run this one retried. */
+  retryOf: Schema.optionalKey(Schema.NullOr(BotRunId)),
+  /** The run that retried this one; a retried run leaves the inbox. */
+  retriedBy: Schema.optionalKey(Schema.NullOr(BotRunId)),
+  /** The ordinary thread the run was opened as. */
+  promotedThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  /** The model the run used. Absent for runs recorded before Loom kept it. */
+  modelSelection: Schema.optionalKey(ModelSelection),
+  /** The thread whose checkout a `caller` checkout bot ran in. */
+  checkoutThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
 });
 export type BotRun = typeof BotRun.Type;
+
+/**
+ * A finished run a person should look at, dismissed or not: it failed, timed out, or could not
+ * decide, and no newer run retried it. A `fail` verdict is an answer, and a cancelled run was a
+ * choice, so neither counts.
+ */
+export const needsBotAttention = (run: BotRun): boolean =>
+  run.retriedBy == null &&
+  (run.status === "failed" ||
+    run.status === "timed_out" ||
+    (run.status === "completed" && run.verdict?.verdict === "needs_attention"));
+
+/** The server's inbox query selects the same runs in SQL; keep the two in step. */
+export const isBotInboxRun = (run: BotRun): boolean =>
+  run.dismissedAt == null && needsBotAttention(run);
 
 export const BotsChange = Schema.Union([
   Schema.TaggedStruct("bot", { bot: BotDefinition }),
@@ -282,6 +315,47 @@ export const BotsListRunsInput = Schema.Struct({
   limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
 });
 export type BotsListRunsInput = typeof BotsListRunsInput.Type;
+
+export const BotsInboxInput = Schema.Struct({
+  /** Lists dismissed runs instead, so one can be restored. */
+  dismissed: Schema.optionalKey(Schema.Boolean),
+  /** Returns runs created strictly before this ISO timestamp. */
+  before: Schema.optionalKey(Schema.String),
+  limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
+});
+export type BotsInboxInput = typeof BotsInboxInput.Type;
+
+export const BotsInboxPage = Schema.Struct({
+  runs: Schema.Array(BotRun),
+  /** Every matching run, not only this page. */
+  total: Schema.Int,
+  hasMore: Schema.Boolean,
+});
+export type BotsInboxPage = typeof BotsInboxPage.Type;
+
+export const BotsRetryInput = Schema.Struct({
+  runId: BotRunId,
+  /** Runs this retry on another model; the bot keeps its own. */
+  modelSelection: Schema.optionalKey(ModelSelection),
+});
+export type BotsRetryInput = typeof BotsRetryInput.Type;
+
+export const BotsDismissInput = Schema.Struct({
+  runIds: Schema.Array(BotRunId).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(BOTS_DISMISS_MAX_RUNS),
+  ),
+  /** False restores the runs to the inbox. */
+  dismissed: Schema.Boolean,
+});
+export type BotsDismissInput = typeof BotsDismissInput.Type;
+
+export const BotsPromoteResult = Schema.Struct({
+  threadId: ThreadId,
+  /** False when the run was already open as this thread. */
+  created: Schema.Boolean,
+});
+export type BotsPromoteResult = typeof BotsPromoteResult.Type;
 
 const errors = Schema.Union([BotsError, EnvironmentAuthorizationError]);
 const M = BOTS_WS_METHODS;
@@ -326,6 +400,18 @@ export const BotsRpcGroup = RpcGroup.make(
   Rpc.make(M.restoreStarter, {
     payload: Schema.Struct({ starterId: BotStarterId }),
     success: BotDefinition,
+    error: errors,
+  }),
+  Rpc.make(M.inbox, { payload: BotsInboxInput, success: BotsInboxPage, error: errors }),
+  Rpc.make(M.retry, { payload: BotsRetryInput, success: BotRun, error: errors }),
+  Rpc.make(M.dismiss, {
+    payload: BotsDismissInput,
+    success: Schema.Struct({ runs: Schema.Array(BotRun) }),
+    error: errors,
+  }),
+  Rpc.make(M.promote, {
+    payload: Schema.Struct({ runId: BotRunId }),
+    success: BotsPromoteResult,
     error: errors,
   }),
 );

@@ -1,6 +1,7 @@
 # L94: Inbox
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build
+differs from this plan.
 
 One place for bot runs that need Kyle. Failed runs, timed-out runs and runs whose verdict is
 "needs attention" collect in a Bots inbox with a count ("2 need attention") on the Bots entry.

@@ -2,17 +2,18 @@ import {
   CommandId,
   MessageId,
   resolveProviderInstanceEnabled,
+  ThreadId,
   type ModelSelection,
   type ProjectId,
   type RunId,
   type RuntimeMode,
-  type ThreadId,
 } from "@t3tools/contracts";
 import {
   BOTS_MAX_ACTIVE_RUNS,
   BOTS_RESULT_MAX_BYTES,
   BotsError,
   botRunThreadId,
+  isBotInboxRun,
   isBotRunThreadId,
   isTerminalBotRunStatus,
   type BotCreator,
@@ -24,7 +25,11 @@ import {
   type BotRun,
   type BotRunStatus,
   type BotsChange,
+  type BotsDismissInput,
+  type BotsInboxInput,
   type BotsListRunsInput,
+  type BotsPromoteResult,
+  type BotsRetryInput,
   type BotsRunInput,
   type BotsSaveInput,
   type BotStarterId,
@@ -90,6 +95,18 @@ const INTERRUPT_GRACE_MS = 30_000;
 export const RESTARTED_BEFORE_START = "The server restarted before this run started.";
 /** Used for a recovered run whose bot was deleted meanwhile. */
 const FALLBACK_TIMEOUT_MINUTES = 30;
+/** A run opened as a thread is named after its bot and first input, at most this long. */
+const PROMOTED_TITLE_MAX = 120;
+
+/** `Reviewer: src/app.ts`, the name of a run opened as an ordinary thread. */
+export const promotedTitle = (run: BotRun): string => {
+  const first = Object.values(run.inputs)[0];
+  const value = first === undefined ? "" : String(first).replace(/\s+/gu, " ").trim();
+  const title = value === "" ? run.botName : `${run.botName}: ${value}`;
+  return title.length <= PROMOTED_TITLE_MAX
+    ? title
+    : `${title.slice(0, PROMOTED_TITLE_MAX - 3)}...`;
+};
 
 interface LiveRun {
   run: BotRun;
@@ -196,6 +213,7 @@ export const make = Effect.gen(function* () {
   const botPermits = new Map<string, { readonly semaphore: Semaphore.Semaphore; size: number }>();
   const live = new Map<string, LiveRun>();
   const recovered = yield* Deferred.make<void>();
+  const retryPermit = yield* Semaphore.make(1);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -661,7 +679,7 @@ export const make = Effect.gen(function* () {
             worktreePath: shell.worktreePath,
             ...(shell.branch === null ? {} : { branch: shell.branch }),
           };
-    return { projectId, strategy };
+    return { projectId, strategy, threadId };
   });
 
   /** A person running a bot from a thread: the thread must be live and not itself a bot run. */
@@ -710,6 +728,9 @@ export const make = Effect.gen(function* () {
 
   interface StartOptions {
     readonly batchId?: string | undefined;
+    /** Runs on this model instead of the bot's. */
+    readonly modelSelection?: ModelSelection | undefined;
+    readonly retryOf?: string | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
   }
@@ -740,6 +761,7 @@ export const make = Effect.gen(function* () {
     const checkout = yield* resolveCheckout(bot, input, caller);
     const projectId = checkout?.projectId ?? (yield* resolveProject(bot, input, caller));
     const runId = yield* randomUuidV4;
+    const modelSelection = options.modelSelection ?? bot.modelSelection;
 
     const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
       checkout !== null
@@ -772,6 +794,9 @@ export const make = Effect.gen(function* () {
         error: null,
         ...(input.notify === true ? { notify: true } : {}),
         ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
+        ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
+        modelSelection,
+        checkoutThreadId: checkout?.threadId ?? null,
       },
       fiber: null,
       started: false,
@@ -789,7 +814,7 @@ export const make = Effect.gen(function* () {
         projectId,
         title: bot.name,
         generateTitle: false,
-        modelSelection: bot.modelSelection,
+        modelSelection,
         runtimeMode: bot.runtimeMode,
         interactionMode: bot.interactionMode,
         workspaceStrategy,
@@ -877,6 +902,118 @@ export const make = Effect.gen(function* () {
     else if (entry.threadRunId !== null)
       yield* interruptThread(entry, "The bot run was cancelled.");
     return entry.run;
+  });
+
+  const inbox = (input: BotsInboxInput) =>
+    store
+      .inbox({ dismissed: input.dismissed === true, before: input.before, limit: input.limit })
+      .pipe(Effect.catch(storageError));
+
+  /**
+   * Reruns an inbox run with the bot as saved now, from where the old run started: its project,
+   * checkout and calling thread. The old run leaves the inbox, and a batch item follows the retry.
+   * Serialized, so two retries of one run cannot both pass the check.
+   */
+  const retry = Effect.fn("BotsService.retry")(function* (
+    input: BotsRetryInput,
+    caller: BotCaller,
+  ) {
+    return yield* Effect.gen(function* () {
+      const old = yield* getRun(input.runId);
+      if (old.retriedBy != null)
+        return yield* fail("invalid", "This run was already retried; retry the newer run.");
+      if (!isBotInboxRun(old))
+        return yield* fail(
+          "invalid",
+          "Only a failed, timed out or undecided run in the inbox can be retried.",
+        );
+      yield* checkCaller({ botId: old.botId, inputs: old.inputs }, caller);
+      const bot = yield* requireBot(old.botId);
+      yield* checkRunnable(bot, caller);
+      const { batchId } = old;
+      return yield* start(
+        bot,
+        {
+          botId: old.botId,
+          inputs: old.inputs,
+          ...(old.projectId === null ? {} : { projectId: old.projectId }),
+          ...(old.checkoutThreadId == null ? {} : { checkoutThreadId: old.checkoutThreadId }),
+          ...(old.notify === true ? { notify: true } : {}),
+        },
+        { ...caller, threadId: old.callerThreadId, projectId: old.projectId },
+        bot,
+        {
+          batchId: batchId ?? undefined,
+          modelSelection: input.modelSelection,
+          retryOf: old.id,
+          onInserted: (inserted) =>
+            store
+              .setRetriedBy(old.id, inserted.id)
+              .pipe(
+                Effect.andThen(
+                  batchId == null
+                    ? Effect.void
+                    : store.replaceBatchItemRun(batchId, old.id, inserted.id),
+                ),
+              ),
+        },
+      ).pipe(Effect.tap((next) => publish({ _tag: "run", run: { ...old, retriedBy: next.id } })));
+    }).pipe(retryPermit.withPermits(1));
+  });
+
+  /** Takes finished runs out of the inbox, or puts them back. */
+  const dismiss = Effect.fn("BotsService.dismiss")(function* (input: BotsDismissInput) {
+    const runs = yield* Effect.forEach([...new Set(input.runIds)], getRun);
+    if (runs.some((run) => !isTerminalBotRunStatus(run.status)))
+      return yield* fail("invalid", "A run that is still going cannot be dismissed.");
+    const dismissedAt = input.dismissed ? yield* nowIso : null;
+    yield* store
+      .setDismissed(
+        runs.map((run) => run.id),
+        dismissedAt,
+      )
+      .pipe(Effect.catch(storageError));
+    const updated = runs.map((run): BotRun => ({ ...run, dismissedAt }));
+    for (const run of updated) yield* publish({ _tag: "run", run });
+    return updated;
+  });
+
+  /**
+   * Forks a finished run into an ordinary thread to continue it. The command id makes a repeated
+   * request the same fork; a thread deleted since is opened again under a new id.
+   */
+  const promote = Effect.fn("BotsService.promote")(function* (runId: string, caller: BotCaller) {
+    const run = yield* getRun(runId);
+    if (!isTerminalBotRunStatus(run.status))
+      return yield* fail("invalid", "Open a run as a thread once it ends, or cancel it first.");
+    const previous = run.promotedThreadId ?? null;
+    if (previous !== null) {
+      const shell = yield* threads.getThreadShell(previous).pipe(Effect.orElseSucceed(() => null));
+      if (shell !== null && shell.deletedAt === null)
+        return { threadId: previous, created: false } satisfies BotsPromoteResult;
+    }
+    const suffix = previous === null ? "" : `-${(yield* randomUuidV4).slice(0, 8)}`;
+    // Not the run prefix, so every list that hides bot runs shows this thread.
+    const threadId = ThreadId.make(`bot-open-${run.id}${suffix}`);
+    yield* threads
+      .dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make(`bot-promote:${run.id}${suffix}`),
+        sourceThreadId: run.threadId,
+        targetThreadId: threadId,
+        sourcePoint: { type: "latest_stable" },
+        title: promotedTitle(run),
+        createdBy: caller.actor,
+        creationSource: "server",
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          fail("launch", `Loom could not open the run as a thread: ${errorMessage(error)}`),
+        ),
+      );
+    yield* store.setPromotedThread(run.id, threadId).pipe(Effect.catch(storageError));
+    yield* publish({ _tag: "run", run: { ...run, promotedThreadId: threadId } });
+    return { threadId, created: true } satisfies BotsPromoteResult;
   });
 
   const listRuns = (input: BotsListRunsInput) =>
@@ -971,6 +1108,10 @@ export const make = Effect.gen(function* () {
     cancel,
     getRun,
     listRuns,
+    inbox,
+    retry,
+    dismiss,
+    promote,
     awaitRun,
     activeRunCount,
     recover,

@@ -97,6 +97,23 @@ A reply Loom cannot read as a verdict is marked **Needs attention** and shows th
 full, so nothing the bot said is lost. Runs that fail, time out or are cancelled have no verdict.
 Agents get the verdict with the run's reply, and a result posted to a thread leads with it.
 
+## Inbox
+
+The **Inbox** tab collects the runs that need you: runs that failed or timed out, and runs whose
+verdict is **Needs attention**. The Bots icon in the sidebar footer shows how many there are.
+
+- **Retry** runs the bot again with the same inputs. **Retry on another model** does the same on
+  a model you choose for that one retry; the bot keeps its own model. A retried run leaves the
+  inbox, and a run from a batch hands its place in the batch to the retry.
+- **Dismiss** clears a run you have dealt with. **Dismiss all shown** clears the whole list at
+  once. Turn on **Dismissed** to see cleared runs and **Restore** one.
+- **Open as thread** copies the run into an ordinary thread in your sidebar, so you can carry on
+  the conversation yourself. Opening the same run again goes back to that thread.
+
+A run that stops to ask for an approval or an answer shows under **Waiting for you** at the top,
+because nobody would see the question otherwise. **Answer** opens its thread. Agents read the
+inbox, retry and dismiss runs with `loom_bots_inbox`, `loom_bots_retry` and `loom_bots_dismiss`.
+
 ## Run a bot from a thread
 
 Type `/bot:` in a thread's composer to list the bots you can run there, next to commands and

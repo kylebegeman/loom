@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { ModelSelection, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   BotDefinitionInput,
   BotInputs,
@@ -46,6 +46,12 @@ export interface RunRow {
   readonly notify: number;
   readonly verdict_json: string | null;
   readonly batch_id: string | null;
+  readonly dismissed_at: string | null;
+  readonly retry_of: string | null;
+  readonly retried_by: string | null;
+  readonly promoted_thread_id: string | null;
+  readonly model_selection_json: string | null;
+  readonly checkout_thread_id: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -64,6 +70,9 @@ const encodeInputs = Schema.encodeSync(inputsJson);
 const verdictJson = Schema.fromJsonString(BotVerdict);
 const decodeVerdict = Schema.decodeUnknownOption(verdictJson);
 const encodeVerdict = Schema.encodeSync(verdictJson);
+const modelSelectionJson = Schema.fromJsonString(ModelSelection);
+const decodeModelSelection = Schema.decodeUnknownOption(modelSelectionJson);
+const encodeModelSelection = Schema.encodeSync(modelSelectionJson);
 const isStatus = Schema.is(BotRunStatus);
 
 // A row written by a future version this one cannot read is skipped, not fatal.
@@ -107,8 +116,31 @@ export const toRun = (row: RunRow): BotRun | null => {
       ? {}
       : { verdict: Option.getOrNull(decodeVerdict(row.verdict_json)) }),
     ...(row.batch_id == null ? {} : { batchId: row.batch_id }),
+    ...(row.dismissed_at == null ? {} : { dismissedAt: row.dismissed_at }),
+    ...(row.retry_of == null ? {} : { retryOf: row.retry_of }),
+    ...(row.retried_by == null ? {} : { retriedBy: row.retried_by }),
+    ...(row.promoted_thread_id == null
+      ? {}
+      : { promotedThreadId: ThreadId.make(row.promoted_thread_id) }),
+    ...Option.match(
+      row.model_selection_json == null
+        ? Option.none()
+        : decodeModelSelection(row.model_selection_json),
+      { onNone: () => ({}), onSome: (modelSelection) => ({ modelSelection }) },
+    ),
+    ...(row.checkout_thread_id == null
+      ? {}
+      : { checkoutThreadId: ThreadId.make(row.checkout_thread_id) }),
   };
 };
+
+/** `isBotInboxRun` in SQL, so the inbox never loads runs it would drop. */
+const inboxCondition = (sql: SqlClient.SqlClient, dismissed: boolean) =>
+  sql.and([
+    sql`retried_by IS NULL`,
+    dismissed ? sql`dismissed_at IS NOT NULL` : sql`dismissed_at IS NULL`,
+    sql`(status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))`,
+  ]);
 
 const definitionFields = ({
   version: _version,
@@ -185,7 +217,7 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
@@ -232,6 +264,59 @@ export const makeBotsStore = Effect.gen(function* () {
         runs: rows.slice(0, input.limit).flatMap((row) => toRun(row) ?? []),
         hasMore: rows.length > input.limit,
       };
+    }),
+
+    /** Newest first, with the count of every match. Fetches one extra row to report more. */
+    inbox: Effect.fn("BotsStore.inbox")(function* (input: {
+      readonly dismissed: boolean;
+      readonly before?: string | undefined;
+      readonly limit: number;
+    }) {
+      const matches = inboxCondition(sql, input.dismissed);
+      const page =
+        input.before === undefined
+          ? matches
+          : sql.and([matches, sql`created_at < ${input.before}`]);
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE ${page} ORDER BY created_at DESC, id DESC LIMIT ${input.limit + 1}`;
+      const counted = yield* sql<{
+        total: number;
+      }>`SELECT COUNT(*) AS total FROM fork_bots_runs WHERE ${matches}`;
+      return {
+        runs: rows.slice(0, input.limit).flatMap((row) => toRun(row) ?? []),
+        total: Number(counted[0]?.total ?? 0),
+        hasMore: rows.length > input.limit,
+      };
+    }),
+
+    setDismissed: Effect.fn("BotsStore.setDismissed")(function* (
+      ids: ReadonlyArray<string>,
+      at: string | null,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET dismissed_at = ${at} WHERE id IN ${sql.in(ids)}`;
+    }),
+
+    setRetriedBy: Effect.fn("BotsStore.setRetriedBy")(function* (id: string, retriedBy: string) {
+      yield* sql`UPDATE fork_bots_runs SET retried_by = ${retriedBy} WHERE id = ${id}`;
+    }),
+
+    setPromotedThread: Effect.fn("BotsStore.setPromotedThread")(function* (
+      id: string,
+      threadId: string,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET promoted_thread_id = ${threadId} WHERE id = ${id}`;
+    }),
+
+    /**
+     * Points a batch item at the run that retried its run, keeping the old one among its earlier
+     * attempts, so the batch view and report follow the retry.
+     */
+    replaceBatchItemRun: Effect.fn("BotsStore.replaceBatchItemRun")(function* (
+      batchId: string,
+      oldRunId: string,
+      newRunId: string,
+    ) {
+      yield* sql`UPDATE fork_bots_batch_items SET run_id = ${newRunId}, previous_run_ids_json = json_insert(previous_run_ids_json, '$[#]', ${oldRunId}) WHERE batch_id = ${batchId} AND run_id = ${oldRunId}`;
     }),
 
     listUnfinishedRuns: Effect.fn("BotsStore.listUnfinishedRuns")(function* () {

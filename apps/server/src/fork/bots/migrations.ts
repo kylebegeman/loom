@@ -61,5 +61,20 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_batch ON fork_bots_runs (batch_id)`;
       }),
     ],
+    [
+      6,
+      "RunInbox",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN dismissed_at TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN retry_of TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN retried_by TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN promoted_thread_id TEXT`;
+        // What ran, so a retry, usage and replay never read a definition edited since.
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN model_selection_json TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN checkout_thread_id TEXT`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_inbox ON fork_bots_runs (status, dismissed_at, created_at DESC)`;
+      }),
+    ],
   ],
 };

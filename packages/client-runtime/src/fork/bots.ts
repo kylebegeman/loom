@@ -7,11 +7,16 @@ import {
   type BotDefinition,
   type BotRun,
   type BotsChange,
+  type BotsInboxPage,
   type BotVerdictValue,
+  isBotInboxRun,
+  isBotRunThreadId,
+  needsBotAttention,
 } from "@t3tools/contracts/fork";
 import * as Stream from "effect/Stream";
-import type { Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import type { EnvironmentThreadShell } from "../state/models.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
@@ -81,6 +86,89 @@ export const applyRunChanges = (
     verdict === undefined ? runs : runs.filter((run) => run.verdict?.verdict === verdict)
   ).sort(newestFirst);
 };
+
+/**
+ * The first inbox page with watched changes applied, its total kept without a refetch. A changed
+ * run on the page was counted; one missing from it was not, unless it is older than an unfinished
+ * page, where its earlier state is unknown and the total is left alone.
+ */
+export const applyInboxChanges = (
+  page: BotsInboxPage,
+  changes: BotsChanges,
+  options: { readonly dismissed: boolean },
+): BotsInboxPage => {
+  const matches = options.dismissed
+    ? (run: BotRun) => run.dismissedAt != null && needsBotAttention(run)
+    : isBotInboxRun;
+  const oldest = page.runs.at(-1)?.createdAt;
+  const merged = new Map(page.runs.map((run) => [run.id, run]));
+  let total = page.total;
+  for (const [id, run] of changes.runs) {
+    const listed = merged.has(id);
+    if (!listed && page.hasMore && oldest !== undefined && run.createdAt < oldest) continue;
+    const now = matches(run);
+    total += Number(now) - Number(listed);
+    if (now) merged.set(id, run);
+    else merged.delete(id);
+  }
+  return {
+    runs: [...merged.values()].sort(newestFirst),
+    total: Math.max(0, total),
+    hasMore: page.hasMore,
+  };
+};
+
+export type WaitingBotRunThread = Pick<
+  EnvironmentThreadShell,
+  "environmentId" | "id" | "title" | "hasPendingApprovals" | "hasPendingUserInput" | "updatedAt"
+>;
+
+/** Bot run threads stopped on an approval or a question; nobody sees a hidden run ask. */
+export const waitingBotRunThreads = (
+  shells: ReadonlyArray<EnvironmentThreadShell>,
+): ReadonlyArray<WaitingBotRunThread> =>
+  shells
+    .filter(
+      (shell) =>
+        isBotRunThreadId(shell.id) &&
+        shell.archivedAt === null &&
+        (shell.hasPendingApprovals || shell.hasPendingUserInput),
+    )
+    .map(({ environmentId, id, title, hasPendingApprovals, hasPendingUserInput, updatedAt }) => ({
+      environmentId,
+      id,
+      title,
+      hasPendingApprovals,
+      hasPendingUserInput,
+      updatedAt,
+    }))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+const sameWaiting = (
+  left: ReadonlyArray<WaitingBotRunThread>,
+  right: ReadonlyArray<WaitingBotRunThread>,
+) =>
+  left.length === right.length &&
+  left.every(
+    (thread, index) =>
+      thread.id === right[index]!.id &&
+      thread.title === right[index]!.title &&
+      thread.hasPendingApprovals === right[index]!.hasPendingApprovals &&
+      thread.hasPendingUserInput === right[index]!.hasPendingUserInput,
+  );
+
+/** Waiting bot runs over every shell; keeps its last value while nothing it shows changed. */
+export function makeWaitingBotRunsAtom(
+  threadShellsAtom: Atom.Atom<ReadonlyArray<EnvironmentThreadShell>>,
+) {
+  let previous: ReadonlyArray<WaitingBotRunThread> = [];
+  return Atom.make((get) => {
+    const next = waitingBotRunThreads(get(threadShellsAtom));
+    if (sameWaiting(previous, next)) return previous;
+    previous = next;
+    return next;
+  }).pipe(Atom.withLabel("loom:bots:waiting-runs"));
+}
 
 /** Batch changes seen since the watch started, keyed by batch id. */
 export interface BotBatchChanges {
@@ -154,6 +242,10 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     delete: createEnvironmentRpcCommand(runtime, { label: "loom:bots:delete", tag: B.delete }),
     run: createEnvironmentRpcCommand(runtime, { label: "loom:bots:run", tag: B.run }),
     cancel: createEnvironmentRpcCommand(runtime, { label: "loom:bots:cancel", tag: B.cancel }),
+    inbox: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:inbox", tag: B.inbox }),
+    retry: createEnvironmentRpcCommand(runtime, { label: "loom:bots:retry", tag: B.retry }),
+    dismiss: createEnvironmentRpcCommand(runtime, { label: "loom:bots:dismiss", tag: B.dismiss }),
+    promote: createEnvironmentRpcCommand(runtime, { label: "loom:bots:promote", tag: B.promote }),
     listStarters: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:bots:list-starters",
       tag: B.listStarters,

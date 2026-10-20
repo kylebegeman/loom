@@ -2,6 +2,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   type ModelSelection,
+  type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -63,6 +64,7 @@ export const makeHarness = Effect.gen(function* () {
   const replies = new Map<string, string>();
   const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
   const receipts = new Set<string>();
+  const dispatched: Array<OrchestrationV2ServerCommand> = [];
   const state = {
     timeOut: false,
     sendError: null as unknown,
@@ -118,6 +120,11 @@ export const makeHarness = Effect.gen(function* () {
         receipts.add(input.commandId);
         return {};
       }),
+    dispatch: (command: OrchestrationV2ServerCommand) =>
+      Effect.sync(() => {
+        dispatched.push(command);
+        return { sequence: dispatched.length };
+      }),
   } as unknown as ThreadManagement.ThreadManagementService["Service"];
 
   const launchService = {
@@ -154,6 +161,7 @@ export const makeHarness = Effect.gen(function* () {
     launches,
     sent,
     receipts,
+    dispatched,
     interrupted,
     state,
     shells,

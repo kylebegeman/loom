@@ -15,7 +15,7 @@ import { BotFindings, RawReply } from "./BotFindings";
 import { bots } from "./state";
 import { VERDICT_LABELS, VerdictChip } from "./VerdictChip";
 
-const STATUS: Record<
+export const RUN_STATUS: Record<
   BotRunStatus,
   { readonly label: string; readonly variant: "secondary" | "success" | "error" | "warning" }
 > = {
@@ -27,9 +27,9 @@ const STATUS: Record<
   timed_out: { label: "Timed out", variant: "error" },
 };
 
-const time = (value: string | null) => (value ? new Date(value).toLocaleString() : null);
+export const runTime = (value: string | null) => (value ? new Date(value).toLocaleString() : null);
 
-const inputSummary = (run: BotRun) =>
+export const runInputSummary = (run: BotRun) =>
   Object.entries(run.inputs)
     .map(([name, value]) => `${name}: ${String(value)}`)
     .join(", ");
@@ -49,9 +49,9 @@ function RunRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useAtomCommand(bots.cancel, { reportFailure: false });
-  const status = STATUS[run.status];
+  const status = RUN_STATUS[run.status];
   const active = !isTerminalBotRunStatus(run.status);
-  const summary = inputSummary(run);
+  const summary = runInputSummary(run);
   const verdict = run.verdict ?? null;
 
   const stop = async () => {
@@ -75,7 +75,7 @@ function RunRow({
           {verdict ? <VerdictChip verdict={verdict.verdict} /> : null}
           {showBot ? <span className="font-medium">{run.botName}</span> : null}
           <span className="text-xs text-muted-foreground">
-            {time(run.finishedAt) ?? time(run.startedAt) ?? time(run.createdAt)}
+            {runTime(run.finishedAt) ?? runTime(run.startedAt) ?? runTime(run.createdAt)}
             {run.startedBy === "agent" ? " · started by an agent" : ""}
           </span>
         </div>

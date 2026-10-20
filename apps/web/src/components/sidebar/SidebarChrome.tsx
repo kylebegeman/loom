@@ -1,6 +1,5 @@
 import {
   ArrowLeftIcon,
-  BotIcon, // fork: bots
   ChartNoAxesColumnIcon,
   FolderKanbanIcon,
   GlobeIcon,
@@ -14,6 +13,7 @@ import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { LoomWordmark } from "../LoomWordmark"; // fork: brand
+import { useBotsFooterEntry } from "../../fork/bots/BotsFooterEntry"; // fork: bots
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -175,6 +175,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       !/^\/(?:sites|projects|library|loom\/bots)(?:\/|$)/.test(location.pathname), // fork: bots
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const botsEntry = useBotsFooterEntry(); // fork: bots
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -254,8 +255,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           {/* fork: bots */}
           <SidebarUtilityItem
-            icon={<BotIcon />}
-            label="Bots"
+            icon={botsEntry.icon}
+            label={botsEntry.label}
             active={pathname === "/loom/bots"}
             onClick={() => {
               closeMobileSidebar();

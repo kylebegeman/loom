@@ -12,9 +12,12 @@ import {
   BotParameterName,
   BotRun,
   BotRunId,
+  BotsDismissInput,
   BotsError,
   BotStarterId,
   BotsRetryBatchInput,
+  BotsRetryInput,
+  BOTS_LIST_RUNS_MAX_LIMIT,
 } from "@t3tools/contracts/fork";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -90,6 +93,37 @@ export const BotsToolkit = Toolkit.make(
     description: "Cancel a queued or running bot run.",
     parameters: Schema.Struct({ runId: BotRunId }),
     success: BotRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_inbox", {
+    description:
+      "List bot runs that need a person, newest first: failed and timed-out runs, and verdict runs that ended needs_attention. Each run carries its error or verdict, inputs and the model it used. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
+    parameters: Schema.Struct({
+      limit: Schema.optionalKey(
+        Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
+      ),
+    }),
+    success: Schema.Struct({
+      runs: Schema.Array(BotRun),
+      total: Schema.Int,
+      hasMore: Schema.Boolean,
+    }),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_retry", {
+    description:
+      "Run an inbox run again with the same inputs, project and checkout, using the bot as saved now. Pass modelSelection to use another model for this retry only. The old run leaves the inbox; a run can be retried once, so retry the newer run after that.",
+    parameters: BotsRetryInput,
+    success: BotRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_dismiss", {
+    description:
+      "Remove finished runs from the bots inbox without rerunning them, or with dismissed:false put them back.",
+    parameters: BotsDismissInput,
+    success: Schema.Struct({ runs: Schema.Array(BotRun) }),
     failure,
     dependencies: callerDependencies,
   }),
@@ -213,6 +247,26 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_cancel: McpToolAccess.writes((input) =>
         onHost(Effect.flatMap(BotsService, (service) => service.cancel(input.runId))),
+      ),
+      loom_bots_inbox: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(BotsService, (service) => service.inbox({ limit: input.limit ?? 20 })),
+        ),
+      ),
+      loom_bots_retry: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotsService, (service) => service.retry(input, caller)),
+          );
+        }),
+      ),
+      loom_bots_dismiss: McpToolAccess.writes((input) =>
+        onHost(
+          Effect.flatMap(BotsService, (service) =>
+            service.dismiss(input).pipe(Effect.map((runs) => ({ runs }))),
+          ),
+        ),
       ),
       loom_bots_run_batch: McpToolAccess.writes(({ wait, ...input }) =>
         Effect.gen(function* () {
