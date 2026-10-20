@@ -2,8 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { isBotInboxRun } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
+import { BUDGET_WINDOW_MS, budgetState, isoAt } from "./BotBudgets.ts";
 import { makeBotsStore, type BotsStore } from "./BotsStore.ts";
 import { BotsMigrations } from "./migrations.ts";
 import { testBot, testRun } from "./testing/fixtures.ts";
@@ -77,6 +79,7 @@ describe("BotsStore", () => {
   it.effect("prunes only finished runs beyond the newest kept", () =>
     withStore((store) =>
       Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse("2026-10-22T00:00:00.000Z"));
         yield* store.insertRun(
           testRun("r0", "2026-10-20T09:00:00.000Z", { status: "running", finishedAt: null }),
         );
@@ -88,6 +91,49 @@ describe("BotsStore", () => {
           "r11",
           "r0",
         ]);
+      }),
+    ),
+  );
+
+  it.effect("keeps runs the budget window still counts when pruning", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const now = Date.parse("2026-10-20T12:00:00.000Z");
+        yield* TestClock.setTime(now);
+        const minutesAgo = (minutes: number) => isoAt(now - minutes * 60_000);
+        const usage = {
+          inputTokens: 100,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          status: "complete",
+        } as const;
+        for (const minutes of [30, 20]) {
+          const run = testRun(`counted-${minutes}`, minutesAgo(minutes), { usage });
+          yield* store.insertRun(run);
+          yield* store.saveRun(run);
+        }
+        // Newer runs that never started, such as trigger skips, fill the kept places.
+        for (const minutes of [10, 5])
+          yield* store.insertRun(
+            testRun(`skipped-${minutes}`, minutesAgo(minutes), {
+              status: "failed",
+              startedAt: null,
+            }),
+          );
+        yield* store.insertRun(testRun("stale", isoAt(now - BUDGET_WINDOW_MS - 60_000)));
+        const since = isoAt(now - BUDGET_WINDOW_MS);
+        const counted = Effect.map(store.budgetWindow("reviewer", since), (window) =>
+          budgetState(undefined, window),
+        );
+        expect(yield* counted).toEqual({ runsInWindow: 2, tokensInWindow: 200 });
+
+        yield* store.pruneRuns("reviewer", 1);
+        expect((yield* store.listRuns({ limit: 10 })).runs.map((run) => run.id)).toEqual([
+          "skipped-5",
+          "counted-20",
+          "counted-30",
+        ]);
+        expect(yield* counted).toEqual({ runsInWindow: 2, tokensInWindow: 200 });
       }),
     ),
   );

@@ -17,12 +17,17 @@ import {
   type BotVersion,
   type BotVersionSummary,
 } from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import { BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 
-/** Runs kept per bot; older finished runs are pruned when a run finishes. */
+/**
+ * Runs kept per bot; older finished runs are pruned when a run finishes, except started runs the
+ * budget window still counts.
+ */
 export const RUNS_KEPT_PER_BOT = 500;
 /** Versions kept per bot, besides the current, stable, pinned and run-referenced ones. */
 export const VERSIONS_KEPT_PER_BOT = 200;
@@ -684,10 +689,12 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /**
      * Deletes finished runs beyond the newest `keep` of a bot, except those of a running batch or
-     * an active pipeline run.
+     * an active pipeline run, and started runs that finished inside the budget window. Runs that
+     * never started count toward no budget, so they always go first.
      */
     pruneRuns: Effect.fn("BotsStore.pruneRuns")(function* (botId: string, keep: number) {
-      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+      const windowStart = isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS);
+      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (started_at IS NULL OR finished_at <= ${windowStart}) AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
     }),
   };
 });
