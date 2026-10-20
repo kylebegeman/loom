@@ -538,17 +538,16 @@ export const make = Effect.gen(function* () {
     const result = yield* openscadStatus(refresh);
     return { ...result, python: yield* python.info(refresh) };
   });
-  const validateOverrides = (
+  const validateOverrides = Effect.fn("ModelPreview.validateOverrides")(function* (
     parsed: Readonly<ReturnType<typeof parseCustomizer>>,
     values: Readonly<Record<string, string>>,
-  ) =>
-    Effect.gen(function* () {
-      for (const [name, value] of Object.entries(values)) {
-        const parameter = parsed.find((p) => p.name === name);
-        if (!parameter || !validateLiteral(parameter.kind, value))
-          return yield* error("invalid-parameter", `Invalid value for ${name}.`);
-      }
-    });
+  ) {
+    for (const [name, value] of Object.entries(values)) {
+      const parameter = parsed.find((p) => p.name === name);
+      if (!parameter || !validateLiteral(parameter.kind, value))
+        return yield* error("invalid-parameter", `Invalid value for ${name}.`);
+    }
+  });
   const prune = Effect.fn("ModelPreview.prune")(function* () {
     const names = (yield* fs.readDirectory(cacheDir)).filter(
       (name) =>
@@ -1050,24 +1049,25 @@ export const make = Effect.gen(function* () {
       7 * 24 * 3600000,
     )).relativeUrl;
   });
-  const mapWorkspaceImages = (state: ModelWorkspace, transform: typeof saveImage) =>
-    Effect.gen(function* () {
-      const variants = yield* Effect.forEach(
-        state.variants,
-        (item) =>
-          transform(item.thumbnail).pipe(Effect.map((thumbnail) => ({ ...item, thumbnail }))),
-        { concurrency: 8 },
-      );
-      const annotations = yield* Effect.forEach(
-        state.annotations,
-        (item) =>
-          transform(item.referenceImage).pipe(
-            Effect.map((referenceImage) => ({ ...item, referenceImage })),
-          ),
-        { concurrency: 8 },
-      );
-      return { ...state, variants, annotations };
-    });
+  const mapWorkspaceImages = Effect.fn("ModelPreview.mapWorkspaceImages")(function* (
+    state: ModelWorkspace,
+    transform: typeof saveImage,
+  ) {
+    const variants = yield* Effect.forEach(
+      state.variants,
+      (item) => transform(item.thumbnail).pipe(Effect.map((thumbnail) => ({ ...item, thumbnail }))),
+      { concurrency: 8 },
+    );
+    const annotations = yield* Effect.forEach(
+      state.annotations,
+      (item) =>
+        transform(item.referenceImage).pipe(
+          Effect.map((referenceImage) => ({ ...item, referenceImage })),
+        ),
+      { concurrency: 8 },
+    );
+    return { ...state, variants, annotations };
+  });
   const pruneWorkspaceImages = Effect.fn("ModelPreview.pruneWorkspaceImages")(function* () {
     const states = yield* store.getWorkspaces();
     const retained = new Set<string>();

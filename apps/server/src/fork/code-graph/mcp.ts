@@ -140,59 +140,60 @@ const callerThread = Effect.gen(function* () {
 });
 
 /** The tool's answer for the calling thread's project, refused unless its switch is on. */
-export const queryCodeGraph = (input: typeof QueryParams.Type) =>
-  Effect.gen(function* () {
-    const service = yield* CodeGraphService;
-    const threadId = yield* callerThread;
-    const checkout = yield* service.threadCheckout(threadId);
-    const record = yield* service.graphRecord(checkout.projectId);
-    if (record === null || !record.agentTool)
-      return yield* new CodeGraphError({
-        reason: "agent-tool-off",
-        message: AGENT_TOOL_OFF_MESSAGE,
-      });
+export const queryCodeGraph = Effect.fn("CodeGraph.queryTool")(function* (
+  input: typeof QueryParams.Type,
+) {
+  const service = yield* CodeGraphService;
+  const threadId = yield* callerThread;
+  const checkout = yield* service.threadCheckout(threadId);
+  const record = yield* service.graphRecord(checkout.projectId);
+  if (record === null || !record.agentTool)
+    return yield* new CodeGraphError({
+      reason: "agent-tool-off",
+      message: AGENT_TOOL_OFF_MESSAGE,
+    });
 
-    if (input.mode === "impact") {
-      const result = yield* service.impact({
-        projectId: checkout.projectId,
-        threadId,
-        files: input.files,
-        depth: input.depth,
-      });
-      return { text: formatImpact(result), stale: result.stale };
+  if (input.mode === "impact") {
+    const result = yield* service.impact({
+      projectId: checkout.projectId,
+      threadId,
+      files: input.files,
+      depth: input.depth,
+    });
+    return { text: formatImpact(result), stale: result.stale };
+  }
+
+  const index = yield* service.indexFor(checkout.projectId);
+  const status = yield* service.status(checkout.projectId);
+  const stale = status.stale || status.dirty;
+  const resolve = (value: string | undefined, name: string) => {
+    if (value === undefined || value.trim() === "")
+      return Effect.fail(invalid(`The ${input.mode} mode needs \`${name}\`.`));
+    const node = Index.resolveNode(index, value);
+    return node === null
+      ? Effect.fail(invalid(`No symbol or file matches "${value}".`))
+      : Effect.succeed(node);
+  };
+
+  switch (input.mode) {
+    case "search": {
+      if (input.query === undefined || input.query.trim() === "")
+        return yield* invalid("The search mode needs `query`.");
+      return { text: formatSearch(index, input.query), stale };
     }
-
-    const index = yield* service.indexFor(checkout.projectId);
-    const status = yield* service.status(checkout.projectId);
-    const stale = status.stale || status.dirty;
-    const resolve = (value: string | undefined, name: string) => {
-      if (value === undefined || value.trim() === "")
-        return Effect.fail(invalid(`The ${input.mode} mode needs \`${name}\`.`));
-      const node = Index.resolveNode(index, value);
-      return node === null
-        ? Effect.fail(invalid(`No symbol or file matches "${value}".`))
-        : Effect.succeed(node);
-    };
-
-    switch (input.mode) {
-      case "search": {
-        if (input.query === undefined || input.query.trim() === "")
-          return yield* invalid("The search mode needs `query`.");
-        return { text: formatSearch(index, input.query), stale };
-      }
-      case "neighbors":
-        return { text: formatNeighbors(index, yield* resolve(input.query, "query")), stale };
-      case "path":
-        return {
-          text: formatPath(
-            index,
-            yield* resolve(input.query, "query"),
-            yield* resolve(input.to, "to"),
-          ),
-          stale,
-        };
-    }
-  });
+    case "neighbors":
+      return { text: formatNeighbors(index, yield* resolve(input.query, "query")), stale };
+    case "path":
+      return {
+        text: formatPath(
+          index,
+          yield* resolve(input.query, "query"),
+          yield* resolve(input.to, "to"),
+        ),
+        stale,
+      };
+  }
+});
 
 export const codeGraphHandlers = McpToolAccess.toLayer(
   CodeGraphToolkit,

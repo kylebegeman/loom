@@ -170,110 +170,104 @@ const runConnector = (
  * completes and never fails; problems surface through `onStatus` and the connector restarts with
  * backoff. The token reaches only the child's environment and is redacted from every message.
  */
-export const runPreviewTunnel = (options: RunPreviewTunnelOptions) =>
-  Effect.gen(function* () {
-    const relayClient = yield* RelayClient.RelayClient;
-    const redact = (text: string) =>
-      options.token.length > 0 ? text.replaceAll(options.token, "<redacted>") : text;
+export const runPreviewTunnel = Effect.fn("PreviewTunnel.run")(function* (
+  options: RunPreviewTunnelOptions,
+) {
+  const relayClient = yield* RelayClient.RelayClient;
+  const redact = (text: string) =>
+    options.token.length > 0 ? text.replaceAll(options.token, "<redacted>") : text;
 
-    let pinnedInstallFailedAt: number | null = null;
-    let pinnedInstalling = false;
-    /**
-     * A cloudflared older than the pin, from PATH or an earlier managed install, gives way to the
-     * pinned release. Until that installs, the older one still runs: it meets the minimum.
-     */
-    const preferPinned = (resolved: RelayClient.AvailableRelayClient) =>
-      Effect.gen(function* () {
-        if (
-          pinnedInstalling ||
-          resolved.source === "override" ||
-          RelayClient.compareCloudflaredVersions(
-            resolved.version,
-            RelayClient.CLOUDFLARED_VERSION,
-          ) >= 0
-        ) {
-          return resolved.executablePath;
-        }
-        const nowMs = yield* Clock.currentTimeMillis;
-        if (
-          pinnedInstallFailedAt !== null &&
-          nowMs - pinnedInstallFailedAt < PINNED_INSTALL_RETRY_MS
-        ) {
-          return resolved.executablePath;
-        }
-        yield* options.onStatus({
-          state: "starting",
-          message: "Installing cloudflared",
-          metricsPort: null,
-        });
-        pinnedInstalling = true;
-        // A child of the tunnel's fiber, so a slow download outlives this attempt but not the tunnel.
-        const install = yield* relayClient.install.pipe(
-          Effect.map((installed): string | null => installed.executablePath),
-          Effect.catchTags({
-            RelayClientInstallError: (error) =>
-              Effect.gen(function* () {
-                pinnedInstallFailedAt = yield* Clock.currentTimeMillis;
-                yield* Effect.logWarning("Could not install the pinned cloudflared", {
-                  reason: error.reason,
-                  using: resolved.version,
-                  pinned: RelayClient.CLOUDFLARED_VERSION,
-                });
-                return null;
-              }),
+  let pinnedInstallFailedAt: number | null = null;
+  let pinnedInstalling = false;
+  /**
+   * A cloudflared older than the pin, from PATH or an earlier managed install, gives way to the
+   * pinned release. Until that installs, the older one still runs: it meets the minimum.
+   */
+  const preferPinned = Effect.fn("PreviewTunnel.preferPinned")(function* (
+    resolved: RelayClient.AvailableRelayClient,
+  ) {
+    if (
+      pinnedInstalling ||
+      resolved.source === "override" ||
+      RelayClient.compareCloudflaredVersions(resolved.version, RelayClient.CLOUDFLARED_VERSION) >= 0
+    ) {
+      return resolved.executablePath;
+    }
+    const nowMs = yield* Clock.currentTimeMillis;
+    if (pinnedInstallFailedAt !== null && nowMs - pinnedInstallFailedAt < PINNED_INSTALL_RETRY_MS) {
+      return resolved.executablePath;
+    }
+    yield* options.onStatus({
+      state: "starting",
+      message: "Installing cloudflared",
+      metricsPort: null,
+    });
+    pinnedInstalling = true;
+    // A child of the tunnel's fiber, so a slow download outlives this attempt but not the tunnel.
+    const install = yield* relayClient.install.pipe(
+      Effect.map((installed): string | null => installed.executablePath),
+      Effect.catchTags({
+        RelayClientInstallError: (error) =>
+          Effect.gen(function* () {
+            pinnedInstallFailedAt = yield* Clock.currentTimeMillis;
+            yield* Effect.logWarning("Could not install the pinned cloudflared", {
+              reason: error.reason,
+              using: resolved.version,
+              pinned: RelayClient.CLOUDFLARED_VERSION,
+            });
+            return null;
           }),
-          Effect.ensuring(
-            Effect.sync(() => {
-              pinnedInstalling = false;
-            }),
-          ),
-          Effect.forkChild,
-        );
-        const installed = yield* Fiber.join(install).pipe(
-          Effect.timeoutOption(PINNED_INSTALL_WAIT),
-        );
-        return Option.getOrNull(installed) ?? resolved.executablePath;
-      });
+      }),
+      Effect.ensuring(
+        Effect.sync(() => {
+          pinnedInstalling = false;
+        }),
+      ),
+      Effect.forkChild,
+    );
+    const installed = yield* Fiber.join(install).pipe(Effect.timeoutOption(PINNED_INSTALL_WAIT));
+    return Option.getOrNull(installed) ?? resolved.executablePath;
+  });
 
-    const resolveExecutable = Effect.gen(function* () {
-      const resolved = yield* relayClient.resolve;
-      if (resolved.status === "available") return yield* preferPinned(resolved);
-      if (resolved.status === "unsupported") {
-        yield* options.onStatus({
-          state: "error",
-          message: `cloudflared does not run on ${resolved.platform} ${resolved.arch}`,
-          metricsPort: null,
-        });
-        return yield* Effect.never;
-      }
+  const resolveExecutable = Effect.gen(function* () {
+    const resolved = yield* relayClient.resolve;
+    if (resolved.status === "available") return yield* preferPinned(resolved);
+    if (resolved.status === "unsupported") {
       yield* options.onStatus({
-        state: "starting",
-        message: "Installing cloudflared",
+        state: "error",
+        message: `cloudflared does not run on ${resolved.platform} ${resolved.arch}`,
         metricsPort: null,
       });
-      return yield* relayClient.install.pipe(
-        Effect.map((installed) => installed.executablePath),
-        Effect.catchTags({
-          RelayClientInstallError: (error) => Effect.fail(installFailureMessage(error)),
-        }),
-      );
+      return yield* Effect.never;
+    }
+    yield* options.onStatus({
+      state: "starting",
+      message: "Installing cloudflared",
+      metricsPort: null,
     });
-
-    let restartDelayMillis = RESTART_BACKOFF_BASE_MS;
-    const attempt = Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis;
-      const message = yield* resolveExecutable.pipe(
-        Effect.flatMap((executablePath) => runConnector(executablePath, options, redact)),
-        Effect.catch(Effect.succeed),
-      );
-      yield* Effect.logWarning("Preview tunnel connector stopped", { message: redact(message) });
-      yield* options.onStatus({ state: "error", message: redact(message), metricsPort: null });
-      if ((yield* Clock.currentTimeMillis) - startedAt >= RESTART_STABLE_UPTIME_MS) {
-        restartDelayMillis = RESTART_BACKOFF_BASE_MS;
-      }
-      yield* Effect.sleep(Duration.millis(restartDelayMillis));
-      restartDelayMillis = Math.min(restartDelayMillis * 2, RESTART_BACKOFF_MAX_MS);
-    });
-
-    return yield* Effect.forever(attempt);
+    return yield* relayClient.install.pipe(
+      Effect.map((installed) => installed.executablePath),
+      Effect.catchTags({
+        RelayClientInstallError: (error) => Effect.fail(installFailureMessage(error)),
+      }),
+    );
   });
+
+  let restartDelayMillis = RESTART_BACKOFF_BASE_MS;
+  const attempt = Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis;
+    const message = yield* resolveExecutable.pipe(
+      Effect.flatMap((executablePath) => runConnector(executablePath, options, redact)),
+      Effect.catch(Effect.succeed),
+    );
+    yield* Effect.logWarning("Preview tunnel connector stopped", { message: redact(message) });
+    yield* options.onStatus({ state: "error", message: redact(message), metricsPort: null });
+    if ((yield* Clock.currentTimeMillis) - startedAt >= RESTART_STABLE_UPTIME_MS) {
+      restartDelayMillis = RESTART_BACKOFF_BASE_MS;
+    }
+    yield* Effect.sleep(Duration.millis(restartDelayMillis));
+    restartDelayMillis = Math.min(restartDelayMillis * 2, RESTART_BACKOFF_MAX_MS);
+  });
+
+  return yield* Effect.forever(attempt);
+});

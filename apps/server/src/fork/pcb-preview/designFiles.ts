@@ -51,76 +51,74 @@ export interface DesignSetIo<E = never> {
   readonly exists: (path: string) => Effect.Effect<boolean, E>;
 }
 /** Follow only this design's literal local references; neighbouring designs are never seeds. */
-export const designSet = <E>(input: {
+export const designSet = Effect.fn("PcbPreview.designSet")(function* <E>(input: {
   kind: "kicad" | "tscircuit";
   seeds: readonly string[];
   projectDirectory: string;
   io: DesignSetIo<E>;
-}) =>
-  Effect.gen(function* () {
-    const paths = new Set<string>();
-    let frontier = [...input.seeds];
-    for (let depth = 0; frontier.length; depth++) {
-      if (depth > 16)
-        return yield* new DesignSetLimit({ message: "This design's references exceed 16 levels." });
-      const next: string[] = [];
-      for (const candidate of frontier) {
-        const name = NodePath.posix.normalize(candidate);
-        if (!allowedDesignPath(name) || paths.has(name) || !(yield* input.io.exists(name)))
+}) {
+  const paths = new Set<string>();
+  let frontier = [...input.seeds];
+  for (let depth = 0; frontier.length; depth++) {
+    if (depth > 16)
+      return yield* new DesignSetLimit({ message: "This design's references exceed 16 levels." });
+    const next: string[] = [];
+    for (const candidate of frontier) {
+      const name = NodePath.posix.normalize(candidate);
+      if (!allowedDesignPath(name) || paths.has(name) || !(yield* input.io.exists(name))) continue;
+      if (!isDesignSource(input.kind, name)) {
+        next.push(...(yield* input.io.list(name)));
+        continue;
+      }
+      paths.add(name);
+      if (paths.size > 2000)
+        return yield* new DesignSetLimit({
+          message: "This design has more than 2,000 source files.",
+        });
+      if (!isReferenceSource(input.kind, name)) continue;
+      const source = yield* input.io.read(name);
+      if (source === null) continue;
+      for (const raw of designReferences(input.kind, source)) {
+        const expanded = raw.replaceAll("${KIPRJMOD}", "/" + input.projectDirectory);
+        if (
+          expanded.includes("${") ||
+          (NodePath.posix.isAbsolute(expanded) && !raw.includes("${KIPRJMOD}"))
+        )
           continue;
-        if (!isDesignSource(input.kind, name)) {
-          next.push(...(yield* input.io.list(name)));
-          continue;
-        }
-        paths.add(name);
-        if (paths.size > 2000)
-          return yield* new DesignSetLimit({
-            message: "This design has more than 2,000 source files.",
-          });
-        if (!isReferenceSource(input.kind, name)) continue;
-        const source = yield* input.io.read(name);
-        if (source === null) continue;
-        for (const raw of designReferences(input.kind, source)) {
-          const expanded = raw.replaceAll("${KIPRJMOD}", "/" + input.projectDirectory);
-          if (
-            expanded.includes("${") ||
-            (NodePath.posix.isAbsolute(expanded) && !raw.includes("${KIPRJMOD}"))
-          )
-            continue;
-          // KIPRJMOD is workspace-relative here; absolute host references stay excluded.
-          const target = raw.includes("${KIPRJMOD}")
-            ? NodePath.posix.normalize(expanded).slice(1)
-            : NodePath.posix.join(NodePath.posix.dirname(name), expanded);
-          if (!allowedDesignPath(target)) continue;
-          if (yield* input.io.exists(target)) next.push(target);
-          else if (input.kind === "tscircuit") {
-            for (const suffix of [
-              ".tsx",
-              ".ts",
-              ".jsx",
-              ".js",
-              ".mjs",
-              ".cjs",
-              ".json",
-              "/index.tsx",
-              "/index.ts",
-              "/index.js",
-            ]) {
-              if (yield* input.io.exists(target + suffix)) {
-                next.push(target + suffix);
-                break;
-              }
+        // KIPRJMOD is workspace-relative here; absolute host references stay excluded.
+        const target = raw.includes("${KIPRJMOD}")
+          ? NodePath.posix.normalize(expanded).slice(1)
+          : NodePath.posix.join(NodePath.posix.dirname(name), expanded);
+        if (!allowedDesignPath(target)) continue;
+        if (yield* input.io.exists(target)) next.push(target);
+        else if (input.kind === "tscircuit") {
+          for (const suffix of [
+            ".tsx",
+            ".ts",
+            ".jsx",
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".json",
+            "/index.tsx",
+            "/index.ts",
+            "/index.js",
+          ]) {
+            if (yield* input.io.exists(target + suffix)) {
+              next.push(target + suffix);
+              break;
             }
           }
         }
       }
-      frontier = next;
     }
-    return {
-      design: [...paths].filter((name) => isDesignFile(input.kind, name)).sort(),
-      supporting: [...paths].filter((name) => !isDesignFile(input.kind, name)).sort(),
-    };
-  });
+    frontier = next;
+  }
+  return {
+    design: [...paths].filter((name) => isDesignFile(input.kind, name)).sort(),
+    supporting: [...paths].filter((name) => !isDesignFile(input.kind, name)).sort(),
+  };
+});
 export function designSeeds(kind: "kicad" | "tscircuit", entry: string, packageDirectory: string) {
   const directory = NodePath.posix.dirname(entry);
   const stem = entry.replace(/\.kicad_(?:pro|sch|pcb)$/i, "");

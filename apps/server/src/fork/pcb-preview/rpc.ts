@@ -3,64 +3,63 @@ import * as Effect from "effect/Effect";
 import * as PcbPreview from "./PcbPreviewService.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 
-export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
-    const service = yield* PcbPreview.PcbPreviewService;
-    return PcbPreviewRpcGroup.of({
-      [M.renderVariant]: (i) => auth.effect(M.renderVariant, service.renderVariant(i)),
-      [M.cancelVariant]: (i) => auth.effect(M.cancelVariant, service.cancelVariant(i)),
-      [M.history]: (i) => auth.effect(M.history, service.history(i)),
-      [M.historyRestore]: (i) => auth.effect(M.historyRestore, service.historyRestore(i)),
-      [M.historyUndo]: (i) => auth.effect(M.historyUndo, service.historyUndo(i)),
-      [M.turnDesigns]: (i) => auth.effect(M.turnDesigns, service.turnDesigns(i)),
-      [M.turnDesignEvents]: (i) => auth.stream(M.turnDesignEvents, service.turnDesignEvents(i)),
-      [M.fabPackage]: (i) => auth.effect(M.fabPackage, service.fabPackage(i)),
-      [M.fabPackages]: (i) => auth.effect(M.fabPackages, service.fabPackages(i)),
-      [M.fabPackageZip]: (i) => auth.effect(M.fabPackageZip, service.fabPackageZip(i)),
-      [M.deleteFabPackage]: (i) => auth.effect(M.deleteFabPackage, service.deleteFabPackage(i)),
-      [M.fabCapabilities]: () => auth.effect(M.fabCapabilities, service.fabCapabilities()),
-      [M.updateFabCapabilities]: (i) =>
-        auth.effect(M.updateFabCapabilities, service.updateFabCapabilities(i)),
-      [M.fabCheck]: (i) => auth.effect(M.fabCheck, service.fabCheck(i)),
-      [M.latestFabCheck]: (i) => auth.effect(M.latestFabCheck, service.latestFabCheck(i)),
-      [M.review]: (i) => auth.effect(M.review, service.review(i)),
-      [M.latestReview]: (i) => auth.effect(M.latestReview, service.latestReview(i)),
-      [M.pinMap]: (i) => auth.effect(M.pinMap, service.pinMap(i)),
-      [M.reuseHardware]: (i) => auth.effect(M.reuseHardware, service.reuseHardware(i)),
-      [M.workspaceUpdates]: (i) => auth.stream(M.workspaceUpdates, service.workspaceUpdates(i)),
-      [M.enclosure]: (i) => auth.effect(M.enclosure, service.enclosure(i)),
-      [M.exportReference]: (i) => auth.effect(M.exportReference, service.exportReference(i)),
-      [M.panelEvents]: (i) => auth.stream(M.panelEvents, service.panelEvents(i.threadId)),
-      [M.editorEvents]: (i) => auth.stream(M.editorEvents, service.editorEvents(i)),
-      [M.editorAction]: (i) => auth.effect(M.editorAction, service.editorAction(i)),
-      [M.completeEditorAction]: (i) =>
-        auth.effect(M.completeEditorAction, service.completeEditorAction(i)),
-      [M.inspect]: (input) => auth.effect(M.inspect, service.inspect(input)),
-      [M.workspace]: (input) => auth.effect(M.workspace, service.getWorkspace(input)),
-      [M.changeRequest]: (input) =>
-        auth.effect(M.changeRequest, service.changeRequest(input, "user")),
-      [M.updateWorkspace]: (input) =>
-        auth.effect(M.updateWorkspace, service.updateWorkspace(input)),
-      [M.asset]: (input) => auth.effect(M.asset, service.asset(input)),
-      [M.compare]: (input) => auth.effect(M.compare, service.compare(input)),
-      [M.revisions]: (input) => auth.effect(M.revisions, service.revisions(input)),
-      [M.parameters]: (input) => auth.effect(M.parameters, service.parameters(input)),
-      [M.applyParameters]: (input) =>
-        auth.effect(M.applyParameters, service.applyParameters(input)),
-      [M.simulate]: (input) => auth.effect(M.simulate, service.simulate(input)),
-      [M.updateLibrary]: (input) => auth.effect(M.updateLibrary, service.updateLibrary(input)),
-      [M.library]: () => auth.effect(M.library, service.library()),
-      [M.status]: () => auth.effect(M.status, service.status()),
-      [M.listDesigns]: (input) => auth.effect(M.listDesigns, service.listDesigns(input)),
-      [M.render]: (input) => auth.effect(M.render, service.render(input)),
-      [M.readSheet]: (input) => auth.effect(M.readSheet, service.readSheet(input)),
-      [M.projectSettings]: (i) => auth.effect(M.projectSettings, service.projectSettings(i)),
-      [M.updateProjectSettings]: (i) =>
-        auth.effect(M.updateProjectSettings, service.updateProjectSettings(i)),
-      [M.checkEvents]: (i) => auth.stream(M.checkEvents, service.checkEvents(i)),
-      [M.check]: (input) => auth.effect(M.check, service.check(input)),
-      [M.print]: (input) => auth.effect(M.print, service.print(input)),
-      [M.latestChecks]: (input) => auth.effect(M.latestChecks, service.latestChecks(input)),
-      [M.watch]: (input) => auth.stream(M.watch, service.watch(input)),
-    });
+export const makePcbPreviewRpcHandlers = Effect.fn("PcbPreview.makeRpcHandlers")(function* (
+  auth: ForkRpcAuth,
+) {
+  const service = yield* PcbPreview.PcbPreviewService;
+  return PcbPreviewRpcGroup.of({
+    [M.renderVariant]: (i) => auth.effect(M.renderVariant, service.renderVariant(i)),
+    [M.cancelVariant]: (i) => auth.effect(M.cancelVariant, service.cancelVariant(i)),
+    [M.history]: (i) => auth.effect(M.history, service.history(i)),
+    [M.historyRestore]: (i) => auth.effect(M.historyRestore, service.historyRestore(i)),
+    [M.historyUndo]: (i) => auth.effect(M.historyUndo, service.historyUndo(i)),
+    [M.turnDesigns]: (i) => auth.effect(M.turnDesigns, service.turnDesigns(i)),
+    [M.turnDesignEvents]: (i) => auth.stream(M.turnDesignEvents, service.turnDesignEvents(i)),
+    [M.fabPackage]: (i) => auth.effect(M.fabPackage, service.fabPackage(i)),
+    [M.fabPackages]: (i) => auth.effect(M.fabPackages, service.fabPackages(i)),
+    [M.fabPackageZip]: (i) => auth.effect(M.fabPackageZip, service.fabPackageZip(i)),
+    [M.deleteFabPackage]: (i) => auth.effect(M.deleteFabPackage, service.deleteFabPackage(i)),
+    [M.fabCapabilities]: () => auth.effect(M.fabCapabilities, service.fabCapabilities()),
+    [M.updateFabCapabilities]: (i) =>
+      auth.effect(M.updateFabCapabilities, service.updateFabCapabilities(i)),
+    [M.fabCheck]: (i) => auth.effect(M.fabCheck, service.fabCheck(i)),
+    [M.latestFabCheck]: (i) => auth.effect(M.latestFabCheck, service.latestFabCheck(i)),
+    [M.review]: (i) => auth.effect(M.review, service.review(i)),
+    [M.latestReview]: (i) => auth.effect(M.latestReview, service.latestReview(i)),
+    [M.pinMap]: (i) => auth.effect(M.pinMap, service.pinMap(i)),
+    [M.reuseHardware]: (i) => auth.effect(M.reuseHardware, service.reuseHardware(i)),
+    [M.workspaceUpdates]: (i) => auth.stream(M.workspaceUpdates, service.workspaceUpdates(i)),
+    [M.enclosure]: (i) => auth.effect(M.enclosure, service.enclosure(i)),
+    [M.exportReference]: (i) => auth.effect(M.exportReference, service.exportReference(i)),
+    [M.panelEvents]: (i) => auth.stream(M.panelEvents, service.panelEvents(i.threadId)),
+    [M.editorEvents]: (i) => auth.stream(M.editorEvents, service.editorEvents(i)),
+    [M.editorAction]: (i) => auth.effect(M.editorAction, service.editorAction(i)),
+    [M.completeEditorAction]: (i) =>
+      auth.effect(M.completeEditorAction, service.completeEditorAction(i)),
+    [M.inspect]: (input) => auth.effect(M.inspect, service.inspect(input)),
+    [M.workspace]: (input) => auth.effect(M.workspace, service.getWorkspace(input)),
+    [M.changeRequest]: (input) =>
+      auth.effect(M.changeRequest, service.changeRequest(input, "user")),
+    [M.updateWorkspace]: (input) => auth.effect(M.updateWorkspace, service.updateWorkspace(input)),
+    [M.asset]: (input) => auth.effect(M.asset, service.asset(input)),
+    [M.compare]: (input) => auth.effect(M.compare, service.compare(input)),
+    [M.revisions]: (input) => auth.effect(M.revisions, service.revisions(input)),
+    [M.parameters]: (input) => auth.effect(M.parameters, service.parameters(input)),
+    [M.applyParameters]: (input) => auth.effect(M.applyParameters, service.applyParameters(input)),
+    [M.simulate]: (input) => auth.effect(M.simulate, service.simulate(input)),
+    [M.updateLibrary]: (input) => auth.effect(M.updateLibrary, service.updateLibrary(input)),
+    [M.library]: () => auth.effect(M.library, service.library()),
+    [M.status]: () => auth.effect(M.status, service.status()),
+    [M.listDesigns]: (input) => auth.effect(M.listDesigns, service.listDesigns(input)),
+    [M.render]: (input) => auth.effect(M.render, service.render(input)),
+    [M.readSheet]: (input) => auth.effect(M.readSheet, service.readSheet(input)),
+    [M.projectSettings]: (i) => auth.effect(M.projectSettings, service.projectSettings(i)),
+    [M.updateProjectSettings]: (i) =>
+      auth.effect(M.updateProjectSettings, service.updateProjectSettings(i)),
+    [M.checkEvents]: (i) => auth.stream(M.checkEvents, service.checkEvents(i)),
+    [M.check]: (input) => auth.effect(M.check, service.check(input)),
+    [M.print]: (input) => auth.effect(M.print, service.print(input)),
+    [M.latestChecks]: (input) => auth.effect(M.latestChecks, service.latestChecks(input)),
+    [M.watch]: (input) => auth.stream(M.watch, service.watch(input)),
   });
+});

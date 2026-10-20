@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect";
 import * as ProjectCheckoutManagement from "../../project/ProjectCheckoutManagement.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 
-export const makeProjectCheckoutRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
+export const makeProjectCheckoutRpcHandlers = Effect.fn("ProjectCheckout.makeRpcHandlers")(
+  function* (auth: ForkRpcAuth) {
     const service = yield* ProjectCheckoutManagement.ProjectCheckoutManagement;
     return {
       [C.preview]: (input: Parameters<typeof service.preview>[0]) =>
@@ -14,4 +14,5 @@ export const makeProjectCheckoutRpcHandlers = (auth: ForkRpcAuth) =>
       [C.setRetention]: (input: Parameters<typeof service.setRetention>[0]) =>
         auth.effect(C.setRetention, service.setRetention(input)),
     };
-  });
+  },
+);

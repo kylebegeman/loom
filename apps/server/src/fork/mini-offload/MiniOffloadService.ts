@@ -658,59 +658,55 @@ const make = Effect.gen(function* () {
           ),
         ),
       ),
-    list: (threadId) =>
-      Effect.gen(function* () {
-        yield* workspace(threadId);
-        const receipts = yield* Effect.forEach(
-          yield* receiptNames,
-          (name) =>
-            Effect.gen(function* () {
-              const value = yield* disk(() =>
-                readJson(NodePath.join(pathFor(name), "receipt.json")),
-              );
-              return value === null ? null : (yield* decode(Stored, value)).receipt;
-            }),
-          { concurrency: 4 },
-        );
-        return receipts
-          .filter(
-            (receipt): receipt is MiniReceipt =>
-              receipt !== null && receipt.request.threadId === threadId,
-          )
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      }),
-    finished: (sinceMs) =>
-      Effect.gen(function* () {
-        const found = yield* Effect.forEach(
-          yield* receiptNames,
-          (name) =>
-            Effect.gen(function* () {
-              const file = NodePath.join(pathFor(name), "receipt.json");
-              const modified = yield* disk(async () => {
-                try {
-                  return (await NodeFSP.stat(file)).mtimeMs;
-                } catch {
-                  return null;
-                }
-              });
-              if (modified === null || modified < sinceMs) return null;
-              const value = yield* disk(() => readJson(file));
-              if (value === null) return null;
-              const stored = yield* decode(Stored, value).pipe(Effect.option);
-              if (Option.isNone(stored)) return null;
-              const { receipt } = stored.value;
-              const state = receipt.job?.state;
-              return state === "succeeded" ||
-                state === "failed" ||
-                state === "cancelled" ||
-                state === "interrupted"
-                ? { receipt, recordedAt: DateTime.formatIso(DateTime.makeUnsafe(modified)) }
-                : null;
-            }),
-          { concurrency: 4 },
-        );
-        return found.filter((entry) => entry !== null);
-      }),
+    list: Effect.fn("MiniOffload.list")(function* (threadId) {
+      yield* workspace(threadId);
+      const receipts = yield* Effect.forEach(
+        yield* receiptNames,
+        (name) =>
+          Effect.gen(function* () {
+            const value = yield* disk(() => readJson(NodePath.join(pathFor(name), "receipt.json")));
+            return value === null ? null : (yield* decode(Stored, value)).receipt;
+          }),
+        { concurrency: 4 },
+      );
+      return receipts
+        .filter(
+          (receipt): receipt is MiniReceipt =>
+            receipt !== null && receipt.request.threadId === threadId,
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }),
+    finished: Effect.fn("MiniOffload.finished")(function* (sinceMs) {
+      const found = yield* Effect.forEach(
+        yield* receiptNames,
+        (name) =>
+          Effect.gen(function* () {
+            const file = NodePath.join(pathFor(name), "receipt.json");
+            const modified = yield* disk(async () => {
+              try {
+                return (await NodeFSP.stat(file)).mtimeMs;
+              } catch {
+                return null;
+              }
+            });
+            if (modified === null || modified < sinceMs) return null;
+            const value = yield* disk(() => readJson(file));
+            if (value === null) return null;
+            const stored = yield* decode(Stored, value).pipe(Effect.option);
+            if (Option.isNone(stored)) return null;
+            const { receipt } = stored.value;
+            const state = receipt.job?.state;
+            return state === "succeeded" ||
+              state === "failed" ||
+              state === "cancelled" ||
+              state === "interrupted"
+              ? { receipt, recordedAt: DateTime.formatIso(DateTime.makeUnsafe(modified)) }
+              : null;
+          }),
+        { concurrency: 4 },
+      );
+      return found.filter((entry) => entry !== null);
+    }),
     inspect: (input) =>
       decode(MiniRef, input).pipe(
         Effect.flatMap((ref) =>
@@ -745,26 +741,25 @@ const make = Effect.gen(function* () {
           artifactsBase64: input.includeBundle ? bundle.artifactsBase64 : null,
         })),
       ),
-    patch: (input) =>
-      Effect.gen(function* () {
-        const stored = yield* load(input);
-        const response = yield* decode(Patch, yield* rpc(stored, "patch"));
-        const bytes = Buffer.from(response.patch_base64, "base64");
-        if (
-          response.job_id !== stored.receipt.job?.id ||
-          response.source_revision !== stored.receipt.sourceRevision ||
-          bytes.length > MAX_PATCH_BYTES ||
-          bytes.toString("base64") !== response.patch_base64 ||
-          NodeCrypto.createHash("sha256").update(bytes).digest("hex") !== response.sha256
-        )
-          return yield* fail("patch");
-        return {
-          sourceRevision: response.source_revision,
-          sha256: response.sha256,
-          bytes: bytes.length,
-          patchBase64: response.patch_base64,
-        };
-      }),
+    patch: Effect.fn("MiniOffload.patch")(function* (input) {
+      const stored = yield* load(input);
+      const response = yield* decode(Patch, yield* rpc(stored, "patch"));
+      const bytes = Buffer.from(response.patch_base64, "base64");
+      if (
+        response.job_id !== stored.receipt.job?.id ||
+        response.source_revision !== stored.receipt.sourceRevision ||
+        bytes.length > MAX_PATCH_BYTES ||
+        bytes.toString("base64") !== response.patch_base64 ||
+        NodeCrypto.createHash("sha256").update(bytes).digest("hex") !== response.sha256
+      )
+        return yield* fail("patch");
+      return {
+        sourceRevision: response.source_revision,
+        sha256: response.sha256,
+        bytes: bytes.length,
+        patchBase64: response.patch_base64,
+      };
+    }),
   });
 });
 export const layer = Layer.effect(MiniOffloadService, make).pipe(

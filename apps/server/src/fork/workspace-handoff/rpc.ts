@@ -8,8 +8,8 @@ import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import * as WorkspaceHandoff from "./WorkspaceHandoffService.ts";
 
-export const makeWorkspaceHandoffRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
+export const makeWorkspaceHandoffRpcHandlers = Effect.fn("WorkspaceHandoff.makeRpcHandlers")(
+  function* (auth: ForkRpcAuth) {
     const service = yield* WorkspaceHandoff.WorkspaceHandoffService;
     return {
       [H.offer]: (input: { threadId: ThreadId; requestId: string }) =>
@@ -21,4 +21,5 @@ export const makeWorkspaceHandoffRpcHandlers = (auth: ForkRpcAuth) =>
       [H.resume]: (input: WorkspaceHandoffFinishInput) =>
         auth.effect(H.resume, service.resume(input)),
     };
-  });
+  },
+);

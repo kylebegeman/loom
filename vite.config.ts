@@ -2,7 +2,12 @@ import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 
-const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [];
+// fork: ext-lint -- loom.sh check runs fork tests through this root config, which has no DOM
+// project, so fork DOM tests keep their per-file environment pragma.
+const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [
+  "apps/web/src/fork/**/*.test.{ts,tsx}",
+  "apps/mobile/src/fork/**/*.test.{ts,tsx}",
+];
 
 const RESTRICTED_IMPORT_PATHS = [
   {

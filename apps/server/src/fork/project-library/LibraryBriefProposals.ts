@@ -76,183 +76,182 @@ const sourceKey = (source: LibraryBriefProposalSource) => {
  * `brief.superseded` (with the replacing proposal's id) carry the proposal's id, base revision,
  * summary and source, so a timeline can attribute them without reading the proposals table.
  */
-export const make = (catalog: LibraryBriefProposalCatalog) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const run = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) =>
-      effect.pipe(Effect.mapError((cause) => new LibraryStoreError({ operation, cause })));
-    const decode = (payload: string) =>
-      decodeProposal(payload).pipe(
-        Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
-      );
-    const encode = (value: unknown) =>
-      encodeEventJson(value).pipe(
-        Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
-      );
+export const make = Effect.fn("LibraryBriefProposals.make")(function* (
+  catalog: LibraryBriefProposalCatalog,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const run = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.mapError((cause) => new LibraryStoreError({ operation, cause })));
+  const decode = (payload: string) =>
+    decodeProposal(payload).pipe(
+      Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+    );
+  const encode = (value: unknown) =>
+    encodeEventJson(value).pipe(
+      Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+    );
 
-    const rows = (
-      projectId: string,
-      status: LibraryBriefProposalStatus | undefined,
-      limit: number,
-      offset: number,
-    ) =>
-      run(
-        "brief-proposals",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_brief_proposals WHERE project_id = ${projectId} ${status ? sql`AND status = ${status}` : sql``} ORDER BY created_at DESC, rowid DESC LIMIT ${limit} OFFSET ${offset}`,
-      ).pipe(Effect.flatMap((found) => Effect.forEach(found, (row) => decode(row.payload_json))));
-    const load = Effect.fnUntraced(function* (id: string) {
-      const [row] = yield* run(
-        "brief-proposal",
-        sql<{
-          payload_json: string;
-        }>`SELECT payload_json FROM fork_library_brief_proposals WHERE id = ${id}`,
-      );
-      if (row === undefined) return yield* new LibraryError({ reason: "not-found" });
-      return yield* decode(row.payload_json);
-    });
-    const save = Effect.fnUntraced(function* (proposal: LibraryBriefProposal) {
-      const payload = yield* encodeProposal(proposal).pipe(
-        Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
-      );
-      yield* run(
-        "put-brief-proposal",
-        sql`INSERT INTO fork_library_brief_proposals (id, project_id, status, payload_json, created_at) VALUES (${proposal.id}, ${proposal.projectId}, ${proposal.status}, ${payload}, ${proposal.createdAt}) ON CONFLICT(id) DO UPDATE SET status = excluded.status, payload_json = excluded.payload_json`,
-      );
-      return proposal;
-    });
-    const record = (proposal: LibraryBriefProposal, eventType: string, extra: object = {}) =>
-      Effect.flatMap(
-        encode({
-          proposalId: proposal.id,
-          baseRevision: proposal.baseRevision,
-          summary: proposal.summary,
-          source: proposal.source,
-          ...extra,
-        }),
-        (payload) =>
-          catalog.appendEvent(
-            proposal.projectId,
-            eventType,
-            payload,
-            proposal.decidedAt ?? proposal.createdAt,
-          ),
-      );
-    const pending = Effect.fnUntraced(function* (id: string) {
-      const proposal = yield* load(id);
-      // A decided proposal changed under the person reviewing it; reloading shows its outcome.
-      if (proposal.status !== "pending") return yield* conflict();
-      return proposal;
-    });
-
-    const propose = Effect.fnUntraced(function* (input: LibraryProposeBriefCommand) {
-      const current = yield* catalog.getProject(input.projectId);
-      // Archived projects take no new proposals; people can still edit or reopen them.
-      if (current.archived || input.baseRevision > current.revision)
-        return yield* new LibraryError({ reason: "invalid" });
-      const base = yield* catalog.getProject(input.projectId, input.baseRevision);
-      if (base.brief === input.proposedBrief) return yield* new LibraryError({ reason: "invalid" });
-      const key = sourceKey(input.source);
-      const queued = yield* rows(input.projectId, "pending", -1, 0);
-      const replaced = queued.filter(
-        (earlier) => key !== null && sourceKey(earlier.source) === key,
-      );
-      // Checked before any write, so a refused proposal leaves nothing behind.
-      if (
-        input.source.kind !== "user" &&
-        queued.length - replaced.length >= MAX_PENDING_BRIEF_PROPOSALS
-      )
-        return yield* new LibraryError({ reason: "blocked" });
-      const timestamp = yield* now;
-      const id = yield* randomUuidV4;
-      for (const earlier of replaced)
-        yield* record(
-          yield* save({ ...earlier, status: "superseded", decidedAt: timestamp }),
-          "brief.superseded",
-          { supersededBy: id },
-        );
-      const proposal = yield* save({
-        id,
-        projectId: input.projectId,
-        baseRevision: input.baseRevision,
-        proposedBrief: input.proposedBrief,
-        summary: input.summary,
-        source: input.source,
-        status: "pending",
-        createdAt: timestamp,
-      });
-      yield* record(proposal, "brief.proposed");
-      // The project timeline reads `timeline.*` events, so the proposal is recorded there too.
-      yield* catalog.appendEvent(
-        proposal.projectId,
-        "timeline.brief-proposed",
-        yield* encode({
-          kind: "brief-proposed",
-          at: timestamp,
-          environmentId: input.source.kind === "conversation" ? input.source.environmentId : null,
-          proposalId: proposal.id,
-          summary: proposal.summary,
-        }),
-        timestamp,
-      );
-      return proposal;
-    });
-
-    const list = Effect.fnUntraced(function* (input: LibraryBriefProposalsRequest) {
-      const offset = input.offset ?? 0;
-      const limit = input.limit ?? 50;
-      if (
-        !Number.isSafeInteger(offset) ||
-        offset < 0 ||
-        !Number.isSafeInteger(limit) ||
-        limit < 1 ||
-        limit > 200
-      )
-        return yield* new LibraryError({ reason: "invalid" });
-      yield* catalog.getProject(input.projectId);
-      const found = yield* rows(input.projectId, input.status, limit + 1, offset);
-      return {
-        proposals: found.slice(0, limit),
-        nextOffset: found.length > limit ? offset + limit : null,
-      };
-    });
-
-    const accept = Effect.fnUntraced(function* (input: LibraryAcceptBriefProposalRequest) {
-      const proposal = yield* pending(input.proposalId);
-      const current = yield* catalog.getProject(proposal.projectId);
-      if (
-        current.revision !== input.expectedRevision ||
-        (input.brief === undefined && proposal.baseRevision !== current.revision)
-      )
-        return yield* conflict();
-      const project = yield* catalog.reviseProject({
-        requestId: input.requestId,
-        projectId: current.id,
-        expectedRevision: current.revision,
-        title: current.title,
-        brief: input.brief ?? proposal.proposedBrief,
-        resources: current.resources,
-      });
-      const accepted = yield* save({
-        ...proposal,
-        status: "accepted",
-        decidedAt: project.updatedAt,
-        acceptedRevision: project.revision,
-      });
-      yield* record(accepted, "brief.revised", {
-        revision: project.revision,
-        edited: input.brief !== undefined && input.brief !== proposal.proposedBrief,
-      });
-      return { proposal: accepted, project };
-    });
-
-    const dismiss = Effect.fnUntraced(function* (input: LibraryDismissBriefProposalRequest) {
-      const proposal = yield* pending(input.proposalId);
-      const dismissed = yield* save({ ...proposal, status: "dismissed", decidedAt: yield* now });
-      yield* record(dismissed, "brief.dismissed");
-      return dismissed;
-    });
-
-    return { propose, list, accept, dismiss };
+  const rows = (
+    projectId: string,
+    status: LibraryBriefProposalStatus | undefined,
+    limit: number,
+    offset: number,
+  ) =>
+    run(
+      "brief-proposals",
+      sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM fork_library_brief_proposals WHERE project_id = ${projectId} ${status ? sql`AND status = ${status}` : sql``} ORDER BY created_at DESC, rowid DESC LIMIT ${limit} OFFSET ${offset}`,
+    ).pipe(Effect.flatMap((found) => Effect.forEach(found, (row) => decode(row.payload_json))));
+  const load = Effect.fnUntraced(function* (id: string) {
+    const [row] = yield* run(
+      "brief-proposal",
+      sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM fork_library_brief_proposals WHERE id = ${id}`,
+    );
+    if (row === undefined) return yield* new LibraryError({ reason: "not-found" });
+    return yield* decode(row.payload_json);
   });
+  const save = Effect.fnUntraced(function* (proposal: LibraryBriefProposal) {
+    const payload = yield* encodeProposal(proposal).pipe(
+      Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+    );
+    yield* run(
+      "put-brief-proposal",
+      sql`INSERT INTO fork_library_brief_proposals (id, project_id, status, payload_json, created_at) VALUES (${proposal.id}, ${proposal.projectId}, ${proposal.status}, ${payload}, ${proposal.createdAt}) ON CONFLICT(id) DO UPDATE SET status = excluded.status, payload_json = excluded.payload_json`,
+    );
+    return proposal;
+  });
+  const record = (proposal: LibraryBriefProposal, eventType: string, extra: object = {}) =>
+    Effect.flatMap(
+      encode({
+        proposalId: proposal.id,
+        baseRevision: proposal.baseRevision,
+        summary: proposal.summary,
+        source: proposal.source,
+        ...extra,
+      }),
+      (payload) =>
+        catalog.appendEvent(
+          proposal.projectId,
+          eventType,
+          payload,
+          proposal.decidedAt ?? proposal.createdAt,
+        ),
+    );
+  const pending = Effect.fnUntraced(function* (id: string) {
+    const proposal = yield* load(id);
+    // A decided proposal changed under the person reviewing it; reloading shows its outcome.
+    if (proposal.status !== "pending") return yield* conflict();
+    return proposal;
+  });
+
+  const propose = Effect.fnUntraced(function* (input: LibraryProposeBriefCommand) {
+    const current = yield* catalog.getProject(input.projectId);
+    // Archived projects take no new proposals; people can still edit or reopen them.
+    if (current.archived || input.baseRevision > current.revision)
+      return yield* new LibraryError({ reason: "invalid" });
+    const base = yield* catalog.getProject(input.projectId, input.baseRevision);
+    if (base.brief === input.proposedBrief) return yield* new LibraryError({ reason: "invalid" });
+    const key = sourceKey(input.source);
+    const queued = yield* rows(input.projectId, "pending", -1, 0);
+    const replaced = queued.filter((earlier) => key !== null && sourceKey(earlier.source) === key);
+    // Checked before any write, so a refused proposal leaves nothing behind.
+    if (
+      input.source.kind !== "user" &&
+      queued.length - replaced.length >= MAX_PENDING_BRIEF_PROPOSALS
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    const timestamp = yield* now;
+    const id = yield* randomUuidV4;
+    for (const earlier of replaced)
+      yield* record(
+        yield* save({ ...earlier, status: "superseded", decidedAt: timestamp }),
+        "brief.superseded",
+        { supersededBy: id },
+      );
+    const proposal = yield* save({
+      id,
+      projectId: input.projectId,
+      baseRevision: input.baseRevision,
+      proposedBrief: input.proposedBrief,
+      summary: input.summary,
+      source: input.source,
+      status: "pending",
+      createdAt: timestamp,
+    });
+    yield* record(proposal, "brief.proposed");
+    // The project timeline reads `timeline.*` events, so the proposal is recorded there too.
+    yield* catalog.appendEvent(
+      proposal.projectId,
+      "timeline.brief-proposed",
+      yield* encode({
+        kind: "brief-proposed",
+        at: timestamp,
+        environmentId: input.source.kind === "conversation" ? input.source.environmentId : null,
+        proposalId: proposal.id,
+        summary: proposal.summary,
+      }),
+      timestamp,
+    );
+    return proposal;
+  });
+
+  const list = Effect.fnUntraced(function* (input: LibraryBriefProposalsRequest) {
+    const offset = input.offset ?? 0;
+    const limit = input.limit ?? 50;
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 200
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    yield* catalog.getProject(input.projectId);
+    const found = yield* rows(input.projectId, input.status, limit + 1, offset);
+    return {
+      proposals: found.slice(0, limit),
+      nextOffset: found.length > limit ? offset + limit : null,
+    };
+  });
+
+  const accept = Effect.fnUntraced(function* (input: LibraryAcceptBriefProposalRequest) {
+    const proposal = yield* pending(input.proposalId);
+    const current = yield* catalog.getProject(proposal.projectId);
+    if (
+      current.revision !== input.expectedRevision ||
+      (input.brief === undefined && proposal.baseRevision !== current.revision)
+    )
+      return yield* conflict();
+    const project = yield* catalog.reviseProject({
+      requestId: input.requestId,
+      projectId: current.id,
+      expectedRevision: current.revision,
+      title: current.title,
+      brief: input.brief ?? proposal.proposedBrief,
+      resources: current.resources,
+    });
+    const accepted = yield* save({
+      ...proposal,
+      status: "accepted",
+      decidedAt: project.updatedAt,
+      acceptedRevision: project.revision,
+    });
+    yield* record(accepted, "brief.revised", {
+      revision: project.revision,
+      edited: input.brief !== undefined && input.brief !== proposal.proposedBrief,
+    });
+    return { proposal: accepted, project };
+  });
+
+  const dismiss = Effect.fnUntraced(function* (input: LibraryDismissBriefProposalRequest) {
+    const proposal = yield* pending(input.proposalId);
+    const dismissed = yield* save({ ...proposal, status: "dismissed", decidedAt: yield* now });
+    yield* record(dismissed, "brief.dismissed");
+    return dismissed;
+  });
+
+  return { propose, list, accept, dismiss };
+});

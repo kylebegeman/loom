@@ -137,25 +137,28 @@ const POLL_MS = 250;
  * SIGTERM to a process we started and everything below it, then SIGKILL to whatever is still
  * alive 15 seconds later. Never this server or its ancestors. Returns pids still alive.
  */
-export const terminateTree = (exec: Exec, pid: number, killAfterMs = KILL_AFTER_MS) =>
-  Effect.gen(function* () {
-    if (pid <= 1) return [];
-    const ps = yield* exec("ps", ["-Ao", "pid=,ppid=,lstart="], {
-      env: { ...process.env, LC_ALL: "C" },
-    });
-    const table = succeeded(ps) ? parseProcessTable(ps.stdout) : new Map();
-    const protectedPids = ancestorsOf(table, process.pid);
-    const tree = [...withDescendants(table, [pid])].filter(
-      (candidate) => !protectedPids.has(candidate),
-    );
-    const targets = tree.length > 0 ? tree : [pid];
-    for (const target of targets) signal(target, "SIGTERM");
-    let alive = targets;
-    for (let waited = 0; waited < killAfterMs && alive.length > 0; waited += POLL_MS) {
-      yield* Effect.sleep(`${POLL_MS} millis`);
-      alive = alive.filter((target) => signal(target, 0));
-    }
-    for (const target of alive) signal(target, "SIGKILL");
-    yield* Effect.sleep(`${POLL_MS} millis`);
-    return alive.filter((target) => signal(target, 0));
+export const terminateTree = Effect.fn("AppleBuild.terminateTree")(function* (
+  exec: Exec,
+  pid: number,
+  killAfterMs = KILL_AFTER_MS,
+) {
+  if (pid <= 1) return [];
+  const ps = yield* exec("ps", ["-Ao", "pid=,ppid=,lstart="], {
+    env: { ...process.env, LC_ALL: "C" },
   });
+  const table = succeeded(ps) ? parseProcessTable(ps.stdout) : new Map();
+  const protectedPids = ancestorsOf(table, process.pid);
+  const tree = [...withDescendants(table, [pid])].filter(
+    (candidate) => !protectedPids.has(candidate),
+  );
+  const targets = tree.length > 0 ? tree : [pid];
+  for (const target of targets) signal(target, "SIGTERM");
+  let alive = targets;
+  for (let waited = 0; waited < killAfterMs && alive.length > 0; waited += POLL_MS) {
+    yield* Effect.sleep(`${POLL_MS} millis`);
+    alive = alive.filter((target) => signal(target, 0));
+  }
+  for (const target of alive) signal(target, "SIGKILL");
+  yield* Effect.sleep(`${POLL_MS} millis`);
+  return alive.filter((target) => signal(target, 0));
+});

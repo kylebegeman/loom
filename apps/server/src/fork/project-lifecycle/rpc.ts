@@ -8,8 +8,8 @@ import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { ProjectLifecycleService } from "./ProjectLifecycleService.ts";
 
-export const makeProjectLifecycleRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
+export const makeProjectLifecycleRpcHandlers = Effect.fn("ProjectLifecycle.makeRpcHandlers")(
+  function* (auth: ForkRpcAuth) {
     const service = yield* ProjectLifecycleService;
     return {
       [L.getSettings]: () => auth.effect(L.getSettings, service.getSettings),
@@ -27,4 +27,5 @@ export const makeProjectLifecycleRpcHandlers = (auth: ForkRpcAuth) =>
       [L.releaseLease]: (input: { laneId: string; kind: LaneLeaseKind; ref: string }) =>
         auth.effect(L.releaseLease, service.releaseLease(input.laneId, input.kind, input.ref)),
     };
-  });
+  },
+);

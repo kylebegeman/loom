@@ -507,34 +507,33 @@ const make = Effect.gen(function* () {
           return observe(observed);
         }).pipe(Effect.onError(() => reconcile(held.input.id, requester).pipe(Effect.ignore)));
       }),
-    reserve: (raw, input, requester) =>
-      Effect.gen(function* () {
-        if (!isMutation(input) || input.id !== raw.id)
-          return yield* new VaultError({ reason: "invalid-input" });
-        const retry = yield* decodeRetry(raw).pipe(
-          Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
-        );
-        return yield* update(input.id, requester, (entry, now) =>
-          Effect.gen(function* () {
-            const report = yield* validated(retry, requester);
-            if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
-            if (
-              entry.reservationId === input.reservationId &&
-              entry.revision === input.expectedRevision + 1
-            )
-              return entry;
-            if (entry.state !== "prepared" || entry.revision !== input.expectedRevision)
-              return yield* new VaultError({ reason: "conflict" });
-            return {
-              ...entry,
-              state: "reserved" as const,
-              reservationId: input.reservationId,
-              updatedAt: now,
-              revision: entry.revision + 1,
-            };
-          }),
-        );
-      }),
+    reserve: Effect.fn("OperationJournal.reserve")(function* (raw, input, requester) {
+      if (!isMutation(input) || input.id !== raw.id)
+        return yield* new VaultError({ reason: "invalid-input" });
+      const retry = yield* decodeRetry(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      return yield* update(input.id, requester, (entry, now) =>
+        Effect.gen(function* () {
+          const report = yield* validated(retry, requester);
+          if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
+          if (
+            entry.reservationId === input.reservationId &&
+            entry.revision === input.expectedRevision + 1
+          )
+            return entry;
+          if (entry.state !== "prepared" || entry.revision !== input.expectedRevision)
+            return yield* new VaultError({ reason: "conflict" });
+          return {
+            ...entry,
+            state: "reserved" as const,
+            reservationId: input.reservationId,
+            updatedAt: now,
+            revision: entry.revision + 1,
+          };
+        }),
+      );
+    }),
     finish: (input, requester) => {
       if (!isFinish(input)) return Effect.fail(new VaultError({ reason: "invalid-input" }));
       return update(input.id, requester, (entry, now) => {

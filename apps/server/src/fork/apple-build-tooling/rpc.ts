@@ -10,8 +10,8 @@ import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { AppleBuildService } from "./AppleBuildService.ts";
 
-export const makeAppleBuildToolingRpcHandlers = (auth: ForkRpcAuth) =>
-  Effect.gen(function* () {
+export const makeAppleBuildToolingRpcHandlers = Effect.fn("AppleBuildTooling.makeRpcHandlers")(
+  function* (auth: ForkRpcAuth) {
     const service = yield* AppleBuildService;
     return {
       [A.status]: (input: AppleWorkspaceRef) => auth.effect(A.status, service.status(input)),
@@ -47,4 +47,5 @@ export const makeAppleBuildToolingRpcHandlers = (auth: ForkRpcAuth) =>
       [A.openResultBundle]: (input: { runId: string }) =>
         auth.effect(A.openResultBundle, service.openResultBundle(input.runId)),
     };
-  });
+  },
+);

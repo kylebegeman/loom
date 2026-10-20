@@ -10,30 +10,33 @@ export const makeCheckCoordinator = Effect.gen(function* () {
   const scope = yield* Effect.scope,
     slot = yield* Semaphore.make(1);
   const requests = new Map<string, Fiber.Fiber<unknown, ModelPreviewError>>();
-  const request = <A extends { status: "ok" | "cancelled"; report: unknown }, R>(
+  // Each caller already spans this operation as Assembly.request or ModelPrintCheck.request.
+  const request = Effect.fnUntraced(function* <
+    A extends { status: "ok" | "cancelled"; report: unknown },
+    R,
+  >(
     input: { file: ModelFileRef; requestId?: string },
     work: Effect.Effect<A, ModelPreviewError, R>,
-  ) =>
-    Effect.gen(function* () {
-      const key = `${input.file.threadId}\0${input.file.path}\0${input.requestId ?? NodeCrypto.randomUUID()}`;
-      const fiber = yield* Effect.scoped(work).pipe(Effect.forkIn(scope));
-      if (input.requestId) {
-        const prior = requests.get(key);
-        requests.set(key, fiber);
-        if (prior) yield* Fiber.interrupt(prior);
-      }
-      const exit = yield* Effect.exit(Fiber.join(fiber)).pipe(
-        Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (requests.get(key) === fiber) requests.delete(key);
-          }),
-        ),
-      );
-      if (Exit.isSuccess(exit)) return exit.value;
-      if (Cause.hasInterrupts(exit.cause)) return { status: "cancelled", report: null } as A;
-      return yield* Effect.failCause(exit.cause);
-    });
+  ) {
+    const key = `${input.file.threadId}\0${input.file.path}\0${input.requestId ?? NodeCrypto.randomUUID()}`;
+    const fiber = yield* Effect.scoped(work).pipe(Effect.forkIn(scope));
+    if (input.requestId) {
+      const prior = requests.get(key);
+      requests.set(key, fiber);
+      if (prior) yield* Fiber.interrupt(prior);
+    }
+    const exit = yield* Effect.exit(Fiber.join(fiber)).pipe(
+      Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (requests.get(key) === fiber) requests.delete(key);
+        }),
+      ),
+    );
+    if (Exit.isSuccess(exit)) return exit.value;
+    if (Cause.hasInterrupts(exit.cause)) return { status: "cancelled", report: null } as A;
+    return yield* Effect.failCause(exit.cause);
+  });
   const cancel = Effect.fn("ModelChecks.cancel")(function* (input: {
     file: ModelFileRef;
     requestId: string;

@@ -555,81 +555,83 @@ const makePagesServer = (context: PagesServerContext) => {
   return server;
 };
 
-/** Serves published pages until the scope closes. */
-export const startPagesHost = (
+/**
+ * Serves published pages until the scope closes. Untraced: the request runtime captures this
+ * context, so a span here would parent every page request for the server's lifetime.
+ */
+export const startPagesHost = Effect.fnUntraced(function* (
   options: PagesHostOptions,
-): Effect.Effect<
+): Effect.fn.Return<
   { readonly port: number },
   PagesHostListenError,
   Scope.Scope | PageLibraryService | PreviewAccessService | ServerSecretStore.ServerSecretStore
-> =>
-  Effect.gen(function* () {
-    const pagesHost = pagesHostOf(options.pagesOrigin);
-    if (pagesHost === null) {
-      return yield* new PagesHostListenError({
-        port: options.port,
-        message: "The pages origin is not an https origin without a port.",
-      });
-    }
-    const pages = yield* PageLibraryService;
-    const access = yield* PreviewAccessService;
-    const secrets = yield* ServerSecretStore.ServerSecretStore;
-    const clock = yield* Clock.Clock;
-    const cookieKey = yield* secrets
-      .getOrCreateRandom(COOKIE_KEY_SECRET, 32)
-      .pipe(
-        Effect.catch((cause) =>
-          Effect.logError(
-            "Published pages sign no one in: the Library could not load its pages cookie key.",
-            { cause },
-          ).pipe(Effect.as(null)),
-        ),
-      );
-    // Created before the listener, so on shutdown the listener closes first and then any
-    // request still waiting on the Library is interrupted.
-    const run = yield* FiberSet.makeRuntime<never, Answer, never>();
-    const server = makePagesServer({
-      pagesOrigin: new URL(options.pagesOrigin).origin,
-      pagesHost,
-      issuerOrigin: options.issuerOrigin,
-      cookieKey,
-      now: () => clock.currentTimeMillisUnsafe(),
-      pages,
-      access,
-      run,
+> {
+  const pagesHost = pagesHostOf(options.pagesOrigin);
+  if (pagesHost === null) {
+    return yield* new PagesHostListenError({
+      port: options.port,
+      message: "The pages origin is not an https origin without a port.",
     });
-    const port = yield* Effect.acquireRelease(
-      Effect.callback<number, PagesHostListenError>((resume) => {
-        const onListenError = (error: NodeJS.ErrnoException) =>
-          resume(
-            Effect.fail(
-              new PagesHostListenError({
-                port: options.port,
-                message: listenErrorMessage(options.port, error),
-              }),
-            ),
-          );
-        server.once("error", onListenError);
-        server.listen({ host: options.host, port: options.port }, () => {
-          server.off("error", onListenError);
-          // After binding, errors belong to single connections and must not reach the process.
-          server.on("error", () => {});
-          const address = server.address();
-          resume(
-            Effect.succeed(
-              typeof address === "object" && address !== null ? address.port : options.port,
-            ),
-          );
-        });
-      }),
-      () =>
-        Effect.callback<void>((resume) => {
-          server.closeAllConnections();
-          server.close(() => resume(Effect.void));
-        }),
+  }
+  const pages = yield* PageLibraryService;
+  const access = yield* PreviewAccessService;
+  const secrets = yield* ServerSecretStore.ServerSecretStore;
+  const clock = yield* Clock.Clock;
+  const cookieKey = yield* secrets
+    .getOrCreateRandom(COOKIE_KEY_SECRET, 32)
+    .pipe(
+      Effect.catch((cause) =>
+        Effect.logError(
+          "Published pages sign no one in: the Library could not load its pages cookie key.",
+          { cause },
+        ).pipe(Effect.as(null)),
+      ),
     );
-    return { port };
+  // Created before the listener, so on shutdown the listener closes first and then any
+  // request still waiting on the Library is interrupted.
+  const run = yield* FiberSet.makeRuntime<never, Answer, never>();
+  const server = makePagesServer({
+    pagesOrigin: new URL(options.pagesOrigin).origin,
+    pagesHost,
+    issuerOrigin: options.issuerOrigin,
+    cookieKey,
+    now: () => clock.currentTimeMillisUnsafe(),
+    pages,
+    access,
+    run,
   });
+  const port = yield* Effect.acquireRelease(
+    Effect.callback<number, PagesHostListenError>((resume) => {
+      const onListenError = (error: NodeJS.ErrnoException) =>
+        resume(
+          Effect.fail(
+            new PagesHostListenError({
+              port: options.port,
+              message: listenErrorMessage(options.port, error),
+            }),
+          ),
+        );
+      server.once("error", onListenError);
+      server.listen({ host: options.host, port: options.port }, () => {
+        server.off("error", onListenError);
+        // After binding, errors belong to single connections and must not reach the process.
+        server.on("error", () => {});
+        const address = server.address();
+        resume(
+          Effect.succeed(
+            typeof address === "object" && address !== null ? address.port : options.port,
+          ),
+        );
+      });
+    }),
+    () =>
+      Effect.callback<void>((resume) => {
+        server.closeAllConnections();
+        server.close(() => resume(Effect.void));
+      }),
+  );
+  return { port };
+});
 
 /**
  * The Library's pages host. It only starts when the Library serves pages and has a fixed ticket

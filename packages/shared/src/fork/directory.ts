@@ -120,48 +120,46 @@ const encodeReport = Schema.encodeEffect(DirectoryEnvironmentReport);
 const decodeReport = Schema.decodeUnknownEffect(DirectoryEnvironmentReport);
 
 /** Signs a report with the environment's Ed25519 private key (PKCS#8 PEM) for one directory. */
-export function signDirectoryReport(input: {
+export const signDirectoryReport = Effect.fn("DirectoryReport.sign")(function* (input: {
   readonly privateKey: string;
   readonly report: DirectoryEnvironmentReport;
   /** The directory's URL; only its origin is signed. */
   readonly audience: string;
   readonly nowEpochSeconds: number;
-}): Effect.Effect<string, DirectoryReportError> {
-  return Effect.gen(function* () {
-    const audience = directoryAudience(input.audience);
-    if (audience === null) {
-      return yield* new DirectoryReportError({ operation: "sign", reason: "invalid-audience" });
-    }
-    const report = yield* encodeReport(input.report).pipe(
-      Effect.mapError(
-        (cause) => new DirectoryReportError({ operation: "sign", reason: "invalid-report", cause }),
-      ),
-    );
-    const iat = Math.floor(input.nowEpochSeconds);
-    return yield* signRelayJwt({
-      privateKey: input.privateKey,
-      typ: DIRECTORY_REPORT_TYP,
-      payload: {
-        iss: directoryIssuer(report.environmentId),
-        sub: report.environmentId,
-        aud: audience,
-        iat,
-        exp: iat + DIRECTORY_REPORT_LIFETIME_SECONDS,
-        report,
-      },
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new DirectoryReportError({
-            operation: "sign",
-            reason: "invalid-key",
-            diagnostic: RelayJwtError.diagnosticCode(cause),
-            cause,
-          }),
-      ),
-    );
-  });
-}
+}): Effect.fn.Return<string, DirectoryReportError> {
+  const audience = directoryAudience(input.audience);
+  if (audience === null) {
+    return yield* new DirectoryReportError({ operation: "sign", reason: "invalid-audience" });
+  }
+  const report = yield* encodeReport(input.report).pipe(
+    Effect.mapError(
+      (cause) => new DirectoryReportError({ operation: "sign", reason: "invalid-report", cause }),
+    ),
+  );
+  const iat = Math.floor(input.nowEpochSeconds);
+  return yield* signRelayJwt({
+    privateKey: input.privateKey,
+    typ: DIRECTORY_REPORT_TYP,
+    payload: {
+      iss: directoryIssuer(report.environmentId),
+      sub: report.environmentId,
+      aud: audience,
+      iat,
+      exp: iat + DIRECTORY_REPORT_LIFETIME_SECONDS,
+      report,
+    },
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new DirectoryReportError({
+          operation: "sign",
+          reason: "invalid-key",
+          diagnostic: RelayJwtError.diagnosticCode(cause),
+          cause,
+        }),
+    ),
+  );
+});
 
 const isIssuerClaimFailure = (error: RelayJwtError) =>
   Predicate.isObject(error.cause) &&

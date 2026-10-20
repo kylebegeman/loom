@@ -455,35 +455,35 @@ const make = Effect.gen(function* () {
     (policy.approvals ?? []).filter(
       (r) => now < r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS,
     );
-  const trimApprovals = (policy: Policy, now: number) =>
-    Effect.gen(function* () {
-      const approvals = retainedApprovals(policy, now);
-      const removed = (policy.approvals?.length ?? 0) - approvals.length;
-      if (removed === 0) return { policy, removed };
-      const discarded = new Set(
-        (policy.approvals ?? [])
-          .filter((r) => now >= r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS)
-          .map((r) => r.request.grantId),
-      );
-      // Never discard version/run binding for a live grant, even if an inconsistent ledger claims it is old.
-      if (
-        policy.grants.some(
-          (g) =>
-            discarded.has(g.definition.id) &&
-            (g.definition.expiresAt === null || now < g.definition.expiresAt),
-        )
+  // Untraced: pure policy trimming inside callers' retry loops, covered by their spans.
+  const trimApprovals = Effect.fnUntraced(function* (policy: Policy, now: number) {
+    const approvals = retainedApprovals(policy, now);
+    const removed = (policy.approvals?.length ?? 0) - approvals.length;
+    if (removed === 0) return { policy, removed };
+    const discarded = new Set(
+      (policy.approvals ?? [])
+        .filter((r) => now >= r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS)
+        .map((r) => r.request.grantId),
+    );
+    // Never discard version/run binding for a live grant, even if an inconsistent ledger claims it is old.
+    if (
+      policy.grants.some(
+        (g) =>
+          discarded.has(g.definition.id) &&
+          (g.definition.expiresAt === null || now < g.definition.expiresAt),
       )
-        return yield* new VaultError({ reason: "invalid-response" });
-      return {
-        removed,
-        policy: {
-          ...policy,
-          revision: policy.revision + 1,
-          approvals,
-          grants: policy.grants.filter((g) => !discarded.has(g.definition.id)),
-        },
-      };
-    });
+    )
+      return yield* new VaultError({ reason: "invalid-response" });
+    return {
+      removed,
+      policy: {
+        ...policy,
+        revision: policy.revision + 1,
+        approvals,
+        grants: policy.grants.filter((g) => !discarded.has(g.definition.id)),
+      },
+    };
+  });
   const approvalRetain = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
@@ -919,8 +919,8 @@ const make = Effect.gen(function* () {
     approvalPrepareRetry,
     approvalRetain,
     approvalStatus,
-    approvalCancel: (input, requester, authorize) =>
-      Effect.gen(function* () {
+    approvalCancel: Effect.fn("VaultAccess.approvalCancel")(
+      function* (input, requester, authorize) {
         if (!isApprovalCancel(input)) return yield* new VaultError({ reason: "invalid-input" });
         return yield* approvalChange(
           {
@@ -935,7 +935,8 @@ const make = Effect.gen(function* () {
           authorize,
           requester,
         );
-      }),
+      },
+    ),
     approvalCreate,
     approvalChange,
     approvalInbox: Effect.gen(function* () {

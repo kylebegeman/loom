@@ -169,44 +169,45 @@ const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => "io" as const),
       );
 
-    const post = (report: DirectoryEnvironmentReport) =>
-      Effect.gen(function* () {
-        const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
-          Effect.option,
-        );
-        if (Option.isNone(keyPair)) return "io" as const;
-        const publicKey = directoryPublicKeyFromPem(keyPair.value.publicKey);
-        if (publicKey === null) return "invalid" as const;
-        const token = yield* signDirectoryReport({
-          privateKey: keyPair.value.privateKey,
-          report,
-          audience: library.origin,
-          nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
-        }).pipe(Effect.option);
-        if (Option.isNone(token)) return "invalid" as const;
-        const sent = yield* library
-          .send(
-            HttpClientRequest.post(library.endpoint(DIRECTORY_REPORT_ROUTE)).pipe(
-              HttpClientRequest.bodyJsonUnsafe({ token: token.value, publicKey }),
-            ),
-          )
-          .pipe(Effect.result);
-        if (sent._tag === "Failure")
-          return sent.failure.reason === "blocked" ? ("signed-out" as const) : ("io" as const);
-        const response = sent.success;
-        // The directory answers with the stored record. Any other success, such as a sign-in
-        // page a proxy redirected to, stored nothing.
-        if (response.status >= 200 && response.status < 300)
-          return isJson(response) ? ("sent" as const) : ("io" as const);
-        // A Library older than the directory has no such route.
-        if (response.status === 404) return "unsupported" as const;
-        const refused = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option);
-        const reason = Option.isSome(refused) ? refused.value.reason : null;
-        if (reason === "key-changed") return "key-changed" as const;
-        if (reason !== null && isFailureReason(reason)) return reason;
-        if (response.status === 401 || response.status === 403) return "signed-out" as const;
-        return "io" as const;
-      });
+    const post = Effect.fn("DirectoryReporter.post")(function* (
+      report: DirectoryEnvironmentReport,
+    ) {
+      const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
+        Effect.option,
+      );
+      if (Option.isNone(keyPair)) return "io" as const;
+      const publicKey = directoryPublicKeyFromPem(keyPair.value.publicKey);
+      if (publicKey === null) return "invalid" as const;
+      const token = yield* signDirectoryReport({
+        privateKey: keyPair.value.privateKey,
+        report,
+        audience: library.origin,
+        nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
+      }).pipe(Effect.option);
+      if (Option.isNone(token)) return "invalid" as const;
+      const sent = yield* library
+        .send(
+          HttpClientRequest.post(library.endpoint(DIRECTORY_REPORT_ROUTE)).pipe(
+            HttpClientRequest.bodyJsonUnsafe({ token: token.value, publicKey }),
+          ),
+        )
+        .pipe(Effect.result);
+      if (sent._tag === "Failure")
+        return sent.failure.reason === "blocked" ? ("signed-out" as const) : ("io" as const);
+      const response = sent.success;
+      // The directory answers with the stored record. Any other success, such as a sign-in
+      // page a proxy redirected to, stored nothing.
+      if (response.status >= 200 && response.status < 300)
+        return isJson(response) ? ("sent" as const) : ("io" as const);
+      // A Library older than the directory has no such route.
+      if (response.status === 404) return "unsupported" as const;
+      const refused = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option);
+      const reason = Option.isSome(refused) ? refused.value.reason : null;
+      if (reason === "key-changed") return "key-changed" as const;
+      if (reason !== null && isFailureReason(reason)) return reason;
+      if (response.status === 401 || response.status === 403) return "signed-out" as const;
+      return "io" as const;
+    });
 
     // Provider snapshots also change for models and usage, so wake only when a status does.
     const wake = yield* Queue.sliding<void>(1);
@@ -234,19 +235,18 @@ const make = Effect.gen(function* () {
       yield* update({ state: "unsupported" });
       return { delay: UNSUPPORTED_RECHECK_MS, wakeable: false };
     });
-    const retry = (reason: FailureReason) =>
-      Effect.gen(function* () {
-        failures += 1;
-        if (failures === 1)
-          yield* Effect.logWarning("This computer could not report to the directory. Retrying.", {
-            reason,
-          });
-        yield* update({ state: "retrying", reason });
-        return {
-          delay: Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS),
-          wakeable: false,
-        };
-      });
+    const retry = Effect.fn("DirectoryReporter.retry")(function* (reason: FailureReason) {
+      failures += 1;
+      if (failures === 1)
+        yield* Effect.logWarning("This computer could not report to the directory. Retrying.", {
+          reason,
+        });
+      yield* update({ state: "retrying", reason });
+      return {
+        delay: Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS),
+        wakeable: false,
+      };
+    });
 
     const step = Effect.gen(function* () {
       if (!supported) {
