@@ -1,4 +1,8 @@
-import { DIRECTORY_FEATURE, LIBRARY_SEMANTIC_SEARCH_FEATURE } from "@t3tools/contracts/fork";
+import {
+  DIRECTORY_FEATURE,
+  DIRECTORY_REPORTING_FEATURE,
+  LIBRARY_SEMANTIC_SEARCH_FEATURE,
+} from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 
@@ -85,6 +89,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "preview-tickets",
   "preview-pages",
   "preview-backings",
+  DIRECTORY_REPORTING_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).

@@ -13,6 +13,8 @@ import { ServerProviderState } from "../server.ts";
 
 /** Advertised in `loomFeatures` by the Library authority that runs the directory. */
 export const DIRECTORY_FEATURE = "directory";
+/** Advertised by every computer that reports itself and answers `loom.directory.reporting`. */
+export const DIRECTORY_REPORTING_FEATURE = "directory-reporting";
 export const DIRECTORY_MAX_ROUTES = 8;
 export const DIRECTORY_MAX_PROVIDERS = 16;
 export const DIRECTORY_MAX_WORKERS = 8;
@@ -215,9 +217,32 @@ export const DirectoryForgetRequest = Schema.Union([
 ]);
 export type DirectoryForgetRequest = typeof DirectoryForgetRequest.Type;
 
+/**
+ * How this computer's reports to its Library's directory are going. `off` has no Library to
+ * report to or is the directory itself, `unsupported` has a Library without the directory, and
+ * `key-changed` has stopped until the computer is forgotten in the directory.
+ */
+export const DirectoryReporting = Schema.Struct({
+  state: Schema.Literals(["off", "unsupported", "reporting", "retrying", "key-changed"]),
+  lastReportedAt: Schema.NullOr(IsoDateTime),
+  /** Why the last report failed, while `retrying`. */
+  reason: Schema.optional(
+    Schema.Literals([
+      "io",
+      "invalid",
+      "unverified",
+      "wrong-environment",
+      "stale-sequence",
+      "signed-out",
+    ]),
+  ),
+});
+export type DirectoryReporting = typeof DirectoryReporting.Type;
+
 export const DIRECTORY_WS_METHODS = {
   list: "loom.directory.list",
   forget: "loom.directory.forget",
+  reporting: "loom.directory.reporting",
 } as const;
 const error = Schema.Union([DirectoryError, EnvironmentAuthorizationError]);
 export const DirectoryRpcGroup = RpcGroup.make(
@@ -230,5 +255,10 @@ export const DirectoryRpcGroup = RpcGroup.make(
     payload: DirectoryForgetRequest,
     success: Schema.Void,
     error,
+  }),
+  Rpc.make(DIRECTORY_WS_METHODS.reporting, {
+    payload: Schema.Struct({}),
+    success: DirectoryReporting,
+    error: EnvironmentAuthorizationError,
   }),
 );

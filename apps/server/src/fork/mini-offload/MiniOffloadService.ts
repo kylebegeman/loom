@@ -23,6 +23,8 @@ import {
   type MiniAgentArtifacts,
   MiniWorkerRef,
   MiniWorkerReadiness,
+  DIRECTORY_MAX_WORKERS,
+  LoomOsSignedIdentity,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -112,7 +114,10 @@ const Capabilities = Schema.Struct({
     waiting_reasons: MiniWorkerReadiness.fields.reasons,
     output_bundles: Schema.optional(Schema.Struct({ supported: Schema.Boolean })),
   }),
+  // LoomOS 0.1.6 sends none. Decoded on its own so a bad identity never fails readiness.
+  identity: Schema.optional(Schema.Unknown),
 });
+const decodeIdentity = Schema.decodeUnknownOption(LoomOsSignedIdentity);
 const fail = (reason: MiniOffloadError["reason"]) => Effect.fail(new MiniOffloadError({ reason }));
 const decode = <S extends Schema.Top>(schema: S, value: unknown) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
@@ -253,6 +258,11 @@ export class MiniOffloadService extends Context.Service<
     readonly agentArtifacts: (
       input: MiniRef & { readonly includeBundle?: boolean | undefined },
     ) => Effect.Effect<MiniAgentArtifacts, MiniOffloadError>;
+    /**
+     * The signed LoomOS identity each enabled worker gave at its last readiness check, as
+     * received. Reads the registry only, so it makes no SSH calls.
+     */
+    readonly identities: Effect.Effect<ReadonlyArray<LoomOsSignedIdentity>, MiniOffloadError>;
   }
 >()("t3/fork/mini-offload/MiniOffloadService") {}
 
@@ -266,6 +276,13 @@ const make = Effect.gen(function* () {
   // Order worker lookups with registry changes. Each request has a separate transfer lock.
   const registryLock = yield* Semaphore.make(1);
   const requestLocks = new Map<string, { lock: Semaphore.Semaphore; count: number }>();
+  // Keyed by worker id and pinned to the connection that answered, so a worker re-pointed at
+  // another machine never carries the old machine's identity.
+  const identities = new Map<
+    string,
+    { readonly connection: string; readonly identity: LoomOsSignedIdentity }
+  >();
+  const connectionOf = (worker: MiniWorker) => JSON.stringify([worker.target, worker.sshConfig]);
   const root = NodePath.join(config.stateDir, "fork", "mini-offload");
   const pathFor = (rid: string) => NodePath.join(root, rid);
   const summary = (worker: MiniWorker) => ({
@@ -422,6 +439,11 @@ const make = Effect.gen(function* () {
       };
     }
     const caps = result.success;
+    // Only an answer replaces or drops the identity. A failed check keeps the last one.
+    const identity = decodeIdentity(caps.identity);
+    if (Option.isSome(identity))
+      identities.set(worker.id, { connection: connectionOf(worker), identity: identity.value });
+    else identities.delete(worker.id);
     const gitMissing = caps.toolsets.find((role) => role.id === "repository")?.missing ?? ["git"];
     const reasons = [
       ...caps.command_jobs.waiting_reasons,
@@ -478,6 +500,20 @@ const make = Effect.gen(function* () {
     };
   });
   return MiniOffloadService.of({
+    identities: source.list.pipe(
+      Effect.map((workers) =>
+        workers
+          .filter((worker) => worker.enabled)
+          .toSorted((a, b) => a.id.localeCompare(b.id))
+          .flatMap((worker) => {
+            const known = identities.get(worker.id);
+            return known !== undefined && known.connection === connectionOf(worker)
+              ? [known.identity]
+              : [];
+          })
+          .slice(0, DIRECTORY_MAX_WORKERS),
+      ),
+    ),
     check: (input) => readiness(input),
     prepare: (input) => readiness(input, true),
     workers: source.list.pipe(Effect.map((workers) => workers.map(summary))),

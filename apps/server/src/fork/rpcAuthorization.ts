@@ -323,6 +323,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [PL.pagesUpdate]: AuthPreviewOperateScope,
   [DIR.list]: AuthOrchestrationReadScope,
   [DIR.forget]: AuthSettingsWriteScope,
+  [DIR.reporting]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>
