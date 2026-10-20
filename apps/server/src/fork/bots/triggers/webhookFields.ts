@@ -54,15 +54,25 @@ export const makeWebhookFieldReader = (request: WebhookRequest) => {
   };
 };
 
+/** Headers senders use to name a delivery, so their retries repeat it: GitHub, Standard Webhooks (Svix), GitLab, Linear. */
+const DELIVERY_ID_HEADERS = [
+  ["github", "x-github-delivery"],
+  ["webhook-id", "webhook-id"],
+  ["gitlab", "x-gitlab-event-uuid"],
+  ["linear", "linear-delivery"],
+] as const;
+
 /**
- * GitHub's delivery id, else the relay's, so a resent delivery fires once. Null for a direct
+ * The sender's delivery id, else the relay's, so a resent delivery fires once. Null for a direct
  * delivery: nothing tells its resend from a new request with the same body, as from a cron job.
  */
 export const webhookEventKey = (
   request: WebhookRequest & { readonly relayDeliveryId?: string | undefined },
 ) => {
-  const github = request.headers["x-github-delivery"];
-  if (github !== undefined && github !== "") return `github:${github}`;
+  for (const [prefix, header] of DELIVERY_ID_HEADERS) {
+    const id = request.headers[header];
+    if (id !== undefined && id !== "") return `${prefix}:${id}`;
+  }
   if (request.relayDeliveryId !== undefined) return `relay:${request.relayDeliveryId}`;
   return null;
 };
