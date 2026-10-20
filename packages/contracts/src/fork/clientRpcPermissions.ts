@@ -81,6 +81,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [GH.cancel]: AuthTerminalOperateScope,
   [O.register]: AuthEnvironmentMaintainScope,
   [O.setEnabled]: AuthEnvironmentMaintainScope,
+  [O.updateWorker]: AuthEnvironmentMaintainScope,
+  [O.removeWorker]: AuthEnvironmentMaintainScope,
   [O.submit]: AuthTerminalOperateScope,
   [O.recover]: AuthTerminalOperateScope,
   [O.cancel]: AuthTerminalOperateScope,

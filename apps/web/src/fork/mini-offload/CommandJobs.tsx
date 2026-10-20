@@ -260,6 +260,10 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(newRequestId);
   const enabledWorkers = workers.filter((worker) => worker.enabled);
+  // Without a choice the first enabled worker runs it. A chosen worker that was since disabled or
+  // removed leaves no destination, so the command never silently runs on a different computer.
+  const chosen = enabledWorkers.find((worker) => worker.id === workerId);
+  const destinationId = workerId === "" ? (enabledWorkers[0]?.id ?? "") : (chosen?.id ?? "");
   const selectedReceipt =
     receipts.find((receipt) => receipt.request.requestId === selected) ?? receipts[0];
   const refresh = useCallback(() => {
@@ -326,7 +330,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                   input: {
                     threadId,
                     requestId,
-                    workerId: workerId || enabledWorkers[0]?.id || "",
+                    workerId: destinationId,
                     label:
                       label.trim() ||
                       command.trim().split("\n")[0]!.replace(/\s+/g, " ").slice(0, 80),
@@ -364,20 +368,25 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                 key={worker.id}
                 type="button"
                 size="sm"
-                variant={
-                  (workerId || enabledWorkers[0]?.id) === worker.id ? "secondary" : "outline"
-                }
-                aria-pressed={(workerId || enabledWorkers[0]?.id) === worker.id}
+                variant={destinationId === worker.id ? "secondary" : "outline"}
+                aria-pressed={destinationId === worker.id}
                 disabled={action.busy}
                 onClick={() => setWorkerId(worker.id)}
               >
                 {worker.name}
               </Button>
             ))}
-            {enabledWorkers.length === 0 && (
+            {enabledWorkers.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Add or enable a command worker in Worker connections below.
               </p>
+            ) : (
+              workerId !== "" &&
+              !chosen && (
+                <p className="text-sm text-muted-foreground">
+                  The chosen worker is no longer available. Choose another.
+                </p>
+              )
             )}
           </div>
           <label className="flex flex-col gap-1.5 text-sm">
@@ -493,7 +502,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                 action.busy ||
                 listResult._tag !== "Success" ||
                 pendingTransfer ||
-                enabledWorkers.length === 0 ||
+                destinationId === "" ||
                 Boolean(outputDeclaration.error) ||
                 (!supportsOutputs && outputDeclaration.outputs.length > 0)
               }

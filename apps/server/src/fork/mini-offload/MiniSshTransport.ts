@@ -22,6 +22,21 @@ export class MiniSshTransport extends Context.Service<
 >()("t3/fork/mini-offload/MiniSshTransport") {}
 
 const MIB = 1024 * 1024;
+// Enough of stderr to find OpenSSH's verdict line. It stays in memory and is never returned.
+const STDERR_TAIL_BYTES = 4096;
+// OpenSSH exits 255 for its own failures, and prints this line when the known host key differs or is missing.
+const SSH_FAILURE_EXIT = 255;
+const HOST_KEY_FAILED = /^Host key verification failed\.\r?$/m;
+
+/** The cause of a transfer failure where SSH refused the worker's host key. Carries no SSH output. */
+export class HostKeyRejected extends Error {
+  constructor() {
+    super("SSH refused the worker's host key.");
+    this.name = "HostKeyRejected";
+  }
+}
+export const isHostKeyRejected = (error: MiniOffloadError) =>
+  error.cause instanceof HostKeyRejected;
 const RPC_DEADLINE = Duration.seconds(120);
 // LoomOS gives a snapshot upload 1800 s, so wait a little longer to hear whether it accepted the job.
 // ServerAlive still ends a dead connection within a minute.
@@ -67,6 +82,8 @@ const request: MiniSshTransport["Service"]["request"] = (worker, operation, head
             7 * MIB
           : 2 * MIB;
     let bytes = 0;
+    let stderrTail = Buffer.alloc(0);
+    let stdinFailed = false;
     let done = false;
     let source: NodeFS.ReadStream | undefined;
     const finish = (value: Effect.Effect<unknown, MiniOffloadError>) => {
@@ -79,15 +96,27 @@ const request: MiniSshTransport["Service"]["request"] = (worker, operation, head
     };
     const fail = () => finish(Effect.fail(new MiniOffloadError({ reason: "transfer" })));
     child.on("error", fail);
-    child.stdin.on("error", fail);
-    child.stderr.resume(); // Never return SSH output containing local configuration or credentials.
+    // SSH that refuses the host key exits before reading stdin, so the write fails with EPIPE first.
+    // Let the exit decide the failure instead.
+    child.stdin.on("error", () => {
+      stdinFailed = true;
+      source?.destroy();
+    });
+    // Never return SSH output containing local configuration or credentials.
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-STDERR_TAIL_BYTES);
+    });
     child.stdout.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > maxBytes) fail();
       else chunks.push(chunk);
     });
     child.on("close", (code) => {
-      if (code !== 0) return fail();
+      if (code === SSH_FAILURE_EXIT && bytes === 0 && HOST_KEY_FAILED.test(stderrTail.toString()))
+        return finish(
+          Effect.fail(new MiniOffloadError({ reason: "transfer", cause: new HostKeyRejected() })),
+        );
+      if (code !== 0 || stdinFailed) return fail();
       try {
         finish(Effect.succeed(parseResponse(Buffer.concat(chunks))));
       } catch {
