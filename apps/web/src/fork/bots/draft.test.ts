@@ -108,6 +108,20 @@ describe("bot drafts", () => {
     expect(text.ok && "output" in text.input).toBe(false);
   });
 
+  it("sends a budget only when a limit is set, accepting thousands separators", () => {
+    const budgeted: BotDefinition = { ...bot, budget: { runsPerDay: 50 } };
+    const draft = { ...botDraft(budgeted), tokensPerDay: "2,000,000" };
+    const saved = saveInputFromDraft(draft, budgeted.version);
+    expect(saved.ok && saved.input.budget).toEqual({ runsPerDay: 50, tokensPerDay: 2_000_000 });
+    const cleared = saveInputFromDraft({ ...draft, runsPerDay: "", tokensPerDay: " " }, 4);
+    expect(cleared.ok && "budget" in cleared.input).toBe(false);
+    expect(saveInputFromDraft({ ...draft, tokensPerDay: "500" }, 4)).toEqual({
+      ok: false,
+      message:
+        "Tokens per 24 hours is a whole number from 1,000 to 10 billion, or empty for no limit.",
+    });
+  });
+
   it("offers one checkout per live worktree of the project, newest first", () => {
     const shell = (id: string, worktreePath: string | null, updatedAt: string, extra = {}) => ({
       id: ThreadId.make(id),

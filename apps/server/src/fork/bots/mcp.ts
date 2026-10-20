@@ -17,8 +17,10 @@ import {
   BotStarterId,
   BotsRetryBatchInput,
   BotsRetryInput,
+  BotsUsageResult,
   BOTS_LIST_RUNS_MAX_LIMIT,
 } from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -109,6 +111,16 @@ export const BotsToolkit = Toolkit.make(
       total: Schema.Int,
       hasMore: Schema.Boolean,
     }),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_usage", {
+    description:
+      "Read what bots used over the last days (default 7, at most 30): per bot, its runs, outcomes, pass or success rate, median and longest duration, tokens and a split by model. Tokens are a lower bound when usageComplete is false. Also returns each budgeted bot's runs and tokens in the last 24 hours and, when a budget is reached, retryAt, the instant the next run may start.",
+    parameters: Schema.Struct({
+      days: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 30 }))),
+      botId: Schema.optionalKey(BotId),
+    }),
+    success: BotsUsageResult,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_bots_retry", {
@@ -251,6 +263,20 @@ export const botsHandlers = McpToolAccess.toLayer(
       loom_bots_inbox: McpToolAccess.reads((input) =>
         onHost(
           Effect.flatMap(BotsService, (service) => service.inbox({ limit: input.limit ?? 20 })),
+        ),
+      ),
+      loom_bots_usage: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.gen(function* () {
+            const service = yield* BotsService;
+            const now = DateTime.toEpochMillis(yield* DateTime.now);
+            const days = input.days ?? 7;
+            return yield* service.usage({
+              since: DateTime.formatIso(DateTime.makeUnsafe(now - days * 24 * 60 * 60 * 1000)),
+              until: DateTime.formatIso(DateTime.makeUnsafe(now)),
+              ...(input.botId === undefined ? {} : { botId: input.botId }),
+            });
+          }),
         ),
       ),
       loom_bots_retry: McpToolAccess.writes((input) =>

@@ -4,6 +4,7 @@ import {
   BotInputs,
   BotOrigin,
   BotRunStatus,
+  BotRunUsage,
   BotVerdict,
   type BotDefinition,
   type BotRun,
@@ -52,6 +53,10 @@ export interface RunRow {
   readonly promoted_thread_id: string | null;
   readonly model_selection_json: string | null;
   readonly checkout_thread_id: string | null;
+  readonly input_tokens: number | null;
+  readonly cached_input_tokens: number | null;
+  readonly output_tokens: number | null;
+  readonly usage_status: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -74,6 +79,17 @@ const modelSelectionJson = Schema.fromJsonString(ModelSelection);
 const decodeModelSelection = Schema.decodeUnknownOption(modelSelectionJson);
 const encodeModelSelection = Schema.encodeSync(modelSelectionJson);
 const isStatus = Schema.is(BotRunStatus);
+const isUsageStatus = Schema.is(BotRunUsage.fields.status);
+
+const toUsage = (row: RunRow): BotRunUsage | null =>
+  isUsageStatus(row.usage_status)
+    ? {
+        inputTokens: Number(row.input_tokens ?? 0),
+        cachedInputTokens: Number(row.cached_input_tokens ?? 0),
+        outputTokens: Number(row.output_tokens ?? 0),
+        status: row.usage_status,
+      }
+    : null;
 
 // A row written by a future version this one cannot read is skipped, not fatal.
 const toDefinition = (row: DefinitionRow): BotDefinition | null => {
@@ -131,6 +147,7 @@ export const toRun = (row: RunRow): BotRun | null => {
     ...(row.checkout_thread_id == null
       ? {}
       : { checkoutThreadId: ThreadId.make(row.checkout_thread_id) }),
+    ...(row.usage_status == null ? {} : { usage: toUsage(row) }),
   };
 };
 
@@ -222,7 +239,7 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
     saveRun: Effect.fn("BotsStore.saveRun")(function* (run: BotRun) {
-      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)} WHERE id = ${run.id}`;
+      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)}, input_tokens = ${run.usage?.inputTokens ?? null}, cached_input_tokens = ${run.usage?.cachedInputTokens ?? null}, output_tokens = ${run.usage?.outputTokens ?? null}, usage_status = ${run.usage?.status ?? null} WHERE id = ${run.id}`;
     }),
 
     /** Records that the result was posted, or why it was not, so it is attempted once. */
@@ -317,6 +334,38 @@ export const makeBotsStore = Effect.gen(function* () {
       newRunId: string,
     ) {
       yield* sql`UPDATE fork_bots_batch_items SET run_id = ${newRunId}, previous_run_ids_json = json_insert(previous_run_ids_json, '$[#]', ${oldRunId}) WHERE batch_id = ${batchId} AND run_id = ${oldRunId}`;
+    }),
+
+    /**
+     * What counts against a bot's budget since `since`, oldest first: runs that started or wait to
+     * start (refused and never-launched runs do not), and the tokens of runs that finished.
+     */
+    budgetWindow: Effect.fn("BotsStore.budgetWindow")(function* (botId: string, since: string) {
+      const runs = yield* sql<{
+        created_at: string;
+      }>`SELECT created_at FROM fork_bots_runs WHERE bot_id = ${botId} AND created_at > ${since} AND (started_at IS NOT NULL OR status IN ('queued', 'running')) ORDER BY created_at, id`;
+      const finished = yield* sql<{
+        finished_at: string;
+        tokens: number;
+      }>`SELECT finished_at, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) AS tokens FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at > ${since} ORDER BY finished_at, id`;
+      return {
+        runs: runs.map((row) => row.created_at),
+        finished: finished.map((row) => ({
+          finishedAt: row.finished_at,
+          tokens: Number(row.tokens),
+        })),
+      };
+    }),
+
+    /** Runs created in `[since, until)`, of one bot or all. */
+    listRunsCreatedBetween: Effect.fn("BotsStore.listRunsCreatedBetween")(function* (input: {
+      readonly since: string;
+      readonly until: string;
+      readonly botId?: string | undefined;
+    }) {
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE created_at >= ${input.since} AND created_at < ${input.until} ${input.botId === undefined ? sql`` : sql`AND bot_id = ${input.botId}`} ORDER BY created_at`;
+      return rows.flatMap((row) => toRun(row) ?? []);
     }),
 
     listUnfinishedRuns: Effect.fn("BotsStore.listUnfinishedRuns")(function* () {

@@ -126,6 +126,22 @@ While runs started from the thread are queued or running, a bot chip in the comp
 counts them. Open it to see each run, cancel one, or open it on the Bots page. Bots are not
 offered in a new thread until its first message is sent.
 
+## Usage and budgets
+
+The **Usage** tab lists every bot that ran in the last 24 hours, 7 days or 30 days: runs, how
+often it passed (or, for bots without verdicts, completed), its median duration and its share of
+bot tokens. Open a bot to see its outcomes, slowest run and tokens, and the same numbers per
+model, which helps when deciding whether **Retry on another model** is worth it. Some providers do
+not report every token, so figures marked "at least" are lower bounds. The Usage page shows a
+short Bots section under Totals with bot tokens for the shown window and the top three bots.
+
+In the bot editor, **Runs per 24 hours** and **Tokens per 24 hours** set an optional budget;
+leave a field empty for no limit. The window is rolling, so it never resets all at once. A run
+that would pass a limit is refused with how long to wait, and a batch pauses and continues on its
+own when the window allows. Runs already in progress are never stopped, so the token limit can be
+passed by the runs that were in flight when it was reached. Agents read the same numbers with
+`loom_bots_usage`.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over

@@ -22,6 +22,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { scheduledTaskDefaultModel } from "~/components/settings/scheduledTasksSettings.logic";
 import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
+import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
 import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
@@ -35,7 +36,9 @@ import {
   type BotParameterDraft,
   type BotWorkspaceChoice,
 } from "./draft";
+import { budgetMeterText } from "./BotsUsage";
 import { bots } from "./state";
+import { rollingWindow } from "./usageWindow";
 
 export const RUNTIME_MODE_LABELS: Record<RuntimeMode, string> = {
   "approval-required": "Ask before actions",
@@ -179,6 +182,7 @@ export function BotEditor({
   canSave,
   startersSupported,
   verdictsSupported,
+  budgetsSupported,
   onSaved,
   onClose,
 }: {
@@ -190,6 +194,8 @@ export function BotEditor({
   readonly startersSupported: boolean;
   /** Older servers keep every reply as text. */
   readonly verdictsSupported: boolean;
+  /** Older servers have no budgets. */
+  readonly budgetsSupported: boolean;
   readonly onSaved: (bot: BotDefinition) => void;
   readonly onClose: () => void;
 }) {
@@ -204,6 +210,13 @@ export function BotEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.save, { reportFailure: false });
+  const [meterWindow] = useState(() => rollingWindow(1, Date.now()));
+  const usage = useEnvironmentQuery(
+    budgetsSupported && bot?.budget !== undefined
+      ? bots.usage({ environmentId, input: { ...meterWindow, botId: bot.id } })
+      : null,
+  );
+  const budgetState = bot ? usage.data?.budgets[bot.id] : undefined;
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
 
   const update = (patch: Partial<BotDraft>) => setDraft((current) => ({ ...current, ...patch }));
@@ -463,6 +476,34 @@ export function BotEditor({
             </LibraryField>
           ) : null}
         </div>
+        {budgetsSupported || draft.runsPerDay !== "" || draft.tokensPerDay !== "" ? (
+          <fieldset className="grid gap-2">
+            <legend className="text-sm font-medium">Budget</legend>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <LibraryField label="Runs per 24 hours">
+                <Input
+                  inputMode="numeric"
+                  placeholder="No limit"
+                  value={draft.runsPerDay}
+                  onChange={(event) => update({ runsPerDay: event.target.value })}
+                />
+              </LibraryField>
+              <LibraryField label="Tokens per 24 hours">
+                <Input
+                  inputMode="numeric"
+                  placeholder="No limit"
+                  value={draft.tokensPerDay}
+                  onChange={(event) => update({ tokensPerDay: event.target.value })}
+                />
+              </LibraryField>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {budgetState
+                ? budgetMeterText(budgetState)
+                : "A run past a limit is refused, and a batch waits until the window allows it. Runs in progress are never stopped."}
+            </span>
+          </fieldset>
+        ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive-foreground">
             {error}

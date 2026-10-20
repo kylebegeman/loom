@@ -51,6 +51,9 @@ export interface BotDraft {
   readonly maxConcurrentRuns: string;
   readonly scopeProjectId: string;
   readonly output: BotOutput;
+  /** Empty means no limit. */
+  readonly runsPerDay: string;
+  readonly tokensPerDay: string;
 }
 
 let parameterKeys = 0;
@@ -80,6 +83,8 @@ export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft =
   maxConcurrentRuns: "2",
   scopeProjectId: "",
   output: "text",
+  runsPerDay: "",
+  tokensPerDay: "",
 });
 
 export const botDraft = (bot: BotDefinition): BotDraft => ({
@@ -113,7 +118,25 @@ export const botDraft = (bot: BotDefinition): BotDraft => ({
   maxConcurrentRuns: String(bot.maxConcurrentRuns),
   scopeProjectId: bot.scopeProjectId ?? "",
   output: bot.output ?? "text",
+  runsPerDay: bot.budget?.runsPerDay === undefined ? "" : String(bot.budget.runsPerDay),
+  tokensPerDay: bot.budget?.tokensPerDay === undefined ? "" : String(bot.budget.tokensPerDay),
 });
+
+/** A limit as typed, with thousands separators allowed; null when left empty. */
+const limitValue = (text: string): number | null => {
+  const trimmed = text.replace(/[\s,_]/g, "");
+  return trimmed === "" ? null : Number(trimmed);
+};
+
+const budgetFromDraft = (draft: BotDraft) => {
+  const runsPerDay = limitValue(draft.runsPerDay);
+  const tokensPerDay = limitValue(draft.tokensPerDay);
+  if (runsPerDay === null && tokensPerDay === null) return null;
+  return {
+    ...(runsPerDay === null ? {} : { runsPerDay }),
+    ...(tokensPerDay === null ? {} : { tokensPerDay }),
+  };
+};
 
 /** A readable id from the name, for new bots. */
 export const slugFromName = (name: string) =>
@@ -149,6 +172,7 @@ export const saveInputFromDraft = (
   | { readonly ok: false; readonly message: string } => {
   if (draft.modelSelection === null) return { ok: false, message: "Choose a model." };
   const projectId = draft.projectId === "" ? null : (draft.projectId as ProjectId);
+  const budget = budgetFromDraft(draft);
   const decoded = decodeSave({
     id: draft.id.trim(),
     name: draft.name.trim(),
@@ -175,6 +199,7 @@ export const saveInputFromDraft = (
     scopeProjectId: draft.scopeProjectId === "" ? null : draft.scopeProjectId,
     // Text is the default, and an older server would refuse a key it does not know.
     ...(draft.output === "verdict" ? { output: "verdict" } : {}),
+    ...(budget === null ? {} : { budget }),
     ...(expectedVersion === undefined ? {} : { expectedVersion }),
   });
   if (Option.isSome(decoded)) return { ok: true, input: decoded.value };
@@ -199,6 +224,18 @@ const describeProblem = (draft: BotDraft): string => {
   const concurrency = Number(draft.maxConcurrentRuns);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 20)
     return "Runs at once is a whole number from 1 to 20.";
+  const runsPerDay = limitValue(draft.runsPerDay);
+  if (
+    runsPerDay !== null &&
+    (!Number.isInteger(runsPerDay) || runsPerDay < 1 || runsPerDay > 10_000)
+  )
+    return "Runs per 24 hours is a whole number from 1 to 10,000, or empty for no limit.";
+  const tokensPerDay = limitValue(draft.tokensPerDay);
+  if (
+    tokensPerDay !== null &&
+    (!Number.isInteger(tokensPerDay) || tokensPerDay < 1_000 || tokensPerDay > 10_000_000_000)
+  )
+    return "Tokens per 24 hours is a whole number from 1,000 to 10 billion, or empty for no limit.";
   return "Check the fields and lengths, then save again.";
 };
 

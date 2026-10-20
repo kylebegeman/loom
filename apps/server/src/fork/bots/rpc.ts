@@ -12,6 +12,7 @@ import {
   type BotsRunInput,
   type BotsSaveInput,
   type BotStarterId,
+  type BotsUsageInput,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
@@ -55,6 +56,7 @@ export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(B.dismiss, service.dismiss(input).pipe(Effect.map((runs) => ({ runs })))),
       [B.promote]: (input: { runId: string }) =>
         auth.effect(B.promote, service.promote(input.runId, USER_CALLER)),
+      [B.usage]: (input: BotsUsageInput) => auth.effect(B.usage, service.usage(input)),
     };
   });
 

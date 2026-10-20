@@ -11,6 +11,7 @@ import {
 import {
   BOTS_MAX_ACTIVE_RUNS,
   BOTS_RESULT_MAX_BYTES,
+  BOTS_USAGE_MAX_DAYS,
   BotsError,
   botRunThreadId,
   isBotInboxRun,
@@ -24,6 +25,7 @@ import {
   type BotOutput,
   type BotRun,
   type BotRunStatus,
+  type BotRunUsage,
   type BotsChange,
   type BotsDismissInput,
   type BotsInboxInput,
@@ -32,6 +34,8 @@ import {
   type BotsRetryInput,
   type BotsRunInput,
   type BotsSaveInput,
+  type BotsUsageInput,
+  type BotsUsageResult,
   type BotStarterId,
   type BotStarterState,
   type BotStarterStatus,
@@ -58,8 +62,10 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import { budgetRefusal, budgetState, BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT } from "./BotsStore.ts";
 import { checkParameters, renderPrompt, validateInputs } from "./render.ts";
+import { summarizeRunUsage, summarizeUsage } from "./usage.ts";
 import { decodeVerdictReply } from "./verdict.ts";
 import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
 
@@ -214,6 +220,8 @@ export const make = Effect.gen(function* () {
   const live = new Map<string, LiveRun>();
   const recovered = yield* Deferred.make<void>();
   const retryPermit = yield* Semaphore.make(1);
+  // Serializes a budget check with the run row it admits, so two starts cannot both take the last run.
+  const budgetPermit = yield* Semaphore.make(1);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -492,6 +500,7 @@ export const make = Effect.gen(function* () {
       readonly status: BotRunStatus;
       readonly error?: string | null;
       readonly reply?: string | null;
+      readonly usage?: BotRunUsage | null;
     },
   ) {
     if (isTerminalBotRunStatus(entry.run.status)) return;
@@ -509,6 +518,7 @@ export const make = Effect.gen(function* () {
       resultTruncated: reply?.truncated ?? false,
       error: outcome.error ?? null,
       ...(verdict === null ? {} : { verdict }),
+      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
     };
     live.delete(entry.run.id);
     yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
@@ -542,6 +552,17 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => null),
     );
 
+  /** Read once at the end; a failed read leaves the run without usage and never fails it. */
+  const readUsage = (projectId: ProjectId, threadId: ThreadId) =>
+    threads.getProjectThreadRecords({ projectId, threadId }, ["providerTurns"]).pipe(
+      Effect.map((records) => summarizeRunUsage(records.providerTurns)),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Reading bot run usage failed", { threadId, cause }).pipe(
+          Effect.as(null),
+        ),
+      ),
+    );
+
   /** Waits for the run thread to end, enforces the timeout, and records the outcome. */
   const awaitThread = Effect.fnUntraced(function* (entry: LiveRun, timeoutMs: number) {
     const projectId = entry.run.projectId;
@@ -559,21 +580,28 @@ export const make = Effect.gen(function* () {
       waited = yield* threads.waitForThread({ ...target, timeoutMs: INTERRUPT_GRACE_MS });
     }
     const reply = yield* readReply(projectId, entry.run.threadId);
-    if (entry.cancelRequested) return yield* finish(entry, { status: "cancelled", reply });
+    const usage = yield* readUsage(projectId, entry.run.threadId);
+    if (entry.cancelRequested) return yield* finish(entry, { status: "cancelled", reply, usage });
     if (timedOut)
       return yield* finish(entry, {
         status: "timed_out",
         error: `The run passed its ${Math.max(1, Math.round(timeoutMs / 60_000))} minute limit and was stopped.`,
         reply,
+        usage,
       });
     if (waited.run === null)
-      return yield* finish(entry, { status: "failed", error: "The run thread never started." });
+      return yield* finish(entry, {
+        status: "failed",
+        error: "The run thread never started.",
+        usage,
+      });
     if (waited.run.status === "completed")
-      return yield* finish(entry, { status: "completed", reply });
+      return yield* finish(entry, { status: "completed", reply, usage });
     return yield* finish(entry, {
       status: "failed",
       error: `The run ended as ${waited.run.status.replaceAll("_", " ")}.`,
       reply,
+      usage,
     });
   });
 
@@ -735,6 +763,20 @@ export const make = Effect.gen(function* () {
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
   }
 
+  const budgetFor = Effect.fnUntraced(function* (bot: BotDefinition, nowMs: number) {
+    const since = isoAt(nowMs - BUDGET_WINDOW_MS);
+    const window = yield* store.budgetWindow(bot.id, since).pipe(Effect.catch(storageError));
+    return budgetState(bot.budget, window);
+  });
+
+  /** Fails with the refusal, carrying `retryAt`, when `bot`'s budget has no room for a run. */
+  const checkBudget = Effect.fnUntraced(function* (bot: BotDefinition) {
+    if (bot.budget === undefined) return;
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const refusal = budgetRefusal(bot.name, yield* budgetFor(bot, nowMs), nowMs);
+    if (refusal !== null) return yield* Effect.fail(refusal);
+  });
+
   const insertRun = (run: BotRun, options: StartOptions) =>
     store
       .withTransaction(
@@ -804,7 +846,13 @@ export const make = Effect.gen(function* () {
       threadRunId: null,
       output: bot.output ?? "text",
     };
-    yield* insertRun(entry.run, options);
+    // The stored definition's budget, so a batch pinned to an older version still honours it.
+    yield* permitBot.budget === undefined
+      ? insertRun(entry.run, options)
+      : checkBudget(permitBot).pipe(
+          Effect.andThen(insertRun(entry.run, options)),
+          budgetPermit.withPermits(1),
+        );
     live.set(runId, entry);
     yield* publish({ _tag: "run", run: entry.run });
     entry.fiber = yield* execute(
@@ -853,8 +901,9 @@ export const make = Effect.gen(function* () {
     if (current.archivedAt !== null)
       return yield* fail("archived", `${current.name} is archived. Restore it to run it.`);
     return yield* start(definition, input, caller, current, options).pipe(
+      // A budget refusal is not recorded: the batch waits for the budget instead.
       Effect.catchIf(
-        (error) => error.reason === "invalid",
+        (error) => error.reason === "invalid" && error.retryAt === undefined,
         (error) =>
           Effect.gen(function* () {
             const runId = yield* randomUuidV4;
@@ -1094,6 +1143,31 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  /** Runs, outcomes, durations and tokens per bot for a window, and every budget as it stands. */
+  const usage = Effect.fn("BotsService.usage")(function* (input: BotsUsageInput) {
+    const since = Date.parse(input.since);
+    const until = Date.parse(input.until);
+    if (Number.isNaN(since) || Number.isNaN(until) || since >= until)
+      return yield* fail("invalid", "Choose a window whose start is before its end.");
+    if (until - since > BOTS_USAGE_MAX_DAYS * BUDGET_WINDOW_MS)
+      return yield* fail("invalid", `Choose a window of at most ${BOTS_USAGE_MAX_DAYS} days.`);
+    const bots = yield* list();
+    const runs = yield* store
+      .listRunsCreatedBetween({
+        since: isoAt(since),
+        until: isoAt(until),
+        botId: input.botId,
+      })
+      .pipe(Effect.catch(storageError));
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const budgeted = bots.filter(
+      (bot) => bot.budget !== undefined && (input.botId === undefined || bot.id === input.botId),
+    );
+    const budgets: Record<string, BotsUsageResult["budgets"][string]> = {};
+    for (const bot of budgeted) budgets[bot.id] = yield* budgetFor(bot, nowMs);
+    return { ...summarizeUsage(runs, bots), budgets } satisfies BotsUsageResult;
+  });
+
   return {
     list,
     get: requireBot,
@@ -1112,6 +1186,8 @@ export const make = Effect.gen(function* () {
     retry,
     dismiss,
     promote,
+    usage,
+    checkBudget,
     awaitRun,
     activeRunCount,
     recover,

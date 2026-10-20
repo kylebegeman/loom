@@ -20,6 +20,7 @@ import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -83,15 +84,21 @@ export const make = Effect.gen(function* () {
   const serviceScope = yield* Effect.scope;
   const changes = yield* PubSub.unbounded<BotBatchChange>();
   const feeders = new Map<string, Fiber.Fiber<void>>();
+  /** Batches their bot's budget holds back, until when; only a running feeder sets one. */
+  const pausedUntil = new Map<string, string>();
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotBatchChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
 
-  const summarize = (stored: StoredBatch, items: ReadonlyArray<BotBatchItem>): BotBatch => ({
-    ...stored.batch,
-    total: items.length,
-    counts: countItems(items),
-  });
+  const summarize = (stored: StoredBatch, items: ReadonlyArray<BotBatchItem>): BotBatch => {
+    const paused = pausedUntil.get(stored.batch.id);
+    return {
+      ...stored.batch,
+      total: items.length,
+      counts: countItems(items),
+      ...(paused === undefined ? {} : { pausedUntil: paused }),
+    };
+  };
 
   const requireStored = Effect.fnUntraced(function* (batchId: string) {
     const stored = yield* store.getBatch(batchId).pipe(Effect.catch(storageError));
@@ -262,10 +269,14 @@ export const make = Effect.gen(function* () {
     runtimeMode: null,
   });
 
-  /** Starts one item; its row turns `started` in the run's own insert, so a crash cannot split them. */
+  /**
+   * Starts one item; its row turns `started` in the run's own insert, so a crash cannot split them.
+   * While the bot's budget refuses, the item stays pending and the batch waits until the budget
+   * allows a run, then asks again; a restart in between starts a feeder that asks again.
+   */
   const feedItem = Effect.fnUntraced(function* (stored: StoredBatch, item: BotBatchItem) {
     const batchId = stored.batch.id;
-    const run = yield* bots
+    const start = bots
       .startRunWith(
         stored.definition,
         {
@@ -283,7 +294,26 @@ export const make = Effect.gen(function* () {
         },
       )
       .pipe(Effect.uninterruptible);
-    yield* bots.awaitRun(run.id).pipe(Effect.ignore({ log: true }));
+    while (true) {
+      const started = yield* start.pipe(
+        Effect.map((run) => ({ run, retryAt: undefined })),
+        Effect.catchIf(
+          (error) => error.retryAt !== undefined,
+          (error) => Effect.succeed({ run: null, retryAt: error.retryAt }),
+        ),
+      );
+      if (started.run !== null) {
+        if (pausedUntil.delete(batchId)) yield* publishSummary(batchId);
+        return yield* bots.awaitRun(started.run.id).pipe(Effect.ignore({ log: true }));
+      }
+      const retryAt = started.retryAt ?? (yield* nowIso);
+      if (pausedUntil.get(batchId) !== retryAt) {
+        pausedUntil.set(batchId, retryAt);
+        yield* publishSummary(batchId);
+      }
+      const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+      yield* Effect.sleep(Duration.millis(Math.max(0, Date.parse(retryAt) - nowMs)));
+    }
   });
 
   /**
@@ -353,7 +383,12 @@ export const make = Effect.gen(function* () {
       Effect.catchCause((cause) =>
         Effect.logWarning("Bot batch feeder failed", { batchId, cause }),
       ),
-      Effect.ensuring(Effect.sync(() => feeders.delete(batchId))),
+      Effect.ensuring(
+        Effect.sync(() => {
+          feeders.delete(batchId);
+          pausedUntil.delete(batchId);
+        }),
+      ),
       Effect.forkIn(serviceScope),
     );
     feeders.set(batchId, fiber);

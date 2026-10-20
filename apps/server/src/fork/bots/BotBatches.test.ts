@@ -2,12 +2,16 @@ import { describe, expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotRun, BotsBatchInput } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { PullRequestService } from "../../pullRequest/PullRequestService.ts";
 import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { make } from "./BotBatches.ts";
+import { BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotBatchesStore, type StoredBatch } from "./BotBatchesStore.ts";
 import { BotsService, RESTARTED_BEFORE_START, USER_CALLER } from "./BotsService.ts";
 import { makeBotsStore } from "./BotsStore.ts";
@@ -109,6 +113,40 @@ describe("BotBatches", () => {
         expect((yield* batches.report(batch.id)).markdown).toContain(
           "## Passed\n\n- a.ts\n- b.ts\n- c.ts",
         );
+      }),
+    ),
+  );
+
+  it.effect("pauses at the bot's budget and resumes when the window allows", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches } = yield* makeBatches(harness);
+        yield* bots.save(
+          reviewer({ maxConcurrentRuns: 2, budget: { runsPerDay: 1 } }),
+          USER_CALLER,
+        );
+        const paused = yield* batches.changes.pipe(
+          Stream.filter((change) => change._tag === "batch" && change.batch.pausedUntil != null),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        const batch = yield* batches.runBatch(lines("a.ts\nb.ts"), USER_CALLER);
+        const first = yield* harness.nextLaunch;
+        yield* Fiber.join(paused);
+
+        const { batch: waiting, items } = yield* batches.get(batch.id);
+        const firstRun = yield* bots.getRun(items[0]!.runId!);
+        expect(waiting.pausedUntil).toBe(isoAt(Date.parse(firstRun.createdAt) + BUDGET_WINDOW_MS));
+        expect(items.map((item) => item.state)).toEqual(["started", "pending"]);
+        yield* harness.end(first.threadId!, { status: "completed", reply: "A" });
+
+        yield* TestClock.adjust("24 hours");
+        expect(yield* endNext(harness, "completed", "B")).toBe("Review b.ts.");
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { completed: 2 },
+        });
       }),
     ),
   );

@@ -1,6 +1,15 @@
+import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import { ThreadId } from "../baseSchemas.ts";
-import { isBotInboxRun, needsBotAttention, type BotRun, type BotVerdictValue } from "./bots.ts";
+import {
+  BotBudget,
+  BotsError,
+  isBotInboxRun,
+  needsBotAttention,
+  type BotRun,
+  type BotVerdictValue,
+} from "./bots.ts";
 
 const run = (fields: Partial<BotRun> = {}): BotRun => ({
   id: "run-1",
@@ -47,5 +56,32 @@ describe("isBotInboxRun", () => {
     const dismissed = run({ status: "failed", dismissedAt: "2026-10-20T11:00:00.000Z" });
     expect(isBotInboxRun(dismissed)).toBe(false);
     expect(needsBotAttention(dismissed)).toBe(true);
+  });
+});
+
+describe("BotBudget", () => {
+  const decode = Schema.decodeUnknownExit(BotBudget);
+
+  it("accepts limits inside their bounds and rejects the rest", () => {
+    expect(Exit.isSuccess(decode({ runsPerDay: 50, tokensPerDay: 1_000 }))).toBe(true);
+    expect(Exit.isSuccess(decode({}))).toBe(true);
+    expect(Exit.isFailure(decode({ runsPerDay: 0 }))).toBe(true);
+    expect(Exit.isFailure(decode({ runsPerDay: 10_001 }))).toBe(true);
+    expect(Exit.isFailure(decode({ tokensPerDay: 999 }))).toBe(true);
+    expect(Exit.isFailure(decode({ runsPerDay: 1.5 }))).toBe(true);
+  });
+});
+
+const decodeBotsError = Schema.decodeUnknownSync(BotsError);
+
+describe("BotsError", () => {
+  it("carries retryAt for a budget refusal", () => {
+    const error = decodeBotsError({
+      _tag: "BotsError",
+      reason: "invalid",
+      message: "Reviewer reached its budget.",
+      retryAt: "2026-10-21T10:00:00.000Z",
+    });
+    expect(error.retryAt).toBe("2026-10-21T10:00:00.000Z");
   });
 });

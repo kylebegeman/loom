@@ -8,7 +8,7 @@ const BotsSearch = Schema.Struct({
   run: Schema.optional(BotId),
   /** The bot whose "Run on many" dialog is open. */
   many: Schema.optional(BotId),
-  tab: Schema.optional(Schema.Literals(["runs", "batches", "inbox"])),
+  tab: Schema.optional(Schema.Literals(["runs", "batches", "inbox", "usage"])),
   batch: Schema.optional(Schema.String),
 });
 type BotsSearch = typeof BotsSearch.Type;

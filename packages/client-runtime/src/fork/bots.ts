@@ -243,6 +243,7 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     run: createEnvironmentRpcCommand(runtime, { label: "loom:bots:run", tag: B.run }),
     cancel: createEnvironmentRpcCommand(runtime, { label: "loom:bots:cancel", tag: B.cancel }),
     inbox: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:inbox", tag: B.inbox }),
+    usage: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:usage", tag: B.usage }),
     retry: createEnvironmentRpcCommand(runtime, { label: "loom:bots:retry", tag: B.retry }),
     dismiss: createEnvironmentRpcCommand(runtime, { label: "loom:bots:dismiss", tag: B.dismiss }),
     promote: createEnvironmentRpcCommand(runtime, { label: "loom:bots:promote", tag: B.promote }),

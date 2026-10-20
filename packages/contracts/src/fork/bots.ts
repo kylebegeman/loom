@@ -13,6 +13,7 @@ export const BOTS_INVOCATION_FEATURE = "bots-invocation";
 export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
 export const BOTS_BATCHES_FEATURE = "bots-batches";
 export const BOTS_INBOX_FEATURE = "bots-inbox";
+export const BOTS_BUDGETS_FEATURE = "bots-budgets";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -29,6 +30,7 @@ export const BOTS_WS_METHODS = {
   retry: "loom.bots.retry",
   dismiss: "loom.bots.dismiss",
   promote: "loom.bots.promote",
+  usage: "loom.bots.usage",
 } as const;
 
 export const BOTS_BATCH_WS_METHODS = {
@@ -115,6 +117,17 @@ export type BotWorkspace = typeof BotWorkspace.Type;
 export const BotOutput = Schema.Literals(["text", "verdict"]);
 export type BotOutput = typeof BotOutput.Type;
 
+/** Rolling 24 hour limits; an absent limit is unlimited. */
+export const BotBudget = Schema.Struct({
+  runsPerDay: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  ),
+  tokensPerDay: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 10_000_000_000 })),
+  ),
+});
+export type BotBudget = typeof BotBudget.Type;
+
 export const BotDefinitionInput = Schema.Struct({
   id: BotId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
@@ -133,6 +146,8 @@ export const BotDefinitionInput = Schema.Struct({
   scopeProjectId: Schema.NullOr(ProjectId),
   /** Absent means `text`. */
   output: Schema.optionalKey(BotOutput),
+  /** Absent means unlimited. */
+  budget: Schema.optionalKey(BotBudget),
 });
 export type BotDefinitionInput = typeof BotDefinitionInput.Type;
 
@@ -221,6 +236,19 @@ export const BotVerdict = Schema.Struct({
 });
 export type BotVerdict = typeof BotVerdict.Type;
 
+/**
+ * Tokens the run's thread reported, summed over its turns. Input includes cache reads and writes
+ * and output includes reasoning, as `TurnTokenUsage` counts them. `partial` when some turns
+ * reported none or the run used subagents, whose tokens are not included.
+ */
+export const BotRunUsage = Schema.Struct({
+  inputTokens: Schema.Int,
+  cachedInputTokens: Schema.Int,
+  outputTokens: Schema.Int,
+  status: Schema.Literals(["complete", "partial", "unavailable"]),
+});
+export type BotRunUsage = typeof BotRunUsage.Type;
+
 export const BotRun = Schema.Struct({
   id: BotRunId,
   botId: BotId,
@@ -257,6 +285,8 @@ export const BotRun = Schema.Struct({
   modelSelection: Schema.optionalKey(ModelSelection),
   /** The thread whose checkout a `caller` checkout bot ran in. */
   checkoutThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  /** Null until the run ends, and when its usage could not be read. */
+  usage: Schema.optionalKey(Schema.NullOr(BotRunUsage)),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -285,6 +315,11 @@ export type BotsChange = typeof BotsChange.Type;
 export class BotsError extends Schema.TaggedError<BotsError>()("BotsError", {
   reason: Schema.Literals(["not_found", "invalid", "archived", "permission", "storage", "launch"]),
   message: Schema.String,
+  /**
+   * When a budget refusal stops applying. A field rather than a reason, so clients built before
+   * budgets still decode the error and show its message.
+   */
+  retryAt: Schema.optionalKey(Schema.String),
 }) {}
 
 export const BotsSaveInput = Schema.Struct({
@@ -357,6 +392,79 @@ export const BotsPromoteResult = Schema.Struct({
 });
 export type BotsPromoteResult = typeof BotsPromoteResult.Type;
 
+export const BOTS_USAGE_MAX_DAYS = 92;
+
+export const BotsUsageInput = Schema.Struct({
+  since: Schema.String,
+  until: Schema.String,
+  botId: Schema.optionalKey(BotId),
+});
+export type BotsUsageInput = typeof BotsUsageInput.Type;
+
+export const BotUsageTokens = Schema.Struct({
+  input: Schema.Int,
+  cachedInput: Schema.Int,
+  output: Schema.Int,
+  /** Input plus output; cached input is part of input. */
+  total: Schema.Int,
+});
+export type BotUsageTokens = typeof BotUsageTokens.Type;
+
+export const BotModelUsage = Schema.Struct({
+  model: Schema.String,
+  /** True for runs recorded before runs kept their model, grouped under the bot's current one. */
+  assumed: Schema.Boolean,
+  runs: Schema.Int,
+  successRate: Schema.NullOr(Schema.Number),
+  medianDurationMs: Schema.NullOr(Schema.Int),
+  totalTokens: Schema.Int,
+});
+export type BotModelUsage = typeof BotModelUsage.Type;
+
+export const BotUsageRow = Schema.Struct({
+  botId: BotId,
+  botName: Schema.String,
+  runs: Schema.Int,
+  completed: Schema.Int,
+  failed: Schema.Int,
+  timedOut: Schema.Int,
+  cancelled: Schema.Int,
+  pass: Schema.Int,
+  fail: Schema.Int,
+  needsAttention: Schema.Int,
+  /** Pass rate for a bot with verdicts in the window, else completion rate; null with nothing finished. */
+  successRate: Schema.NullOr(Schema.Number),
+  medianDurationMs: Schema.NullOr(Schema.Int),
+  maxDurationMs: Schema.NullOr(Schema.Int),
+  tokens: BotUsageTokens,
+  /** False when any run reported partial or no usage, so the tokens are a floor. */
+  usageComplete: Schema.Boolean,
+  byModel: Schema.Array(BotModelUsage),
+});
+export type BotUsageRow = typeof BotUsageRow.Type;
+
+/** A bot's use of its budget over the rolling 24 hours ending now. */
+export const BotBudgetState = Schema.Struct({
+  runsInWindow: Schema.Int,
+  tokensInWindow: Schema.Int,
+  runsPerDay: Schema.optionalKey(Schema.Int),
+  tokensPerDay: Schema.optionalKey(Schema.Int),
+  /** Set while a limit is reached: when the next run may start. */
+  retryAt: Schema.optionalKey(Schema.String),
+});
+export type BotBudgetState = typeof BotBudgetState.Type;
+
+export const BotsUsageResult = Schema.Struct({
+  rows: Schema.Array(BotUsageRow),
+  totals: Schema.Struct({
+    runs: Schema.Int,
+    tokens: BotUsageTokens,
+    usageComplete: Schema.Boolean,
+  }),
+  budgets: Schema.Record(BotId, BotBudgetState),
+});
+export type BotsUsageResult = typeof BotsUsageResult.Type;
+
 const errors = Schema.Union([BotsError, EnvironmentAuthorizationError]);
 const M = BOTS_WS_METHODS;
 const BB = BOTS_BATCH_WS_METHODS;
@@ -414,6 +522,7 @@ export const BotsRpcGroup = RpcGroup.make(
     success: BotsPromoteResult,
     error: errors,
   }),
+  Rpc.make(M.usage, { payload: BotsUsageInput, success: BotsUsageResult, error: errors }),
 );
 
 export const BOTS_BATCH_MAX_ITEMS = 200;
@@ -540,6 +649,8 @@ export const BotBatch = Schema.Struct({
   callerThreadId: Schema.NullOr(ThreadId),
   createdAt: Schema.String,
   finishedAt: Schema.NullOr(Schema.String),
+  /** Set while the bot's budget holds the batch back: when it tries the next item again. */
+  pausedUntil: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type BotBatch = typeof BotBatch.Type;
 

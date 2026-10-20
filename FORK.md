@@ -202,6 +202,11 @@ L91 lists `LOOM_BOTS_INSTRUCTIONS` with the orchestration sections in
 following the `ext-vault` seam there. Its composer features use `ext-composer` and
 `ext-composer-menu`. See the [L91 packet](docs/fork/packets/L91-bots-invocation/SEAMS.md).
 
+L95 renders a Bots section after the Totals section of `apps/web/src/components/usage/UsagePage.tsx`
+(`fork: bots`, 2 marker lines). `BotsUsageSection` fetches its own numbers and renders nothing
+unless the primary environment supports `bots-budgets` and is selected. See the
+[L95 packet](docs/fork/packets/L95-bots-budgets/SEAMS.md).
+
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.
 

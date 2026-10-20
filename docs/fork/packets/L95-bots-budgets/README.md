@@ -1,6 +1,7 @@
 # L95: Usage and budgets
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Show what each bot costs and how well it works, and let Kyle cap it. Every run records the
 tokens it used. The Bots page shows, per bot, runs, success rate, median duration and tokens for a

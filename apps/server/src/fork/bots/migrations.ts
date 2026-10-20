@@ -76,5 +76,18 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_inbox ON fork_bots_runs (status, dismissed_at, created_at DESC)`;
       }),
     ],
+    [
+      7,
+      "RunUsage",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN input_tokens INTEGER`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN cached_input_tokens INTEGER`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN output_tokens INTEGER`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN usage_status TEXT`;
+        // The token budget sums a bot's runs by when they finished.
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_finished ON fork_bots_runs (bot_id, finished_at)`;
+      }),
+    ],
   ],
 };

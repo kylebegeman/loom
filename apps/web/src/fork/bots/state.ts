@@ -14,6 +14,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_BATCHES_FEATURE,
+  BOTS_BUDGETS_FEATURE,
   BOTS_FEATURE,
   BOTS_INBOX_FEATURE,
   BOTS_INVOCATION_FEATURE,
@@ -43,6 +44,7 @@ export function useBotsHost() {
     verdictsSupported: supportsLoomFeature(capabilities, BOTS_VERDICTS_FEATURE),
     batchesSupported: supportsLoomFeature(capabilities, BOTS_BATCHES_FEATURE),
     inboxSupported: supportsLoomFeature(capabilities, BOTS_INBOX_FEATURE),
+    budgetsSupported: supportsLoomFeature(capabilities, BOTS_BUDGETS_FEATURE),
   };
 }
 

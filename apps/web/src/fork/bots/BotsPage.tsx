@@ -26,6 +26,7 @@ import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
 import { BotsInbox } from "./BotsInbox";
+import { BotsUsage } from "./BotsUsage";
 import { botDraft } from "./draft";
 import { RunOnManyDialog } from "./RunOnManyDialog";
 import {
@@ -38,7 +39,7 @@ import {
 
 type Editing = { readonly bot: BotDefinition | null } | null;
 
-const TAB_LABELS = { runs: "Runs", batches: "Batches", inbox: "Inbox" } as const;
+const TAB_LABELS = { runs: "Runs", batches: "Batches", inbox: "Inbox", usage: "Usage" } as const;
 
 const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
   present: "Starter",
@@ -121,6 +122,7 @@ export function BotsPage() {
     "runs" as const,
     ...(batchesLive ? (["batches"] as const) : []),
     ...(inboxLive ? (["inbox"] as const) : []),
+    ...(live && host.budgetsSupported ? (["usage"] as const) : []),
   ];
   const tab = tabs.find((value) => value === search.tab) ?? "runs";
   const attention = useBotsAttentionCount();
@@ -434,7 +436,13 @@ export function BotsPage() {
                     ))}
                   </div>
                 ) : null}
-                {tab === "inbox" ? (
+                {tab === "usage" ? (
+                  <BotsUsage
+                    environmentId={environmentId}
+                    changes={changes}
+                    connected={host.connected}
+                  />
+                ) : tab === "inbox" ? (
                   <BotsInbox
                     environmentId={environmentId}
                     changes={changes}
@@ -558,6 +566,7 @@ export function BotsPage() {
           canSave={canSave}
           startersSupported={host.startersSupported}
           verdictsSupported={host.verdictsSupported}
+          budgetsSupported={host.budgetsSupported}
           onClose={() => setEditing(null)}
           onSaved={(bot) => {
             setEditing(null);

@@ -406,6 +406,7 @@ apps/web/src/components/Sidebar.logic.ts	bots	2
 packages/client-runtime/src/state/threadShell.ts	bots	1
 apps/web/src/components/ThreadNotificationCoordinator.tsx	bots	1
 packages/provider-core/src/server/orchestrationInstructions.ts	bots	2
+apps/web/src/components/usage/UsagePage.tsx	bots	2
 apps/web/src/components/chat/ChatComposer.tsx	ext-composer	4
 apps/web/src/components/chat/ChatComposer.tsx	ext-composer-menu	4
 apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	2

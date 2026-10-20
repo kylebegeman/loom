@@ -5,6 +5,7 @@ import {
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadShell,
   type ThreadId,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import type { BotsSaveInput } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
@@ -65,9 +66,12 @@ export const makeHarness = Effect.gen(function* () {
   const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
   const receipts = new Set<string>();
   const dispatched: Array<OrchestrationV2ServerCommand> = [];
+  /** Token usage per provider turn of a run thread; a thread with none reports no usage. */
+  const turns = new Map<string, Array<TurnTokenUsage | undefined>>();
   const state = {
     timeOut: false,
     sendError: null as unknown,
+    usageError: false,
     settings: { defaultModelSelection: model as ModelSelection | null, providerInstances: {} },
   };
   const shells = new Map<string, Partial<OrchestrationV2ThreadShell>>();
@@ -82,6 +86,16 @@ export const makeHarness = Effect.gen(function* () {
     Effect.sync(() => {
       if (outcome.reply !== null && !replies.has(threadId)) replies.set(threadId, outcome.reply);
     }).pipe(Effect.andThen(Deferred.succeed(outcomeFor(threadId), outcome)), Effect.asVoid);
+
+  const messagesOf = (threadId: string) => {
+    const reply = replies.get(threadId);
+    return {
+      messages: [
+        { role: "user", text: "brief" },
+        ...(reply === undefined ? [] : [{ role: "assistant", text: reply }]),
+      ],
+    };
+  };
 
   const threads = {
     getThreadShell: (threadId: string) =>
@@ -102,15 +116,18 @@ export const makeHarness = Effect.gen(function* () {
         yield* end(input.threadId, { status: "interrupted", reply: "Partial notes." });
         return {};
       }),
-    getProjectThreadRecords: (input: { readonly threadId: ThreadId }) =>
-      Effect.sync(() => {
-        const reply = replies.get(input.threadId);
-        return {
-          messages: [
-            { role: "user", text: "brief" },
-            ...(reply === undefined ? [] : [{ role: "assistant", text: reply }]),
-          ],
-        };
+    getProjectThreadRecords: (
+      input: { readonly threadId: ThreadId },
+      fields: ReadonlyArray<string>,
+    ) =>
+      Effect.suspend((): Effect.Effect<unknown, { readonly _tag: string }> => {
+        if (!fields.includes("providerTurns")) return Effect.succeed(messagesOf(input.threadId));
+        if (state.usageError) return Effect.fail({ _tag: "RecordsUnavailable" });
+        return Effect.succeed({
+          providerTurns: (turns.get(input.threadId) ?? []).map((turnTokenUsage) =>
+            turnTokenUsage === undefined ? {} : { turnTokenUsage },
+          ),
+        });
       }),
     hasReceipt: (commandId: string) => Effect.sync(() => receipts.has(commandId)),
     sendToThread: (input: ThreadManagement.ThreadManagementSendInput) =>
@@ -162,6 +179,7 @@ export const makeHarness = Effect.gen(function* () {
     sent,
     receipts,
     dispatched,
+    turns,
     interrupted,
     state,
     shells,

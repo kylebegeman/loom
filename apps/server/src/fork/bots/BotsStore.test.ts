@@ -1,53 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { isBotInboxRun, type BotDefinition, type BotRun } from "@t3tools/contracts/fork";
+import { isBotInboxRun } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { makeBotsStore, type BotsStore } from "./BotsStore.ts";
 import { BotsMigrations } from "./migrations.ts";
-
-const testBot = (fields: Partial<BotDefinition> = {}): BotDefinition => ({
-  id: "reviewer",
-  name: "Reviewer",
-  description: "Reviews one file.",
-  instructions: "Review {{file}}.",
-  parameters: [{ name: "file", label: "File", type: "string", required: true }],
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
-  runtimeMode: "auto",
-  interactionMode: "default",
-  workspace: { type: "project", projectId: null, worktree: false },
-  timeoutMinutes: 5,
-  maxConcurrentRuns: 2,
-  scopeProjectId: null,
-  version: 1,
-  createdBy: "user",
-  createdAt: "2026-10-20T10:00:00.000Z",
-  updatedAt: "2026-10-20T10:00:00.000Z",
-  archivedAt: null,
-  ...fields,
-});
-
-const testRun = (id: string, createdAt: string, fields: Partial<BotRun> = {}): BotRun => ({
-  id,
-  botId: "reviewer",
-  botVersion: 1,
-  botName: "Reviewer",
-  threadId: ThreadId.make(`bot-run-${id}`),
-  projectId: ProjectId.make("project-a"),
-  inputs: { file: "a.ts" },
-  status: "completed",
-  startedBy: "user",
-  callerThreadId: null,
-  createdAt,
-  startedAt: createdAt,
-  finishedAt: createdAt,
-  result: "Looks fine.",
-  resultTruncated: false,
-  error: null,
-  ...fields,
-});
+import { testBot, testRun } from "./testing/fixtures.ts";
 
 const withStore = <A, E>(use: (store: BotsStore) => Effect.Effect<A, E, SqlClient.SqlClient>) =>
   Effect.gen(function* () {
