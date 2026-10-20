@@ -194,3 +194,36 @@ binds the preview context only; it cannot prove the old identity works. Executio
 unavailable in contracts, service and clients (`canCutover`, `canRollback` and
 `configurationWrites` are literal false). This is not a Git configuration patch or a recovery
 bundle. Workload authorization and later provider revocation are explicitly unknown.
+
+## Typed credential imports
+
+Typed operations extend `VaultMigration` through a protocol-two lifecycle helper in the same
+existing `migrations` subtree; actual credentials use the existing `items` subtree. There are
+no new OpenBao paths, permissions, SQL migrations or Library changes. Protocol-one manual
+reviews remain readable. Separate typed RPC/list/status schemas keep typed metadata out of
+older client decoders; paginated lists skip the other protocol while retaining bounded raw-key
+cursors. `vault-migration-typed-imports` gates the new controls. Private prepare/apply stay in
+human RPC forms; administrator MCP/CLI expose typed list/status only.
+
+Preparation locally normalizes a dedicated key/connection using the adapters' existing stored
+schemas. SSH keys are canonicalized to Ed25519 PKCS#8 PEM. OpenSSH parsing rejects encryption,
+multiple keys, malformed checks/padding and mismatched public/private material; the public key
+is independently derived from the seed. GitHub token format and App RSA key type/size are
+checked without opening a session. The expected account is declared, unverified metadata;
+existing connector execution still authenticates and compares the actual account on use.
+No import receipt establishes API or Git transport evidence.
+
+A fingerprint binds label, typed adapter metadata and canonical private material. The review
+ledger contains safe details, allocated item ID, actor and fingerprint, not private bytes.
+Apply requires separate reviewed/development literals and matching reentry, actor and unexpired
+review. It persists acceptance, then saves a newly allocated item at expected version zero.
+Current destination write authorization is rechecked before commit; no existing item is replaced.
+The existing core mutation receipt recovers committed items after a lost final ledger write,
+without a read-side write. Guarded archive retains the expected initial item version and never
+archives a later edit. CAS and operation IDs retain idempotency. Both typed result execution
+gates and configurationWrites remain literal false; workload authorization is not evaluated.
+
+A typed review requires a runtime that understands protocol two. Upgraded servers preserve older
+client APIs, but downgrading to an older server does not teach it to read new typed ledgers.
+Keep a compatible runtime for review history; do not delete history to make a downgrade appear
+compatible. L79's host-owner rollout/recovery gates still apply.

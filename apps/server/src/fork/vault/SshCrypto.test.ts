@@ -141,3 +141,48 @@ it.effect("rejects forged and forwarded host binding, wrong pins and malformed k
     ).toBe("invalid-key");
   }).pipe(Effect.provide(SshCrypto.layer)),
 );
+
+it.effect(
+  "imports unencrypted Ed25519 PEM/OpenSSH material and rejects forged, encrypted and non-Ed25519 keys",
+  () =>
+    Effect.gen(function* () {
+      const crypto = yield* SshCrypto.SshCrypto;
+      const original = yield* crypto.create;
+      const imported = yield* crypto.importKey(original.privateKey);
+      expect(imported.publicKey).toBe(original.publicKey);
+      const jwk = NodeCrypto.createPrivateKey(Redacted.value(original.privateKey)).export({
+        format: "jwk",
+      });
+      const pub = Buffer.from(jwk.x!, "base64url"),
+        seed = Buffer.from(jwk.d!, "base64url");
+      const envelope = (cipher = "none", forged = false) => {
+        const privateData = Buffer.concat([
+          SshCrypto.sshUint32(7),
+          SshCrypto.sshUint32(7),
+          SshCrypto.sshString("ssh-ed25519"),
+          SshCrypto.sshString(pub),
+          SshCrypto.sshString(Buffer.concat([forged ? Buffer.alloc(32, 9) : seed, pub])),
+          SshCrypto.sshString("Synthetic dev import"),
+        ]);
+        const padding = Buffer.from(
+          Array.from({ length: (8 - (privateData.length % 8)) % 8 }, (_, i) => i + 1),
+        );
+        return Redacted.make(
+          `-----BEGIN OPENSSH PRIVATE KEY-----\n${Buffer.concat([Buffer.from("openssh-key-v1\0"), SshCrypto.sshString(cipher), SshCrypto.sshString("none"), SshCrypto.sshString(""), SshCrypto.sshUint32(1), SshCrypto.sshString(Buffer.from(original.publicKey.split(" ")[1]!, "base64")), SshCrypto.sshString(Buffer.concat([privateData, padding]))]).toString("base64")}\n-----END OPENSSH PRIVATE KEY-----`,
+        );
+      };
+      expect((yield* crypto.importKey(envelope())).publicKey).toBe(original.publicKey);
+      for (const input of [
+        envelope("aes256-ctr"),
+        envelope("none", true),
+        Redacted.make("invalid private material"),
+        Redacted.make(
+          NodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
+            .privateKey.export({ type: "pkcs8", format: "pem" })
+            .toString(),
+        ),
+      ]) {
+        expect((yield* crypto.importKey(input).pipe(Effect.flip)).reason).toBe("invalid-key");
+      }
+    }).pipe(Effect.provide(SshCrypto.layer)),
+);

@@ -1,6 +1,6 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed development imports, local inventory, replacement plans, verification receipts and read-route previews implemented; waiting on host policy.** Kyle selected the full packet. Typed imports and configuration cutover remain unfinished; live verification acceptance is pending.
+Status: **In progress; reviewed manual and typed development imports, local inventory, replacement plans, receipts and read-route previews implemented; waiting on host policy.** Kyle selected the full packet. Configuration cutover remains unfinished; live verification acceptance is pending.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
@@ -32,7 +32,12 @@ and push entries cannot produce these previews. The inverse is hypothetical: ori
 is unverified, no configuration backup is captured, and both execution paths remain unavailable.
 Previews perform no provider probes, ledger writes, grant changes or configuration writes.
 
-Dedicated replacement provisioning, typed SSH/GitHub imports, live verification acceptance,
+Reviewed typed imports now accept dedicated unencrypted Ed25519 PEM/OpenSSH keys and GitHub
+App/token credentials into new items. Reviews retain public metadata and a canonical-material
+fingerprint, never private values. A second confirmation reenters the same material before commit.
+No provider verification, grant, configuration change or production operation is implied.
+
+Dedicated replacement provisioning, live verification acceptance,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer
 fresh Vault SSH keys and dedicated GitHub App/token connections in their existing flows.
 Production use waits on the namespace policy in [operations](../../operations/vault.md#development-import-operating-policy).

@@ -173,11 +173,40 @@ These are read-route plans and conditional inverses only, not Git configuration 
 restorable backups or evidence of original-account access. No rollback or cutover execution
 exists. L75 stays partial and L77 retains its restricted local acceptance.
 
+## Reviewed typed development imports
+
+The eight-file focused suite passed **46 tests**, including real fork MCP registration. New
+cases cover Ed25519 PEM/OpenSSH imports, independent public-key derivation and rejection of
+forged, encrypted, malformed and non-Ed25519 keys; local RSA App validation; safe public review
+metadata; actor/material/scope/expiry binding; destination write permissions/revocation; separate
+attestations; mixed legacy/typed pagination; unchanged-item archival; and lost final receipt
+recovery without a read-side write. Private values are absent from review ledgers and results.
+No provider transport is supplied to the import test layers. Contracts forbid execution and
+verification claims. All five affected consumer package typechecks, focused lint and mobile
+native static checks passed. Documentation links, the 390-row seam manifest and whitespace
+checks pass; no repository-wide checks ran.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigration.test.ts apps/server/src/fork/vault/SshCrypto.test.ts packages/contracts/src/fork/vault-migration.test.ts packages/client-runtime/src/fork/vault-migration.permissions.test.ts apps/server/src/fork/vault/migration-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts
+```
+
+Authorized isolated Browser-panel checks passed separate development/review gating, masked token
+entry and hidden review material, SSH/token commits, receipt refresh, guarded archive, closing
+and reopening with empty private input, mismatched reentry rejection and cancellation. Synthetic
+SSH keys were generated locally; no provider was contacted. Both review and committed layouts
+fit a 390 CSS-pixel viewport without horizontal overflow. Native mobile, App-form interaction,
+Electron shell and remote/live-provider acceptance remain pending. RSA App acceptance is
+currently automated local evidence only. No install, SSH probe, production credential, Library
+change, new backend permission or Git transport mutation was used.
+
+Typed import work starts from fork main `6b66ed8bd5`; the final fetch found main already in
+its ancestry, with no additional merge changes requiring integration checks.
+
 ## Full packet acceptance still required
 
 Live acceptance must confirm the implemented binding between reviewed source, replacement
 item/version, host trust and current permissions. Connection success alone is not repository access, and a
-GitHub API result is not Git transport readiness. Typed imports and replacement provisioning,
+GitHub API result is not Git transport readiness. Replacement provisioning,
 verified cutover, interrupted-cutover recovery, unrelated personal-repository preservation and
 concurrent-edit rejection during configuration apply/rollback remain unfinished. No configuration
 writer is implemented in this slice. L77 retains its separate restricted local acceptance.

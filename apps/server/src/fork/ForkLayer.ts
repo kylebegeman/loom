@@ -183,7 +183,9 @@ const ForkServicesLive = Layer.mergeAll(
       ),
     ),
   ),
-  VaultMigration.layer.pipe(Layer.provide(Layer.merge(layerVaultStore, layerVaultCore))),
+  VaultMigration.layer.pipe(
+    Layer.provide(Layer.mergeAll(layerVaultStore, layerVaultCore, SshCrypto.layer)),
+  ),
   layerVaultHealth,
   layerVaultHealthContext,
   VaultHealthChecks.reactor.pipe(Layer.provideMerge(layerVaultHealthChecks)),

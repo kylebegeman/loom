@@ -74,7 +74,7 @@ export class VaultGitHub extends Context.Service<
     ) => Effect.Effect<VaultGitHubResult, Failure>;
   }
 >()("t3/fork/vault/VaultGitHub") {}
-const Stored = Schema.Struct({
+export const Stored = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   provider: Schema.Literal("github.com"),
   credential: VaultGitHubCredential,

@@ -1,3 +1,4 @@
+import { makeTypedMigration } from "./TypedMigration.ts";
 import { SecretRef } from "@t3tools/contracts";
 import {
   VaultError,
@@ -6,6 +7,10 @@ import {
   VaultMigrationApply,
   VaultMigrationList,
   VaultMigrationPlan,
+  type VaultTypedMigrationPrepare,
+  type VaultTypedMigrationApply,
+  type VaultTypedMigrationResult,
+  type VaultTypedMigrationPage,
   type VaultMigrationResult,
   type VaultMigrationPage,
 } from "@t3tools/contracts/fork";
@@ -26,6 +31,29 @@ type Failure = VaultError | VaultMigrationError;
 export class VaultMigration extends Context.Service<
   VaultMigration,
   {
+    readonly typedPrepare: (
+      input: VaultTypedMigrationPrepare,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultTypedMigrationResult, Failure>;
+    readonly typedApply: (
+      input: VaultTypedMigrationApply,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultTypedMigrationResult, Failure>;
+    readonly typedInspect: (id: string) => Effect.Effect<VaultTypedMigrationResult, Failure>;
+    readonly typedList: (
+      input: VaultMigrationList,
+    ) => Effect.Effect<VaultTypedMigrationPage, Failure>;
+    readonly typedCancel: (
+      id: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultTypedMigrationResult, Failure>;
+    readonly typedArchive: (
+      id: string,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultTypedMigrationResult, Failure>;
     readonly prepare: (
       input: VaultMigrationPrepare,
       actor: string,
@@ -40,6 +68,7 @@ export class VaultMigration extends Context.Service<
     readonly archive: (id: string, actor: string) => Effect.Effect<VaultMigrationResult, Failure>;
   }
 >()("t3/fork/vault/VaultMigration") {}
+const isOtherImportProtocol = Schema.is(Schema.Struct({ protocol: Schema.Literal(2) }));
 const Stored = Schema.Struct({
   protocol: Schema.Literal(1),
   plan: VaultMigrationPlan,
@@ -159,6 +188,7 @@ const make = Effect.gen(function* () {
       }),
     );
   return VaultMigration.of({
+    ...(yield* makeTypedMigration),
     inspect,
     list: Effect.fn("VaultMigration.list")(function* (input) {
       if (!isList(input)) return yield* invalid();
@@ -168,7 +198,13 @@ const make = Effect.gen(function* () {
       const remaining = keys.filter((id) => input.cursor === null || id > input.cursor),
         page = remaining.slice(0, 25);
       return {
-        items: yield* Effect.forEach(page, inspect),
+        items: (yield* Effect.forEach(page, (id) =>
+          Effect.gen(function* () {
+            const raw = yield* store.read(`${prefix}/${id}`);
+            if (raw && isOtherImportProtocol(Redacted.value(raw.value))) return null;
+            return yield* inspect(id);
+          }),
+        )).filter((r): r is VaultMigrationResult => r !== null),
         nextCursor: remaining.length > 25 ? page.at(-1)! : null,
       };
     }),

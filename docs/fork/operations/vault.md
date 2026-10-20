@@ -592,3 +592,18 @@ establish Git transport eligibility; pushes remain unsupported. Both execution p
 unavailable. Original-route authentication and a restorable configuration snapshot must be
 verified/designed separately before any future writer. Do not treat a preview ID as an execution
 authorization or rollback artifact.
+
+## Typed development import compatibility
+
+Typed SSH/GitHub reviews reuse the existing migration and item subtrees and add no OpenBao
+policy permission or Library requirement. Keep the migration/replacement namespace rollout
+with the host owner behind L79. Private material enters only the selected development Vault
+through explicit human attestations; this is not automated proof that a credential is unused
+by personal or production systems. Do not supply those credentials to this workflow.
+
+Credential formats are checked locally and account names are declared expectations. No import
+contacts a provider, grants access or changes transport configuration. All execution gates stay
+false. Typed reviews use protocol two and separate APIs so older clients can use protocol-one
+manual imports against an upgraded server. Older server versions cannot inspect protocol-two
+reviews; retain a compatible runtime/history when planning rollback. No new production commands
+are required for this slice beyond the already deferred L79-gated host rollout.

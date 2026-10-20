@@ -3,6 +3,8 @@ import {
   VaultError,
   VaultMigrationError,
   VaultMigrationResult,
+  VaultTypedMigrationResult,
+  VaultTypedMigrationPage,
   VaultMigrationList,
   VaultMigrationPage,
   VaultItemId,
@@ -18,6 +20,22 @@ import * as VaultMigration from "./VaultMigration.ts";
 const failure = Schema.Union([VaultError, VaultMigrationError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultMigrationToolkit = Toolkit.make(
+  Tool.make("loom_vault_migration_typed_plans", {
+    description:
+      "List safe reviewed development-only SSH/GitHub imports. Administrator clients only. No credentials, provider contact, grants or configuration changes. Private ingress is only in Loom's human review form.",
+    parameters: VaultMigrationList,
+    success: VaultTypedMigrationPage,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_migration_typed_status", {
+    description:
+      "Inspect a typed development import receipt without importing credentials or contacting providers. Administrator clients only. Imported credentials are unverified and all configuration execution stays unavailable.",
+    parameters: Schema.Struct({ id: VaultItemId }),
+    success: VaultTypedMigrationResult,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_migration_plans", {
     description:
       "List safe development import reviews, 25 per page. Full-access administrator clients only. No personal store access, credential values or automatic import. Private prepare/apply happen in Loom's reviewed form.",
@@ -47,6 +65,26 @@ export const vaultMigrationHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_migration_typed_plans: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(
+              Effect.flatMap(VaultMigration.VaultMigration, (service) => service.typedList(input)),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_migration_typed_status: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(
+              Effect.flatMap(VaultMigration.VaultMigration, (service) =>
+                service.typedInspect(input.id),
+              ),
+            ),
+          ),
+        ),
+      ),
       loom_vault_migration_plans: McpToolAccess.reads((input) =>
         admin.pipe(
           Effect.andThen(

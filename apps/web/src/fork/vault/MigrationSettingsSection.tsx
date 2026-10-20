@@ -1,3 +1,4 @@
+import { TypedImports } from "./TypedImports";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
@@ -30,7 +31,20 @@ export function VaultMigrationSettingsSection() {
   )
     return <p>Development import reviews need a newer Vault server.</p>;
   if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
-  return <Imports key={environment.environmentId} environmentId={environment.environmentId} />;
+  return (
+    <>
+      <Imports key={environment.environmentId} environmentId={environment.environmentId} />
+      {supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-migration-typed-imports",
+      ) ? (
+        <TypedImports
+          key={`typed:${environment.environmentId}`}
+          environmentId={environment.environmentId}
+        />
+      ) : null}
+    </>
+  );
 }
 function Imports({ environmentId }: { environmentId: EnvironmentId }) {
   const [enteringValue, setEnteringValue] = useState(false);

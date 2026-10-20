@@ -36,6 +36,24 @@ Use the dedicated SSH and GitHub connection flows for their typed records. This 
 never inspects personal stores, bulk exports or files, and does not establish usable workload
 access. The complete workflow below remains selected.
 
+## Delivered typed development imports
+
+The same Vault development imports settings include a capability-gated typed form for one
+dedicated SSH key, GitHub token or GitHub App identity. SSH supports unencrypted Ed25519 PKCS#8
+PEM and OpenSSH envelopes, with an explicit user/host/port and optional independently verified
+host public pin. GitHub requires the expected account and repository allowlist; App imports
+also require App and installation IDs and an unencrypted RSA PEM key of at least 2048 bits.
+Encrypted and unsupported keys are refused locally. No file, personal vault or credential
+manager is inspected, and no provider is contacted.
+
+The ten-minute review shows only public metadata and scope. Separate development and review
+attestations are mandatory. Closing clears private input; reopening requires reentry of the
+same canonical material. Cancellation creates no item. Commit creates one new typed item,
+with interrupted-response recovery and guarded archival only while the imported item remains
+unchanged. Restore through Vault management. Format validation does not prove development-only
+ownership, account ownership, host identity or service access. Existing grants and all Git
+transport configuration remain untouched. Cutover/rollback/configuration-write gates remain false.
+
 ## Implemented inventory and replacement planning
 
 Open **Vault migration plans** in the selected computer's settings or command palette. Inspect

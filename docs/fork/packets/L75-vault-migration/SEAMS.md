@@ -30,6 +30,10 @@ There is no new storage path, policy permission or upstream seam. Capability
 `vault-migration-previews` gates both clients; their migration views share one state instance
 per surface so receipt invalidation reaches the displayed preview.
 
+Typed imports add no upstream seam. `ForkLayer` supplies the existing local SSH crypto adapter
+to `VaultMigration`; fork-owned schemas, RPC/scope/client/MCP/CLI registries and settings handle
+the new protocol. Existing item and migration subtrees are reused, with no policy extension.
+
 ## Remaining integration review
 
 Verified cutover must inspect GitHubHostSetup and SSH configuration writers.

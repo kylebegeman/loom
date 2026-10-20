@@ -91,7 +91,7 @@ export class VaultSsh extends Context.Service<
     ) => Effect.Effect<VaultSshResult, Failure>;
   }
 >()("t3/fork/vault/VaultSsh") {}
-const StoredKey = Schema.Struct({
+export const StoredKey = Schema.Struct({
   protocol: Schema.Literal(1),
   privateKey: Schema.RedactedFromValue(Schema.String),
   publicKey: VaultSshPublicKey,

@@ -1,3 +1,4 @@
+import { TypedImports } from "./TypedImports";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Switch, View } from "react-native";
@@ -39,11 +40,23 @@ export function VaultMigrationSettingsSection({
   return (
     <SettingsSection title="Vault development imports">
       {canRead ? (
-        <Imports
-          key={`${environmentId}:${connected}`}
-          environmentId={environmentId}
-          connected={connected}
-        />
+        <>
+          <Imports
+            key={`${environmentId}:${connected}`}
+            environmentId={environmentId}
+            connected={connected}
+          />
+          {supportsLoomFeature(
+            config?.environment.capabilities,
+            "vault-migration-typed-imports",
+          ) ? (
+            <TypedImports
+              key={`typed:${environmentId}:${connected}`}
+              environmentId={environmentId}
+              connected={connected}
+            />
+          ) : null}
+        </>
       ) : (
         <Text>Your connection does not include Vault inspection.</Text>
       )}

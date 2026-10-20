@@ -19,6 +19,11 @@ it.effect(
       const threadId = ThreadId.make("maintenance-acceptance");
       let reads = 0;
       const migration = Layer.mock(VaultMigration.VaultMigration)({
+        typedList: () =>
+          Effect.sync(() => {
+            reads++;
+            return { items: [], nextCursor: null };
+          }),
         list: () =>
           Effect.sync(() => {
             reads++;
@@ -70,9 +75,24 @@ it.effect(
       expect(reads).toBe(0);
       expect((yield* inspect(admin))[0]?.result).toEqual({ items: [], nextCursor: null });
       expect(reads).toBe(1);
+      const typed = (scope: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_migration_typed_plans", { cursor: null })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(threads),
+            Effect.provideService(McpInvocationContext, scope),
+          );
+      expect((yield* typed(agent).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* typed(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect(reads).toBe(1);
+      expect((yield* typed(admin))[0]?.result).toEqual({ items: [], nextCursor: null });
+      expect(reads).toBe(2);
       expect(Object.keys(VaultMigrationToolkit.tools).sort()).toEqual([
         "loom_vault_migration_plans",
         "loom_vault_migration_status",
+        "loom_vault_migration_typed_plans",
+        "loom_vault_migration_typed_status",
       ]);
     }).pipe(Effect.scoped),
 );

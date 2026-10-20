@@ -52,6 +52,22 @@ does not read 1Password, import exports, discover projects, verify logins or cha
 configuration. Administrator `loom vault migration-plans` and `migration-status` report safe
 receipts; private imports use the reviewed form. Never put credentials in chat or command arguments.
 
+## Import dedicated SSH and GitHub identities
+
+Under **Vault development imports**, use **Typed development imports** for a credential created
+specifically for development. Choose SSH key, GitHub token or GitHub App. Enter its explicit
+destination or expected account/repositories and paste only that credential. SSH accepts
+unencrypted Ed25519 PKCS#8 PEM or OpenSSH keys. Apps require an unencrypted RSA PEM key of at
+least 2048 bits, plus App and installation IDs. Personal stores and files are never scanned.
+
+Confirm development-only ownership, review the public scope and selected computer, then confirm
+again to create one new item. Format checks are local; no host or provider is contacted. Account
+ownership and access still need separate verification and workload grants. GitHub API evidence
+cannot authorize Git transport changes. Closing clears private input; reopen the review to
+reenter the same material. Cancel before commit, inspect an uncertain result before retrying,
+or archive the unchanged imported item. Restore archived items through Vault management.
+Cutover, rollback and configuration changes remain unavailable.
+
 ## Plan development replacements
 
 Open **Vault migration plans** in the selected computer's Loom settings or command palette.

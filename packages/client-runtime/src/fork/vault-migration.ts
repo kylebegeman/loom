@@ -9,6 +9,30 @@ export function createVaultMigrationAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    typedList: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:typed-import-list",
+      tag: V.typedList,
+    }),
+    typedInspect: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:typed-import-inspect",
+      tag: V.typedInspect,
+    }),
+    typedPrepare: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:typed-import-prepare",
+      tag: V.typedPrepare,
+    }),
+    typedApply: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:typed-import-apply",
+      tag: V.typedApply,
+    }),
+    typedCancel: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:typed-import-cancel",
+      tag: V.typedCancel,
+    }),
+    typedArchive: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:typed-import-archive",
+      tag: V.typedArchive,
+    }),
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:migration-list",
       tag: V.list,

@@ -39,6 +39,12 @@ export class SshReader {
     this.offset += length;
     return result;
   }
+  padding() {
+    const remaining = this.buffer.length - this.offset;
+    if (this.buffer.length % 8 !== 0 || remaining > 8) throw new Error("Invalid SSH padding");
+    for (let i = 1; i <= remaining; i++)
+      if (this.byte() !== i) throw new Error("Invalid SSH padding");
+  }
   end() {
     if (this.offset !== this.buffer.length) throw new Error("Trailing SSH data");
   }
@@ -57,11 +63,69 @@ const publicLine = (key: NodeCrypto.KeyObject) => {
   if (jwk.crv !== "Ed25519" || !jwk.x) throw new Error("Unsupported key");
   return `ssh-ed25519 ${Buffer.concat([sshString("ssh-ed25519"), sshString(Buffer.from(jwk.x, "base64url"))]).toString("base64")}`;
 };
+const importKey = (value: string) => {
+  const text = value.trim();
+  if (!text.startsWith("-----BEGIN OPENSSH PRIVATE KEY-----")) {
+    if (!/^-----BEGIN PRIVATE KEY-----[\s\S]*-----END PRIVATE KEY-----$/.test(text))
+      throw new Error("Unsupported private key");
+    return NodeCrypto.createPrivateKey(text);
+  }
+  const body = text
+    .replace(/^-----BEGIN OPENSSH PRIVATE KEY-----\s*/, "")
+    .replace(/\s*-----END OPENSSH PRIVATE KEY-----$/, "")
+    .replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body)) throw new Error("Invalid OpenSSH key");
+  const buffer = Buffer.from(body, "base64");
+  if (
+    buffer.toString("base64") !== body ||
+    buffer.subarray(0, 15).toString() !== "openssh-key-v1\0"
+  )
+    throw new Error("Invalid OpenSSH envelope");
+  const outer = new SshReader(buffer.subarray(15));
+  if (
+    outer.string().toString() !== "none" ||
+    outer.string().toString() !== "none" ||
+    outer.string().length !== 0 ||
+    outer.uint32() !== 1
+  )
+    throw new Error("Encrypted or multiple SSH keys are unsupported");
+  const publicBlob = outer.string(),
+    inner = new SshReader(outer.string());
+  outer.end();
+  if (inner.uint32() !== inner.uint32() || inner.string().toString() !== "ssh-ed25519")
+    throw new Error("Invalid Ed25519 key");
+  const publicBytes = inner.string(),
+    secret = inner.string();
+  inner.string();
+  inner.padding();
+  if (publicBytes.length !== 32 || secret.length !== 64 || !secret.subarray(32).equals(publicBytes))
+    throw new Error("Invalid Ed25519 private key");
+  // Derive the public key independently of the two public copies in the OpenSSH envelope.
+  const key = NodeCrypto.createPrivateKey({
+    format: "der",
+    type: "pkcs8",
+    key: Buffer.concat([
+      Buffer.from("302e020100300506032b657004220420", "hex"),
+      secret.subarray(0, 32),
+    ]),
+  });
+  if (
+    !blob(publicLine(key)).equals(publicBlob) ||
+    !Buffer.from(NodeCrypto.createPublicKey(key).export({ format: "jwk" }).x!, "base64url").equals(
+      publicBytes,
+    )
+  )
+    throw new Error("Mismatched SSH public key");
+  return key;
+};
 const invalid = () => new VaultSshError({ reason: "invalid-key" });
 export type SshBinding = { readonly sessionId: Buffer };
 export class SshCrypto extends Context.Service<
   SshCrypto,
   {
+    readonly importKey: (
+      privateKey: Redacted.Redacted<string>,
+    ) => Effect.Effect<{ privateKey: Redacted.Redacted<string>; publicKey: string }, VaultSshError>;
     readonly create: Effect.Effect<
       { privateKey: Redacted.Redacted<string>; publicKey: string },
       VaultSshError
@@ -83,6 +147,17 @@ export class SshCrypto extends Context.Service<
   }
 >()("t3/fork/vault/SshCrypto") {}
 export const layer = Layer.succeed(SshCrypto, {
+  importKey: (value) =>
+    Effect.try({
+      try: () => {
+        const key = importKey(Redacted.value(value));
+        return {
+          publicKey: publicLine(key),
+          privateKey: Redacted.make(key.export({ type: "pkcs8", format: "pem" }).toString()),
+        };
+      },
+      catch: invalid,
+    }),
   create: Effect.try({
     try: () => {
       const pair = NodeCrypto.generateKeyPairSync("ed25519");

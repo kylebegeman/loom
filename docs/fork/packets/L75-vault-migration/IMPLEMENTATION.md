@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; reviewed imports, local inventory, replacement intent, verification receipts and read-route previews implemented locally.** The sequence below describes the full packet outcome;
+Status: **In progress; reviewed manual/typed imports, local inventory, replacement intent, verification receipts and read-route previews implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -25,9 +25,13 @@ repository-read receipts. Source/item/trust/permission checks, scope rejection a
 non-executable inverse limitations are implemented. There is no configuration writer, captured
 backup or original-credential verifier. The preview adds no backend namespace or policy rights.
 
+Typed development imports now validate SSH PEM/OpenSSH and GitHub App/token material locally,
+bind a public review to canonical private material, commit only new typed items after a second
+confirmation, and recover/guard archive through existing core receipts. Existing paths/policy
+rights and legacy client schemas are preserved. Native/live/remote acceptance remains incomplete.
+
 Next: original-route verification and recoverable configuration snapshot design before any
-future cutover writer. Keep execution disabled until that scope is separately selected. Typed
-imports, native/remote/live acceptance, dedicated replacement provisioning and host rollout
+future cutover writer. Keep execution disabled until that scope is separately selected. Native/remote/live acceptance, dedicated replacement provisioning and host rollout
 remain open. Interrupted configuration-cutover recovery and source-specific cleanup remain open.
 Full scope is retained; the manual import slice does not complete L75.
 

@@ -13,6 +13,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-migration-previews",
   "vault-migration-verification",
   "vault-migration-inventory",
+  "vault-migration-typed-imports",
   "vault-migration-imports",
   "vault-health",
   "vault-health-context",
