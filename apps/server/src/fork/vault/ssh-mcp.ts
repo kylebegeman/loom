@@ -65,7 +65,7 @@ export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_agents", {
     description:
       "List public terminal-agent activations for this authenticated active run. References alone grant no signing access.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Array(VaultSshAgentSession),
     failure,
     dependencies,
