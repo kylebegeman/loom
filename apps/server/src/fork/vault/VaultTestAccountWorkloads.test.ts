@@ -51,6 +51,7 @@ const fixture = () => {
   const state = {
     runId: RunId.make("run-one"),
     active: true,
+    status: "running",
     archived: false,
     deleted: false,
     project: true,
@@ -74,7 +75,7 @@ const fixture = () => {
             ({
               ...liveThreadShell(id),
               projectId,
-              status: state.active ? "running" : "idle",
+              status: state.active ? state.status : "idle",
               activeRunId: state.active ? state.runId : null,
               providerInstanceId: state.provider,
               runtimeMode: state.runtimeMode,
@@ -878,4 +879,46 @@ it.effect("refuses a lease released while the login access audit is committing",
       expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("quarantined");
     }),
   ),
+);
+
+it.effect.each(["queued", "waiting"])(
+  "preserves the reserving run's lease while its thread is %s",
+  (status) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const reserved = yield* f.reserve(),
+          lease = reserved.accounts[0]!.lease!;
+        f.state.status = status;
+        const observed = yield* f.service.discover(caller);
+        expect(observed.accounts[0]!.lease).toEqual(lease);
+        const before = (yield* f.manager.snapshot("client:manager")).revision;
+        yield* f.service.reconcile;
+        expect((yield* f.manager.snapshot("client:manager")).revision).toBe(before);
+        yield* TestClock.adjust("1 minute");
+        const renewed = yield* f.service.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: before,
+            change: { type: "renew", id: account.id, leaseId: lease.id },
+          },
+          caller,
+          Effect.void,
+        );
+        expect(renewed.accounts[0]!.lease!.expiresAt).toBeGreaterThan(lease.expiresAt);
+        const released = yield* f.service.apply(
+          {
+            operationId: f.id(),
+            expectedRevision: renewed.revision,
+            change: { type: "release", id: account.id, leaseId: lease.id },
+          },
+          caller,
+          Effect.void,
+        );
+        expect(released.accounts).toEqual([]);
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe(
+          "quarantined",
+        );
+      }),
+    ),
 );

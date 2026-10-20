@@ -30,6 +30,18 @@ export function createVaultTestAccountAtoms<R, E>(
 }
 export const vaultTestAccountState = (account: VaultTestAccount, now: number) =>
   account.lease && account.lease.expiresAt <= now ? ("quarantined" as const) : account.state;
+// Renewal becomes useful just after a 15-minute lease's rolling window advances.
+export const vaultTestAccountDeadlines = (accounts: readonly VaultTestAccount[]) =>
+  accounts.flatMap((account) =>
+    account.lease
+      ? [
+          account.lease.expiresAt,
+          ...(account.lease.expiresAt < account.lease.createdAt + 3_600_000
+            ? [account.lease.expiresAt - 900_000 + 1]
+            : []),
+        ]
+      : [],
+  );
 export function vaultTestAccountActions(
   account: VaultTestAccount,
   actor: string,

@@ -5,7 +5,7 @@ packet acceptance remains unfinished. Implementation base is current fork main `
 
 ## Authenticated workload evidence
 
-Four focused suites pass **33 tests**: the existing 13 manager cases, 18 real-service workload
+Four focused suites pass **35 tests**: the existing 13 manager cases, 20 real-service workload
 cases, one MCP authorization case and real startup registration. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
@@ -132,3 +132,24 @@ mail ownership/cleanup and browser/native login verification. These remain the f
 PRODUCT outcomes. Policy3/journal1 and L86's false execution/resumption/allow-once gates stay
 unchanged. L75 stays parked behind CW-1/L79. No Library schema, production, SSH, install or release
 action is included. This branch is prepared for the release owner's landing review.
+
+## Landing-review regressions
+
+Queued follow-ups and waiting user questions do not end an active reserving run. Two additional
+real-service cases preserve the same lease through discovery and reconciliation, then renew and
+release it while the presentation status stays queued/waiting. The binding trusts activeRunId,
+provider/project identity and permission modes rather than the thread's presentation status.
+
+Each client has a mounted clock regression: an empty manager waits twelve minutes, receives a
+new five-minute lease, then renews twice. Fresh snapshot.checkedAt rebases the clock and explicit
+renew-eligibility deadlines wake it after a fifteen-minute extension. Both renew and release
+withdraw at expiry, leaving clean review/retire and no timer. This is unit evidence for both
+web/native hooks, not a simulator pass. The card's lease line now uses that computed state, and
+mobile rename disables application and target edits. Both clients show and can copy the exact
+collection grant scope; the guide states full-access/default run requirements.
+
+The isolated browser pass verifies the visible scope, Copy action and success notice, and the
+quarantined card without a stale lease banner. Evidence: browser-screenshot-localhost-mvgz70ja-5a6d3d01.png
+in the local browser-artifacts directory. No synthetic wall-clock mutation or native interaction
+is claimed. Four affected package typechecks, focused lint, mobile static checks and seam/link
+checks pass. The release owner's landing review remains separate from these local checks.

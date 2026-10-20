@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultTestAccountMutation,
+  vaultTestAccountDestination,
   type VaultItemSummary,
   type VaultTestAccount,
   type VaultTestAccountChange,
@@ -12,6 +13,7 @@ import {
   createVaultTestAccountAtoms,
   supportsLoomFeature,
   vaultTestAccountActions,
+  vaultTestAccountDeadlines,
   vaultTestAccountState,
 } from "@t3tools/client-runtime/fork";
 import * as Cause from "effect/Cause";
@@ -25,6 +27,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "~/components/ui/dialog";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useEnvironmentScope } from "~/state/session";
 import { useServerConfigs } from "~/state/entities";
@@ -75,8 +78,18 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
     title: string;
     description: string;
   } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const copy = useCopyToClipboard({
+    target: "agent grant destination",
+    onCopy: () => setNotice("Agent grant destination copied."),
+    onError: () =>
+      setNotice("The destination could not be copied. Select and copy the displayed text."),
+  });
   const prefix = useId();
-  const now = useVaultTime(snapshot?.accounts.map((a) => a.lease?.expiresAt ?? null) ?? []);
+  const now = useVaultTime(
+    vaultTestAccountDeadlines(snapshot?.accounts ?? []),
+    snapshot?.checkedAt,
+  );
   const collection =
     snapshot?.collections.find((c) => c.id === selected) ?? snapshot?.collections[0] ?? null;
   const refresh = () => appAtomRegistry.refresh(atom);
@@ -181,6 +194,11 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
           Create collection
         </Button>
       </div>
+      {notice ? (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      ) : null}
       {error || result._tag === "Failure" ? (
         <p role="alert">
           {error ?? (result._tag === "Failure" ? message(Cause.squash(result.cause)) : "")}
@@ -224,6 +242,21 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                   <h3 className="text-sm font-medium">
                     {collection.application} · {collection.target}
                   </h3>
+                  <p className="break-all text-xs text-muted-foreground">
+                    Agent grant destination:{" "}
+                    <code>{vaultTestAccountDestination(collection.id)}</code>
+                  </p>
+                  <div>
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        copy.copyToClipboard(vaultTestAccountDestination(collection.id), undefined)
+                      }
+                    >
+                      Copy agent grant destination
+                    </Button>
+                  </div>
                   <div>
                     <Button
                       variant="outline"
@@ -276,7 +309,7 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                           <p className="break-all text-xs text-muted-foreground">
                             Vault account {account.itemId} · Version {account.itemVersion}
                           </p>
-                          {account.lease ? (
+                          {account.lease && vaultTestAccountState(account, now) === "reserved" ? (
                             <p className="text-sm">
                               {account.lease.owner === snapshot.actor
                                 ? "Reserved by this connection"

@@ -1,9 +1,11 @@
+import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultTestAccountMutation,
+  vaultTestAccountDestination,
   type VaultItemSummary,
   type VaultTestAccount,
   type VaultTestAccountChange,
@@ -14,6 +16,7 @@ import {
   createVaultReferenceAtoms,
   supportsLoomFeature,
   vaultTestAccountActions,
+  vaultTestAccountDeadlines,
   vaultTestAccountState,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -83,8 +86,9 @@ function Manager({
     title: string;
     description: string;
   } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const data = snapshot.data;
-  const now = useVaultTime(data?.accounts.map((a) => a.lease?.expiresAt ?? null) ?? []);
+  const now = useVaultTime(vaultTestAccountDeadlines(data?.accounts ?? []), data?.checkedAt);
   const collection =
     data?.collections.find((c) => c.id === selected) ?? data?.collections[0] ?? null;
   const prepare = (change: VaultTestAccountChange, title: string, description: string) => {
@@ -187,6 +191,7 @@ function Manager({
         <Button label="Refresh accounts" disabled={!connected || busy} onPress={snapshot.refresh} />
         <Button label="Create collection" disabled={disabled} onPress={() => start("collection")} />
       </View>
+      {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
       {error || snapshot.error ? (
         <Text accessibilityRole="alert">{error ?? snapshot.error}</Text>
       ) : null}
@@ -214,6 +219,22 @@ function Manager({
               <Text accessibilityRole="header">
                 {collection.application} · {collection.target}
               </Text>
+              <Text selectable className="text-foreground-muted">
+                Agent grant destination: {vaultTestAccountDestination(collection.id)}
+              </Text>
+              <Button
+                label="Copy agent grant destination"
+                disabled={busy}
+                onPress={() => {
+                  void Clipboard.setStringAsync(vaultTestAccountDestination(collection.id)).then(
+                    () => setNotice("Agent grant destination copied."),
+                    () =>
+                      setNotice(
+                        "The destination could not be copied. Select and copy the displayed text.",
+                      ),
+                  );
+                }}
+              />
               <Button label="Rename collection" disabled={disabled} onPress={renameCollection} />
               <View className="flex-row flex-wrap gap-2">
                 <Button
@@ -253,7 +274,7 @@ function Manager({
                     <Text className="text-foreground-muted">
                       Vault account {account.itemId} · Version {account.itemVersion}
                     </Text>
-                    {account.lease ? (
+                    {account.lease && vaultTestAccountState(account, now) === "reserved" ? (
                       <Text>
                         {account.lease.owner === data.actor
                           ? "Reserved by this connection"
@@ -324,7 +345,12 @@ function Manager({
               <Text>Test environment: {target}</Text>
               <View className="flex-row flex-wrap gap-2">
                 {(["test", "development", "staging"] as const).map((t) => (
-                  <Button key={t} label={t} disabled={disabled} onPress={() => setTarget(t)} />
+                  <Button
+                    key={t}
+                    label={t}
+                    disabled={disabled || editingId !== null}
+                    onPress={() => setTarget(t)}
+                  />
                 ))}
               </View>
             </>

@@ -80,7 +80,6 @@ const make = Effect.gen(function* () {
       !thread ||
       thread.deletedAt !== null ||
       thread.archivedAt !== null ||
-      thread.status !== "running" ||
       thread.activeRunId === null ||
       thread.runtimeMode !== "full-access" ||
       thread.interactionMode !== "default" ||
