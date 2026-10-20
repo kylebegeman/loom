@@ -195,7 +195,7 @@ describe("BotPipelines", () => {
           publish: (_definition, link) => Effect.succeed({ ...link, revision: link.revision + 1 }),
           resolveTarget: () => Effect.succeed({ environmentId: studio, label: "Studio" }),
           submit: (run) => Deferred.succeed(submitted, run.botVersion).pipe(Effect.asVoid),
-          cancel: () => Effect.void,
+          cancel: () => Effect.succeed(false),
           vaultLines: () => Effect.succeed([]),
         });
         const pinned = yield* bots.setLibraryLink("reviewer", {
