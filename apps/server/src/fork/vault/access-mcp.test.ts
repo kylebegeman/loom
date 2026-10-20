@@ -138,3 +138,55 @@ it.effect(
       expect(failed).toMatchObject({ _tag: "VaultError", reason: "unavailable" });
     }).pipe(Effect.scoped),
 );
+
+it.effect(
+  "binds approval requests to the authenticated thread and cannot expose a decision tool",
+  () =>
+    Effect.gen(function* () {
+      let called = false;
+      const serviceContext = yield* Layer.build(
+        Layer.mock(VaultAccess)({
+          approvalCreate: (request, actor, authorize) =>
+            Effect.gen(function* () {
+              yield* authorize;
+              called = true;
+              expect(request.threadId).toBe(threadId);
+              expect(actor).toBe(`thread:${threadId}`);
+              return yield* new VaultError({ reason: "unavailable" });
+            }),
+        }),
+      );
+      const toolkit = yield* VaultAccessToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(vaultAccessHandlers).pipe(
+            Layer.provide(
+              Layer.succeed(ForkRuntime, serviceContext as Context.Context<ForkServices>),
+            ),
+          ),
+        ),
+      );
+      const failed = yield* toolkit
+        .handle("loom_vault_access_request", {
+          id: "e".repeat(32),
+          threadId: "spoofed",
+          itemId: "b".repeat(32),
+          action: "use",
+          destination: null,
+        } as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provide(
+            Layer.mock(ThreadManagementService)({
+              getThreadShell: () => Effect.succeed(liveThreadShell(threadId)),
+            }),
+          ),
+          Effect.flip,
+        );
+      expect(failed).toMatchObject({ _tag: "VaultError", reason: "unavailable" });
+      expect(called).toBe(true);
+      expect(
+        Object.keys(VaultAccessToolkit.tools).some((name) => name.includes("approvals_decide")),
+      ).toBe(false);
+    }).pipe(Effect.scoped),
+);

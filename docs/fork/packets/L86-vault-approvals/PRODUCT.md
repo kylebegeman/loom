@@ -53,7 +53,7 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- Who may approve an agent request, and which actions require fresh human authentication?
-- Choose the initial notification channel and the lifetime of pending requests.
+- Initial approvers are destination environment clients with `access:write`. Fresh human authentication and platform account eligibility remain open.
+- Pending requests last ten minutes; timed approvals last five or fifteen minutes. Notification transports remain stubbed, with no initial external channel selected.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

@@ -1,3 +1,4 @@
+import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import { EnvironmentId, ThreadId, ProjectId, RunId } from "@t3tools/contracts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -85,6 +86,7 @@ const policyDependencies = Layer.mergeAll(
 );
 const policyCore = VaultCore.layer.pipe(Layer.provide(policyDependencies));
 const policyLayer = VaultAccess.layer.pipe(
+  Layer.provide(ApprovalNotifications.stub),
   Layer.provideMerge(policyCore),
   Layer.provide(policyDependencies),
 );

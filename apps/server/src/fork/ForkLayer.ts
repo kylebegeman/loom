@@ -1,3 +1,4 @@
+import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
 import * as MigrationGitMetadata from "./vault/MigrationGitMetadata.ts";
 import * as VaultMigration from "./vault/VaultMigration.ts";
@@ -89,6 +90,7 @@ const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.la
 const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 
 const layerVaultAccess = VaultAccess.layer.pipe(
+  Layer.provide(ApprovalNotifications.stub),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
 );
 

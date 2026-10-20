@@ -1,3 +1,4 @@
+import { VaultApprovalInbox } from "./ApprovalInbox";
 import { useVaultTime } from "./useVaultTime";
 import { useContext, useEffect, useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
@@ -123,6 +124,7 @@ function AccessManager({
   };
   return (
     <View className="gap-3">
+      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} connected={connected} />
       <Text>Choose who may inspect, manage or use development records.</Text>
       <Text className="text-foreground-muted">
         Every thread starts without access. A project grant covers all threads in that project.

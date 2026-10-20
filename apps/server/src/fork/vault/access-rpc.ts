@@ -1,5 +1,8 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
+  VaultError,
+  type VaultApprovalCreate,
+  type VaultApprovalChange,
   type VaultGrantMutation,
   type VaultDecisionInput,
   type VaultReadinessInput,
@@ -11,6 +14,29 @@ export const makeVaultAccessRpcHandlers = (auth: ForkRpcAuth, actor: string) =>
   Effect.gen(function* () {
     const access = yield* VaultAccess.VaultAccess;
     return {
+      [V.approvalInbox]: () => auth.effect(V.approvalInbox, access.approvalInbox),
+      [V.approvalCreate]: (input: VaultApprovalCreate) =>
+        auth.effect(
+          V.approvalCreate,
+          access.approvalCreate(
+            input,
+            actor,
+            Effect.suspend(() => auth.effect(V.approvalCreate, Effect.void)).pipe(
+              Effect.mapError(() => new VaultError({ reason: "denied" })),
+            ),
+          ),
+        ),
+      [V.approvalChange]: (input: VaultApprovalChange) =>
+        auth.effect(
+          V.approvalChange,
+          access.approvalChange(
+            input,
+            actor,
+            Effect.suspend(() => auth.effect(V.approvalChange, Effect.void)).pipe(
+              Effect.mapError(() => new VaultError({ reason: "denied" })),
+            ),
+          ),
+        ),
       [V.catalog]: () => auth.effect(V.catalog, access.catalog),
       [V.snapshot]: () => auth.effect(V.snapshot, access.snapshot),
       [V.apply]: (input: VaultGrantMutation) => auth.effect(V.apply, access.apply(input, actor)),

@@ -1,3 +1,4 @@
+import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
@@ -88,7 +89,10 @@ export const sshFixture = (
     );
     const coreLayer = VaultCore.layer.pipe(Layer.provide(dependencies));
     const brokerLayer = VaultBrokers.layer.pipe(Layer.provide(dependencies));
-    const accessLayer = VaultAccess.layer.pipe(Layer.provide(Layer.merge(coreLayer, dependencies)));
+    const accessLayer = VaultAccess.layer.pipe(
+      Layer.provide(ApprovalNotifications.stub),
+      Layer.provide(Layer.merge(coreLayer, dependencies)),
+    );
     const workloadsLayer = VaultWorkloads.layer.pipe(
       Layer.provide(Layer.mergeAll(brokerLayer, accessLayer, dependencies)),
     );

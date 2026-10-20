@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; reviewed manual/typed imports, local inventory, replacement intent, independent route receipts and recovery design previews implemented locally.** The sequence below describes the full packet outcome;
+Status: **Waiting on host policy; reviewed manual/typed imports, local inventory, replacement intent, independent route receipts and recovery design previews implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -41,8 +41,9 @@ revision/content/identity guards under an assumed atomic CAS. It is test infrast
 host/backend/transport integration. The real concurrent-writer primitive remains explicit open
 decision CW-1; the safe default is refusal of every host write.
 
-Next: design the actual managed route and byte-preserving bounded capture codec using synthetic
-fixtures; evaluate host concurrency options against CW-1 before choosing any capture or writer.
+Parked next section: managed route plus the byte-preserving bounded capture codec. It starts
+only once CW-1 selects a real compare-and-write primitive and L79 host policy is in place.
+Designing the codec ahead of that primitive is not approved. CW-1 refusal remains the default.
 Keep real capture and cutover/rollback execution disabled until separately selected. Native,
 remote and live acceptance, dedicated replacement provisioning and host rollout remain open.
 Interrupted real configuration recovery and source-specific cleanup remain unfinished.

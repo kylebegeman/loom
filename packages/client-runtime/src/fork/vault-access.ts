@@ -14,6 +14,18 @@ export function createVaultAccessAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    approvalInbox: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:approvals",
+      tag: V.approvalInbox,
+    }),
+    approvalCreate: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:approval-request",
+      tag: V.approvalCreate,
+    }),
+    approvalChange: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:approval-decide",
+      tag: V.approvalChange,
+    }),
     snapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:grants",
       tag: V.snapshot,

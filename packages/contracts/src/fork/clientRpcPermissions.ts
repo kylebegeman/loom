@@ -59,6 +59,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [VS.probe]: AuthAccessWriteScope,
   [VB.begin]: AuthAccessWriteScope,
   [VB.apply]: AuthAccessWriteScope,
+  [VA.approvalCreate]: AuthAccessWriteScope,
+  [VA.approvalChange]: AuthAccessWriteScope,
   [VA.apply]: AuthAccessWriteScope,
   [V.save]: AuthAccessWriteScope,
   [V.change]: AuthAccessWriteScope,

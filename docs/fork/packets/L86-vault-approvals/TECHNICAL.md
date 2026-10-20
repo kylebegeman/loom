@@ -1,7 +1,7 @@
 # L86 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
+First local milestone is implemented from `b0cfe6a63f`. Kyle authorized implementation and
+selected OpenBao for encrypted storage. Later full-packet targets below remain design scope.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 
@@ -50,3 +50,59 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## Implemented request and timed-grant boundary
+
+The existing `VaultAccess` service owns request creation, inbox and decisions. Requests and
+latest decision fingerprints are optional additions to the existing `access-policy` value;
+no new backend paths or policy permissions are needed. Existing records decode with an empty
+queue. The queue retains up to 128 requests, including terminal ones, and refuses overflow.
+There is no pruning or full immutable audit history. The first request sets policy schema version 2; older readers reject it before writing, preventing
+queue loss or edits that bypass approval bounds. Downgrade requires a compatible reader or an
+operator-reviewed pre-feature backup with explicit revocation reconciliation. No older runtime
+may share this policy.
+
+A request binds a stable ID, server-resolved thread/project, item/version, action, destination,
+requester, creation policy revision and ten-minute deadline. Creation grants no access. The
+request ID and actor/input fingerprint make retries idempotent; a different request or actor
+with the same ID conflicts. Administrator RPC mutations require destination `access:write`,
+while inbox requires `access:read`. Authorization is repeated before CAS persistence.
+Approvers are the existing environment clients with that permission, not a new platform account
+or proof of fresh human presence. Full-access agents remain able to access their host process
+and files; this feature does not claim OS isolation.
+
+Decisions require the displayed policy and request revisions plus a stable operation ID.
+Approve rechecks current project and item/version, then commits its fixed five/fifteen-minute
+thread grant and request decision in one existing-policy CAS. Deny/cancel commit no grant.
+Racing decisions retry only CAS interference and reject stale logical revisions. Actor/input
+fingerprints protect the most recent decision retry; clients preserve the pending operation
+on uncertain errors. Explicit refresh reconciles state and discards the pending client command.
+The existing bounded grant audit records decision provenance without credential material.
+
+Approval grants cannot be edited to extend lifetime or broaden scope through ordinary grant
+management; only revocation is accepted there. The existing evaluator enforces exact non-null
+destination, action and item scope, grant expiry and lineage; its normal execution paths retain
+runtime/activity and item checks. Approval-bound grants also require the approved item version at use. A null destination means unrestricted destination scope and
+is labelled explicitly. Revocation does not remove other independent grants or terminate an
+already executing external operation. Expiry is enforced by server time at use, without a job,
+background poll or client timer. Inbox derives expired/revoked state; both active and expired
+approvals can be durably revoked. Pending expiry is terminal; submit a new request to ask again.
+
+The request remains thread-scoped, not single-operation or single-run authorization. It does not
+pause/resume a provider or deliver credentials. After approval, the caller must recheck access
+and explicitly retry through ordinary authorized adapters. One-time consumption, resumable
+workload correlation and step-up authentication remain separate work.
+
+`ApprovalNotifications` is a service adapter supplied with a no-op stub at runtime construction.
+Only already committed requests reach it. Notification delivery and durable delivery retries
+are absent and advertised as stubbed; no external message is sent. Inbox remains discoverable
+without any notification service.
+
+Capability `vault-approvals` gates web/desktop and native mobile inboxes. They use shared guarded
+commands, expiry-boundary timers, explicit refresh, loading/empty/error states, decision retry,
+and read-only availability when write permission is absent. Failed refresh hides cached requests.
+The MCP request tool derives the caller thread from authenticated invocation context, rejects
+non-thread callers and provides no decision tool; self explanation is the existing access tool.
+All providers use the shared MCP boundary where available. Adapters without MCP do not acquire
+an implicit approval path. Scheduled tasks and brokers continue to use the same evaluator;
+requests do not bypass runtime modes or create special policy exceptions.

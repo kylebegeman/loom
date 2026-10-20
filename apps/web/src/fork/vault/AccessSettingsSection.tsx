@@ -1,3 +1,4 @@
+import { VaultApprovalInbox } from "./ApprovalInbox";
 import { useVaultTime } from "./useVaultTime";
 import { vaultAccessTarget } from "./access-navigation";
 import { useEffect, useState } from "react";
@@ -150,6 +151,7 @@ function AccessManager({
     )?.label ?? grant.definition.principal.id;
   return (
     <div className="flex flex-col gap-5">
+      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm">Choose who may inspect, manage or use development records.</p>

@@ -1,6 +1,8 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed manual and typed development imports, local inventory, replacement plans, independent route receipts and recovery design previews implemented; waiting on host policy.** Kyle selected the full packet. Configuration cutover remains unfinished; live verification acceptance is pending.
+Status: **Waiting on host policy.** Current implementation and synthetic recovery proof are retained.
+Managed route plus capture codec is the next section, parked until CW-1 selects a real compare-and-write
+primitive and L79 host policy is in place. Real capture and all execution gates remain disabled.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 

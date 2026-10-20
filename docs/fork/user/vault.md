@@ -33,6 +33,24 @@ configures this computer's execution broker and grants access. Adding a key alon
 ordinary terminal commands through Vault or remove their existing 1Password approvals.
 Authentication connectors and general credential delivery remain selected work.
 
+## Review temporary access requests
+
+Open **Settings > Loom > Vault access > Remote approvals** on the computer whose credentials
+will be used. The same inbox is available in mobile Vault access settings. Refresh to view
+requests, inspect the thread, record, action and destination scope, then approve for five or
+fifteen minutes, deny, or cancel. A destination shown as unrestricted permits any destination
+for the selected action. Only a connection with access-management permission can decide.
+
+Approvals expire automatically at the server. Use **Revoke approval** to revoke active or
+expired approvals visibly. Other independent grants may still permit access. Pending requests
+expire after ten minutes; ask again with a new request if needed. If a decision response is
+uncertain, retry the same decision or refresh its status before deciding again.
+
+Agents request access using the Vault access request tool, then recheck their access before
+explicitly retrying work. There are no external notifications or automatic restarts yet. Approval
+does not verify an external login or override runner permissions. Older servers without approval
+support do not show this inbox.
+
 ## Import development records
 
 Open **Vault development imports** in the selected computer's Loom settings or command palette.

@@ -1,5 +1,7 @@
 import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
 import {
+  VaultApprovalCreate,
+  VaultApprovalRequest,
   VaultError,
   VaultPolicySnapshot,
   VaultGrantMutation,
@@ -29,6 +31,17 @@ const ownReadiness = Schema.Struct({
 });
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultAccessToolkit = Toolkit.make(
+  Tool.make("loom_vault_access_request", {
+    description:
+      "Request temporary Vault access for the authenticated thread. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals. After approval, recheck access before explicitly retrying the operation; no automatic resumption or notification transport is provided.",
+    parameters: Schema.Struct({
+      ...VaultApprovalCreate.fields,
+      threadId: Schema.optional(ThreadId),
+    }),
+    success: VaultApprovalRequest,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_vault_grants", {
     description:
       "Read Vault grant policy and recent decisions as an approved full-access human CLI/MCP client. Threads must use their own access explanation instead.",
@@ -90,6 +103,27 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_access_request: McpToolAccess.writesEnvironment((input, check) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          const context = yield* Effect.context<Effect.Services<typeof check>>();
+          const authorize = check.pipe(
+            Effect.provide(context),
+            Effect.asVoid,
+            Effect.mapError(() => new VaultError({ reason: "denied" })),
+          );
+          return yield* onHost(
+            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
+              access.approvalCreate(
+                { ...input, threadId: caller.thread!.threadId },
+                `thread:${caller.thread!.threadId}`,
+                authorize,
+              ),
+            ),
+          );
+        }),
+      ),
       loom_vault_grants: McpToolAccess.writesEnvironment(() =>
         administrator.pipe(
           Effect.andThen(

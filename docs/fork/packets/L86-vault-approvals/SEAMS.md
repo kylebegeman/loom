@@ -1,21 +1,14 @@
 # L86 seams
 
-## Extension points
+No upstream files or seam markers are added. Fork-owned access contracts/RPC, scope maps,
+service construction, capability registry, MCP toolkit, shared commands and web/mobile access
+settings are extended through existing registries. The notification adapter is supplied with
+a stub at production and test construction boundaries.
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
-future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+Requests and timed grants share the existing encrypted access-policy CAS. There is no new
+OpenBao path, permission, dependency, SQL migration or Library service change. No provider
+adapter, desktop password dialog or orchestration event is changed. Automatic workload
+resumption and external notifications remain outside this milestone.
 
-## Packet integration review
-
-Reuse the private-input/request lifecycle patterns, but keep approval decisions distinct from secret entry and desktop SSH password prompts. Integrate resumption through services/effects after commit.
-
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
-
-## Actual seams and merge status
-
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+Source baseline `b0cfe6a63f`; required focused registration and seam checks are recorded in
+TESTING.md. There are no additional FORK.md or seam-manifest rows for fork-owned files.

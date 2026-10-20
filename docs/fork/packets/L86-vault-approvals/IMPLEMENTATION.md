@@ -1,7 +1,19 @@
 # L86 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress; local pending inbox and timed-grant milestone implemented. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
+
+## Delivered milestone and next work
+
+The existing access service now atomically stores bounded durable requests, reviewed timed
+decisions and grants in its existing policy. Web/desktop and mobile inboxes expose approve,
+deny, cancel, expired status and revoke. MCP can create an authenticated thread request but
+cannot decide it. Notification transport is a supplied stub. Existing grant enforcement applies.
+
+Next selected work: current native-client acceptance when the no-install constraint permits,
+explicit requester status/cancellation and durable waiting-operation correlation/resumption.
+Allow-once, step-up authentication, notification transports/retries, queue retention and remote
+relay/tunnel acceptance remain unfinished. Do not mark the full packet done.
 
 ## Before starting
 

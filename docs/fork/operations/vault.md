@@ -624,3 +624,16 @@ rollback and configurationWrites false. Existing migration/replacement rollout s
 host owner behind L79. This slice adds no OpenBao path, policy permission, Library deployment or
 host command. Retain a runtime that understands the new optional evidence when preserving it;
 older runtime rewrites may omit fields they do not recognize.
+
+## Temporary approval policy compatibility
+
+The first saved remote-approval request upgrades the existing environment access-policy value
+to schema version 2. Older runtimes reject that policy and cannot serve its Vault grant checks.
+Use a runtime with `vault-approvals` support for every writer sharing it. Downgrading requires a
+compatible reader or an explicitly reviewed pre-feature backup, including reconciliation of
+revocations after that backup. Never silently strip the request queue or restore old access.
+
+This milestone uses existing policy read/write permissions; it adds no OpenBao paths, policy
+rules or Library rollout. Migration/replacement subtree rollout remains deferred to the host
+owner behind L79. Notification delivery is stubbed. The request queue retains at most 128 entries;
+capacity/retention management remains follow-up work rather than an automatic deletion job.

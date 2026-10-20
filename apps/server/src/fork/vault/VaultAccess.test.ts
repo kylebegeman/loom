@@ -1,3 +1,4 @@
+import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
@@ -42,7 +43,14 @@ const save: VaultGrantMutation = {
 };
 const fixture = () => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
-  const state = { failWrites: false, active: true, deleted: false, approvalRequired: false };
+  const state = {
+    loseNextReply: false,
+    notificationsFail: false,
+    failWrites: false,
+    active: true,
+    deleted: false,
+    approvalRequired: false,
+  };
   const store = OpenBaoStore.OpenBaoStore.of({
     status: Effect.succeed({
       backend: "openbao",
@@ -62,6 +70,10 @@ const fixture = () => {
         const current = records.get(path)?.version ?? 0;
         if (current !== expected) return Effect.fail(new VaultError({ reason: "conflict" }));
         records.set(path, { value, version: current + 1 });
+        if (state.loseNextReply) {
+          state.loseNextReply = false;
+          return Effect.fail(new VaultError({ reason: "unavailable" }));
+        }
         return Effect.succeed(current + 1);
       }),
   });
@@ -101,7 +113,20 @@ const fixture = () => {
     }),
   );
   const core = VaultCore.layer.pipe(Layer.provide(dependencies));
-  const layer = VaultAccess.layer.pipe(Layer.provideMerge(core), Layer.provide(dependencies));
+  const layer = VaultAccess.layer.pipe(
+    Layer.provide(
+      Layer.succeed(ApprovalNotifications.ApprovalNotifications, {
+        pending: () =>
+          Effect.suspend(() =>
+            state.notificationsFail
+              ? Effect.fail(new VaultError({ reason: "unavailable" }))
+              : Effect.void,
+          ),
+      }),
+    ),
+    Layer.provideMerge(core),
+    Layer.provide(dependencies),
+  );
   return { records, state, layer };
 };
 function withAccess<A, E>(
@@ -451,6 +476,279 @@ it.effect("keeps archived metadata inspectable while denying credential use", ()
         (yield* access.explain({ threadId, itemId, action: "use", destination: null })).decision
           .reason,
       ).toBe("item-unavailable");
+    }),
+  ),
+);
+
+const approvalInput = {
+  id: "e".repeat(32),
+  threadId,
+  itemId,
+  action: "use" as const,
+  destination: "ssh://git@code.invalid:22",
+};
+const approveInput = {
+  id: approvalInput.id,
+  operationId: "f".repeat(32),
+  expectedRevision: 1,
+  expectedPolicyRevision: 0,
+  decision: "approve" as const,
+  durationMs: 300_000 as const,
+};
+it.effect(
+  "atomically approves a durable request as a bounded grant, expires it and visibly revokes it",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        const request = yield* access.approvalCreate(
+          approvalInput,
+          "thread:requester",
+          Effect.void,
+        );
+        expect(request.state).toBe("pending");
+        expect(
+          (yield* access
+            .require(threadId, itemId, "use", approvalInput.destination)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const approved = yield* access.approvalChange(approveInput, "human:approver", Effect.void);
+        expect(approved.state).toBe("approved");
+        expect(
+          (yield* access.approvalChange(approveInput, "human:approver", Effect.void)).revision,
+        ).toBe(2);
+        yield* access.require(threadId, itemId, "use", approvalInput.destination);
+        expect(
+          (yield* access
+            .require(threadId, itemId, "use", "ssh://other.invalid:22")
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        yield* TestClock.adjust("5 minutes");
+        expect((yield* access.approvalInbox).requests[0]?.state).toBe("expired");
+        expect(
+          (yield* access
+            .require(threadId, itemId, "use", approvalInput.destination)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const revoked = yield* access.approvalChange(
+          {
+            ...approveInput,
+            operationId: "1".repeat(32),
+            expectedRevision: 2,
+            expectedPolicyRevision: 1,
+            decision: "revoke",
+          },
+          "human:approver",
+          Effect.void,
+        );
+        expect(revoked.state).toBe("revoked");
+        expect((yield* access.snapshot).grants[0]?.state).toBe("revoked");
+      }),
+    ),
+);
+it.effect(
+  "denies and cancels pending requests without creating grants and rejects later approval",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+        yield* access.approvalChange(
+          { ...approveInput, decision: "deny" },
+          "approver",
+          Effect.void,
+        );
+        expect((yield* access.snapshot).grants).toHaveLength(0);
+        expect((yield* access.approvalInbox).requests[0]?.state).toBe("denied");
+        expect(
+          (yield* access
+            .approvalChange(
+              {
+                ...approveInput,
+                operationId: "2".repeat(32),
+                expectedRevision: 2,
+                expectedPolicyRevision: 1,
+              },
+              "approver",
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        yield* access.approvalCreate(
+          { ...approvalInput, id: "3".repeat(32) },
+          "requester",
+          Effect.void,
+        );
+        yield* access.approvalChange(
+          { ...approveInput, id: "3".repeat(32), expectedPolicyRevision: 1, decision: "cancel" },
+          "approver",
+          Effect.void,
+        );
+        expect((yield* access.approvalInbox).requests[0]?.state).toBe("cancelled");
+      }),
+    ),
+);
+it.effect(
+  "guards item versions, stale revisions, pending expiry and failed writes without creating access",
+  () =>
+    withAccess(({ access, core, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+        expect(
+          (yield* access
+            .approvalCreate({ ...approvalInput, destination: null }, "requester", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        fixture.state.failWrites = true;
+        expect(
+          (yield* access.approvalChange(approveInput, "approver", Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("unavailable");
+        fixture.state.failWrites = false;
+        expect((yield* access.snapshot).grants).toHaveLength(0);
+        expect(
+          (yield* access
+            .approvalChange({ ...approveInput, expectedPolicyRevision: 5 }, "approver", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        yield* core.change(
+          { id: itemId, operationId: "4".repeat(32), expectedVersion: 1, action: "archive" },
+          "human",
+        );
+        expect(
+          (yield* access.approvalChange(approveInput, "approver", Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("conflict");
+        yield* TestClock.adjust("10 minutes");
+        expect((yield* access.approvalInbox).requests[0]?.state).toBe("expired");
+        expect(
+          (yield* access
+            .approvalChange({ ...approveInput, decision: "deny" }, "approver", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+      }),
+    ),
+);
+it.effect(
+  "permits exactly one racing decision and never bypasses runtime permission ceilings",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(
+          { ...approvalInput, action: "manage" },
+          "requester",
+          Effect.void,
+        );
+        const outcomes = yield* Effect.all(
+          [
+            access.approvalChange(approveInput, "approver", Effect.void).pipe(Effect.result),
+            access
+              .approvalChange(
+                { ...approveInput, operationId: "5".repeat(32), decision: "deny" },
+                "other",
+                Effect.void,
+              )
+              .pipe(Effect.result),
+          ],
+          { concurrency: "unbounded" },
+        );
+        expect(outcomes.filter((r) => r._tag === "Success")).toHaveLength(1);
+        if ((yield* access.approvalInbox).requests[0]?.state === "approved") {
+          fixture.state.approvalRequired = true;
+          expect(
+            (yield* access
+              .require(threadId, itemId, "manage", approvalInput.destination)
+              .pipe(Effect.flip)).reason,
+          ).toBe("denied");
+        }
+      }),
+    ),
+);
+it.effect(
+  "blocks revoked permissions at commit and cannot extend a temporary approval through ordinary grant edits",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+        let checks = 0;
+        const authorize = Effect.suspend(() =>
+          ++checks > 1 ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+        );
+        expect(
+          (yield* access.approvalChange(approveInput, "approver", authorize).pipe(Effect.flip))
+            .reason,
+        ).toBe("denied");
+        expect((yield* access.snapshot).grants).toHaveLength(0);
+        expect(
+          (yield* access
+            .approvalChange(approveInput, "thread:requester", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        yield* access.approvalChange(approveInput, "approver", Effect.void);
+        const policy = yield* access.snapshot;
+        const grant = policy.grants[0]!;
+        expect(
+          (yield* access
+            .apply(
+              {
+                operationId: "6".repeat(32),
+                expectedRevision: policy.revision,
+                change: { type: "save", grant: { ...grant.definition, expiresAt: null } },
+              },
+              "human",
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+
+it.effect("recovers lost decision replies and notification failure from the committed policy", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      fixture.state.notificationsFail = true;
+      yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+      fixture.state.loseNextReply = true;
+      expect(
+        (yield* access.approvalChange(approveInput, "approver", Effect.void).pipe(Effect.flip))
+          .reason,
+      ).toBe("unavailable");
+      expect((yield* access.approvalChange(approveInput, "approver", Effect.void)).state).toBe(
+        "approved",
+      );
+      expect((yield* access.snapshot).grants).toHaveLength(1);
+      const reopened = yield* Effect.flatMap(
+        VaultAccess.VaultAccess,
+        (service) => service.approvalInbox,
+      ).pipe(Effect.provide(fixture.layer));
+      expect(reopened.requests[0]?.state).toBe("approved");
+      expect(
+        (yield* access.approvalChange(approveInput, "other-actor", Effect.void).pipe(Effect.flip))
+          .reason,
+      ).toBe("conflict");
+    }),
+  ),
+);
+
+it.effect("invalidates approved access when the credential version changes", () =>
+  withAccess(({ access, core }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+      yield* access.approvalChange(approveInput, "approver", Effect.void);
+      yield* core.save(
+        {
+          id: itemId,
+          operationId: "7".repeat(32),
+          expectedVersion: 1,
+          label: "Rotated",
+          kind: "secret",
+          value: Redacted.make("synthetic-rotated"),
+        },
+        "human",
+      );
+      expect(
+        (yield* access
+          .require(threadId, itemId, "use", approvalInput.destination)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
     }),
   ),
 );

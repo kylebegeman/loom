@@ -168,7 +168,60 @@ export const VaultAccessCatalog = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type VaultAccessCatalog = typeof VaultAccessCatalog.Type;
+export const VaultApprovalCreate = Schema.Struct({
+  id: VaultItemId,
+  threadId: ThreadId,
+  itemId: VaultItemId,
+  action: VaultAccessAction,
+  destination: VaultGrantDefinition.fields.destination,
+});
+export type VaultApprovalCreate = typeof VaultApprovalCreate.Type;
+export const VaultApprovalRequest = Schema.Struct({
+  ...VaultApprovalCreate.fields,
+  projectId: Schema.String,
+  itemVersion: PositiveInt,
+  policyRevision: NonNegativeInt,
+  revision: PositiveInt,
+  requestedBy: Schema.String,
+  requestedAt: Time,
+  requestExpiresAt: Time,
+  state: Schema.Literals(["pending", "approved", "denied", "cancelled", "expired", "revoked"]),
+  decidedBy: Schema.NullOr(Schema.String),
+  approvedUntil: Schema.NullOr(Time),
+  grantId: Schema.NullOr(VaultItemId),
+}).check(
+  Schema.makeFilter(
+    (request) =>
+      request.requestExpiresAt > request.requestedAt &&
+      (request.grantId === null) === (request.approvedUntil === null) &&
+      (request.grantId === null ||
+        (request.grantId === request.id &&
+          request.approvedUntil! > request.requestedAt &&
+          request.decidedBy !== null)) &&
+      ((request.state !== "approved" && request.state !== "revoked") || request.grantId !== null),
+  ),
+);
+export type VaultApprovalRequest = typeof VaultApprovalRequest.Type;
+export const VaultApprovalChange = Schema.Struct({
+  id: VaultItemId,
+  operationId: VaultItemId,
+  expectedRevision: PositiveInt,
+  expectedPolicyRevision: NonNegativeInt,
+  decision: Schema.Literals(["approve", "deny", "cancel", "revoke"]),
+  durationMs: Schema.Literals([300_000, 900_000]),
+});
+export type VaultApprovalChange = typeof VaultApprovalChange.Type;
+export const VaultApprovalInbox = Schema.Struct({
+  policyRevision: NonNegativeInt,
+  requests: Schema.Array(VaultApprovalRequest).check(Schema.isMaxLength(128)),
+  notifications: Schema.Literal("stubbed"),
+});
+export type VaultApprovalInbox = typeof VaultApprovalInbox.Type;
+
 export const VAULT_ACCESS_WS_METHODS = {
+  approvalInbox: "loom.vault-approvals.inbox",
+  approvalCreate: "loom.vault-approvals.request",
+  approvalChange: "loom.vault-approvals.decide",
   catalog: "loom.vault-grants.catalog",
   snapshot: "loom.vault-grants.snapshot",
   apply: "loom.vault-grants.apply",
@@ -178,6 +231,21 @@ export const VAULT_ACCESS_WS_METHODS = {
 } as const;
 const error = Schema.Union([VaultError, EnvironmentAuthorizationError]);
 export const VaultAccessRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_ACCESS_WS_METHODS.approvalInbox, {
+    payload: Schema.Struct({}),
+    success: VaultApprovalInbox,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.approvalCreate, {
+    payload: VaultApprovalCreate,
+    success: VaultApprovalRequest,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.approvalChange, {
+    payload: VaultApprovalChange,
+    success: VaultApprovalRequest,
+    error,
+  }),
   Rpc.make(VAULT_ACCESS_WS_METHODS.catalog, {
     payload: Schema.Struct({}),
     success: VaultAccessCatalog,

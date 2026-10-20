@@ -1,5 +1,9 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  VaultApprovalCreate,
+  VaultApprovalRequest,
+  VaultApprovalChange,
+  type VaultApprovalInbox,
   VaultError,
   VaultGrant,
   VaultGrantMutation,
@@ -31,10 +35,17 @@ import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
+import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import { evaluateVaultPolicy, grantAttenuates, grantMatchesWorkload } from "./VaultPolicy.ts";
 
+const StoredApproval = Schema.Struct({
+  request: VaultApprovalRequest,
+  fingerprint: Schema.String,
+  lastOperation: Schema.NullOr(Schema.Struct({ id: Schema.String, fingerprint: Schema.String })),
+});
 const Policy = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  approvals: Schema.optionalKey(Schema.Array(StoredApproval).check(Schema.isMaxLength(128))),
+  schemaVersion: Schema.Literals([1, 2]),
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   grants: Schema.Array(VaultGrant).check(Schema.isMaxLength(128)),
   audit: Schema.Array(VaultAuditEvent).check(Schema.isMaxLength(256)),
@@ -44,6 +55,14 @@ const Policy = Schema.Struct({
   ).check(Schema.isMaxLength(32)),
 });
 type Policy = typeof Policy.Type;
+const isApprovalCreate = Schema.is(VaultApprovalCreate);
+const isApprovalChange = Schema.is(VaultApprovalChange);
+const encodeApprovalCreate = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Struct({ input: VaultApprovalCreate, actor: Schema.String })),
+);
+const encodeApprovalChange = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Struct({ input: VaultApprovalChange, actor: Schema.String })),
+);
 const decodePolicy = Schema.decodeUnknownOption(Policy);
 const encodePolicy = Schema.encodeEffect(Policy);
 const decodeMutation = Schema.decodeUnknownOption(VaultGrantMutation);
@@ -66,6 +85,17 @@ const UNKNOWN = [
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
+    readonly approvalInbox: Effect.Effect<VaultApprovalInbox, VaultError>;
+    readonly approvalCreate: (
+      input: VaultApprovalCreate,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultApprovalRequest, VaultError>;
+    readonly approvalChange: (
+      input: VaultApprovalChange,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultApprovalRequest, VaultError>;
     readonly catalog: Effect.Effect<VaultAccessCatalog, VaultError>;
     readonly snapshot: Effect.Effect<VaultPolicySnapshot, VaultError>;
     readonly apply: (
@@ -103,6 +133,7 @@ export class VaultAccess extends Context.Service<
 >()("t3/fork/vault/VaultAccess") {}
 
 const make = Effect.gen(function* () {
+  const notifications = yield* ApprovalNotifications.ApprovalNotifications;
   const store = yield* OpenBaoStore.OpenBaoStore;
   const core = yield* VaultCore.VaultCore;
   const threads = yield* ThreadManagementService;
@@ -164,6 +195,11 @@ const make = Effect.gen(function* () {
     const current = policy.grants.find((grant) => grant.definition.id === id);
     if (current?.state === "revoked") return yield* new VaultError({ reason: "denied" });
     if (input.change.type === "state") {
+      if (
+        policy.approvals?.some((r) => r.request.grantId === id) &&
+        input.change.state !== "revoked"
+      )
+        return yield* new VaultError({ reason: "denied" });
       if (!current) return yield* new VaultError({ reason: "not-found" });
       return {
         ...current,
@@ -173,6 +209,8 @@ const make = Effect.gen(function* () {
       };
     }
     const definition = input.change.grant;
+    if (policy.approvals?.some((r) => r.request.grantId === definition.id))
+      return yield* new VaultError({ reason: "denied" });
     if (definition.principal.kind === "thread") {
       const target = yield* subject(ThreadId.make(definition.principal.id));
       if (definition.projectId !== null && definition.projectId !== target.projectId)
@@ -265,8 +303,18 @@ const make = Effect.gen(function* () {
   const decision = Effect.fnUntraced(function* (policy: Policy, input: VaultDecisionInput) {
     const workload = yield* subject(input.threadId);
     const item = yield* core.inspect(input.itemId);
+    const staleApprovals = new Set(
+      (policy.approvals ?? [])
+        .filter(
+          (r) =>
+            r.request.grantId !== null &&
+            r.request.itemId === input.itemId &&
+            r.request.itemVersion !== item?.version,
+        )
+        .map((r) => r.request.grantId),
+    );
     const evaluated = evaluateVaultPolicy(
-      policy.grants,
+      policy.grants.filter((g) => !staleApprovals.has(g.definition.id)),
       workload,
       input,
       yield* Clock.currentTimeMillis,
@@ -317,7 +365,231 @@ const make = Effect.gen(function* () {
     }
     return yield* new VaultError({ reason: "conflict" });
   });
+  const approvalView = (
+    request: VaultApprovalRequest,
+    policy: Policy,
+    now: number,
+  ): VaultApprovalRequest => {
+    const grant = policy.grants.find((g) => g.definition.id === request.grantId);
+    return {
+      ...request,
+      state:
+        request.state === "pending" && now >= request.requestExpiresAt
+          ? "expired"
+          : request.state === "approved" && (!grant || grant.state !== "active")
+            ? "revoked"
+            : request.state === "approved" &&
+                request.approvedUntil !== null &&
+                now >= request.approvedUntil
+              ? "expired"
+              : request.state,
+    };
+  };
+  const approvalCreate = Effect.fn("VaultAccess.approvalCreate")(function* (
+    input: VaultApprovalCreate,
+    actor: string,
+    authorize: Effect.Effect<void, VaultError>,
+  ) {
+    if (!isApprovalCreate(input) || !actor.trim() || actor.length > 256)
+      return yield* new VaultError({ reason: "invalid-input" });
+    const fingerprint = yield* hash(
+      yield* encodeApprovalCreate({ input, actor }).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      ),
+    );
+    for (let attempt = 0; attempt < 4; attempt++) {
+      yield* authorize;
+      const { policy, version } = yield* load();
+      const old = policy.approvals?.find((r) => r.request.id === input.id);
+      if (old) {
+        if (old.fingerprint !== fingerprint) return yield* new VaultError({ reason: "conflict" });
+        return approvalView(old.request, policy, yield* Clock.currentTimeMillis);
+      }
+      if (
+        (policy.approvals?.length ?? 0) >= 128 ||
+        policy.grants.some((g) => g.definition.id === input.id)
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      const target = yield* subject(input.threadId),
+        item = yield* core.inspect(input.itemId);
+      if (!item || item.state !== "active") return yield* new VaultError({ reason: "not-found" });
+      const now = yield* Clock.currentTimeMillis;
+      const request: VaultApprovalRequest = {
+        ...input,
+        projectId: target.projectId,
+        itemVersion: item.version,
+        policyRevision: policy.revision,
+        revision: 1,
+        requestedBy: actor,
+        requestedAt: now,
+        requestExpiresAt: now + 600_000,
+        state: "pending",
+        decidedBy: null,
+        approvedUntil: null,
+        grantId: null,
+      };
+      const next: Policy = {
+        ...policy,
+        schemaVersion: 2,
+        approvals: [...(policy.approvals ?? []), { request, fingerprint, lastOperation: null }],
+      };
+      yield* authorize;
+      const result = yield* persist(next, version).pipe(Effect.result);
+      if (result._tag === "Success") {
+        yield* notifications.pending(request).pipe(Effect.catch(() => Effect.void));
+        return request;
+      }
+      if (result.failure.reason !== "conflict") return yield* result.failure;
+    }
+    return yield* new VaultError({ reason: "conflict" });
+  });
+  const approvalChange = Effect.fn("VaultAccess.approvalChange")(function* (
+    input: VaultApprovalChange,
+    actor: string,
+    authorize: Effect.Effect<void, VaultError>,
+  ) {
+    if (!isApprovalChange(input) || !actor.trim() || actor.length > 256)
+      return yield* new VaultError({ reason: "invalid-input" });
+    if (actor.startsWith("thread:")) return yield* new VaultError({ reason: "denied" });
+    const fingerprint = yield* hash(
+      yield* encodeApprovalChange({ input, actor }).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      ),
+    );
+    for (let attempt = 0; attempt < 4; attempt++) {
+      yield* authorize;
+      const { policy, version } = yield* load();
+      const stored = policy.approvals?.find((r) => r.request.id === input.id);
+      if (!stored) return yield* new VaultError({ reason: "not-found" });
+      if (stored.lastOperation?.id === input.operationId) {
+        if (stored.lastOperation.fingerprint !== fingerprint)
+          return yield* new VaultError({ reason: "conflict" });
+        return approvalView(stored.request, policy, yield* Clock.currentTimeMillis);
+      }
+      if (
+        stored.request.revision !== input.expectedRevision ||
+        policy.revision !== input.expectedPolicyRevision
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      const now = yield* Clock.currentTimeMillis,
+        request = stored.request;
+      let grants = policy.grants;
+      let grantId = request.grantId,
+        approvedUntil = request.approvedUntil;
+      if (input.decision === "revoke") {
+        if (request.state !== "approved" || !grantId)
+          return yield* new VaultError({ reason: "conflict" });
+        grants = grants.map((g) =>
+          g.definition.id === grantId
+            ? { ...g, state: "revoked" as const, revision: g.revision + 1, updatedBy: actor }
+            : g,
+        );
+      } else {
+        if (request.state !== "pending" || now >= request.requestExpiresAt)
+          return yield* new VaultError({ reason: "conflict" });
+        if (input.decision === "approve") {
+          const target = yield* subject(request.threadId),
+            item = yield* core.inspect(request.itemId);
+          if (
+            target.projectId !== request.projectId ||
+            !item ||
+            item.state !== "active" ||
+            item.version !== request.itemVersion
+          )
+            return yield* new VaultError({ reason: "conflict" });
+          if (grants.length >= 128 || grants.some((g) => g.definition.id === request.id))
+            return yield* new VaultError({ reason: "conflict" });
+          grantId = request.id;
+          approvedUntil = now + input.durationMs;
+          const grant = yield* prepare(
+            {
+              operationId: input.operationId,
+              expectedRevision: policy.revision,
+              change: {
+                type: "save",
+                grant: {
+                  id: grantId,
+                  label: "Temporary Vault approval",
+                  principal: { kind: "thread", id: request.threadId },
+                  projectId: request.projectId,
+                  itemIds: [request.itemId],
+                  actions: [request.action],
+                  destination: request.destination,
+                  notBefore: now,
+                  expiresAt: approvedUntil,
+                  parentId: null,
+                },
+              },
+            },
+            policy,
+            actor,
+          );
+          grants = [...grants, grant];
+        }
+      }
+      const changed: VaultApprovalRequest = {
+        ...request,
+        revision: request.revision + 1,
+        state:
+          input.decision === "approve"
+            ? "approved"
+            : input.decision === "deny"
+              ? "denied"
+              : input.decision === "cancel"
+                ? "cancelled"
+                : "revoked",
+        decidedBy: actor,
+        approvedUntil,
+        grantId,
+      };
+      const updated = {
+        ...policy,
+        revision: policy.revision + 1,
+        grants,
+        approvals: (policy.approvals ?? []).map((r) =>
+          r.request.id === input.id
+            ? { ...r, request: changed, lastOperation: { id: input.operationId, fingerprint } }
+            : r,
+        ),
+      };
+      const next = withAudit(updated, {
+        id: yield* eventId,
+        at: now,
+        actor,
+        type: "grant-change",
+        itemId: request.itemId,
+        grantId,
+        action: request.action,
+        reason: `approval-${changed.state}`,
+        policyRevision: updated.revision,
+      });
+      yield* authorize;
+      if (
+        input.decision !== "revoke" &&
+        (yield* Clock.currentTimeMillis) >= request.requestExpiresAt
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      const result = yield* persist(next, version).pipe(Effect.result);
+      if (result._tag === "Success")
+        return approvalView(changed, next, yield* Clock.currentTimeMillis);
+      if (result.failure.reason !== "conflict") return yield* result.failure;
+    }
+    return yield* new VaultError({ reason: "conflict" });
+  });
   return VaultAccess.of({
+    approvalCreate,
+    approvalChange,
+    approvalInbox: Effect.gen(function* () {
+      const { policy } = yield* load(),
+        now = yield* Clock.currentTimeMillis;
+      return {
+        policyRevision: policy.revision,
+        requests: (policy.approvals ?? [])
+          .map((r) => approvalView(r.request, policy, now))
+          .toReversed(),
+        notifications: "stubbed" as const,
+      };
+    }),
     catalog: Effect.gen(function* () {
       const shell = yield* threads
         .getShellSnapshot()
