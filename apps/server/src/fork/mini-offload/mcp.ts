@@ -41,7 +41,7 @@ export const MiniOffloadToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_mini_worker_update", {
     description:
-      "Point a registered worker at a new SSH host alias, with an optional absolute SSH config path on this computer, after the same worker moved or its connection broke. Its ID, name and enabled state stay, and its earlier jobs use the new connection. Register a different computer as a new worker instead. Requires full access.",
+      "Replace a registered worker's saved SSH connection after the same worker moved or its connection broke. target and sshConfig together replace the saved connection: pass the worker's absolute SSH config path on this computer again if it uses one (ask the user if unknown), or null for the server's default SSH config. Its ID, name and enabled state stay, and its earlier jobs use the new connection. Register a different computer as a new worker instead. Requires full access.",
     parameters: MiniWorkerConnection,
     success: MiniWorkerSummary,
     failure,
