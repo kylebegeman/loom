@@ -34,3 +34,8 @@ this packet adds no application dependency.
 - Requester identity, cancellation, run binding and retention use the same
   [access service](../../../../apps/server/src/fork/vault/VaultAccess.ts) and
   [MCP boundary](../../../../apps/server/src/fork/vault/access-mcp.ts); no resumable command payload is stored.
+
+Local explicit-retry acceptance composes the existing services in
+[`VaultApprovalRetry.test.ts`](../../../../apps/server/src/fork/vault/VaultApprovalRetry.test.ts)
+and [`VaultGitHub.test.ts`](../../../../apps/server/src/fork/vault/VaultGitHub.test.ts).
+Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).

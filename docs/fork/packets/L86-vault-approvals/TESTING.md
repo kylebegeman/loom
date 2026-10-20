@@ -96,8 +96,9 @@ Old encrypted backend versions and audit history are deliberately outside queue 
 
 ## Full packet acceptance still required
 
-Prove actual explicit retry execution and durable resumption/one-time consumption before
-exposing those execution flows. Requester status/cancellation and correlation are implemented,
+Local explicit-retry integration through existing adapters is proven below with synthetic external
+transports. Live explicit-retry execution and durable resumption/one-time consumption still need
+acceptance before exposing those new execution flows. Requester status/cancellation and correlation are implemented,
 with execution gates still disabled. Exercise
 notification failure/retry with an actual approved adapter. Retention is bounded by 24 hours and 128 entries; do not claim permanent idempotency or
 erasure of backend history. Verify approved devices over relay/tunnel, stale-client capability
@@ -195,3 +196,30 @@ now uses the newly filtered array. The isolated Browser-panel pass verified 0-pe
 copy, Show all revealing the four synthetic decisions, the reverse pending action and no
 horizontal overflow at 390 CSS pixels. Native testing remains owner-led. No notification is sent,
 fixture written, policy format bumped, sidecar introduced or production action taken.
+
+## Explicit retry through existing operation services
+
+Four focused suites pass **26 tests**: `VaultApprovalRetry.test.ts`, `VaultGitHub.test.ts`,
+`VaultLaunch.test.ts` and real MCP registration. New acceptance composes the actual encrypted-store
+boundary (an in-memory test store), access evaluator, timed-approval ledger, enrolled broker,
+workload signing, SSH/Git launch service and GitHub connector. Only external transports and
+host identity/project lookup boundaries use synthetic fixtures. No live SSH command, Git
+transport, GitHub API or host configuration is contacted.
+
+The SSH and Git-over-SSH cases fail before approval without calling the transport, obtain human
+timed approval, prepare the exact proposal, explicitly invoke the ordinary launch service and
+release its workload session. Revocation prevents a subsequent invocation. Additional cases
+change the run, runtime permission, item version/trust or expiry after preparation and prove no
+transport call occurs. A Deferred barrier withdraws approval at the transport authorization
+boundary, preventing the synthetic effect. A synthetic SSH timeout produces one attempt, releases
+the session and leaves recovery at `requires-outcome-review`; status/preparation do not repeat it.
+GitHub API acceptance likewise fails before approval, executes through the current connector
+only after explicit invocation, rejects revocation and rejects runtime withdrawal after
+preparation but before the CLI effect.
+
+Preparation remains observational and all `canExecute`, `automaticResumption` and
+`allowOnceConsumption` fields remain literal false. Tests call the already available operation
+services explicitly; no new retry/resume endpoint or dispatch engine is enabled. This is local
+integration acceptance, not live-provider proof, durable duplicate suppression or crash-safe
+one-time consumption. Server typecheck, focused lint/format, documentation links, 392 seam rows
+and whitespace pass. No production, Library, OpenBao-path/policy, install or release action occurs.

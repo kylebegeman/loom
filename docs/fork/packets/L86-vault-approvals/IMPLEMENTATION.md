@@ -41,11 +41,21 @@ Pending/all review is implemented on web/desktop and mobile using shared expiry-
 counts and pending-first sorting. Decision and deadline races with a late adapter result retain
 current request authority and never reopen pending work.
 
-Next selected work: approver-context review labels and accessible pending/decision navigation,
-with read-only discovery and existing access scopes. External transports and agent delivery
-mutations remain absent. Automatic resumption and one-time consumption remain
-gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
-simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
+Kyle's native iOS acceptance passed on source `d849f9b20a` / nightly `0.0.99`, including pending/all
+review, decision/revoke/cancel, expiry, correlation and fail-closed recovery. Evidence and
+remaining surface limits are recorded in TESTING.md. No parallel simulator pass is needed.
+
+Local explicit retry integration now composes real policy, broker/workload and operation services
+with synthetic external transports. Timed approval permits a separately invoked SSH, Git-over-SSH
+or GitHub API operation; revocation, stale context and uncertain writes retain their checks.
+The public preparation/resumption/allow-once gates stay false and no new execution endpoint is
+introduced. Live-provider and durable resumption/consumption acceptance remain open.
+
+Next selected work: durable operation-journal design and synthetic crash/reconciliation proof
+behind closed execution gates. Keep policy format 3 and no new OpenBao path or permission. The
+existing notification-memory decision does not authorize a persistent execution journal.
+Approver-context labels/accessibility, fresh step-up authentication, Android/Electron and remote
+relay/tunnel acceptance remain unfinished. L75 stays waiting on CW-1/L79 host policy.
 Do not mark the full packet done.
 
 ## Before starting

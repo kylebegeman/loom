@@ -49,7 +49,9 @@ Preparation now rejects concurrent policy/status changes, fails closed on backen
 returns actionable repair guidance. Lost approval replies reconcile without duplicating grants.
 Policy format remains 3. The inbox opens with pending work first and shows retained/pending counts. Show all requests
 restores decision review and revocation. Expiry and age-out update the client view without
-changing the authoritative server checks. Native acceptance stays owner-led.
+changing the authoritative server checks. Kyle's native iOS acceptance passed on `0.0.99`; TESTING.md records evidence and remaining
+surfaces. Local retry integration through existing SSH/Git/GitHub services also passes with
+synthetic transports. Durable resumption/consumption and live-provider acceptance remain open.
 
 ## Scope
 

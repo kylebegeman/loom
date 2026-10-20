@@ -6,6 +6,7 @@ import {
   VaultGitHubError,
   vaultGitHubDestination,
   type VaultGitHubSave,
+  type VaultApprovalRetryInput,
 } from "@t3tools/contracts/fork";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -520,4 +521,133 @@ it.effect("cancelling an in-flight readiness probe releases its acquired provide
     expect(f.releases()).toBe(released + 1);
     expect(f.terminalCalls()).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "executes an explicit GitHub API retry only through current timed approval and connector checks",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "human", Effect.void);
+      const requestId = yield* f.id;
+      const target = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        operation: { action: "repo-view" as const },
+      };
+      expect((yield* f.service.run(target, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+      expect(f.calls()).toBe(0);
+      yield* f.access.approvalCreate(
+        {
+          id: requestId,
+          threadId: f.threadId,
+          itemId: f.input.id,
+          action: "use",
+          destination: vaultGitHubDestination(target.repository),
+        },
+        `thread:${f.threadId}`,
+        Effect.void,
+      );
+      yield* f.access.approvalChange(
+        {
+          id: requestId,
+          operationId: yield* f.id,
+          expectedRevision: 1,
+          expectedPolicyRevision: 0,
+          decision: "approve",
+          durationMs: 300_000,
+        },
+        "human",
+        Effect.void,
+      );
+      const retry: VaultApprovalRetryInput = {
+        id: requestId,
+        waitingOperationId: requestId,
+        expectedRevision: 2,
+        previousOutcome: "not-started",
+        operation: { kind: "github-api", input: target },
+      };
+      expect(yield* f.access.approvalPrepareRetry(retry, f.threadId)).toMatchObject({
+        retryState: "policy-valid-recheck-adapter",
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      });
+      expect(f.calls()).toBe(0);
+      expect((yield* f.service.run(target, f.threadId)).stdout).toBe("Synthetic GH result");
+      expect(f.calls()).toBe(1);
+      yield* f.access.approvalChange(
+        {
+          id: requestId,
+          operationId: yield* f.id,
+          expectedRevision: 2,
+          expectedPolicyRevision: 1,
+          decision: "revoke",
+          durationMs: 300_000,
+        },
+        "human",
+        Effect.void,
+      );
+      expect((yield* f.service.run(target, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+      expect(f.calls()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "rechecks GitHub runtime withdrawal after preparation and before a synthetic API side effect",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "human", Effect.void);
+      const requestId = yield* f.id;
+      yield* f.access.approvalCreate(
+        {
+          id: requestId,
+          threadId: f.threadId,
+          itemId: f.input.id,
+          action: "use",
+          destination: vaultGitHubDestination("owner/repo"),
+        },
+        `thread:${f.threadId}`,
+        Effect.void,
+      );
+      yield* f.access.approvalChange(
+        {
+          id: requestId,
+          operationId: yield* f.id,
+          expectedRevision: 1,
+          expectedPolicyRevision: 0,
+          decision: "approve",
+          durationMs: 300_000,
+        },
+        "human",
+        Effect.void,
+      );
+      const target = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        operation: { action: "issue-comment" as const, number: 1, body: "Synthetic only" },
+      };
+      const retry: VaultApprovalRetryInput = {
+        id: requestId,
+        waitingOperationId: requestId,
+        expectedRevision: 2,
+        previousOutcome: "not-started",
+        operation: { kind: "github-api", input: target },
+      };
+      expect((yield* f.access.approvalPrepareRetry(retry, f.threadId)).retryState).toBe(
+        "policy-valid-recheck-adapter",
+      );
+      f.onSession(() => {
+        f.state.thread = { ...f.state.thread, runtimeMode: "approval-required" };
+      });
+      expect((yield* f.service.run(target, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+      expect(f.calls()).toBe(0);
+      expect(
+        (yield* f.access.approvalPrepareRetry({ ...retry, previousOutcome: "unknown" }, f.threadId))
+          .canExecute,
+      ).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
 );
