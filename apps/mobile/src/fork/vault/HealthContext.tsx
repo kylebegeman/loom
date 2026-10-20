@@ -2,7 +2,11 @@ import { VaultHealthRetained } from "./HealthRetained";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { AuthAccessWriteScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
-import { createVaultHealthAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createVaultHealthAtoms,
+  supportsLoomFeature,
+  vaultHealthCoverageMessages,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
@@ -63,6 +67,16 @@ function ContextPage({
             Inspected {page.inspectedProjects} projects on this page, at{" "}
             {new Date(page.checkedAt).toLocaleString()}.
           </Text>
+          {vaultHealthCoverageMessages(page.coverage).map((message) => (
+            <Text key={message}>{message}</Text>
+          ))}
+          {page.coverage && page.coverage.unattributedGrants > 0 ? (
+            <Button
+              label="Review unattributed grants"
+              disabled={!connected}
+              onPress={() => setReviewingAccess(true)}
+            />
+          ) : null}
           {page.projects.length === 0 ? (
             <Text>No references in these projects. Continue to the next page if available.</Text>
           ) : null}

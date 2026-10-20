@@ -48,6 +48,12 @@ const make = Effect.gen(function* () {
         projectId: input.projectId,
         checkedAt: yield* Clock.currentTimeMillis,
         inspectedSelections: page.items.length,
+        coverage: {
+          scope: "retained-page",
+          externalConsumers: "not-discovered",
+          providerCopies: "unknown",
+          authorization: "not-evaluated",
+        },
         unattributableSelections: page.items.filter((pin) => pin.resolution === null).length,
         nextCursor: page.nextCursor,
         items: page.items.flatMap((pin) => {
@@ -110,6 +116,15 @@ const make = Effect.gen(function* () {
           { concurrency: 2 },
         ),
       );
+      const projectIds = new Set<string>(all.map((project) => project.id));
+      const grantProject = (grant: (typeof related)[number]) => {
+        const principal = grant.definition.principal;
+        return principal.kind === "project" ? principal.id : threadProjects.get(principal.id);
+      };
+      const unattributedGrants = related.filter((grant) => {
+        const projectId = grantProject(grant);
+        return projectId == null || !projectIds.has(projectId);
+      }).length;
       const references = yield* Effect.forEach(
         page,
         (project) =>
@@ -132,14 +147,7 @@ const make = Effect.gen(function* () {
                   ];
             });
             const grants = related
-              .filter((grant) => {
-                const principal = grant.definition.principal;
-                return (
-                  (principal.kind === "project"
-                    ? principal.id
-                    : threadProjects.get(principal.id)) === project.id
-                );
-              })
+              .filter((grant) => grantProject(grant) === project.id)
               .map((grant) => ({
                 id: grant.definition.id,
                 label: grant.definition.label,
@@ -155,6 +163,13 @@ const make = Effect.gen(function* () {
         itemId: input.itemId,
         checkedAt: yield* Clock.currentTimeMillis,
         inspectedProjects: page.length,
+        coverage: {
+          scope: "project-page",
+          externalConsumers: "not-discovered",
+          providerCopies: "unknown",
+          authorization: "not-evaluated",
+          unattributedGrants,
+        },
         scannedProjects: page.map(({ id, title }) => ({ id, title })),
         nextCursor: remaining.length > PAGE_SIZE ? page.at(-1)!.id : null,
         projects: references.filter(

@@ -71,10 +71,22 @@ export const VaultHealthContextInput = Schema.Struct({
   cursor: Schema.NullOr(ProjectId),
 });
 export type VaultHealthContextInput = typeof VaultHealthContextInput.Type;
+const discoveryLimits = {
+  externalConsumers: Schema.Literal("not-discovered"),
+  providerCopies: Schema.Literal("unknown"),
+  authorization: Schema.Literal("not-evaluated"),
+};
 export const VaultHealthContextPage = Schema.Struct({
   itemId: VaultItemId,
   checkedAt: Time,
   inspectedProjects: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({
+      ...discoveryLimits,
+      scope: Schema.Literal("project-page"),
+      unattributedGrants: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
   scannedProjects: Schema.optional(
     Schema.Array(Schema.Struct({ id: ProjectId, title: Schema.String })).check(
       Schema.isMaxLength(10),
@@ -117,6 +129,9 @@ export const VaultHealthRetainedPage = Schema.Struct({
   projectId: ProjectId,
   checkedAt: Time,
   inspectedSelections: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({ ...discoveryLimits, scope: Schema.Literal("retained-page") }),
+  ),
   unattributableSelections: Schema.Int,
   nextCursor: VaultProfilePinList.fields.cursor,
   items: Schema.Array(

@@ -127,3 +127,19 @@ merge/health/MCP files passed. The real fork MCP registration check is included 
 All five affected package typechecks and scoped Vault lint passed on the merged tree.
 `vp run lint:mobile` also passed, including SwiftLint, ktlint and detekt. No live installation,
 SSH execution or production check was performed.
+
+## Discovery coverage follow-up
+
+Ten focused service/client/MCP tests in three files passed. Coverage verifies missing/deleted
+thread and project attribution, valid references on later pages, environment-wide grant counts,
+empty final pages, retired snapshot limits and older response compatibility. The server fixture's
+deleted-thread date was corrected to the actual Effect UTC type; all five affected package
+typechecks then passed. Scoped lint, changed-document links and all 390 seam rows passed.
+
+Web acceptance expanded the current issue, displayed current-page scope and external/provider
+unknowns, then selected a scanned project and verified the same limits on an empty final
+retained-selection page. Unattributed-grant counts and legacy-server messaging have service/shared
+client coverage; their interactive states were not seeded in this pass. Mobile shares the coverage
+formatter and passed its package typecheck; native interaction remains pending because its
+installed client is stale and Kyle's no-install restriction remains in force. No live SSH command,
+provider validation, schema migration or production action was performed.
