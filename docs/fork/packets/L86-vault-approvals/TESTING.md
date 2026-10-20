@@ -30,10 +30,10 @@ Authorized isolated Browser-panel checks use the existing loopback synthetic Ope
 They cover empty/pending request display, five/fifteen-minute approval, denial, refresh and visible
 revocation, expired approval visibility and the revoke path after expiry. The 390 CSS-pixel
 layout has no horizontal overflow. Expiry uses synthetic fixture timestamps; no credential or provider is contacted.
-Native iOS acceptance is **pending**: `mobile-native-client.ts check` reports the installed client
-stale, and opening it shows an existing Threads-screen "Maximum update depth exceeded" overlay
-before Vault is reached. The current no-install constraint excludes rebuilding/installing it.
-Native typecheck/static checks pass; these are not native interaction acceptance. Android,
+Native iOS acceptance is **pending and owner-led**. The earlier pass stopped at the Threads-screen
+"Maximum update depth exceeded" overlay before Vault. Kyle has since rebuilt the client and
+owns reproduction, the fix and native L86 acceptance. This lane does not run a simulator pass.
+Native typecheck/static evidence is not native interaction acceptance. Android,
 Electron shell, remote/relay/tunnel, keyboard/screen-reader and live-provider acceptance remain
 open. No automatic resumption, notification delivery or allow-once consumption is claimed.
 
@@ -71,7 +71,7 @@ Old encrypted backend versions and audit history are deliberately outside queue 
 
 ## Full packet acceptance still required
 
-Prove operation-specific explicit retry and durable resumption/one-time consumption before
+Prove actual explicit retry execution and durable resumption/one-time consumption before
 exposing those execution flows. Requester status/cancellation and correlation are implemented,
 with execution gates still disabled. Exercise
 notification failure/retry with an actual approved adapter. Retention is bounded by 24 hours and 128 entries; do not claim permanent idempotency or
@@ -84,3 +84,20 @@ only once CW-1 selects a real write primitive and L79 policy is in place. All L7
 remain refused. L77 restricted acceptance remains unchanged. This milestone adds no Library
 change, OpenBao namespace or policy permission. Approval-ledger writes now use existing access-policy format 3, intentionally blocking format-2
 writers from dropping correlation and retention fields.
+
+## Typed retry preparation and recovery validation
+
+Eight focused suites pass **80 tests**. Added service cases prove typed operation/destination,
+item/version and request revision matching, cross-requester denial, current runtime/run/expiry,
+restart recovery, changed-command digests, conservative unknown-write handling, Git fetch versus
+ref-listing classification, and GitHub API versus SSH transport separation. Store writes are
+forced unavailable during successful preparation and restart validation; records remain unchanged.
+No execution adapter is present in the access-service layer. Contract tests reject unsupported
+continuations/outcome claims and non-false execution gates; MCP tests reject injected identities
+and non-thread callers. The real MCP registration test passes.
+
+Server, contracts, client-runtime, web and mobile typechecks pass. Focused lint, format,
+documentation-link/seam checks and whitespace pass. No new UI is introduced, no browser or
+simulator pass is run, and no external service is contacted. These are metadata/policy validation
+proofs, not host trust, broker, GitHub credential or actual retry acceptance. Policy format remains
+3 with its existing downgrade caveat; no storage path or permission is added.

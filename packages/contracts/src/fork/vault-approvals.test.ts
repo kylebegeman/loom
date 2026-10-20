@@ -2,6 +2,8 @@ import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import {
+  VaultApprovalRetryInput,
+  VaultApprovalRetryReport,
   VaultApprovalChange,
   VaultApprovalRequest,
   VaultApprovalCancel,
@@ -108,4 +110,36 @@ it("keeps requester status observational and cancellation narrower than a decisi
       request({ ...requestValue, waitingOperation: { operationId: "b".repeat(32), runId: "run" } }),
     ),
   ).toBe(true);
+});
+
+const retryExecutionGates = [
+  Schema.is(VaultApprovalRetryReport.fields.canExecute),
+  Schema.is(VaultApprovalRetryReport.fields.automaticResumption),
+  Schema.is(VaultApprovalRetryReport.fields.allowOnceConsumption),
+];
+it("rejects executable retry reports and unsupported unbounded operation proposals", () => {
+  const decode = Schema.decodeUnknownOption(VaultApprovalRetryInput);
+  const input = {
+    id: "a".repeat(32),
+    waitingOperationId: "b".repeat(32),
+    expectedRevision: 2,
+    previousOutcome: "unknown",
+    operation: {
+      kind: "ssh",
+      target: { hostname: "qa.invalid", username: "qa", port: 22, hostKey: null },
+      input: {
+        id: "c".repeat(32),
+        command: { expectedVersion: 1, argv: ["true"], timeoutMs: 1000 },
+      },
+    },
+  };
+  expect(Option.isSome(decode(input))).toBe(true);
+  for (const patch of [
+    { expectedRevision: 0 },
+    { previousOutcome: "failed-safe-to-repeat" },
+    { previousOperationDigest: "invalid" },
+    { operation: { kind: "arbitrary-continuation" } },
+  ])
+    expect(Option.isNone(decode({ ...input, ...patch }))).toBe(true);
+  for (const accepts of retryExecutionGates) expect(accepts(true)).toBe(false);
 });

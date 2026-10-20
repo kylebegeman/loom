@@ -1,5 +1,11 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  VaultApprovalRetryInput,
+  VaultApprovalRetryOperation,
+  type VaultApprovalRetryReport,
+  vaultSshDestination,
+  vaultGitDestination,
+  vaultGitHubDestination,
   VAULT_APPROVAL_RETENTION_MS,
   VaultApprovalCancel,
   type VaultApprovalRequesterStatus,
@@ -59,6 +65,22 @@ const Policy = Schema.Struct({
   ).check(Schema.isMaxLength(32)),
 });
 type Policy = typeof Policy.Type;
+const encodeRetryOperation = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      protocol: Schema.Literal("loom-vault-retry-v1"),
+      environmentId: Schema.String,
+      requester: ThreadId,
+      requestId: Schema.String,
+      waitingOperation: Schema.NullOr(
+        Schema.Struct({ operationId: Schema.String, runId: Schema.String }),
+      ),
+      proposedOperationId: Schema.String,
+      operation: VaultApprovalRetryOperation,
+    }),
+  ),
+);
+const decodeApprovalRetry = Schema.decodeUnknownEffect(VaultApprovalRetryInput);
 const isApprovalCancel = Schema.is(VaultApprovalCancel);
 const isApprovalCreate = Schema.is(VaultApprovalCreate);
 const isApprovalChange = Schema.is(VaultApprovalChange);
@@ -90,6 +112,10 @@ const UNKNOWN = [
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
+    readonly approvalPrepareRetry: (
+      input: VaultApprovalRetryInput,
+      requester: ThreadId,
+    ) => Effect.Effect<VaultApprovalRetryReport, VaultError>;
     readonly approvalRetain: Effect.Effect<number, VaultError>;
     readonly approvalStatus: (
       id: string,
@@ -457,13 +483,13 @@ const make = Effect.gen(function* () {
     );
     return record ? Effect.succeed(record) : Effect.fail(new VaultError({ reason: "not-found" }));
   };
-  const approvalStatus = Effect.fn("VaultAccess.approvalStatus")(function* (
+  const approvalStatusFromPolicy = Effect.fnUntraced(function* (
+    policy: Policy,
+    now: number,
     id: string,
     requester: ThreadId,
   ) {
     const target = yield* subject(requester);
-    const { policy } = yield* load(),
-      now = yield* Clock.currentTimeMillis;
     const stored = yield* requesterRecord(policy, id, requester, now);
     const request = approvalView(stored.request, policy, now);
     let operationState: VaultApprovalRequesterStatus["operationState"];
@@ -498,6 +524,112 @@ const make = Effect.gen(function* () {
       request,
       checkedAt: now,
       operationState,
+      automaticResumption: false as const,
+      allowOnceConsumption: false as const,
+      canExecute: false as const,
+    };
+  });
+  const approvalStatus = Effect.fn("VaultAccess.approvalStatus")(function* (
+    id: string,
+    requester: ThreadId,
+  ) {
+    const { policy } = yield* load();
+    return yield* approvalStatusFromPolicy(policy, yield* Clock.currentTimeMillis, id, requester);
+  });
+  const approvalPrepareRetry = Effect.fn("VaultAccess.approvalPrepareRetry")(function* (
+    raw: VaultApprovalRetryInput,
+    requester: ThreadId,
+  ) {
+    const input = yield* decodeApprovalRetry(raw).pipe(
+      Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+    );
+    const { policy } = yield* load();
+    const status = yield* approvalStatusFromPolicy(
+      policy,
+      yield* Clock.currentTimeMillis,
+      input.id,
+      requester,
+    );
+    const { request } = status;
+    const operationDigest = yield* hash(
+      yield* encodeRetryOperation({
+        protocol: "loom-vault-retry-v1",
+        environmentId,
+        requester,
+        requestId: request.id,
+        waitingOperation: request.waitingOperation ?? null,
+        proposedOperationId: input.waitingOperationId,
+        operation: input.operation,
+      }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" }))),
+    );
+    const proposed = input.operation;
+    const destination =
+      proposed.kind === "github-api"
+        ? vaultGitHubDestination(proposed.input.repository)
+        : proposed.kind === "git-ssh"
+          ? vaultGitDestination(proposed.target, proposed.input.repository)
+          : vaultSshDestination(proposed.target);
+    const version =
+      proposed.kind === "ssh"
+        ? proposed.input.command.expectedVersion
+        : proposed.input.expectedVersion;
+    const effects: VaultApprovalRetryReport["effects"] =
+      proposed.kind === "ssh"
+        ? "remote-write-or-unknown"
+        : proposed.kind === "git-ssh"
+          ? proposed.input.action === "fetch"
+            ? "local-write"
+            : "read"
+          : ["pr-comment", "issue-comment", "issue-create"].includes(
+                proposed.input.operation.action,
+              )
+            ? "remote-write-or-unknown"
+            : "read";
+    let retryState: VaultApprovalRetryReport["retryState"] = "blocked-request";
+    if (input.expectedRevision !== request.revision) retryState = "stale-request";
+    else if (
+      !request.waitingOperation ||
+      request.waitingOperation.operationId !== input.waitingOperationId ||
+      proposed.input.id !== request.itemId ||
+      version !== request.itemVersion ||
+      request.action !== "use" ||
+      destination !== request.destination
+    )
+      retryState = "operation-mismatch";
+    else if (
+      input.previousOperationDigest !== undefined &&
+      input.previousOperationDigest !== operationDigest
+    )
+      retryState = "operation-changed";
+    else if (status.operationState === "retry-requires-explicit-operation") {
+      const item = yield* core.inspect(request.itemId);
+      const evaluated = yield* decision(policy, {
+        threadId: requester,
+        itemId: request.itemId,
+        action: "use",
+        destination,
+      });
+      if (item?.kind !== (proposed.kind === "github-api" ? "service-connection" : "ssh-key"))
+        retryState = "unsupported-item";
+      else if (
+        evaluated.workload.thread.activeRunId !== request.waitingOperation.runId ||
+        evaluated.workload.projectId !== request.projectId ||
+        evaluated.workload.thread.runtimeMode !== "full-access" ||
+        evaluated.workload.thread.interactionMode !== "default"
+      )
+        retryState = "runtime-denied";
+      else if (!evaluated.result.allowed) retryState = "access-denied";
+      else if (input.previousOutcome === "unknown" && effects !== "read")
+        retryState = "requires-outcome-review";
+      else retryState = "policy-valid-recheck-adapter";
+    }
+    return {
+      status,
+      operationDigest,
+      policyRevision: policy.revision,
+      retryState,
+      effects,
+      adapterValidation: "required" as const,
       automaticResumption: false as const,
       allowOnceConsumption: false as const,
       canExecute: false as const,
@@ -723,6 +855,7 @@ const make = Effect.gen(function* () {
     return yield* new VaultError({ reason: "conflict" });
   });
   return VaultAccess.of({
+    approvalPrepareRetry,
     approvalRetain,
     approvalStatus,
     approvalCancel: (input, requester, authorize) =>

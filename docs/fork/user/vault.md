@@ -658,3 +658,11 @@ and a fixed no-op command. Saving this rule does not run the check unless automa
 also enabled. Use **Check selected item** for an explicit check. An untrusted host or failed SSH
 connection appears as a configuration issue; a timeout appears as an outage. Neither proves key
 revocation. Disable SSH validation and save the rule to keep expiry-only maintenance.
+
+Agents can use `loom_vault_access_retry_prepare` to check a proposed SSH, Git-over-SSH or GitHub
+API operation against their own approved, run-bound request. Supply the request revision and
+waiting-operation reference. Keep the returned operation digest to compare the same proposal
+after a reconnect. Preparation never runs a command or grants access; normal operation checks
+still apply. If a previous write may have run, inspect its outcome before retrying. The digest
+is comparison metadata, not proof that a command ran or permission to replay it. Automatic
+resumption and one-time approval consumption remain unavailable.

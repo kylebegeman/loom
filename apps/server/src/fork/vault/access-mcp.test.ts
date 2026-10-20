@@ -196,9 +196,16 @@ it.effect(
   () =>
     Effect.gen(function* () {
       let statusCalls = 0,
-        cancelCalls = 0;
+        cancelCalls = 0,
+        prepareCalls = 0;
       const serviceContext = yield* Layer.build(
         Layer.mock(VaultAccess)({
+          approvalPrepareRetry: (_input, requester) =>
+            Effect.gen(function* () {
+              prepareCalls++;
+              expect(requester).toBe(threadId);
+              return yield* new VaultError({ reason: "not-found" });
+            }),
           approvalStatus: (id, requester) =>
             Effect.gen(function* () {
               statusCalls++;
@@ -235,6 +242,29 @@ it.effect(
         operationId: "f".repeat(32),
         expectedRevision: 1,
       };
+      const retry = {
+        ...injected,
+        waitingOperationId: "e".repeat(32),
+        previousOutcome: "not-started",
+        operation: {
+          kind: "github-api",
+          input: {
+            id: "b".repeat(32),
+            expectedVersion: 1,
+            repository: "org/repo",
+            operation: { action: "repo-view" },
+          },
+        },
+      };
+      yield* toolkit
+        .handle("loom_vault_access_retry_prepare", retry as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      expect(prepareCalls).toBe(1);
       const status = yield* toolkit
         .handle("loom_vault_access_request_status", injected as never)
         .pipe(
@@ -276,6 +306,15 @@ it.effect(
           Effect.provide(dependencies),
           Effect.flip,
         );
+      yield* toolkit
+        .handle("loom_vault_access_retry_prepare", retry as never)
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, outside),
+          Effect.provide(dependencies),
+          Effect.flip,
+        );
+      expect(prepareCalls).toBe(1);
       expect(statusCalls).toBe(1);
       expect(cancelCalls).toBe(1);
     }).pipe(Effect.scoped),

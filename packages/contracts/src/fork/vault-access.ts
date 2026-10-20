@@ -11,6 +11,9 @@ import {
 } from "../baseSchemas.ts";
 import { VaultError, VaultItemId, VaultItemSummary, VaultCoreStatus } from "./vault-core.ts";
 
+import { VaultSshRun, VaultGitRun, VaultSshTarget } from "./vault-ssh.ts";
+import { VaultGitHubRun } from "./vault-github.ts";
+
 const Id = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
 const Time = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }));
 export const VaultAccessAction = Schema.Literals([
@@ -251,6 +254,45 @@ export const VaultApprovalRequesterStatus = Schema.Struct({
   canExecute: Schema.Literal(false),
 });
 export type VaultApprovalRequesterStatus = typeof VaultApprovalRequesterStatus.Type;
+// Typed proposals describe a new explicit attempt, never a stored executable continuation.
+export const VaultApprovalRetryOperation = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("ssh"), input: VaultSshRun, target: VaultSshTarget }),
+  Schema.Struct({ kind: Schema.Literal("git-ssh"), input: VaultGitRun, target: VaultSshTarget }),
+  Schema.Struct({ kind: Schema.Literal("github-api"), input: VaultGitHubRun }),
+]);
+export const VaultApprovalRetryInput = Schema.Struct({
+  id: VaultItemId,
+  waitingOperationId: VaultItemId,
+  expectedRevision: PositiveInt,
+  operation: VaultApprovalRetryOperation,
+  previousOutcome: Schema.Literals(["not-started", "unknown"]),
+  previousOperationDigest: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  ),
+});
+export type VaultApprovalRetryInput = typeof VaultApprovalRetryInput.Type;
+export const VaultApprovalRetryReport = Schema.Struct({
+  status: VaultApprovalRequesterStatus,
+  operationDigest: Schema.String,
+  policyRevision: NonNegativeInt,
+  retryState: Schema.Literals([
+    "blocked-request",
+    "stale-request",
+    "operation-mismatch",
+    "operation-changed",
+    "unsupported-item",
+    "runtime-denied",
+    "access-denied",
+    "requires-outcome-review",
+    "policy-valid-recheck-adapter",
+  ]),
+  effects: Schema.Literals(["read", "local-write", "remote-write-or-unknown"]),
+  adapterValidation: Schema.Literal("required"),
+  automaticResumption: Schema.Literal(false),
+  allowOnceConsumption: Schema.Literal(false),
+  canExecute: Schema.Literal(false),
+});
+export type VaultApprovalRetryReport = typeof VaultApprovalRetryReport.Type;
 export const VaultApprovalInbox = Schema.Struct({
   retention: Schema.optionalKey(
     Schema.Struct({

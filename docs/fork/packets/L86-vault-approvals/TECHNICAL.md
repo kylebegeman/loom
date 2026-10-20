@@ -171,3 +171,42 @@ separate capped audit retain their operator-owned policies. No delete/destroy pe
 OpenBao subtree, Library integration or production action is added. Format 3 prevents a format-2
 writer from silently stripping run binding and retention metadata. Downgrade requires a compatible
 reader or reviewed recovery with post-backup revocation reconciliation, never a silent format edit.
+
+## Explicit-retry preparation and recovery validation
+
+`loom_vault_access_retry_prepare` is a read-only requester capability on the existing access
+service. It accepts the retained request ID, waiting-operation reference, expected request
+revision and one typed proposal using the existing SSH, Git-over-SSH or GitHub API command
+contracts. Unknown command kinds and unbounded inputs fail decoding. Ownership still requires
+both authenticated thread and original requester actor. The policy is loaded once for request
+state and evaluator checks, without an audit write or any call to execution adapters.
+
+Preparation requires an approved, unexpired, run-bound request, matching item/version, `use`
+action, exact derived destination and current full-access/default runtime. API repository scope
+cannot authorize Git transport. The item must have the corresponding SSH-key or service-connection
+kind. Pending/terminal, unbound, stale, changed or denied contexts remain blocked. The returned
+`policy-valid-recheck-adapter` state describes only this point-in-time policy check: the caller's
+SSH target has not been compared with the encrypted key, host trust, broker availability, provider
+permissions and connector configuration have not been tested, and normal adapters must revalidate
+all inputs and current grants before a separate explicit attempt. There is no readiness token.
+
+A schema-encoded SHA-256 digest covers the exact typed proposal and its environment, requester,
+request and captured run/operation correlation. Recovery supplies the previous digest and the
+proposal again; a changed command, repository, timeout, target or context does not silently become
+the old operation. This digest is caller-retained comparison metadata, not a signed receipt, an
+external idempotency key, evidence of execution or proof of human review. Neither proposals nor
+digests are persisted. The original approval covers resource/action/destination scope, not an
+exact command. Never put credentials in proposals; the existing command interfaces are not private
+secret-input channels. Existing queue age-out bounds recovery lookup.
+
+The caller declares `not-started` or `unknown`, never a claimed retry-safe failure. All arbitrary
+SSH commands conservatively have unknown remote effects; Git fetch has local writes; GitHub
+comment/create has remote writes. An unknown result for any of these requires outcome review,
+even with valid policy. Git ref listing and the typed GitHub read operations are classified as
+reads. These classifications do not observe external state or undo effects. A false caller claim
+of not-started grants nothing: every result keeps `canExecute`, `automaticResumption` and
+`allowOnceConsumption` literal false and requires independent adapter validation. No execution,
+continuation, provider dispatch, consumption or notification side effect is introduced.
+
+This slice is additive/read-only and leaves policy format 3 unchanged. No OpenBao path or policy
+permission, Library change or production rollout is introduced.

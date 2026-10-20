@@ -19,8 +19,13 @@ and atomic creation cleanup reclaim aged requests plus expired approval grants; 
 to discard a live grant's binding. Backend history/audit retention remains separate. Existing
 policy writes with an approval ledger use format 3 to prevent older writers dropping correlation.
 
-Next selected work: operation-specific safe retry/resumption design and notification delivery
-adapters with durable delivery outcomes. Automatic resumption and one-time consumption remain
+Typed read-only retry preparation now validates exact proposal scope, requester/run, item/version,
+request revision and current evaluator access. Caller-retained operation digests support recovery
+comparison; uncertain writes require outcome review. No adapter is called and no continuation is
+persisted. Policy format stays 3.
+
+Next selected work: recovery validation failure/race acceptance and actionable repair guidance,
+then notification delivery adapters with durable delivery outcomes. Automatic resumption and one-time consumption remain
 gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
 simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
 Do not mark the full packet done.

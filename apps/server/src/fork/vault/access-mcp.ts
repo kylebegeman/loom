@@ -1,5 +1,7 @@
 import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
 import {
+  VaultApprovalRetryInput,
+  VaultApprovalRetryReport,
   VaultApprovalStatusInput,
   VaultApprovalCancel,
   VaultApprovalRequesterStatus,
@@ -34,6 +36,14 @@ const ownReadiness = Schema.Struct({
 });
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultAccessToolkit = Toolkit.make(
+  Tool.make("loom_vault_access_retry_prepare", {
+    description:
+      "Read-only preparation/recovery validation for your own run-bound approved request and a typed SSH, Git-over-SSH or GitHub API proposal. Supply the waiting operation ID, current request revision and previous outcome. Retain the returned operationDigest to detect changed proposals on recovery; it is not an authenticated receipt or execution token. Unknown write outcomes require external review, never blind replay. The original request approved scope, not this command. No commands are stored or run. Normal adapter validation and fresh access checks remain required. No automatic resumption, allow-once consumption or self-approval.",
+    parameters: VaultApprovalRetryInput,
+    success: VaultApprovalRetryReport,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_access_request_status", {
     description:
       "Read only your authenticated thread's own Vault request and durable waiting-operation correlation. Unknown, other-requester and aged-out IDs return not-found. A retry-ready status is not an execution token: automatic resumption and allow-once consumption remain disabled. Recheck normal access before explicitly retrying an operation.",
@@ -122,6 +132,17 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_access_retry_prepare: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
+              access.approvalPrepareRetry(input, caller.thread!.threadId),
+            ),
+          );
+        }),
+      ),
       loom_vault_access_request_status: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const caller = yield* McpInvocationContext;

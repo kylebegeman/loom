@@ -4,6 +4,8 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
 import {
   VaultError,
+  type VaultApprovalRetryInput,
+  type VaultItemKind,
   type VaultGrantDefinition,
   type VaultGrantMutation,
 } from "@t3tools/contracts/fork";
@@ -136,6 +138,7 @@ function withAccess<A, E>(
     core: VaultCore.VaultCore["Service"];
     fixture: ReturnType<typeof fixture>;
   }) => Effect.Effect<A, E>,
+  kind: VaultItemKind = "secret",
 ) {
   const f = fixture();
   return Effect.gen(function* () {
@@ -147,7 +150,7 @@ function withAccess<A, E>(
         operationId: "a".repeat(32),
         expectedVersion: 0,
         label: "Private account",
-        kind: "secret",
+        kind,
         value: Redacted.make("synthetic-never-in-audit"),
       },
       "human",
@@ -1018,4 +1021,313 @@ it.effect(
         );
       }),
     ),
+);
+
+const retryInput: VaultApprovalRetryInput = {
+  id: approvalInput.id,
+  waitingOperationId: approvalInput.id,
+  expectedRevision: 2,
+  previousOutcome: "not-started",
+  operation: {
+    kind: "ssh",
+    target: { hostname: "code.invalid", username: "git", port: 22, hostKey: null },
+    input: { id: itemId, command: { expectedVersion: 1, argv: ["true"], timeoutMs: 1000 } },
+  },
+};
+it.effect(
+  "prepares an exact typed proposal without writes or execution and revalidates it after restart",
+  () =>
+    withAccess(
+      ({ access, fixture }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 1 }, threadId))
+              .retryState,
+          ).toBe("blocked-request");
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          const before = [...fixture.records.entries()];
+          fixture.state.failWrites = true;
+          const prepared = yield* access.approvalPrepareRetry(retryInput, threadId);
+          expect(prepared).toMatchObject({
+            retryState: "policy-valid-recheck-adapter",
+            effects: "remote-write-or-unknown",
+            adapterValidation: "required",
+            canExecute: false,
+            automaticResumption: false,
+            allowOnceConsumption: false,
+          });
+          expect(prepared.operationDigest).toMatch(/^[a-f0-9]{64}$/);
+          const recovered = yield* Effect.flatMap(VaultAccess.VaultAccess, (service) =>
+            service.approvalPrepareRetry(
+              {
+                ...retryInput,
+                previousOperationDigest: prepared.operationDigest,
+              },
+              threadId,
+            ),
+          ).pipe(Effect.provide(fixture.layer));
+          expect(recovered).toEqual(prepared);
+          expect([...fixture.records.entries()]).toEqual(before);
+          expect(
+            (yield* access.approvalPrepareRetry(
+              { ...retryInput, previousOutcome: "unknown" },
+              threadId,
+            )).retryState,
+          ).toBe("requires-outcome-review");
+        }),
+      "ssh-key",
+    ),
+);
+it.effect("rejects substituted scope, revision, item, version and changed recovery payload", () =>
+  withAccess(
+    ({ access }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        yield* access.approvalChange(approveInput, "human", Effect.void);
+        const prepared = yield* access.approvalPrepareRetry(retryInput, threadId);
+        const operation = retryInput.operation;
+        if (operation.kind !== "ssh") throw new Error("fixture");
+        for (const patch of [
+          { waitingOperationId: "1".repeat(32) },
+          {
+            operation: { ...operation, target: { ...operation.target, hostname: "other.invalid" } },
+          },
+          { operation: { ...operation, input: { ...operation.input, id: "1".repeat(32) } } },
+          {
+            operation: {
+              ...operation,
+              input: {
+                ...operation.input,
+                command: { ...operation.input.command, expectedVersion: 2 },
+              },
+            },
+          },
+        ])
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, ...patch }, threadId)).retryState,
+          ).toBe("operation-mismatch");
+        expect(
+          (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 1 }, threadId))
+            .retryState,
+        ).toBe("stale-request");
+        expect(
+          (yield* access.approvalPrepareRetry(
+            {
+              ...retryInput,
+              previousOperationDigest: prepared.operationDigest,
+              operation: {
+                ...operation,
+                input: {
+                  ...operation.input,
+                  command: { ...operation.input.command, argv: ["changed"] },
+                },
+              },
+            },
+            threadId,
+          )).retryState,
+        ).toBe("operation-changed");
+        expect(
+          (yield* access.approvalPrepareRetry(retryInput, childId).pipe(Effect.flip)).reason,
+        ).toBe("not-found");
+        expect(
+          (yield* access
+            .approvalPrepareRetry(
+              { ...retryInput, operation: { kind: "shell" } } as never,
+              threadId,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+      }),
+    "ssh-key",
+  ),
+);
+it.effect(
+  "requires current full-access runtime, current run and unexpired approval on every preparation",
+  () =>
+    withAccess(
+      ({ access, fixture }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          fixture.state.approvalRequired = true;
+          expect((yield* access.approvalPrepareRetry(retryInput, threadId)).retryState).toBe(
+            "runtime-denied",
+          );
+          fixture.state.approvalRequired = false;
+          fixture.state.runId = RunId.make("replacement-run");
+          expect(
+            (yield* access.approvalPrepareRetry(retryInput, threadId)).status.operationState,
+          ).toBe("stale-run");
+          fixture.state.runId = RunId.make("grant-run");
+          yield* TestClock.adjust("5 minutes");
+          const expired = yield* access.approvalPrepareRetry(retryInput, threadId);
+          expect(expired.retryState).toBe("blocked-request");
+          expect(expired.status.operationState).toBe("expired");
+          yield* TestClock.adjust("24 hours");
+          expect(
+            (yield* access.approvalPrepareRetry(retryInput, threadId).pipe(Effect.flip)).reason,
+          ).toBe("not-found");
+        }),
+      "ssh-key",
+    ),
+);
+it.effect(
+  "blocks recovery after item changes or grant revocation even when an independent grant allows access",
+  () =>
+    withAccess(
+      ({ access, core }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          yield* access.apply({ ...save, expectedRevision: 1 }, "human");
+          yield* access.approvalChange(
+            {
+              ...approveInput,
+              expectedRevision: 2,
+              expectedPolicyRevision: 2,
+              operationId: "1".repeat(32),
+              decision: "revoke",
+            },
+            "human",
+            Effect.void,
+          );
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 3 }, threadId))
+              .retryState,
+          ).toBe("blocked-request");
+          yield* core.change(
+            { id: itemId, operationId: "2".repeat(32), expectedVersion: 1, action: "archive" },
+            "human",
+          );
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 3 }, threadId))
+              .canExecute,
+          ).toBe(false);
+        }),
+      "ssh-key",
+    ),
+);
+it.effect(
+  "derives repository-specific Git SSH scope and distinguishes reads from local fetch writes",
+  () =>
+    withAccess(
+      ({ access }) =>
+        Effect.gen(function* () {
+          const destination = "git+ssh://git@code.invalid:22/org/repo.git";
+          yield* access.approvalCreate(
+            { ...approvalInput, destination },
+            requesterActor,
+            Effect.void,
+          );
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          const operation = retryInput.operation;
+          if (operation.kind !== "ssh") throw new Error("fixture");
+          const git: VaultApprovalRetryInput = {
+            ...retryInput,
+            previousOutcome: "unknown",
+            operation: {
+              kind: "git-ssh",
+              target: operation.target,
+              input: {
+                id: itemId,
+                expectedVersion: 1,
+                repository: "org/repo.git",
+                action: "ls-remote",
+                timeoutMs: 1000,
+              },
+            },
+          };
+          expect((yield* access.approvalPrepareRetry(git, threadId)).retryState).toBe(
+            "policy-valid-recheck-adapter",
+          );
+          expect(
+            (yield* access.approvalPrepareRetry(
+              {
+                ...git,
+                operation: {
+                  ...git.operation,
+                  kind: "git-ssh",
+                  target: operation.target,
+                  input: {
+                    ...git.operation.input,
+                    id: itemId,
+                    expectedVersion: 1,
+                    repository: "org/repo.git",
+                    action: "fetch",
+                    timeoutMs: 1000,
+                  },
+                },
+              },
+              threadId,
+            )).retryState,
+          ).toBe("requires-outcome-review");
+          expect((yield* access.approvalPrepareRetry(retryInput, threadId)).retryState).toBe(
+            "operation-mismatch",
+          );
+        }),
+      "ssh-key",
+    ),
+);
+it.effect(
+  "keeps GitHub API scope separate from Git transport and requires review for uncertain API writes",
+  () =>
+    withAccess(
+      ({ access }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(
+            { ...approvalInput, destination: "https://github.com/org/repo" },
+            requesterActor,
+            Effect.void,
+          );
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          const github: VaultApprovalRetryInput = {
+            ...retryInput,
+            previousOutcome: "unknown",
+            operation: {
+              kind: "github-api",
+              input: {
+                id: itemId,
+                expectedVersion: 1,
+                repository: "Org/Repo",
+                operation: { action: "repo-view" },
+              },
+            },
+          };
+          expect((yield* access.approvalPrepareRetry(github, threadId)).retryState).toBe(
+            "policy-valid-recheck-adapter",
+          );
+          if (github.operation.kind !== "github-api") throw new Error("fixture");
+          expect(
+            (yield* access.approvalPrepareRetry(
+              {
+                ...github,
+                operation: {
+                  ...github.operation,
+                  input: {
+                    ...github.operation.input,
+                    operation: { action: "issue-create", title: "Synthetic", body: "Synthetic" },
+                  },
+                },
+              },
+              threadId,
+            )).retryState,
+          ).toBe("requires-outcome-review");
+          expect((yield* access.approvalPrepareRetry(retryInput, threadId)).retryState).toBe(
+            "operation-mismatch",
+          );
+        }),
+      "service-connection",
+    ),
+);
+it.effect("does not treat a generic secret item as an executable connector", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      expect((yield* access.approvalPrepareRetry(retryInput, threadId)).retryState).toBe(
+        "unsupported-item",
+      );
+    }),
+  ),
 );

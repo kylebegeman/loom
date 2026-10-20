@@ -1,6 +1,6 @@
 # L86: Remote approvals and temporary access
 
-Status: **In progress; timed approvals and requester lifecycle implemented.** Kyle selected the full
+Status: **In progress; timed approvals, requester lifecycle and explicit-retry preparation implemented.** Kyle selected the full
 packet on 2026-10-17. Notification delivery, allow-once consumption, automatic resumption,
 step-up authentication and broader acceptance remain selected work.
 
@@ -37,6 +37,12 @@ Requests without a captured run remain explicitly unbound. This extends the exis
 value to format 3 on a write with an approval ledger; format 1/2 readers remain supported, while
 older runtimes reject format 3 rather than dropping correlation metadata.
 There is no Library change or production action. See TESTING for verified surfaces and limits.
+
+Typed SSH, Git-over-SSH and GitHub API proposals now have read-only, requester-scoped retry
+preparation and recovery comparison. Changed operations, stale context and unknown write outcomes
+are blocked or require review. Every result still requires normal adapter validation and keeps
+all execution gates false. Proposals are not captured continuations or stored credentials.
+Policy format remains 3. Native acceptance stays owner-led.
 
 ## Scope
 
