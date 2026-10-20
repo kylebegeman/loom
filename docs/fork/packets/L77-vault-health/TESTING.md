@@ -183,3 +183,30 @@ After merging fork main `967d8875d8`, 80 tests passed in ten focused history/con
 shared-client, MCP registration, preview MCP/gateway/host and Library publisher files. All five
 affected package typechecks, scoped Vault lint and documentation/seam checks passed. Main's
 preview and Library changes were preserved; this Vault slice adds no Library deployment work.
+
+## Outage aggregation and maintenance acceptance
+
+Focused contract, service, observer, launch, client and MCP checks cover grouping by recorded
+endpoint, SSH port separation, unknown destinations, dismissed/resolved history, snoozed issues,
+independent recovery and legacy snapshots. The launch regression uses a mocked timeout transport
+and verifies host-only attribution for SSH and Git; no SSH binary runs. The maintenance MCP
+regression rejects agent/read-only callers, confirms snapshot reads do not probe and reaches
+recheck only for a full-access administrator. Existing item/version and claim guards remain in
+force. A new test initially reused the fixture's one-shot grant for two destinations; it now creates
+a second explicit grant, and the launch regression passes. A client grouping return-type inference
+error was corrected before all affected consumer typechecks passed.
+
+Web acceptance used isolated synthetic GitHub outage reports plus a separate SSH report. It
+verified grouping, snooze/unsnooze, dismiss/history/reopen, rule save/removal, an expiry-only recheck,
+burst limiting and the unconfigured result after rule removal. No provider validation or automatic
+check was enabled. An invalid synthetic health record produced an error with no old groups, no
+false empty-success message and disabled mutation controls; restoring it and refreshing recovered
+the inbox. Both clients now require a settled successful snapshot before showing its issues.
+The layout was inspected at 1280px and 390px, with no horizontal overflow. Native interaction,
+relay/tunnel and live provider acceptance remain unverified under the no-install/no-SSH/production
+restrictions. External-consumer and provider-copy discovery limits remain explicit.
+
+Final evidence: 35 tests passed in nine focused files, including the real fork MCP registration
+check. All five affected package typechecks, scoped lint and changed-document/seam checks passed.
+No upstream seam, new dependency, application schema migration or Library deployment requirement
+was introduced. This remains a partial packet rather than full native/live-provider acceptance.

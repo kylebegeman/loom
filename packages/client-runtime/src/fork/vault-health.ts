@@ -1,6 +1,7 @@
 import {
   VAULT_HEALTH_WS_METHODS as V,
   type VaultHealthIssue,
+  type VaultHealthSnapshot,
   type VaultHealthContextPage,
   type VaultHealthRetainedPage,
 } from "@t3tools/contracts/fork";
@@ -74,4 +75,37 @@ export function vaultHealthCoverageMessages(
       `${coverage.unattributedGrants} ${coverage.unattributedGrants === 1 ? "grant referencing this item cannot" : "grants referencing this item cannot"} be attributed to a current project across this environment. Review grants before changing this item.`,
     );
   return messages;
+}
+
+export function vaultHealthInboxGroups(snapshot: VaultHealthSnapshot, history: boolean) {
+  const issues = snapshot.issues.filter(
+    (issue) => history || !["dismissed", "resolved"].includes(issue.state),
+  );
+  const groupByIssue = new Map(
+    (snapshot.outageGroups ?? []).flatMap((group) =>
+      group.issueIds.map((id) => [id, group] as const),
+    ),
+  );
+  const emitted = new Set<string>();
+  return issues.flatMap<{
+    id: string;
+    label: string | null;
+    issues: ReadonlyArray<VaultHealthIssue>;
+  }>((issue) => {
+    const group = groupByIssue.get(issue.id);
+    if (!group) return [{ id: issue.id, label: null, issues: [issue] }];
+    if (emitted.has(group.id)) return [];
+    emitted.add(group.id);
+    const target = group.target;
+    return [
+      {
+        id: group.id,
+        label:
+          target.kind === "github"
+            ? "GitHub (github.com)"
+            : `SSH ${target.hostname}:${target.port}`,
+        issues: issues.filter((candidate) => group.issueIds.includes(candidate.id)),
+      },
+    ];
+  });
 }

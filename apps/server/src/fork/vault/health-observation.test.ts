@@ -22,12 +22,13 @@ it.effect(
       reports.length = 0;
       const error = new VaultGitHubError({ reason: "unavailable" });
       expect(
-        yield* observeVaultHealth(Effect.fail(error), "a".repeat(32), 1).pipe(
+        yield* observeVaultHealth(Effect.fail(error), "a".repeat(32), 1, { kind: "github" }).pipe(
           Effect.provide(layer),
           Effect.flip,
         ),
       ).toBe(error);
       expect(reports.map((r) => [r.category, r.healthy])).toEqual([["outage", false]]);
+      expect(reports[0]?.outageTarget).toEqual({ kind: "github" });
       reports.length = 0;
       yield* observeVaultHealth(
         Effect.fail(new VaultError({ reason: "denied" })),

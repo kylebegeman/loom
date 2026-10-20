@@ -2,6 +2,7 @@ import {
   type VaultHealthRecheckResult,
   VaultError,
   type VaultHealthClass,
+  type VaultHealthOutageTarget,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -39,9 +40,17 @@ const make = Effect.gen(function* () {
     });
     if (!claim.rule.githubRepository && !claim.rule.sshValidation) return true;
     const target = { id: itemId, expectedVersion: claim.itemVersion };
+    let outageTarget: VaultHealthOutageTarget | undefined;
     const result = yield* Effect.gen(function* () {
-      if (claim.rule.sshValidation) yield* ssh.probe(target, Effect.void);
-      else yield* github.test({ ...target, repository: claim.rule.githubRepository! }, Effect.void);
+      if (claim.rule.sshValidation) {
+        const info = yield* ssh.info(itemId);
+        if (info.item.version === claim.itemVersion)
+          outageTarget = { kind: "ssh", hostname: info.target.hostname, port: info.target.port };
+        yield* ssh.probe(target, Effect.void);
+      } else {
+        outageTarget = { kind: "github" };
+        yield* github.test({ ...target, repository: claim.rule.githubRepository! }, Effect.void);
+      }
     }).pipe(
       Effect.provideService(VaultHealthObservation, {
         observedAt: claim.observedAt,
@@ -75,6 +84,7 @@ const make = Effect.gen(function* () {
         itemVersion: claim.itemVersion,
         category,
         healthy: false,
+        ...(category === "outage" && outageTarget ? { outageTarget } : {}),
         observedAt: claim.observedAt,
         checkDeadline: claim.checkDeadline,
       });

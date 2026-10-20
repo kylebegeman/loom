@@ -15,6 +15,7 @@ import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
+import * as VaultHealth from "./VaultHealth.ts";
 import { VaultSshToolkit, vaultSshHandlers } from "./ssh-mcp.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 const dependencies = Layer.merge(NodeServices.layer, memoryVault);
@@ -335,4 +336,68 @@ it.effect("project grants cover fresh scheduled-run threads and stop after revoc
     ).toBe("denied");
     expect(yield* f.workloads.list(taskThread)).toEqual([]);
   }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
+  "attributes SSH and Git timeouts to their recorded host without exposing usernames or remote paths",
+  () =>
+    Effect.gen(function* () {
+      const reports: Array<Parameters<VaultHealth.VaultHealth["Service"]["report"]>[0]> = [];
+      const f = yield* launchFixture(
+        Layer.succeed(SshTransport.SshTransport, {
+          execute: (input) =>
+            input.authorize.pipe(
+              Effect.andThen(Effect.fail(new VaultSshError({ reason: "timeout" }))),
+            ),
+        }),
+      );
+      const health = Layer.mock(VaultHealth.VaultHealth)({
+        report: (report) =>
+          Effect.sync(() => {
+            reports.push(report);
+          }),
+      });
+      yield* f.grant(f.key.destination);
+      expect(
+        (yield* f.launch
+          .ssh({ id: f.itemId, command }, f.threadId)
+          .pipe(Effect.provide(health), Effect.flip)).reason,
+      ).toBe("timeout");
+      const repository = "team/repo.git";
+      yield* f.access.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: 1,
+          change: {
+            type: "save",
+            grant: {
+              id: yield* f.id,
+              label: "Git outage QA",
+              principal: { kind: "thread", id: f.threadId },
+              itemIds: [f.itemId],
+              actions: ["use"],
+              projectId: null,
+              destination: vaultGitDestination(f.key.target, repository),
+              notBefore: 0,
+              expiresAt: null,
+              parentId: null,
+            },
+          },
+        },
+        "fixture-admin",
+      );
+      expect(
+        (yield* f.launch
+          .git(
+            { id: f.itemId, expectedVersion: 1, action: "fetch", repository, timeoutMs: 30000 },
+            f.threadId,
+          )
+          .pipe(Effect.provide(health), Effect.flip)).reason,
+      ).toBe("timeout");
+      expect(reports.map((report) => report.outageTarget)).toEqual([
+        { kind: "ssh", hostname: f.key.target.hostname, port: f.key.target.port },
+        { kind: "ssh", hostname: f.key.target.hostname, port: f.key.target.port },
+      ]);
+      expect(reports.every((report) => report.category === "outage" && !report.healthy)).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

@@ -151,58 +151,62 @@ const make = Effect.gen(function* () {
       }),
     );
   const operations = {
-    ssh: Effect.fn("VaultLaunch.ssh")(
-      function* (
-        input: VaultSshRun,
-        threadId: ThreadId,
-        guard: Effect.Effect<void, HostedFailure> = Effect.void,
-      ) {
-        if (!isSsh(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
-        const info = yield* ssh.info(input.id);
-        return yield* run(
+    ssh: Effect.fn("VaultLaunch.ssh")(function* (
+      input: VaultSshRun,
+      threadId: ThreadId,
+      guard: Effect.Effect<void, HostedFailure> = Effect.void,
+    ) {
+      if (!isSsh(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const info = yield* ssh.info(input.id);
+      return yield* observeVaultHealth(
+        run(
           threadId,
           input.id,
           info.destination,
           "ssh-exec",
           vaultSshCommandMessage(input.command),
           (proof) => ssh.execute({ proof, command: input.command }, guard),
-        );
-      },
-      (effect, input) => observeVaultHealth(effect, input.id, input.command.expectedVersion),
-    ),
-    git: Effect.fn("VaultLaunch.git")(
-      function* (
-        input: VaultGitRun,
-        threadId: ThreadId,
-        guard: Effect.Effect<void, HostedFailure> = Effect.void,
-      ) {
-        if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
-        const info = yield* ssh.info(input.id);
-        const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
-        if (!thread) return yield* denied();
-        const project = yield* projects.get(thread.projectId).pipe(Effect.mapError(denied));
-        if (Option.isNone(project)) return yield* denied();
-        const cwd = thread.worktreePath ?? project.value.workspaceRoot;
-        if (!path.isAbsolute(cwd)) return yield* denied();
-        const command = {
-          kind: "git" as const,
-          expectedVersion: input.expectedVersion,
-          action: input.action,
-          repository: input.repository,
-          cwd,
-          timeoutMs: input.timeoutMs,
-        };
-        return yield* run(
+        ),
+        input.id,
+        input.command.expectedVersion,
+        { kind: "ssh", hostname: info.target.hostname, port: info.target.port },
+      );
+    }),
+    git: Effect.fn("VaultLaunch.git")(function* (
+      input: VaultGitRun,
+      threadId: ThreadId,
+      guard: Effect.Effect<void, HostedFailure> = Effect.void,
+    ) {
+      if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const info = yield* ssh.info(input.id);
+      const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+      if (!thread) return yield* denied();
+      const project = yield* projects.get(thread.projectId).pipe(Effect.mapError(denied));
+      if (Option.isNone(project)) return yield* denied();
+      const cwd = thread.worktreePath ?? project.value.workspaceRoot;
+      if (!path.isAbsolute(cwd)) return yield* denied();
+      const command = {
+        kind: "git" as const,
+        expectedVersion: input.expectedVersion,
+        action: input.action,
+        repository: input.repository,
+        cwd,
+        timeoutMs: input.timeoutMs,
+      };
+      return yield* observeVaultHealth(
+        run(
           threadId,
           input.id,
           vaultGitDestination(info.target, input.repository),
           "git-exec",
           vaultGitCommandMessage(command),
           (proof) => ssh.git({ proof, command }, guard),
-        );
-      },
-      (effect, input) => observeVaultHealth(effect, input.id, input.expectedVersion),
-    ),
+        ),
+        input.id,
+        input.expectedVersion,
+        { kind: "ssh", hostname: info.target.hostname, port: info.target.port },
+      );
+    }),
   };
   return VaultLaunch.of({
     ...operations,

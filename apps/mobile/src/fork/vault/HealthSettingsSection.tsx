@@ -13,6 +13,7 @@ import {
   vaultHealthMessage,
   vaultHealthRecheckMessage,
   vaultHealthVisibleState,
+  vaultHealthInboxGroups,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -71,6 +72,7 @@ function Inbox({
   const snapshot = useEnvironmentQuery(
     connected ? atoms.snapshot({ environmentId, input: {} }) : null,
   );
+  const snapshotData = snapshot.isSuccess && !snapshot.isPending ? snapshot.data : null;
   const apply = useAtomCommand(atoms.apply, { reportFailure: false }),
     recheck = useAtomCommand(atoms.recheck, { reportFailure: false });
   const canApply = useAtomValue(atoms.apply.permissionAtom(environmentId));
@@ -91,9 +93,15 @@ function Inbox({
     connected ? core.list({ environmentId, input: { cursor, includeArchived: false } }) : null,
   );
   const [reviewing, setReviewing] = useState<string | null>(null);
-  const now = useVaultTime(snapshot.data?.issues.map((issue) => issue.snoozedUntil) ?? []);
+  const now = useVaultTime(snapshotData?.issues.map((issue) => issue.snoozedUntil) ?? []);
   const locked =
-    busy || !canWrite || !canApply || !connected || snapshot.isPending || !!snapshot.error;
+    !snapshotData ||
+    busy ||
+    !canWrite ||
+    !canApply ||
+    !connected ||
+    snapshot.isPending ||
+    !!snapshot.error;
   const act = async (work: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
@@ -111,12 +119,12 @@ function Inbox({
     }
   };
   const change = async (change: VaultHealthMutation["change"]) => {
-    if (!snapshot.data) return;
+    if (!snapshotData) return;
     const result = await apply({
       environmentId,
       input: {
         operationId: uuidv4().replaceAll("-", ""),
-        expectedRevision: snapshot.data.revision,
+        expectedRevision: snapshotData.revision,
         change,
       },
     });
@@ -143,7 +151,11 @@ function Inbox({
       <Button
         label="Refresh health"
         disabled={busy || !connected}
-        onPress={() => snapshot.refresh()}
+        onPress={() => {
+          setError(null);
+          setNotice(null);
+          snapshot.refresh();
+        }}
       />
       <Button
         label={history ? "Hide resolved and dismissed" : "Show resolved and dismissed"}
@@ -156,68 +168,88 @@ function Inbox({
         </Text>
       ) : null}
       {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
-      {snapshot.data?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
+      {snapshotData?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
         .length === 0 ? (
         <Text>No active maintenance issues.</Text>
       ) : null}
-      {snapshot.data?.issues
-        .filter((i) => history || !["dismissed", "resolved"].includes(i.state))
-        .map((issue) => (
-          <View key={issue.id} className="gap-2 rounded-lg border border-border p-3">
-            <Text className="font-semibold">
-              {issue.itemLabel}: {issue.category}
-            </Text>
-            <Text>{vaultHealthMessage(issue)}</Text>
-            <Button label="Review access" onPress={() => setReviewing(issue.itemId)} />
-            <Button
-              label={
-                contextIssue === issue.id ? "Hide project references" : "Show project references"
-              }
-              onPress={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
-            />
-            {contextIssue === issue.id ? (
-              <VaultHealthContext
-                environmentId={environmentId}
-                itemId={issue.itemId}
-                connected={connected}
-              />
-            ) : null}
-            <Text>
-              {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences
-            </Text>
-            <Text>Last seen {new Date(issue.lastSeenAt).toLocaleString()}</Text>
-            <Button
-              label="Recheck"
-              disabled={locked}
-              onPress={() =>
-                void act(async () => {
-                  const result = await recheck({ environmentId, input: { itemId: issue.itemId } });
-                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                  setNotice(vaultHealthRecheckMessage(result.value.outcome));
-                })
-              }
-            />
-            <Button
-              label={issue.state === "snoozed" ? "Unsnooze" : "Snooze 1 day"}
-              disabled={locked}
-              onPress={() =>
-                void issueAction(issue, issue.state === "snoozed" ? "unsnooze" : "snooze")
-              }
-            />
-            <Button
-              label={["dismissed", "resolved"].includes(issue.state) ? "Reopen" : "Dismiss"}
-              disabled={locked}
-              onPress={() =>
-                void issueAction(
-                  issue,
-                  ["dismissed", "resolved"].includes(issue.state) ? "reopen" : "dismiss",
-                )
-              }
-            />
-          </View>
-        ))}
-      {snapshot.data?.omittedIssues ? (
-        <Text>{snapshot.data.omittedIssues} older issues omitted by retention.</Text>
+      {snapshotData
+        ? vaultHealthInboxGroups(snapshotData, history).map((group) => (
+            <View key={group.id} className="gap-3">
+              {group.label ? (
+                <>
+                  <Text accessibilityRole="header" className="font-semibold">
+                    Outage reports: {group.label}
+                  </Text>
+                  <Text>
+                    {group.issues.length} affected items. Reports share a destination; they may have
+                    different causes. Review and update each item separately.
+                  </Text>
+                </>
+              ) : null}
+              {group.issues.map((issue) => (
+                <View key={issue.id} className="gap-2 rounded-lg border border-border p-3">
+                  <Text className="font-semibold">
+                    {issue.itemLabel}: {issue.category}
+                  </Text>
+                  <Text>{vaultHealthMessage(issue)}</Text>
+                  <Button label="Review access" onPress={() => setReviewing(issue.itemId)} />
+                  <Button
+                    label={
+                      contextIssue === issue.id
+                        ? "Hide project references"
+                        : "Show project references"
+                    }
+                    onPress={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
+                  />
+                  {contextIssue === issue.id ? (
+                    <VaultHealthContext
+                      environmentId={environmentId}
+                      itemId={issue.itemId}
+                      connected={connected}
+                    />
+                  ) : null}
+                  <Text>
+                    {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences
+                  </Text>
+                  <Text>Last seen {new Date(issue.lastSeenAt).toLocaleString()}</Text>
+                  <Button
+                    label="Recheck"
+                    disabled={locked}
+                    onPress={() =>
+                      void act(async () => {
+                        const result = await recheck({
+                          environmentId,
+                          input: { itemId: issue.itemId },
+                        });
+                        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                        setNotice(vaultHealthRecheckMessage(result.value.outcome));
+                      })
+                    }
+                  />
+                  <Button
+                    label={issue.state === "snoozed" ? "Unsnooze" : "Snooze 1 day"}
+                    disabled={locked}
+                    onPress={() =>
+                      void issueAction(issue, issue.state === "snoozed" ? "unsnooze" : "snooze")
+                    }
+                  />
+                  <Button
+                    label={["dismissed", "resolved"].includes(issue.state) ? "Reopen" : "Dismiss"}
+                    disabled={locked}
+                    onPress={() =>
+                      void issueAction(
+                        issue,
+                        ["dismissed", "resolved"].includes(issue.state) ? "reopen" : "dismiss",
+                      )
+                    }
+                  />
+                </View>
+              ))}
+            </View>
+          ))
+        : null}
+      {snapshotData?.omittedIssues ? (
+        <Text>{snapshotData.omittedIssues} older issues omitted by retention.</Text>
       ) : null}
       <Text className="font-semibold">Expiry and validation rule</Text>
       <Button label={itemLabel} disabled={locked} onPress={() => setPicking(true)} />
@@ -320,7 +352,7 @@ function Inbox({
                 key={item.id}
                 label={item.label}
                 onPress={() => {
-                  const rule = snapshot.data?.rules.find((r) => r.itemId === item.id);
+                  const rule = snapshotData?.rules.find((r) => r.itemId === item.id);
                   setItemId(item.id);
                   setItemLabel(item.label);
                   setExpires(rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "");

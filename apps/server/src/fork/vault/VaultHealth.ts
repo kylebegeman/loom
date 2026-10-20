@@ -3,6 +3,7 @@ import {
   VaultHealthIssue,
   VaultHealthRule,
   VaultHealthMutation,
+  VaultHealthOutageTarget,
   type VaultHealthSnapshot,
   type VaultHealthClass,
 } from "@t3tools/contracts/fork";
@@ -33,6 +34,7 @@ export class VaultHealth extends Context.Service<
       itemVersion: number;
       category: VaultHealthClass;
       healthy: boolean;
+      outageTarget?: VaultHealthOutageTarget;
       observedAt?: number;
       checkDeadline?: number;
     }) => Effect.Effect<void, VaultError>;
@@ -66,6 +68,7 @@ const encodeMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ input: VaultHealthMutation, actor: Schema.String })),
 );
 const isMutation = Schema.is(VaultHealthMutation);
+const isOutageTarget = Schema.is(VaultHealthOutageTarget);
 const invalid = () => new VaultError({ reason: "invalid-input" }),
   conflict = () => new VaultError({ reason: "conflict" });
 const CHECK_INTERVAL_MS = 15 * 60_000;
@@ -93,17 +96,41 @@ const make = Effect.gen(function* () {
       Effect.mapError(invalid),
       Effect.flatMap((value) => store.write(path, Redacted.make(value), version)),
     );
-  const view = (state: State, revision: number, now: number): VaultHealthSnapshot => ({
-    revision,
-    checkedAt: now,
-    rules: state.rules,
-    omittedIssues: state.omittedIssues,
-    issues: state.issues.map((issue) =>
+  const view = (state: State, revision: number, now: number): VaultHealthSnapshot => {
+    const issues = state.issues.map((issue) =>
       issue.state === "snoozed" && issue.snoozedUntil !== null && issue.snoozedUntil <= now
-        ? { ...issue, state: "open", snoozedUntil: null }
+        ? { ...issue, state: "open" as const, snoozedUntil: null }
         : issue,
-    ),
-  });
+    );
+    const groups = new Map<
+      string,
+      { id: string; target: VaultHealthOutageTarget; issueIds: string[] }
+    >();
+    for (const issue of issues) {
+      if (
+        issue.category !== "outage" ||
+        !issue.outageTarget ||
+        !["open", "snoozed"].includes(issue.state)
+      )
+        continue;
+      const target = issue.outageTarget;
+      const id =
+        target.kind === "github"
+          ? "outage:github.com"
+          : `outage:ssh:${target.hostname}:${target.port}`;
+      const group = groups.get(id) ?? { id, target, issueIds: [] };
+      group.issueIds.push(issue.id);
+      groups.set(id, group);
+    }
+    return {
+      revision,
+      checkedAt: now,
+      rules: state.rules,
+      omittedIssues: state.omittedIssues,
+      issues,
+      outageGroups: [...groups.values()].filter((group) => group.issueIds.length > 1),
+    };
+  };
   const snapshot = Effect.gen(function* () {
     const { state, version } = yield* load;
     return view(state, version, yield* Clock.currentTimeMillis);
@@ -221,6 +248,8 @@ const make = Effect.gen(function* () {
     report: (input) =>
       mutate((state, now) =>
         Effect.gen(function* () {
+          if (input.outageTarget !== undefined && !isOutageTarget(input.outageTarget))
+            return yield* invalid();
           const item = yield* core.inspect(input.itemId);
           if (!item || item.state !== "active" || item.version !== input.itemVersion)
             return { state, result: undefined };
@@ -242,6 +271,9 @@ const make = Effect.gen(function* () {
                 itemLabel: item.label,
                 itemVersion: item.version,
                 category: input.category,
+                ...(input.category === "outage" && input.outageTarget
+                  ? { outageTarget: input.outageTarget }
+                  : {}),
                 state:
                   prior?.itemVersion === item.version &&
                   ["snoozed", "dismissed"].includes(prior.state)

@@ -510,6 +510,11 @@ the command palette. Review expiry warnings and failed development access, reche
 item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
 item's grant and destination. An outage warning does not mean the credential was revoked.
 
+Outage reports with the same recorded GitHub service or SSH host and port appear together.
+Each item keeps its own recheck, snooze and dismiss actions. A shared destination does not prove
+a shared cause; one item recovering does not clear the others. Older reports without a recorded
+destination remain individual.
+
 Choose a Vault item and declare its expiry, optionally adding a dedicated GitHub repository
 for validation. Enable automatic checks explicitly; otherwise checks run only when requested.
 Warnings begin seven days before declared expiry. Recent checks can be rate limited, and an

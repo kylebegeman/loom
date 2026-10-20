@@ -41,7 +41,7 @@ export const VaultHealthToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_health", {
     description:
-      "Inspect the administrator maintenance inbox and declared expiry rules. Full-access administrator clients only, not agent threads. Does not contact providers or return credentials.",
+      "Inspect the administrator maintenance inbox and declared expiry rules. Full-access administrator clients only, not agent threads. Includes outage groups by recorded destination without claiming a common cause. Does not contact providers or return credentials.",
     success: VaultHealthSnapshot,
     failure,
     dependencies,

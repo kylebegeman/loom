@@ -118,3 +118,19 @@ other SSH failures create configuration issues without claiming revocation or au
 failure. A successful probe resolves prior validation issues through the same stale-claim guard.
 The existing opt-in, interval, burst and concurrency bounds apply. Clients gate the new form
 control on `vault-health-ssh-validation` and retain explicit automatic-check consent.
+
+## Outage aggregation
+
+Outage observations may retain a typed destination: the fixed GitHub service, or an SSH hostname
+and port. GitHub delivery observers, SSH/Git launch observers and explicit validation supply it
+from their recorded connection. Usernames, remote paths, credential values and provider responses
+are excluded. The fields are optional for existing encrypted records and older clients; there is
+no application database migration or additional backend policy path.
+
+The snapshot derives groups only for two or more open/snoozed outage issues with the same recorded
+destination. Dismissed/resolved history stays separate, and missing attribution is never guessed
+from item kind or label. This is destination aggregation, not incident diagnosis. Group membership
+has no authority and is not mutable state: recheck, snooze, dismiss and confirmed recovery continue
+to operate on individual issues with the existing CAS/version guards. Recovering one item never
+resolves another. CLI/MCP return the same grouped snapshot. Both clients hide cached snapshots
+while the current read is pending or failed, and refresh clears stale operation messages.
