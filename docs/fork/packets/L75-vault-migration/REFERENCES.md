@@ -11,7 +11,11 @@ reviewed import was developed against fork main `f7cd2e14d1`.
   setup; no automatic SSH remote migration is added here.
 - [Inventory adapter](../../../../apps/server/src/fork/vault/MigrationGitMetadata.ts) and
   [replacement service](../../../../apps/server/src/fork/vault/VaultMigrationInventory.ts): bounded
-  local reads, sanitized hints and unverified intent, without config writers.
+  local reads, sanitized hints, reviewed intent and scoped receipts, without config writers.
+- [SSH service](../../../../apps/server/src/fork/vault/VaultSsh.ts) and
+  [transport](../../../../apps/server/src/fork/vault/SshTransport.ts): exact, isolated repository
+  read verification; [GitHub connection](../../../../apps/server/src/fork/vault/VaultGitHub.ts)
+  owns scoped API verification and cleanup.
 - [Inventory contracts](../../../../packages/contracts/src/fork/vault-migration-inventory.ts):
   literal verification/cutover limits and destination-scoped commands.
 - [User help](../../user/vault.md#import-development-records): starting the reviewed import.

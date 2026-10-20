@@ -16,11 +16,23 @@ export class VaultReplacementError extends Schema.TaggedError<VaultReplacementEr
       "unsupported-source",
       "expired",
       "invalid-state",
+      "verification-busy",
+      "receipt-changed",
+      "verification-timeout",
+      "cancelled",
     ]),
   },
 ) {
   override get message() {
     switch (this.reason) {
+      case "verification-busy":
+        return "A verification is already running. Refresh its receipt.";
+      case "receipt-changed":
+        return "The verification receipt changed. Refresh before starting another check.";
+      case "verification-timeout":
+        return "Verification exceeded its time limit. Refresh its receipt before trying again.";
+      case "cancelled":
+        return "This replacement plan was cancelled. Prepare a new plan.";
       case "source-changed":
         return "The inspected project configuration changed. Refresh inventory and prepare a new plan.";
       case "source-unavailable":
@@ -131,7 +143,82 @@ export const VaultReplacementReview = Schema.Struct({
   reviewed: Schema.Literal(true),
 });
 export type VaultReplacementReview = typeof VaultReplacementReview.Type;
+
+export const VaultVerificationFailure = Schema.Literals([
+  "denied",
+  "source-changed",
+  "source-unavailable",
+  "item-changed",
+  "replacement-unavailable",
+  "cancelled",
+  "expired",
+  "untrusted-host",
+  "unsupported",
+  "unavailable",
+  "timeout",
+  "failed",
+]);
+export type VaultVerificationFailure = typeof VaultVerificationFailure.Type;
+export const VaultReplacementVerificationReceipt = Schema.Struct({
+  operationId: VaultItemId,
+  planId: VaultItemId,
+  itemId: VaultItemId,
+  itemVersion: PositiveInt,
+  scope: VaultReplacementPlan.fields.replacement.fields.scope,
+  destination: text,
+  gitPath: Schema.NullOr(text),
+  state: Schema.Literals(["running", "passed", "failed"]),
+  startedAt: Schema.Int,
+  deadlineAt: Schema.Int,
+  completedAt: Schema.NullOr(Schema.Int),
+  validUntil: Schema.NullOr(Schema.Int),
+  failure: Schema.NullOr(VaultVerificationFailure),
+  hostFingerprint: Schema.NullOr(text),
+}).check(
+  Schema.makeFilter(
+    (receipt) =>
+      (receipt.scope === "ssh-git-transport"
+        ? receipt.gitPath !== null
+        : receipt.gitPath === null) &&
+      (receipt.state === "running"
+        ? receipt.completedAt === null && receipt.validUntil === null && receipt.failure === null
+        : receipt.completedAt !== null &&
+          (receipt.state === "passed"
+            ? receipt.validUntil !== null &&
+              receipt.failure === null &&
+              (receipt.scope !== "ssh-git-transport" || receipt.hostFingerprint !== null)
+            : receipt.validUntil === null && receipt.failure !== null)),
+  ),
+);
+export type VaultReplacementVerificationReceipt = typeof VaultReplacementVerificationReceipt.Type;
+export const VaultReplacementVerificationStatus = Schema.Struct({
+  planId: VaultItemId,
+  planState: VaultReplacementPlan.fields.state,
+  receipt: Schema.NullOr(VaultReplacementVerificationReceipt),
+  freshness: Schema.Literals([
+    "not-run",
+    "running",
+    "current",
+    "expired",
+    "invalidated",
+    "failed",
+    "interrupted",
+  ]),
+  invalidatedBy: Schema.NullOr(VaultVerificationFailure),
+  workloadAuthorization: Schema.Literal("not-evaluated"),
+  canCutover: Schema.Literal(false),
+});
+export type VaultReplacementVerificationStatus = typeof VaultReplacementVerificationStatus.Type;
+export const VaultReplacementVerify = Schema.Struct({
+  id: VaultItemId,
+  operationId: VaultItemId,
+  expectedOperationId: Schema.NullOr(VaultItemId),
+  contactDestination: Schema.Literal(true),
+});
+export type VaultReplacementVerify = typeof VaultReplacementVerify.Type;
 export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
+  verify: "loom.vault-migration.replacement-verify",
+  verification: "loom.vault-migration.replacement-verification",
   inventory: "loom.vault-migration.inventory",
   prepare: "loom.vault-migration.replacement-prepare",
   inspect: "loom.vault-migration.replacement-inspect",
@@ -142,6 +229,16 @@ export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
 const V = VAULT_MIGRATION_INVENTORY_WS_METHODS;
 const error = Schema.Union([VaultError, VaultReplacementError, EnvironmentAuthorizationError]);
 export const VaultMigrationInventoryRpcGroup = RpcGroup.make(
+  Rpc.make(V.verify, {
+    payload: VaultReplacementVerify,
+    success: VaultReplacementVerificationStatus,
+    error,
+  }),
+  Rpc.make(V.verification, {
+    payload: Schema.Struct({ id: VaultItemId }),
+    success: VaultReplacementVerificationStatus,
+    error,
+  }),
   Rpc.make(V.inventory, {
     payload: VaultMigrationInventoryInput,
     success: VaultMigrationInventoryPage,

@@ -1,12 +1,17 @@
 import { ProjectId } from "@t3tools/contracts";
 import {
   VaultError,
+  VaultSshError,
   VaultReplacementError,
   VaultMigrationInventoryInput,
   VaultReplacementPrepare,
   VaultReplacementReview,
   VaultReplacementList,
   VaultReplacementPlan,
+  VaultReplacementVerify,
+  VaultReplacementVerificationReceipt,
+  type VaultReplacementVerificationStatus,
+  type VaultVerificationFailure,
   type VaultMigrationInventoryPage,
   type VaultMigrationProject,
   type VaultMigrationDependency,
@@ -35,6 +40,14 @@ type Failure = VaultError | VaultReplacementError;
 export class VaultMigrationInventory extends Context.Service<
   VaultMigrationInventory,
   {
+    readonly verify: (
+      input: VaultReplacementVerify,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultReplacementVerificationStatus, Failure>;
+    readonly verification: (
+      id: string,
+    ) => Effect.Effect<VaultReplacementVerificationStatus, Failure>;
     readonly inventory: (
       input: VaultMigrationInventoryInput,
     ) => Effect.Effect<VaultMigrationInventoryPage, VaultError>;
@@ -58,10 +71,18 @@ const Stored = Schema.Struct({
   requestFingerprint: Schema.String,
   preparedBy: Schema.String,
   reviewedBy: Schema.NullOr(Schema.String),
+  verification: Schema.optionalKey(
+    Schema.Struct({
+      receipt: VaultReplacementVerificationReceipt,
+      requestedBy: Schema.String,
+      expectedOperationId: Schema.NullOr(VaultReplacementVerify.fields.operationId),
+    }),
+  ),
 });
 type Stored = typeof Stored.Type;
 const decode = Schema.decodeUnknownOption(Stored),
   encode = Schema.encodeEffect(Stored);
+const isVerify = Schema.is(VaultReplacementVerify);
 const isInventory = Schema.is(VaultMigrationInventoryInput),
   isPrepare = Schema.is(VaultReplacementPrepare),
   isReview = Schema.is(VaultReplacementReview),
@@ -96,6 +117,37 @@ const encodeRequest = Schema.encodeEffect(
     }),
   ),
 );
+const VERIFICATION_TIMEOUT_MS = 30_000;
+const VERIFICATION_TTL_MS = 60_000;
+const verificationFailure = (error: {
+  readonly _tag: string;
+  readonly reason?: string;
+}): VaultVerificationFailure => {
+  const reason = error.reason;
+  if (
+    error._tag === "TimeoutException" ||
+    reason === "verification-timeout" ||
+    reason === "timeout"
+  )
+    return "timeout";
+  if (
+    reason === "source-changed" ||
+    reason === "source-unavailable" ||
+    reason === "item-changed" ||
+    reason === "replacement-unavailable" ||
+    reason === "cancelled" ||
+    reason === "expired" ||
+    reason === "untrusted-host" ||
+    reason === "unsupported" ||
+    reason === "unavailable"
+  )
+    return reason;
+  if (reason === "denied" || reason === "unauthorized" || reason === "repository-denied")
+    return "denied";
+  if (reason === "conflict" || reason === "archived" || reason === "not-found")
+    return "item-changed";
+  return "failed";
+};
 const REVIEW_TTL_MS = 10 * 60_000;
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore,
@@ -238,7 +290,220 @@ const make = Effect.gen(function* () {
       canCutover: false,
     };
   });
+
+  const verificationView = Effect.fnUntraced(function* (
+    record: Stored,
+  ): Effect.fn.Return<VaultReplacementVerificationStatus, VaultError> {
+    const now = yield* Clock.currentTimeMillis;
+    const planState =
+      record.plan.state !== "cancelled" && now >= record.plan.expiresAt
+        ? "expired"
+        : record.plan.state;
+    const receipt = record.verification?.receipt ?? null;
+    const result = {
+      planId: record.plan.id,
+      planState,
+      receipt,
+      workloadAuthorization: "not-evaluated" as const,
+      canCutover: false as const,
+    };
+    if (!receipt) return { ...result, freshness: "not-run", invalidatedBy: null };
+    if (planState === "cancelled" || planState === "expired")
+      return { ...result, freshness: "invalidated", invalidatedBy: planState };
+    if (receipt.state === "running")
+      return {
+        ...result,
+        freshness: now >= receipt.deadlineAt ? "interrupted" : "running",
+        invalidatedBy: null,
+      };
+    if (receipt.state === "failed")
+      return { ...result, freshness: "failed", invalidatedBy: receipt.failure };
+    if (receipt.validUntil === null || now >= receipt.validUntil)
+      return { ...result, freshness: "expired", invalidatedBy: null };
+    const current = yield* Effect.result(check(record));
+    if (current._tag === "Failure")
+      return {
+        ...result,
+        freshness: "invalidated",
+        invalidatedBy: verificationFailure(current.failure),
+      };
+    return { ...result, freshness: "current", invalidatedBy: null };
+  });
+  const verify = Effect.fn("VaultMigrationInventory.verify")(function* (
+    input: VaultReplacementVerify,
+    actor: string,
+    authorize: Effect.Effect<void, VaultError>,
+  ) {
+    if (!isVerify(input) || !actor.trim() || actor.length > 512) return yield* invalid();
+    yield* authorize;
+    const accepted = yield* lock.withPermit(
+      Effect.gen(function* () {
+        const { record, version } = yield* load(input.id);
+        const prior = record.verification;
+        if (prior?.receipt.operationId === input.operationId) {
+          if (
+            prior.requestedBy !== actor ||
+            prior.expectedOperationId !== input.expectedOperationId
+          )
+            return yield* fail("receipt-changed");
+          return { record, duplicate: true };
+        }
+        if ((prior?.receipt.operationId ?? null) !== input.expectedOperationId)
+          return yield* fail("receipt-changed");
+        const now = yield* Clock.currentTimeMillis;
+        if (record.plan.state === "cancelled") return yield* fail("cancelled");
+        if (record.plan.state !== "reviewed") return yield* fail("invalid-state");
+        if (now >= record.plan.expiresAt) return yield* fail("expired");
+        if (prior?.receipt.state === "running" && now < prior.receipt.deadlineAt)
+          return yield* fail("verification-busy");
+        yield* check(record);
+        const startedAt = yield* Clock.currentTimeMillis;
+        if (startedAt >= record.plan.expiresAt) return yield* fail("expired");
+        const next: Stored = {
+          ...record,
+          verification: {
+            requestedBy: actor,
+            expectedOperationId: input.expectedOperationId,
+            receipt: {
+              operationId: input.operationId,
+              planId: input.id,
+              itemId: record.plan.replacement.itemId,
+              itemVersion: record.plan.replacement.expectedVersion,
+              scope: record.plan.replacement.scope,
+              destination: record.plan.replacement.destination,
+              gitPath:
+                record.plan.replacement.adapter === "ssh" ? record.plan.dependency.gitPath : null,
+              state: "running",
+              startedAt,
+              deadlineAt: startedAt + VERIFICATION_TIMEOUT_MS,
+              completedAt: null,
+              validUntil: null,
+              failure: null,
+              hostFingerprint: null,
+            },
+          },
+        };
+        yield* save(next, version);
+        return { record: next, duplicate: false };
+      }),
+    );
+    if (accepted.duplicate) return yield* verificationView(accepted.record);
+    const record = accepted.record,
+      plan = record.plan,
+      initial = record.verification!;
+    const guard = Effect.gen(function* () {
+      yield* authorize;
+      const latest = yield* load(input.id);
+      if (latest.record.plan.state === "cancelled") return yield* fail("cancelled");
+      if (
+        latest.record.plan.state !== "reviewed" ||
+        latest.record.verification?.receipt.operationId !== input.operationId
+      )
+        return yield* fail("receipt-changed");
+      const now = yield* Clock.currentTimeMillis;
+      if (now >= plan.expiresAt) return yield* fail("expired");
+      if (now >= initial.receipt.deadlineAt) return yield* fail("verification-timeout");
+      const current = yield* core.inspect(plan.replacement.itemId);
+      if (
+        !current ||
+        current.state !== "active" ||
+        current.version !== plan.replacement.expectedVersion
+      )
+        return yield* fail("item-changed");
+    });
+    const credentialGuard = guard.pipe(
+      Effect.mapError(
+        (error) =>
+          new VaultError({
+            reason: verificationFailure(error) === "denied" ? "denied" : "conflict",
+          }),
+      ),
+    );
+    const outcome = yield* Effect.gen(function* () {
+      yield* guard;
+      yield* check(record);
+      let hostFingerprint: string | null = null,
+        upstreamExpiry: number | null = null;
+      if (plan.replacement.adapter === "ssh") {
+        if (plan.replacement.hostTrust !== "pinned")
+          return yield* new VaultSshError({ reason: "untrusted-host" });
+        if (!plan.dependency.gitPath) return yield* fail("replacement-unavailable");
+        const checked = yield* ssh.verifyGit(
+          {
+            id: plan.replacement.itemId,
+            expectedVersion: plan.replacement.expectedVersion,
+            repository: plan.dependency.gitPath,
+          },
+          credentialGuard,
+        );
+        if (
+          checked.destination !== plan.replacement.destination ||
+          checked.repository !== plan.dependency.gitPath ||
+          checked.version !== plan.replacement.expectedVersion ||
+          checked.id !== plan.replacement.itemId
+        )
+          return yield* fail("item-changed");
+        hostFingerprint = checked.hostFingerprint;
+      } else {
+        const checked = yield* github.test(
+          {
+            id: plan.replacement.itemId,
+            expectedVersion: plan.replacement.expectedVersion,
+            repository: plan.dependency.repository!.toLowerCase(),
+          },
+          credentialGuard,
+        );
+        if (checked.repository !== plan.dependency.repository!.toLowerCase())
+          return yield* fail("replacement-unavailable");
+        if (checked.tokenExpiresAt !== null) {
+          upstreamExpiry = Date.parse(checked.tokenExpiresAt);
+          if (!Number.isFinite(upstreamExpiry)) return yield* fail("replacement-unavailable");
+        }
+      }
+      yield* guard;
+      yield* check(record);
+      const now = yield* Clock.currentTimeMillis;
+      return {
+        hostFingerprint,
+        validUntil: Math.min(now + VERIFICATION_TTL_MS, plan.expiresAt, upstreamExpiry ?? Infinity),
+      };
+    }).pipe(Effect.timeout(VERIFICATION_TIMEOUT_MS), Effect.result);
+    return yield* lock.withPermit(
+      Effect.gen(function* () {
+        const latest = yield* load(input.id);
+        if (latest.record.verification?.receipt.operationId !== input.operationId)
+          return yield* fail("receipt-changed");
+        const ending = yield* Effect.result(guard);
+        const completedAt = yield* Clock.currentTimeMillis;
+        const failure =
+          ending._tag === "Failure"
+            ? verificationFailure(ending.failure)
+            : outcome._tag === "Failure"
+              ? verificationFailure(outcome.failure)
+              : null;
+        const next: Stored = {
+          ...latest.record,
+          verification: {
+            ...initial,
+            receipt: {
+              ...initial.receipt,
+              state: failure === null ? "passed" : "failed",
+              completedAt,
+              failure,
+              validUntil:
+                failure === null && outcome._tag === "Success" ? outcome.success.validUntil : null,
+              hostFingerprint: outcome._tag === "Success" ? outcome.success.hostFingerprint : null,
+            },
+          },
+        };
+        yield* save(next, latest.version);
+        return yield* verificationView(next);
+      }),
+    );
+  });
   return VaultMigrationInventory.of({
+    verify,
+    verification: (id) => Effect.flatMap(load(id), ({ record }) => verificationView(record)),
     inventory: Effect.fn("VaultMigrationInventory.inventory")(function* (input) {
       if (!isInventory(input)) return yield* invalid();
       const all = yield* projects

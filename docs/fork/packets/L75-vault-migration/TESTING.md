@@ -1,7 +1,9 @@
 # L75 testing
 
-Status: reviewed development imports, metadata inventory and replacement intent verified locally. Full migration
-acceptance is incomplete; no personal credentials, production paths or provider probes used.
+Status: reviewed development imports, metadata inventory, replacement intent and source-specific
+verification receipts verified locally. Full migration acceptance is incomplete. Provider-success
+cases use synthetic transports; no personal credentials, production paths or live provider probes
+were used.
 
 ## Automated evidence
 
@@ -106,10 +108,37 @@ browser project. All five changed package typechecks passed, and the web typeche
 again after the merge. Focused lint, native mobile static checks, documentation links, the
 390-row seam manifest and whitespace checks passed. No repo-wide checks ran.
 
+## Source-specific verification receipts
+
+The eight-file focused verification run passed **57 tests**, including the real fork MCP
+startup registration test. It covers explicit contact/review gates, durable running receipts
+before provider access, same-request retries without repeated provider IO, actor and previous
+receipt conflicts, concurrent attempts, cancellation, source/item/permission changes in flight,
+lost final writes and interrupted recovery. A controlled clock and Deferred milestones verify
+timeout and expiry without sleeps. SSH checks retain the exact reviewed repository path, require
+pinned host trust and run isolated Git configuration; refs are discarded. GitHub checks establish
+repository API access only. Token expiry bounds evidence lifetime. Contract tests cannot represent
+incomplete success or cutover authorization. Administrator MCP receipt reads reject agent and
+read-only clients, and status refresh performs no provider probe or ledger write. All five
+consumer package typechecks, focused lint, native mobile static checks, documentation links,
+the 390-row seam manifest and whitespace checks passed. No repository-wide checks ran.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigrationInventory.test.ts apps/server/src/fork/vault/VaultSsh.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts packages/client-runtime/src/fork/vault-migration-inventory.permissions.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts
+```
+
+Authorized Browser-panel checks against isolated state passed review/contact gating, missing-host
+trust failure before SSH transport, receipt refresh without another attempt, failed receipt-load
+handling that hides cached evidence, and recovery after restoring the synthetic ledger. At 390
+CSS pixels the page has no horizontal document overflow. Positive provider outcomes remain
+synthetic automated evidence; no live SSH or GitHub verification ran. Native mobile interaction
+is pending under the no-install restriction; Electron shell and remote/relay/tunnel acceptance
+remain pending. A responsive browser check does not establish native mobile acceptance.
+
 ## Full packet acceptance still required
 
-Live source-specific verification must bind the reviewed source, replacement item/version,
-host trust and current permissions. Connection success alone is not repository access, and a
+Live acceptance must confirm the implemented binding between reviewed source, replacement
+item/version, host trust and current permissions. Connection success alone is not repository access, and a
 GitHub API result is not Git transport readiness. Typed imports and replacement provisioning,
 verified cutover, interrupted-cutover recovery, unrelated personal-repository preservation and
 concurrent-edit rejection during configuration apply/rollback remain unfinished. No configuration

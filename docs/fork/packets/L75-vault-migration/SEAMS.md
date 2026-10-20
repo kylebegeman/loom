@@ -10,13 +10,20 @@ fork-owned Vault settings. The capability is `vault-migration-imports`.
 Private values use the existing redacted RPC ingress. The initial import has no filesystem,
 SSH, GitHub, provider configuration, scheduled-run or Library integration. Inventory uses the
 existing ProcessRunner for read-only Git configuration and existing typed Vault adapter metadata;
-it invokes no SSH, GitHub login, helper or provider session. It adds an encrypted
+inventory invokes no SSH, GitHub login, helper or provider session. Explicit verification is a
+separate method: it uses fixed SSH Git reads or scoped GitHub API sessions, without personal
+configuration or credential fallback. It adds an encrypted
 OpenBao migration subtree; the reviewed namespace policy is an operator-owned prerequisite.
 See [operations](../../operations/vault.md#development-import-operating-policy).
 
 Replacement plans add no upstream seams. They reuse fork contracts, scopes, runtime, settings,
 palette, CLI and MCP registries. The capability is `vault-migration-inventory`; the separate
 OpenBao subtree and host policy are in [operations](../../operations/vault.md#replacement-plan-operating-policy).
+
+Verification adds only fork-owned contract, service/transport, scope, client and safe MCP/CLI
+changes. SSH repository verification uses the existing transport with an isolated working
+directory; ordinary workload execution behavior is preserved. There are no upstream seam
+entries, new backend paths or extra deployment permissions in this slice.
 
 ## Remaining integration review
 

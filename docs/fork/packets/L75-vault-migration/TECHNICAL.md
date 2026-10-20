@@ -1,7 +1,7 @@
 # L75 technical design
 
 The initial implementation uses the existing encrypted OpenBao boundary and destination-scoped
-RPC authorization. Local inventory and replacement intent are implemented; live verification and cutover remain pending.
+RPC authorization. Local inventory and replacement intent are implemented; verification receipts are implemented; live verification acceptance and cutover remain pending.
 
 ## Implemented reviewed import boundary
 
@@ -83,6 +83,45 @@ The separate data/metadata subtree needs an operator-owned policy extension, doc
 [operations](../../operations/vault.md#replacement-plan-operating-policy). It remains gated by
 L79 production readiness. No Library deployment, SQL migration or application dependency is added.
 
+## Source-specific verification receipts
+
+An optional field in the existing encrypted replacement ledger stores one current attempt,
+its actor and expected prior operation ID. Old records decode without it. The separate
+`replacement-verify` RPC requires destination write access and literal provider-contact consent;
+`replacement-verification` is read-only. Capability `vault-migration-verification` gates client
+controls. Existing replacement result schemas keep `verification: required` and `canCutover:
+false`; clients that cannot read the new receipt API remain compatible.
+
+Only reviewed, unexpired plans with current source/item metadata can accept a check. Acceptance
+is persisted before contacting a provider. Source/item and environment permissions are checked
+before credential use and again before recording success. SSH signs through the existing pinned
+host-bound transport and uses an isolated Git working directory to exclude repository-local URL
+or executable configuration. The fixed operation is `ls-remote`, with an eight-second SSH limit;
+raw refs are discarded. GitHub uses the existing scoped connection test and token cleanup, which
+may also report normal health observations. It proves repository API access, not Git transport
+or the local CLI. No personal key agent, helper, account store or CLI login is a fallback.
+
+Provider work has a thirty-second deadline. Success evidence expires after at most sixty seconds,
+or earlier at plan/token expiry, and records its exact scope, item/version, destination, SSH
+path and pinned host fingerprint. It does not evaluate workload grants or passively detect
+later upstream revocation. Read-only status checks local source/item freshness and cannot
+re-contact a provider. Failed refresh hides cached evidence in clients. No cutover writer exists.
+
+The process lock is held only for receipt acceptance/completion, allowing cancellation while
+network work runs. CAS prevents stale completion overwriting a newer attempt or cancelled plan.
+The operation ID, actor and expected prior receipt make immediate retry idempotent; older
+requests conflict after a later attempt. A persisted running attempt whose final write fails
+remains unknown and becomes interrupted at its deadline. Retrying it never reruns the probe;
+reconciliation is a fresh, explicitly confirmed read attempt. No success is inferred from a
+missing receipt. Only the latest attempt is retained in the current record; backend KV history
+and backup retention remain operator-owned, not a complete immutable audit log.
+
+Administrator MCP/CLI expose receipt inspection only. Agents cannot approve or start these
+human verification requests. The shared query invalidates after review, cancellation and every
+verification settlement, with no background probes or polling. There are no new storage paths,
+OpenBao rights, application dependencies, SQL migrations or Library changes beyond the previously
+deferred replacement subtree. The optional field needs no live data migration.
+
 ## Overview
 
 Inventory configured credential sources without extracting personal vault contents. Prepare a reviewed change set for dedicated key generation, service reconnection, explicit imports and optional repository configuration updates. Record prior non-secret configuration for rollback and test replacement access before cutover.
@@ -91,7 +130,7 @@ Inventory configured credential sources without extracting personal vault conten
 
 Current inventory reports selected project-local dependency hints; import `inspect` reads one import receipt and replacement inspect rechecks local source/item metadata. `prepare` produces an immutable, expiring plan with configuration fingerprints. `apply` requires that reviewed plan and idempotency key. `rollback` restores only unchanged configuration owned by the migration.
 
-Existing `loom.vault-migration.*` RPC methods serve the initial import. Live verification/cutover schemas
+Existing `loom.vault-migration.*` RPC methods serve the initial import. Cutover/rollback schemas
 remain a follow-up design output. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.

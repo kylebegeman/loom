@@ -33,6 +33,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [VI.verify]: AuthAccessWriteScope,
   [VI.prepare]: AuthAccessWriteScope,
   [VI.review]: AuthAccessWriteScope,
   [VI.cancel]: AuthAccessWriteScope,

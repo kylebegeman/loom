@@ -1,3 +1,4 @@
+import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
@@ -41,15 +42,21 @@ export function VaultMigrationInventorySettingsSection() {
       key={environment.environmentId}
       environmentId={environment.environmentId}
       computer={environment.label}
+      verificationSupported={supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-migration-verification",
+      )}
     />
   );
 }
 function Inventory({
   environmentId,
   computer,
+  verificationSupported,
 }: {
   environmentId: EnvironmentId;
   computer: string;
+  verificationSupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -273,8 +280,8 @@ function Inventory({
             {now >= result.plan.expiresAt ? "This review expired." : ""}
           </p>
           <p>
-            Access verification is still required. No cutover is available from this plan. Existing
-            grants, profiles and repository settings are preserved.
+            Access verification is required before cutover. Cutover is unavailable in this release.
+            Existing grants, profiles and repository settings are preserved.
           </p>
           {result.plan.state === "prepared" ? (
             <>
@@ -309,6 +316,15 @@ function Inventory({
               </Button>
             </>
           ) : null}
+          {verificationSupported ? (
+            <ReplacementVerification
+              key={result.plan.id}
+              environmentId={environmentId}
+              plan={result.plan}
+            />
+          ) : (
+            <p>Verification needs a newer Vault server.</p>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"

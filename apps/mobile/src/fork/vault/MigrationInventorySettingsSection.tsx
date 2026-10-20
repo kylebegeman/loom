@@ -1,3 +1,4 @@
+import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Switch, View } from "react-native";
@@ -53,6 +54,10 @@ export function VaultMigrationInventorySettingsSection({
           key={`${environmentId}:${connected}`}
           environmentId={environmentId}
           connected={connected}
+          verificationSupported={supportsLoomFeature(
+            config?.environment.capabilities,
+            "vault-migration-verification",
+          )}
         />
       ) : (
         <Text>Your connection does not include credential inspection.</Text>
@@ -63,9 +68,11 @@ export function VaultMigrationInventorySettingsSection({
 function Inventory({
   environmentId,
   connected,
+  verificationSupported,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
+  verificationSupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -278,8 +285,8 @@ function Inventory({
             {now >= result.plan.expiresAt ? "This review expired." : ""}
           </Text>
           <Text>
-            Access verification is still required. No cutover is available from this plan. Existing
-            grants, profiles and repository settings are preserved.
+            Access verification is required before cutover. Cutover is unavailable in this release.
+            Existing grants, profiles and repository settings are preserved.
           </Text>
           {result.plan.state === "prepared" ? (
             <>
@@ -309,6 +316,16 @@ function Inventory({
               />
             </>
           ) : null}
+          {verificationSupported ? (
+            <ReplacementVerification
+              key={result.plan.id}
+              environmentId={environmentId}
+              connected={connected}
+              plan={result.plan}
+            />
+          ) : (
+            <Text>Verification needs a newer Vault server.</Text>
+          )}
           <Button
             label="Refresh replacement status"
             disabled={busy || !connected}

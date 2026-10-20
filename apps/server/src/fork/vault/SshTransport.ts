@@ -31,6 +31,8 @@ export class SshTransport extends Context.Service<
       publicKey: string;
       privateKey: Redacted.Redacted<string>;
       command: VaultSshCommand | VaultGitCommand;
+      // Repository verification must not inherit local executable or URL configuration.
+      isolatedGit?: boolean;
       authorize: Effect.Effect<void, Failure>;
     }) => Effect.Effect<{ exitCode: number; stdout: string }, Failure>;
   }
@@ -231,7 +233,7 @@ const make = Effect.gen(function* () {
         const run = Effect.callback<{ exitCode: number; stdout: string }, VaultSshError>(
           (resume) => {
             const child = NodeChildProcess.spawn(git ? "/usr/bin/git" : "/usr/bin/ssh", args, {
-              ...(git ? { cwd: git.cwd } : {}),
+              ...(git ? { cwd: input.isolatedGit ? directory : git.cwd } : {}),
               detached: true,
               env: {
                 PATH: "/usr/bin:/bin:/usr/sbin:/sbin",

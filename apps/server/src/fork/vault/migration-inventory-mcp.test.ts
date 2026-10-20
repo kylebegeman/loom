@@ -20,8 +20,22 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("maintenance-acceptance");
-      let reads = 0;
+      let reads = 0,
+        receiptReads = 0;
       const migration = Layer.mock(VaultMigrationInventory.VaultMigrationInventory)({
+        verification: (id) =>
+          Effect.sync(() => {
+            receiptReads++;
+            return {
+              planId: id,
+              planState: "reviewed" as const,
+              receipt: null,
+              freshness: "not-run" as const,
+              invalidatedBy: null,
+              workloadAuthorization: "not-evaluated" as const,
+              canCutover: false as const,
+            };
+          }),
         list: () =>
           Effect.sync(() => {
             reads++;
@@ -68,6 +82,22 @@ it.effect(
             Effect.provide(threads),
             Effect.provideService(McpInvocationContext, scope),
           );
+      const receipt = (scope: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_migration_verification", { id: "a".repeat(32) })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(threads),
+            Effect.provideService(McpInvocationContext, scope),
+          );
+      expect((yield* receipt(agent).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* receipt(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect(receiptReads).toBe(0);
+      expect((yield* receipt(admin))[0]?.result).toMatchObject({
+        freshness: "not-run",
+        canCutover: false,
+      });
+      expect(receiptReads).toBe(1);
       expect((yield* inspect(agent).pipe(Effect.flip))._tag).toBe("VaultError");
       expect((yield* inspect(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
       expect(reads).toBe(0);
@@ -77,6 +107,7 @@ it.effect(
         "loom_vault_migration_inventory",
         "loom_vault_migration_replacement_status",
         "loom_vault_migration_replacements",
+        "loom_vault_migration_verification",
       ]);
     }).pipe(Effect.scoped),
 );

@@ -1,5 +1,7 @@
 import { VAULT_MIGRATION_INVENTORY_WS_METHODS as V } from "@t3tools/contracts/fork";
-import type { Atom } from "effect/reactivity";
+import type { Atom, AtomRegistry } from "effect/reactivity";
+import type { EnvironmentId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
@@ -8,7 +10,22 @@ import {
 export function createVaultMigrationInventoryAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const verification = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:vault:replacement-verification",
+    tag: V.verification,
+  });
+  const refreshVerification = (
+    { environmentId, input }: { environmentId: EnvironmentId; input: { readonly id: string } },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() => registry.refresh(verification({ environmentId, input: { id: input.id } })));
   return {
+    verify: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:replacement-verify",
+      tag: V.verify,
+      onSettled: refreshVerification,
+    }),
+    verification,
     inventory: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:migration-inventory",
       tag: V.inventory,
@@ -28,10 +45,12 @@ export function createVaultMigrationInventoryAtoms<R, E>(
     review: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:replacement-review",
       tag: V.review,
+      onSuccess: refreshVerification,
     }),
     cancel: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:replacement-cancel",
       tag: V.cancel,
+      onSuccess: refreshVerification,
     }),
   };
 }

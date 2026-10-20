@@ -7,6 +7,7 @@ import {
   VaultReplacementList,
   VaultReplacementPage,
   VaultReplacementResult,
+  VaultReplacementVerificationStatus,
   VaultItemId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,14 @@ import * as VaultMigrationInventory from "./VaultMigrationInventory.ts";
 const failure = Schema.Union([VaultError, VaultReplacementError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultMigrationInventoryToolkit = Toolkit.make(
+  Tool.make("loom_vault_migration_verification", {
+    description:
+      "Inspect a replacement verification receipt without contacting a provider. Administrator clients only. Freshness is bounded; provider revocations after a check and workload grants are unknown. No cutover is authorized.",
+    parameters: Schema.Struct({ id: VaultItemId }),
+    success: VaultReplacementVerificationStatus,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_migration_inventory", {
     description:
       "Inspect up to ten registered projects' selected local Git metadata. Full-access administrator clients only. No authentication, network, personal stores, helpers, global config or SSH config inspection. Sanitized endpoints are hints, not verified identities or access. Follow nextCursor for coverage.",
@@ -57,6 +66,17 @@ export const vaultMigrationInventoryHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_migration_verification: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(
+              Effect.flatMap(VaultMigrationInventory.VaultMigrationInventory, (service) =>
+                service.verification(input.id),
+              ),
+            ),
+          ),
+        ),
+      ),
       loom_vault_migration_inventory: McpToolAccess.reads((input) =>
         admin.pipe(
           Effect.andThen(

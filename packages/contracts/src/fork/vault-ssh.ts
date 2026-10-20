@@ -168,6 +168,19 @@ export const VaultGitCommand = Schema.Struct({
   timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 30000 })),
 });
 export type VaultGitCommand = typeof VaultGitCommand.Type;
+export const VaultSshGitProbe = Schema.Struct({
+  id: VaultItemId,
+  expectedVersion: PositiveInt,
+  repository: VaultGitCommand.fields.repository,
+});
+export type VaultSshGitProbe = typeof VaultSshGitProbe.Type;
+export const VaultSshGitProbeResult = Schema.Struct({
+  ...VaultSshProbeResult.fields,
+  repository: VaultGitCommand.fields.repository,
+  readable: Schema.Literal(true),
+});
+export type VaultSshGitProbeResult = typeof VaultSshGitProbeResult.Type;
+
 export const VaultGitRun = Schema.Struct({
   id: VaultItemId,
   expectedVersion: PositiveInt,

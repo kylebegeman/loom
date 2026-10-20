@@ -7,6 +7,10 @@ import {
   type VaultReplacementPrepare,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -40,6 +44,12 @@ const fixture = Effect.sync(() => {
     unavailable: false,
     version: 1,
     active: true,
+    pinned: false,
+    permit: true,
+    probeCalls: 0,
+    failReceipt: false,
+    upstreamExpiry: null as string | null,
+    onProbe: Effect.void as Effect.Effect<void, VaultError>,
     root: "/synthetic/0",
     github: false,
     allowed: true,
@@ -85,17 +95,49 @@ const fixture = Effect.sync(() => {
     }),
     Layer.mock(VaultCore.VaultCore)({ inspect: () => Effect.succeed(item()) }),
     Layer.mock(VaultSsh.VaultSsh)({
+      verifyGit: (input, authorize) =>
+        Effect.gen(function* () {
+          yield* authorize;
+          state.probeCalls++;
+          yield* state.onProbe;
+          yield* authorize;
+          return {
+            id: input.id,
+            version: input.expectedVersion,
+            repository: input.repository,
+            destination: `ssh://git@${state.host}:22`,
+            fingerprint: "synthetic-key",
+            hostFingerprint: "synthetic-host",
+            checkedAt: yield* Clock.currentTimeMillis,
+            authenticated: true as const,
+            readable: true as const,
+          };
+        }),
       info: () =>
         Effect.succeed({
           item: item(),
           target: { hostname: state.host, username: "git", port: 22, hostKey: null },
           publicKey: "",
           fingerprint: "synthetic",
-          hostFingerprint: null,
+          hostFingerprint: state.pinned ? "synthetic-host" : null,
           destination: `ssh://git@${state.host}:22`,
         }),
     }),
     Layer.mock(VaultGitHub.VaultGitHub)({
+      test: (input, authorize) =>
+        Effect.gen(function* () {
+          yield* authorize;
+          state.probeCalls++;
+          yield* state.onProbe;
+          yield* authorize;
+          return {
+            account: "dev",
+            repository: input.repository,
+            checkedAt: "2026-01-01T00:00:00Z",
+            tokenExpiresAt: state.upstreamExpiry,
+            api: "ready" as const,
+          };
+        }),
       info: () =>
         Effect.succeed({
           item: item(),
@@ -114,6 +156,9 @@ const fixture = Effect.sync(() => {
         ),
       write: (key, value, expected) =>
         Effect.suspend(() => {
+          const stored = Redacted.value(value) as { verification?: { receipt: { state: string } } };
+          if (state.failReceipt && stored.verification?.receipt.state === "passed")
+            return Effect.fail(new VaultError({ reason: "unavailable" }));
           const version = records.get(key)?.version ?? 0;
           if (version !== expected) return Effect.fail(new VaultError({ reason: "conflict" }));
           records.set(key, { value, version: version + 1 });
@@ -279,6 +324,267 @@ it.effect("refuses mismatched endpoints, local URL rewrites and stale inventory 
         "source-changed",
       );
       expect(f.records.size).toBe(0);
+    }).pipe(Effect.provide(f.layer));
+  }),
+);
+
+const attempt = (id: string, expectedOperationId: string | null = null, letter = "c") => ({
+  id,
+  operationId: letter.repeat(32),
+  expectedOperationId,
+  contactDestination: true as const,
+});
+it.effect(
+  "requires review and explicit contact, persists bounded SSH evidence and never authorizes cutover",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        expect(
+          (yield* service.verify(attempt(input.id), "admin", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("invalid-state");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        f.state.onProbe = Effect.sync(() => {
+          const stored = [...f.records.values()].map(
+            (r) => Redacted.value(r.value) as { verification?: { receipt: { state: string } } },
+          );
+          expect(stored[0]?.verification?.receipt.state).toBe("running");
+        });
+        const verified = yield* service.verify(attempt(input.id), "admin", Effect.void);
+        expect(verified).toMatchObject({
+          freshness: "current",
+          workloadAuthorization: "not-evaluated",
+          canCutover: false,
+          receipt: {
+            state: "passed",
+            scope: "ssh-git-transport",
+            gitPath: "dev/repo.git",
+            hostFingerprint: "synthetic-host",
+          },
+        });
+        expect(yield* service.verify(attempt(input.id), "admin", Effect.void)).toEqual(verified);
+        const before = [...f.records.values()].map((r) => r.version);
+        expect((yield* service.verification(input.id)).freshness).toBe("current");
+        expect([...f.records.values()].map((r) => r.version)).toEqual(before);
+        expect(f.state.probeCalls).toBe(1);
+        yield* TestClock.adjust("61 seconds");
+        expect((yield* service.verification(input.id)).freshness).toBe("expired");
+        expect(f.state.probeCalls).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect("keeps GitHub repository API evidence separate from Git and clamps token lifetime", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.state.github = true;
+    f.state.upstreamExpiry = DateTime.formatIso(
+      DateTime.makeUnsafe((yield* Clock.currentTimeMillis) + 30_000),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+      const input = {
+        ...prepareInput(f.state.raw),
+        replacement: { adapter: "github" as const, itemId, expectedVersion: 1 },
+      };
+      yield* service.prepare(input, "admin");
+      yield* service.review({ id: input.id, reviewed: true }, "admin");
+      const result = yield* service.verify(attempt(input.id), "admin", Effect.void);
+      expect(result).toMatchObject({
+        freshness: "current",
+        canCutover: false,
+        receipt: {
+          scope: "github-api-and-gh-only",
+          gitPath: null,
+          hostFingerprint: null,
+          validUntil: Date.parse(f.state.upstreamExpiry!),
+        },
+      });
+      yield* TestClock.adjust("30 seconds");
+      expect((yield* service.verification(input.id)).freshness).toBe("expired");
+      expect(f.state.probeCalls).toBe(1);
+    }).pipe(Effect.provide(f.layer));
+  }),
+);
+it.effect.each(["source", "item", "permission"] as const)(
+  "rejects a successful probe when %s changes in flight",
+  (kind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        f.state.onProbe = Effect.sync(() => {
+          if (kind === "source") f.state.raw += "core.sshcommand\nchanged\0";
+          if (kind === "item") f.state.active = false;
+          if (kind === "permission") f.state.permit = false;
+        });
+        const authorize = Effect.suspend(() =>
+          f.state.permit ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+        );
+        const result = yield* service.verify(attempt(input.id), "admin", authorize);
+        expect(result.receipt?.state).toBe("failed");
+        expect(result.receipt?.failure).toBe(
+          kind === "source" ? "source-changed" : kind === "item" ? "item-changed" : "denied",
+        );
+        expect(result.canCutover).toBe(false);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect(
+  "supports cancelling in-flight checks without letting late results restore the plan",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      const started = yield* Deferred.make<void>(),
+        finish = yield* Deferred.make<void>();
+      f.state.onProbe = Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Deferred.await(finish)),
+      );
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        const running = yield* service
+          .verify(attempt(input.id), "admin", Effect.void)
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        expect((yield* service.verify(attempt(input.id), "admin", Effect.void)).freshness).toBe(
+          "running",
+        );
+        expect(
+          (yield* service
+            .verify(attempt(input.id, "c".repeat(32), "d"), "admin", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("verification-busy");
+        expect(
+          (yield* service.verify(attempt(input.id), "other-admin", Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("receipt-changed");
+        yield* service.cancel(input.id);
+        yield* Deferred.succeed(finish, undefined);
+        const result = yield* Fiber.join(running);
+        expect(result).toMatchObject({
+          planState: "cancelled",
+          freshness: "invalidated",
+          invalidatedBy: "cancelled",
+          receipt: { state: "failed", failure: "cancelled" },
+        });
+        expect(f.state.probeCalls).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect(
+  "preserves unknown outcome after receipt-write failure, never replaying the same network request",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        f.state.failReceipt = true;
+        expect(
+          (yield* service.verify(attempt(input.id), "admin", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        expect((yield* service.verify(attempt(input.id), "admin", Effect.void)).freshness).toBe(
+          "running",
+        );
+      }).pipe(Effect.provide(f.layer));
+      yield* TestClock.adjust("31 seconds");
+      f.state.failReceipt = false;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          id = prepareInput(f.state.raw).id;
+        expect((yield* service.verification(id)).freshness).toBe("interrupted");
+        expect(f.state.probeCalls).toBe(1);
+        expect(
+          (yield* service.verify(attempt(id, "c".repeat(32), "d"), "admin", Effect.void)).freshness,
+        ).toBe("current");
+        expect(f.state.probeCalls).toBe(2);
+        expect(
+          (yield* service.verify(attempt(id), "admin", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("receipt-changed");
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect("records missing host trust without any network request", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* Effect.gen(function* () {
+      const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+        input = prepareInput(f.state.raw);
+      yield* service.prepare(input, "admin");
+      yield* service.review({ id: input.id, reviewed: true }, "admin");
+      const blocked = yield* service.verify(attempt(input.id), "admin", Effect.void);
+      expect(blocked).toMatchObject({
+        freshness: "failed",
+        receipt: { failure: "untrusted-host" },
+      });
+      expect(f.state.probeCalls).toBe(0);
+    }).pipe(Effect.provide(f.layer));
+  }),
+);
+
+it.effect(
+  "invalidates historical success when source or item metadata changes and makes no extra probes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        f.state.active = false;
+        expect(yield* service.verification(input.id)).toMatchObject({
+          freshness: "invalidated",
+          invalidatedBy: "item-changed",
+        });
+        f.state.active = true;
+        f.state.unavailable = true;
+        expect(yield* service.verification(input.id)).toMatchObject({
+          freshness: "invalidated",
+          invalidatedBy: "source-unavailable",
+        });
+        expect(f.state.probeCalls).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect("times out an unfinished probe with a controlled clock and records no success", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.state.pinned = true;
+    const started = yield* Deferred.make<void>();
+    f.state.onProbe = Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never));
+    yield* Effect.gen(function* () {
+      const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+        input = prepareInput(f.state.raw);
+      yield* service.prepare(input, "admin");
+      yield* service.review({ id: input.id, reviewed: true }, "admin");
+      const running = yield* service
+        .verify(attempt(input.id), "admin", Effect.void)
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("30 seconds");
+      const result = yield* Fiber.join(running);
+      expect(result).toMatchObject({
+        freshness: "failed",
+        receipt: { state: "failed", failure: "timeout", validUntil: null },
+      });
+      expect(f.state.probeCalls).toBe(1);
     }).pipe(Effect.provide(f.layer));
   }),
 );

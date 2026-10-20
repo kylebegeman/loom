@@ -574,3 +574,60 @@ it.effect("rechecks administrator authorization at the transport boundary before
     ).toBe("denied");
   }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
+
+it.effect("checks exact SSH Git repository read access in isolation and discards refs", () =>
+  Effect.gen(function* () {
+    let permitted = true,
+      exitCode = 0,
+      calls = 0;
+    const adapter = Layer.succeed(SshTransport.SshTransport, {
+      execute: (input) =>
+        Effect.gen(function* () {
+          yield* input.authorize;
+          calls++;
+          expect(input.isolatedGit).toBe(true);
+          expect(input.command).toMatchObject({
+            kind: "git",
+            action: "ls-remote",
+            repository: "/team/repo.git",
+            timeoutMs: 8000,
+          });
+          return { exitCode, stdout: "private-ref-output" };
+        }),
+    });
+    const f = yield* sshFixture(adapter),
+      host = yield* f.sshKeys.create;
+    const key = yield* f.ssh.generate(
+      {
+        id: f.itemId,
+        operationId: yield* f.id,
+        label: "Development repository",
+        target: { hostname: "repo.invalid", username: "git", port: 22, hostKey: host.publicKey },
+      },
+      "admin",
+      Effect.void,
+    );
+    const input = {
+      id: key.item.id,
+      expectedVersion: key.item.version,
+      repository: "/team/repo.git",
+    };
+    const authorize = Effect.suspend(() =>
+      permitted ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+    );
+    const checked = yield* f.ssh.verifyGit(input, authorize);
+    expect(checked).toMatchObject({
+      id: key.item.id,
+      readable: true,
+      repository: "/team/repo.git",
+      hostFingerprint: key.hostFingerprint,
+    });
+    expect(JSON.stringify(checked)).not.toContain("private-ref-output");
+    permitted = false;
+    expect((yield* f.ssh.verifyGit(input, authorize).pipe(Effect.flip)).reason).toBe("denied");
+    expect(calls).toBe(1);
+    permitted = true;
+    exitCode = 1;
+    expect((yield* f.ssh.verifyGit(input, authorize).pipe(Effect.flip)).reason).toBe("failed");
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);

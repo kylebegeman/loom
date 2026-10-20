@@ -1,6 +1,6 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed development imports, local inventory and replacement plans implemented; waiting on host policy.** Kyle selected the full packet. Provider verification, typed imports and configuration cutover remain unfinished.
+Status: **In progress; reviewed development imports, local inventory, replacement plans and verification receipts implemented; waiting on host policy.** Kyle selected the full packet. Typed imports and configuration cutover remain unfinished; live verification acceptance is pending.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
@@ -20,11 +20,13 @@ On-demand inventory now reads selected local Git metadata for ten registered pro
 page, without network/authentication or personal-store access. It reports safe endpoint hints
 and local helper/SSH-command presence, not account identities. Expiring replacement plans bind
 that source and an explicitly selected active SSH/GitHub item/version. Human review and
-cancellation are recorded; changes or outages block review. Verification remains required and
-cutover is explicitly unavailable, including for reviewed plans. Native, remote and Electron
+cancellation are recorded; changes or outages block review. Verification now requires a separate explicit provider-contact confirmation. It records exact
+SSH repository-read or GitHub repository-API evidence with a short lifetime, while retaining
+source/item/permission checks, unknown outcomes and cancellation. Cutover remains explicitly
+unavailable even after a passing check. Native, remote and Electron
 shell interaction acceptance remain pending.
 
-Dedicated replacement provisioning, typed SSH/GitHub imports, explicit access verification,
+Dedicated replacement provisioning, typed SSH/GitHub imports, live verification acceptance,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer
 fresh Vault SSH keys and dedicated GitHub App/token connections in their existing flows.
 Production use waits on the namespace policy in [operations](../../operations/vault.md#development-import-operating-policy).

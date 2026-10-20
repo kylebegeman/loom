@@ -16,6 +16,8 @@ import {
   vaultGitCommandMessage,
   vaultGitDestination,
   VaultSshProbe,
+  VaultSshGitProbe,
+  type VaultSshGitProbeResult,
   type VaultSshProbeResult,
   VaultSshTrust,
   VaultSshExecute,
@@ -71,6 +73,10 @@ export class VaultSsh extends Context.Service<
       actor: string,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultSshInfo, Failure>;
+    readonly verifyGit: (
+      input: VaultSshGitProbe,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultSshGitProbeResult, Failure>;
     readonly probe: (
       input: VaultSshProbe,
       authorize: Effect.Effect<void, VaultError>,
@@ -99,6 +105,7 @@ const isGenerate = Schema.is(VaultSshGenerate),
   isTrust = Schema.is(VaultSshTrust),
   isExecute = Schema.is(VaultSshExecute),
   isProbe = Schema.is(VaultSshProbe),
+  isGitProbe = Schema.is(VaultSshGitProbe),
   isGit = Schema.is(VaultGitExecute);
 const isAgentOpen = Schema.is(VaultSshAgentOpen),
   isAgentFrame = Schema.is(VaultSshAgentFrame);
@@ -288,6 +295,47 @@ const make = Effect.gen(function* () {
       const result = yield* run({ ...record.key, command: input.command, authorize });
       yield* authorize;
       return { sessionId: session.id, requestId: input.proof.challenge.requestId, ...result };
+    }),
+    verifyGit: Effect.fn("VaultSsh.verifyGit")(function* (input, authorize) {
+      if (!isGitProbe(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      yield* authorize;
+      const record = yield* load(input.id);
+      if (record.item.state !== "active" || record.item.version !== input.expectedVersion)
+        return yield* new VaultError({ reason: "conflict" });
+      if (!record.key.target.hostKey) return yield* new VaultSshError({ reason: "untrusted-host" });
+      const revalidate = Effect.gen(function* () {
+        yield* authorize;
+        const item = yield* core.inspect(input.id);
+        if (!item || item.state !== "active" || item.version !== input.expectedVersion)
+          return yield* new VaultError({ reason: "conflict" });
+      });
+      yield* revalidate;
+      const result = yield* run({
+        ...record.key,
+        isolatedGit: true,
+        command: {
+          kind: "git",
+          action: "ls-remote",
+          expectedVersion: input.expectedVersion,
+          repository: input.repository,
+          cwd: "/",
+          timeoutMs: 8000,
+        },
+        authorize: revalidate,
+      });
+      if (result.exitCode !== 0) return yield* new VaultSshError({ reason: "failed" });
+      yield* revalidate;
+      return {
+        id: record.item.id,
+        version: record.item.version,
+        destination: vaultSshDestination(record.key.target),
+        repository: input.repository,
+        fingerprint: yield* keys.fingerprint(record.key.publicKey),
+        hostFingerprint: yield* keys.fingerprint(record.key.target.hostKey),
+        checkedAt: yield* Clock.currentTimeMillis,
+        authenticated: true as const,
+        readable: true as const,
+      };
     }),
     probe: Effect.fn("VaultSsh.probe")(function* (input, authorize) {
       if (!isProbe(input)) return yield* new VaultSshError({ reason: "invalid-operation" });

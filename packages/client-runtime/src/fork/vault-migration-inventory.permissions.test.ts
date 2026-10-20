@@ -39,7 +39,7 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["prepare", "review", "cancel"] as const)(
+it.effect.each(["prepare", "review", "cancel", "verify"] as const)(
   "Vault replacement %s requires its destination's access:write grant and observes revocation",
   (method) =>
     Effect.scoped(

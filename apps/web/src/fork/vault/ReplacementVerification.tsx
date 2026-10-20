@@ -1,0 +1,164 @@
+import { useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { VaultReplacementPlan, VaultReplacementVerify } from "@t3tools/contracts/fork";
+import { createVaultMigrationInventoryAtoms } from "@t3tools/client-runtime/fork";
+import { Button } from "~/components/ui/button";
+import { connectionAtomRuntime } from "~/connection/runtime";
+import { randomUUID } from "~/lib/utils";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { runVault } from "./state";
+import { useVaultTime } from "./useVaultTime";
+const atoms = createVaultMigrationInventoryAtoms(connectionAtomRuntime);
+export function ReplacementVerification({
+  environmentId,
+  plan,
+}: {
+  environmentId: EnvironmentId;
+  plan: VaultReplacementPlan;
+}) {
+  const [pending, setPending] = useState<VaultReplacementVerify | null>(null),
+    [confirmed, setConfirmed] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState<string | null>(null);
+  const canWrite = useAtomValue(atoms.verify.permissionAtom(environmentId));
+  const queryAtom = atoms.verification({ environmentId, input: { id: plan.id } }),
+    query = useAtomValue(queryAtom);
+  const status = !busy && !error && query._tag === "Success" && !query.waiting ? query.value : null;
+  const refresh = () => {
+    setError(null);
+    setPending(null);
+    setConfirmed(false);
+    appAtomRegistry.refresh(queryAtom);
+  };
+  const now = useVaultTime([
+    plan.expiresAt,
+    status?.receipt?.validUntil ?? null,
+    status?.receipt?.state === "running" ? status.receipt.deadlineAt : null,
+  ]);
+  const freshness =
+    status?.freshness === "current" &&
+    status.receipt?.validUntil != null &&
+    now >= status.receipt.validUntil
+      ? "expired"
+      : status?.freshness === "running" && status.receipt && now >= status.receipt.deadlineAt
+        ? "interrupted"
+        : status?.freshness;
+  const verify = async () => {
+    if (busy || !canWrite || !confirmed) return;
+    const input = pending ?? {
+      id: plan.id,
+      operationId: randomUUID().replaceAll("-", ""),
+      expectedOperationId: status?.receipt?.operationId ?? null,
+      contactDestination: true as const,
+    };
+    setPending(input);
+    setBusy(true);
+    setError(null);
+    setConfirmed(false);
+    try {
+      const next = await runVault(atoms.verify, { environmentId, input });
+      if (next.receipt?.state !== "running" || next.freshness === "interrupted") setPending(null);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Verification response was lost. Refresh its receipt before retrying.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section
+      aria-label="Replacement verification"
+      className="flex flex-col gap-3 rounded-md border p-3"
+    >
+      <h4 className="font-medium">Verify replacement access</h4>
+      <p>
+        {plan.replacement.scope === "ssh-git-transport"
+          ? `Check read access to ${plan.dependency.gitPath} using the saved SSH key and pinned host. The check reads refs without fetching or changing Git configuration.`
+          : "Check this repository through the dedicated GitHub connection's API. This does not test Git SSH/HTTPS transport or the local gh executable."}
+      </p>
+      {busy || query.waiting ? <p role="status">Updating verification receipt…</p> : null}
+      {query._tag === "Failure" ? (
+        <p role="alert">Could not load verification evidence. Refresh before continuing.</p>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+      {status ? (
+        <>
+          <p>Evidence: {freshness}. Cutover remains unavailable.</p>
+          {status.receipt ? (
+            <>
+              <p>
+                Last attempt: {status.receipt.state} ·{" "}
+                {new Date(status.receipt.startedAt).toLocaleString()} ·{" "}
+                {status.receipt.scope === "ssh-git-transport"
+                  ? "SSH repository read"
+                  : "GitHub repository API"}
+              </p>
+              {status.receipt.failure ? (
+                <p role="status">
+                  Check failed: {status.receipt.failure.replaceAll("-", " ")}. Review the source,
+                  record, trust and connection before retrying.
+                </p>
+              ) : null}
+              {status.invalidatedBy && freshness === "invalidated" ? (
+                <p role="status">
+                  Evidence is invalidated by {status.invalidatedBy.replaceAll("-", " ")}.
+                </p>
+              ) : null}
+              {freshness === "current" && status.receipt.validUntil !== null ? (
+                <p>Evidence expires {new Date(status.receipt.validUntil).toLocaleTimeString()}.</p>
+              ) : null}
+              {freshness === "interrupted" ? (
+                <p>
+                  The final outcome was not recorded. Refresh first; a new attempt needs explicit
+                  confirmation.
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p>No verification has been attempted.</p>
+          )}
+        </>
+      ) : null}
+      <p>
+        A workload still needs its own current grant. Upstream access can be revoked after a
+        successful check. This receipt cannot authorize a repository change.
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          aria-label="Allow replacement verification"
+          checked={confirmed}
+          disabled={busy || !canWrite || plan.state !== "reviewed"}
+          onChange={(e) => setConfirmed(e.target.checked)}
+        />{" "}
+        Allow a verification attempt against the saved destination. Missing host trust will block
+        it.
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={
+            busy ||
+            !canWrite ||
+            !confirmed ||
+            plan.state !== "reviewed" ||
+            now >= plan.expiresAt ||
+            (!status && !pending) ||
+            freshness === "running" ||
+            status?.planState === "cancelled" ||
+            status?.freshness === "invalidated"
+          }
+          onClick={() => void verify()}
+        >
+          {pending ? "Retry verification request" : "Verify replacement access"}
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={refresh}>
+          Refresh verification receipt
+        </Button>
+      </div>
+    </section>
+  );
+}

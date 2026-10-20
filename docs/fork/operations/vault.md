@@ -550,6 +550,34 @@ path "<mount>/metadata/environments/<namespace>/migration-replacements" {
 Inventory excludes global/included config, SSH configuration/aliases, environment overrides,
 other checkout roots and external consumers. It cannot identify a personal credential owner or
 prove unattended readiness. GitHub API/gh connection plans cannot verify Git transport. Reviewed
-plans retain explicit verification-required and cutover-unavailable outcomes; they grant no
-workload access and perform no configuration writes. Retain these encrypted ledgers in the
+plans require separately confirmed verification and retain cutover-unavailable outcomes; they
+grant no workload access and perform no configuration writes. Retain these encrypted ledgers in the
 existing backup procedure; there is no automatic retention or history erasure.
+
+## Replacement verification operating limits
+
+Verification receipts use the already deferred replacement-plan data paths and add no OpenBao
+permissions, Library changes or host installation. They are optional fields in existing ledgers;
+no SQL or live data migration is required. Keep the host-owner handoff deferred behind L79.
+The implementation does not enable a background check on startup or during inventory/inspection.
+
+Only explicit human requests from a write-authorized connection contact a provider. SSH uses
+an isolated working directory, dedicated key and pinned host for fixed `ls-remote`; it neither
+fetches nor changes project configuration. GitHub creates a scoped API session from the selected
+Vault connection and performs its existing cleanup. Provider responses and refs are not stored
+in receipts. Those checks do not route ordinary terminal commands or remove existing personal
+1Password approvals from unrelated operations.
+
+Provider work has a thirty-second deadline; SSH itself has an eight-second limit. Evidence
+lasts at most sixty seconds, bounded by plan and token expiry. Persistence and cleanup can add
+latency. Inspecting a receipt never reruns a check. If the final write fails, a running receipt
+becomes interrupted, never implicitly successful. Reconcile with a new explicitly confirmed
+read attempt. The latest receipt and its predecessor pointer are retained in the current ledger;
+older current-state retries conflict. KV history/backups follow the existing retention policy.
+
+Live SSH/provider/remote/native acceptance and production rollout remain pending. No host
+commands, installation, production action or live SSH verification were performed for this
+slice. Positive automated checks used injected synthetic transports. Cutover stays blocked;
+future configuration writers must revalidate fresh operation-specific evidence, source/item,
+trust and current permissions immediately before writing. An API receipt cannot verify Git
+transport, and a receipt cannot establish workload grants or current provider revocation state.

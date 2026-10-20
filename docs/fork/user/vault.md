@@ -68,10 +68,20 @@ explicit push URL does not mean pushes have no credential dependency. Unsupporte
 local rewrites need separate review. Inventory does not authenticate or inspect personal stores.
 
 SSH plans cover mediated SSH Git operations. GitHub App/token plans cover API and `gh` operations;
-they do not replace Git SSH/HTTPS authentication. Reviewing a plan verifies no provider access
-and changes no configuration, grants or profiles. **Access verification is still required before
-any cutover.** This release provides no cutover action. Administrator CLI commands
-`loom vault migration-inventory`, `migration-replacements` and `migration-replacement-status`
+they do not replace Git SSH/HTTPS authentication. Reviewing a plan changes no configuration, grants or profiles. To check access, record the
+review first, then explicitly allow **Verify replacement access**. SSH reads refs from the exact
+repository using the saved key and pinned host; GitHub checks repository API access, which does
+not prove Git transport or local `gh` readiness. Missing SSH host trust blocks the check.
+
+Refresh the verification receipt to inspect its evidence without contacting the provider.
+Evidence expires within one minute, or earlier when the plan/token expires. Source/item changes,
+cancellation or loss of permission during a check prevent usable success. Provider access can
+be revoked after a successful check, and workloads still need their own current grants.
+A lost response can be refreshed or retried without repeating an accepted check. An interrupted
+receipt needs a fresh, explicitly confirmed attempt. Cancel the plan to stop further credential
+use; an already started read may finish. **Cutover remains unavailable even after verification.** Administrator CLI commands
+`loom vault migration-inventory`, `migration-replacements`, `migration-replacement-status`
+and `migration-verification-status`
 return the same safe reports; lists do not recheck source freshness until a plan is opened.
 
 ## Grant recurring access

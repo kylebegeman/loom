@@ -38,9 +38,28 @@ SSH plans concern mediated SSH Git operations and report missing host trust. Git
 plans cover API and `gh` operations; they do not replace SSH or HTTPS Git authentication. The
 server checks source freshness, candidate type, endpoint/repository and active item version.
 This is metadata matching, not verification of provider access or development-only ownership.
-Every plan explicitly requires access verification and forbids cutover. Plans create no identity,
-grant, profile, provider session or configuration change. Source-specific verification and guarded
-configuration cutover remain the next implementation section.
+Every plan requires explicit verification and forbids cutover. Plans create no identity,
+grant, profile, provider session or configuration change. Source-specific verification is implemented below; guarded configuration cutover remains unfinished.
+
+## Implemented verification receipts
+
+After recording a reviewed plan, explicitly allow a verification attempt against the saved
+destination. SSH checks read refs from the exact repository using the dedicated key and pinned
+host, without fetching or using project/global SSH authentication configuration. Missing host
+trust blocks the attempt. GitHub checks repository API access through the selected App/token;
+that receipt does not prove Git transport or local `gh` readiness.
+
+Results record their scope, source/item binding, outcome and expiry. Read-only refresh never
+contacts a provider. Evidence lasts at most one minute and is bounded by plan/token expiry;
+source/item changes, cancellation and lost permissions during the check prevent usable success.
+A successful historical receipt cannot promise that a provider has not revoked access since.
+Workloads still need their own current grants. No receipt authorizes a repository change.
+
+A lost response can be inspected or retried with the same request, without repeating an
+accepted provider check. If the final outcome could not be recorded, the receipt becomes
+interrupted rather than successful; a new attempt requires another explicit confirmation.
+Cancel the replacement plan to stop further credential use, while an already started remote
+read may finish. Native/live-provider/remote acceptance and configuration cutover remain pending.
 
 ## How it works
 

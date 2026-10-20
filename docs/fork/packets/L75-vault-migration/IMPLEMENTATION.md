@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; reviewed imports, local inventory and replacement intent implemented locally.** The sequence below describes the full packet outcome;
+Status: **In progress; reviewed imports, local inventory, replacement intent and verification receipts implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -15,10 +15,15 @@ Local metadata inventory and reviewed replacement intent are implemented. They r
 identity/global/alias coverage and never authorize cutover. SSH Git and GitHub API/gh plans
 have distinct scope. The replacement namespace adds an operator-owned policy prerequisite.
 
-Next: explicit source-specific access verification, bound to the reviewed source/item version,
-then per-repository cutover with guarded rollback. SSH checks must distinguish connection
-success from Git repository access, and GitHub API checks cannot stand in for Git transport.
-Recheck source, item, trust and permissions immediately before any future operation. Typed import adapters, native/remote acceptance, interrupted
+Source-specific verification now records bounded SSH repository-read or GitHub API receipts,
+with explicit contact confirmation, failure/revocation checks, cancellation and lost-write
+recovery. Automated positive cases use synthetic adapters; no live SSH/provider acceptance is
+claimed. Receipts never enable cutover or establish workload grants.
+
+Next: per-repository cutover planning and guarded rollback, bound to fresh source-specific
+verification of the operation actually being changed. A GitHub API receipt cannot authorize
+Git transport changes. Recheck source, item, trust and permissions immediately before any
+future write. Typed imports, native/remote/live acceptance and host rollout remain open. Typed import adapters, native/remote acceptance, interrupted
 cutover, unrelated personal-repository preservation and source-specific cleanup remain open.
 Full scope is retained; the manual import slice does not complete L75.
 
