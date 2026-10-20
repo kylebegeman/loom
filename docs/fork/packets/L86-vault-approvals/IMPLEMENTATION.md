@@ -37,8 +37,13 @@ Lost creation replies reconcile without alert replay, and fresh service reconstr
 request/run correlation while discarding notification observations. Older restart tests now use
 fresh layers so their recovery assertions exercise real service reconstruction.
 
-Next selected work: notification eligibility/decision-race acceptance and pending-request review
-ergonomics, still without an external transport or agent delivery mutation. Automatic resumption and one-time consumption remain
+Pending/all review is implemented on web/desktop and mobile using shared expiry-aware filtering,
+counts and pending-first sorting. Decision and deadline races with a late adapter result retain
+current request authority and never reopen pending work.
+
+Next selected work: approver-context review labels and accessible pending/decision navigation,
+with read-only discovery and existing access scopes. External transports and agent delivery
+mutations remain absent. Automatic resumption and one-time consumption remain
 gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
 simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
 Do not mark the full packet done.

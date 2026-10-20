@@ -2,11 +2,13 @@ import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultApprovalChange } from "@t3tools/contracts/fork";
+import { VAULT_APPROVAL_RETENTION_MS, type VaultApprovalChange } from "@t3tools/contracts/fork";
 import {
   createVaultAccessAtoms,
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
+  vaultApprovalState,
+  vaultApprovalReviewQueue,
   vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -54,9 +56,15 @@ function Inbox({
   );
   const data = query.error ? null : query.data;
   const now = useVaultTime(
-    data?.requests.flatMap((r) => [r.requestExpiresAt, r.approvedUntil]) ?? [],
+    data?.requests.flatMap((r) => [
+      r.requestExpiresAt,
+      r.approvedUntil,
+      r.requestedAt + VAULT_APPROVAL_RETENTION_MS,
+    ]) ?? [],
   );
   const change = useAtomCommand(access.approvalChange, { reportFailure: false });
+  const [filter, setFilter] = useState<"pending" | "all">("pending");
+  const review = vaultApprovalReviewQueue(data?.requests ?? [], now, filter);
   const [pending, setPending] = useState<VaultApprovalChange | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -109,88 +117,102 @@ function Inbox({
           access remain disabled.
         </Text>
       ) : null}
-      {data?.requests.length === 0 ? (
+      {data ? (
+        <View className="gap-2">
+          <Text>
+            {review.pendingCount} pending of {review.totalCount} retained requests.
+          </Text>
+          <Button
+            label={filter === "pending" ? "Show all requests" : "Show pending requests"}
+            disabled={busy}
+            onPress={() => setFilter(filter === "pending" ? "all" : "pending")}
+          />
+          {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
+            <Text>
+              No pending requests. Show all requests to review decisions or revoke an approval.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {data && review.totalCount === 0 ? (
         <Text>No access requests. An agent can request access with the Vault request tool.</Text>
       ) : null}
-      {data?.requests.map((r) => {
-        const state =
-          (r.state === "pending" && now >= r.requestExpiresAt) ||
-          (r.state === "approved" && r.approvedUntil !== null && now >= r.approvedUntil)
-            ? "expired"
-            : r.state;
-        const decide = (
-          decision: VaultApprovalChange["decision"],
-          durationMs: 300000 | 900000 = 300000,
-        ) =>
-          void submit({
-            id: r.id,
-            operationId: uuidv4().replaceAll("-", ""),
-            expectedRevision: r.revision,
-            expectedPolicyRevision: data.policyRevision,
-            decision,
-            durationMs,
-          });
-        const disabled = !connected || !canWrite || busy || pending !== null;
-        return (
-          <View key={r.id} className="gap-2 rounded-lg border border-border p-3">
-            <Text className="font-semibold">
-              {VAULT_ACTION_LABELS[r.action]} · {state}
-            </Text>
-            <Text>
-              Thread {r.threadId}
-              {"\n"}Project {r.projectId}
-              {"\n"}Record {r.itemId} · version {r.itemVersion}
-              {"\n"}Destination {r.destination ?? "Any destination (unrestricted)"}
-            </Text>
-            <Text>
-              {vaultApprovalNotificationMessage(
-                data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
-                state,
-              )}
-            </Text>
-            {r.waitingOperation ? (
-              <Text>
-                Waiting operation {r.waitingOperation.operationId}
-                {"\n"}Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
-                required.
+      {data &&
+        review.requests.map((r) => {
+          const state = vaultApprovalState(r, now);
+          const decide = (
+            decision: VaultApprovalChange["decision"],
+            durationMs: 300000 | 900000 = 300000,
+          ) =>
+            void submit({
+              id: r.id,
+              operationId: uuidv4().replaceAll("-", ""),
+              expectedRevision: r.revision,
+              expectedPolicyRevision: data.policyRevision,
+              decision,
+              durationMs,
+            });
+          const disabled = !connected || !canWrite || busy || pending !== null;
+          return (
+            <View key={r.id} className="gap-2 rounded-lg border border-border p-3">
+              <Text className="font-semibold">
+                {VAULT_ACTION_LABELS[r.action]} · {state}
               </Text>
-            ) : (
-              <Text>No run-bound operation correlation was captured.</Text>
-            )}
-            <Text>
-              Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
-              Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
-            </Text>
-            {state === "pending" ? (
-              <>
+              <Text>
+                Thread {r.threadId}
+                {"\n"}Project {r.projectId}
+                {"\n"}Record {r.itemId} · version {r.itemVersion}
+                {"\n"}Destination {r.destination ?? "Any destination (unrestricted)"}
+              </Text>
+              <Text>
+                {vaultApprovalNotificationMessage(
+                  data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                  state,
+                )}
+              </Text>
+              {r.waitingOperation ? (
+                <Text>
+                  Waiting operation {r.waitingOperation.operationId}
+                  {"\n"}Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
+                  required.
+                </Text>
+              ) : (
+                <Text>No run-bound operation correlation was captured.</Text>
+              )}
+              <Text>
+                Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
+                Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
+              </Text>
+              {state === "pending" ? (
+                <>
+                  <Button
+                    label="Approve for 5 minutes"
+                    onPress={() => decide("approve")}
+                    disabled={disabled}
+                  />
+                  <Button
+                    label="Approve for 15 minutes"
+                    onPress={() => decide("approve", 900000)}
+                    disabled={disabled}
+                  />
+                  <Button label="Deny" onPress={() => decide("deny")} disabled={disabled} />
+                  <Button
+                    label="Cancel request"
+                    onPress={() => decide("cancel")}
+                    disabled={disabled}
+                  />
+                </>
+              ) : null}
+              {r.grantId && (state === "approved" || state === "expired") ? (
                 <Button
-                  label="Approve for 5 minutes"
-                  onPress={() => decide("approve")}
+                  label="Revoke approval"
+                  onPress={() => decide("revoke")}
                   disabled={disabled}
                 />
-                <Button
-                  label="Approve for 15 minutes"
-                  onPress={() => decide("approve", 900000)}
-                  disabled={disabled}
-                />
-                <Button label="Deny" onPress={() => decide("deny")} disabled={disabled} />
-                <Button
-                  label="Cancel request"
-                  onPress={() => decide("cancel")}
-                  disabled={disabled}
-                />
-              </>
-            ) : null}
-            {r.grantId && (state === "approved" || state === "expired") ? (
-              <Button
-                label="Revoke approval"
-                onPress={() => decide("revoke")}
-                disabled={disabled}
-              />
-            ) : null}
-          </View>
-        );
-      })}
+              ) : null}
+            </View>
+          );
+        })}
     </View>
   );
 }

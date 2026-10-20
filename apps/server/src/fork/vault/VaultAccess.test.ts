@@ -52,6 +52,10 @@ const fixture = () => {
     loseNextReply: false,
     notificationsFail: false,
     notificationCalls: 0,
+    notificationBarrier: null as {
+      started: Deferred.Deferred<void>;
+      release: Deferred.Deferred<"delivered">;
+    } | null,
     failWrites: false,
     failReads: false,
     readBarrier: null as {
@@ -142,11 +146,16 @@ const fixture = () => {
         Layer.provide(
           Layer.succeed(ApprovalNotificationTransport.ApprovalNotificationTransport, {
             pending: () =>
-              Effect.suspend(() => {
+              Effect.gen(function* () {
                 state.notificationCalls++;
-                return state.notificationsFail
-                  ? Effect.fail(new VaultError({ reason: "unavailable" }))
-                  : Effect.succeed("stubbed" as const);
+                if (state.notificationsFail)
+                  return yield* new VaultError({ reason: "unavailable" });
+                if (state.notificationBarrier) {
+                  const barrier = state.notificationBarrier;
+                  yield* Deferred.succeed(barrier.started, undefined);
+                  return yield* Deferred.await(barrier.release);
+                }
+                return "stubbed" as const;
               }),
           }),
         ),
@@ -1620,4 +1629,35 @@ it.effect(
         ).toBe("not-found");
       }),
     ),
+);
+
+it.effect("keeps decisions authoritative when notification completion arrives after approval", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<"delivered">();
+      fixture.state.notificationBarrier = { started, release };
+      const creating = yield* access
+        .approvalCreate(approvalInput, requesterActor, Effect.void)
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      expect((yield* access.approvalInbox).notificationOutcomes?.[0]?.delivery).toBe("sending");
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      expect(
+        (yield* access.approvalStatus(approvalInput.id, threadId)).notificationOutcome?.delivery,
+      ).toBe("not-required");
+      yield* Deferred.succeed(release, "delivered");
+      yield* Fiber.join(creating);
+      const current = yield* access.approvalStatus(approvalInput.id, threadId);
+      expect(current).toMatchObject({
+        request: { state: "approved", revision: 2 },
+        notificationOutcome: { delivery: "not-required" },
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      });
+      expect(fixture.state.notificationCalls).toBe(1);
+      expect((yield* access.snapshot).grants).toHaveLength(1);
+    }),
+  ),
 );

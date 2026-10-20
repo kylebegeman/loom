@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultApprovalChange } from "@t3tools/contracts/fork";
+import { VAULT_APPROVAL_RETENTION_MS, type VaultApprovalChange } from "@t3tools/contracts/fork";
 import {
   createVaultAccessAtoms,
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
+  vaultApprovalState,
+  vaultApprovalReviewQueue,
   vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
@@ -43,8 +45,14 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
     result = useAtomValue(query);
   const data = result._tag === "Failure" ? null : Option.getOrNull(AsyncResult.value(result));
   const now = useVaultTime(
-    data?.requests.flatMap((r) => [r.requestExpiresAt, r.approvedUntil]) ?? [],
+    data?.requests.flatMap((r) => [
+      r.requestExpiresAt,
+      r.approvedUntil,
+      r.requestedAt + VAULT_APPROVAL_RETENTION_MS,
+    ]) ?? [],
   );
+  const [filter, setFilter] = useState<"pending" | "all">("pending");
+  const review = vaultApprovalReviewQueue(data?.requests ?? [], now, filter);
   const [pending, setPending] = useState<VaultApprovalChange | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -103,104 +111,120 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
           access remain disabled.
         </p>
       ) : null}
-      {data?.requests.length === 0 ? (
+      {data ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-sm">
+            {review.pendingCount} pending of {review.totalCount} retained requests.
+          </p>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
+          >
+            {filter === "pending" ? "Show all requests" : "Show pending requests"}
+          </Button>
+          {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
+            <p className="text-sm">
+              No pending requests. Show all requests to review decisions or revoke an approval.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {data && review.totalCount === 0 ? (
         <p>No access requests. An agent can request access with the Vault request tool.</p>
       ) : null}
-      {data?.requests.map((r) => {
-        const state =
-          (r.state === "pending" && now >= r.requestExpiresAt) ||
-          (r.state === "approved" && r.approvedUntil !== null && now >= r.approvedUntil)
-            ? "expired"
-            : r.state;
-        const decide = (
-          decision: VaultApprovalChange["decision"],
-          durationMs: 300000 | 900000 = 300000,
-        ) =>
-          void submit({
-            id: r.id,
-            operationId: randomUUID().replaceAll("-", ""),
-            expectedRevision: r.revision,
-            expectedPolicyRevision: data.policyRevision,
-            decision,
-            durationMs,
-          });
-        return (
-          <article key={r.id} className="flex flex-col gap-2 rounded-md border p-3">
-            <p className="font-medium">
-              {VAULT_ACTION_LABELS[r.action]} · {state}
-            </p>
-            <p className="break-all text-sm">
-              Thread {r.threadId} · Project {r.projectId}
-              <br />
-              Record {r.itemId} · version {r.itemVersion}
-              <br />
-              Destination {r.destination ?? "Any destination (unrestricted)"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {vaultApprovalNotificationMessage(
-                data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
-                state,
-              )}
-            </p>
-            {r.waitingOperation ? (
-              <p className="break-all text-sm">
-                Waiting operation {r.waitingOperation.operationId}
-                <br />
-                Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
-                required.
+      {data &&
+        review.requests.map((r) => {
+          const state = vaultApprovalState(r, now);
+          const decide = (
+            decision: VaultApprovalChange["decision"],
+            durationMs: 300000 | 900000 = 300000,
+          ) =>
+            void submit({
+              id: r.id,
+              operationId: randomUUID().replaceAll("-", ""),
+              expectedRevision: r.revision,
+              expectedPolicyRevision: data.policyRevision,
+              decision,
+              durationMs,
+            });
+          return (
+            <article key={r.id} className="flex flex-col gap-2 rounded-md border p-3">
+              <p className="font-medium">
+                {VAULT_ACTION_LABELS[r.action]} · {state}
               </p>
-            ) : (
-              <p className="text-sm">No run-bound operation correlation was captured.</p>
-            )}
-            <p className="text-sm">
-              Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
-              Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {state === "pending" ? (
-                <>
-                  <Button
-                    disabled={!canWrite || busy || pending !== null}
-                    onClick={() => decide("approve")}
-                  >
-                    Approve for 5 minutes
-                  </Button>
+              <p className="break-all text-sm">
+                Thread {r.threadId} · Project {r.projectId}
+                <br />
+                Record {r.itemId} · version {r.itemVersion}
+                <br />
+                Destination {r.destination ?? "Any destination (unrestricted)"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {vaultApprovalNotificationMessage(
+                  data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                  state,
+                )}
+              </p>
+              {r.waitingOperation ? (
+                <p className="break-all text-sm">
+                  Waiting operation {r.waitingOperation.operationId}
+                  <br />
+                  Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
+                  required.
+                </p>
+              ) : (
+                <p className="text-sm">No run-bound operation correlation was captured.</p>
+              )}
+              <p className="text-sm">
+                Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
+                Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {state === "pending" ? (
+                  <>
+                    <Button
+                      disabled={!canWrite || busy || pending !== null}
+                      onClick={() => decide("approve")}
+                    >
+                      Approve for 5 minutes
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!canWrite || busy || pending !== null}
+                      onClick={() => decide("approve", 900000)}
+                    >
+                      Approve for 15 minutes
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!canWrite || busy || pending !== null}
+                      onClick={() => decide("deny")}
+                    >
+                      Deny
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={!canWrite || busy || pending !== null}
+                      onClick={() => decide("cancel")}
+                    >
+                      Cancel request
+                    </Button>
+                  </>
+                ) : null}
+                {r.grantId && (state === "approved" || state === "expired") ? (
                   <Button
                     variant="outline"
                     disabled={!canWrite || busy || pending !== null}
-                    onClick={() => decide("approve", 900000)}
+                    onClick={() => decide("revoke")}
                   >
-                    Approve for 15 minutes
+                    Revoke approval
                   </Button>
-                  <Button
-                    variant="outline"
-                    disabled={!canWrite || busy || pending !== null}
-                    onClick={() => decide("deny")}
-                  >
-                    Deny
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={!canWrite || busy || pending !== null}
-                    onClick={() => decide("cancel")}
-                  >
-                    Cancel request
-                  </Button>
-                </>
-              ) : null}
-              {r.grantId && (state === "approved" || state === "expired") ? (
-                <Button
-                  variant="outline"
-                  disabled={!canWrite || busy || pending !== null}
-                  onClick={() => decide("revoke")}
-                >
-                  Revoke approval
-                </Button>
-              ) : null}
-            </div>
-          </article>
-        );
-      })}
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
     </section>
   );
 }

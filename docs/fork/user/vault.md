@@ -678,3 +678,7 @@ Agents can inspect the same notification observation through their own request-s
 If saving a request loses its reply, look it up by the original ID before retrying. A saved
 request may have no recorded delivery attempt; replaying creation returns that request without
 sending an alert. Status remains available only during the request's retention window.
+
+The inbox starts with pending requests. Choose **Show all requests** to review retained decisions
+or revoke an active or expired approval, then **Show pending requests** to return. Counts and
+visible pending work update at expiry; server-side checks remain authoritative.

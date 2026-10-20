@@ -1,5 +1,6 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
+  VAULT_APPROVAL_RETENTION_MS,
   type VaultApprovalNotificationOutcome,
   type VaultApprovalRequest,
   type VaultAccessAction,
@@ -104,4 +105,36 @@ export const vaultApprovalNotificationMessage = (
     case "not-required":
       return "This request no longer needs an approval notification.";
   }
+};
+
+export const vaultApprovalState = (request: VaultApprovalRequest, now: number) =>
+  (request.state === "pending" && now >= request.requestExpiresAt) ||
+  (request.state === "approved" && request.approvedUntil !== null && now >= request.approvedUntil)
+    ? ("expired" as const)
+    : request.state;
+
+export const vaultApprovalReviewQueue = (
+  requests: ReadonlyArray<VaultApprovalRequest>,
+  now: number,
+  filter: "pending" | "all",
+) => {
+  const retained = requests.filter(
+    (request) => now < request.requestedAt + VAULT_APPROVAL_RETENTION_MS,
+  );
+  const pendingCount = retained.filter(
+    (request) => vaultApprovalState(request, now) === "pending",
+  ).length;
+  return {
+    pendingCount,
+    totalCount: retained.length,
+    requests: retained
+      .filter((request) => filter === "all" || vaultApprovalState(request, now) === "pending")
+      .sort(
+        (a, b) =>
+          Number(vaultApprovalState(b, now) === "pending") -
+            Number(vaultApprovalState(a, now) === "pending") ||
+          b.requestedAt - a.requestedAt ||
+          a.id.localeCompare(b.id),
+      ),
+  };
 };

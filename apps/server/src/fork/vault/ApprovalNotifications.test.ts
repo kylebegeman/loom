@@ -193,3 +193,43 @@ it.effect(
       expect(after[0]).toMatchObject({ delivery: "not-delivered", attemptedAt: null });
     }).pipe(Effect.provide(ApprovalNotifications.stub)),
 );
+
+it.effect("does not dispatch for terminal or expired requests", () => {
+  let calls = 0;
+  return withTransport(
+    () =>
+      Effect.sync(() => {
+        calls++;
+        return "delivered" as const;
+      }),
+    (service) =>
+      Effect.gen(function* () {
+        yield* service.pending({ ...request, state: "denied", revision: 2, decidedBy: "human" });
+        yield* TestClock.adjust("10 minutes");
+        yield* service.pending(request);
+        expect(calls).toBe(0);
+        expect((yield* service.outcomes([request]))[0]?.delivery).toBe("not-required");
+      }),
+  );
+});
+it.effect(
+  "derives current expiry even if an adapter reports delivery after the request deadline",
+  () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const delivered = yield* Deferred.make<"delivered">();
+      const short = { ...request, requestExpiresAt: 1_000 };
+      yield* withTransport(
+        () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(delivered))),
+        (service) =>
+          Effect.gen(function* () {
+            const pending = yield* service.pending(short).pipe(Effect.forkChild);
+            yield* Deferred.await(started);
+            yield* TestClock.adjust("1 second");
+            yield* Deferred.succeed(delivered, "delivered");
+            yield* Fiber.join(pending);
+            expect((yield* service.outcomes([short]))[0]?.delivery).toBe("not-required");
+          }),
+      );
+    }),
+);

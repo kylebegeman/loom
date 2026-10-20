@@ -154,3 +154,19 @@ Server, contracts, client-runtime, web and mobile typechecks plus focused lint/f
 documentation links, 390 seam rows and whitespace pass. This follow-up adds no UI or simulator
 pass. Policy stays format 3; no sidecar, Library, OpenBao path, permission or external action is
 introduced. All canExecute/automaticResumption/allowOnceConsumption gates remain false.
+
+## Pending review ergonomics and late-delivery acceptance
+
+Five focused suites pass **59 tests** including real MCP registration. Shared queue tests cover
+pending-first order, pending/all filtering, immutable input, exact request/approval expiry and
+retention boundaries. Notification service tests refuse terminal/expired dispatch and derive
+`not-required` after an adapter returns beyond the deadline. Access-service acceptance uses a
+Deferred barrier: approval commits while notification dispatch is pending; a late delivered
+result does not change approved state, create another grant or enable execution.
+
+Affected server, client-runtime, web and mobile typechecks plus focused lint/format, doc links,
+390 seam rows and whitespace pass. Focused lint caught unsupported Hermes `toSorted`; sorting
+now uses the newly filtered array. The isolated Browser-panel pass verified 0-pending/4-retained
+copy, Show all revealing the four synthetic decisions, the reverse pending action and no
+horizontal overflow at 390 CSS pixels. Native testing remains owner-led. No notification is sent,
+fixture written, policy format bumped, sidecar introduced or production action taken.

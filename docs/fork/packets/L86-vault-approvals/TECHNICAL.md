@@ -275,3 +275,19 @@ not-found rather than falling back to a stale process observation.
 The field is optional for older-server compatibility and never enters the stored policy. Policy
 remains format 3, with no sidecar or new downgrade requirement. Every execution, automatic
 resumption and allow-once gate stays literal false.
+
+## Pending review and late adapter observations
+
+Web/desktop and mobile use a shared pure queue helper for pending/all filtering, pending-first
+ordering, expiry state and cached retention filtering. Pending is the initial view; a visible
+reverse action exposes all retained decisions, including revoke on approved/expired entries.
+Counts derive from current client time and retained requests, without another RPC or a continuous
+poll. Existing boundary timers now include each request's retention deadline. Sorting mutates
+only a newly filtered array, preserving source query data and Hermes compatibility.
+
+A notification adapter can complete after a human decides or after the request deadline.
+Observations always derive `not-required` from the current request, even when an attempt reports
+delivery later. This does not cancel an already dispatched external alert or imply transport
+recall. Production still has no external transport. A controlled service race proves approval
+can commit while its original creation call awaits an adapter; the subsequent status remains
+approved with one grant and no executable continuation.

@@ -47,7 +47,9 @@ are blocked or require review. Every result still requires normal adapter valida
 all execution gates false. Proposals are not captured continuations or stored credentials.
 Preparation now rejects concurrent policy/status changes, fails closed on backend outages and
 returns actionable repair guidance. Lost approval replies reconcile without duplicating grants.
-Policy format remains 3. Native acceptance stays owner-led.
+Policy format remains 3. The inbox opens with pending work first and shows retained/pending counts. Show all requests
+restores decision review and revocation. Expiry and age-out update the client view without
+changing the authoritative server checks. Native acceptance stays owner-led.
 
 ## Scope
 
