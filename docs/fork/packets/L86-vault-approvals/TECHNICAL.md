@@ -178,8 +178,11 @@ reader or reviewed recovery with post-backup revocation reconciliation, never a 
 service. It accepts the retained request ID, waiting-operation reference, expected request
 revision and one typed proposal using the existing SSH, Git-over-SSH or GitHub API command
 contracts. Unknown command kinds and unbounded inputs fail decoding. Ownership still requires
-both authenticated thread and original requester actor. The policy is loaded once for request
-state and evaluator checks, without an audit write or any call to execution adapters.
+both authenticated thread and original requester actor. Request state and evaluator checks use one policy snapshot, without an audit write or any call
+to execution adapters. Before returning, a second policy read and fresh requester status reject
+a concurrent policy version or operation-state change as `context-changed`. An outage on either
+read returns an error; no cached preparation is offered. This bounded observation is not atomic
+with later execution, so normal adapter checks remain mandatory.
 
 Preparation requires an approved, unexpired, run-bound request, matching item/version, `use`
 action, exact derived destination and current full-access/default runtime. API repository scope
@@ -210,3 +213,11 @@ continuation, provider dispatch, consumption or notification side effect is intr
 
 This slice is additive/read-only and leaves policy format 3 unchanged. No OpenBao path or policy
 permission, Library change or production rollout is introduced.
+
+Preparation returns an actionable `nextStep` plus fixed safe repair text: refresh a changed
+request/context, wait for a human decision, request fresh access for stale/terminal work, review
+the changed proposal, select a supported connector, restore runtime, review access, inspect an
+uncertain outcome, or recheck through the normal adapter. The guidance does not expose command
+bodies, trigger external inspection, mutate runtime modes, approve a request or assert that a
+write is safe. A backend outage never returns a successful prepared response. Policy revision in
+the response names the final observation, not a capability to reuse it indefinitely.

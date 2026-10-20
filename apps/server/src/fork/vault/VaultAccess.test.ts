@@ -10,6 +10,8 @@ import {
   type VaultGrantMutation,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Clock from "effect/Clock";
 import * as Option from "effect/Option";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
@@ -49,6 +51,11 @@ const fixture = () => {
     loseNextReply: false,
     notificationsFail: false,
     failWrites: false,
+    failReads: false,
+    readBarrier: null as {
+      observed: Deferred.Deferred<void>;
+      release: Deferred.Deferred<void>;
+    } | null,
     runId: RunId.make("grant-run"),
     active: true,
     deleted: false,
@@ -60,7 +67,18 @@ const fixture = () => {
       state: "ready",
       origin: "https://vault.example.test",
     }),
-    read: (path) => Effect.sync(() => records.get(path) ?? null),
+    read: (path) =>
+      Effect.gen(function* () {
+        if (state.failReads) return yield* new VaultError({ reason: "unavailable" });
+        const value = records.get(path) ?? null;
+        const barrier = path.endsWith("/access-policy") ? state.readBarrier : null;
+        if (barrier) {
+          state.readBarrier = null;
+          yield* Deferred.succeed(barrier.observed, undefined);
+          yield* Deferred.await(barrier.release);
+        }
+        return value;
+      }),
     keys: (prefix) =>
       Effect.sync(() =>
         [...records.keys()]
@@ -1330,4 +1348,158 @@ it.effect("does not treat a generic secret item as an executable connector", () 
       );
     }),
   ),
+);
+
+it.effect(
+  "fails closed on a recovery outage, then reconciles a lost approval reply without another grant",
+  () =>
+    withAccess(
+      ({ access, fixture }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          fixture.state.loseNextReply = true;
+          expect(
+            (yield* access.approvalChange(approveInput, "human", Effect.void).pipe(Effect.flip))
+              .reason,
+          ).toBe("unavailable");
+          fixture.state.failReads = true;
+          expect(
+            (yield* access.approvalPrepareRetry(retryInput, threadId).pipe(Effect.flip)).reason,
+          ).toBe("unavailable");
+          fixture.state.failReads = false;
+          const report = yield* access.approvalPrepareRetry(retryInput, threadId);
+          expect(report).toMatchObject({
+            retryState: "policy-valid-recheck-adapter",
+            nextStep: "recheck-adapter",
+            canExecute: false,
+          });
+          expect((yield* access.snapshot).grants).toHaveLength(1);
+          expect((yield* access.approvalChange(approveInput, "human", Effect.void)).revision).toBe(
+            2,
+          );
+          expect((yield* access.snapshot).grants).toHaveLength(1);
+        }),
+      "ssh-key",
+    ),
+);
+it.effect(
+  "invalidates an in-flight preparation when revocation commits after its first policy read",
+  () =>
+    withAccess(
+      ({ access, fixture }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          const observed = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          fixture.state.readBarrier = { observed, release };
+          const preparing = yield* access
+            .approvalPrepareRetry(retryInput, threadId)
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(observed);
+          yield* access.approvalChange(
+            {
+              ...approveInput,
+              expectedRevision: 2,
+              expectedPolicyRevision: 1,
+              operationId: "1".repeat(32),
+              decision: "revoke",
+            },
+            "human",
+            Effect.void,
+          );
+          yield* Deferred.succeed(release, undefined);
+          const report = yield* Fiber.join(preparing);
+          expect(report).toMatchObject({
+            retryState: "context-changed",
+            nextStep: "refresh-request",
+            policyRevision: 2,
+            canExecute: false,
+            status: { operationState: "revoked" },
+          });
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 3 }, threadId))
+              .nextStep,
+          ).toBe("request-new-approval");
+        }),
+      "ssh-key",
+    ),
+);
+it.effect("detects run replacement, item rotation and expiry on recovery validation", () =>
+  withAccess(
+    ({ access, fixture, core }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        yield* access.approvalChange(approveInput, "human", Effect.void);
+        const prepared = yield* access.approvalPrepareRetry(retryInput, threadId);
+        fixture.state.runId = RunId.make("different-run");
+        expect(
+          yield* access.approvalPrepareRetry(
+            { ...retryInput, previousOperationDigest: prepared.operationDigest },
+            threadId,
+          ),
+        ).toMatchObject({
+          retryState: "blocked-request",
+          nextStep: "request-new-approval",
+          status: { operationState: "stale-run" },
+        });
+        fixture.state.runId = RunId.make("grant-run");
+        yield* core.save(
+          {
+            id: itemId,
+            operationId: "1".repeat(32),
+            expectedVersion: 1,
+            label: "Rotated synthetic key",
+            kind: "ssh-key",
+            value: Redacted.make("synthetic-rotated-key"),
+          },
+          "human",
+        );
+        expect(yield* access.approvalPrepareRetry(retryInput, threadId)).toMatchObject({
+          retryState: "blocked-request",
+          nextStep: "request-new-approval",
+          status: { operationState: "stale-item" },
+        });
+        yield* TestClock.adjust("5 minutes");
+        expect(
+          (yield* access.approvalPrepareRetry(retryInput, threadId)).status.operationState,
+        ).toBe("expired");
+      }),
+    "ssh-key",
+  ),
+);
+it.effect(
+  "gives actionable pending, changed-operation, uncertain-write and runtime repair guidance",
+  () =>
+    withAccess(
+      ({ access, fixture }) =>
+        Effect.gen(function* () {
+          yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 1 }, threadId))
+              .nextStep,
+          ).toBe("wait-for-decision");
+          yield* access.approvalChange(approveInput, "human", Effect.void);
+          expect(
+            (yield* access.approvalPrepareRetry({ ...retryInput, expectedRevision: 1 }, threadId))
+              .nextStep,
+          ).toBe("refresh-request");
+          const changed = yield* access.approvalPrepareRetry(
+            { ...retryInput, previousOperationDigest: "0".repeat(64) },
+            threadId,
+          );
+          expect(changed.nextStep).toBe("review-operation");
+          const unknown = yield* access.approvalPrepareRetry(
+            { ...retryInput, previousOutcome: "unknown" },
+            threadId,
+          );
+          expect(unknown.nextStep).toBe("inspect-outcome");
+          expect(unknown.repair).toContain("Do not blindly repeat");
+          fixture.state.approvalRequired = true;
+          expect((yield* access.approvalPrepareRetry(retryInput, threadId)).nextStep).toBe(
+            "restore-runtime",
+          );
+        }),
+      "ssh-key",
+    ),
 );

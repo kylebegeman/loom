@@ -109,6 +109,27 @@ const UNKNOWN = [
   "Automatic workload launch, profile bindings and external consumers are not tracked.",
 ];
 
+const RETRY_REPAIRS = {
+  "refresh-request":
+    "Refresh your request and prepare again using its current revision. This check cannot execute work.",
+  "wait-for-decision":
+    "Wait for a human decision, then refresh the request before preparing an explicit retry.",
+  "request-new-approval":
+    "Review the terminal or stale request. New work needs a fresh request bound to the current run; do not replay the old operation.",
+  "review-operation":
+    "Review the exact item, version, destination and command. A changed proposal must be prepared again; a digest does not authorize it.",
+  "select-supported-item":
+    "Select the corresponding dedicated SSH key or GitHub connection, then request access for that item.",
+  "restore-runtime":
+    "Restore the intended active full-access/default run, then refresh and prepare again. Request access again if the run changed.",
+  "review-access":
+    "Ask an eligible approver to review current access. Preparation cannot change grants or approve its own request.",
+  "inspect-outcome":
+    "Inspect the previous operation's remote or local effects before considering a new attempt. Do not blindly repeat a possibly completed write.",
+  "recheck-adapter":
+    "Use the normal operation adapter for a separate explicit attempt. It must recheck current access, destination, trust and connector/broker state; this report grants no execution.",
+} satisfies Record<VaultApprovalRetryReport["nextStep"], string>;
+
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
@@ -543,7 +564,7 @@ const make = Effect.gen(function* () {
     const input = yield* decodeApprovalRetry(raw).pipe(
       Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
     );
-    const { policy } = yield* load();
+    const { policy, version: policyVersion } = yield* load();
     const status = yield* approvalStatusFromPolicy(
       policy,
       yield* Clock.currentTimeMillis,
@@ -623,10 +644,48 @@ const make = Effect.gen(function* () {
         retryState = "requires-outcome-review";
       else retryState = "policy-valid-recheck-adapter";
     }
+    // A concurrent policy commit invalidates the observation instead of quietly reusing its checks.
+    const latest = yield* load();
+    const latestStatus = yield* approvalStatusFromPolicy(
+      latest.policy,
+      yield* Clock.currentTimeMillis,
+      input.id,
+      requester,
+    );
+    if (latest.version !== policyVersion || latestStatus.operationState !== status.operationState)
+      retryState = "context-changed";
+    if (retryState === "policy-valid-recheck-adapter") {
+      const current = yield* subject(requester);
+      if (
+        current.thread.runtimeMode !== "full-access" ||
+        current.thread.interactionMode !== "default"
+      )
+        retryState = "runtime-denied";
+    }
+    const nextStep: VaultApprovalRetryReport["nextStep"] =
+      retryState === "blocked-request"
+        ? latestStatus.operationState === "waiting"
+          ? "wait-for-decision"
+          : "request-new-approval"
+        : retryState === "context-changed" || retryState === "stale-request"
+          ? "refresh-request"
+          : retryState === "operation-mismatch" || retryState === "operation-changed"
+            ? "review-operation"
+            : retryState === "unsupported-item"
+              ? "select-supported-item"
+              : retryState === "runtime-denied"
+                ? "restore-runtime"
+                : retryState === "access-denied"
+                  ? "review-access"
+                  : retryState === "requires-outcome-review"
+                    ? "inspect-outcome"
+                    : "recheck-adapter";
     return {
-      status,
+      status: latestStatus,
       operationDigest,
-      policyRevision: policy.revision,
+      policyRevision: latest.policy.revision,
+      nextStep,
+      repair: RETRY_REPAIRS[nextStep],
       retryState,
       effects,
       adapterValidation: "required" as const,

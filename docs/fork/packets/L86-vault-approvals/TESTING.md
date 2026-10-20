@@ -101,3 +101,16 @@ documentation-link/seam checks and whitespace pass. No new UI is introduced, no 
 simulator pass is run, and no external service is contacted. These are metadata/policy validation
 proofs, not host trust, broker, GitHub credential or actual retry acceptance. Policy format remains
 3 with its existing downgrade caveat; no storage path or permission is added.
+
+## Recovery failure and repair-guidance acceptance
+
+Four targeted suites pass **49 tests**, including the real MCP registration test. New cases cover
+backend read failure and recovery, an approval committed with a lost reply, no duplicate grant
+on reconciliation, and a deterministic concurrent revocation between the initial policy read
+and the final observation. The race uses Deferred barriers and fiber joining, never sleeps or
+polling. Run replacement, item rotation, expiry and pending/changed/unknown-write/runtime repair
+steps also have focused coverage. All execution gates remain false; policy format stays 3.
+
+Server, contracts, client-runtime, web and mobile typechecks pass. Focused lint/format,
+documentation links, 390 seam rows and whitespace pass. Native acceptance remains with Kyle; no simulator, production,
+Library, OpenBao path or policy-permission change is part of this follow-up.

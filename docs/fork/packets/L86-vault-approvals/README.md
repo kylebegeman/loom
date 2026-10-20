@@ -42,6 +42,8 @@ Typed SSH, Git-over-SSH and GitHub API proposals now have read-only, requester-s
 preparation and recovery comparison. Changed operations, stale context and unknown write outcomes
 are blocked or require review. Every result still requires normal adapter validation and keeps
 all execution gates false. Proposals are not captured continuations or stored credentials.
+Preparation now rejects concurrent policy/status changes, fails closed on backend outages and
+returns actionable repair guidance. Lost approval replies reconcile without duplicating grants.
 Policy format remains 3. Native acceptance stays owner-led.
 
 ## Scope

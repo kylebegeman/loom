@@ -664,5 +664,7 @@ API operation against their own approved, run-bound request. Supply the request 
 waiting-operation reference. Keep the returned operation digest to compare the same proposal
 after a reconnect. Preparation never runs a command or grants access; normal operation checks
 still apply. If a previous write may have run, inspect its outcome before retrying. The digest
-is comparison metadata, not proof that a command ran or permission to replay it. Automatic
-resumption and one-time approval consumption remain unavailable.
+is comparison metadata, not proof that a command ran or permission to replay it. Follow the
+returned repair step: wait for a decision, refresh changed context, review a changed operation
+or inspect a possibly completed write. A backend outage requires a fresh check after recovery.
+Automatic resumption and one-time approval consumption remain unavailable.

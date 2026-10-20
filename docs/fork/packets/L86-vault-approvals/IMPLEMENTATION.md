@@ -24,8 +24,12 @@ request revision and current evaluator access. Caller-retained operation digests
 comparison; uncertain writes require outcome review. No adapter is called and no continuation is
 persisted. Policy format stays 3.
 
-Next selected work: recovery validation failure/race acceptance and actionable repair guidance,
-then notification delivery adapters with durable delivery outcomes. Automatic resumption and one-time consumption remain
+Recovery validation now rejects concurrent policy/status changes and backend outages, reconciles
+lost approval replies, and provides actionable repair guidance with focused failure/race coverage.
+
+Next selected work: in-app notification adapter delivery contracts and bounded outcome handling
+while external transports remain stubbed. Persisted delivery outcomes need an explicit storage
+compatibility decision before changing the existing policy value. Automatic resumption and one-time consumption remain
 gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
 simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
 Do not mark the full packet done.
