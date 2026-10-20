@@ -16,6 +16,7 @@ import {
   newCommandId,
   readCaller,
   readThread,
+  refuseBotRunSpawn,
   unavailable,
 } from "../../threadAccess.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
@@ -113,6 +114,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   ),
   t3_thread_fork: writesThread((input) =>
     Effect.gen(function* () {
+      yield* refuseBotRunSpawn((yield* readCaller()).scope);
       const { threads, projection } = yield* readThread(input.threadId);
       const commandId = yield* newCommandId();
       const targetThreadId = ThreadId.make(`${commandId}:fork`);

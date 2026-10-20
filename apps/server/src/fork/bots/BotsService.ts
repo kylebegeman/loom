@@ -329,6 +329,9 @@ export const make = Effect.gen(function* () {
 
   /** What every saved definition, and every draft a replay runs, must satisfy. */
   const checkDefinition = (definition: BotDefinitionInput, caller: BotCaller) => {
+    // A trigger following the latest version would repeat a run's edit on every firing.
+    if (caller.threadId !== null && isBotRunThreadId(caller.threadId))
+      return Effect.fail(fail("permission", "A bot run cannot change bots."));
     const problem = checkParameters(definition);
     if (problem !== null) return Effect.fail(fail("invalid", problem));
     if (

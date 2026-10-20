@@ -5,7 +5,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { makeBotsStore } from "./BotsStore.ts";
-import { USER_CALLER } from "./BotsService.ts";
+import { USER_CALLER, versionInput } from "./BotsService.ts";
 import { NO_PROVIDERS, model, projectId, reviewer, withHarness } from "./testing/BotsHarness.ts";
 import { starterById } from "./starters.ts";
 
@@ -585,6 +585,29 @@ describe("BotsService invocation", () => {
           expect(yield* Effect.flip(bots.threadCaller(ThreadId.make(threadId)))).toMatchObject({
             reason: "invalid",
           });
+      }),
+    ),
+  );
+
+  it.effect("refuses a bot run changing a bot", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const latest = yield* bots.get("reviewer");
+        const refused = yield* Effect.flip(
+          bots.save(
+            { ...versionInput(latest), instructions: "Something else {{file}}." },
+            {
+              actor: "agent",
+              threadId: ThreadId.make("bot-run-parent"),
+              projectId,
+              runtimeMode: "full-access",
+            },
+          ),
+        );
+        expect(refused.message).toBe("A bot run cannot change bots.");
+        expect((yield* bots.get("reviewer")).version).toBe(latest.version);
       }),
     ),
   );

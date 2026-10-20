@@ -2,6 +2,7 @@ import {
   BOTS_MAX_ACTIVE_PIPELINES,
   BotsError,
   isActiveBotPipelineRunStatus,
+  isBotRunThreadId,
   type BotDefinition,
   type BotPipeline,
   type BotPipelineChange,
@@ -204,6 +205,8 @@ export const make = Effect.gen(function* () {
     caller: BotCaller,
     expectedVersion: number | undefined,
   ) {
+    if (caller.threadId !== null && isBotRunThreadId(caller.threadId))
+      return yield* fail("permission", "A bot run cannot change pipelines.");
     const problem = firstError(yield* check(input));
     if (problem !== undefined) return yield* fail("invalid", problemMessage(problem));
     // A person's trigger runs the pipeline with no ceiling, so an agent may not widen its steps.

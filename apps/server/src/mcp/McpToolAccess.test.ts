@@ -7,6 +7,7 @@ import {
   RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
+import { botRunThreadId } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -27,6 +28,7 @@ const backgroundThreadId = ThreadId.make("thread:background");
 const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
+const botRunId = botRunThreadId("run-1");
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -42,6 +44,7 @@ const shells = new Map([
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
+  [botRunId, liveThreadShell(botRunId)],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -216,6 +219,7 @@ const supervised = threadCaller(supervisedThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
+const botRun = threadCaller(botRunId);
 // Its turn ended, but a background subagent it started still runs.
 const background = threadCaller(backgroundThreadId);
 const oldProviderBackground = threadCaller(oldProviderThreadId);
@@ -292,6 +296,8 @@ it.effect.each([
   ["starts_threads", supervisedClient, {}, "approval-required/default"],
   ["starts_threads", supervisedClient, { runtimeMode: "auto" }, "runtime_mode_escalation_denied"],
   ["starts_threads", fullAccessClient, { runtimeMode: "full-access" }, "full-access/default"],
+  ["starts_threads", botRun, {}, "capability_denied"],
+  ["writes", botRun, {}, "ran"],
 
   ["writes_environment", fullAccess, {}, "ran"],
   ["writes_environment", supervised, {}, "capability_denied"],
