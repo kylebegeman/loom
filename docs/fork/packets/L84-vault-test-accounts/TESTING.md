@@ -201,6 +201,50 @@ contract has no credential-file export, product CLI/MCP/RPC surface, backend pat
 format change. `canReadLive`, `canExecute`, resumption, verification and allow-once gates remain
 false; L84 remains partial.
 
+## Retained cleanup/reset design proof
+
+The new `SyntheticCleanupBarrier.test.ts` has **46 passing cases** against an opaque in-memory
+CAS store and a separately retained synthetic provider ledger. Controllers are reconstructed
+at intent, external-effect and receipt/write boundaries. This is simulated crash/restart evidence,
+not an OS-process, durable storage, real provider or production deployment exercise.
+
+Cases prove write-before-start with before/after-commit failures; no automatic remint after a
+lost start response; unknown/forged/error/lost fence evidence; before/after reset-intent failures;
+provider failure/lost receipt; readiness write failure/lost acknowledgement; same-ID reset retry;
+foreign scope/generation/operation receipts; concurrent CAS admission; delayed start after fence
+and generation advance; stale cleanup/reset receipts that cannot clear a newer operation;
+controller rollback refused by provider generation; missing/outage state; unchanged barriers after
+thirty days; fresh lease/operation requirements; scope/version changes; and resource/replay/reset
+capacity refusal without eviction. Deferred interleavings and fiber interruption use no sleeps
+or polling. Separate start and maintenance authority allow host cleanup after workload revocation.
+The result gates remain false and no pool account is marked clean.
+
+All **11 guard-removal mutations are caught**: omitted write-ahead intent; reset before terminal
+fence; unknown fence accepted; mismatched fence/reset receipt accepted; stale cleanup writing
+against a fresh revision; forgotten operation ID; forgotten lease ID; provider-generation
+comparison omitted; capacity guard omitted; and reset ID rebound to a later generation. Each
+mutant runs the matching behavioral regression and is restored before final verification.
+The rollback case uses a fresh operation ID so an old operation's terminal fence cannot mask a
+missing provider-generation check. No serialized fixture, persistent backend or format is added.
+
+Final package-CWD verification passes **152 tests** across the 46 barrier and 106 workload cases.
+Server typecheck, changed-file lint, 398 seam entries/unlisted-marker scan, local doc references
+and whitespace pass. No Python, client, native or provider code changes in this slice, so the
+earlier Python and app-interaction checks are not claimed as new runs.
+
+```sh
+# From apps/server:
+../../node_modules/.bin/vp test run src/fork/vault/SyntheticCleanupBarrier.test.ts \
+  src/fork/vault/VaultTestAccountWorkloads.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
+The [design](./TECHNICAL.md#cleanup-and-reset-before-reuse-barrier-design) states the required
+terminal fence and provider-generation semantics, atomic CAS boundaries, reader/rollback and
+reclamation gates. Only test files import the model. It changes no runtime transport, backend
+path/capability, persistent reader/schema or policy/journal/registry format. Existing live cleanup,
+provider identity and reset/reuse integration remain unfinished.
+
 ## Synthetic broker/mail integration evidence
 
 The workload suite adds **55 cases** and passes **106 total** from `apps/server`. Combined with

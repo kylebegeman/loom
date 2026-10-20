@@ -27,6 +27,9 @@ backend restart. TESTING records focused checks and integrated web evidence.
    target now proves real session issue, access, revocation, replacement and final cleanup. It is
    not integrated with pool leases or broker login delivery. Add durable idempotent creation,
    cancellation/late-result reconciliation and reset-before-reuse before enabling that adapter.
+   The retained synthetic barrier now proves write-ahead intent, terminal fencing, generation-bound
+   idempotent reset and conservative restart behavior. It has no persistent integration or codec;
+   backend/readers, independent fence custody, rollback/rebind and retention remain owner decisions.
    Manual mark-clean remains an operator attestation until then.
 3. The read-only Migadu transport contract now passes synthetic message and real loopback
    IMAP/TLS proof. It has no default live connector, credential ingress or product integration.
