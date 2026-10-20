@@ -64,6 +64,6 @@ const WORKER_STATUS: Record<MiniWorkerReadiness["status"], string> = {
 /** A refused host key needs a person to confirm the new key, so it says so instead of a generic failure. */
 export function workerCheckStatus(report: Pick<MiniWorkerReadiness, "status" | "reasons">): string {
   if (report.reasons.includes(MINI_HOST_KEY_MISMATCH))
-    return "SSH refused this worker's host key. If the worker was reinstalled or replaced, confirm its new key and update known_hosts on the server, then check again.";
+    return "SSH refused this worker's host key. It changed or is not yet known for this address. Confirm the key and add or update it in known_hosts on the server, then check again.";
   return WORKER_STATUS[report.status];
 }

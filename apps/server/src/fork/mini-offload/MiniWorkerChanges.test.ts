@@ -88,6 +88,8 @@ const setup = Effect.gen(function* () {
   git("-c", "user.name=Test", "-c", "user.email=test@localhost", "commit", "--quiet", "-m", "Base");
   const reached: { target: string; sshConfig: string | null; action: string }[] = [];
   let failure: MiniOffloadError | null = null;
+  // Runs once when a submission looks up its checkout, after it first checked the worker.
+  let atCheckout: Effect.Effect<unknown, MiniOffloadError> = Effect.void;
   const transport: Ssh.MiniSshTransport["Service"] = {
     request: (destination, operation, header) =>
       Effect.gen(function* () {
@@ -116,12 +118,18 @@ const setup = Effect.gen(function* () {
             Layer.succeed(
               Threads.ProjectionStoreV2,
               partial<Threads.ProjectionStoreV2["Service"]>({
-                getThread: (id) =>
-                  Effect.succeed({
-                    id,
-                    projectId: ProjectId.make("test-project"),
-                    worktreePath: null,
-                  } as OrchestrationV2AppThread),
+                getThread: (id) => {
+                  const run = atCheckout;
+                  atCheckout = Effect.void;
+                  return run.pipe(
+                    Effect.orDie,
+                    Effect.as({
+                      id,
+                      projectId: ProjectId.make("test-project"),
+                      worktreePath: null,
+                    } as OrchestrationV2AppThread),
+                  );
+                },
               }),
             ),
             Layer.succeed(
@@ -146,6 +154,10 @@ const setup = Effect.gen(function* () {
     service,
     reached,
     sshConfig: NodePath.join(home, "ssh_config"),
+    registry: NodePath.join(home, "state", "userdata", "fork", "mini-offload", "workers.json"),
+    atCheckout: (effect: Effect.Effect<unknown, MiniOffloadError>) => {
+      atCheckout = effect;
+    },
     failWith: (error: MiniOffloadError | null) => {
       failure = error;
     },
@@ -169,10 +181,11 @@ describe("changing a Mini worker's registration", () => {
       ]);
     }),
   );
-  it.effect("keeps a removed worker's jobs listed and out of new submissions", () =>
+  it.effect("keeps a removed worker's jobs listed at its last connection", () =>
     Effect.gen(function* () {
-      const { service, reached } = yield* setup;
+      const { service, reached, sshConfig } = yield* setup;
       yield* service.submit(request);
+      yield* service.updateWorker({ workerId: worker.id, target: "pi-moved", sshConfig });
       yield* service.removeWorker({ workerId: worker.id });
       expect(yield* service.workers).toEqual([]);
       expect((yield* service.list(tid)).map((receipt) => receipt.workerName)).toEqual([
@@ -181,13 +194,38 @@ describe("changing a Mini worker's registration", () => {
       expect(
         (yield* Effect.flip(service.submit({ ...request, requestId: "e".repeat(32) }))).reason,
       ).toBe("worker");
+      // Another computer cannot take the removed ID, and with it the earlier jobs.
+      expect((yield* Effect.flip(service.register({ ...worker, target: "pi-other" }))).reason).toBe(
+        "worker",
+      );
       reached.length = 0;
       yield* service.inspect(ref);
-      // Its jobs keep the connection saved with them.
-      expect(reached.map((call) => call.target)).toEqual([worker.target, worker.target]);
+      expect(reached.map((call) => [call.target, call.sshConfig])).toEqual([
+        ["pi-moved", sshConfig],
+        ["pi-moved", sshConfig],
+      ]);
       expect((yield* Effect.flip(service.removeWorker({ workerId: worker.id }))).reason).toBe(
         "worker",
       );
+    }),
+  );
+  it.effect("reaches a job's saved connection when the registry cannot be read", () =>
+    Effect.gen(function* () {
+      const { service, reached, registry } = yield* setup;
+      yield* service.submit(request);
+      NodeFS.writeFileSync(registry, "not json");
+      reached.length = 0;
+      expect((yield* service.inspect(ref)).receipt.job?.state).toBe("succeeded");
+      expect(reached.map((call) => call.target)).toEqual([worker.target, worker.target]);
+    }),
+  );
+  it.effect("sends no job to a worker removed while its snapshot was prepared", () =>
+    Effect.gen(function* () {
+      const { service, reached, atCheckout } = yield* setup;
+      atCheckout(service.removeWorker({ workerId: worker.id }));
+      expect((yield* Effect.flip(service.submit(request))).reason).toBe("worker");
+      expect(reached).toEqual([]);
+      expect(yield* service.list(tid)).toEqual([]);
     }),
   );
   it.effect("reports a host key SSH refused as its own readiness reason", () =>

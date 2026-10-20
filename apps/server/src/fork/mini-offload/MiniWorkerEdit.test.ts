@@ -35,7 +35,11 @@ const setup = Effect.gen(function* () {
   );
   yield* source.register(worker);
   yield* source.register(other);
-  return { source, sshConfig: NodePath.join(home, "ssh_config") };
+  return {
+    source,
+    sshConfig: NodePath.join(home, "ssh_config"),
+    file: NodePath.join(home, "state", "userdata", "fork", "mini-offload", "workers.json"),
+  };
 });
 describe("changing a registered Mini worker", () => {
   it.effect("re-points a worker and keeps its ID, name and enabled state", () =>
@@ -70,16 +74,32 @@ describe("changing a registered Mini worker", () => {
       expect(yield* source.list).toEqual([worker, other]);
     }),
   );
-  it.effect("removes only the named worker and refuses one that is already gone", () =>
+  it.effect("removes only the named worker and keeps its last connection for its jobs", () =>
     Effect.gen(function* () {
-      const { source } = yield* setup;
-      expect(yield* source.remove({ workerId: worker.id })).toEqual(worker);
+      const { source, file } = yield* setup;
+      const enabled = yield* source.setEnabled({ workerId: worker.id, enabled: true });
+      expect(yield* source.remove({ workerId: worker.id })).toEqual(enabled);
       expect(yield* source.list).toEqual([other]);
-      expect((yield* Effect.flip(source.remove({ workerId: worker.id }))).reason).toBe("worker");
-      expect(yield* source.list).toEqual([other]);
-      // A removed ID can be registered again, at any connection.
-      const returned = { ...worker, target: "pi-new" };
+      for (const change of [
+        source.remove({ workerId: worker.id }),
+        source.update({ workerId: worker.id, target: "pi-new", sshConfig: null }),
+        source.setEnabled({ workerId: worker.id, enabled: true }),
+      ])
+        expect((yield* Effect.flip(change)).reason).toBe("worker");
+      expect(yield* source.lookup(worker.id)).toEqual({ ...worker, enabled: false });
+      // A server that predates removal reads the row as a disabled worker and sends it nothing.
+      expect(JSON.parse(NodeFS.readFileSync(file, "utf8"))).toContainEqual({
+        ...worker,
+        enabled: false,
+        removed: true,
+      });
+      // Another computer never takes a removed ID, since that would hand it the earlier jobs.
+      expect((yield* Effect.flip(source.register({ ...worker, target: "pi-new" }))).reason).toBe(
+        "worker",
+      );
+      const returned = { ...worker, name: "Returned Pi", enabled: true };
       expect(yield* source.register(returned)).toEqual(returned);
+      expect(yield* source.list).toEqual([other, returned]);
     }),
   );
 });

@@ -236,7 +236,7 @@ export class MiniOffloadService extends Context.Service<
     readonly updateWorker: (
       input: MiniWorkerConnection,
     ) => Effect.Effect<Pick<MiniWorker, "id" | "name" | "enabled">, MiniOffloadError>;
-    /** Removes a worker. Its receipts stay, so earlier jobs can still be inspected while it is gone. */
+    /** Removes a worker. Its earlier jobs stay inspectable and keep reaching its last connection. */
     readonly removeWorker: (
       input: MiniWorkerRef,
     ) => Effect.Effect<Pick<MiniWorker, "id" | "name" | "enabled">, MiniOffloadError>;
@@ -348,15 +348,16 @@ const make = Effect.gen(function* () {
         }),
     );
   // A receipt reaches its worker the way the registry says now, so changing a moved worker's
-  // connection also reaches its earlier jobs. A removed worker keeps the connection saved with them.
+  // connection also reaches its earlier jobs, including after the worker is removed. A registry
+  // that cannot be read leaves the connection saved with the receipt, as before workers could move.
   const destination = (stored: Stored) =>
-    registryLock.withPermit(source.list).pipe(
-      Effect.map((workers) => {
-        const current = workers.find((worker) => worker.id === stored.worker.id);
-        return current
+    registryLock.withPermit(source.lookup(stored.worker.id)).pipe(
+      Effect.orElseSucceed(() => undefined),
+      Effect.map((current) =>
+        current
           ? { ...stored.worker, target: current.target, sshConfig: current.sshConfig }
-          : stored.worker;
-      }),
+          : stored.worker,
+      ),
     );
   const send = Effect.fn("MiniOffload.send")(function* (stored: Stored) {
     const receipt = stored.receipt;
@@ -532,14 +533,14 @@ const make = Effect.gen(function* () {
                 return stored.receipt.state === "submitted" ? stored.receipt : yield* send(stored);
               }
               // Archiving can take minutes, so it must not hold up other submissions or registry changes.
-              const worker = yield* registryLock
+              const enabledWorker = registryLock
                 .withPermit(source.list)
                 .pipe(
                   Effect.map((rows) =>
                     rows.find((row) => row.id === request.workerId && row.enabled),
                   ),
                 );
-              if (!worker) return yield* fail("worker");
+              if (!(yield* enabledWorker)) return yield* fail("worker");
               const cwd = yield* workspace(request.threadId);
               const top = yield* git(cwd, ["rev-parse", "--show-toplevel"]);
               if (
@@ -571,6 +572,9 @@ const make = Effect.gen(function* () {
                 if (bytes > MAX_ARCHIVE_BYTES) return yield* fail("too_large");
                 if (bytes <= 0) return yield* fail("storage");
                 const checksum = yield* disk(() => sha256File(archive));
+                // A worker removed or disabled while this archived gets no new job.
+                const worker = yield* enabledWorker;
+                if (!worker) return yield* fail("worker");
                 const initial: Stored = {
                   worker,
                   archiveEncoding: "gzip",

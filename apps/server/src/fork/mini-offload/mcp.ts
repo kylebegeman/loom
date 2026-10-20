@@ -25,7 +25,7 @@ const failure = Schema.Union([MiniOffloadError, OrchestratorMcpFailure]);
 export const MiniOffloadToolkit = Toolkit.make(
   Tool.make("loom_mini_workers", {
     description:
-      "List registered LoomOS Mini destinations. Registering, changing and removing workers is administrator controlled; these jobs run trusted repository commands, not a new Loom conversation.",
+      "List registered LoomOS Mini destinations. Registering workers is administrator controlled; with full access, loom_mini_worker_update and loom_mini_worker_remove change or remove one. These jobs run trusted repository commands, not a new Loom conversation.",
     parameters: Tool.EmptyParams,
     success: Schema.Array(MiniWorkerSummary),
     failure,
@@ -51,7 +51,7 @@ export const MiniOffloadToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_mini_worker_remove", {
     description:
-      "Remove a registered worker from this computer so it gets no new jobs. Its earlier jobs stay listed and keep the connection saved with them. Requires full access.",
+      "Remove a registered worker from this computer so it gets no new jobs. Its earlier jobs stay listed and keep reaching its last connection, and its ID can only be registered again at that connection. Requires full access.",
     parameters: MiniWorkerRef,
     success: MiniWorkerSummary,
     failure,

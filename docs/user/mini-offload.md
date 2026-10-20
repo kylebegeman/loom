@@ -42,11 +42,14 @@ must be enabled on the worker. Disabling a worker prevents new submissions;
 existing jobs remain inspectable, cancellable and recoverable.
 
 If the same worker moved or its SSH setup changed, choose **Change connection**
-on its row and enter the new host alias. Its earlier jobs use the new connection
-too. Add a different computer as a new worker instead. **Remove** stops new
-commands to a worker; its earlier jobs stay listed and keep the connection saved
-with them. When the connection check says SSH refused the worker's host key,
-the worker was probably reinstalled or replaced: confirm its new key, update
+on its row and enter the new host alias and, if it needs one, the SSH config
+path again; the new values replace the saved connection. Its earlier jobs use
+the new connection too. Add a different computer as a new worker instead.
+**Remove** stops new commands to a worker; its earlier jobs stay listed and
+keep reaching its last connection, so its ID can only be registered again at
+that connection. When the connection check says SSH refused the worker's host
+key, the key changed or is not yet known for this address, for example after a
+move, reinstall or replacement. Confirm the worker's key, add or update it in
 `known_hosts` on the Loom server, then check again.
 
 The snapshot contains the committed revision only, up to 1 GiB before
@@ -85,12 +88,13 @@ Agents can use `loom_mini_workers`, `loom_mini_submit`, `loom_mini_recover`,
 a verified file manifest and missing-file list. Binary content is omitted by
 default; `includeBundle: true` explicitly returns the tar as base64.
 Their jobs belong to the calling thread. Submit and recover require a live
-full-access thread in default mode. Agents cannot register new workers. With
-full access, `loom_mini_worker_update` changes a moved worker's connection and
-`loom_mini_worker_remove` removes a worker.
-Registering, changing and removing command workers requires environment
-maintenance access; submit, recover and cancel require terminal access. Reads
-require orchestration read access.
+full-access thread in default mode. Agents cannot register new workers.
+`loom_mini_worker_update` changes a moved worker's connection and
+`loom_mini_worker_remove` removes a worker; both need a full-access thread in
+default mode or a full-access MCP client. In Loom, registering, changing and
+removing command workers requires environment maintenance access; submit,
+recover and cancel require terminal access. Reads require orchestration read
+access.
 
 Computers and Command jobs are available in web and desktop Loom. Native mobile
 lists its environment connections under **Settings → Computers**, but has no

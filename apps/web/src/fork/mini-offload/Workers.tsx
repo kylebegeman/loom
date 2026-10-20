@@ -73,7 +73,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   {worker.enabled ? "Enabled for commands" : "Disabled"}
                 </span>
               </span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {supportsCheck && (
                   <Button
                     size="xs"
@@ -145,7 +145,9 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
               >
                 <Muted>
                   Use this when the same worker moved or its SSH setup changed. Its earlier jobs use
-                  the new connection. Add a different computer as a new worker.
+                  the new connection. Add a different computer as a new worker. This replaces the
+                  saved connection: enter the SSH config path again if the worker uses one, or leave
+                  it blank for the server's default SSH config.
                 </Muted>
                 <label className="text-sm">
                   SSH host alias
@@ -183,7 +185,10 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
             )}
             {editing?.workerId === worker.id && editing.kind === "remove" && (
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <p>Remove {worker.name}? It gets no new commands. Its earlier jobs stay listed.</p>
+                <p>
+                  Remove {worker.name}? It gets no new commands. Its earlier jobs stay listed, and
+                  its ID can only be added again at this connection.
+                </p>
                 <Button
                   size="xs"
                   disabled={action.busy}
