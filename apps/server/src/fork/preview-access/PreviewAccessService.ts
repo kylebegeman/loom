@@ -22,6 +22,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { AuthSessionRepository } from "../../persistence/AuthSessions.ts";
 import { sanitizeEntryPath } from "../preview-links/policy.ts";
 import {
@@ -136,6 +137,7 @@ const make = Effect.gen(function* () {
   const pagesSetting = yield* Config.String("LOOM_PAGES_ORIGIN").pipe(Config.option);
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const sessions = yield* AuthSessionRepository;
+  const ownEnvironmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const store = yield* makeStore;
   // Spent pages tickets are memory only, so tickets signed before this run are never accepted.
   const startedAtMs = yield* Clock.currentTimeMillis;
@@ -262,7 +264,9 @@ const make = Effect.gen(function* () {
 
   const stillEnrolled = (row: PreviewHostRow, nowMs: number) =>
     row.sessionId === null
-      ? Effect.succeed(true)
+      ? // Only this Library's own computer registers without a session. Any other session-less
+        // row, such as one an older build wrote after a downgrade, has nothing to retire it.
+        Effect.succeed(row.environmentId === ownEnvironmentId)
       : sessions
           .getById({ sessionId: row.sessionId })
           .pipe(

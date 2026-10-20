@@ -6,6 +6,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSessionId,
+  EnvironmentId,
 } from "@t3tools/contracts";
 import { LOOM_IDENTITY_LOGIN_PATH, LibraryPreviewAccess } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
@@ -21,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HttpRouter } from "effect/http";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as AuthSessions from "../../persistence/AuthSessions.ts";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
@@ -94,6 +96,11 @@ const fixture = (env: Record<string, string>) =>
       Effect.provide(
         PreviewAccess.layer.pipe(
           Layer.provide(Layer.succeed(ServerSecretStore, secrets)),
+          Layer.provide(
+            Layer.succeed(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-library")),
+            }),
+          ),
           Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
         ),
       ),
