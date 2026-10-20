@@ -338,6 +338,40 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("records a pinned remote run as the revision the other computer runs", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        const pinned = yield* bots.get("reviewer");
+        yield* bots.save({ ...versionInput(pinned), description: "Edited." }, USER_CALLER);
+        yield* library.reportStatus(
+          studio,
+          studioReport({
+            bots: [{ libraryBotId: "reviewer", revision: 2, ready: true, reasons: [] }],
+          }),
+        );
+
+        const run = yield* bots.startRunWith(
+          pinned,
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          {},
+        );
+        const [delivery] = yield* library.nextRequests(studio, 0);
+        expect(delivery?.message).toMatchObject({ _tag: "run", request: { revision: 2 } });
+        expect(run.botVersion).toBe((yield* bots.get("reviewer")).version);
+        expect(run.botVersion).not.toBe(pinned.version);
+      }),
+    ),
+  );
+
   it.effect("times out a remote run whose computer stops reporting", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

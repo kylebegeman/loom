@@ -1014,7 +1014,9 @@ export const make = Effect.gen(function* () {
 
   /**
    * Records a run for another computer and hands it to the Library. It takes no permit here; the
-   * other computer applies its own limits, and this bot's budget still counts the run.
+   * other computer applies its own limits, and this bot's budget still counts the run. That
+   * computer runs the Library's latest revision, not a pinned version, so the run is recorded and
+   * sent as `permitBot`, the bot as it stands now.
    */
   const startRemote = Effect.fnUntraced(function* (
     bot: BotDefinition,
@@ -1025,7 +1027,7 @@ export const make = Effect.gen(function* () {
     options: StartOptions,
     ranOn: BotRunComputer,
   ) {
-    if (bot.library == null)
+    if (permitBot.library == null)
       return yield* fail(
         "invalid",
         `Share ${bot.name} through the Library to run it on another computer.`,
@@ -1045,7 +1047,7 @@ export const make = Effect.gen(function* () {
     const run: BotRun = {
       id: runId,
       botId: bot.id,
-      botVersion: bot.version,
+      botVersion: permitBot.version,
       botName: bot.name,
       threadId: botRunThreadId(runId),
       projectId: remoteProject(bot, input, caller),
@@ -1075,7 +1077,7 @@ export const make = Effect.gen(function* () {
           budgetPermit.withPermits(1),
         );
     yield* publish({ _tag: "run", run });
-    return yield* hooks.submit(run, bot, untrustedInputs(options, values)).pipe(
+    return yield* hooks.submit(run, permitBot, untrustedInputs(options, values)).pipe(
       Effect.as(run),
       Effect.catch((error) =>
         settleRemote(run, { status: "failed", finishedAt: run.createdAt, error: error.message }),
