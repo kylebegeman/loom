@@ -1,3 +1,5 @@
+import type { VaultHealth } from "./vault/VaultHealth.ts";
+import type { VaultHealthChecks } from "./vault/VaultHealthChecks.ts";
 import type { VaultGitHub } from "./vault/VaultGitHub.ts";
 import type { VaultProfiles } from "./vault/VaultProfiles.ts";
 import type { VaultReferences } from "./vault/VaultReferences.ts";
@@ -39,6 +41,8 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | VaultHealth
+  | VaultHealthChecks
   | VaultGitHub
   | VaultProfiles
   | VaultReferences

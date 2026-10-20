@@ -1,3 +1,4 @@
+export * from "./vault-health.ts";
 export * from "./vault-ssh-agent.ts";
 export * from "./vault-github.ts";
 export * from "./vault-prompt.ts";
