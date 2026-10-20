@@ -380,7 +380,8 @@ No Library deployment is required for the implemented environment-local Vault se
 5. Obtain the persisted environment ID from the **owning** Loom environment's descriptor,
    and compute its lowercase hexadecimal SHA-256 namespace. Prepare an OpenBao policy with
    read on `loom/config`, read/create/update on that namespace's item, policy, broker and
-   profile paths, and list on item/profile metadata as described above. Review the exact
+   profile paths, and list on item/profile metadata as described above. Add selected health
+   and migration paths from the operating-policy sections below. Review the exact
    paths against the current adapter. Do not grant root, wildcard-environment access,
    mount administration or Raft snapshot privileges to the Loom service credential.
 6. Install that policy with `bao policy write <environment-policy> <reviewed-policy.hcl>`.
@@ -441,3 +442,83 @@ agent. Automatic validation remains separately opt-in. Deploying this code does 
 for existing rules. A timeout is an outage, and untrusted-host or other SSH failures require
 configuration review. These results do not establish credential revocation. No additional
 OpenBao paths or Library changes are needed beyond the health policy above.
+
+## Development import operating policy
+
+`vault-migration-imports` adds reviewed, manually entered development secret/note imports.
+The host owner must add read/create/update on
+`<mount>/data/environments/<namespace>/migrations/*` and list on
+`<mount>/metadata/environments/<namespace>/migrations` to the existing environment policy.
+Core item permissions remain required. A ready backend status does not prove these new rights.
+Until that policy and the L79 production gates are satisfied, L75 is **waiting on deploy**.
+No Library service, schema, mount, dependency or personal credential configuration changes.
+
+These commands are a host-owner handoff. They were not run against production. Run with an
+already authenticated operator CLI, not Loom's restricted service token. Set `LOOM_USERDATA_DIR`
+to the owning server's existing userdata directory, `BAO_POLICY` to its reviewed policy name,
+and `BAO_MOUNT` to its existing KV v2 mount (normally `loom`). Confirm the target OpenBao origin
+with `bao status` first. No token belongs in shell arguments, chat or the policy file.
+
+```sh
+set -eu
+: "${LOOM_USERDATA_DIR:?Set the owning server userdata directory}"
+: "${BAO_POLICY:?Set the existing environment policy name}"
+: "${BAO_MOUNT:?Set the existing KV v2 mount}"
+bao status
+umask 077
+migration_policy_dir="$(mktemp -d)"
+export migration_policy_dir
+bao policy read "$BAO_POLICY" > "$migration_policy_dir/before.hcl"
+python3 - <<'PY'
+import hashlib, os, pathlib, re
+userdata = pathlib.Path(os.environ['LOOM_USERDATA_DIR'])
+environment_id = (userdata / 'environment-id').read_text().strip()
+if not environment_id:
+    raise SystemExit('Missing environment identity')
+mount = os.environ['BAO_MOUNT']
+if not re.fullmatch(r'[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*', mount):
+    raise SystemExit('Invalid mount path')
+namespace = hashlib.sha256(environment_id.encode()).hexdigest()
+directory = pathlib.Path(os.environ['migration_policy_dir'])
+base = (directory / 'before.hcl').read_text()
+addition = f'''
+path "{mount}/data/environments/{namespace}/migrations/*" {{
+  capabilities = ["read", "create", "update"]
+}}
+path "{mount}/metadata/environments/{namespace}/migrations" {{
+  capabilities = ["list"]
+}}
+'''
+(directory / 'reviewed.hcl').write_text(base + addition)
+PY
+diff -u "$migration_policy_dir/before.hcl" "$migration_policy_dir/reviewed.hcl" || test "$?" -eq 1
+```
+
+Review that diff against the correct environment and preserve any existing stanzas. If the
+migration paths already exist, edit those stanzas instead of leaving duplicate path rules.
+Apply the resulting policy with:
+
+```sh
+bao policy write "$BAO_POLICY" "$migration_policy_dir/reviewed.hcl"
+```
+
+No Loom restart is required for a policy update on its existing token. The runtime must include
+the L75 implementation and use the same environment ID. In that computer's settings, prepare a
+synthetic development record, verify that preparation created no item, cancel it, then prepare,
+explicitly import, refresh and archive another synthetic record. Confirm an agent thread cannot
+use administrator migration tools and no repository settings changed. Keep actual provider
+verification and repository cutover separate. Host owner records this evidence before using
+real development credentials.
+
+Policy rollback uses the retained original file; this disables new migration operations and
+does not undo imports, revoke provider credentials or erase encrypted history:
+
+```sh
+bao policy write "$BAO_POLICY" "$migration_policy_dir/before.hcl"
+```
+
+Import ledgers retain metadata and value digests encrypted in OpenBao, never plaintext values.
+There is no automatic ledger retention/erase job. Include these paths in existing backup and
+retention procedures. Cancellation, archival and restore are logical actions, not KV history
+erasure. If an imported record changed before a failed receipt was recovered, resolve the
+conflict manually without overwriting that newer record.

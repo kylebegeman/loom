@@ -1,3 +1,4 @@
+import type { VaultMigration } from "./vault/VaultMigration.ts";
 import type { VaultHealthContext } from "./vault/VaultHealthContext.ts";
 import type { VaultHealth } from "./vault/VaultHealth.ts";
 import type { VaultHealthChecks } from "./vault/VaultHealthChecks.ts";
@@ -43,6 +44,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | VaultMigration
   | VaultHealth
   | VaultHealthContext
   | VaultHealthChecks

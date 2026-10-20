@@ -1,3 +1,4 @@
+import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
 import { VaultHealthSettingsSection } from "../vault/HealthSettingsSection";
 import { VaultGitHubSettingsSection } from "../vault/GitHubSettingsSection";
 import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
@@ -21,6 +22,11 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "vault-migration",
+    title: "Vault development imports",
+    Component: VaultMigrationSettingsSection,
+  },
   { id: "vault-health", title: "Vault maintenance", Component: VaultHealthSettingsSection },
   { id: "vault-github", title: "Vault GitHub connections", Component: VaultGitHubSettingsSection },
   { id: "vault-profiles", title: "Vault project profiles", Component: VaultProfileSettingsSection },

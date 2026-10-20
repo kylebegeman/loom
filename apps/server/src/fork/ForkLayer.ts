@@ -1,3 +1,4 @@
+import * as VaultMigration from "./vault/VaultMigration.ts";
 import * as VaultHealthContext from "./vault/VaultHealthContext.ts";
 import * as VaultHealth from "./vault/VaultHealth.ts";
 import * as VaultHealthChecks from "./vault/VaultHealthChecks.ts";
@@ -167,6 +168,7 @@ const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
 
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  VaultMigration.layer.pipe(Layer.provide(Layer.merge(layerVaultStore, layerVaultCore))),
   layerVaultHealth,
   layerVaultHealthContext,
   VaultHealthChecks.reactor.pipe(Layer.provideMerge(layerVaultHealthChecks)),

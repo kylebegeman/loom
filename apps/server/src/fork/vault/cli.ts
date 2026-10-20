@@ -6,6 +6,8 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "migration-plans": "loom_vault_migration_plans",
+  "migration-status": "loom_vault_migration_status",
   health: "loom_vault_health",
   "health-context": "loom_vault_health_context",
   "health-retained": "loom_vault_health_retained",

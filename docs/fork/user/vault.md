@@ -33,6 +33,25 @@ configures this computer's execution broker and grants access. Adding a key alon
 ordinary terminal commands through Vault or remove their existing 1Password approvals.
 Authentication connectors and general credential delivery remain selected work.
 
+## Import development records
+
+Open **Vault development imports** in the selected computer's Loom settings or command palette.
+On mobile, use that computer's settings. Enter one dedicated development secret or secure note,
+confirm that it is separate from your personal accounts, and review the new record and selected
+computer. Confirm the review separately to import. Preparation creates no Vault item and expires
+after ten minutes. Existing records and repository settings are preserved.
+
+Cancel a prepared review or clear private input to discard the local draft. Reopen a review to
+refresh its status after a lost response; if it still needs input, reenter the same value.
+Archiving from the review only affects the unchanged imported record. Restore it through Vault's
+normal archived-item controls. Archiving does not revoke a provider credential or erase backend
+history. Configure and verify a dedicated adapter before using the record in a project.
+
+For SSH, prefer a fresh Vault key; for GitHub, use a dedicated App or token connection. This form
+does not read 1Password, import exports, discover projects, verify logins or change Git/SSH
+configuration. Administrator `loom vault migration-plans` and `migration-status` report safe
+receipts; private imports use the reviewed form. Never put credentials in chat or command arguments.
+
 ## Grant recurring access
 
 Open **Vault access** in the selected computer's settings. Add a grant for one thread or all

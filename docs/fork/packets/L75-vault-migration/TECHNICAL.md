@@ -1,9 +1,45 @@
 # L75 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
-Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
-permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+The initial implementation uses the existing encrypted OpenBao boundary and destination-scoped
+RPC authorization. The complete inventory/cutover design below remains pending.
+
+## Implemented reviewed import boundary
+
+`vault-migration.ts` defines private prepare/apply ingress with redacted values and literal
+`developmentOnly: true` / `reviewed: true` attestations. Only `secret` and `secure-note` are
+accepted. Preparation binds label, kind and value with a digest, generates a new item ID, and
+stores no private value in the plan. The immutable review lasts ten minutes; a retry with the
+same ID cannot extend its lifetime or alter its metadata/bytes. The attestation is a human
+statement, not automatic proof of ownership or development use.
+
+`VaultMigration.ts` stores encrypted, CAS-protected ledgers at
+`environments/<sha256-environment-id>/migrations/<review-id>`. Apply durably records acceptance
+before saving a new core item at expected version zero. Core receipts bind the generated item,
+source reference, operation and original actor. Interrupted responses can be inspected without
+private input or ledger writes, and accepted imports can be retried with matching bytes.
+Cancellation cannot undo an accepted operation. Archival checks the original save receipt and
+version, durably accepts its own operation, and retries using the pinned actor and operation.
+Edits to the imported record conflict rather than being overwritten. Later edits that replace
+the only core receipt before a failed ledger write is recovered require manual review; the
+service does not infer ownership from a matching label.
+
+List/status return only summaries in pages of 25. OpenBao key enumeration is capped at 4096
+by the shared store. Plan metadata has no automatic retention/erase job; backups and encrypted
+KV history follow the backend policy. Cancellation and expiry do not erase historical metadata.
+
+RPC list/inspect require destination `access:read`; prepare/apply/cancel/archive require
+`access:write`. Shared commands observe revocation. MCP and CLI only provide safe list/status
+for full-access administrator clients, never agent threads or read-only MCP clients. Private
+input stays in the reviewed human form; no chat/CLI inline values or personal-store fallback.
+The existing full-access environment can still read process/files; this is not OS isolation.
+
+Capability `vault-migration-imports` gates clients. Web and desktop share the settings/palette
+flow; mobile has its own private form. Every request targets the selected environment. No
+provider adapter or scheduled task gets implicit import, approval or use permissions.
+
+The OpenBao service policy requires read/create/update on the migration data subtree and list
+on its metadata directory. [Host commands](../../operations/vault.md#development-import-operating-policy)
+are a handoff to the host owner, not an executed deployment. No Library service change is needed.
 
 ## Overview
 
@@ -11,10 +47,10 @@ Inventory configured credential sources without extracting personal vault conten
 
 ## Contracts and authorization
 
-`inspect` reports source types and affected consumers. `prepare` produces an immutable, expiring plan with configuration fingerprints. `apply` requires that reviewed plan and idempotency key. `rollback` restores only unchanged configuration owned by the migration.
+The future inventory operation reports source types and affected consumers; current `inspect` reads one import receipt. `prepare` produces an immutable, expiring plan with configuration fingerprints. `apply` requires that reviewed plan and idempotency key. `rollback` restores only unchanged configuration owned by the migration.
 
-Use packet-owned `loom.vault-migration.*` RPC methods if Loom transport is needed; exact schemas
-remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
+Existing `loom.vault-migration.*` RPC methods serve the initial import. Inventory/cutover schemas
+remain a follow-up design output. Return typed unsupported, locked, denied, conflict, expired,
 unavailable and operation-failed outcomes as appropriate, including environment authorization
 errors. Register protected methods in the fork permission map and use environment RPC commands.
 Metadata visibility, item management and credential use are distinct rights.

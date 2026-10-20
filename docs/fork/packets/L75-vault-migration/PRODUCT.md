@@ -4,6 +4,21 @@
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
+## Implemented first step
+
+Open **Vault development imports** in the selected computer's Loom settings or command
+palette. On mobile, use that computer's settings. Enter one development-only secret or secure
+note, confirm that it is separate from personal accounts, and review the destination and new
+record before explicitly importing. The review expires after ten minutes. It creates no item
+until apply is accepted. Clearing the form discards local private input; cancel ends a prepared
+review. Reopen a review to inspect its receipt or reenter the same value for retry.
+
+Archival affects only the unchanged newly imported record, preserves encrypted history, and
+can be reversed using Vault's existing restore action. It does not revoke a provider credential.
+Use the dedicated SSH and GitHub connection flows for their typed records. This first step
+never inspects personal stores, bulk exports or files, and does not establish usable workload
+access. The complete workflow below remains selected.
+
 ## How it works
 
 Inventory configured credential sources without extracting personal vault contents. Prepare a reviewed change set for dedicated key generation, service reconnection, explicit imports and optional repository configuration updates. Record prior non-secret configuration for rollback and test replacement access before cutover.
@@ -53,7 +68,7 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- Which initial import formats are worth supporting, and how should user-selected imports enter from mobile?
-- Should the default flow always create a new development identity rather than reuse an existing one?
+- Initial private input is one manually entered development secret or secure note. File/bulk and typed connector formats still need adapter-specific review.
+- Prefer a fresh dedicated identity; imported records are always newly allocated. Full replacement and cutover orchestration remains unfinished.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.
