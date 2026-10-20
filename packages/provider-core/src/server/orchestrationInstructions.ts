@@ -7,7 +7,6 @@ import type { ProviderInteractionMode } from "@t3tools/contracts";
  * of any entry over 4,000 bytes, so start a new section before one gets close.
  */
 export const T3_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
-  LOOM_VAULT_INSTRUCTIONS, // fork: ext-vault
   `## T3 Code orchestration
 
 The \`t3-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
@@ -38,6 +37,7 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 ### Showing visuals
 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.`,
+  LOOM_VAULT_INSTRUCTIONS, // fork: ext-vault
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `

@@ -167,3 +167,23 @@ checks, process cleanup and token release remain authoritative, independently of
 This does not install a persistent shell environment, migrate SSH remotes or certify every
 provider's terminal MCP environment. The shared contract and limits are in
 [L83 technical design](../L83-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
+
+## Native terminal session connection
+
+Codex thread start/resume receives `shell_environment_policy.set` with a private session
+connection-file path; Claude receives that path in its query environment. The bearer is not
+an environment value or command argument. Session replacement/clear and layer shutdown remove
+the files; server-side credential revocation rejects stale copies, including after crashes.
+The files use owner-only POSIX permissions and do not contain host-isolated authority.
+Same-user full-access agents can read them. Windows requires operator ACL controls.
+
+All Vault CLI paths share strict descriptor/connection-family parsing. A broken explicit
+file never selects another identity. Managed native sessions clear alternate MCP variables;
+Pi/ACP retain their existing connection families. Other native harnesses continue to use hosted
+MCP operations or explicit terminal configuration. This does not configure a user's independent
+shell, install a global `loom` executable or change personal SSH/1Password settings.
+
+`loom vault terminal-readiness` calls `VaultWorkloads.terminalReadiness` through authenticated
+MCP. It identifies the current provider/run, online enrolled-broker presence and 60-second
+freshness. It does not assert configured execution-broker custody, selected-item access,
+network reachability or successful GitHub/SSH login. Current resource grants remain mandatory.

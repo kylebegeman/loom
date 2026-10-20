@@ -1,3 +1,4 @@
+import { readTerminalConnection } from "./TerminalConnection.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI boundary forwards scrubbed child output and preserves its exit code.
 import * as NodeProcess from "node:process";
 import { VaultGitHubTerminalRun, VaultGitHubTerminalResult } from "@t3tools/contracts/fork";
@@ -52,9 +53,9 @@ export const runGitHubTerminalCli = Effect.fn("runGitHubTerminalCli")(function* 
     },
   },
 ) {
-  const endpoint = environment.LOOM_MCP_ENDPOINT ?? environment.T3_ACP_MCP_ENDPOINT,
-    authorization = environment.LOOM_MCP_AUTHORIZATION ?? environment.T3_ACP_MCP_AUTHORIZATION;
-  if (!endpoint || !authorization) return yield* new TerminalCliError({ reason: "connection" });
+  const { endpoint, authorization } = yield* readTerminalConnection(environment).pipe(
+    Effect.mapError(() => new TerminalCliError({ reason: "connection" })),
+  );
   const args = yield* decodeRun(argumentsJson);
   const envelope = decodeEnvelope(
     yield* callAcpMcpTool({

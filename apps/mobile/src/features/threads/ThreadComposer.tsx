@@ -719,7 +719,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           environmentId={props.environmentId}
           projectId={props.selectedThread.projectId}
           threadId={props.selectedThread.id}
-          prompt={props.draftMessage}
+          prompt={draftMessage}
           onChange={props.onChangeDraftMessage}
           disabled={!props.canOperateThread}
         />

@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { RunId, ThreadId } from "@t3tools/contracts";
+import { RunId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import {
   vaultWorkloadRequestMessage,
   vaultWorkloadProofMessage,
@@ -196,6 +196,33 @@ it.effect(
             .open({ ...f.input, publicKey: f.machine.publicKey }, f.threadId)
             .pipe(Effect.flip)).reason,
         ).toBe("invalid-proof");
+      }),
+    ),
+);
+it.effect(
+  "terminal readiness identifies this provider/run without claiming account-use readiness",
+  () =>
+    test((f, service) =>
+      Effect.gen(function* () {
+        const result = yield* service.terminalReadiness(
+          f.threadId,
+          f.state.thread.providerInstanceId!,
+        );
+        expect(result.activeRun).toBe(true);
+        expect(result.runId).toBe(f.state.thread.activeRunId);
+        expect(result.credentialUse).toBe("requires-selection-and-current-grant");
+        expect(result.expiresAt - result.checkedAt).toBe(60_000);
+        expect(f.state.decisions).toHaveLength(0);
+        expect(
+          (yield* service
+            .terminalReadiness(f.threadId, ProviderInstanceId.make("other"))
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        f.state.thread = { ...f.state.thread, activeRunId: null };
+        expect(
+          (yield* service.terminalReadiness(f.threadId, f.state.thread.providerInstanceId!))
+            .activeRun,
+        ).toBe(false);
       }),
     ),
 );

@@ -3171,3 +3171,21 @@ rg 'VaultCoreRpcGroup' packages/contracts/src/fork/rpc.ts
 Promote additional shared contracts independently as their consumers arrive. Do not fabricate
 workload, credential lease, platform identity, remote approval or delivery capabilities because
 records or enrolled hosts already exist.
+
+## Vault native terminal sessions (`ext-vault-terminal`)
+
+The provider MCP session owns an optional private connection descriptor. `McpProviderSessions`
+creates it under a scoped private temporary directory when filesystem support is available,
+replaces it with a new descriptor on credential rotation, and removes it on clear/shutdown.
+Existing session-registry revocation still rejects a stale token, including files left by a
+crash. The descriptor is plaintext and readable by the same operating-system user.
+
+Native Codex applies its path through thread-local `shell_environment_policy.set` on
+start/resume; Claude applies it to the query environment. Changed MCP identity already
+invalidates Claude's query policy key. Both clear inherited alternate connection variables
+when installing this managed connection. Pi and ACP retain their existing environment paths;
+other native adapters retain hosted tools and explicit terminal configuration.
+
+All Vault terminal paths use the same validated connection-family resolver. A specified broken
+file cannot fall back to another identity. Terminal readiness is a service-backed authenticated
+context check; it is not permission to use an arbitrary item or proof of an upstream login.

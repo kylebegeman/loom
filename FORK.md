@@ -96,6 +96,24 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`                | Persist and reopen fork documents; retire archived inspector history.                                       |
 | `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header`           | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
 
+### Native Vault terminal connection seams
+
+`fork: ext-vault-terminal` supplies a private session connection-file path to native
+Codex shell configuration and Claude query environments. Provider-session rotation and cleanup
+remove prior files; existing MCP credential revocation remains authoritative. Files are plaintext
+with owner-only POSIX permissions, not same-user process isolation. See
+[L85](docs/fork/packets/L85-vault-delivery/SEAMS.md).
+
+| File                                                                | Purpose                                                        |
+| ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `packages/provider-core/src/server/mcpSession.ts`                   | Optional connection path and shared environment helper.        |
+| `packages/provider-core/src/server/McpProviderSessions.ts`          | Session-owned creation, replacement and cleanup.               |
+| `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`       | Thread-local shell environment configuration.                  |
+| `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts`  | Native configuration regression coverage.                      |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`      | Query-local terminal environment configuration.                |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts` | Launched query environment regression coverage.                |
+| `apps/server/src/orchestration-v2/ProviderSessionManager.test.ts`   | Await connection cleanup after the parallel shutdown deadline. |
+
 ### Development fixture seam
 
 | File                                 | Marker         | Why                                                                                         |

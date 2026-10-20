@@ -27,3 +27,14 @@ local foundation is reviewable without deploying a service or importing personal
 L81/L78/L73 now have local policy, inspector and server-readiness milestones; their complete
 PRODUCT outcomes remain in progress. Other Vault packets remain selected and queued. Foundation work does not complete their
 readiness, SSH, GitHub, provisioning, approval, lifecycle or recovery-management outcomes.
+
+## Production deployment handoff
+
+Status: **Waiting on deploy**. No production host, service, credential, DNS or live Loom
+state was changed by this branch. The Library is not a credential backend and does not need a
+Vault deployment for this implementation. Kyle owns nightly releases; this thread must not
+run `scripts/fork/loom.sh land`.
+
+Use the exact operating procedure in [the Vault operations guide](../../operations/vault.md#production-rollout-procedure).
+The operator must supply the chosen HTTPS hostname, certificate/recovery custody and owning
+Loom service. Those are deployment inputs, not defaults that the application may invent.

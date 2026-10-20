@@ -1,3 +1,4 @@
+import { readTerminalConnection } from "../vault/TerminalConnection.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Console from "effect/Console";
@@ -16,15 +17,7 @@ export const callForkTool = Effect.fn("callForkTool")(function* (
   argumentsJson: string,
   environment: Readonly<Record<string, string | undefined>>,
 ) {
-  const endpoint = environment.LOOM_MCP_ENDPOINT ?? environment.T3_ACP_MCP_ENDPOINT;
-  const authorization = environment.LOOM_MCP_AUTHORIZATION ?? environment.T3_ACP_MCP_AUTHORIZATION;
-  if (!endpoint || !authorization)
-    return yield* Effect.fail(
-      new ForkCliError({
-        message:
-          "Configure LOOM_MCP_ENDPOINT and LOOM_MCP_AUTHORIZATION, or run from an ACP agent terminal with its MCP environment.",
-      }),
-    );
+  const { endpoint, authorization } = yield* readTerminalConnection(environment);
   const args = yield* Schema.decodeEffect(argumentsSchema)(argumentsJson);
   const result = yield* callAcpMcpTool({ endpoint, authorization, tool, arguments: args });
   yield* Console.log(yield* encodeResult(result));

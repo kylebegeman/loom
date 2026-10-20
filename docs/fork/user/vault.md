@@ -490,3 +490,15 @@ an independently configured provider terminal, SSH readiness or another runner's
 Agents can call `loom_vault_github_readiness` for their own thread; administrators can use
 `loom vault github-readiness` with the connection/version/repository and `threadId:null` or a
 selected thread. A successful check grants no later access; execution checks authority again.
+
+## Native agent terminals
+
+Loom prepares terminal access automatically for Codex and Claude sessions. Run
+`loom vault terminal-readiness` from the agent's terminal to check its current connection,
+provider/run and online broker presence. Restart the provider session if the connection is
+missing or stale. No manual MCP token setup is needed for these sessions.
+
+Continue using explicit `loom vault github-exec` or `loom vault ssh-agent-exec` commands with
+a selected item, current version and destination. Readiness does not grant access or establish
+that GitHub/SSH authentication will succeed. Other shells do not automatically acquire the
+agent session's access. Pi and ACP use the connection attached to their own sessions.

@@ -1,3 +1,4 @@
+import { readTerminalConnection } from "./TerminalConnection.ts";
 import {
   VaultSshAgentOpen,
   VaultSshAgentSession,
@@ -50,31 +51,14 @@ const decodeEnvelope = Schema.decodeUnknownOption(Envelope);
 const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment,
     fetchImplementation = yield* FetchHttpClient.Fetch;
-  const connection =
-    environment.LOOM_MCP_ENDPOINT || environment.LOOM_MCP_AUTHORIZATION
-      ? {
-          endpoint: environment.LOOM_MCP_ENDPOINT,
-          authorization: environment.LOOM_MCP_AUTHORIZATION,
-        }
-      : environment.T3_ACP_MCP_ENDPOINT || environment.T3_ACP_MCP_AUTHORIZATION
-        ? {
-            endpoint: environment.T3_ACP_MCP_ENDPOINT,
-            authorization: environment.T3_ACP_MCP_AUTHORIZATION,
-          }
-        : {
-            endpoint: environment.T3_MCP_URL,
-            authorization: environment.T3_MCP_BEARER_TOKEN
-              ? `Bearer ${environment.T3_MCP_BEARER_TOKEN}`
-              : undefined,
-          };
-  const { endpoint, authorization } = connection;
+  const connection = yield* readTerminalConnection(environment).pipe(Effect.option);
   const call = Effect.fnUntraced(function* <A, I>(
     tool: string,
     input: Readonly<Record<string, unknown>>,
     schema: Schema.Codec<A, I>,
   ) {
-    if (!endpoint || !authorization)
-      return yield* new SshAgentClientError({ reason: "connection" });
+    if (Option.isNone(connection)) return yield* new SshAgentClientError({ reason: "connection" });
+    const { endpoint, authorization } = connection.value;
     const envelope = decodeEnvelope(
       yield* callAcpMcpTool({
         endpoint,

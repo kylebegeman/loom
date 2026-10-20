@@ -2633,6 +2633,44 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
 
+  // fork: ext-vault-terminal
+  it.effect(
+    "gives Claude terminals their current session path without a bearer in the environment",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const sessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* sessions.set({
+          environmentId: EnvironmentId.make("terminal-test"),
+          threadId: harness.threadId,
+          providerSessionId: "terminal-test",
+          providerInstanceId: ProviderInstanceId.make("claude"),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer synthetic-terminal-only",
+          browserToolsAvailable: false,
+        });
+        const config = yield* sessions.read(harness.threadId);
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("terminal-test"),
+            text: "Check Vault",
+            attachments: [],
+          }),
+        );
+        const env = harness.getOpenedOptions()?.env;
+        assert.isDefined(config?.terminalConnectionFile);
+        assert.equal(env?.LOOM_MCP_CONNECTION_FILE, config?.terminalConnectionFile);
+        assert.notInclude(JSON.stringify(env), "synthetic-terminal-only");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(McpProviderSessions.layer.pipe(Layer.provide(NodeServices.layer))),
+        Effect.provide(Layer.mergeAll(IdAllocator.layer, NodeServices.layer)),
+      ),
+  );
+
   it.effect.each([
     { isError: false, title: "Check weather" },
     { isError: true, title: "Check weather" },

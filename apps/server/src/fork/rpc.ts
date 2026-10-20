@@ -27,6 +27,12 @@ import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import {
+  VaultCoreRpcGroup,
+  VAULT_CORE_WS_METHODS,
+  VaultAccessRpcGroup,
+  VAULT_ACCESS_WS_METHODS,
+  VaultBrokerRpcGroup,
+  VAULT_BROKER_WS_METHODS,
   PreviewLinksRpcGroup,
   PREVIEW_LINKS_WS_METHODS,
   VaultProfileRpcGroup,
@@ -48,6 +54,9 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(VAULT_BROKER_WS_METHODS),
+  ...Object.values(VAULT_ACCESS_WS_METHODS),
+  ...Object.values(VAULT_CORE_WS_METHODS),
   ...Object.values(PREVIEW_LINKS_WS_METHODS),
   ...Object.values(VAULT_GITHUB_WS_METHODS),
   ...Object.values(VAULT_SSH_WS_METHODS),
@@ -59,6 +68,9 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
 export const makeForkRpcLayer = (
   session: AuthenticatedSession,
 ): Layer.Layer<
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultCoreRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultAccessRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultBrokerRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof PreviewLinksRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultGitHubRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof otherForkRpcGroup>>
@@ -67,6 +79,15 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
 > =>
   Layer.mergeAll(
+    VaultBrokerRpcGroup.toLayer(
+      withForkRuntime(makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
+    VaultAccessRpcGroup.toLayer(
+      withForkRuntime(makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
+    VaultCoreRpcGroup.toLayer(
+      withForkRuntime(makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
     PreviewLinksRpcGroup.toLayer(
       withForkRuntime(makePreviewLinksRpcHandlers(makeForkRpcAuth(session), session)),
     ),
@@ -90,9 +111,6 @@ export const makeForkRpcLayer = (
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
         const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
         return otherForkRpcGroup.of({
-          ...(yield* withForkRuntime(makeVaultBrokerRpcHandlers(auth, session.subject))),
-          ...(yield* withForkRuntime(makeVaultCoreRpcHandlers(auth, session.subject))),
-          ...(yield* withForkRuntime(makeVaultAccessRpcHandlers(auth, session.subject))),
           [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),

@@ -1324,6 +1324,14 @@ export function codexThreadRuntimeParams(
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      // fork: ext-vault-terminal
+      ...(mcpSession?.terminalConnectionFile === undefined
+        ? {}
+        : {
+            shell_environment_policy: {
+              set: McpProviderSession.vaultTerminalEnvironment(mcpSession),
+            },
+          }),
       ...(mcpSession === undefined
         ? {}
         : {

@@ -76,3 +76,16 @@ layout and expiry. Service cancellation releases the acquired provider session. 
 commands, merge baseline and live-provider/runner limits are in
 [L83 testing](../L83-vault-connectors/TESTING.md#github-terminal-and-live-readiness-milestone).
 The complete selected packet remains In progress.
+
+## Native terminal verification, 2026-10-20
+
+Focused native Codex/Claude adapter, provider-session lifecycle and workload tests pass:
+551 tests in four files. Private descriptor tests exercise real file permissions, rotation,
+clear/shutdown cleanup and missing/malformed/permissive/symlink denial without identity fallback.
+A real `node .../bin.ts vault terminal-readiness` child uses only its inherited descriptor path
+against a synthetic loopback MCP endpoint, then fails after session cleanup.
+
+Server, contracts and provider-core typechecks pass. Scoped fork lint is checked separately
+from three existing unused private adapter declarations on fork main. These are synthetic
+provider launches and real CLI processes, not paid model executions or real credentials.
+No new frontend screen or browser/device check is part of this section.

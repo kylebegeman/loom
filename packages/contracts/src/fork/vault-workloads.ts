@@ -124,3 +124,16 @@ export const vaultWorkloadProofMessage = (input: VaultWorkloadChallenge) =>
       ? [input.payloadDigest ?? null]
       : []),
   ]);
+
+export const VaultTerminalReadiness = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  runId: Schema.NullOr(RunId),
+  checkedAt: Time,
+  expiresAt: Time,
+  activeRun: Schema.Boolean,
+  brokerOnline: Schema.Boolean,
+  credentialUse: Schema.Literal("requires-selection-and-current-grant"),
+});
+export type VaultTerminalReadiness = typeof VaultTerminalReadiness.Type;

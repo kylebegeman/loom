@@ -334,3 +334,88 @@ work around a denial. Shared instructions advertise tools conditionally for ever
 including Pi. A server-context readiness result cannot certify that a harness propagates its
 MCP environment to terminal children, a detached runner, a future grant or every provider write.
 Persistent terminal activation and provider adapter environment setup remain separate work.
+
+## Native terminal connection operations
+
+`vault-native-terminal` prepares Codex/Claude sessions with a private temporary descriptor.
+It is plaintext with owner-only POSIX permissions; Windows needs owner-restricted inherited
+ACLs. Rotation removes the old file, clear removes its current file, and service shutdown
+removes the private directory. A crash can leave temporary files whose tokens the restarted
+registry no longer accepts. Do not copy these files into shell profiles, service definitions,
+backups or logs. Other agents running as the same OS user are not isolated from the files.
+
+Run `loom vault terminal-readiness` in the actual agent terminal. A connection error calls for
+restarting that provider session or using hosted tools; it is not a request to sign into a
+personal password manager. An inactive run or offline enrolled broker is reported separately.
+Selected-item/version/destination grants and actual upstream readiness remain separate checks.
+
+## Production rollout procedure
+
+This procedure is a handoff, not a completed deployment. Run it only in a separately authorized
+production rollout. Never start an implementation/test process against `~/.t3/userdata`.
+No Library deployment is required for the implemented environment-local Vault services.
+
+1. Allocate the OpenBao service host and HTTPS origin under the existing begam.in/platform
+   operating conventions. Supply the hostname and TLS certificate paths explicitly. Use a
+   dedicated OS service identity and persistent Raft directory with mode 0700. Install the
+   official OpenBao 2.7.1 binary after verifying its published checksum. Keep it pinned with
+   the compatible Loom application version in the recovery inventory.
+2. Configure `api_addr` to that HTTPS origin, `cluster_addr` to the private cluster address,
+   a TLS-enabled TCP listener using the operator-supplied certificate and private key, and
+   `storage "raft"` with a persistent directory and unique node ID. Do not use dev mode,
+   `tls_disable`, the removed file backend, or credentials in the service environment.
+   Install/start the service through the existing host service manager and restrict network
+   access to the intended Loom authority. Keep the cluster port private.
+3. Initialize through the operator's authenticated administrative channel:
+   `bao operator init -key-shares=5 -key-threshold=3`. Deliver individual shares to the
+   designated recovery custodians separately from Raft storage and backups. Do not save a
+   root token or combined recovery bundle in the Loom repository, runtime home, chat or
+   backup directory. Unseal with `bao operator unseal`, entering shares interactively.
+   This procedure requires operator unseal after a cold restart; it does not establish
+   automatic unseal. A separately approved external seal authority is required to change that.
+4. With `BAO_ADDR` pointing to the chosen HTTPS origin and an administrator authenticated
+   interactively, create the mount and require CAS:
+   `bao secrets enable -path=loom kv-v2`, then `bao write loom/config cas_required=true`.
+   Choose explicit KV version retention consistent with the recovery policy.
+5. Obtain the persisted environment ID from the **owning** Loom environment's descriptor,
+   and compute its lowercase hexadecimal SHA-256 namespace. Prepare an OpenBao policy with
+   read on `loom/config`, read/create/update on that namespace's item, policy, broker and
+   profile paths, and list on item/profile metadata as described above. Review the exact
+   paths against the current adapter. Do not grant root, wildcard-environment access,
+   mount administration or Raft snapshot privileges to the Loom service credential.
+6. Install that policy with `bao policy write <environment-policy> <reviewed-policy.hcl>`.
+   Provision a renewable narrowly scoped service token using the existing secret delivery
+   mechanism. Write it to an owner-only file outside projects, set
+   `LOOM_VAULT_OPENBAO_URL`, `LOOM_VAULT_OPENBAO_TOKEN_FILE` and
+   `LOOM_VAULT_OPENBAO_MOUNT=loom` on the owning Loom service, and restart only that service
+   in the authorized rollout. Never put the token value in argv or environment variables.
+7. From an authenticated administrator client, verify backend status, then create/read/archive/
+   restore/delete a synthetic canary. Confirm another environment cannot list it. Enroll the
+   execution computer through `loom vault broker` and the reviewed administrator flow; compare
+   its fingerprint on both ends before approving. Follow the managed-broker procedure above,
+   start its heartbeat, and set `LOOM_VAULT_EXECUTION_BROKER_DIR` on the owning Loom service
+   to the reviewed private identity directory. Do not enroll or approve a machine on its behalf
+   from an agent prompt.
+8. Generate a **dedicated development** SSH key or register a dedicated GitHub App/token.
+   Register only its public key upstream. Independently verify SSH host trust. Create exact
+   item/action/destination grants and a project profile. From an actual Codex/Claude/Pi run,
+   check terminal and selected-credential readiness, perform a synthetic read operation, then
+   revoke and prove the next use fails. Test broker restart, sealed backend and network outage.
+   Keep personal 1Password/SSH configuration separate; no implicit remote migration occurs.
+9. Before entrusting real credentials, use an operator credential separate from Loom's token
+   to run `bao operator raft snapshot save <protected-snapshot>`. Transfer the encrypted
+   snapshot off-host with its checksum and compatible application/configuration version;
+   keep recovery shares separately. Restore with `bao operator raft snapshot restore` into
+   an isolated Raft service, unseal through its recovery procedure, and verify canary decryption,
+   item lifecycle, policy and host records. Record the recovery owner, retention and actual
+   recovery time/data loss. Never restore over an active authority as a verification step.
+10. Promotion is explicit: stop old-authority traffic, reconcile all post-snapshot revocations
+    and disable lost/stale machines before allowing new use, switch the selected authority,
+    then re-enroll/revalidate hosts. A stale snapshot can restore an earlier allow grant;
+    backup success alone cannot prove current revocation state. If revocation history is lost,
+    keep workload access disabled and replace/revoke the affected downstream credentials.
+    For rollback, use a compatible application reader or a matching pre-upgrade snapshot,
+    then repeat revocation reconciliation. Report actual upstream revocation outcomes separately.
+
+Until these operator checks and custody decisions are complete, the tracker remains
+**waiting on deploy** and synthetic local acceptance must not be presented as production readiness.

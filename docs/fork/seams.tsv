@@ -379,3 +379,12 @@ apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2
 apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	2
 apps/mobile/src/reactCompilerCoverage.test.ts	react-compiler	2
 vite.config.ts	ext-lint	1
+
+# Loom Vault native terminal session connection
+packages/provider-core/src/server/mcpSession.ts	ext-vault-terminal	3
+packages/provider-core/src/server/McpProviderSessions.ts	ext-vault-terminal	4
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	ext-vault-terminal	1
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	ext-vault-terminal	2
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	ext-vault-terminal	2
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	ext-vault-terminal	1
+apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	ext-vault-terminal	1

@@ -1,8 +1,9 @@
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, type ProviderInstanceId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultWorkloadError,
   VaultWorkloadOpen,
+  type VaultTerminalReadiness,
   VaultWorkloadChallengeRequest,
   VaultWorkloadProof,
   type VaultWorkloadSession,
@@ -27,6 +28,10 @@ type Failure = VaultError | VaultWorkloadError;
 export class VaultWorkloads extends Context.Service<
   VaultWorkloads,
   {
+    readonly terminalReadiness: (
+      threadId: ThreadId,
+      providerInstanceId: ProviderInstanceId,
+    ) => Effect.Effect<VaultTerminalReadiness, Failure>;
     readonly open: (
       input: VaultWorkloadOpen,
       threadId: ThreadId,
@@ -178,6 +183,41 @@ const make = Effect.gen(function* () {
     return session;
   });
   return VaultWorkloads.of({
+    terminalReadiness: Effect.fn("VaultWorkloads.terminalReadiness")(
+      function* (threadId, providerInstanceId) {
+        const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+        if (
+          !thread ||
+          thread.providerInstanceId !== providerInstanceId ||
+          thread.deletedAt !== null ||
+          thread.archivedAt !== null
+        )
+          return yield* denied();
+        const checkedAt = yield* Clock.currentTimeMillis;
+        const snapshot = yield* brokers.snapshot.pipe(
+          Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
+        );
+        return {
+          environmentId,
+          threadId,
+          providerInstanceId,
+          runId: thread.activeRunId,
+          checkedAt,
+          expiresAt: checkedAt + 60_000,
+          activeRun:
+            thread.activeRunId !== null &&
+            thread.status === "running" &&
+            thread.runtimeMode === "full-access" &&
+            thread.interactionMode === "default",
+          brokerOnline:
+            snapshot.environmentId === environmentId &&
+            snapshot.machines.some(
+              (machine) => machine.state === "active" && machine.leaseUntil > checkedAt,
+            ),
+          credentialUse: "requires-selection-and-current-grant",
+        };
+      },
+    ),
     open: Effect.fn("VaultWorkloads.open")(function* (input, threadId) {
       if (!isOpen(input)) return yield* invalid();
       yield* keys.fingerprint(input.publicKey).pipe(Effect.mapError(invalid));

@@ -174,7 +174,7 @@ MCP authority and a signed five-minute workload check. Host-bound signing and cu
 remain on the server; private keys never enter the terminal. This requires host SSH access,
 since an SSH authentication message cannot bind a repository path. Exact repository-only use
 stays on the mediated Git path. Pi/ACP terminal connections work with their existing variables;
-remaining native harnesses need explicit terminal configuration. See
+Codex/Claude now receive a private session connection-file path automatically; other native harnesses need explicit terminal configuration. See
 [L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for lifecycle and trust limits.
 
 The shared OpenBao adapter now uses a versioned serialized payload to avoid engine JSON

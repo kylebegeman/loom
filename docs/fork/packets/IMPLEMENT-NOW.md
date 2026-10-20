@@ -30,9 +30,6 @@ key creation, copying, reviewed host trust and a fixed authenticated connection 
 web/iOS and disposable SSH/OpenBao checks pass. Real Git ref listing/repeated fetches also
 pass with exact repository grants, wrong-pin/revocation/timeout denial and cleanup. Ordinary
 terminal routing, clone/push and production registration remain unfinished.
-Kyle requested that every work-cycle overview suggest a concrete next section for his approval
-until the selected work is complete. Finish the current section, report its exact verification
-and limits, then propose the next bounded section.
 
 L74/L76 now add searchable metadata references and environment/project-local SSH/Git profiles,
 with web/desktop/native management and MCP/CLI named execution. First use durably pins run
@@ -74,11 +71,11 @@ Pi and ACP terminal connections are recognized. A discovered OpenBao JSON-comple
 fixed by a versioned, legacy-readable storage envelope; encrypted persistence/restore passes.
 No live backend conversion, credential registration, service installation or deployment ran.
 
-The next proposed section for Kyle's approval is automatic terminal MCP connection setup and
-readiness for the remaining native provider harnesses, beginning with Codex and Claude. Keep
-credentials session-bound, refresh/revoke on provider lifecycle changes and verify real launched
-terminal contexts, so explicit Vault commands do not require manual connection configuration.
-Broader packet scopes remain In progress.
+Kyle authorized completing all remaining Vault sections and landing the branch on 2026-10-20.
+No additional section approvals are required. Native Codex/Claude terminal setup is implemented
+with session-owned private connection files; focused native adapter/lifecycle checks cover
+rotation, cleanup and readiness. All complete packet scopes remain tracked below. Landing waits
+for published 0.0.83. Kyle alone owns nightly release cuts; this thread must not run `loom.sh land`.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and
@@ -136,6 +133,27 @@ Kyle selected hosted previews on 2026-10-18 and approved the later slices on 202
 | Order | Packet                                    | Status                                                          | Decision                                                                              |
 | ----- | ----------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; Library deploy and client checks pending | Slices 1 to 5 are built. Slice 6, guest links, is parked under the one-operator rule. |
+
+Kyle selected all Vault packets; stable V identifiers map to these collision-free packet IDs:
+
+| Order | Packet                                                                                  | Status                             | Note                            |
+| ----- | --------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------- |
+| 12    | [L73 Headless readiness checks](./L73-vault-readiness/)                                 | In progress                        | Vault V01; full scope selected. |
+| 13    | [L74 Searchable credential references everywhere](./L74-vault-references/)              | In progress                        | Vault V02; full scope selected. |
+| 14    | [L75 Guided migration from personal credential stores](./L75-vault-migration/)          | Selected; remaining implementation | Vault V03; full scope selected. |
+| 15    | [L76 Project environment profiles](./L76-vault-profiles/)                               | In progress                        | Vault V04; full scope selected. |
+| 16    | [L77 Credential health and maintenance inbox](./L77-vault-health/)                      | Selected; remaining implementation | Vault V05; full scope selected. |
+| 17    | [L78 Explain access and preview changes](./L78-vault-access-inspector/)                 | In progress                        | Vault V06; full scope selected. |
+| 18    | [L79 Encrypted Vault and self-hosted control plane](./L79-vault-core/)                  | In progress; waiting on deploy     | Vault V07; full scope selected. |
+| 19    | [L80 Enrolled machines and headless brokers](./L80-vault-brokers/)                      | In progress                        | Vault V08; full scope selected. |
+| 20    | [L81 Agent identities and persistent access grants](./L81-vault-grants/)                | In progress                        | Vault V09; full scope selected. |
+| 21    | [L82 SSH key management and Loom SSH agent](./L82-vault-ssh/)                           | In progress                        | Vault V10; full scope selected. |
+| 22    | [L83 Developer service accounts and authentication connectors](./L83-vault-connectors/) | In progress                        | Vault V11; full scope selected. |
+| 23    | [L84 Test account collections and provisioning](./L84-vault-test-accounts/)             | Selected; remaining implementation | Vault V12; full scope selected. |
+| 24    | [L85 Credential delivery API, CLI, and runner integrations](./L85-vault-delivery/)      | In progress                        | Vault V13; full scope selected. |
+| 25    | [L86 Remote approvals and temporary access](./L86-vault-approvals/)                     | Selected; remaining implementation | Vault V14; full scope selected. |
+| 26    | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Selected; remaining implementation | Vault V15; full scope selected. |
+| 27    | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Selected; remaining implementation | Vault V16; full scope selected. |
 
 ## Candidates for the queue
 

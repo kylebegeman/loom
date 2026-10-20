@@ -16,13 +16,21 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-Services, signed SSH/Git contracts and hosted operations use existing fork-owned registries.
-There is no SQL migration, production dependency or new web/native control. One upstream file,
-`packages/provider-core/src/server/orchestrationInstructions.ts`, imports fork-owned Vault
-guidance and prepends it through the existing provider instruction constant. Both marked
-`fork: ext-vault` lines are registered in FORK.md and `docs/fork/seams.tsv`; no provider adapter
-is edited. This shared instruction boundary is recorded in EXTENSION-POINTS.md. Ordinary
-terminal environment attachment and additional delivery modes still need integration review.
+Services, signed SSH/Git contracts and hosted operations use fork-owned registries.
+The existing provider instruction seam adds a separate Vault instruction section, keeping main's
+orchestration section order and the native Codex per-entry size limit intact.
+
+Native terminal setup adds `fork: ext-vault-terminal` in:
+
+- `packages/provider-core/src/server/mcpSession.ts`: optional private connection-file path and environment helper.
+- `packages/provider-core/src/server/McpProviderSessions.ts`: file creation, rotation and cleanup tied to provider sessions.
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`: thread shell environment path, refreshed on start/resume.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`: current session path in the query environment; changed MCP identity recreates the query.
+- The two adapter tests and `ProviderSessionManager.test.ts`: configuration and lifecycle regressions, including asynchronous file cleanup after the parallel shutdown deadline.
+
+All are listed in FORK.md and the seam manifest. File IO and connection parsing remain
+in fork-owned modules. No SQL migration, runtime dependency, global shell setup or production
+infrastructure change is introduced.
 
 GitHub terminal routing/readiness extends fork-owned contracts, adapters, services, CLI/MCP,
 protected RPC registrations and web/native settings. It adds no upstream seams, dependencies,
