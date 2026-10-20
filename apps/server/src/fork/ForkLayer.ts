@@ -1,3 +1,4 @@
+import * as VaultReadiness from "./vault/VaultReadiness.ts";
 import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
 import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
 import * as OperationAdmission from "./vault/OperationAdmission.ts";
@@ -159,6 +160,9 @@ const layerVaultHealthContext = VaultHealthContext.layer.pipe(
     Layer.mergeAll(layerVaultCore, layerVaultProfiles, layerVaultAccess, ProjectStore.layer),
   ),
 );
+const layerVaultReadiness = VaultReadiness.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultAccess, layerVaultWorkloads, layerVaultProfiles)),
+);
 const layerVaultReferences = VaultReferences.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess)),
 );
@@ -230,6 +234,7 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),
+  layerVaultReadiness,
   layerVaultProfiles,
   layerVaultReferences,
   layerVaultLaunch,

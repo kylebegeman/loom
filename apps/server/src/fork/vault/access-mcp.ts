@@ -25,6 +25,7 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as OperationJournal from "./OperationJournal.ts";
 const failure = Schema.Union([VaultError, OrchestratorMcpFailure]);
@@ -114,7 +115,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_readiness", {
     description:
-      "Check the authenticated thread's declared Vault requirements in the Loom server context. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
+      "Check declared requirements, or discover the active project profile when none are supplied, with current provider/run and relevant enrolled-broker presence in the Loom server context. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
     parameters: ownReadiness,
     success: VaultReadinessReport,
     failure,
@@ -270,8 +271,11 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
             if (!input.threadId) return yield* new VaultError({ reason: "invalid-input" });
           }
           return yield* onHost(
-            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
-              access.readiness({ ...input, threadId: caller.thread?.threadId ?? input.threadId! }),
+            Effect.flatMap(VaultReadiness.VaultReadiness, (readiness) =>
+              readiness.check({
+                requirements: input.requirements,
+                threadId: caller.thread?.threadId ?? input.threadId!,
+              }),
             ),
           );
         }),

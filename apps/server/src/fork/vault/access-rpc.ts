@@ -9,12 +9,14 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
+import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers")(function* (
   auth: ForkRpcAuth,
   actor: string,
 ) {
   const access = yield* VaultAccess.VaultAccess;
+  const readiness = yield* VaultReadiness.VaultReadiness;
   return {
     [V.approvalInbox]: () => auth.effect(V.approvalInbox, access.approvalInbox),
     [V.approvalCreate]: (input: VaultApprovalCreate) =>
@@ -45,7 +47,6 @@ export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers
     [V.preview]: (input: VaultGrantMutation) =>
       auth.effect(V.preview, access.preview(input, actor)),
     [V.explain]: (input: VaultDecisionInput) => auth.effect(V.explain, access.explain(input)),
-    [V.readiness]: (input: VaultReadinessInput) =>
-      auth.effect(V.readiness, access.readiness(input)),
+    [V.readiness]: (input: VaultReadinessInput) => auth.effect(V.readiness, readiness.check(input)),
   };
 });

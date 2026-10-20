@@ -723,3 +723,23 @@ while cleanup is unavailable. A manager must independently check/reset and mark 
 These agent tools return account references and leases, not passwords or a logged-in browser.
 Login delivery remains unavailable. Other runs' reservations and accounts without the required
 grants do not appear in discovery.
+
+## Find references from an authenticated terminal
+
+Run `loom vault references-complete editor --kind account` to get active reference candidates
+for a terminal picker or completion function. It prints up to 20 canonical references, one per
+line, without labels or values. Searches use the terminal's current Loom connection and the
+calling thread's inspect grants; they never combine environments. Use `references-search` with
+its continuation cursor when you need a complete large-vault search.
+
+`loom vault test-accounts` shows eligible dedicated accounts and your run's leases. Use
+`test-account-apply` with the same JSON operation as the authenticated account tool to reserve,
+renew or release one. For waiting access requests, the CLI also exposes `access-request`,
+`access-request-status`, `access-request-cancel`, `access-retry-prepare` and
+`access-recovery-status`. These report or prepare existing requests; they do not approve access
+or execute a prepared retry.
+
+An empty readiness request now checks the active project profile. Missing bindings, stale broker
+presence and a permission-limited or changed provider run include repair guidance. Supplying
+explicit requirements checks those instead. Profile configuration and broker presence do not
+prove an upstream login; use a supported explicit connection check for that destination.
