@@ -24,6 +24,7 @@ import {
   BOTS_STARTERS_FEATURE,
   BOTS_TRIGGERS_FEATURE,
   BOTS_VERDICTS_FEATURE,
+  BOTS_VERSIONS_FEATURE,
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
@@ -50,6 +51,7 @@ export function useBotsHost() {
     budgetsSupported: supportsLoomFeature(capabilities, BOTS_BUDGETS_FEATURE),
     fromThreadSupported: supportsLoomFeature(capabilities, BOTS_FROM_THREAD_FEATURE),
     triggersSupported: supportsLoomFeature(capabilities, BOTS_TRIGGERS_FEATURE),
+    versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
   };
 }
 

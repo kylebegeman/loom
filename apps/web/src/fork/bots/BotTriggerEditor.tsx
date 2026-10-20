@@ -25,6 +25,7 @@ import {
   type MappingDraft,
   type MappingMode,
   type TriggerDraft,
+  type TriggerFollow,
 } from "./triggerDraft";
 import { bots } from "./state";
 
@@ -46,6 +47,7 @@ export function BotTriggerEditor({
   bot,
   trigger,
   canSave,
+  stableSupported,
   onClose,
   onSaved,
 }: {
@@ -53,6 +55,8 @@ export function BotTriggerEditor({
   readonly bot: BotDefinition;
   readonly trigger: BotTrigger | null;
   readonly canSave: boolean;
+  /** Older servers keep no stable version. */
+  readonly stableSupported: boolean;
   readonly onClose: () => void;
   readonly onSaved: (trigger: BotTrigger) => void;
 }) {
@@ -353,13 +357,21 @@ export function BotTriggerEditor({
             />
           </LibraryField>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={draft.followLatest}
-            onCheckedChange={(followLatest) => update({ followLatest })}
-          />
-          Always run the latest version of {bot.name}
-        </label>
+        <Choice<TriggerFollow>
+          label="Version to run"
+          value={draft.follow}
+          options={[
+            [
+              "pinned",
+              trigger ? `v${trigger.pinnedVersion}, saved with this trigger` : `v${bot.version}`,
+            ],
+            ["latest", "The latest version"],
+            ...(stableSupported || draft.follow === "stable"
+              ? [["stable", "The stable version, or the latest while none is marked"] as const]
+              : []),
+          ]}
+          onChange={(follow) => update({ follow })}
+        />
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} />
           On

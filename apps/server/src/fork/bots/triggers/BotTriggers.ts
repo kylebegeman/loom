@@ -53,7 +53,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
 /** A firing row's reason until its outcome is written, so a crash in between explains itself. */
 const INTERRUPTED = "The server stopped before this firing finished.";
-export const BOT_CHANGED = "Bot changed since this trigger was set.";
+export const BATCH_NEEDS_LATEST =
+  "A batch runs the bot's latest version; pin this trigger to it or let it follow the latest.";
+const BOTH_FOLLOWS = "A trigger follows either the latest or the stable version, not both.";
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
 
@@ -202,6 +204,8 @@ export const make = Effect.gen(function* () {
       bot,
       existing === null ? caller : { ...caller, runtimeMode: existing.creatorRuntimeMode },
     );
+    if (input.followLatest && input.followStable === true)
+      return yield* fail("invalid", BOTH_FOLLOWS);
     const mappingError = checkTriggerMapping(bot, input.event, input.mapping);
     if (mappingError !== null) return yield* fail("invalid", mappingError);
 
@@ -234,6 +238,7 @@ export const make = Effect.gen(function* () {
       cooldownMinutes: input.cooldownMinutes,
       dailyLimit: input.dailyLimit,
       followLatest: input.followLatest,
+      ...(input.followStable === true ? { followStable: true } : {}),
       pinnedVersion: existing?.trigger.pinnedVersion ?? bot.version,
       createdBy: existing?.trigger.createdBy ?? caller.actor,
       createdAt: existing?.trigger.createdAt ?? now,
@@ -285,18 +290,23 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  /** Pins the bot's current version; earlier versions need L98's history. */
+  /** Pins any stored version of the bot, its current one when none is named. */
   const repin = Effect.fn("BotTriggers.repin")(function* (input: BotsRepinTriggerInput) {
     const stored = yield* requireStored(input.triggerId);
     const bot = yield* bots.get(stored.trigger.botId);
-    if (input.version !== undefined && input.version !== bot.version)
-      return yield* fail("invalid", `Only the current version, ${bot.version}, can be pinned.`);
+    const version = input.version ?? bot.version;
+    if (version !== bot.version) yield* bots.version({ botId: bot.id, version });
+    const followLatest = input.followLatest ?? stored.trigger.followLatest;
+    const followStable = input.followStable ?? stored.trigger.followStable === true;
+    if (followLatest && followStable) return yield* fail("invalid", BOTH_FOLLOWS);
+    const { followStable: _followStable, ...rest } = stored.trigger;
     return yield* write({
       ...stored,
       trigger: {
-        ...stored.trigger,
-        pinnedVersion: bot.version,
-        followLatest: input.followLatest ?? stored.trigger.followLatest,
+        ...rest,
+        pinnedVersion: version,
+        followLatest,
+        ...(followStable ? { followStable: true } : {}),
         updatedAt: yield* nowIso,
       },
     });
@@ -331,7 +341,21 @@ export const make = Effect.gen(function* () {
     const bot = yield* bots.get(trigger.botId).pipe(Effect.option);
     if (bot._tag === "None")
       return { outcome: "skipped", runId: null, reason: "The bot was deleted." };
-    const definition = bot.value;
+    // A version that cannot run still names the bot on the skipped run it records.
+    const pinned = yield* bots
+      .definitionAt(
+        trigger.botId,
+        trigger.followLatest
+          ? "latest"
+          : trigger.followStable === true
+            ? "stable"
+            : trigger.pinnedVersion,
+      )
+      .pipe(
+        Effect.map((definition) => ({ definition, problem: null })),
+        Effect.catch((error) => Effect.succeed({ definition: bot.value, problem: error.message })),
+      );
+    const { definition } = pinned;
     const caller: BotCaller = {
       actor: trigger.createdBy,
       threadId: null,
@@ -370,13 +394,13 @@ export const make = Effect.gen(function* () {
           `Already started ${trigger.dailyLimit} run${trigger.dailyLimit === 1 ? "" : "s"} in the last 24 hours.`,
         );
     }
-    if (definition.version !== trigger.pinnedVersion && !trigger.followLatest)
-      return yield* skip(BOT_CHANGED);
+    if (pinned.problem !== null) return yield* skip(pinned.problem);
     const runnable = yield* bots.checkRunnable(definition, caller).pipe(Effect.flip, Effect.option);
     if (runnable._tag === "Some") return yield* skip(runnable.value.message);
 
     if (event.items !== undefined) {
       if (event.items.length === 0) return yield* skip("The report listed no conflicting files.");
+      if (definition.version !== bot.value.version) return yield* skip(BATCH_NEEDS_LATEST);
       return yield* batches
         .runBatch(
           {

@@ -185,8 +185,11 @@ Each trigger fires once per event, however often Loom sees it, and waits out its
 held back becomes a skipped run in the inbox with the reason, and **Firings** on the trigger lists
 recent firings with the run each one started.
 
-A trigger runs the bot version it was saved with. When the bot changes, its firings are skipped
-until you choose **Use version N** on the trigger, or turn on **Always run the latest version**.
+**Version to run** chooses which version of the bot a trigger starts: the version it was saved
+with, the latest version, or the stable version (the latest while none is marked). A trigger
+pinned to an older version keeps running it; choose **Use version N** on the trigger to move it to
+the current one. A merge conflict trigger runs a batch, which always uses the latest version, so
+pinned to an older one its firings are skipped.
 
 **Test** fires the trigger once with event fields you enter. It skips the filters, cooldown and
 daily limit, and starts a real run.
@@ -204,6 +207,30 @@ For merge conflicts, set `LOOM_BOTS_CONFLICT_HOOK` to the address before running
 `scripts/fork/loom.sh integrate`. The script posts the conflicting files and carries on whether or
 not the post succeeds.
 
+## Versions and replay
+
+Every save keeps the bot as a numbered version, and every run records the version it used. Open a
+bot and choose the **History** tab to see each version, who saved it, what it changed, and how its
+runs went. **Compare with vN** shows the brief as a diff and every other changed field side by
+side. **Restore** saves an old version again as a new one, so nothing in the history is lost.
+Version numbers never repeat, even after a bot is deleted and made again.
+
+**Mark stable** flags the version you trust. Triggers set to the stable version run it while you
+keep editing; without one, they run the latest.
+
+Mark a finished run **Good** or **Bad** on its row. In the editor, **Suggest an edit** asks the
+bot's model to change the brief so later runs avoid what the Bad runs got wrong, keeping what the
+Good runs got right. It needs at least one Bad run, takes up to three minutes, and fills the
+editor without saving.
+
+To check an edit before saving it, choose **Try on past runs** in the editor, or **Replay** on a
+version in History. Pick up to 20 finished runs (rated runs come first) and Loom runs each one's
+inputs again, then shows the new result beside the original: **Fixed** or **Broke** when a
+verdict changed between passing and failing, **Same** or **Changed** otherwise. Replays count
+toward the bot's budget, and the whole replay must fit in it before it starts. Replay runs appear
+in the run list with a **Replay** badge but never reach the inbox. **Cancel replay** stops runs in
+flight and skips the rest.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over
@@ -212,6 +239,8 @@ An agent that starts a run without waiting for it can ask to be told when it end
 then arrives in its thread like a finished delegated task. A bot run cannot start another bot.
 Agents list and save triggers with `loom_bots_triggers`, `loom_bots_save_trigger` and
 `loom_bots_set_trigger_enabled`.
+They read history with `loom_bots_versions`, rate runs with `loom_bots_rate_run`, and start a
+replay with `loom_bots_replay`, then follow it with `loom_bots_replay_status`.
 
 ## Archiving and deleting
 

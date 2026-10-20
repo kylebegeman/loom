@@ -9,7 +9,7 @@ import {
   type BotTrigger,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
-import { applyBatchChanges, applyRunChanges } from "@t3tools/client-runtime/fork";
+import { applyBatchChanges, applyRunChanges, botVersionLabel } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -24,6 +24,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryPermission } from "../project-library/state";
 import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
+import { BotHistory } from "./BotHistory";
+import { BotReplayDialog, type BotReplaySourceChoice } from "./BotReplay";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
 import { BotTriggerEditor } from "./BotTriggerEditor";
@@ -44,9 +46,11 @@ import {
 } from "./state";
 
 type Editing = { readonly bot: BotDefinition | null } | null;
+type Replaying = { readonly bot: BotDefinition; readonly source: BotReplaySourceChoice } | null;
 
 const TAB_LABELS = {
   runs: "Runs",
+  history: "History",
   batches: "Batches",
   triggers: "Triggers",
   inbox: "Inbox",
@@ -125,6 +129,9 @@ export function BotsPage() {
   const canSave = useLibraryPermission(bots.save, environmentId) && host.connected;
   const canRun = useLibraryPermission(bots.run, environmentId) && host.connected;
   const canCancel = useLibraryPermission(bots.cancel, environmentId) && host.connected;
+  const canRate = useLibraryPermission(bots.rateRun, environmentId) && host.connected;
+  const canReplay = useLibraryPermission(bots.replay, environmentId) && host.connected;
+  const versionsLive = live && host.versionsSupported;
   const archive = useAtomCommand(bots.archive, { reportFailure: false });
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
   const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
@@ -137,6 +144,7 @@ export function BotsPage() {
   const [editingTrigger, setEditingTrigger] = useState<BotTrigger | null>(null);
   const tabs = [
     "runs" as const,
+    ...(versionsLive && selectedId !== undefined ? (["history"] as const) : []),
     ...(batchesLive ? (["batches"] as const) : []),
     ...(triggersLive ? (["triggers"] as const) : []),
     ...(inboxLive ? (["inbox"] as const) : []),
@@ -170,6 +178,7 @@ export function BotsPage() {
       : starters.find((starter) => starter.starterId === bot.origin?.starterId);
   const removedStarters = starters.filter((starter) => starter.state === "removed");
   const [editing, setEditing] = useState<Editing>(null);
+  const [replaying, setReplaying] = useState<Replaying>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -348,6 +357,9 @@ export function BotsPage() {
                   >
                     <span className="truncate">{bot.name}</span>
                     {bot.archivedAt ? " (archived)" : ""}
+                    {bot.stableVersion != null && bot.stableVersion !== bot.version ? (
+                      <span className="text-xs text-muted-foreground">{botVersionLabel(bot)}</span>
+                    ) : null}
                     <StarterBadge status={starterOf(bot)} />
                   </Button>
                 ))}
@@ -398,7 +410,7 @@ export function BotsPage() {
                           {selected.archivedAt ? <Badge variant="secondary">Archived</Badge> : null}
                           <StarterBadge status={starterOf(selected)} />
                           <span className="text-xs text-muted-foreground">
-                            Version {selected.version}
+                            {botVersionLabel(selected)}
                           </span>
                         </div>
                         {selected.description ? (
@@ -478,7 +490,19 @@ export function BotsPage() {
                     ))}
                   </div>
                 ) : null}
-                {tab === "usage" ? (
+                {tab === "history" && selected ? (
+                  <BotHistory
+                    key={selected.id}
+                    environmentId={environmentId}
+                    bot={selected}
+                    connected={host.connected}
+                    canSave={canSave}
+                    canRun={canReplay}
+                    onReplay={(version) =>
+                      setReplaying({ bot: selected, source: { kind: "version", version } })
+                    }
+                  />
+                ) : tab === "usage" ? (
                   <BotsUsage
                     environmentId={environmentId}
                     changes={changes}
@@ -591,6 +615,7 @@ export function BotsPage() {
                         runs={runs}
                         showBot={selected === null || selected === undefined}
                         canCancel={canCancel}
+                        canRate={host.versionsSupported && canRate}
                         emptyMessage={
                           verdict !== undefined
                             ? "No run matches this verdict."
@@ -620,6 +645,9 @@ export function BotsPage() {
           startersSupported={host.startersSupported}
           verdictsSupported={host.verdictsSupported}
           budgetsSupported={host.budgetsSupported}
+          versionsSupported={host.versionsSupported}
+          canReplay={canReplay}
+          onReplay={(bot, draft) => setReplaying({ bot, source: { kind: "draft", draft } })}
           onClose={() => setEditing(null)}
           onSaved={(bot) => {
             setEditing(null);
@@ -658,6 +686,7 @@ export function BotsPage() {
           bot={newTriggerBot}
           trigger={null}
           canSave={canOperateTriggers}
+          stableSupported={host.versionsSupported}
           onClose={() => go({ bot: search.bot, tab: search.tab })}
           onSaved={(trigger) => go({ bot: trigger.botId, tab: "triggers" })}
         />
@@ -669,8 +698,18 @@ export function BotsPage() {
           bot={editingTriggerBot}
           trigger={editingTrigger}
           canSave={canOperateTriggers}
+          stableSupported={host.versionsSupported}
           onClose={() => setEditingTrigger(null)}
           onSaved={() => setEditingTrigger(null)}
+        />
+      ) : null}
+      {replaying && environmentId ? (
+        <BotReplayDialog
+          environmentId={environmentId}
+          bot={replaying.bot}
+          source={replaying.source}
+          canRun={canReplay}
+          onClose={() => setReplaying(null)}
         />
       ) : null}
       {manyTarget && environmentId ? (

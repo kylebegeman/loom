@@ -1,6 +1,7 @@
 import {
   CommandId,
   ThreadId,
+  type ModelSelection,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
@@ -127,12 +128,95 @@ export const mergeRefinement = (
   return merged === null || checkParameters(merged) !== null ? null : merged;
 };
 
+/**
+ * Asks a model one question in a hidden thread that cannot change files, and returns its last
+ * reply. Null when it took longer than `REFINE_TIMEOUT_MS`. The thread is archived afterwards.
+ */
+export const makeDraftingThread = Effect.gen(function* () {
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const launches = yield* ThreadLaunch.ThreadLaunchService;
+  const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+
+  const ask = Effect.fn("BotDrafts.ask")(function* (request: {
+    readonly title: string;
+    readonly modelSelection: ModelSelection;
+    readonly text: string;
+  }) {
+    const scratch = yield* folders.ensureScratchProject.pipe(
+      Effect.mapError((error) =>
+        fail("launch", `Loom could not prepare a scratch folder: ${errorMessage(error)}`),
+      ),
+    );
+    const id = yield* randomUuidV4;
+    const threadId = ThreadId.make(`${DRAFT_THREAD_PREFIX}${id}`);
+    const target = { projectId: scratch.projectId, threadId };
+    const archive = threads
+      .dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make(`bot-draft:${id}:archive`),
+        threadId,
+      })
+      .pipe(Effect.ignore({ log: true }));
+    const interrupt = (reason: string) =>
+      threads
+        .interruptThread({
+          ...target,
+          commandId: CommandId.make(`bot-draft:${id}:interrupt`),
+          reason,
+        })
+        .pipe(Effect.ignore({ log: true }));
+
+    return yield* Effect.gen(function* () {
+      yield* launches
+        .launch({
+          ...target,
+          commandId: CommandId.make(`bot-draft:${id}`),
+          title: request.title,
+          generateTitle: false,
+          modelSelection: request.modelSelection,
+          // `plan` could answer with a proposed plan instead of a message, so the mode that
+          // cannot change files without approval is what keeps the drafting agent read-only.
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          workspaceStrategy: { type: "root" },
+          initialMessage: {
+            text: request.text,
+            attachments: [],
+          },
+          createdBy: "user",
+          creationSource: "server",
+        })
+        .pipe(Effect.mapError((error) => fail("launch", errorMessage(error))));
+      const waited = yield* threads
+        .waitForThread({ ...target, timeoutMs: REFINE_TIMEOUT_MS })
+        .pipe(Effect.mapError((error) => fail("launch", errorMessage(error))));
+      if (waited.timedOut) {
+        yield* interrupt("Drafting the bot took too long.");
+        yield* threads.waitForThread({ ...target, timeoutMs: REFINE_GRACE_MS }).pipe(Effect.ignore);
+        return null;
+      }
+      return yield* threads.getProjectThreadRecords(target, ["messages"]).pipe(
+        Effect.map(
+          (records) =>
+            records.messages.findLast((message) => message.role === "assistant")?.text ?? null,
+        ),
+        Effect.orElseSucceed(() => null),
+      );
+    }).pipe(
+      Effect.onInterrupt(() => interrupt("Drafting the bot was cancelled.")),
+      Effect.ensuring(archive),
+    );
+  });
+
+  return { ask };
+});
+
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* makeSuggestionsStore;
   const threads = yield* ThreadManagement.ThreadManagementService;
-  const launches = yield* ThreadLaunch.ThreadLaunchService;
   const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const drafting = yield* makeDraftingThread;
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const storageError = (cause: unknown) =>
@@ -191,70 +275,11 @@ export const make = Effect.gen(function* () {
    */
   const refine = Effect.fn("BotDrafts.refine")(function* (input: BotsRefineDraftInput) {
     const { shell, brief } = yield* readThread(input.threadId);
-    const scratch = yield* folders.ensureScratchProject.pipe(
-      Effect.mapError((error) =>
-        fail("launch", `Loom could not prepare a scratch folder: ${errorMessage(error)}`),
-      ),
-    );
-    const id = yield* randomUuidV4;
-    const threadId = ThreadId.make(`${DRAFT_THREAD_PREFIX}${id}`);
-    const target = { projectId: scratch.projectId, threadId };
-    const archive = threads
-      .dispatch({
-        type: "thread.archive",
-        commandId: CommandId.make(`bot-draft:${id}:archive`),
-        threadId,
-      })
-      .pipe(Effect.ignore({ log: true }));
-    const interrupt = (reason: string) =>
-      threads
-        .interruptThread({
-          ...target,
-          commandId: CommandId.make(`bot-draft:${id}:interrupt`),
-          reason,
-        })
-        .pipe(Effect.ignore({ log: true }));
-
-    const reply = yield* Effect.gen(function* () {
-      yield* launches
-        .launch({
-          ...target,
-          commandId: CommandId.make(`bot-draft:${id}`),
-          title: `Refine ${input.draft.name}`,
-          generateTitle: false,
-          modelSelection: shell.modelSelection,
-          // `plan` could answer with a proposed plan instead of a message, so the mode that
-          // cannot change files without approval is what keeps the drafting agent read-only.
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workspaceStrategy: { type: "root" },
-          initialMessage: {
-            text: `${REFINE_DRAFT_REQUEST}\n\n## Draft\n\n${encodeDraft(input.draft)}\n\n## Original request\n\n${brief.text}`,
-            attachments: [],
-          },
-          createdBy: "user",
-          creationSource: "server",
-        })
-        .pipe(Effect.mapError((error) => fail("launch", errorMessage(error))));
-      const waited = yield* threads
-        .waitForThread({ ...target, timeoutMs: REFINE_TIMEOUT_MS })
-        .pipe(Effect.mapError((error) => fail("launch", errorMessage(error))));
-      if (waited.timedOut) {
-        yield* interrupt("Refining the bot draft took too long.");
-        yield* threads.waitForThread({ ...target, timeoutMs: REFINE_GRACE_MS }).pipe(Effect.ignore);
-        return null;
-      }
-      return yield* threads.getProjectThreadRecords(target, ["messages"]).pipe(
-        Effect.map(
-          (records) =>
-            records.messages.findLast((message) => message.role === "assistant")?.text ?? null,
-        ),
-        Effect.orElseSucceed(() => null),
-      );
-    }).pipe(
-      Effect.onInterrupt(() => interrupt("Refining the bot draft was cancelled.")),
-      Effect.ensuring(archive),
-    );
+    const reply = yield* drafting.ask({
+      title: `Refine ${input.draft.name}`,
+      modelSelection: shell.modelSelection,
+      text: `${REFINE_DRAFT_REQUEST}\n\n## Draft\n\n${encodeDraft(input.draft)}\n\n## Original request\n\n${brief.text}`,
+    });
 
     const merged = reply === null ? null : mergeRefinement(input.draft, reply);
     return {

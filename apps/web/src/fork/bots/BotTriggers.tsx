@@ -316,7 +316,10 @@ function TriggerRow({
     });
 
   const outdated =
-    bot !== undefined && !trigger.followLatest && bot.version !== trigger.pinnedVersion;
+    bot !== undefined &&
+    !trigger.followLatest &&
+    trigger.followStable !== true &&
+    bot.version !== trigger.pinnedVersion;
   return (
     <li className="space-y-2 rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -324,6 +327,11 @@ function TriggerRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{trigger.name}</span>
             {trigger.enabled ? null : <Badge variant="secondary">Off</Badge>}
+            {trigger.followLatest ? (
+              <Badge variant="outline">Latest version</Badge>
+            ) : trigger.followStable === true ? (
+              <Badge variant="outline">Stable version</Badge>
+            ) : null}
             {showBot ? (
               <span className="text-xs text-muted-foreground">{bot?.name ?? "Deleted bot"}</span>
             ) : null}

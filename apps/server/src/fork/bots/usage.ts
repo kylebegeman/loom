@@ -134,6 +134,7 @@ const byModel = (
 const usageRow = (runs: ReadonlyArray<BotRun>, bot: BotDefinition | undefined): BotUsageRow => {
   const count = (status: BotRun["status"]) => runs.filter((run) => run.status === status).length;
   const times = durations(runs);
+  const replays = runs.filter((run) => run.replayId != null).length;
   return {
     botId: runs[0]!.botId,
     botName: bot?.name ?? runs[0]!.botName,
@@ -149,6 +150,7 @@ const usageRow = (runs: ReadonlyArray<BotRun>, bot: BotDefinition | undefined): 
     tokens: sumTokens(runs),
     usageComplete: !runs.some(lacksUsage),
     byModel: byModel(runs, bot),
+    ...(replays === 0 ? {} : { replays }),
   };
 };
 

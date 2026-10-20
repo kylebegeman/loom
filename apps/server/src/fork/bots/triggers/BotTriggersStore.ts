@@ -23,6 +23,7 @@ const Settings = Schema.Struct({
   mapping: BotTriggerMapping,
   cooldownMinutes: Schema.Int,
   dailyLimit: Schema.Int,
+  followStable: Schema.optionalKey(Schema.Boolean),
 });
 const settingsJson = Schema.fromJsonString(Settings);
 const decodeSettings = Schema.decodeUnknownOption(settingsJson);
@@ -132,6 +133,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
         mapping: trigger.mapping,
         cooldownMinutes: trigger.cooldownMinutes,
         dailyLimit: trigger.dailyLimit,
+        ...(trigger.followStable === true ? { followStable: true } : {}),
       });
       yield* sql`INSERT INTO fork_bots_triggers (id, bot_id, trigger_json, enabled, pinned_version, follow_latest, created_by, creator_runtime_mode, webhook_token, webhook_secret, next_fire_at, last_fired_at, created_at, updated_at) VALUES (${trigger.id}, ${trigger.botId}, ${json}, ${trigger.enabled ? 1 : 0}, ${trigger.pinnedVersion}, ${trigger.followLatest ? 1 : 0}, ${trigger.createdBy}, ${stored.creatorRuntimeMode}, ${stored.webhookToken}, ${stored.webhookSecret}, ${trigger.nextFireAt ?? null}, ${trigger.lastFiredAt}, ${trigger.createdAt}, ${trigger.updatedAt}) ON CONFLICT(id) DO UPDATE SET trigger_json = excluded.trigger_json, enabled = excluded.enabled, pinned_version = excluded.pinned_version, follow_latest = excluded.follow_latest, webhook_token = excluded.webhook_token, webhook_secret = excluded.webhook_secret, next_fire_at = excluded.next_fire_at, updated_at = excluded.updated_at`;
     }),

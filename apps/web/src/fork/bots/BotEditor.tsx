@@ -3,6 +3,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react";
 import type { EnvironmentId, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import type {
   BotDefinition,
+  BotDefinitionInput,
   BotDraftResult,
   BotOutput,
   BotParameterType,
@@ -192,6 +193,9 @@ export function BotEditor({
   startersSupported,
   verdictsSupported,
   budgetsSupported,
+  versionsSupported = false,
+  canReplay = false,
+  onReplay,
   onSaved,
   onClose,
 }: {
@@ -207,6 +211,11 @@ export function BotEditor({
   readonly verdictsSupported: boolean;
   /** Older servers have no budgets. */
   readonly budgetsSupported: boolean;
+  /** Older servers keep no history, so they can neither suggest an edit nor replay. */
+  readonly versionsSupported?: boolean;
+  readonly canReplay?: boolean;
+  /** Tries the unsaved draft on the bot's past runs. */
+  readonly onReplay?: (bot: BotDefinition, draft: BotDefinitionInput) => void;
   readonly onSaved: (bot: BotDefinition) => void;
   readonly onClose: () => void;
 }) {
@@ -224,9 +233,11 @@ export function BotEditor({
   // A drafted id is already free on the server; renaming must not trade it for a taken one.
   const [idTouched, setIdTouched] = useState(bot !== null || fromThread !== undefined);
   const [notes, setNotes] = useState(fromThread?.notes ?? []);
-  const [refining, setRefining] = useState(false);
+  /** What the model is drafting, shown while it works; null when idle. */
+  const [refining, setRefining] = useState<string | null>(null);
   const refineAttempt = useRef(0);
   const refineDraft = useAtomCommand(bots.refineDraft, { reportFailure: false });
+  const suggestEdit = useAtomCommand(bots.suggestEdit, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.save, { reportFailure: false });
@@ -243,45 +254,80 @@ export function BotEditor({
   const projectTitle = (id: string) =>
     projects.find((project) => project.id === id)?.title ?? (id === ANY_PROJECT ? "" : id);
 
+  // Only the newest attempt may replace the draft, so a cancelled one that finishes is ignored.
+  const draftWithModel = async (
+    status: string,
+    work: () => Promise<
+      Awaited<ReturnType<typeof refineDraft>> | Awaited<ReturnType<typeof suggestEdit>>
+    >,
+    fallbackNote: string,
+    failure: string,
+  ) => {
+    const attempt = ++refineAttempt.current;
+    setRefining(status);
+    setError(null);
+    try {
+      const result = await work();
+      if (attempt !== refineAttempt.current) return;
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      setDraft(botDraft(result.value.draft));
+      setNotes(result.value.notes.length > 0 ? result.value.notes : [fallbackNote]);
+    } catch (cause) {
+      if (attempt === refineAttempt.current)
+        setError(cause instanceof Error ? cause.message : failure);
+    } finally {
+      if (attempt === refineAttempt.current) setRefining(null);
+    }
+  };
+
   const refine = async () => {
-    if (!fromThread || refining || busy || !canSave) return;
+    if (!fromThread || refining !== null || busy || !canSave) return;
     const checked = refineInputFromDraft(draft);
     if (!checked.ok) {
       setError(checked.message);
       return;
     }
-    const attempt = ++refineAttempt.current;
-    setRefining(true);
-    setError(null);
-    try {
-      const result = await refineDraft({
-        environmentId,
-        input: { threadId: fromThread.sourceThreadId, draft: checked.draft },
-      });
-      if (attempt !== refineAttempt.current) return;
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setDraft(botDraft(result.value.draft));
-      setNotes(
-        result.value.notes.length > 0
-          ? result.value.notes
-          : ["Refined by the model. Check the draft before saving."],
-      );
-    } catch (cause) {
-      if (attempt === refineAttempt.current)
-        setError(cause instanceof Error ? cause.message : "Could not refine the draft.");
-    } finally {
-      if (attempt === refineAttempt.current) setRefining(false);
+    await draftWithModel(
+      "Refining with the thread's model. This can take up to three minutes.",
+      () =>
+        refineDraft({
+          environmentId,
+          input: { threadId: fromThread.sourceThreadId, draft: checked.draft },
+        }),
+      "Refined by the model. Check the draft before saving.",
+      "Could not refine the draft.",
+    );
+  };
+
+  const suggest = async () => {
+    if (!bot || refining !== null || busy || !canSave) return;
+    await draftWithModel(
+      "Reading the runs rated Bad. This can take up to three minutes.",
+      () => suggestEdit({ environmentId, input: { botId: bot.id } }),
+      "Suggested by the model. Check the edit, or try it on past runs, before saving.",
+      "Could not suggest an edit.",
+    );
+  };
+
+  const tryOnPastRuns = () => {
+    if (!bot || !onReplay) return;
+    const checked = refineInputFromDraft(draft);
+    if (!checked.ok) {
+      setError(checked.message);
+      return;
     }
+    setError(null);
+    onReplay(bot, checked.draft);
   };
 
   // Stops waiting only; the drafting thread still ends at its own time limit.
   const cancelRefine = () => {
     refineAttempt.current += 1;
-    setRefining(false);
+    setRefining(null);
   };
 
   const submit = async () => {
-    if (busy || refining || !canSave) return;
+    if (busy || refining !== null || !canSave) return;
     const checked = saveInputFromDraft(draft, bot?.version);
     if (!checked.ok) {
       setError(checked.message);
@@ -357,21 +403,39 @@ export function BotEditor({
       }
       actions={
         <>
-          {fromThread ? (
-            refining ? (
-              <Button variant="outline" className="sm:me-auto" onClick={cancelRefine}>
-                Cancel refining
-              </Button>
-            ) : (
+          {refining !== null ? (
+            <Button variant="outline" className="sm:me-auto" onClick={cancelRefine}>
+              Stop waiting
+            </Button>
+          ) : fromThread ? (
+            <Button
+              variant="outline"
+              className="sm:me-auto"
+              disabled={busy || !canSave}
+              onClick={() => void refine()}
+            >
+              Refine with model
+            </Button>
+          ) : bot && versionsSupported ? (
+            <>
               <Button
                 variant="outline"
                 className="sm:me-auto"
-                disabled={busy || !canSave}
-                onClick={() => void refine()}
+                disabled={busy || !canSave || bot.archivedAt !== null}
+                onClick={() => void suggest()}
               >
-                Refine with model
+                Suggest an edit
               </Button>
-            )
+              {onReplay ? (
+                <Button
+                  variant="outline"
+                  disabled={busy || !canReplay || bot.archivedAt !== null}
+                  onClick={tryOnPastRuns}
+                >
+                  Try on past runs
+                </Button>
+              ) : null}
+            </>
           ) : null}
           {starterId !== undefined ? (
             <Button
@@ -386,22 +450,18 @@ export function BotEditor({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || refining || !canSave} onClick={() => void submit()}>
+          <Button disabled={busy || refining !== null || !canSave} onClick={() => void submit()}>
             {busy ? "Saving…" : "Save bot"}
           </Button>
         </>
       }
     >
-      {notes.length > 0 || refining ? (
+      {notes.length > 0 || refining !== null ? (
         <div role="status" className="mb-4 grid gap-1 text-sm text-muted-foreground">
-          {refining ? (
-            <p>Refining with the thread's model. This can take up to three minutes.</p>
-          ) : (
-            notes.map((note) => <p key={note}>{note}</p>)
-          )}
+          {refining !== null ? <p>{refining}</p> : notes.map((note) => <p key={note}>{note}</p>)}
         </div>
       ) : null}
-      <fieldset disabled={refining} className="grid gap-4">
+      <fieldset disabled={refining !== null} className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <LibraryField label="Name">
             <Input

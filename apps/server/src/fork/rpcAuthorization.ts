@@ -38,6 +38,7 @@ import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
   BOTS_TRIGGER_WS_METHODS as BOT_TRIGGER,
+  BOTS_VERSION_WS_METHODS as BOT_VERSION,
   BOTS_WS_METHODS as BOT,
 } from "@t3tools/contracts/fork";
 import {
@@ -369,6 +370,15 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [BOT_TRIGGER.repinTrigger]: AuthOrchestrationOperateScope,
   [BOT_TRIGGER.testTrigger]: AuthOrchestrationOperateScope,
   [BOT_TRIGGER.rotateTriggerToken]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.versions]: AuthOrchestrationReadScope,
+  [BOT_VERSION.version]: AuthOrchestrationReadScope,
+  [BOT_VERSION.getReplay]: AuthOrchestrationReadScope,
+  [BOT_VERSION.setStable]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.restoreVersion]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.replay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.cancelReplay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.rateRun]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.suggestEdit]: AuthOrchestrationOperateScope,
   [G.status]: AuthOrchestrationReadScope,
   [G.subscribeStatus]: AuthOrchestrationReadScope,
   [G.list]: AuthOrchestrationReadScope,

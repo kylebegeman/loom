@@ -16,12 +16,15 @@ import {
   applyInboxChanges,
   applyRunChanges,
   applyTriggerChanges,
+  botVersionDiff,
+  botVersionLabel,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOT_TRIGGER_CHANGES,
   EMPTY_BOTS_CHANGES,
   foldBotBatchChange,
   foldBotTriggerChange,
   foldBotsChange,
+  formatReplaySummary,
   type BotsChanges,
   waitingBotRunThreads,
 } from "./bots.ts";
@@ -325,5 +328,42 @@ describe("bot trigger changes", () => {
       EMPTY_BOT_TRIGGER_CHANGES,
     );
     expect(applyFiringChanges(listed, changes, first).map((f) => f.id)).toEqual(["f1", "f2"]);
+  });
+});
+
+describe("bot versions", () => {
+  it("diffs the instructions as text and every other changed field as before and after", () => {
+    const before = bot("a", "Reviewer");
+    const after = {
+      ...before,
+      instructions: "Do it carefully.",
+      timeoutMinutes: 10,
+      modelSelection: { model: "test", instanceId: ProviderInstanceId.make("codex") },
+      budget: { runsPerDay: 5 },
+    };
+    const diff = botVersionDiff(before, after);
+    expect(diff.instructions).toEqual({ before: "Do it.", after: "Do it carefully." });
+    expect(diff.fields).toEqual([
+      { field: "timeoutMinutes", label: "Timeout (minutes)", before: "5", after: "10" },
+      {
+        field: "budget",
+        label: "Budget",
+        before: "None",
+        after: JSON.stringify({ runsPerDay: 5 }, null, 2),
+      },
+    ]);
+    expect(botVersionDiff(before, before)).toEqual({ instructions: null, fields: [] });
+  });
+
+  it("formats a replay summary and a version label", () => {
+    expect(formatReplaySummary({ fixed: 2, broke: 0, same: 8, changed: 0, failed: 0 })).toBe(
+      "Fixed 2, broke 0, same 8",
+    );
+    expect(formatReplaySummary({ fixed: 0, broke: 1, same: 0, changed: 3, failed: 1 })).toBe(
+      "Fixed 0, broke 1, same 0, changed 3, failed 1",
+    );
+    expect(botVersionLabel({ version: 4, stableVersion: 2 })).toBe("v4, stable v2");
+    expect(botVersionLabel({ version: 4, stableVersion: 4 })).toBe("v4");
+    expect(botVersionLabel({ version: 4 })).toBe("v4");
   });
 });

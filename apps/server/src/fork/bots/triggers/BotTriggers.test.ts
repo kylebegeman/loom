@@ -13,7 +13,7 @@ import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
 import { BotsService, USER_CALLER } from "../BotsService.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
-import { BOT_CHANGED, make } from "./BotTriggers.ts";
+import { make } from "./BotTriggers.ts";
 import type { TriggerEvent } from "./matchers.ts";
 
 const scratchReviewer = reviewer({ workspace: { type: "scratch" } });
@@ -140,24 +140,34 @@ describe("BotTriggers", () => {
     ),
   );
 
-  it.effect("skips a pinned trigger once the bot changes, until it is repinned", () =>
+  it.effect("runs the pinned version after the bot changes, until it is repinned", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
         const { bots, triggers } = yield* makeTriggers(harness);
-        yield* bots.save(reviewer(), USER_CALLER);
+        yield* bots.save(reviewer({ maxConcurrentRuns: 5 }), USER_CALLER);
         const saved = yield* triggers.save(trigger(), USER_CALLER);
         yield* bots.save(
-          reviewer({ instructions: "Check {{file}}.", expectedVersion: 1 }),
+          reviewer({ maxConcurrentRuns: 5, instructions: "Check {{file}}.", expectedVersion: 1 }),
           USER_CALLER,
         );
 
         yield* triggers.handleEvent(checksFailing("a", "pr/1"));
-        const [skipped] = (yield* triggers.firings({ triggerId: saved.id, limit: 1 })).firings;
-        expect(skipped).toMatchObject({ outcome: "skipped", reason: BOT_CHANGED });
+        expect((yield* harness.nextLaunch).initialMessage?.text).toContain("Review <event-data-");
 
         expect(yield* triggers.repin({ triggerId: saved.id })).toMatchObject({ pinnedVersion: 2 });
         yield* triggers.handleEvent(checksFailing("b", "pr/2"));
         expect((yield* harness.nextLaunch).initialMessage?.text).toContain("Check <event-data-");
+
+        // Following stable runs the latest until a version is marked, then that one.
+        yield* triggers.repin({ triggerId: saved.id, followStable: true });
+        yield* bots.setStable({ botId: "reviewer", version: 1 });
+        yield* triggers.handleEvent(checksFailing("c", "pr/3"));
+        expect((yield* harness.nextLaunch).initialMessage?.text).toContain("Review <event-data-");
+
+        const both = yield* triggers
+          .repin({ triggerId: saved.id, followLatest: true })
+          .pipe(Effect.flip);
+        expect(both.reason).toBe("invalid");
       }),
     ),
   );

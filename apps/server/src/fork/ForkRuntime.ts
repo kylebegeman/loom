@@ -39,6 +39,7 @@ import type { BotBatches } from "./bots/BotBatches.ts";
 import type { BotsService } from "./bots/BotsService.ts";
 import type { BotDrafts } from "./bots/fromThread/BotDrafts.ts";
 import type { BotTriggers } from "./bots/triggers/BotTriggers.ts";
+import type { BotVersions } from "./bots/versions/BotVersions.ts";
 import type { SwitchboardStatus } from "./switchboard/SwitchboardStatus.ts";
 import type { PreviewLinksService } from "./preview-links/PreviewLinksService.ts";
 import type { PreviewAccessService } from "./preview-access/PreviewAccessService.ts";
@@ -90,6 +91,7 @@ export type ForkServices =
   | BotBatches
   | BotDrafts
   | BotTriggers
+  | BotVersions
   | WorkspaceHandoffService
   | SwitchboardStatus
   | LibraryBriefSuggestions

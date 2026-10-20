@@ -2,6 +2,7 @@ import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
   BOTS_TRIGGER_WS_METHODS as BT,
+  BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
   type BotsBatchInput,
   type BotsDismissSuggestionInput,
@@ -25,6 +26,13 @@ import {
   type BotsTriggerFiringsInput,
   type BotTrigger,
   type BotTriggerChange,
+  type BotsRateRunInput,
+  type BotsReplayInput,
+  type BotsRestoreVersionInput,
+  type BotsSetStableInput,
+  type BotsSuggestEditInput,
+  type BotsVersionRef,
+  type BotsVersionsInput,
 } from "@t3tools/contracts/fork";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -34,6 +42,7 @@ import { BotBatches } from "./BotBatches.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
+import { BotVersions } from "./versions/BotVersions.ts";
 
 export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
@@ -157,5 +166,29 @@ export const makeBotTriggersRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(BT.rotateTriggerToken, triggers.rotate(input.triggerId)),
       [BT.watchTriggers]: () =>
         auth.stream(BT.watchTriggers, triggers.changes.pipe(Stream.map(shownChange))),
+    };
+  });
+
+export const makeBotVersionsRpcHandlers = (auth: ForkRpcAuth) =>
+  Effect.gen(function* () {
+    const service = yield* BotsService;
+    const versions = yield* BotVersions;
+    return {
+      [BV.versions]: (input: BotsVersionsInput) =>
+        auth.effect(BV.versions, service.versions(input)),
+      [BV.version]: (input: BotsVersionRef) => auth.effect(BV.version, service.version(input)),
+      [BV.setStable]: (input: BotsSetStableInput) =>
+        auth.effect(BV.setStable, service.setStable(input)),
+      [BV.restoreVersion]: (input: BotsRestoreVersionInput) =>
+        auth.effect(BV.restoreVersion, service.restoreVersion(input, USER_CALLER)),
+      [BV.replay]: (input: BotsReplayInput) =>
+        auth.effect(BV.replay, versions.replay(input, USER_CALLER)),
+      [BV.getReplay]: (input: { replayId: string }) =>
+        auth.effect(BV.getReplay, versions.get(input.replayId)),
+      [BV.cancelReplay]: (input: { replayId: string }) =>
+        auth.effect(BV.cancelReplay, versions.cancel(input.replayId)),
+      [BV.rateRun]: (input: BotsRateRunInput) => auth.effect(BV.rateRun, service.rateRun(input)),
+      [BV.suggestEdit]: (input: BotsSuggestEditInput) =>
+        auth.effect(BV.suggestEdit, versions.suggestEdit(input)),
     };
   });

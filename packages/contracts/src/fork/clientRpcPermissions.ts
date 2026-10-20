@@ -34,6 +34,7 @@ import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
   BOTS_TRIGGER_WS_METHODS as TRIGGER,
+  BOTS_VERSION_WS_METHODS as BOT_VERSION,
   BOTS_WS_METHODS as BOT,
 } from "./bots.ts";
 
@@ -230,4 +231,10 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [TRIGGER.repinTrigger]: AuthOrchestrationOperateScope,
   [TRIGGER.testTrigger]: AuthOrchestrationOperateScope,
   [TRIGGER.rotateTriggerToken]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.setStable]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.restoreVersion]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.replay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.cancelReplay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.rateRun]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.suggestEdit]: AuthOrchestrationOperateScope,
 } as const;

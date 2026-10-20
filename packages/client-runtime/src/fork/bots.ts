@@ -2,11 +2,14 @@ import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
   BOTS_TRIGGER_WS_METHODS as BT,
+  BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
   type BotBatch,
   type BotBatchChange,
   type BotBatchItem,
   type BotDefinition,
+  type BotDefinitionInput,
+  type BotReplay,
   type BotRun,
   type BotsChange,
   type BotsInboxPage,
@@ -229,6 +232,90 @@ export const applyBatchItemChanges = (
   return { batch, items: fetched.items.map((item) => watched.get(item.index) ?? item) };
 };
 
+/** The definition fields a version diff compares beside the instructions, in the editor's order. */
+const FIELD_LABELS: Readonly<Record<string, string>> = {
+  name: "Name",
+  description: "Description",
+  parameters: "Parameters",
+  modelSelection: "Model",
+  runtimeMode: "Runtime mode",
+  interactionMode: "Interaction mode",
+  workspace: "Workspace",
+  timeoutMinutes: "Timeout (minutes)",
+  maxConcurrentRuns: "Concurrent runs",
+  scopeProjectId: "Project",
+  output: "Output",
+  budget: "Budget",
+};
+
+/** Field values as text, objects with sorted keys so key order never reads as a change. */
+const fieldText = (value: unknown): string => {
+  if (value === undefined || value === null) return "None";
+  if (typeof value === "string") return value === "" ? "None" : value;
+  const sorted = (item: unknown): unknown =>
+    Array.isArray(item)
+      ? item.map(sorted)
+      : typeof item === "object" && item !== null
+        ? Object.fromEntries(
+            Object.entries(item)
+              .filter(([, entry]) => entry !== undefined)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([key, entry]) => [key, sorted(entry)]),
+          )
+        : item;
+  return JSON.stringify(sorted(value), null, 2);
+};
+
+export interface BotFieldChange {
+  readonly field: string;
+  readonly label: string;
+  readonly before: string;
+  readonly after: string;
+}
+
+export interface BotVersionDiff {
+  /** Both instruction texts when they differ, for a line diff. */
+  readonly instructions: { readonly before: string; readonly after: string } | null;
+  /** Every other changed field, in definition order. */
+  readonly fields: ReadonlyArray<BotFieldChange>;
+}
+
+/** What changed between two versions of a bot's definition. */
+export const botVersionDiff = (
+  before: BotDefinitionInput,
+  after: BotDefinitionInput,
+): BotVersionDiff => {
+  const fields: Array<BotFieldChange> = [];
+  for (const [field, label] of Object.entries(FIELD_LABELS)) {
+    const was = fieldText((before as Record<string, unknown>)[field]);
+    const now = fieldText((after as Record<string, unknown>)[field]);
+    if (was !== now) fields.push({ field, label, before: was, after: now });
+  }
+  return {
+    instructions:
+      before.instructions === after.instructions
+        ? null
+        : { before: before.instructions, after: after.instructions },
+    fields,
+  };
+};
+
+/** "Fixed 2, broke 0, same 8", with changed and failed counts only when there are some. */
+export const formatReplaySummary = (summary: BotReplay["summary"]): string =>
+  [
+    `Fixed ${summary.fixed}`,
+    `broke ${summary.broke}`,
+    `same ${summary.same}`,
+    ...(summary.changed > 0 ? [`changed ${summary.changed}`] : []),
+    ...(summary.failed > 0 ? [`failed ${summary.failed}`] : []),
+  ].join(", ");
+
+/** "v4, stable v2"; just "v4" while no version is marked or the latest is the stable one. */
+export const botVersionLabel = (bot: Pick<BotDefinition, "version" | "stableVersion">): string =>
+  bot.stableVersion == null || bot.stableVersion === bot.version
+    ? `v${bot.version}`
+    : `v${bot.version}, stable v${bot.stableVersion}`;
+
 /** Trigger changes seen since the watch started; a null trigger was deleted. */
 export interface BotTriggerChanges {
   readonly triggers: ReadonlyMap<string, BotTrigger | null>;
@@ -409,6 +496,36 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     rotateTriggerToken: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:rotate-trigger-token",
       tag: BT.rotateTriggerToken,
+    }),
+    versions: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:versions",
+      tag: BV.versions,
+    }),
+    version: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:version",
+      tag: BV.version,
+    }),
+    setStable: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:set-stable",
+      tag: BV.setStable,
+    }),
+    restoreVersion: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:restore-version",
+      tag: BV.restoreVersion,
+    }),
+    replay: createEnvironmentRpcCommand(runtime, { label: "loom:bots:replay", tag: BV.replay }),
+    getReplay: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:get-replay",
+      tag: BV.getReplay,
+    }),
+    cancelReplay: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:cancel-replay",
+      tag: BV.cancelReplay,
+    }),
+    rateRun: createEnvironmentRpcCommand(runtime, { label: "loom:bots:rate-run", tag: BV.rateRun }),
+    suggestEdit: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:suggest-edit",
+      tag: BV.suggestEdit,
     }),
   };
 }

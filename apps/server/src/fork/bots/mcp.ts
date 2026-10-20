@@ -23,7 +23,13 @@ import {
   BotsUsageResult,
   BotTrigger,
   BotTriggerId,
+  BotReplay,
+  BotsRateRunInput,
+  BotsReplayInput,
+  BotVersion,
+  BotVersionSummary,
   BOTS_LIST_RUNS_MAX_LIMIT,
+  BOTS_VERSIONS_MAX_LIMIT,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
@@ -39,6 +45,7 @@ import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
+import { BotVersions } from "./versions/BotVersions.ts";
 
 /** A waiting run call returns the run as it stands after this, even if it is still going. */
 export const AGENT_RUN_WAIT_MAX_MS = 10 * 60 * 1000;
@@ -207,9 +214,49 @@ export const BotsToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_bots_save_trigger", {
     description:
-      "Create or update a trigger that runs a bot when an event happens: a pull request's checks start failing, a pull request opens, a thread settles in a project, a schedule comes due, a webhook arrives, or `scripts/fork/loom.sh integrate` hits merge conflicts. mapping fills each bot input from an event field ({field}) or a fixed value ({value}); every required input needs one. Webhook and merge conflict triggers return webhook.url (or webhook.path on this server) to give the sender. Runs start with this thread's runtime mode as their ceiling, and a trigger skips its runs once the bot changes unless followLatest is set.",
+      "Create or update a trigger that runs a bot when an event happens: a pull request's checks start failing, a pull request opens, a thread settles in a project, a schedule comes due, a webhook arrives, or `scripts/fork/loom.sh integrate` hits merge conflicts. mapping fills each bot input from an event field ({field}) or a fixed value ({value}); every required input needs one. Webhook and merge conflict triggers return webhook.url (or webhook.path on this server) to give the sender. Runs start with this thread's runtime mode as their ceiling. A trigger runs the version it was saved with, even after the bot changes; set followLatest to run the bot as saved now, or followStable to run its stable version.",
     parameters: BotsSaveTriggerInput,
     success: BotTrigger,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_versions", {
+    description:
+      "List a bot's saved versions, newest first: who saved each, which fields changed, and how its kept runs went. Pass version to get that version's full definition instead.",
+    parameters: Schema.Struct({
+      botId: BotId,
+      version: Schema.optionalKey(Schema.Int),
+      before: Schema.optionalKey(Schema.Int),
+      limit: Schema.optionalKey(
+        Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_VERSIONS_MAX_LIMIT })),
+      ),
+    }),
+    success: Schema.Struct({
+      versions: Schema.Array(BotVersionSummary),
+      hasMore: Schema.Boolean,
+      definition: Schema.optionalKey(BotVersion),
+    }),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_replay", {
+    description:
+      "Run earlier runs of a bot again with an unsaved draft or a saved version, to check an edit before saving it. Each replayed run gets the original's inputs and is compared with it: fixed, broke, same or changed. Returns the replay at once; follow it with loom_bots_replay_status. The whole replay must fit in the bot's daily run budget.",
+    parameters: BotsReplayInput,
+    success: BotReplay,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_replay_status", {
+    description: "Read a replay: each replayed run's comparison with its original, and a summary.",
+    parameters: Schema.Struct({ replayId: Schema.String }),
+    success: BotReplay,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_rate_run", {
+    description:
+      "Mark a finished bot run as good (up) or bad (down) with an optional note, or clear the mark with null. Bad runs are what a suggested edit learns from and good replay candidates.",
+    parameters: BotsRateRunInput,
+    success: BotRun,
     failure,
     dependencies: callerDependencies,
   }),
@@ -396,6 +443,30 @@ export const botsHandlers = McpToolAccess.toLayer(
             Effect.flatMap(BotTriggers, (triggers) => triggers.save(input, caller)),
           );
         }),
+      ),
+      loom_bots_versions: McpToolAccess.reads(({ version, limit, ...input }) =>
+        onHost(
+          Effect.gen(function* () {
+            const service = yield* BotsService;
+            const page = yield* service.versions({ ...input, limit: limit ?? 20 });
+            if (version === undefined) return page;
+            return { ...page, definition: yield* service.version({ botId: input.botId, version }) };
+          }),
+        ),
+      ),
+      loom_bots_replay: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotVersions, (versions) => versions.replay(input, caller)),
+          );
+        }),
+      ),
+      loom_bots_replay_status: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(BotVersions, (versions) => versions.get(input.replayId))),
+      ),
+      loom_bots_rate_run: McpToolAccess.writes((input) =>
+        onHost(Effect.flatMap(BotsService, (service) => service.rateRun(input))),
       ),
       loom_bots_set_trigger_enabled: McpToolAccess.writes((input) =>
         onHost(

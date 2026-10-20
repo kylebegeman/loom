@@ -92,6 +92,11 @@ function UsageRow({
             {row.usageComplete ? "" : "At least "}
             {formatTokens(row.tokens.total)} tokens ({formatTokens(row.tokens.input)} in,{" "}
             {formatTokens(row.tokens.output)} out).
+            {row.replays
+              ? row.replays === 1
+                ? " One run was a replay."
+                : ` ${formatCount(row.replays)} runs were replays.`
+              : ""}
           </p>
           {budget ? (
             <p className="text-muted-foreground">Budget: {budgetMeterText(budget)}</p>

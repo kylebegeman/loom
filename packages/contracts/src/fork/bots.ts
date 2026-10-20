@@ -17,6 +17,7 @@ export const BOTS_INBOX_FEATURE = "bots-inbox";
 export const BOTS_BUDGETS_FEATURE = "bots-budgets";
 export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
 export const BOTS_TRIGGERS_FEATURE = "bots-triggers";
+export const BOTS_VERSIONS_FEATURE = "bots-versions";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -176,6 +177,8 @@ export const BotDefinition = Schema.Struct({
   updatedAt: Schema.String,
   archivedAt: Schema.NullOr(Schema.String),
   origin: Schema.optionalKey(BotOrigin),
+  /** The version marked as known good. Absent or null when none is. */
+  stableVersion: Schema.optionalKey(Schema.NullOr(Schema.Int)),
 });
 export type BotDefinition = typeof BotDefinition.Type;
 
@@ -252,6 +255,11 @@ export const BotRunUsage = Schema.Struct({
 });
 export type BotRunUsage = typeof BotRunUsage.Type;
 
+export const BOTS_RUN_NOTE_MAX = 500;
+
+export const BotRunRating = Schema.Literals(["up", "down"]);
+export type BotRunRating = typeof BotRunRating.Type;
+
 export const BotRun = Schema.Struct({
   id: BotRunId,
   botId: BotId,
@@ -292,6 +300,10 @@ export const BotRun = Schema.Struct({
   usage: Schema.optionalKey(Schema.NullOr(BotRunUsage)),
   /** The trigger that started the run, or skipped it. */
   triggerId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The replay the run belongs to. Replay runs stay out of the inbox. */
+  replayId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  rating: Schema.optionalKey(Schema.NullOr(BotRunRating)),
+  note: Schema.optionalKey(Schema.NullOr(shortText(BOTS_RUN_NOTE_MAX))),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -308,7 +320,7 @@ export const needsBotAttention = (run: BotRun): boolean =>
 
 /** The server's inbox query selects the same runs in SQL; keep the two in step. */
 export const isBotInboxRun = (run: BotRun): boolean =>
-  run.dismissedAt == null && needsBotAttention(run);
+  run.dismissedAt == null && run.replayId == null && needsBotAttention(run);
 
 export const BotsChange = Schema.Union([
   Schema.TaggedStruct("bot", { bot: BotDefinition }),
@@ -445,6 +457,8 @@ export const BotUsageRow = Schema.Struct({
   /** False when any run reported partial or no usage, so the tokens are a floor. */
   usageComplete: Schema.Boolean,
   byModel: Schema.Array(BotModelUsage),
+  /** Replay runs, which `runs` and every other count include. Absent when there were none. */
+  replays: Schema.optionalKey(Schema.Int),
 });
 export type BotUsageRow = typeof BotUsageRow.Type;
 
@@ -991,6 +1005,8 @@ const TriggerFields = {
   dailyLimit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
   /** Run the bot as saved now instead of the version the trigger was set with. */
   followLatest: Schema.Boolean,
+  /** Run the bot's stable version, or its latest while none is marked. Never with `followLatest`. */
+  followStable: Schema.optionalKey(Schema.Boolean),
 };
 
 export const BotTrigger = Schema.Struct({
@@ -1042,9 +1058,10 @@ export type BotsSaveTriggerInput = typeof BotsSaveTriggerInput.Type;
 
 export const BotsRepinTriggerInput = Schema.Struct({
   triggerId: BotTriggerId,
-  /** Absent pins the bot's current version. */
+  /** Absent pins the bot's current version; any stored version can be pinned. */
   version: Schema.optionalKey(Schema.Int),
   followLatest: Schema.optionalKey(Schema.Boolean),
+  followStable: Schema.optionalKey(Schema.Boolean),
 });
 export type BotsRepinTriggerInput = typeof BotsRepinTriggerInput.Type;
 
@@ -1102,5 +1119,174 @@ export const BotTriggersRpcGroup = RpcGroup.make(
     success: BotTriggerChange,
     error: errors,
     stream: true,
+  }),
+);
+
+export const BOTS_VERSION_WS_METHODS = {
+  versions: "loom.bots.versions",
+  version: "loom.bots.version",
+  setStable: "loom.bots.setStable",
+  restoreVersion: "loom.bots.restoreVersion",
+  replay: "loom.bots.replay",
+  getReplay: "loom.bots.getReplay",
+  cancelReplay: "loom.bots.cancelReplay",
+  rateRun: "loom.bots.rateRun",
+  suggestEdit: "loom.bots.suggestEdit",
+} as const;
+
+export const BOTS_VERSIONS_MAX_LIMIT = 50;
+export const BOTS_REPLAY_MAX_RUNS = 20;
+/** Version 0 marks a run of an unsaved draft; saved versions start at 1. */
+export const BOT_DRAFT_VERSION = 0;
+
+export const BotVersionSavedBy = Schema.Literals(["user", "agent", "starter", "restore"]);
+export type BotVersionSavedBy = typeof BotVersionSavedBy.Type;
+
+const VersionFields = {
+  botId: BotId,
+  version: Schema.Int,
+  savedBy: BotVersionSavedBy,
+  savedAt: Schema.String,
+  /** Top-level fields that differ from the version before, such as `instructions`. */
+  changed: Schema.Array(Schema.String),
+  /** The version a restore copied. */
+  restoredFrom: Schema.NullOr(Schema.Int),
+};
+
+export const BotVersion = Schema.Struct({ ...VersionFields, definition: BotDefinitionInput });
+export type BotVersion = typeof BotVersion.Type;
+
+export const BotVersionSummary = Schema.Struct({
+  ...VersionFields,
+  /** Kept runs of this version. */
+  runs: Schema.Int,
+  /** Share of finished verdict runs that passed; null without any. */
+  passRate: Schema.NullOr(Schema.Number),
+  /** Null when no finished run reported usage. */
+  medianTotalTokens: Schema.NullOr(Schema.Int),
+});
+export type BotVersionSummary = typeof BotVersionSummary.Type;
+
+export const BotReplaySource = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("draft") }),
+  Schema.Struct({ kind: Schema.Literal("version"), version: Schema.Int }),
+]);
+export type BotReplaySource = typeof BotReplaySource.Type;
+
+export const BotReplayComparison = Schema.Literals([
+  "fixed",
+  "broke",
+  "same",
+  "changed",
+  "pending",
+  "failed",
+]);
+export type BotReplayComparison = typeof BotReplayComparison.Type;
+
+export const BotReplayItem = Schema.Struct({
+  originalRunId: BotRunId,
+  replayRunId: Schema.NullOr(BotRunId),
+  comparison: BotReplayComparison,
+  /** Why an item failed without a run, such as inputs the replayed version no longer takes. */
+  reason: Schema.NullOr(Schema.String),
+});
+export type BotReplayItem = typeof BotReplayItem.Type;
+
+export const BotReplay = Schema.Struct({
+  id: Schema.String,
+  botId: BotId,
+  source: BotReplaySource,
+  /** The bot's version when the replay started, which a draft is compared against. */
+  baseVersion: Schema.Int,
+  createdAt: Schema.String,
+  finishedAt: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["running", "done", "cancelled"]),
+  items: Schema.Array(BotReplayItem),
+  summary: Schema.Struct({
+    fixed: Schema.Int,
+    broke: Schema.Int,
+    same: Schema.Int,
+    changed: Schema.Int,
+    failed: Schema.Int,
+  }),
+});
+export type BotReplay = typeof BotReplay.Type;
+
+export const BotsVersionsInput = Schema.Struct({
+  botId: BotId,
+  /** Returns versions strictly below this number. */
+  before: Schema.optionalKey(Schema.Int),
+  limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_VERSIONS_MAX_LIMIT })),
+});
+export type BotsVersionsInput = typeof BotsVersionsInput.Type;
+
+export const BotsVersionRef = Schema.Struct({ botId: BotId, version: Schema.Int });
+export type BotsVersionRef = typeof BotsVersionRef.Type;
+
+export const BotsSetStableInput = Schema.Struct({
+  botId: BotId,
+  /** Null clears the mark. */
+  version: Schema.NullOr(Schema.Int),
+});
+export type BotsSetStableInput = typeof BotsSetStableInput.Type;
+
+export const BotsRestoreVersionInput = Schema.Struct({
+  botId: BotId,
+  version: Schema.Int,
+  /** The bot's current version, so a restore never overwrites a save it has not seen. */
+  expectedVersion: Schema.Int,
+});
+export type BotsRestoreVersionInput = typeof BotsRestoreVersionInput.Type;
+
+export const BotsReplayInput = Schema.Struct({
+  botId: BotId,
+  /** An unsaved edit to try. Exactly one of `draft` and `version` is set. */
+  draft: Schema.optionalKey(BotDefinitionInput),
+  version: Schema.optionalKey(Schema.Int),
+  runIds: Schema.Array(BotRunId).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(BOTS_REPLAY_MAX_RUNS),
+  ),
+});
+export type BotsReplayInput = typeof BotsReplayInput.Type;
+
+export const BotsRateRunInput = Schema.Struct({
+  runId: BotRunId,
+  rating: Schema.NullOr(BotRunRating),
+  note: Schema.NullOr(shortText(BOTS_RUN_NOTE_MAX)),
+});
+export type BotsRateRunInput = typeof BotsRateRunInput.Type;
+
+export const BotsSuggestEditInput = Schema.Struct({
+  botId: BotId,
+  /** Runs to learn from; absent uses the bot's down-rated runs. */
+  runIds: Schema.optionalKey(Schema.Array(BotRunId).check(Schema.isMaxLength(10))),
+});
+export type BotsSuggestEditInput = typeof BotsSuggestEditInput.Type;
+
+const BV = BOTS_VERSION_WS_METHODS;
+const ReplayRef = Schema.Struct({ replayId: Schema.String });
+
+export const BotVersionsRpcGroup = RpcGroup.make(
+  Rpc.make(BV.versions, {
+    payload: BotsVersionsInput,
+    success: Schema.Struct({ versions: Schema.Array(BotVersionSummary), hasMore: Schema.Boolean }),
+    error: errors,
+  }),
+  Rpc.make(BV.version, { payload: BotsVersionRef, success: BotVersion, error: errors }),
+  Rpc.make(BV.setStable, { payload: BotsSetStableInput, success: BotDefinition, error: errors }),
+  Rpc.make(BV.restoreVersion, {
+    payload: BotsRestoreVersionInput,
+    success: BotDefinition,
+    error: errors,
+  }),
+  Rpc.make(BV.replay, { payload: BotsReplayInput, success: BotReplay, error: errors }),
+  Rpc.make(BV.getReplay, { payload: ReplayRef, success: BotReplay, error: errors }),
+  Rpc.make(BV.cancelReplay, { payload: ReplayRef, success: BotReplay, error: errors }),
+  Rpc.make(BV.rateRun, { payload: BotsRateRunInput, success: BotRun, error: errors }),
+  Rpc.make(BV.suggestEdit, {
+    payload: BotsSuggestEditInput,
+    success: BotDraftResult,
+    error: errors,
   }),
 );

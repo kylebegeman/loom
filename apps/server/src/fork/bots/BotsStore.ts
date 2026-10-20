@@ -3,11 +3,15 @@ import {
   BotDefinitionInput,
   BotInputs,
   BotOrigin,
+  BotRunRating,
   BotRunStatus,
   BotRunUsage,
   BotVerdict,
+  BotVersionSavedBy,
   type BotDefinition,
   type BotRun,
+  type BotVersion,
+  type BotVersionSummary,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -16,6 +20,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 /** Runs kept per bot; older finished runs are pruned when a run finishes. */
 export const RUNS_KEPT_PER_BOT = 500;
+/** Versions kept per bot, besides the current, stable, pinned and run-referenced ones. */
+export const VERSIONS_KEPT_PER_BOT = 200;
 
 interface DefinitionRow {
   readonly id: string;
@@ -25,6 +31,17 @@ interface DefinitionRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly archived_at: string | null;
+  readonly stable_version: number | null;
+}
+
+interface VersionRow {
+  readonly bot_id: string;
+  readonly version: number;
+  readonly definition_json: string;
+  readonly saved_by: string;
+  readonly saved_at: string;
+  readonly changed_json: string;
+  readonly restored_from: number | null;
 }
 
 export interface RunRow {
@@ -58,6 +75,9 @@ export interface RunRow {
   readonly output_tokens: number | null;
   readonly usage_status: string | null;
   readonly trigger_id: string | null;
+  readonly replay_id: string | null;
+  readonly rating: string | null;
+  readonly note: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -79,6 +99,11 @@ const encodeVerdict = Schema.encodeSync(verdictJson);
 const modelSelectionJson = Schema.fromJsonString(ModelSelection);
 const decodeModelSelection = Schema.decodeUnknownOption(modelSelectionJson);
 const encodeModelSelection = Schema.encodeSync(modelSelectionJson);
+const changedJson = Schema.fromJsonString(Schema.Array(Schema.String));
+const decodeChanged = Schema.decodeUnknownOption(changedJson);
+const encodeChanged = Schema.encodeSync(changedJson);
+const isSavedBy = Schema.is(BotVersionSavedBy);
+const isRating = Schema.is(BotRunRating);
 const isStatus = Schema.is(BotRunStatus);
 const isUsageStatus = Schema.is(BotRunUsage.fields.status);
 
@@ -103,7 +128,34 @@ const toDefinition = (row: DefinitionRow): BotDefinition | null => {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
+    ...(row.stable_version == null ? {} : { stableVersion: Number(row.stable_version) }),
   };
+};
+
+const versionFields = (row: VersionRow) => ({
+  botId: row.bot_id,
+  version: Number(row.version),
+  savedBy: isSavedBy(row.saved_by) ? row.saved_by : ("user" as const),
+  savedAt: row.saved_at,
+  changed: Option.getOrElse(decodeChanged(row.changed_json), () => []),
+  restoredFrom: row.restored_from === null ? null : Number(row.restored_from),
+});
+
+const toVersion = (row: VersionRow): BotVersion | null => {
+  const decoded = decodeDefinition(row.definition_json);
+  if (Option.isNone(decoded)) return null;
+  // The origin belongs to the bot, not to one of its versions.
+  const { origin: _origin, ...definition } = decoded.value;
+  return { ...versionFields(row), definition };
+};
+
+const median = (values: ReadonlyArray<number>) => {
+  if (values.length === 0) return null;
+  const sorted = values.toSorted((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[middle]!
+    : Math.round((sorted[middle - 1]! + sorted[middle]!) / 2);
 };
 
 export const toRun = (row: RunRow): BotRun | null => {
@@ -150,6 +202,9 @@ export const toRun = (row: RunRow): BotRun | null => {
       : { checkoutThreadId: ThreadId.make(row.checkout_thread_id) }),
     ...(row.usage_status == null ? {} : { usage: toUsage(row) }),
     ...(row.trigger_id == null ? {} : { triggerId: row.trigger_id }),
+    ...(row.replay_id == null ? {} : { replayId: row.replay_id }),
+    ...(isRating(row.rating) ? { rating: row.rating } : {}),
+    ...(row.note == null ? {} : { note: row.note }),
   };
 };
 
@@ -157,6 +212,7 @@ export const toRun = (row: RunRow): BotRun | null => {
 const inboxCondition = (sql: SqlClient.SqlClient, dismissed: boolean) =>
   sql.and([
     sql`retried_by IS NULL`,
+    sql`replay_id IS NULL`,
     dismissed ? sql`dismissed_at IS NOT NULL` : sql`dismissed_at IS NULL`,
     sql`(status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))`,
   ]);
@@ -167,6 +223,7 @@ const definitionFields = ({
   createdAt: _createdAt,
   updatedAt: _updatedAt,
   archivedAt: _archivedAt,
+  stableVersion: _stableVersion,
   ...input
 }: BotDefinition): StoredDefinition => input;
 
@@ -210,6 +267,95 @@ export const makeBotsStore = Effect.gen(function* () {
       return Number(rows[0]?.version ?? 0);
     }),
 
+    /** The highest version stored, including versions of a deleted bot. */
+    maxVersion: Effect.fn("BotsStore.maxVersion")(function* (botId: string) {
+      const rows = yield* sql<{
+        version: number | null;
+      }>`SELECT MAX(version) AS version FROM fork_bots_versions WHERE bot_id = ${botId}`;
+      return Number(rows[0]?.version ?? 0);
+    }),
+
+    insertVersion: Effect.fn("BotsStore.insertVersion")(function* (
+      bot: BotDefinition,
+      saved: Pick<BotVersion, "savedBy" | "savedAt" | "changed" | "restoredFrom">,
+    ) {
+      yield* sql`INSERT INTO fork_bots_versions (bot_id, version, definition_json, saved_by, saved_at, changed_json, restored_from) VALUES (${bot.id}, ${bot.version}, ${encodeDefinition(definitionFields(bot))}, ${saved.savedBy}, ${saved.savedAt}, ${encodeChanged(saved.changed)}, ${saved.restoredFrom})`;
+    }),
+
+    getVersion: Effect.fn("BotsStore.getVersion")(function* (botId: string, version: number) {
+      const rows =
+        yield* sql<VersionRow>`SELECT * FROM fork_bots_versions WHERE bot_id = ${botId} AND version = ${version}`;
+      return rows[0] ? toVersion(rows[0]) : null;
+    }),
+
+    /** Newest first, with how each version's kept runs did. Fetches one extra row for more. */
+    listVersions: Effect.fn("BotsStore.listVersions")(function* (
+      botId: string,
+      before: number | undefined,
+      limit: number,
+    ) {
+      const rows =
+        yield* sql<VersionRow>`SELECT bot_id, version, '' AS definition_json, saved_by, saved_at, changed_json, restored_from FROM fork_bots_versions WHERE bot_id = ${botId} ${before === undefined ? sql`` : sql`AND version < ${before}`} ORDER BY version DESC LIMIT ${limit + 1}`;
+      const page = rows.slice(0, limit);
+      const versions = page.map((row) => Number(row.version));
+      const runs =
+        versions.length === 0
+          ? []
+          : yield* sql<{
+              bot_version: number;
+              verdict: string | null;
+              tokens: number | null;
+            }>`SELECT bot_version, verdict, CASE WHEN usage_status IS NULL THEN NULL ELSE COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) END AS tokens FROM fork_bots_runs WHERE bot_id = ${botId} AND bot_version IN ${sql.in(versions)} AND finished_at IS NOT NULL`;
+      const summaries = page.map((row): BotVersionSummary => {
+        const own = runs.filter((run) => Number(run.bot_version) === Number(row.version));
+        const judged = own.filter((run) => run.verdict !== null);
+        return {
+          ...versionFields(row),
+          runs: own.length,
+          passRate:
+            judged.length === 0
+              ? null
+              : judged.filter((run) => run.verdict === "pass").length / judged.length,
+          medianTotalTokens: median(
+            own.flatMap((run) => (run.tokens === null ? [] : [Number(run.tokens)])),
+          ),
+        };
+      });
+      return { versions: summaries, hasMore: rows.length > limit };
+    }),
+
+    setStable: Effect.fn("BotsStore.setStable")(function* (botId: string, version: number | null) {
+      yield* sql`UPDATE fork_bots_definitions SET stable_version = ${version} WHERE id = ${botId}`;
+    }),
+
+    /**
+     * Deletes the oldest versions beyond the newest `keep`, except the current and stable ones
+     * and any a trigger pins or a kept run used.
+     */
+    pruneVersions: Effect.fn("BotsStore.pruneVersions")(function* (botId: string, keep: number) {
+      yield* sql`DELETE FROM fork_bots_versions WHERE bot_id = ${botId} AND version NOT IN (SELECT version FROM fork_bots_versions WHERE bot_id = ${botId} ORDER BY version DESC LIMIT ${keep}) AND version NOT IN (SELECT version FROM fork_bots_definitions WHERE id = ${botId}) AND version NOT IN (SELECT stable_version FROM fork_bots_definitions WHERE id = ${botId} AND stable_version IS NOT NULL) AND version NOT IN (SELECT pinned_version FROM fork_bots_triggers WHERE bot_id = ${botId}) AND version NOT IN (SELECT bot_version FROM fork_bots_runs WHERE bot_id = ${botId})`;
+    }),
+
+    rateRun: Effect.fn("BotsStore.rateRun")(function* (
+      id: string,
+      rating: string | null,
+      note: string | null,
+      at: string | null,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET rating = ${rating}, note = ${note}, rated_at = ${at} WHERE id = ${id}`;
+    }),
+
+    /** Finished runs of a bot, newest first, rated `rating`. */
+    listRatedRuns: Effect.fn("BotsStore.listRatedRuns")(function* (
+      botId: string,
+      rating: string,
+      limit: number,
+    ) {
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE bot_id = ${botId} AND rating = ${rating} ORDER BY rated_at DESC, id DESC LIMIT ${limit}`;
+      return rows.flatMap((row) => toRun(row) ?? []);
+    }),
+
     listStarterRows: Effect.fn("BotsStore.listStarterRows")(function* () {
       const rows = yield* sql<{
         starter_id: string;
@@ -236,7 +382,7 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id,replay_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null},${run.replayId ?? null})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */

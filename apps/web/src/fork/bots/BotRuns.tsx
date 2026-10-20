@@ -4,6 +4,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   isTerminalBotRunStatus,
   type BotRun,
+  type BotRunRating,
   type BotRunStatus,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
@@ -39,16 +40,19 @@ function RunRow({
   run,
   showBot,
   canCancel,
+  canRate,
 }: {
   readonly environmentId: EnvironmentId;
   readonly run: BotRun;
   readonly showBot: boolean;
   readonly canCancel: boolean;
+  readonly canRate: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useAtomCommand(bots.cancel, { reportFailure: false });
+  const rateRun = useAtomCommand(bots.rateRun, { reportFailure: false });
   const status = RUN_STATUS[run.status];
   const active = !isTerminalBotRunStatus(run.status);
   const summary = runInputSummary(run);
@@ -67,12 +71,34 @@ function RunRow({
     }
   };
 
+  // Pressing the current rating again clears it.
+  const rate = async (rating: BotRunRating) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await rateRun({
+        environmentId,
+        input: {
+          runId: run.id,
+          rating: run.rating === rating ? null : rating,
+          note: run.note ?? null,
+        },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rate the run.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <li className="grid gap-2 rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant={status.variant}>{status.label}</Badge>
           {verdict ? <VerdictChip verdict={verdict.verdict} /> : null}
+          {run.replayId ? <Badge variant="outline">Replay</Badge> : null}
           {showBot ? <span className="font-medium">{run.botName}</span> : null}
           <span className="text-xs text-muted-foreground">
             {runTime(run.finishedAt) ?? runTime(run.startedAt) ?? runTime(run.createdAt)}
@@ -104,6 +130,28 @@ function RunRow({
                   ? "Hide reply"
                   : "Show reply"}
             </Button>
+          ) : null}
+          {canRate && !active ? (
+            <>
+              <Button
+                size="xs"
+                variant={run.rating === "up" ? "secondary" : "ghost"}
+                aria-pressed={run.rating === "up"}
+                disabled={busy}
+                onClick={() => void rate("up")}
+              >
+                Good
+              </Button>
+              <Button
+                size="xs"
+                variant={run.rating === "down" ? "secondary" : "ghost"}
+                aria-pressed={run.rating === "down"}
+                disabled={busy}
+                onClick={() => void rate("down")}
+              >
+                Bad
+              </Button>
+            </>
           ) : null}
           {active ? (
             <Button
@@ -166,12 +214,15 @@ export function BotRuns({
   runs,
   showBot,
   canCancel,
+  canRate,
   emptyMessage,
 }: {
   readonly environmentId: EnvironmentId;
   readonly runs: ReadonlyArray<BotRun>;
   readonly showBot: boolean;
   readonly canCancel: boolean;
+  /** Good and Bad mark runs for replays and suggested edits. */
+  readonly canRate: boolean;
   readonly emptyMessage: string;
 }) {
   if (runs.length === 0) return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
@@ -184,6 +235,7 @@ export function BotRuns({
           run={run}
           showBot={showBot}
           canCancel={canCancel}
+          canRate={canRate}
         />
       ))}
     </ul>

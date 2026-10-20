@@ -37,6 +37,7 @@ import {
   BotDraftsRpcGroup,
   BotsRpcGroup,
   BotTriggersRpcGroup,
+  BotVersionsRpcGroup,
   BOTS_BATCH_WS_METHODS,
   BOTS_TRIGGER_WS_METHODS,
   BOTS_WS_METHODS,
@@ -105,6 +106,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   BotBatchesRpcGroup,
   BotDraftsRpcGroup,
   BotTriggersRpcGroup,
+  BotVersionsRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 

@@ -52,8 +52,14 @@ export interface TriggerDraft {
   readonly enabled: boolean;
   readonly cooldownMinutes: string;
   readonly dailyLimit: string;
-  readonly followLatest: boolean;
+  readonly follow: TriggerFollow;
 }
+
+/** Which version a run starts: the one saved with the trigger, the latest, or the stable one. */
+export type TriggerFollow = "pinned" | "latest" | "stable";
+
+export const followOf = (trigger: Pick<BotTrigger, "followLatest" | "followStable">) =>
+  trigger.followLatest ? "latest" : trigger.followStable === true ? "stable" : "pinned";
 
 const EMPTY_MAPPING: MappingDraft = { mode: "none", field: "", value: "" };
 
@@ -106,7 +112,7 @@ export const emptyTriggerDraft = (bot: BotDefinition): TriggerDraft => ({
   enabled: true,
   cooldownMinutes: "10",
   dailyLimit: "20",
-  followLatest: false,
+  follow: "pinned",
 });
 
 export const triggerDraftFrom = (bot: BotDefinition, trigger: BotTrigger): TriggerDraft => {
@@ -166,7 +172,7 @@ export const triggerDraftFrom = (bot: BotDefinition, trigger: BotTrigger): Trigg
     enabled: trigger.enabled,
     cooldownMinutes: String(trigger.cooldownMinutes),
     dailyLimit: String(trigger.dailyLimit),
-    followLatest: trigger.followLatest,
+    follow: followOf(trigger),
   };
 };
 
@@ -269,7 +275,11 @@ export const triggerInputFromDraft = (
       enabled: draft.enabled,
       cooldownMinutes,
       dailyLimit,
-      followLatest: draft.followLatest,
+      followLatest: draft.follow === "latest",
+      // Servers keep the stored choice when this is absent, and older ones do not know it.
+      ...(draft.follow === "stable" || existing?.followStable === true
+        ? { followStable: draft.follow === "stable" }
+        : {}),
       ...(event.kind === "webhook" && draft.signed && draft.secret !== ""
         ? { webhookSecret: draft.secret }
         : {}),

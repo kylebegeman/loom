@@ -1,6 +1,7 @@
 # L98: Versions and replay
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Improve a bot without worrying that a change made it worse. Every save keeps the full definition
 as a numbered version, and every run already records which version it used. Kyle can see a bot's

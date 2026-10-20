@@ -119,5 +119,27 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN trigger_id TEXT`;
       }),
     ],
+    [
+      10,
+      "Versions",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // Rows outlive their definition, so a deleted bot's runs stay readable and numbering
+        // continues when its id is reused.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_versions (bot_id TEXT NOT NULL, version INTEGER NOT NULL, definition_json TEXT NOT NULL, saved_by TEXT NOT NULL, saved_at TEXT NOT NULL, changed_json TEXT NOT NULL, restored_from INTEGER, PRIMARY KEY (bot_id, version))`;
+        yield* sql`ALTER TABLE fork_bots_definitions ADD COLUMN stable_version INTEGER`;
+        // Earlier versions were never stored; history starts at each bot's current one.
+        yield* sql`INSERT OR IGNORE INTO fork_bots_versions (bot_id, version, definition_json, saved_by, saved_at, changed_json, restored_from) SELECT id, version, definition_json, created_by, updated_at, '[]', NULL FROM fork_bots_definitions`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_replays (id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, source_json TEXT NOT NULL, draft_json TEXT, base_version INTEGER NOT NULL, status TEXT NOT NULL, started_by TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_replays_bot ON fork_bots_replays (bot_id, created_at DESC)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_replay_items (replay_id TEXT NOT NULL, original_run_id TEXT NOT NULL, position INTEGER NOT NULL, replay_run_id TEXT, comparison TEXT NOT NULL, reason TEXT, PRIMARY KEY (replay_id, original_run_id))`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN replay_id TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN rating TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN note TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN rated_at TEXT`;
+        // Version stats group a bot's runs by version.
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_version ON fork_bots_runs (bot_id, bot_version)`;
+      }),
+    ],
   ],
 };

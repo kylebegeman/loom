@@ -63,6 +63,15 @@ describe("trigger drafts", () => {
     });
   });
 
+  it("sends followStable only for a stable choice", () => {
+    const draft = emptyTriggerDraft(bot);
+    expect(triggerInputFromDraft(bot, { ...draft, follow: "stable" }, null)).toMatchObject({
+      input: { followLatest: false, followStable: true },
+    });
+    const pinned = triggerInputFromDraft(bot, { ...draft, follow: "pinned" }, null);
+    expect("input" in pinned && "followStable" in pinned.input).toBe(false);
+  });
+
   it("reports what to fix with the server's mapping rule", () => {
     const draft = emptyTriggerDraft(bot);
     const unmapped = {
@@ -119,6 +128,13 @@ describe("trigger drafts", () => {
     expect("input" in kept && "webhookSecret" in kept.input).toBe(false);
     expect(triggerInputFromDraft(bot, { ...draft, signed: false }, trigger)).toMatchObject({
       input: { event: { kind: "webhook" }, webhookSecret: "" },
+    });
+
+    const stable: BotTrigger = { ...trigger, followLatest: false, followStable: true };
+    const stableDraft = triggerDraftFrom(bot, stable);
+    expect(stableDraft.follow).toBe("stable");
+    expect(triggerInputFromDraft(bot, { ...stableDraft, follow: "pinned" }, stable)).toMatchObject({
+      input: { followLatest: false, followStable: false },
     });
   });
 

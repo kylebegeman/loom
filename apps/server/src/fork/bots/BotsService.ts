@@ -24,10 +24,16 @@ import {
   type BotOrigin,
   type BotOutput,
   type BotRun,
+  type BotRunRating,
   type BotRunStatus,
   type BotRunUsage,
   type BotsChange,
   type BotsDismissInput,
+  type BotsRateRunInput,
+  type BotsRestoreVersionInput,
+  type BotsSetStableInput,
+  type BotsVersionRef,
+  type BotsVersionsInput,
   type BotsInboxInput,
   type BotsListRunsInput,
   type BotsPromoteResult,
@@ -40,6 +46,7 @@ import {
   type BotStarterState,
   type BotStarterStatus,
   type BotVerdict,
+  type BotVersionSavedBy,
 } from "@t3tools/contracts/fork";
 import {
   fallbackTextGenerationModelSelection,
@@ -63,11 +70,12 @@ import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { budgetRefusal, budgetState, BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
-import { makeBotsStore, RUNS_KEPT_PER_BOT } from "./BotsStore.ts";
+import { makeBotsStore, RUNS_KEPT_PER_BOT, VERSIONS_KEPT_PER_BOT } from "./BotsStore.ts";
 import { checkParameters, renderPrompt, validateInputs } from "./render.ts";
 import { summarizeRunUsage, summarizeUsage } from "./usage.ts";
 import { decodeVerdictReply } from "./verdict.ts";
 import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
+import { changedFields } from "./versions/compare.ts";
 
 /** Who asked for a bot operation. */
 export interface BotCaller {
@@ -126,6 +134,18 @@ interface LiveRun {
 }
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
+
+/** What a version stores of a definition: everything but the server-owned fields. */
+export const versionInput = ({
+  version: _version,
+  createdBy: _createdBy,
+  createdAt: _createdAt,
+  updatedAt: _updatedAt,
+  archivedAt: _archivedAt,
+  stableVersion: _stableVersion,
+  origin: _origin,
+  ...input
+}: BotDefinition): BotDefinitionInput => input;
 
 const storageError = (cause: unknown) =>
   Effect.logWarning("Bots storage failed", { cause }).pipe(
@@ -248,6 +268,39 @@ export const make = Effect.gen(function* () {
 
   const list = () => store.listDefinitions().pipe(Effect.catch(storageError));
 
+  /**
+   * The highest version this id ever used. A bot recreated under a deleted bot's id continues
+   * past its runs and stored versions, so a version number never names two different texts.
+   */
+  const nextVersion = Effect.fnUntraced(function* (botId: string, existing: BotDefinition | null) {
+    return Math.max(
+      existing?.version ?? 0,
+      yield* store.maxRunVersion(botId),
+      yield* store.maxVersion(botId),
+    );
+  });
+
+  /** What every saved definition, and every draft a replay runs, must satisfy. */
+  const checkDefinition = (definition: BotDefinitionInput, caller: BotCaller) => {
+    const problem = checkParameters(definition);
+    if (problem !== null) return Effect.fail(fail("invalid", problem));
+    if (
+      definition.workspace.type === "project" &&
+      definition.workspace.projectId !== null &&
+      definition.scopeProjectId !== null &&
+      definition.workspace.projectId !== definition.scopeProjectId
+    )
+      return Effect.fail(fail("invalid", "A project-scoped bot can only run in its own project."));
+    if (caller.runtimeMode !== null && outranks(definition.runtimeMode, caller.runtimeMode))
+      return Effect.fail(
+        fail(
+          "permission",
+          `An agent running in ${caller.runtimeMode} mode cannot define a bot that runs in ${definition.runtimeMode} mode.`,
+        ),
+      );
+    return Effect.void;
+  };
+
   /** The one write path for definitions; `origin` is set only by the starter paths. */
   const write = Effect.fnUntraced(function* (
     definition: BotDefinitionInput,
@@ -256,22 +309,12 @@ export const make = Effect.gen(function* () {
       readonly expectedVersion?: number | undefined;
       readonly origin?: BotOrigin | undefined;
       readonly unarchive?: boolean | undefined;
+      /** Defaults to the caller's actor. */
+      readonly savedBy?: BotVersionSavedBy | undefined;
+      readonly restoredFrom?: number | undefined;
     },
   ) {
-    const problem = checkParameters(definition);
-    if (problem !== null) return yield* fail("invalid", problem);
-    if (
-      definition.workspace.type === "project" &&
-      definition.workspace.projectId !== null &&
-      definition.scopeProjectId !== null &&
-      definition.workspace.projectId !== definition.scopeProjectId
-    )
-      return yield* fail("invalid", "A project-scoped bot can only run in its own project.");
-    if (caller.runtimeMode !== null && outranks(definition.runtimeMode, caller.runtimeMode))
-      return yield* fail(
-        "permission",
-        `An agent running in ${caller.runtimeMode} mode cannot define a bot that runs in ${definition.runtimeMode} mode.`,
-      );
+    yield* checkDefinition(definition, caller);
     const existing = yield* store.getDefinition(definition.id).pipe(Effect.catch(storageError));
     if (
       existing === null &&
@@ -286,23 +329,33 @@ export const make = Effect.gen(function* () {
         "invalid",
         "This bot changed since it was opened. Reload it and apply your edits again.",
       );
-    // A bot recreated under a deleted bot's id continues its numbering, so a version its runs
-    // recorded never names two different texts.
-    const previousVersion =
-      existing?.version ??
-      (yield* store.maxRunVersion(definition.id).pipe(Effect.catch(storageError)));
     const origin = options.origin ?? existing?.origin;
     const now = yield* nowIso;
-    const bot: BotDefinition = {
-      ...definition,
-      version: previousVersion + 1,
-      createdBy: existing?.createdBy ?? caller.actor,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      archivedAt: options.unarchive === true ? null : (existing?.archivedAt ?? null),
-      ...(origin === undefined ? {} : { origin }),
-    };
-    yield* store.putDefinition(bot).pipe(Effect.catch(storageError));
+    const bot = yield* store
+      .withTransaction(
+        Effect.gen(function* () {
+          const next: BotDefinition = {
+            ...definition,
+            version: (yield* nextVersion(definition.id, existing)) + 1,
+            createdBy: existing?.createdBy ?? caller.actor,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+            archivedAt: options.unarchive === true ? null : (existing?.archivedAt ?? null),
+            ...(existing?.stableVersion == null ? {} : { stableVersion: existing.stableVersion }),
+            ...(origin === undefined ? {} : { origin }),
+          };
+          yield* store.putDefinition(next);
+          yield* store.insertVersion(next, {
+            savedBy: options.savedBy ?? caller.actor,
+            savedAt: now,
+            changed: existing === null ? [] : changedFields(versionInput(existing), definition),
+            restoredFrom: options.restoredFrom ?? null,
+          });
+          yield* store.pruneVersions(definition.id, VERSIONS_KEPT_PER_BOT);
+          return next;
+        }),
+      )
+      .pipe(Effect.catch(storageError));
     yield* permitsFor(bot);
     yield* publish({ _tag: "bot", bot });
     return bot;
@@ -366,14 +419,22 @@ export const make = Effect.gen(function* () {
               ? null
               : {
                   ...starterDefinition(starter, modelSelection, null),
-                  version: (yield* store.maxRunVersion(starter.starterId)) + 1,
+                  version: (yield* nextVersion(starter.starterId, null)) + 1,
                   createdBy: "user",
                   createdAt: now,
                   updatedAt: now,
                   archivedAt: null,
                   origin: starterOrigin(starter),
                 };
-            if (bot !== null) yield* store.putDefinition(bot);
+            if (bot !== null) {
+              yield* store.putDefinition(bot);
+              yield* store.insertVersion(bot, {
+                savedBy: "starter",
+                savedAt: now,
+                changed: [],
+                restoredFrom: null,
+              });
+            }
             yield* store.recordStarter(starter.starterId, starter.revision, now);
             return bot;
           }),
@@ -424,7 +485,7 @@ export const make = Effect.gen(function* () {
     const bot = yield* write(
       starterDefinition(starter, modelSelection, existing?.scopeProjectId ?? null),
       caller,
-      { origin: starterOrigin(starter), unarchive: true },
+      { origin: starterOrigin(starter), unarchive: true, savedBy: "starter" },
     );
     yield* store
       .recordStarter(starter.starterId, starter.revision, bot.updatedAt)
@@ -451,6 +512,69 @@ export const make = Effect.gen(function* () {
     yield* store.deleteDefinition(botId).pipe(Effect.catch(storageError));
     botPermits.delete(botId);
     yield* publish({ _tag: "bot-deleted", botId });
+  });
+
+  const missingVersion = (bot: BotDefinition, version: number) =>
+    fail("not_found", `Version ${version} of ${bot.name} is no longer stored.`);
+
+  /**
+   * The bot as it was at `version`, with the current row's state, so an archived bot refuses
+   * every version. "stable" is the latest while none is marked.
+   */
+  const definitionAt = Effect.fn("BotsService.definitionAt")(function* (
+    botId: string,
+    at: number | "stable" | "latest",
+  ) {
+    const current = yield* requireBot(botId);
+    if (current.archivedAt !== null)
+      return yield* fail("archived", `${current.name} is archived. Restore it to run it.`);
+    const version =
+      at === "latest"
+        ? current.version
+        : at === "stable"
+          ? (current.stableVersion ?? current.version)
+          : at;
+    if (version === current.version) return current;
+    const stored = yield* store.getVersion(botId, version).pipe(Effect.catch(storageError));
+    if (stored === null) return yield* missingVersion(current, version);
+    return { ...current, ...stored.definition, version } satisfies BotDefinition;
+  });
+
+  const versions = (input: BotsVersionsInput) =>
+    store.listVersions(input.botId, input.before, input.limit).pipe(Effect.catch(storageError));
+
+  const version = Effect.fn("BotsService.version")(function* (input: BotsVersionRef) {
+    const stored = yield* store
+      .getVersion(input.botId, input.version)
+      .pipe(Effect.catch(storageError));
+    if (stored !== null) return stored;
+    return yield* missingVersion(yield* requireBot(input.botId), input.version);
+  });
+
+  /** Marks a stored version known good, or clears the mark; the bot's version does not change. */
+  const setStable = Effect.fn("BotsService.setStable")(function* (input: BotsSetStableInput) {
+    const bot = yield* requireBot(input.botId);
+    if (input.version !== null && input.version !== bot.version)
+      yield* version({ botId: bot.id, version: input.version });
+    yield* store.setStable(bot.id, input.version).pipe(Effect.catch(storageError));
+    const { stableVersion: _previous, ...rest } = bot;
+    const next: BotDefinition =
+      input.version === null ? rest : { ...rest, stableVersion: input.version };
+    yield* publish({ _tag: "bot", bot: next });
+    return next;
+  });
+
+  /** Saves an earlier version's definition as a new version, so history only grows. */
+  const restoreVersion = Effect.fn("BotsService.restoreVersion")(function* (
+    input: BotsRestoreVersionInput,
+    caller: BotCaller,
+  ) {
+    const stored = yield* version(input);
+    return yield* write(stored.definition, caller, {
+      expectedVersion: input.expectedVersion,
+      savedBy: "restore",
+      restoredFrom: input.version,
+    });
   });
 
   /**
@@ -760,6 +884,7 @@ export const make = Effect.gen(function* () {
     readonly modelSelection?: ModelSelection | undefined;
     readonly retryOf?: string | undefined;
     readonly triggerId?: string | undefined;
+    readonly replayId?: string | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
   }
@@ -776,6 +901,11 @@ export const make = Effect.gen(function* () {
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const refusal = budgetRefusal(bot.name, yield* budgetFor(bot, nowMs), nowMs);
     if (refusal !== null) return yield* Effect.fail(refusal);
+  });
+
+  /** The bot's budget as it stands now. */
+  const budgetNow = Effect.fnUntraced(function* (bot: BotDefinition) {
+    return yield* budgetFor(bot, DateTime.toEpochMillis(yield* DateTime.now));
   });
 
   const insertRun = (run: BotRun, options: StartOptions) =>
@@ -839,6 +969,7 @@ export const make = Effect.gen(function* () {
         ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
         ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
         ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+        ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
         modelSelection,
         checkoutThreadId: checkout?.threadId ?? null,
       },
@@ -927,6 +1058,7 @@ export const make = Effect.gen(function* () {
       error: reason,
       ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
       ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+      ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
       ...(input.checkoutThreadId === undefined ? {} : { checkoutThreadId: input.checkoutThreadId }),
     };
     yield* insertRun(failed, options);
@@ -963,6 +1095,34 @@ export const make = Effect.gen(function* () {
     if (current === null) return yield* fail("not_found", "The bot run was not found.");
     return current;
   });
+
+  /** Records whether a finished run was good, with an optional note; null clears either. */
+  const rateRun = Effect.fn("BotsService.rateRun")(function* (input: BotsRateRunInput) {
+    const run = yield* getRun(input.runId);
+    if (!isTerminalBotRunStatus(run.status))
+      return yield* fail("invalid", "Rate a run once it ends.");
+    const note = input.note?.trim() === "" ? null : input.note;
+    yield* store
+      .rateRun(
+        run.id,
+        input.rating,
+        note,
+        input.rating === null && note === null ? null : yield* nowIso,
+      )
+      .pipe(Effect.catch(storageError));
+    const { rating: _rating, note: _note, ...rest } = run;
+    const rated: BotRun = {
+      ...rest,
+      ...(input.rating === null ? {} : { rating: input.rating }),
+      ...(note === null ? {} : { note }),
+    };
+    yield* publish({ _tag: "run", run: rated });
+    return rated;
+  });
+
+  /** A bot's runs rated `rating`, most recently rated first. */
+  const ratedRuns = (botId: string, rating: BotRunRating, limit: number) =>
+    store.listRatedRuns(botId, rating, limit).pipe(Effect.catch(storageError));
 
   const cancel = Effect.fn("BotsService.cancel")(function* (runId: string) {
     const entry = live.get(runId);
@@ -1195,6 +1355,13 @@ export const make = Effect.gen(function* () {
     list,
     get: requireBot,
     save,
+    definitionAt,
+    versions,
+    version,
+    setStable,
+    restoreVersion,
+    rateRun,
+    ratedRuns,
     archive,
     delete: remove,
     run,
@@ -1212,6 +1379,8 @@ export const make = Effect.gen(function* () {
     promote,
     usage,
     checkBudget,
+    budgetNow,
+    checkDefinition,
     awaitRun,
     activeRunCount,
     recover,
