@@ -206,6 +206,8 @@ export const make = Effect.gen(function* () {
   ) {
     const problem = firstError(yield* check(input));
     if (problem !== undefined) return yield* fail("invalid", problemMessage(problem));
+    // A person's trigger runs the pipeline with no ceiling, so an agent may not widen its steps.
+    if (caller.runtimeMode !== null) yield* resolveBots(input, caller);
     const existing = yield* store.getPipeline(input.id).pipe(Effect.catch(storageError));
     if (existing === null && (yield* store.hasPipeline(input.id).pipe(Effect.catch(storageError))))
       return yield* fail(
@@ -561,7 +563,10 @@ export const make = Effect.gen(function* () {
     );
 
   /** Each step's bot as the run will use it, refusing any the caller could not run itself. */
-  const resolveBots = Effect.fnUntraced(function* (pipeline: BotPipeline, caller: BotCaller) {
+  const resolveBots = Effect.fnUntraced(function* (
+    pipeline: Pick<BotPipeline, "steps">,
+    caller: BotCaller,
+  ) {
     const resolved: Record<string, BotDefinition> = {};
     for (const step of pipeline.steps) {
       const bot = yield* bots.definitionAt(step.botId, step.version ?? "latest");
@@ -569,6 +574,14 @@ export const make = Effect.gen(function* () {
       resolved[step.id] = bot;
     }
     return resolved;
+  });
+
+  /** Refuses a pipeline any of whose steps, as a run would use them, the caller could not run. */
+  const checkRunnable = Effect.fn("BotPipelines.checkRunnable")(function* (
+    pipelineId: string,
+    caller: BotCaller,
+  ) {
+    yield* resolveBots(yield* requirePipeline(pipelineId), caller);
   });
 
   const run = Effect.fn("BotPipelines.run")(function* (
@@ -821,6 +834,7 @@ export const make = Effect.gen(function* () {
     check,
     save,
     delete: remove,
+    checkRunnable,
     run,
     cancel,
     resume,

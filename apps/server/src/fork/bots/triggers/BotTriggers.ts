@@ -75,6 +75,19 @@ const narrower = (a: RuntimeMode | null, b: RuntimeMode | null) =>
   a === null ? b : b === null || outranks(b, a) ? a : b;
 
 /** Webhook and merge-conflict triggers listen on a hook URL. */
+type TriggerTarget = Pick<
+  BotTrigger,
+  "botId" | "pipelineId" | "followLatest" | "followStable" | "pinnedVersion"
+>;
+
+/** The bot version a firing of the trigger runs. */
+const versionRun = (trigger: TriggerTarget) =>
+  trigger.followLatest
+    ? "latest"
+    : trigger.followStable === true
+      ? "stable"
+      : trigger.pinnedVersion;
+
 const usesHook = (event: BotTriggerEvent) =>
   event.kind === "webhook" || event.kind === "merge-conflict";
 
@@ -197,19 +210,25 @@ export const make = Effect.gen(function* () {
   /**
    * Refuses arming a trigger whose runs its caller could not start: a bot run never arms one, and
    * an agent cannot re-arm a person's trigger, which has no ceiling, for a bot broader than itself.
+   * It checks what a firing runs: the trigger's version of its bot, or every step of its pipeline.
    */
   const checkArming = Effect.fnUntraced(function* (
-    bot: BotDefinition,
+    target: TriggerTarget,
     stored: StoredTrigger | null,
     caller: BotCaller,
   ) {
-    yield* bots.checkCaller({ botId: bot.id, inputs: {} }, caller);
-    yield* bots.checkRunnable(
-      bot,
+    yield* bots.checkCaller({ botId: target.botId, inputs: {} }, caller);
+    const ceiling =
       stored === null
         ? caller
-        : { ...caller, runtimeMode: narrower(caller.runtimeMode, stored.creatorRuntimeMode) },
-    );
+        : { ...caller, runtimeMode: narrower(caller.runtimeMode, stored.creatorRuntimeMode) };
+    if (target.pipelineId != null)
+      return yield* pipelines.checkRunnable(target.pipelineId, ceiling);
+    // A firing of a version that no longer exists is skipped, so the current bot stands in.
+    const definition = yield* bots
+      .definitionAt(target.botId, versionRun(target))
+      .pipe(Effect.catch(() => bots.get(target.botId)));
+    yield* bots.checkRunnable(definition, ceiling);
   });
 
   /** Creates or updates a trigger. The creator and their runtime mode are kept from creation. */
@@ -230,7 +249,17 @@ export const make = Effect.gen(function* () {
     if (existing !== null && (existing.trigger.pipelineId ?? null) !== pipelineId)
       return yield* fail("invalid", "A trigger cannot move to another pipeline.");
     const bot = yield* bots.get(input.botId);
-    yield* checkArming(bot, existing, caller);
+    yield* checkArming(
+      {
+        botId: input.botId,
+        pipelineId,
+        followLatest: input.followLatest,
+        ...(input.followStable === true ? { followStable: true } : {}),
+        pinnedVersion: existing?.trigger.pinnedVersion ?? bot.version,
+      },
+      existing,
+      caller,
+    );
     if (input.followLatest && input.followStable === true)
       return yield* fail("invalid", BOTH_FOLLOWS);
     const pipeline = pipelineId === null ? null : yield* pipelines.get(pipelineId);
@@ -313,7 +342,7 @@ export const make = Effect.gen(function* () {
     caller: BotCaller,
   ) {
     const stored = yield* requireStored(triggerId);
-    if (enabled) yield* checkArming(yield* bots.get(stored.trigger.botId), stored, caller);
+    if (enabled) yield* checkArming(stored.trigger, stored, caller);
     const { trigger } = stored;
     return yield* write({
       ...stored,
@@ -380,19 +409,10 @@ export const make = Effect.gen(function* () {
     if (bot._tag === "None")
       return { outcome: "skipped", runId: null, reason: "The bot was deleted." };
     // A version that cannot run still names the bot on the skipped run it records.
-    const pinned = yield* bots
-      .definitionAt(
-        trigger.botId,
-        trigger.followLatest
-          ? "latest"
-          : trigger.followStable === true
-            ? "stable"
-            : trigger.pinnedVersion,
-      )
-      .pipe(
-        Effect.map((definition) => ({ definition, problem: null })),
-        Effect.catch((error) => Effect.succeed({ definition: bot.value, problem: error.message })),
-      );
+    const pinned = yield* bots.definitionAt(trigger.botId, versionRun(trigger)).pipe(
+      Effect.map((definition) => ({ definition, problem: null })),
+      Effect.catch((error) => Effect.succeed({ definition: bot.value, problem: error.message })),
+    );
     const { definition } = pinned;
     const caller: BotCaller = {
       actor: trigger.createdBy,

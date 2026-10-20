@@ -13,7 +13,7 @@ import type { WebhookTriggerRequest } from "../../../scheduledTasks/ScheduledTas
 import { GitVcsDriver } from "../../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
-import { BotsService, USER_CALLER, type BotCaller } from "../BotsService.ts";
+import { BotsService, USER_CALLER, versionInput, type BotCaller } from "../BotsService.ts";
 import { BotPipelines, make as makeBotPipelines } from "../pipelines/BotPipelines.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotTriggers.ts";
@@ -381,6 +381,62 @@ describe("BotTriggers", () => {
         expect(yield* triggers.setEnabled(saved.id, false, narrow)).toMatchObject({
           enabled: false,
         });
+      }),
+    ),
+  );
+
+  it.effect("checks arming against the version a trigger runs, not the bot's latest", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer({ runtimeMode: "full-access" }), USER_CALLER);
+        const saved = yield* triggers.save(trigger({ enabled: false }), USER_CALLER);
+        const narrow = agent("approval-required");
+        // The agent narrows the bot, which leaves the trigger pinned to the full-access version.
+        const latest = yield* bots.get("reviewer");
+        yield* bots.save({ ...versionInput(latest), runtimeMode: "approval-required" }, narrow);
+
+        const enabled = yield* triggers.setEnabled(saved.id, true, narrow).pipe(Effect.flip);
+        expect(enabled.reason).toBe("permission");
+        expect(yield* triggers.get(saved.id)).toMatchObject({ enabled: false });
+        const following = yield* triggers
+          .save(trigger({ id: saved.id, enabled: true, followLatest: true }), narrow)
+          .pipe(Effect.option);
+        expect(following._tag).toBe("Some");
+      }),
+    ),
+  );
+
+  it.effect("checks arming a pipeline trigger against every step of the pipeline", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, pipelines, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer({ runtimeMode: "approval-required" }), USER_CALLER);
+        yield* bots.save(
+          reviewer({ id: "deployer", name: "Deployer", runtimeMode: "full-access" }),
+          USER_CALLER,
+        );
+        const steps = [
+          { id: "review", botId: "reviewer", inputs: { file: "{{input.file}}" } },
+          { id: "deploy", botId: "deployer", inputs: { file: "{{input.file}}" } },
+        ];
+        const narrow = agent("approval-required");
+        const widened = yield* pipelines
+          .save({ pipeline: { ...checksPipeline("ship").pipeline, steps } }, narrow)
+          .pipe(Effect.flip);
+        expect(widened.reason).toBe("permission");
+
+        yield* pipelines.save(
+          { pipeline: { ...checksPipeline("ship").pipeline, steps } },
+          USER_CALLER,
+        );
+        const saved = yield* triggers.save(
+          trigger({ pipelineId: "ship", enabled: false }),
+          USER_CALLER,
+        );
+        const enabled = yield* triggers.setEnabled(saved.id, true, narrow).pipe(Effect.flip);
+        expect(enabled.reason).toBe("permission");
+        expect(yield* triggers.get(saved.id)).toMatchObject({ enabled: false });
       }),
     ),
   );
