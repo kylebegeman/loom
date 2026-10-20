@@ -84,7 +84,7 @@ is never performed by this service.
 `VaultHealthContext` inspects current profile bindings and grant references for one item. It
 uses the environment's project store and existing profile/access services, sorted by project ID,
 with ten projects per page and two concurrent profile reads. Thread grants resolve to the
-thread's current project; deleted or unknown threads are omitted. Suspended/revoked grants and
+thread's current project. References with deleted/unknown threads or projects contribute to an environment-wide unattributed-grant count, rather than silently disappearing. Valid grants on other pages do not contribute to that count. Suspended/revoked grants and
 archived profiles retain their labels and state, without being represented as usable authority.
 The response contains only metadata. Project and registry failures return an error rather than
 an empty-success result. Each page is a current inspection, not a transaction across registries.
@@ -107,7 +107,7 @@ Web handoff stores the requested project in the Vault navigation atom and routes
 so the profile picker owns project selection rather than the global settings scope.
 The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
 optional on older context responses. External consumers and provider-side copies remain
-undiscovered. No field or empty page should be interpreted as proof they do not exist.
+undiscovered. Optional structured coverage accompanies both responses, including empty/final pages. It identifies page scope, external consumers as not discovered, provider copies as unknown and current authorization as not evaluated. Missing coverage on older servers renders an explicit unknown notice. No field or empty page should be interpreted as proof external consumers do not exist.
 
 SSH validation reuses the existing pinned-host probe with its fixed `/usr/bin/true` command
 and eight-second timeout. The optional rule field defaults to no SSH validation for existing

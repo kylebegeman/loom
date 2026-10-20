@@ -21,6 +21,7 @@ import { AppleBuildToolingToolkit, appleBuildToolingHandlers } from "../apple-bu
 import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.ts";
+import { DirectoryToolkit, directoryHandlers } from "../directory/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
   {
@@ -150,5 +151,11 @@ export const FORK_MCP_TOOLKITS = [
     handlers: previewLinksHandlers,
     register: (register: typeof toolkitRegistration) =>
       register(PreviewLinksToolkit, previewLinksHandlers),
+  },
+  {
+    toolkit: DirectoryToolkit,
+    handlers: directoryHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(DirectoryToolkit, directoryHandlers),
   },
 ] as const;
