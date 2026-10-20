@@ -137,3 +137,20 @@ service tests, not claimed as browser interaction acceptance. Kyle retains the n
 Outcomes are memory-only. Policy format stays 3 and no sidecar is written, so a sidecar corruption
 or compatible-policy-reader test does not apply to this milestone. No external notification,
 automatic replay, persistent duplicate guarantee, production, Library or OpenBao action is added.
+
+## Requester outcome visibility and replay reconciliation
+
+Five focused suites pass **58 tests**: access service, notification service, requester MCP,
+real MCP registration and approval contracts. New service cases prove own-request notification
+visibility with no send or encrypted-policy write, cross-requester not-found, terminal-state
+derivation, lost creation-reply lookup, replay without notification delivery, and restart with
+durable run correlation but no retained delivery observation. Backend outage fails the status
+read; the exact retention boundary returns not-found. All restart tests now rebuild with
+`Layer.fresh`, including prior policy/retry recovery cases, so memoization cannot conceal missing
+reconstruction. Approved-request recovery correctly retains terminal state while dropping the
+old process's attempted timestamp.
+
+Server, contracts, client-runtime, web and mobile typechecks plus focused lint/format,
+documentation links, 390 seam rows and whitespace pass. This follow-up adds no UI or simulator
+pass. Policy stays format 3; no sidecar, Library, OpenBao path, permission or external action is
+introduced. All canExecute/automaticResumption/allowOnceConsumption gates remain false.

@@ -541,8 +541,10 @@ const make = Effect.gen(function* () {
               : "access-denied";
       }
     }
+    const notificationOutcome = (yield* notifications.outcomes([request]))[0];
     return {
       request,
+      ...(notificationOutcome ? { notificationOutcome } : {}),
       checkedAt: now,
       operationState,
       automaticResumption: false as const,

@@ -14,7 +14,8 @@ Pending requests can be viewed and approved for five or fifteen minutes, denied 
 in web/desktop Settings > Loom > Vault access and its native mobile equivalent. Active and
 expired approvals retain a visible revoke action. Decisions atomically save the request and
 ordinary evaluator-enforced grant in the existing encrypted access policy. Agents can request access, inspect their own status and cancel their own pending requests
-through authenticated MCP identity; there is no agent approval tool.
+through authenticated MCP identity; own-request status also exposes process-local notification
+outcomes without sending an alert. There is no agent approval or delivery-mutation tool.
 The selected environment and its access permissions remain authoritative.
 
 External notification delivery remains stubbed behind an adapter. The inbox shows bounded,

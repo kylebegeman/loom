@@ -51,6 +51,7 @@ const fixture = () => {
   const state = {
     loseNextReply: false,
     notificationsFail: false,
+    notificationCalls: 0,
     failWrites: false,
     failReads: false,
     readBarrier: null as {
@@ -141,11 +142,12 @@ const fixture = () => {
         Layer.provide(
           Layer.succeed(ApprovalNotificationTransport.ApprovalNotificationTransport, {
             pending: () =>
-              Effect.suspend(() =>
-                state.notificationsFail
+              Effect.suspend(() => {
+                state.notificationCalls++;
+                return state.notificationsFail
                   ? Effect.fail(new VaultError({ reason: "unavailable" }))
-                  : Effect.succeed("stubbed" as const),
-              ),
+                  : Effect.succeed("stubbed" as const);
+              }),
           }),
         ),
       ),
@@ -457,7 +459,9 @@ it.effect("survives service reconstruction and enforces persisted revocation", (
         },
         "human",
       );
-      const restarted = yield* VaultAccess.VaultAccess.pipe(Effect.provide(fixture.layer));
+      const restarted = yield* VaultAccess.VaultAccess.pipe(
+        Effect.provide(Layer.fresh(fixture.layer)),
+      );
       expect((yield* restarted.snapshot).revision).toBe(2);
       expect(
         (yield* restarted.require(threadId, itemId, "inspect", null).pipe(Effect.flip)).reason,
@@ -749,7 +753,7 @@ it.effect("recovers lost decision replies and notification failure from the comm
       const reopened = yield* Effect.flatMap(
         VaultAccess.VaultAccess,
         (service) => service.approvalInbox,
-      ).pipe(Effect.provide(fixture.layer));
+      ).pipe(Effect.provide(Layer.fresh(fixture.layer)));
       expect(reopened.requests[0]?.state).toBe("approved");
       expect(reopened.notificationOutcomes?.[0]?.delivery).toBe("not-required");
       expect(
@@ -877,7 +881,7 @@ it.effect(
         ).toBe("conflict");
         const reopened = yield* Effect.flatMap(VaultAccess.VaultAccess, (service) =>
           service.approvalStatus(approvalInput.id, threadId),
-        ).pipe(Effect.provide(fixture.layer));
+        ).pipe(Effect.provide(Layer.fresh(fixture.layer)));
         expect(reopened.request.waitingOperation?.runId).toBe("grant-run");
         yield* access.approvalChange(approveInput, "human", Effect.void);
         yield* access.require(threadId, itemId, "use", approvalInput.destination);
@@ -1094,8 +1098,15 @@ it.effect(
               },
               threadId,
             ),
-          ).pipe(Effect.provide(fixture.layer));
-          expect(recovered).toEqual(prepared);
+          ).pipe(Effect.provide(Layer.fresh(fixture.layer)));
+          expect(prepared.status.notificationOutcome?.attemptedAt).toBe(0);
+          expect(recovered).toEqual({
+            ...prepared,
+            status: {
+              ...prepared.status,
+              notificationOutcome: { ...prepared.status.notificationOutcome!, attemptedAt: null },
+            },
+          });
           expect([...fixture.records.entries()]).toEqual(before);
           expect(
             (yield* access.approvalPrepareRetry(
@@ -1511,5 +1522,102 @@ it.effect(
           );
         }),
       "ssh-key",
+    ),
+);
+
+it.effect(
+  "exposes only the authenticated requester's notification outcome without sends or policy writes",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        const records = [...fixture.records.entries()];
+        const status = yield* access.approvalStatus(approvalInput.id, threadId);
+        expect(status).toMatchObject({
+          notificationOutcome: {
+            requestId: approvalInput.id,
+            delivery: "stubbed",
+            storage: "process",
+            inApp: "available-in-inbox",
+          },
+          canExecute: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect(fixture.state.notificationCalls).toBe(1);
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, childId).pipe(Effect.flip)).reason,
+        ).toBe("not-found");
+        expect([...fixture.records.entries()]).toEqual(records);
+        expect(fixture.state.notificationCalls).toBe(1);
+        yield* access.approvalCancel(cancelInput, threadId, Effect.void);
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, threadId)).notificationOutcome?.delivery,
+        ).toBe("not-required");
+        expect(fixture.state.notificationCalls).toBe(1);
+      }),
+    ),
+);
+
+it.effect(
+  "reconciles a committed request with a lost reply without inventing or replaying delivery",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        fixture.state.loseNextReply = true;
+        expect(
+          (yield* access
+            .approvalCreate(approvalInput, requesterActor, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        const recovered = yield* access.approvalStatus(approvalInput.id, threadId);
+        expect(recovered).toMatchObject({
+          request: { state: "pending" },
+          notificationOutcome: {
+            inApp: "available-in-inbox",
+            delivery: "not-delivered",
+            attemptedAt: null,
+          },
+        });
+        expect(fixture.state.notificationCalls).toBe(0);
+        expect(
+          (yield* access.approvalCreate(approvalInput, requesterActor, Effect.void)).state,
+        ).toBe("pending");
+        expect(fixture.state.notificationCalls).toBe(0);
+        yield* access.approvalChange(approveInput, "human", Effect.void);
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, threadId)).notificationOutcome?.delivery,
+        ).toBe("not-required");
+        expect((yield* access.snapshot).grants).toHaveLength(1);
+      }),
+    ),
+);
+
+it.effect(
+  "resets requester notification observations after a real service rebuild while retaining request correlation",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.approvalCreate(approvalInput, requesterActor, Effect.void);
+        expect(fixture.state.notificationCalls).toBe(1);
+        const restarted = yield* Effect.flatMap(VaultAccess.VaultAccess, (service) =>
+          service.approvalStatus(approvalInput.id, threadId),
+        ).pipe(Effect.provide(Layer.fresh(fixture.layer)));
+        expect(restarted).toMatchObject({
+          request: { waitingOperation: { operationId: approvalInput.id, runId: "grant-run" } },
+          notificationOutcome: { delivery: "not-delivered", attemptedAt: null },
+          canExecute: false,
+        });
+        expect(fixture.state.notificationCalls).toBe(1);
+        fixture.state.failReads = true;
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, threadId).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        fixture.state.failReads = false;
+        yield* TestClock.adjust("24 hours");
+        expect(
+          (yield* access.approvalStatus(approvalInput.id, threadId).pipe(Effect.flip)).reason,
+        ).toBe("not-found");
+      }),
     ),
 );

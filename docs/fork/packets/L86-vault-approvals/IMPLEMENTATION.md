@@ -32,8 +32,13 @@ Bounded process-local notification observations are implemented with an explicit
 shared web/mobile status copy. Reads and restarts never resend. Kyle selected memory storage;
 policy stays 3 and no sidecar is written.
 
-Next selected work: requester-scoped notification outcome visibility and committed-request/replay
-reconciliation, with no agent delivery mutation or external transport. Automatic resumption and one-time consumption remain
+Requester status now includes only its owned request's process-local notification outcome.
+Lost creation replies reconcile without alert replay, and fresh service reconstruction preserves
+request/run correlation while discarding notification observations. Older restart tests now use
+fresh layers so their recovery assertions exercise real service reconstruction.
+
+Next selected work: notification eligibility/decision-race acceptance and pending-request review
+ergonomics, still without an external transport or agent delivery mutation. Automatic resumption and one-time consumption remain
 gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
 simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
 Do not mark the full packet done.

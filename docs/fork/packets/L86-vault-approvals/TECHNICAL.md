@@ -252,3 +252,26 @@ and mobile use shared status wording and derive terminal copy using their curren
 so a cached in-flight result cannot outlive the visible pending request. A failed refresh still
 hides stale data. Approval persistence, grants and every literal-false execution/resumption/
 allow-once gate stay independent of observations.
+
+## Requester notification visibility and reconciliation
+
+Own-request status now optionally includes the same process-local notification observation as
+administrator inbox reads. The service resolves the authenticated requester and checks request
+ownership before consulting notification state. It passes only that request to the observation
+service, never the whole queue. Non-owners, administrator-created-on-behalf requests and aged-out
+IDs retain their existing not-found boundary. Status reads and retry-preparation/recovery reads
+never dispatch alerts, write encrypted policy or expose a notification mutation.
+
+If creation commits but the storage reply is lost, the request is still available in the inbox.
+Its current process may have no attempted delivery, because dispatch follows confirmed commit.
+The caller can reconcile by its stable request ID or identical creation replay; replay returns
+the committed request without delivering an alert. This deliberately prefers truthful
+`not-delivered` observation over duplicate delivery. Rebuilding the service preserves durable
+request/run correlation but discards attempt metadata. Even terminal requests may then have a
+null attempted timestamp, while current state still derives `not-required`. None of these fields
+prove historical delivery or human review. After the 24-hour request window, lookup returns
+not-found rather than falling back to a stale process observation.
+
+The field is optional for older-server compatibility and never enters the stored policy. Policy
+remains format 3, with no sidecar or new downgrade requirement. Every execution, automatic
+resumption and allow-once gate stays literal false.

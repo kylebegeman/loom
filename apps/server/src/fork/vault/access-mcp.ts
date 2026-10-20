@@ -46,7 +46,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_access_request_status", {
     description:
-      "Read only your authenticated thread's own Vault request and durable waiting-operation correlation. Unknown, other-requester and aged-out IDs return not-found. A retry-ready status is not an execution token: automatic resumption and allow-once consumption remain disabled. Recheck normal access before explicitly retrying an operation.",
+      "Read only your authenticated thread's own Vault request, durable waiting-operation correlation and process-local notification outcome. A saved request is available in the inbox even if no alert was delivered; restart forgets delivery observations and this read never sends an alert. Unknown, other-requester and aged-out IDs return not-found. A retry-ready status is not an execution token: automatic resumption and allow-once consumption remain disabled. Recheck normal access before explicitly retrying an operation.",
     parameters: VaultApprovalStatusInput,
     success: VaultApprovalRequesterStatus,
     failure,

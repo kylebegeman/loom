@@ -673,3 +673,8 @@ The approval inbox also shows notification status. External alerts are not conne
 requests remain available here regardless of that status. Delivery observations reset with the
 server session. “Unconfirmed” does not mean an alert arrived, and a delivery receipt would not
 mean someone reviewed or approved the request. Refreshing or restarting does not resend alerts.
+
+Agents can inspect the same notification observation through their own request-status tool.
+If saving a request loses its reply, look it up by the original ID before retrying. A saved
+request may have no recorded delivery attempt; replaying creation returns that request without
+sending an alert. Status remains available only during the request's retention window.

@@ -234,8 +234,26 @@ export const VaultApprovalCancel = Schema.Struct({
   expectedRevision: PositiveInt,
 });
 export type VaultApprovalCancel = typeof VaultApprovalCancel.Type;
+export const VaultApprovalNotificationOutcome = Schema.Struct({
+  requestId: VaultItemId,
+  requestRevision: PositiveInt,
+  storage: Schema.Literal("process"),
+  inApp: Schema.Literal("available-in-inbox"),
+  delivery: Schema.Literals([
+    "not-delivered",
+    "stubbed",
+    "sending",
+    "unconfirmed",
+    "delivered",
+    "not-required",
+  ]),
+  attemptedAt: Schema.NullOr(Time),
+  expiresAt: Time,
+});
+export type VaultApprovalNotificationOutcome = typeof VaultApprovalNotificationOutcome.Type;
 export const VaultApprovalRequesterStatus = Schema.Struct({
   request: VaultApprovalRequest,
+  notificationOutcome: Schema.optionalKey(VaultApprovalNotificationOutcome),
   checkedAt: Time,
   operationState: Schema.Literals([
     "unbound",
@@ -306,23 +324,6 @@ export const VaultApprovalRetryReport = Schema.Struct({
   canExecute: Schema.Literal(false),
 });
 export type VaultApprovalRetryReport = typeof VaultApprovalRetryReport.Type;
-export const VaultApprovalNotificationOutcome = Schema.Struct({
-  requestId: VaultItemId,
-  requestRevision: PositiveInt,
-  storage: Schema.Literal("process"),
-  inApp: Schema.Literal("available-in-inbox"),
-  delivery: Schema.Literals([
-    "not-delivered",
-    "stubbed",
-    "sending",
-    "unconfirmed",
-    "delivered",
-    "not-required",
-  ]),
-  attemptedAt: Schema.NullOr(Time),
-  expiresAt: Time,
-});
-export type VaultApprovalNotificationOutcome = typeof VaultApprovalNotificationOutcome.Type;
 export const VaultApprovalInbox = Schema.Struct({
   retention: Schema.optionalKey(
     Schema.Struct({
