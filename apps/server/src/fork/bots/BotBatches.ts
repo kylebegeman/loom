@@ -651,7 +651,8 @@ export const make = Effect.gen(function* () {
 
   /**
    * After bot run recovery: items whose run never started go back to wait, and each running
-   * batch gets a new feeder that also waits on its runs still in flight.
+   * batch gets a new feeder that also waits on its runs still in flight. The run that never
+   * started leaves the inbox, since the feeder reruns its item and a retry would run it twice.
    */
   const recover = Effect.fn("BotBatches.recover")(function* () {
     yield* bots.whenRecovered;
@@ -664,10 +665,15 @@ export const make = Effect.gen(function* () {
           item.state === "started" &&
           item.run?.status === "failed" &&
           item.run.error === RESTARTED_BEFORE_START
-        )
+        ) {
+          // Dismissed first, so a restart in between still finds the item to requeue.
+          yield* bots
+            .dismiss({ runIds: [item.run.id], dismissed: true })
+            .pipe(Effect.ignore({ log: true }));
           yield* store
             .requeueItem(stored.batch.id, item.index, item.previousRunIds)
             .pipe(Effect.catch(storageError));
+        }
       yield* startFeeder(stored.batch.id);
     }
   });

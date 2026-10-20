@@ -319,6 +319,8 @@ describe("BotBatches", () => {
         expect(yield* bots.getRun(queued.id)).toMatchObject({ error: RESTARTED_BEFORE_START });
         yield* bots.markRecovered;
         yield* batches.recover();
+        // The feeder reruns the item, so the inbox offers no retry of the run that never started.
+        expect((yield* bots.inbox({ limit: 10 })).runs).toEqual([]);
 
         expect(yield* endNext(harness, "completed", "Fine.")).toBe("Review a.ts.");
         expect(yield* batches.awaitBatch("batch-1", WAIT_MS)).toMatchObject({
