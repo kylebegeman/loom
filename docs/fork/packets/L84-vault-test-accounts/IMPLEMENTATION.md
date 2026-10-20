@@ -33,8 +33,11 @@ backend restart. TESTING records focused checks and integrated web evidence.
    acceptance with independently authorized synthetic accounts. Shared-account semantics remain
    open; the first milestone is exclusively reserved.
 
-The synthetic login-delivery admission contract and failure/revocation proof are implemented.
-The next live section needs the dedicated app/environment and durable cleanup policy. Keep
+The synthetic admission and broker login-delivery contract are implemented as test-only models.
+They cover exact broker binding, callback revalidation, concurrent dispatch, ambiguous start/cleanup,
+cancellation fencing and model reconstruction with a retained synthetic fence. No live delivery
+implementation or durable cleanup storage is added.
+The next live section needs the dedicated app/environment and a durable cleanup barrier that also blocks reset/reuse. Keep
 delivery unavailable until its adapter, unknown-outcome recovery and cleanup behavior are proven. A live application/reset adapter and test-mail
 domain still need Kyle's selection. L86's execution gates and L75's host-policy park remain unchanged.
 

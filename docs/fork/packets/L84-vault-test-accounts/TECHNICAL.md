@@ -144,6 +144,48 @@ response cannot be treated as not-started, retried into another session or refun
 release. The L86 protected-item and temporal-consistency decisions remain separate owner gates;
 this account boundary does not bypass them.
 
+## Synthetic broker login-delivery contract
+
+`testkit/SyntheticLoginDelivery.ts` is an executable test-only contract, imported only by the
+workload suite. It has no runtime layer, RPC/MCP/CLI entry point, real credential input or storage.
+Its adapter registration binds environment/machine, app, test target, canonical origin and a
+current broker deadline. The real workload admission guard checks account/lease/item versions,
+run identity, pool grants and separate login scope before dispatch and before/after a callback.
+The selected adapter must validate its own registered binding again at the effect boundary;
+a prior observation cannot close that race. Returned session metadata must match operation,
+machine, lease and origin before the callback receives the synthetic session handle.
+
+A local atomic claim admits one start per model instance. Concurrent refusals cannot change the
+winning admission. A cleanup finalizer is registered before start, including before a failed or
+interrupted response. Cleanup targets the original operation ID, never an unvalidated returned
+handle. The modeled transitions are:
+
+| State               | Meaning and allowed next action                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| pending / admitting | One caller may perform current admission. A pre-start refusal is terminal.                        |
+| starting / active   | An external effect may exist. Exit always requests cleanup, even after a lost reply.              |
+| closing             | One cleanup owns reconciliation; interruption cannot declare success.                             |
+| cleanup-required    | Start outcome or cleanup remains unresolved. Reconcile cleanup only; no remint or callback retry. |
+| closed              | Broker acknowledged a terminal operation fence; no later start with this ID may create a session. |
+| refused             | No start was admitted; the model does not automatically retry.                                    |
+
+A cleanup acknowledgement means a **terminal fence**, not merely that a lookup currently finds
+no session. Synthetic race evidence includes a remote mint attempt arriving after cancellation;
+the fixture fence refuses it. Reconstructing the local model cannot bypass a fence retained by
+the synthetic broker. This deliberately assumes the broker retains that fence; the fixture is
+in memory and proves neither real provider logout nor durable restart-safe cleanup.
+
+`closed` describes only this synthetic delivery operation. It never marks a pool account clean,
+refunds a lease, proves reset or authorizes reuse. Registry expiry/quarantine still operates
+independently. Before live delivery, the owner must choose a durable cleanup/unknown-outcome
+barrier, enforce it against account reset/reuse, define restart reconciliation and retention, and
+prove provider-specific terminal revocation or equivalent fencing. A provider without that
+capability cannot satisfy this contract by acknowledging absence. These are unresolved live
+adapter decisions, not a new OpenBao permission/path/schema proposal.
+
+All delivery, automatic-resumption and allow-once gates remain literal false. Policy3, journal1,
+registry1 and existing runtime behavior are unchanged by this test/docs slice. L75 stays parked.
+
 ## Contracts and authorization
 
 Collection/account CRUD plus reserve/renew/release/quarantine/reset/retire. Reservation returns a lease and safe account summary; login delivery is separate. Provisioning uses request IDs so retries cannot create duplicate accounts. Destructive resets apply only to dedicated test environments.

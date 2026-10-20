@@ -25,6 +25,11 @@ import * as Access from "./VaultAccess.ts";
 import * as Notifications from "./ApprovalNotifications.ts";
 import * as Accounts from "./VaultTestAccounts.ts";
 import * as Workloads from "./VaultTestAccountWorkloads.ts";
+import {
+  syntheticLoginDelivery,
+  type SyntheticLoginAdapter,
+} from "./testkit/SyntheticLoginDelivery.ts";
+import * as Clock from "effect/Clock";
 
 const caller = {
   environmentId: EnvironmentId.make("account-workloads"),
@@ -988,6 +993,410 @@ it.effect.each(["run", "item", "deadline"] as const)(
           });
         expect((yield* prepared.revalidate.pipe(Effect.flip)).reason).toBe("denied");
         expect(interleaved).toBe(true);
+      }),
+    ),
+);
+
+const syntheticDelivery = Effect.fnUntraced(function* (
+  f: Effect.Success<typeof setup> & ReturnType<typeof fixture>,
+) {
+  yield* f.grant();
+  const loginGrant = yield* f.grant({
+    destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+    actions: ["use"],
+  });
+  const reserved = yield* f.reserve(),
+    leaseId = reserved.accounts[0]!.lease!.id;
+  const prepared = yield* f.service.prepareLogin(
+    { accountId: account.id, leaseId, origin: loginOrigin },
+    caller,
+  );
+  const operationId = f.id(),
+    machineId = f.id();
+  const control = {
+    broker: {
+      environmentId: caller.environmentId as string,
+      machineId,
+      application: collection.application,
+      target: collection.target as string,
+      origin: loginOrigin,
+      online: true,
+      leaseUntil: (yield* Clock.currentTimeMillis) + 900_000,
+    },
+    starts: 0,
+    mints: 0,
+    cleanups: 0,
+    cleanupIds: [] as string[],
+    active: false,
+    fenced: false,
+    loseReply: false,
+    failCleanup: false,
+    beforeStart: Effect.void as Effect.Effect<void>,
+    afterStart: Effect.void as Effect.Effect<void, VaultError>,
+    beforeCleanup: Effect.void as Effect.Effect<void, VaultError>,
+    forged: false,
+  };
+  const adapter: SyntheticLoginAdapter = {
+    observe: Effect.sync(() => ({ ...control.broker })),
+    start: ({ operationId: id, admission }) =>
+      Effect.gen(function* () {
+        control.starts++;
+        yield* control.beforeStart;
+        // This synthetic adapter checks its own boundary and honors cleanup's terminal fence.
+        if (
+          control.fenced ||
+          !control.broker.online ||
+          control.broker.environmentId !== caller.environmentId ||
+          control.broker.machineId !== machineId ||
+          control.broker.application !== admission.collection.application ||
+          control.broker.target !== admission.collection.target ||
+          control.broker.origin !== admission.origin ||
+          (yield* Clock.currentTimeMillis) >=
+            Math.min(control.broker.leaseUntil, admission.expiresAt)
+        )
+          return yield* new VaultError({ reason: "denied" });
+        control.active = true;
+        control.mints++;
+        yield* control.afterStart;
+        if (control.loseReply) return yield* new VaultError({ reason: "unavailable" });
+        return {
+          operationId: control.forged ? "foreign-operation" : id,
+          machineId,
+          leaseId: admission.leaseId,
+          origin: admission.origin,
+          sessionId: "synthetic-session",
+        };
+      }),
+    cleanup: (id) =>
+      Effect.gen(function* () {
+        yield* control.beforeCleanup;
+        control.cleanups++;
+        control.cleanupIds.push(id);
+        if (id !== operationId || control.failCleanup) return "unknown" as const;
+        control.fenced = true;
+        control.active = false;
+        return "fenced" as const;
+      }),
+  };
+  const delivery = yield* syntheticLoginDelivery(
+    operationId,
+    { environmentId: caller.environmentId, machineId },
+    prepared,
+    adapter,
+  );
+  return { control, delivery, loginGrant, leaseId, adapter, prepared, operationId, machineId };
+});
+it.effect(
+  "scopes a synthetic broker session to its admission and fences it without cleaning the reserved account",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery } = yield* syntheticDelivery(f);
+        let callbacks = 0;
+        yield* delivery.run((id) =>
+          Effect.sync(() => {
+            expect(id).toBe("synthetic-session");
+            callbacks++;
+          }),
+        );
+        expect({
+          starts: control.starts,
+          cleanups: control.cleanups,
+          active: control.active,
+          callbacks,
+        }).toEqual({ starts: 1, cleanups: 1, active: false, callbacks: 1 });
+        expect(yield* delivery.snapshot).toBe("closed");
+        expect(delivery.gates).toEqual({
+          canDeliver: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("reserved");
+        expect((yield* delivery.run(() => Effect.void).pipe(Effect.flip)).reason).toBe("denied");
+        expect(control.starts).toBe(1);
+      }),
+    ),
+);
+it.effect.each([
+  "environmentId",
+  "machineId",
+  "application",
+  "target",
+  "origin",
+  "offline",
+  "expired",
+] as const)("refuses mismatched or unavailable synthetic broker %s before start", (field) =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const { control, delivery } = yield* syntheticDelivery(f);
+      if (field === "offline") control.broker.online = false;
+      else if (field === "expired") control.broker.leaseUntil = 0;
+      else control.broker[field] = "mismatched";
+      expect(
+        (yield* delivery.run(() => Effect.die("No callback permitted")).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(yield* delivery.snapshot).toBe("refused");
+      expect(control.starts).toBe(0);
+      expect(control.cleanups).toBe(0);
+    }),
+  ),
+);
+it.effect.each(["revoked", "run", "expired", "forged", "broker", "released"] as const)(
+  "cleans synthetic start and refuses callback after %s drift",
+  (drift) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery, loginGrant, leaseId, operationId } = yield* syntheticDelivery(f);
+        control.afterStart = Effect.gen(function* () {
+          if (drift === "revoked")
+            yield* f.access
+              .apply(
+                {
+                  operationId: f.id(),
+                  expectedRevision: (yield* f.access.snapshot).revision,
+                  change: { type: "state", id: loginGrant.definition.id, state: "revoked" },
+                },
+                "human",
+              )
+              .pipe(Effect.orDie);
+          else if (drift === "run") f.state.runId = RunId.make("changed-after-start");
+          else if (drift === "expired") yield* TestClock.adjust("5 minutes");
+          else if (drift === "forged") control.forged = true;
+          else if (drift === "broker") control.broker.online = false;
+          else
+            yield* f.service.apply(
+              {
+                operationId: f.id(),
+                expectedRevision: (yield* f.manager.snapshot("client:manager")).revision,
+                change: { type: "release", id: account.id, leaseId: leaseId },
+              },
+              caller,
+              Effect.void,
+            );
+        });
+        expect(
+          (yield* delivery.run(() => Effect.die("No callback permitted")).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(yield* delivery.snapshot).toBe("closed");
+        expect(control.active).toBe(false);
+        expect(control.cleanups).toBe(1);
+        expect(control.cleanupIds).toEqual([operationId]);
+      }),
+    ),
+);
+it.effect(
+  "reconciles unknown start and cleanup without minting twice or declaring the account clean",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery } = yield* syntheticDelivery(f);
+        control.loseReply = true;
+        control.failCleanup = true;
+        expect(
+          (yield* delivery.run(() => Effect.die("No callback permitted")).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        expect(yield* delivery.snapshot).toBe("cleanup-required");
+        expect(control.active).toBe(true);
+        expect((yield* delivery.run(() => Effect.void).pipe(Effect.flip)).reason).toBe("denied");
+        control.failCleanup = false;
+        yield* delivery.reconcile;
+        yield* delivery.reconcile;
+        expect(yield* delivery.snapshot).toBe("closed");
+        expect(control.active).toBe(false);
+        expect(control.starts).toBe(1);
+        expect(control.cleanups).toBe(2);
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("reserved");
+      }),
+    ),
+);
+it.effect("fences interrupted starts and refuses concurrent dispatch without a second mint", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const { control, delivery } = yield* syntheticDelivery(f);
+      const waiting = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      control.beforeStart = Deferred.succeed(waiting, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      const first = yield* delivery.run(() => Effect.void).pipe(Effect.forkChild);
+      yield* Deferred.await(waiting);
+      expect((yield* delivery.run(() => Effect.void).pipe(Effect.flip)).reason).toBe("denied");
+      yield* Fiber.interrupt(first);
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* delivery.snapshot).toBe("closed");
+      expect(control.fenced).toBe(true);
+      expect(control.starts).toBe(1);
+      expect(control.active).toBe(false);
+    }),
+  ),
+);
+
+it.effect("does not let a concurrent refusal change another caller's in-flight admission", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const { delivery } = yield* syntheticDelivery(f);
+      const waiting = yield* Deferred.make<void>(),
+        resume = yield* Deferred.make<void>();
+      f.state.beforePolicyWrite = () =>
+        Effect.gen(function* () {
+          f.state.beforePolicyWrite = null;
+          yield* Deferred.succeed(waiting, undefined);
+          yield* Deferred.await(resume);
+        });
+      const first = yield* delivery.run(() => Effect.void).pipe(Effect.forkChild);
+      yield* Deferred.await(waiting);
+      expect((yield* delivery.run(() => Effect.void).pipe(Effect.flip)).reason).toBe("denied");
+      expect(yield* delivery.snapshot).toBe("admitting");
+      yield* Deferred.succeed(resume, undefined);
+      yield* Fiber.join(first);
+      expect(yield* delivery.snapshot).toBe("closed");
+    }),
+  ),
+);
+it.effect(
+  "a fenced cancellation blocks a late synthetic remote mint, even after its client wait was interrupted",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, adapter, prepared, operationId, machineId } = yield* syntheticDelivery(f);
+        const sent = yield* Deferred.make<void>(),
+          permitRemote = yield* Deferred.make<void>();
+        const reply =
+          yield* Deferred.make<Effect.Success<ReturnType<SyntheticLoginAdapter["start"]>>>();
+        let refusedLateMint = false;
+        const remote = yield* Effect.gen(function* () {
+          yield* Deferred.await(sent);
+          yield* Deferred.await(permitRemote);
+          if (control.fenced) refusedLateMint = true;
+          else control.active = true;
+          yield* Deferred.succeed(reply, {
+            operationId,
+            machineId,
+            leaseId: prepared.report.leaseId,
+            origin: loginOrigin,
+            sessionId: "late-synthetic-session",
+          });
+        }).pipe(Effect.forkChild);
+        const delivery = yield* syntheticLoginDelivery(
+          operationId,
+          { environmentId: caller.environmentId, machineId },
+          prepared,
+          {
+            ...adapter,
+            start: () =>
+              Deferred.succeed(sent, undefined).pipe(Effect.andThen(Deferred.await(reply))),
+          },
+        );
+        const client = yield* delivery
+          .run(() => Effect.die("No callback permitted"))
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(sent);
+        yield* Fiber.interrupt(client);
+        expect(yield* delivery.snapshot).toBe("closed");
+        yield* Deferred.succeed(permitRemote, undefined);
+        yield* Fiber.join(remote);
+        expect(refusedLateMint).toBe(true);
+        expect(control.active).toBe(false);
+        expect(control.cleanups).toBe(1);
+      }),
+    ),
+);
+
+it.effect("adapter-side binding validation refuses a reconfigured origin after admission", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const { control, delivery } = yield* syntheticDelivery(f);
+      control.beforeStart = Effect.sync(() => {
+        control.broker.origin = "https://changed.example.test";
+      });
+      expect(
+        (yield* delivery.run(() => Effect.die("No callback permitted")).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(control.mints).toBe(0);
+      expect(yield* delivery.snapshot).toBe("closed");
+    }),
+  ),
+);
+it.effect(
+  "retains unknown cleanup on adapter errors and fences replay after model reconstruction",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery, adapter, prepared, operationId, machineId } =
+          yield* syntheticDelivery(f);
+        control.beforeCleanup = Effect.fail(new VaultError({ reason: "unavailable" }));
+        yield* delivery.run(() => Effect.void);
+        expect(yield* delivery.snapshot).toBe("cleanup-required");
+        expect(control.active).toBe(true);
+        control.beforeCleanup = Effect.void;
+        yield* delivery.reconcile;
+        const restored = yield* syntheticLoginDelivery(
+          operationId,
+          { environmentId: caller.environmentId, machineId },
+          prepared,
+          adapter,
+        );
+        expect(
+          (yield* restored.run(() => Effect.die("No callback permitted")).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(control.mints).toBe(1);
+        expect(control.active).toBe(false);
+      }),
+    ),
+);
+it.effect.each(["failure", "run"] as const)(
+  "cleans callback %s and refuses authority lost inside a successful callback",
+  (outcome) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery } = yield* syntheticDelivery(f);
+        const callback =
+          outcome === "failure"
+            ? Effect.fail(new VaultError({ reason: "unavailable" }))
+            : Effect.sync(() => {
+                f.state.active = false;
+              });
+        expect((yield* delivery.run(() => callback).pipe(Effect.flip)).reason).toBe(
+          outcome === "failure" ? "unavailable" : "denied",
+        );
+        expect(control.active).toBe(false);
+        expect(yield* delivery.snapshot).toBe("closed");
+      }),
+    ),
+);
+
+it.effect.each(["complete", "interrupt"] as const)(
+  "keeps concurrent cleanup ownership and leaves interruption unresolved (%s)",
+  (outcome) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const { control, delivery } = yield* syntheticDelivery(f);
+        control.failCleanup = true;
+        yield* delivery.run(() => Effect.void);
+        expect(yield* delivery.snapshot).toBe("cleanup-required");
+        const waiting = yield* Deferred.make<void>(),
+          resume = yield* Deferred.make<void>();
+        control.failCleanup = false;
+        control.beforeCleanup = Deferred.succeed(waiting, undefined).pipe(
+          Effect.andThen(Deferred.await(resume)),
+        );
+        const first = yield* delivery.reconcile.pipe(Effect.forkChild);
+        yield* Deferred.await(waiting);
+        yield* delivery.reconcile;
+        expect(yield* delivery.snapshot).toBe("closing");
+        if (outcome === "interrupt") {
+          yield* Fiber.interrupt(first);
+          expect(yield* delivery.snapshot).toBe("cleanup-required");
+          expect(control.active).toBe(true);
+          control.beforeCleanup = Effect.void;
+          yield* delivery.reconcile;
+        } else {
+          yield* Deferred.succeed(resume, undefined);
+          yield* Fiber.join(first);
+        }
+        expect(yield* delivery.snapshot).toBe("closed");
+        expect(control.active).toBe(false);
+        expect(control.starts).toBe(1);
       }),
     ),
 );

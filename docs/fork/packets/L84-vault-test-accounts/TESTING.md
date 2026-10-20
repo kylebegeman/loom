@@ -159,3 +159,26 @@ then prove that a fresh preparation succeeds while the old one fails. Removing t
 makes this regression fail. Separate renewal coverage enforces the original deadline. Audit-write
 hooks change the run, archive the account item or advance past expiry during access.require;
 post-await revalidation refuses each case. These are synthetic service tests, not login delivery.
+
+## Synthetic broker contract
+
+The server package-CWD workload suite passes 48 tests, including 24 new broker-contract cases.
+It uses the real account/grant admission service and a fake broker, with no credential reveal.
+Cases cover environment/machine/app/target/origin mismatch, offline/expired presence, registered
+origin changes at the adapter boundary, forged return correlation, grant/run/lease/expiry changes,
+callback failure, duplicate admission, lost start replies and cleanup refusal/errors. Deferreds
+interleave cancellation and a late remote mint; the fixture's terminal operation fence prevents
+that late creation. Reconstructing the model with the same fixture fence cannot mint again.
+Concurrent cleanup ownership and interrupted reconciliation are covered.
+Only the original operation ID reaches cleanup. Confirmed cleanup does not mark the account
+clean; unresolved cleanup blocks model redispatch and can only retry cleanup.
+
+The contract is in testkit and imported only by this suite. Server typecheck, changed-file lint,
+links and 398 seams pass. Client contracts and runtime surfaces do not change in this slice.
+No synthetic broker assertion proves a real provider's fence, process isolation, durable cleanup
+or account-reset/reuse safety. Those remain explicit live adapter gates in TECHNICAL.md.
+
+```sh
+cd apps/server
+../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts
+```
