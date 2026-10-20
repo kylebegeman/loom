@@ -66,6 +66,7 @@ const fixture = () => {
     active: true,
     deleted: false,
     projectAvailable: true,
+    projectDeleted: false,
     approvalRequired: false,
   };
   const store = OpenBaoStore.OpenBaoStore.of({
@@ -108,10 +109,17 @@ const fixture = () => {
   const dependencies = Layer.mergeAll(
     NodeServices.layer,
     Layer.mock(ProjectStoreV2)({
-      get: (id) =>
+      // Mirrors ProjectStoreV2: a soft-deleted project is returned only with includeDeleted.
+      get: (id, options) =>
         Effect.succeed(
-          id === projectId && state.projectAvailable
-            ? Option.some({ projectId, title: "Test project" } as never)
+          id === projectId &&
+            state.projectAvailable &&
+            (!state.projectDeleted || options?.includeDeleted === true)
+            ? Option.some({
+                projectId,
+                title: "Test project",
+                deletedAt: state.projectDeleted ? "2026-10-19T00:00:00Z" : null,
+              } as never)
             : Option.none(),
         ),
     }),
@@ -1683,6 +1691,14 @@ it.effect(
         expect(inbox.requests[0]).not.toHaveProperty("threadTitle");
         fixture.state.runId = RunId.make("changed-run");
         expect((yield* access.approvalInbox).reviewContext?.[0]?.state).toBe("changed");
+        fixture.state.runId = RunId.make("grant-run");
+        fixture.state.projectDeleted = true;
+        // A retired project is a permanent change, not a lookup gap a refresh could clear.
+        expect((yield* access.approvalInbox).reviewContext?.[0]).toMatchObject({
+          projectTitle: "Test project",
+          state: "changed",
+        });
+        fixture.state.projectDeleted = false;
         fixture.state.projectAvailable = false;
         expect((yield* access.approvalInbox).reviewContext?.[0]).toMatchObject({
           projectTitle: null,

@@ -321,4 +321,7 @@ is used. Older policy readers remain independent and no path or capability is ad
 All five affected package typechecks, focused lint/format, documentation links, 392 seam rows
 and whitespace pass. This is a service/MCP follow-up with no UI change or native pass. The only
 wire addition is optional recovery metadata in retry reports. Policy format stays 3, journal
-version stays 1, and L86 remains partial behind the same closed gates.
+version stays 1, and L86 remains partial behind the same closed gates. After integrating the
+concurrent deleted-project/VoiceOver fixes from main, 78 tests pass across access, journal,
+requester MCP and real MCP registration; server/web/mobile typechecks, affected lint and mobile
+native static checks also pass. Native interaction acceptance remains owner-led.

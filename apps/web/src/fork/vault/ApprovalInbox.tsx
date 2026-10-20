@@ -159,7 +159,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               aria-labelledby={`vault-request-${r.id}`}
               className="flex flex-col gap-2 rounded-md border p-3"
             >
-              <h4 id={`vault-request-${r.id}`} className="font-medium">
+              <h4 id={`vault-request-${r.id}`} className="break-words font-medium">
                 {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
               </h4>
               <p className="break-words text-sm">
