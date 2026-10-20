@@ -1,0 +1,280 @@
+import { describe, expect, it } from "vite-plus/test";
+import type { DirectoryRoute } from "@t3tools/contracts/fork";
+
+import {
+  directoryAgeText,
+  directoryCatalogRows,
+  directoryConnectPlan,
+  directoryProofAge,
+  directoryRoutes,
+  directoryUnattachedMachines,
+} from "./directory.ts";
+import {
+  BOOK,
+  DESK,
+  MINUTES,
+  NOW,
+  STUDIO,
+  ago,
+  identity,
+  listing,
+  machine,
+  reported,
+} from "./directory-test-fixtures.ts";
+
+/** A saved connection as a client holds it, with routes the directory must never touch. */
+const savedStudio = {
+  environmentId: STUDIO,
+  label: "Studio (saved)",
+  httpBaseUrl: "https://studio.saved.example.com",
+  wsBaseUrl: "wss://studio.saved.example.com/ws",
+};
+
+describe("directoryAgeText", () => {
+  it("reads in the largest whole unit", () => {
+    expect(directoryAgeText(20_000)).toBe("just now");
+    expect(directoryAgeText(2 * MINUTES)).toBe("2 min ago");
+    expect(directoryAgeText(60 * MINUTES)).toBe("1 hour ago");
+    expect(directoryAgeText(3 * 60 * MINUTES)).toBe("3 hours ago");
+    expect(directoryAgeText(49 * 60 * MINUTES)).toBe("2 days ago");
+  });
+});
+
+describe("directoryProofAge", () => {
+  it("counts a report within two minutes as recent, like the Library's online window", () => {
+    expect(directoryProofAge(ago(2 * MINUTES), NOW)).toMatchObject({
+      recent: true,
+      text: "Reported 2 min ago",
+    });
+    expect(directoryProofAge(ago(2 * MINUTES + 1), NOW)?.recent).toBe(false);
+  });
+
+  it("reads a report from a clock running ahead as just now", () => {
+    expect(directoryProofAge(ago(-5 * MINUTES), NOW)).toMatchObject({
+      ageMs: 0,
+      text: "Reported just now",
+    });
+  });
+
+  it("has no age for an unreadable time", () => {
+    expect(directoryProofAge("yesterday", NOW)).toBeNull();
+  });
+});
+
+describe("directoryRoutes", () => {
+  it("drops every route that is not a DNS name over HTTPS, even from a malformed listing", () => {
+    const routes = [
+      { kind: "tailnet", url: "https://studio.example.ts.net" },
+      { kind: "public", url: "http://studio.example.com" },
+      { kind: "public", url: "https://192.168.1.20" },
+      { kind: "tailnet", url: "https://100.64.0.7:3773" },
+      { kind: "public", url: "https://[fd7a:115c::1]" },
+      { kind: "public", url: "https://localhost.example.com" },
+      { kind: "public", url: "https://user:secret@studio.example.com" },
+      { kind: "public", url: "https://studio.example.com?token=1" },
+      { kind: "lan", url: "https://studio.example.org" },
+      { kind: "tailnet", url: "https://studio.example.ts.net" },
+      { kind: "public", url: "https://studio.example.com" },
+    ] as unknown as readonly DirectoryRoute[];
+    expect(directoryRoutes(routes)).toEqual([
+      { kind: "public", url: "https://studio.example.com" },
+      { kind: "tailnet", url: "https://studio.example.ts.net" },
+    ]);
+  });
+});
+
+describe("directoryCatalogRows", () => {
+  it("keeps one row per environment, from its newest report", () => {
+    const rows = directoryCatalogRows({
+      listing: listing([
+        reported(BOOK, {
+          sequence: 4,
+          routes: [{ kind: "tailnet", url: "https://book-old.example.ts.net" }],
+        }),
+        reported(BOOK, {
+          sequence: 9,
+          routes: [{ kind: "public", url: "https://book.example.com" }],
+        }),
+      ]),
+      saved: [],
+      connected: [],
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      environmentId: BOOK,
+      saved: null,
+      routes: [{ kind: "public", url: "https://book.example.com" }],
+      action: "connect",
+    });
+    expect(rows[0]?.report?.sequence).toBe(9);
+  });
+
+  it("breaks a sequence tie by the later receipt", () => {
+    const rows = directoryCatalogRows({
+      listing: listing([
+        reported(BOOK, { label: "Earlier", receivedAt: ago(3 * MINUTES) }),
+        reported(BOOK, { label: "Later", receivedAt: ago(MINUTES) }),
+      ]),
+      saved: [],
+      connected: [],
+      now: NOW,
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Later"]);
+  });
+
+  it("annotates a saved connection without changing its routes", () => {
+    const rows = directoryCatalogRows({
+      listing: listing([
+        reported(STUDIO, {
+          label: "Studio",
+          routes: [
+            { kind: "public", url: "https://studio.elsewhere.example.com" },
+            { kind: "tailnet", url: "https://studio.example.ts.net" },
+          ],
+        }),
+      ]),
+      saved: [savedStudio],
+      connected: [],
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row?.saved).toBe(savedStudio);
+    expect(savedStudio.httpBaseUrl).toBe("https://studio.saved.example.com");
+    expect(row).toMatchObject({
+      label: "Studio (saved)",
+      routes: [],
+      action: null,
+      proof: { text: "Reported 1 min ago" },
+    });
+    expect(row?.report).not.toHaveProperty("routes");
+    expect(row && directoryConnectPlan(row, identity(STUDIO), "browser")).toBeNull();
+  });
+
+  it("lists saved connections first in their order, then discovered computers by label", () => {
+    const rows = directoryCatalogRows({
+      listing: listing([reported(DESK, { label: "Desk" }), reported(BOOK, { label: "Book" })]),
+      saved: [savedStudio, { environmentId: DESK, label: "Desk" }, savedStudio],
+      connected: [],
+      now: NOW,
+    });
+    expect(rows.map((row) => [row.environmentId, row.saved === null])).toEqual([
+      [STUDIO, false],
+      [DESK, false],
+      [BOOK, true],
+    ]);
+    expect(rows[0]?.report).toBeNull();
+  });
+
+  it("is online only when this device is connected, however recent the report", () => {
+    const rows = directoryCatalogRows({
+      listing: listing([reported(BOOK, { reportedAt: ago(0) }), reported(DESK)]),
+      saved: [],
+      connected: [DESK],
+      now: NOW,
+    });
+    expect(rows.map((row) => [row.environmentId, row.proof?.recent, row.connected])).toEqual([
+      [BOOK, true, false],
+      [DESK, true, true],
+    ]);
+  });
+
+  it("offers no Connect action when no route survives", () => {
+    const [row] = directoryCatalogRows({
+      listing: listing([reported(BOOK, { routes: [{ kind: "public", url: "https://10.0.0.4" }] })]),
+      saved: [],
+      connected: [],
+      now: NOW,
+    });
+    expect(row).toMatchObject({ routes: [], action: null });
+    expect(row && directoryConnectPlan(row, null, "native")).toBeNull();
+  });
+
+  it("attaches LoomOS machines to the computer that reported them", () => {
+    const mini = machine(BOOK);
+    const orphan = machine(DESK, { keyFingerprint: "c".repeat(64) });
+    const current = listing([reported(BOOK), reported(STUDIO)], [mini, orphan]);
+    const rows = directoryCatalogRows({
+      listing: current,
+      saved: [savedStudio],
+      connected: [],
+      now: NOW,
+    });
+    expect(rows.map((row) => [row.environmentId, row.machines])).toEqual([
+      [STUDIO, []],
+      [BOOK, [mini]],
+    ]);
+    expect(directoryUnattachedMachines(current)).toEqual([orphan]);
+  });
+
+  it("keeps saved rows when no listing is known", () => {
+    const rows = directoryCatalogRows({
+      listing: null,
+      saved: [savedStudio],
+      connected: [STUDIO],
+      now: NOW,
+    });
+    expect(rows).toEqual([
+      {
+        environmentId: STUDIO,
+        label: "Studio (saved)",
+        saved: savedStudio,
+        report: null,
+        routes: [],
+        machines: [],
+        connected: true,
+        proof: null,
+        action: null,
+      },
+    ]);
+  });
+});
+
+describe("directoryConnectPlan", () => {
+  const [row] = directoryCatalogRows({
+    listing: listing([
+      reported(BOOK, {
+        routes: [
+          { kind: "tailnet", url: "https://book.example.ts.net" },
+          { kind: "public", url: "https://book.example.com" },
+        ],
+      }),
+    ]),
+    saved: [],
+    connected: [],
+    now: NOW,
+  });
+  if (row === undefined) throw new Error("expected a discovered row");
+
+  it("tries the public route first, then tailnet", () => {
+    expect(directoryConnectPlan(row, null, "browser")).toEqual({
+      environmentId: BOOK,
+      routes: [
+        { kind: "public", url: "https://book.example.com" },
+        { kind: "tailnet", url: "https://book.example.ts.net" },
+      ],
+      signIn: "pairing",
+    });
+  });
+
+  it("signs in with Loom Identity when the computer advertises it for this surface", () => {
+    expect(directoryConnectPlan(row, identity(BOOK), "browser")?.signIn).toBe("loom-identity");
+    expect(directoryConnectPlan(row, identity(BOOK), "native")?.signIn).toBe("loom-identity");
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { browserLoginEnabled: false }), "browser")?.signIn,
+    ).toBe("pairing");
+    const { nativeClientId: _native, ...browserOnly } = identity(BOOK);
+    expect(directoryConnectPlan(row, browserOnly, "native")?.signIn).toBe("pairing");
+  });
+
+  it("pairs when sign-in is off or the route reaches another computer", () => {
+    expect(directoryConnectPlan(row, identity(BOOK, { enabled: false }), "browser")?.signIn).toBe(
+      "pairing",
+    );
+    expect(directoryConnectPlan(row, identity(STUDIO), "browser")?.signIn).toBe("pairing");
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { tokenEndpoint: null }), "native")?.signIn,
+    ).toBe("pairing");
+  });
+});
