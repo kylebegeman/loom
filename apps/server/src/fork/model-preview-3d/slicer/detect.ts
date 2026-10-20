@@ -70,16 +70,22 @@ export const makeSlicerDetection = (home: string, settings: () => SlicerSettings
                 !(yield* fs.exists(executable).pipe(Effect.orElseSucceed(() => false)))
               )
                 continue;
-              const result = yield* runner
-                .run({
-                  command: executable,
-                  args: ["--help"],
-                  timeout: "10 seconds",
-                  timeoutBehavior: "timedOutResult",
-                  maxOutputBytes: 64 * 1024,
-                  outputMode: "truncate",
-                })
-                .pipe(Effect.option);
+              // Bambu Studio and OrcaSlicer write result.json into their working directory even
+              // for --help, so probe from a scratch directory instead of the server's.
+              const result = yield* Effect.scoped(
+                Effect.gen(function* () {
+                  const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "loom-slicer-probe-" });
+                  return yield* runner.run({
+                    command: executable,
+                    args: ["--help"],
+                    cwd,
+                    timeout: "10 seconds",
+                    timeoutBehavior: "timedOutResult",
+                    maxOutputBytes: 64 * 1024,
+                    outputMode: "truncate",
+                  });
+                }),
+              ).pipe(Effect.option);
               let version =
                 result._tag === "Some"
                   ? slicerVersion(result.value.stdout || result.value.stderr)
