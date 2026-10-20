@@ -24,13 +24,17 @@ import {
   type BotTriggerFiring,
   type BotVerdictValue,
   BOTS_DISMISS_MAX_RUNS,
+  BOTS_LIST_RUNS_MAX_LIMIT,
   isBotInboxRun,
   isBotRunThreadId,
+  isTerminalBotRunStatus,
   needsBotAttention,
 } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import type { EnvironmentThreadShell } from "../state/models.ts";
 import {
@@ -130,6 +134,53 @@ export const applyRunChanges = (
   ).sort(newestFirst);
   return limit === undefined ? sorted : sorted.slice(0, limit);
 };
+
+/** A thread's unfinished bot runs, newest first, and the watch's prune count. */
+export interface ThreadBotRuns {
+  readonly runs: ReadonlyArray<BotRun>;
+  readonly pruned: number;
+}
+
+export const NO_THREAD_BOT_RUNS: ThreadBotRuns = { runs: [], pruned: 0 };
+
+/**
+ * One thread's unfinished runs over the shared run list and watch. It keeps its last value while
+ * nothing it shows changed, so a composer is not re-rendered by runs started anywhere else.
+ */
+export function makeThreadBotRunsAtom(
+  listRunsAtom: Atom.Atom<
+    AsyncResult.AsyncResult<{ readonly runs: ReadonlyArray<BotRun> }, unknown>
+  >,
+  changesAtom: Atom.Atom<AsyncResult.AsyncResult<BotsChanges, unknown>> | null,
+  threadId: string,
+) {
+  let previous = NO_THREAD_BOT_RUNS;
+  return Atom.make((get): ThreadBotRuns => {
+    const listed = Option.match(AsyncResult.value(get(listRunsAtom)), {
+      onNone: () => [],
+      onSome: (page) => page.runs,
+    });
+    const changes =
+      changesAtom === null
+        ? EMPTY_BOTS_CHANGES
+        : Option.getOrElse(AsyncResult.value(get(changesAtom)), () => EMPTY_BOTS_CHANGES);
+    const merged = new Map<string, BotRun>();
+    for (const run of listed) if (run.callerThreadId === threadId) merged.set(run.id, run);
+    for (const run of changes.runs.values())
+      if (run.callerThreadId === threadId) merged.set(run.id, run);
+    const runs = [...merged.values()]
+      .filter((run) => !isTerminalBotRunStatus(run.status))
+      .sort(newestFirst);
+    if (
+      changes.pruned === previous.pruned &&
+      runs.length === previous.runs.length &&
+      runs.every((run, index) => run === previous.runs[index])
+    )
+      return previous;
+    previous = { runs, pruned: changes.pruned };
+    return previous;
+  });
+}
 
 /**
  * The first inbox page with watched changes applied, its total kept without a refetch. A changed
@@ -515,17 +566,38 @@ export const applyPipelineAttemptChanges = (
 
 /** Bots live on one environment, which runs them; every request stays on that host. */
 export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const listRuns = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:bots:list-runs",
+    tag: B.listRuns,
+  });
+  const changes = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "loom:bots:changes",
+    tag: B.watch,
+    transform: (stream) => stream.pipe(Stream.scan(() => EMPTY_BOTS_CHANGES, foldBotsChange)),
+  });
+  /** The recent run list every thread's composer shares. */
+  const recentRuns = (environmentId: EnvironmentId) =>
+    listRuns({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } });
+  const threadRunsFamily = Atom.family((key: string) => {
+    const [environmentId, threadId, watching] = JSON.parse(key) as [EnvironmentId, string, boolean];
+    return makeThreadBotRunsAtom(
+      recentRuns(environmentId),
+      watching ? changes({ environmentId, input: {} }) : null,
+      threadId,
+    ).pipe(Atom.withLabel(`loom:bots:thread-runs:${key}`));
+  });
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:list", tag: B.list }),
-    listRuns: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "loom:bots:list-runs",
-      tag: B.listRuns,
-    }),
-    changes: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "loom:bots:changes",
-      tag: B.watch,
-      transform: (stream) => stream.pipe(Stream.scan(() => EMPTY_BOTS_CHANGES, foldBotsChange)),
-    }),
+    listRuns,
+    changes,
+    recentRuns,
+    /** Unwatched while disconnected: changes missed then never arrive. */
+    threadRuns: (target: {
+      readonly environmentId: EnvironmentId;
+      readonly threadId: string;
+      readonly watching: boolean;
+    }) =>
+      threadRunsFamily(JSON.stringify([target.environmentId, target.threadId, target.watching])),
     save: createEnvironmentRpcCommand(runtime, { label: "loom:bots:save", tag: B.save }),
     archive: createEnvironmentRpcCommand(runtime, { label: "loom:bots:archive", tag: B.archive }),
     delete: createEnvironmentRpcCommand(runtime, { label: "loom:bots:delete", tag: B.delete }),

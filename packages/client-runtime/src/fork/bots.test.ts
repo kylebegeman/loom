@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type {
   BotBatch,
@@ -37,6 +38,7 @@ import {
   foldBotTriggerChange,
   foldBotsChange,
   formatReplaySummary,
+  makeThreadBotRunsAtom,
   type BotsChanges,
   waitingBotRunThreads,
 } from "./bots.ts";
@@ -342,6 +344,41 @@ describe("bot pipeline changes", () => {
       "2:done",
       "3:pending",
     ]);
+  });
+});
+
+describe("thread bot runs", () => {
+  it("changes only when a run from its own thread changes", () => {
+    const thread = ThreadId.make("thread-a");
+    const fromThread = (id: string, status: BotRun["status"], callerThreadId = thread) => ({
+      ...run(id, "x", "2026-10-20T10:00:00.000Z", status),
+      callerThreadId,
+    });
+    const listRuns = Atom.make(
+      AsyncResult.success({
+        runs: [fromThread("listed", "running"), fromThread("done", "completed")],
+      }),
+    );
+    const changes = Atom.make(AsyncResult.success(EMPTY_BOTS_CHANGES));
+    const threadRuns = makeThreadBotRunsAtom(listRuns, changes, thread);
+    const registry = AtomRegistry.make();
+    let notified = 0;
+    const unsubscribe = registry.subscribe(threadRuns, () => notified++);
+    const ids = () => registry.get(threadRuns).runs.map((entry) => entry.id);
+    expect(ids()).toEqual(["listed"]);
+    notified = 0;
+
+    const other = fromThread("elsewhere", "running", ThreadId.make("thread-b"));
+    let watched = fold({ _tag: "run", run: other });
+    registry.set(changes, AsyncResult.success(watched));
+    expect(notified).toBe(0);
+
+    watched = foldBotsChange(watched, { _tag: "run", run: fromThread("listed", "completed") });
+    watched = foldBotsChange(watched, { _tag: "run", run: fromThread("new", "queued") });
+    registry.set(changes, AsyncResult.success(watched));
+    expect(notified).toBe(1);
+    expect(ids()).toEqual(["new"]);
+    unsubscribe();
   });
 });
 

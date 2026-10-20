@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { Link } from "@tanstack/react-router";
 import { BotIcon } from "lucide-react";
-import { applyRunChanges } from "@t3tools/client-runtime/fork";
+import { NO_THREAD_BOT_RUNS } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import {
-  BOTS_LIST_RUNS_MAX_LIMIT,
-  isTerminalBotRunStatus,
-  type BotRun,
-} from "@t3tools/contracts/fork";
+import type { BotRun } from "@t3tools/contracts/fork";
 import {
   ComposerControl,
   ComposerControlIcon,
@@ -19,11 +17,11 @@ import { useComposerMenuProps } from "~/components/chat/composerEventScope";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentQueryRefresh } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerBlock, ForkComposerContext } from "../../composer/registry";
 import { useLibraryPermission } from "../../project-library/state";
-import { bots, useBotsChanges, useRefreshWhenBotsChangesPruned } from "../state";
+import { bots, useRefreshWhenBotsChangesPruned } from "../state";
 import { useComposerBotsAccess } from "./slashSource";
 
 function AttachedRun({
@@ -123,38 +121,31 @@ function AttachedRunsChip({
   );
 }
 
+const NO_RUNS = Atom.make(NO_THREAD_BOT_RUNS);
+
 /** A footer control counting the unfinished bot runs started from this thread. */
 export function useAttachedBotRunsBlock(context: ForkComposerContext): ForkComposerBlock | null {
   const { host, available } = useComposerBotsAccess(context);
   const environmentId = available ? host.environmentId : null;
   const canCancel = useLibraryPermission(bots.cancel, environmentId) && host.connected;
-  const changes = useBotsChanges(environmentId, host.connected);
-  const query = useEnvironmentQuery(
-    environmentId
-      ? bots.listRuns({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } })
-      : null,
+  const threadId = context.threadRef?.threadId ?? null;
+  const { refresh } = useEnvironmentQueryRefresh(
+    environmentId ? bots.recentRuns(environmentId) : null,
   );
+  const threadRuns = useAtomValue(
+    environmentId && threadId
+      ? bots.threadRuns({ environmentId, threadId, watching: host.connected })
+      : NO_RUNS,
+  );
+  const { runs } = threadRuns;
 
   // Changes missed while disconnected never arrive, so a reconnect refetches the list.
   const wasConnected = useRef(host.connected);
-  const refresh = query.refresh;
   useEffect(() => {
     if (host.connected && !wasConnected.current) refresh();
     wasConnected.current = host.connected;
   }, [host.connected, refresh]);
-  useRefreshWhenBotsChangesPruned(changes, refresh);
-
-  const threadId = context.threadRef?.threadId ?? null;
-  const listed = query.data?.runs;
-  const runs = useMemo(
-    () =>
-      environmentId === null || threadId === null
-        ? []
-        : applyRunChanges(listed ?? [], changes, { includeNew: true }).filter(
-            (run) => run.callerThreadId === threadId && !isTerminalBotRunStatus(run.status),
-          ),
-    [environmentId, threadId, listed, changes],
-  );
+  useRefreshWhenBotsChangesPruned(threadRuns, refresh);
 
   if (environmentId === null || runs.length === 0) return null;
   return {

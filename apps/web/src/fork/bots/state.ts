@@ -73,7 +73,10 @@ export function useBotsChanges(environmentId: EnvironmentId | null, enabled: boo
 }
 
 /** Refetches a list overlaid with watched changes once the watch dropped some of them. */
-export function useRefreshWhenBotsChangesPruned(changes: BotsChanges, refresh: () => void) {
+export function useRefreshWhenBotsChangesPruned(
+  changes: Pick<BotsChanges, "pruned">,
+  refresh: () => void,
+) {
   const { pruned } = changes;
   const seen = useRef(pruned);
   useEffect(() => {
