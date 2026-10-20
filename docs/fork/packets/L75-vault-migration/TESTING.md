@@ -95,6 +95,17 @@ Run the six new focused files plus the existing four registry/authorization file
 ./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigrationInventory.test.ts apps/server/src/fork/vault/MigrationGitMetadata.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts packages/client-runtime/src/fork/vault-migration-inventory.permissions.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/settings/registry.test.ts apps/web/src/fork/commandPalette/registry.test.ts
 ```
 
+## Inventory integration with current main
+
+Merged fork main `173e1c95a1` without conflicts, preserving the Utilities focus fixes. The
+inventory's ten-file run passed **45 tests** again, including real fork MCP registration. The
+merged Utilities focus file passed **4 browser tests** from the web package with
+`../../node_modules/.bin/vp test run src/fork/utilities/UtilitiesView.focus.browser.test.tsx --project browser`.
+The root unit configuration rejects this browser file before running tests; use that package
+browser project. All five changed package typechecks passed, and the web typecheck passed
+again after the merge. Focused lint, native mobile static checks, documentation links, the
+390-row seam manifest and whitespace checks passed. No repo-wide checks ran.
+
 ## Full packet acceptance still required
 
 Live source-specific verification must bind the reviewed source, replacement item/version,

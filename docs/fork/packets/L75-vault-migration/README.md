@@ -55,7 +55,7 @@ Uses foundation import, connector and SSH adapter interfaces when available; mis
 ## Packet seams
 
 No upstream seams were added. [SEAMS.md](./SEAMS.md) records fork registry integration.
-Implementation was reviewed against fork main `f7cd2e14d1`.
+Inventory/replacement implementation was integrated with fork main `173e1c95a1`.
 
 ## Documents
 
