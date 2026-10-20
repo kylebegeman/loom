@@ -1,4 +1,5 @@
-import { LIBRARY_SEMANTIC_SEARCH_FEATURE } from "@t3tools/contracts/fork";
+import { DIRECTORY_FEATURE, LIBRARY_SEMANTIC_SEARCH_FEATURE } from "@t3tools/contracts/fork";
+import { directoryAdvertised } from "./directory/advertised.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
@@ -82,4 +83,6 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "preview-backings",
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
+  // Only the Library authority, which computers ask for it (DIR-05).
+  ...(directoryAdvertised(process.env) ? [DIRECTORY_FEATURE] : []),
 ];

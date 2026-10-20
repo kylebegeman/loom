@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import { DIRECTORY_SCHEMA } from "../directory/DirectoryService.ts";
 import type { ForkMigrationSet } from "../persistence/migrations.ts";
 import { LIBRARY_SEARCH_SCHEMA, backfillLibrarySearch } from "./LibrarySearch.ts";
 import { backfillTimeline } from "./LibraryTimeline.ts";
@@ -119,6 +120,15 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE fork_library_ingested_entries SET payload_json = '' WHERE payload_json <> ''`;
+      }),
+    ],
+    [
+      11,
+      "DirectoryRecords",
+      // Idempotent because parallel packets renumber this migration at merge.
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        for (const statement of DIRECTORY_SCHEMA) yield* sql.unsafe(statement);
       }),
     ],
   ],

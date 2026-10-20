@@ -8,6 +8,7 @@ import * as NodeWorkerThreads from "node:worker_threads";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { isLibraryAuthorityEnv } from "./authority.ts";
 
 /**
  * Local sentence embeddings for semantic history search.
@@ -86,8 +87,7 @@ const sha256File = (path: string) =>
 export function resolveLibraryEmbeddingFiles(
   env: Readonly<Record<string, string | undefined>>,
 ): { readonly files: LibraryEmbeddingFiles } | { readonly off: string } {
-  if (!/^(true|yes|on|1)$/i.test(env.LOOM_LIBRARY_AUTHORITY ?? ""))
-    return { off: "not a Library authority" };
+  if (!isLibraryAuthorityEnv(env)) return { off: "not a Library authority" };
   const directory = env[LIBRARY_EMBEDDINGS_DIR_ENV]?.trim();
   if (!directory) return { off: `${LIBRARY_EMBEDDINGS_DIR_ENV} is not set` };
   for (const file of Object.values(LIBRARY_EMBEDDING_MODEL.files)) {

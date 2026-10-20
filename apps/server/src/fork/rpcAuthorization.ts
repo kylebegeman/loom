@@ -30,6 +30,7 @@ import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "@t3tools/contracts/fork";
 import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import { CODE_GRAPH_WS_METHODS as G } from "@t3tools/contracts/fork";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "@t3tools/contracts/fork";
+import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
@@ -314,6 +315,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [PL.signOutBrowsers]: AuthPreviewOperateScope,
   [PL.pagesList]: AuthOrchestrationReadScope,
   [PL.pagesUpdate]: AuthPreviewOperateScope,
+  [DIR.list]: AuthOrchestrationReadScope,
+  [DIR.forget]: AuthSettingsWriteScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

@@ -25,6 +25,7 @@ import { makeAppleBuildToolingRpcHandlers } from "./apple-build-tooling/rpc.ts";
 import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
+import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import {
   VaultCoreRpcGroup,
@@ -142,6 +143,7 @@ export const makeForkRpcLayer = (
           ...(yield* withForkRuntime(makeAppleBuildToolingRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeDeviceQaRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeCodeGraphRpcHandlers(auth))),
+          ...(yield* withForkRuntime(makeDirectoryRpcHandlers(auth))),
         });
       }),
     ),

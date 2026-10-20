@@ -68,6 +68,8 @@ import * as PageLibrary from "./preview-pages/PageLibraryService.ts";
 import { PagesHostLive } from "./preview-pages/host.ts";
 import { PageLibraryHttpRoutes } from "./preview-pages/libraryHttp.ts";
 import * as PreviewPages from "./preview-pages/PreviewPagesService.ts";
+import * as Directory from "./directory/DirectoryService.ts";
+import { DirectoryHttpRoutes } from "./directory/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -281,6 +283,7 @@ const ForkServicesLive = Layer.mergeAll(
       ),
     ),
   ),
+  Directory.layer.pipe(Layer.provide(FetchHttpClient.layer)),
 );
 
 /**
@@ -305,4 +308,5 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PcbPreviewHttpRoutes,
   PreviewAccessHttpRoutes,
   PageLibraryHttpRoutes,
+  DirectoryHttpRoutes,
 );
