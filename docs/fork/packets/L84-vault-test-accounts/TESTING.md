@@ -201,10 +201,45 @@ contract has no credential-file export, product CLI/MCP/RPC surface, backend pat
 format change. `canReadLive`, `canExecute`, resumption, verification and allow-once gates remain
 false; L84 remains partial.
 
+## Synthetic broker/mail integration evidence
+
+The workload suite adds **55 cases** and passes **106 total** from `apps/server`. Combined with
+five seeder and three fixture-home cases, the focused run passes **114 tests**. Server typecheck
+and changed-file lint pass. The Python suites remain green at 92 cases under both normal temp
+configuration and `TMPDIR=/var/tmp`; syntax, links, seams and whitespace pass.
+
+The positive integration launches a bounded, cancellable Python child that uses the actual
+inbox selector over synthetic messages: a different run's UID is not body-fetched, an unusable
+matched UID is visible, and the valid UID remains usable. Raw body/reader/session canaries are
+absent from the metadata-only result. Its gates remain false. No network connection, real mail,
+provider or new browser/native pass is involved.
+
+Cases prove fifteen forged initial scope fields refuse even when adapter registration agrees,
+and nineteen registration-field changes refuse before reading. A separate real evaluator grant
+on a synthetic reader reference is required. Revocation before read, at the adapter boundary,
+after the awaited observation or during cleanup withdraws the result. Root-run replacement,
+lease release, reader rotation, expiry and broker-offline transitions also refuse. Receipt tests
+reject foreign scope/correlation/recipient/folder, out-of-range UID, inconsistent status, raw body
+fields and enabled gates.
+
+Deferred-only interleavings prove delayed observation refusal after broker reconciliation and
+cleanup fencing on cancellation. An unknown cleanup withholds metadata; later cleanup can fence
+but cannot reread/resume. Accounts stay reserved, not automatically clean or reusable. The
+correlation echo does not authenticate mail. This remains test-only, with no durable cleanup
+journal, live credential delivery, product grant namespace, API, policy or format change.
+
+```sh
+# From apps/server:
+../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts \
+  scripts/seed-dev-db.test.ts src/fork/dev-fixtures/fixtureHome.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
 ## Authenticated workload evidence
 
-Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract
-cases, one MCP authorization case and real startup registration. Workload tests use the real
+The focused workload suite now passes **106 tests**, including 55 new broker/mail composition
+cases. The earlier four-suite baseline passed 66 tests (13 manager, 51 workload, MCP authorization
+and startup registration); the unchanged manager/MCP suites are prior evidence. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
 no other-owner/unrelated-collection leakage; audited reserve; exact run/lease release; renewal;
@@ -362,7 +397,8 @@ post-await revalidation refuses each case. These are synthetic service tests, no
 
 ## Synthetic broker contract
 
-The server package-CWD workload suite passes 51 tests, including 25 broker-contract cases.
+The server package-CWD workload suite passes 106 tests, including 25 broker-contract cases and
+55 broker/mail composition cases.
 It uses the real account/grant admission service and a fake broker, with no credential reveal.
 Cases cover environment/machine/app/target/origin mismatch, offline/expired presence, registered
 origin changes at the adapter boundary, forged return correlation, grant/run/lease/expiry changes,

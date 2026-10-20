@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - A bounded cancellable child joins the real synthetic Python inbox fixture.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -36,6 +39,12 @@ import {
   syntheticLoginDelivery,
   type SyntheticLoginAdapter,
 } from "./testkit/SyntheticLoginDelivery.ts";
+import {
+  syntheticBrokerMail,
+  syntheticMailScope,
+  type SyntheticMailBinding,
+  type SyntheticMailAdapter,
+} from "./testkit/SyntheticBrokerMail.ts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 
@@ -1509,6 +1518,389 @@ it.effect("does not reactivate a start fenced by reconciliation before the adapt
       expect(control.cleanups).toBe(1);
       expect(control.starts).toBe(1);
       expect(control.active).toBe(false);
+    }),
+  ),
+);
+
+// No live connector or credential ingress: this child imports only synthetic Python fixtures.
+const pythonMailRead = (binding: SyntheticMailBinding) =>
+  Effect.callback<unknown, VaultError>((resume, signal) => {
+    const directory = NodeURL.fileURLToPath(new URL("./testkit/", import.meta.url));
+    const script = `import json,sys
+from datetime import datetime,timezone
+import migadu_inbox as inbox
+from test_migadu_inbox import FixtureClient,message,CREDENTIALS
+payload=json.load(sys.stdin)
+b=payload["binding"]
+now=datetime.fromtimestamp(b["startedAt"]/1000,timezone.utc)
+request=inbox.Request(b["correlationId"],now,b["expectedSender"])
+bad=("From: "+request.expected_sender+"\\nTo: "+request.recipient+"\\nContent-Type: text/plain; charset=unknown-8bit\\n\\nWelcome").encode()
+client=FixtureClient({1:message(recipient="vault+loom-"+"f"*32+"@begam.in"),2:message(recipient=request.recipient,sender=request.expected_sender,text="synthetic-mail-body-canary"),3:bad})
+client.arrivals={uid:now for uid in client.bodies}
+result=inbox.read_once(CREDENTIALS,request,connect=lambda:client,clock=lambda:now)
+uids=[entry["uid"] for entry in result["messages"]]
+result={key:value for key,value in result.items() if key not in ("messages","coverage")}
+result["scope"]=payload["scope"]
+result["messageUids"]=uids
+assert result["messageUids"]==[2] and client.body_fetches==[3,2]
+print(json.dumps(result))`;
+    const child = NodeChildProcess.execFile(
+      "python3",
+      ["-c", script],
+      {
+        cwd: directory,
+        env: { PATH: process.env.PATH, PYTHONPATH: directory, PYTHONDONTWRITEBYTECODE: "1" },
+        maxBuffer: 16_384,
+        timeout: 10_000,
+        signal,
+      },
+      (error, stdout) => {
+        resume(
+          error
+            ? Effect.fail(new VaultError({ reason: "unavailable" }))
+            : Effect.try({
+                try: () => JSON.parse(stdout) as unknown,
+                catch: () => new VaultError({ reason: "unavailable" }),
+              }),
+        );
+      },
+    );
+    child.stdin?.end(JSON.stringify({ binding, scope: syntheticMailScope(binding) }));
+  });
+
+const syntheticMailDelivery = Effect.fnUntraced(function* (
+  f: Effect.Success<typeof setup> & ReturnType<typeof fixture>,
+) {
+  const broker = yield* syntheticDelivery(f);
+  const readerItemId = "d".repeat(32);
+  yield* f.core.save(
+    {
+      id: readerItemId,
+      operationId: f.id(),
+      expectedVersion: 0,
+      label: "Synthetic test reader",
+      kind: "account",
+      value: Redacted.make("synthetic-mail-reader-secret"),
+    },
+    "human",
+  );
+  // An arbitrary evaluator destination for this proof, not a registered product scope.
+  const destination = "test-only:mail:" + collection.id;
+  const mailGrant = yield* f.grant({ itemIds: [readerItemId], actions: ["use"], destination });
+  const binding: SyntheticMailBinding = {
+    operationId: broker.operationId,
+    environmentId: caller.environmentId,
+    machineId: broker.machineId,
+    threadId: caller.threadId,
+    runId: f.state.runId,
+    collectionId: collection.id,
+    accountId: account.id,
+    itemId: account.itemId,
+    itemVersion: account.itemVersion,
+    leaseId: broker.leaseId,
+    application: collection.application,
+    target: collection.target,
+    origin: loginOrigin,
+    readerItemId,
+    readerItemVersion: 1,
+    correlationId: f.id(),
+    expectedSender: "qa@begam.in",
+    startedAt: yield* Clock.currentTimeMillis,
+    expiresAt: broker.prepared.report.expiresAt,
+  };
+  const prepared = {
+    ...broker.prepared,
+    owner: { threadId: caller.threadId, runId: f.state.runId },
+  };
+  const mail = {
+    binding: { ...binding },
+    reads: 0,
+    beforeRead: Effect.void as Effect.Effect<void, VaultError>,
+    afterRead: Effect.void as Effect.Effect<void, VaultError>,
+    response: null as null | ((value: unknown) => unknown),
+  };
+  const authorize = Effect.gen(function* () {
+    const item = yield* f.core.inspect(readerItemId);
+    if (item?.version !== binding.readerItemVersion || item.state !== "active")
+      return yield* new VaultError({ reason: "denied" });
+    yield* f.access.require(caller.threadId, readerItemId, "use", destination);
+    const current = yield* f.core.inspect(readerItemId);
+    if (current?.version !== binding.readerItemVersion || current.state !== "active")
+      return yield* new VaultError({ reason: "denied" });
+  });
+  const adapter: SyntheticMailAdapter = {
+    reference: { itemId: readerItemId, itemVersion: 1 },
+    observe: Effect.sync(() => ({ ...mail.binding })),
+    authorize,
+    read: (expected) =>
+      Effect.gen(function* () {
+        yield* mail.beforeRead;
+        yield* prepared.revalidate;
+        yield* authorize;
+        if (
+          broker.control.fenced ||
+          syntheticMailScope(mail.binding) !== syntheticMailScope(expected) ||
+          (yield* Clock.currentTimeMillis) >= expected.expiresAt
+        )
+          return yield* new VaultError({ reason: "denied" });
+        mail.reads++;
+        const observation = yield* pythonMailRead(expected);
+        yield* mail.afterRead;
+        return mail.response ? mail.response(observation) : observation;
+      }),
+  };
+  const read = syntheticBrokerMail(broker.delivery, prepared, binding, adapter);
+  return { ...broker, binding, mail, mailGrant, prepared, adapter, read, readerItemId };
+});
+
+it.effect(
+  "joins the real synthetic inbox selector to broker admission with metadata-only output",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const m = yield* syntheticMailDelivery(f);
+        const result = yield* m.read;
+        expect(result.status).toBe("found");
+        expect(result.messageUids).toEqual([2]);
+        expect(result.candidates).toEqual([
+          { uid: 3, status: "unusable", reason: "unsupported-text-encoding" },
+        ]);
+        expect(result.recipient).toBe(`vault+loom-${m.binding.correlationId}@begam.in`);
+        expect(m.binding.correlationId).not.toBe(m.binding.runId);
+        for (const canary of [
+          "synthetic-mail-body-canary",
+          "synthetic-mail-reader-secret",
+          "synthetic-session",
+        ])
+          expect(JSON.stringify(result)).not.toContain(canary);
+        expect(result).toMatchObject({
+          canReadLive: false,
+          canExecute: false,
+          automaticVerification: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect(m.control.cleanups).toBe(1);
+        expect(m.mail.reads).toBe(1);
+        expect(yield* m.delivery.snapshot).toBe("closed");
+        expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("reserved");
+        expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+        expect(m.mail.reads).toBe(1);
+      }),
+    ),
+);
+
+it.effect.each([
+  "operationId",
+  "environmentId",
+  "machineId",
+  "threadId",
+  "runId",
+  "collectionId",
+  "accountId",
+  "itemId",
+  "itemVersion",
+  "leaseId",
+  "application",
+  "target",
+  "origin",
+  "readerItemId",
+  "readerItemVersion",
+] as const)("refuses forged initial synthetic mail %s despite an agreeing registration", (field) =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      const value = typeof m.binding[field] === "number" ? 2 : "e".repeat(32);
+      Object.assign(m.binding, { [field]: value });
+      Object.assign(m.mail.binding, { [field]: value });
+      expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+      expect(m.control.starts).toBe(0);
+      expect(m.mail.reads).toBe(0);
+    }),
+  ),
+);
+
+it.effect.each([
+  "operationId",
+  "environmentId",
+  "machineId",
+  "threadId",
+  "runId",
+  "collectionId",
+  "accountId",
+  "itemId",
+  "itemVersion",
+  "leaseId",
+  "application",
+  "target",
+  "origin",
+  "readerItemId",
+  "readerItemVersion",
+  "correlationId",
+  "expectedSender",
+  "startedAt",
+  "expiresAt",
+] as const)("refuses synthetic mailbox registration drift in %s before any body read", (field) =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      Object.assign(m.mail.binding, {
+        [field]: typeof m.mail.binding[field] === "number" ? 2 : "changed",
+      });
+      expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+      expect(m.mail.reads).toBe(0);
+      expect(m.control.cleanups).toBe(1);
+      expect(m.control.active).toBe(false);
+    }),
+  ),
+);
+
+it.effect.each(["before", "during", "after", "cleanup"] as const)(
+  "withdraws synthetic mail after separate reader-grant revocation %s the read",
+  (stage) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const m = yield* syntheticMailDelivery(f);
+        const revoke = Effect.gen(function* () {
+          yield* f.access.apply(
+            {
+              operationId: f.id(),
+              expectedRevision: (yield* f.access.snapshot).revision,
+              change: { type: "state", id: m.mailGrant.definition.id, state: "revoked" },
+            },
+            "human",
+          );
+        });
+        if (stage === "before") yield* revoke;
+        else if (stage === "during") m.mail.beforeRead = revoke;
+        else if (stage === "after") m.mail.afterRead = revoke;
+        else m.control.beforeCleanup = revoke;
+        expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+        expect(m.mail.reads).toBe(stage === "before" || stage === "during" ? 0 : 1);
+        expect(m.control.active).toBe(false);
+      }),
+    ),
+);
+
+it.effect.each(["run", "lease", "reader-version", "expired", "broker-offline"] as const)(
+  "withdraws a completed synthetic inbox observation after %s changes",
+  (drift) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const m = yield* syntheticMailDelivery(f);
+        m.mail.afterRead = Effect.gen(function* () {
+          if (drift === "run") f.state.runId = RunId.make("replacement-root-run");
+          else if (drift === "expired") yield* TestClock.adjust("5 minutes");
+          else if (drift === "broker-offline") m.control.broker.online = false;
+          else if (drift === "reader-version")
+            yield* f.core.save(
+              {
+                id: m.readerItemId,
+                operationId: f.id(),
+                expectedVersion: 1,
+                label: "Rotated reader",
+                kind: "account",
+                value: Redacted.make("synthetic-rotated-reader"),
+              },
+              "human",
+            );
+          else yield* f.manage({ type: "release", id: account.id, leaseId: m.leaseId });
+        });
+        expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+        expect(m.mail.reads).toBe(1);
+        expect(m.control.active).toBe(false);
+      }),
+    ),
+);
+
+it.effect(
+  "withholds delayed mailbox results when reconciliation fences an active broker operation",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const m = yield* syntheticMailDelivery(f);
+        const waiting = yield* Deferred.make<void>(),
+          release = yield* Deferred.make<void>();
+        m.mail.afterRead = Deferred.succeed(waiting, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        );
+        const operation = yield* m.read.pipe(Effect.result, Effect.forkChild);
+        yield* Deferred.await(waiting);
+        yield* m.delivery.reconcile;
+        yield* Deferred.succeed(release, undefined);
+        const outcome = yield* Fiber.join(operation);
+        expect(outcome._tag).toBe("Failure");
+        if (outcome._tag === "Failure") expect(outcome.failure.reason).toBe("denied");
+        expect(m.mail.reads).toBe(1);
+        expect(m.control.cleanups).toBe(1);
+        expect(yield* m.delivery.snapshot).toBe("closed");
+      }),
+    ),
+);
+
+it.effect("withholds mail metadata while broker cleanup remains unknown", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      m.control.failCleanup = true;
+      expect((yield* m.read.pipe(Effect.flip)).reason).toBe("unavailable");
+      expect(yield* m.delivery.snapshot).toBe("cleanup-required");
+      expect((yield* f.manager.snapshot("client:manager")).accounts[0]!.state).toBe("reserved");
+      m.control.failCleanup = false;
+      yield* m.delivery.reconcile;
+      expect(yield* m.delivery.snapshot).toBe("closed");
+      expect((yield* m.read.pipe(Effect.flip)).reason).toBe("denied");
+      expect(m.mail.reads).toBe(1);
+    }),
+  ),
+);
+
+it.effect.each([
+  "scope",
+  "runId",
+  "recipient",
+  "folder",
+  "uid",
+  "status",
+  "raw-body",
+  "gate",
+] as const)("refuses a synthetic mail receipt with foreign or unsupported %s", (field) =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      m.mail.response = (raw) => {
+        const value = raw as Record<string, unknown>;
+        if (field === "uid") return { ...value, messageUids: [999] };
+        if (field === "status") return { ...value, status: "pending-in-bounded-window" };
+        if (field === "raw-body") return { ...value, text: "synthetic-mail-body-canary" };
+        if (field === "gate") return { ...value, canExecute: true };
+        return { ...value, [field]: "foreign" };
+      };
+      expect((yield* m.read.pipe(Effect.flip)).reason).toBe(
+        field === "raw-body" || field === "gate" ? "unavailable" : "denied",
+      );
+      expect(m.mail.reads).toBe(1);
+      expect(m.control.active).toBe(false);
+    }),
+  ),
+);
+
+it.effect("fences a synthetic broker when mail observation is cancelled", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      const waiting = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      m.mail.afterRead = Deferred.succeed(waiting, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      const operation = yield* m.read.pipe(Effect.forkChild);
+      yield* Deferred.await(waiting);
+      yield* Fiber.interrupt(operation);
+      expect(m.control.fenced).toBe(true);
+      expect(m.mail.reads).toBe(1);
+      expect(m.control.cleanups).toBe(1);
+      expect(yield* m.delivery.snapshot).toBe("closed");
     }),
   ),
 );

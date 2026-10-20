@@ -87,6 +87,11 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
     );
   });
   return {
+    binding: Object.freeze({
+      operationId,
+      environmentId: expected.environmentId,
+      machineId: expected.machineId,
+    }),
     snapshot: Ref.get(state),
     gates: {
       canDeliver: false as const,

@@ -194,6 +194,36 @@ adapter decisions, not a new OpenBao permission/path/schema proposal.
 All delivery, automatic-resumption and allow-once gates remain literal false. Policy3, journal1,
 registry1 and existing runtime behavior are unchanged by this test/docs slice. L75 stays parked.
 
+## Synthetic broker/mail composition
+
+`testkit/SyntheticBrokerMail.ts` composes the existing broker contract with an explicitly supplied
+mail adapter. Only the workload test suite imports it. It pins the broker operation/environment/
+machine, captured root thread/run, account/collection/item versions, exact lease and origin,
+reader reference/version, separate mail correlation ID, expected sender and bounded request time.
+The registration must agree with the login admission and owning adapter's reader reference.
+A scope echo correlates a result to this tuple; it is not sender authentication or an access token.
+
+The proof uses real VaultCore/VaultAccess services and an additional synthetic reader record/use
+grant, independently of pool and login grants. Its `test-only:mail:` destination is an arbitrary
+fixture evaluator input, not a registered product scope or a proposed storage/policy change.
+The owning adapter must check authorization/reference versions and registration at its read
+boundary. The composition revalidates before/after the awaited observation and after cleanup;
+these separate service reads do not form an atomic distributed authorization snapshot.
+
+The bounded child process imports the Python inbox's synthetic client and the real selector,
+with no live connector, credential-file input or inherited credential environment. Raw text stays
+inside that child. Only scoped message UIDs, candidate outcomes and fixed gate flags cross back.
+The receiving schema rejects excess properties, enabled gates, foreign scope/recipient/folder,
+inconsistent status, duplicates and out-of-window UIDs. A nonmatching run is never body-fetched;
+an unusable matched message does not hide the valid UID's metadata.
+
+The existing broker cleanup finalizer fences cancellation and delayed observations. Metadata is
+withheld if cleanup remains unknown, and cleanup reconciliation cannot repeat the read or resume
+a verification step. The account stays reserved rather than being marked clean. No OTP/link is
+consumed, no actual mail credential is delivered from Vault, no mail is mutated, and no public
+transport, runtime worker, persistent schema or backend path is added. Durable provider cleanup,
+restart/reuse barriers, sender authentication and all live acceptance remain unfinished.
+
 ## Selected Loom test target and email boundary
 
 The operator-only [local harness](../../../../apps/server/src/fork/vault/testkit/loom_test_instance.py)
@@ -300,8 +330,8 @@ issued. Provider failures disclose only fixed errors. The transcript and message
 synthetic credentials and message content.
 
 Kyle confirmed that the dedicated mailbox exists; live reader identity, custody/audit controls,
-authenticated-sender handling, mailbox routing/header acceptance and broker/Vault-reference/grant
-integration remain unfinished. Custody stays Kyle-only in 1Password until L79 approval, as the
+authenticated-sender handling, mailbox routing/header acceptance and shipping broker/Vault-reference/
+grant integration remain unfinished. The test-only composition above does not clear those gates. Custody stays Kyle-only in 1Password until L79 approval, as the
 [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) requires. The
 prototype adds no live credential export and does not clear the pool cleanup/reuse barrier.
 Policy3, journal1, registry1, existing gates and Library behavior are unchanged.

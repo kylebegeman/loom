@@ -34,7 +34,9 @@ backend restart. TESTING records focused checks and integrated web evidence.
    authentication/flag acceptance and approved custody/audit path remain pending behind L79.
    The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) keeps
    live secrets Kyle-only in 1Password, outside disposable OpenBao and this lane's test state.
-   Broker/Vault-reference/grant integration, authenticated sender checks, retention/deletion,
+   Synthetic broker/mail composition now binds a separate reader reference/use grant to actual
+   login admission and a bounded real-selector observation; no live credential is delivered.
+   Shipping broker/Vault-reference/grant integration, authenticated sender checks, retention/deletion,
    session/TOTP/recovery field structures, fixture selectors and optional browser/native test
    integration remain to build.
 4. Complete native iOS/Android, Electron shell, remote/tunnel, assistive-technology and live QA
