@@ -157,6 +157,24 @@ Kyle selected all Vault packets; stable V identifiers map to these collision-fre
 | 26    | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Selected; remaining implementation       | Vault V15; full scope selected.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 27    | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Selected; remaining implementation       | Vault V16; full scope selected.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
+Kyle selected all twelve Bots items as the V1 on 2026-10-20; see the [Bots index](./LOOM-BOTS.md).
+Build in waves: L89 to L92, then L93 to L96, then L97 and L98, then L99 and L100.
+
+| Order | Packet                                                       | Status           | Note                                                                   |
+| ----- | ------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------- |
+| 28    | [L89 Bots core and the Bots page](./L89-bots-core/)          | In progress      | Bots B07; foundation for L90 to L100.                                  |
+| 29    | [L90 Starter bots](./L90-bots-starters/)                     | Selected; queued | Bots B01.                                                              |
+| 30    | [L91 Composer and agent invocation](./L91-bots-invocation/)  | Selected; queued | Bots B03.                                                              |
+| 31    | [L92 Structured results and verdicts](./L92-bots-verdicts/)  | Selected; queued | Bots B04.                                                              |
+| 32    | [L93 Batch runs](./L93-bots-batches/)                        | Selected; queued | Bots B08.                                                              |
+| 33    | [L94 Outcome inbox and promote to thread](./L94-bots-inbox/) | Selected; queued | Bots B05.                                                              |
+| 34    | [L95 Usage, success rate and budgets](./L95-bots-budgets/)   | Selected; queued | Bots B06.                                                              |
+| 35    | [L96 Save thread as bot](./L96-bots-from-thread/)            | Selected; queued | Bots B02.                                                              |
+| 36    | [L97 Event triggers](./L97-bots-triggers/)                   | Selected; queued | Bots B09.                                                              |
+| 37    | [L98 Versions and replay](./L98-bots-versions/)              | Selected; queued | Bots B11.                                                              |
+| 38    | [L99 Pipelines](./L99-bots-pipelines/)                       | Selected; queued | Bots B10.                                                              |
+| 39    | [L100 Library bots that run anywhere](./L100-bots-anywhere/) | Selected; queued | Bots B12; Library and VPS side local only, no deployment without Kyle. |
+
 ## Candidates for the queue
 
 Source review: 2026-09-27, Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
