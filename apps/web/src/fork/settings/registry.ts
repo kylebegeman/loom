@@ -1,3 +1,4 @@
+import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import { VaultMigrationInventorySettingsSection } from "../vault/MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
 import { VaultHealthSettingsSection } from "../vault/HealthSettingsSection";
@@ -23,6 +24,11 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "vault-test-accounts",
+    title: "Vault test accounts",
+    Component: VaultTestAccountSettingsSection,
+  },
   {
     id: "vault-migration-inventory",
     title: "Vault migration plans",

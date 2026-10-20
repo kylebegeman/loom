@@ -106,8 +106,10 @@ const EMPTY: Policy = {
 };
 const UNKNOWN = [
   "External credential copies and provider-side revocation are not tracked.",
-  "Automatic workload launch, profile bindings and external consumers are not tracked.",
+  "Automatic workload launch and external consumers are not verified by this policy observation.",
 ];
+
+const PREVIEW_UNKNOWN = [...UNKNOWN, "Profile bindings are not tracked by this change preview."];
 
 const RETRY_REPAIRS = {
   "refresh-request":
@@ -147,6 +149,14 @@ export class VaultAccess extends Context.Service<
       requester: ThreadId,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultApprovalRequest, VaultError>;
+    readonly approvalContext: (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: string;
+      readonly itemId: string;
+      readonly itemVersion: number;
+      readonly runId: string | null;
+      readonly restrictMetadata: boolean;
+    }) => Effect.Effect<ReadonlyArray<VaultApprovalRequest>, VaultError>;
     readonly approvalInbox: Effect.Effect<VaultApprovalInbox, VaultError>;
     readonly approvalCreate: (
       input: VaultApprovalCreate,
@@ -939,6 +949,26 @@ const make = Effect.gen(function* () {
     ),
     approvalCreate,
     approvalChange,
+    approvalContext: Effect.fn("VaultAccess.approvalContext")(function* (input) {
+      const { policy } = yield* load(),
+        now = yield* Clock.currentTimeMillis;
+      // This diagnostic path must not resolve context for other requesters or unrelated inbox rows.
+      return retainedApprovals(policy, now)
+        .filter(
+          ({ request: r }) =>
+            r.threadId === input.threadId &&
+            r.projectId === input.projectId &&
+            r.itemId === input.itemId &&
+            (!input.restrictMetadata || r.requestedBy === `thread:${input.threadId}`),
+        )
+        .map(({ request }) => approvalView(request, policy, now))
+        .filter(
+          (r) =>
+            !["pending", "approved"].includes(r.state) ||
+            (r.itemVersion === input.itemVersion &&
+              (!r.waitingOperation || r.waitingOperation.runId === input.runId)),
+        );
+    }),
     approvalInbox: Effect.gen(function* () {
       const { policy } = yield* load(),
         now = yield* Clock.currentTimeMillis;
@@ -1073,7 +1103,7 @@ const make = Effect.gen(function* () {
               .concat(grant.definition.itemIds),
           ),
         ],
-        unknowns: UNKNOWN,
+        unknowns: PREVIEW_UNKNOWN,
       };
     }),
     explain: Effect.fn("VaultAccess.explain")(function* (input, restrictMetadata) {
@@ -1209,11 +1239,11 @@ const make = Effect.gen(function* () {
       const decisions: VaultAccessDecision[] = [];
       if (backend.state === "ready") {
         const { policy } = yield* load();
-        for (const requirement of input.requirements) {
+        for (const [index, requirement] of input.requirements.entries()) {
           const result = yield* decision(policy, { ...requirement, threadId: input.threadId });
           decisions.push(result.result);
           checks.push({
-            id: `grant:${requirement.itemId}:${requirement.action}`,
+            id: `grant:${requirement.itemId}:${requirement.action}:${index}`,
             state: result.result.allowed ? "passed" : "blocked",
             reason: result.result.reason,
             repair: result.result.allowed

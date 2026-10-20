@@ -3,6 +3,7 @@ import * as NodeHttp from "node:http";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -164,7 +165,7 @@ const fixture = Effect.gen(function* () {
   );
   const address = http.address;
   if (!("port" in address)) return yield* Effect.die("Missing fixture port");
-  const entrypoint = NodePath.resolve("apps/server/src/bin.ts");
+  const entrypoint = NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url));
   const execute = (command: VaultSshAgentRun["command"], timeoutMs = 30000, pi = false) =>
     Effect.tryPromise(
       () =>

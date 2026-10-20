@@ -57,6 +57,14 @@ it.effect(
       expect(
         (yield* r.search({ ...search, query: first!.reference }, f.threadId)).items[0],
       ).toEqual(first);
+      const prefix = first!.reference.slice(0, -20);
+      expect((yield* r.search({ ...search, query: prefix }, f.threadId)).items).toEqual([first]);
+      expect(
+        (yield* r.search(
+          { ...search, query: `loom-vault:another-environment:${f.itemId.slice(0, 8)}` },
+          f.threadId,
+        )).items,
+      ).toEqual([]);
       const itemId = yield* f.id;
       yield* f.core.save(
         {

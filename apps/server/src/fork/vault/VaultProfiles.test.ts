@@ -338,6 +338,8 @@ it.effect(
       const prefix = `environments/${yield* hash(f.environmentId)}/profiles`;
       const journalPath = `${prefix}/_operations/approval-journal-v1`;
       yield* store.write(journalPath, Redacted.make({ schemaVersion: 1, entries: [] }), 0);
+      const accountRegistryPath = `${prefix}/_test_accounts/registry-v1`;
+      yield* store.write(accountRegistryPath, Redacted.make({ schemaVersion: 1, accounts: [] }), 0);
       const otherProject = ProjectId.make("other");
       const otherBefore = yield* f.profiles.apply(
         {
@@ -350,6 +352,7 @@ it.effect(
       );
       const protectedPaths = [
         journalPath,
+        accountRegistryPath,
         `${prefix}/${yield* hash(otherProject)}/registry`,
         `${prefix}/${yield* hash(f.projectId)}/registry`,
       ];

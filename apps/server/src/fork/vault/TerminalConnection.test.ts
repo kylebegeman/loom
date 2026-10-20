@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- A synthetic loopback endpoint and real CLI child verify inherited terminal connection paths.
 import * as NodeHttp from "node:http";
 import * as NodeChildProcess from "node:child_process";
-import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -171,7 +171,7 @@ it.live(
       yield* sessions.set({ ...config, endpoint: `http://127.0.0.1:${address.port}/mcp` });
       const session = (yield* sessions.read(config.threadId))!;
       const env = vaultTerminalEnvironment(session);
-      const entrypoint = NodePath.resolve("apps/server/src/bin.ts");
+      const entrypoint = NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url));
       const run = () =>
         Effect.promise(
           () =>

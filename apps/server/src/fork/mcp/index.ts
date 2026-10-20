@@ -1,3 +1,4 @@
+import { VaultTestAccountToolkit, vaultTestAccountHandlers } from "../vault/test-accounts-mcp.ts";
 import {
   VaultMigrationInventoryToolkit,
   vaultMigrationInventoryHandlers,
@@ -29,6 +30,12 @@ import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.
 import { DirectoryToolkit, directoryHandlers } from "../directory/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: VaultTestAccountToolkit,
+    handlers: vaultTestAccountHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultTestAccountToolkit, vaultTestAccountHandlers),
+  },
   {
     toolkit: VaultMigrationInventoryToolkit,
     handlers: vaultMigrationInventoryHandlers,

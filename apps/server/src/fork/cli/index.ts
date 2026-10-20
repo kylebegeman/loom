@@ -1,3 +1,4 @@
+export { withVaultCompletionOutput } from "../vault/references-cli.ts";
 import { vaultCommand } from "../vault/cli.ts";
 import { sitesCommand } from "../sites/cli.ts";
 import { loomLibraryMigrationCommand } from "../../../scripts/loom-library-migrate.ts";

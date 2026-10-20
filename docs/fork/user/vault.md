@@ -172,6 +172,11 @@ Readiness is checked in the Loom server context, expires after a minute, and mus
 after policy changes. It does not yet test SSH or GitHub; credential delivery reports unsupported
 until a supported workload delivery channel is implemented. Pending checks can be cancelled.
 
+The access inspector also shows related project profiles, the current provider/run, observed
+workload and broker sessions, and retained requests for the selected item and thread. Context can
+be partial and expires; refresh it before relying on labels. An empty list does not establish that
+there are no consumers. External credential copies remain unknown, and this view grants no access.
+
 Administrator CLI clients can use `loom vault grants`, `grant-preview`, `grant-apply`, `explain`
 and `readiness` through the same services. Agent threads can inspect their own access and
 delegate narrower grants to an authenticated direct subagent when allowed; they cannot approve
@@ -696,3 +701,60 @@ Approval cards show current record, thread and project names alongside the IDs a
 requested. Review those details and the destination before deciding. Changed or unavailable
 context requires refreshed review; you can still deny or cancel the request. On an older server,
 IDs remain available even when names are not. Names do not verify an external account's identity.
+
+## Keep dedicated test accounts ready for QA
+
+In Settings > Loom > Vault test accounts, create a collection for an app and its development,
+staging or test environment. Add a reference to a dedicated **Account** item already stored in
+Vault. Confirm it is separate from personal and production accounts, then review it clean before
+reserving it. The account picker searches names; passwords stay in the original Vault item.
+
+A reservation belongs to your current Loom connection. Release and expiry put the entry in
+quarantine until you reset or independently check it and mark it clean. You can renew a live
+reservation within its one-hour maximum, retire an entry, or restore it to quarantine. If your
+connection is replaced, an authorized manager can quarantine its abandoned reservation.
+
+This first version manages the account pool. It does not provision/reset accounts, log a test
+worker in, or revoke existing application sessions. Reserving grants no extra Vault access.
+
+Agents need an active full-access/default Loom root run, including queued follow-ups and pending
+approval/user-input requests while that run remains active. Leases end when the root run ends,
+including a waiting thread with only background subagents. Those subagents cannot retain or
+renew the old lease; use a new root run or a separate manager-owned reservation. Supervised and plan-mode runs cannot discover or mutate account reservations.
+Use `loom_vault_test_accounts_discover` to find available
+accounts and their own run's reservations. Grant both inspect and use for the relevant Account
+items, scoped to the copyable **Agent grant destination** shown for each collection in web and mobile
+(`loom:test-accounts:<collectionId>`) when access should cover only that pool.
+They can reserve, renew or release with `loom_vault_test_accounts_apply`; they cannot mark an
+account clean or grant themselves access. Reservations belong to that run. Stopping or replacing
+it, or withdrawing access, causes cleanup to quarantine its accounts. Expiry remains enforced
+while cleanup is unavailable. A manager must independently check/reset and mark them clean again.
+
+These agent tools return account references and leases, not passwords or a logged-in browser.
+Login delivery remains unavailable. Other runs' reservations and accounts without the required
+grants do not appear in discovery.
+
+## Find references from an authenticated terminal
+
+Run `loom vault references-complete --kind account -- editor` to get active reference candidates
+for a terminal picker or completion function. It prints up to 20 canonical references, one per
+line, without labels or values. Put `--` before a shell-supplied query so leading dashes stay literal.
+Parse errors and help use stderr for this command. Both label queries and partial canonical references are supported.
+A shell completion wrapper must replace the current word with the returned references rather than
+filtering them again against a label fragment. Searches use the terminal's current Loom connection and the
+calling thread's inspect grants; they never combine environments. Use `references-search` with
+its continuation cursor when you need a complete large-vault search.
+
+`loom vault test-accounts` shows eligible dedicated accounts and your run's leases. Use
+`test-account-apply` with the same JSON operation as the authenticated account tool to reserve,
+renew or release one. For waiting access requests, the CLI also exposes `access-request`,
+`access-request-status`, `access-request-cancel`, `access-retry-prepare` and
+`access-recovery-status`. `access-request` creates a pending approval request, and
+`access-request-cancel` cancels one. The other aliases report status or prepare an explicit retry;
+none approve access or execute a prepared retry.
+
+An empty readiness request checks the current run's pinned profile and credential versions when
+present, otherwise the active project default. Missing bindings, stale broker
+presence and a permission-limited or changed provider run include repair guidance. Supplying
+explicit requirements checks those instead. Profile configuration and broker presence do not
+prove an upstream login; use a supported explicit connection check for that destination.

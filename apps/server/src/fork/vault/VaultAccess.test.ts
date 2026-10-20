@@ -334,6 +334,9 @@ it.effect("delegates only to a real direct child and rechecks ancestor revocatio
         "human",
       );
       expect(preview.affectedGrantIds).toContain(child.id);
+      expect(preview.unknowns).toContain(
+        "Profile bindings are not tracked by this change preview.",
+      );
       expect((yield* access.snapshot).revision).toBe(2);
       yield* access.apply(
         {

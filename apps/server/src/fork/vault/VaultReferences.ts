@@ -53,9 +53,9 @@ const make = Effect.gen(function* () {
           if (
             (!input.kind || item.kind === input.kind) &&
             (!query ||
-              item.label.toLocaleLowerCase().includes(query) ||
-              item.id.includes(query) ||
-              vaultReferenceText(environmentId, item.id).toLocaleLowerCase() === query)
+              (query.startsWith("loom-vault:")
+                ? vaultReferenceText(environmentId, item.id).toLocaleLowerCase().startsWith(query)
+                : item.label.toLocaleLowerCase().includes(query) || item.id.includes(query)))
           )
             items.push(reference(item));
         cursor = result.nextCursor;
