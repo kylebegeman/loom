@@ -56,7 +56,11 @@ parameters only pick targets; see
 Issuer and resource URLs come from the request's Host and
 `X-Forwarded-Proto`, so one server answers over loopback, Tailscale Serve and a
 T3 Connect tunnel. A proxy that rewrites Host or drops the protocol header
-breaks sign-in.
+breaks sign-in. The same header marks browser session cookies `Secure`,
+because a proxy may also answer plain HTTP for that hostname and would leak an
+unmarked cookie there. A browser will not replace a `Secure` cookie from plain
+HTTP, so after signing in over HTTPS, the same server reached over plain HTTP
+on that hostname stays signed out until the cookie expires or is cleared.
 
 Bearer and DPoP clients obtain short-lived WebSocket tickets through authenticated
 HTTP so long-lived tokens stay out of socket URLs. Browser sessions can

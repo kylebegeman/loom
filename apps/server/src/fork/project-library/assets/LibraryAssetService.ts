@@ -53,8 +53,8 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const objects = yield* ObjectStore.LibraryObjectStore;
   const uploads = yield* Semaphore.make(1);
-  const find = (environmentId: EnvironmentId, attachmentId: string) =>
-    Effect.gen(function* () {
+  const find = Effect.fn("LibraryAssetService.find")(
+    function* (environmentId: EnvironmentId, attachmentId: string) {
       const rows =
         yield* sql<Row>`SELECT * FROM fork_library_assets WHERE source_environment_id=${environmentId} AND source_attachment_id=${attachmentId}`;
       if (!rows[0]) return yield* new LibraryError({ reason: "not-found" });
@@ -68,11 +68,11 @@ const make = Effect.gen(function* () {
         bytes: row.bytes,
         createdAt: row.created_at,
       };
-    }).pipe(
-      Effect.mapError((cause) =>
-        isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
-      ),
-    );
+    },
+    Effect.mapError((cause) =>
+      isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
+    ),
+  );
   const put: LibraryAssetService["Service"]["put"] = (input) =>
     uploads.withPermits(1)(
       Effect.gen(function* () {

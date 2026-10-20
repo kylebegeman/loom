@@ -171,8 +171,8 @@ A local run of the pages host checked:
 ## Still to check
 
 - A real-client pass for Library sign-in, pages, replies, and folder and container links.
-- The LP-22 Library deploy, then pages at `pages.bagels.top` from another device and a reply
-  sent while the computer is off.
+- Pages at `pages.bagels.top` from another device, including a private window that signs in
+  to the Library, and a reply sent while the computer is off.
 - DPoP sessions: a browser opened from mobile or from web over T3 Connect stays in past an
   hour with its hot reload socket open, and removing that device signs it out.
 - Web on app.t3.codes over T3 Connect, and desktop connected to a remote computer.
@@ -181,7 +181,7 @@ A local run of the pages host checked:
   but no MCP server with an app UI was available to test.
 - The "Unregistered tunnel connection" log line has not been seen, and neither readiness line
   has been checked against the pinned `cloudflared` 2026.10.0.
-- After the LP-22 deploy: a computer on the shared Library token registers, and revoking a
+- Against the Library: a computer on the shared Library token registers, and revoking a
   computer's session ends sign-in to its links; **Sign out preview browsers** signs a pages
   reader out.
 

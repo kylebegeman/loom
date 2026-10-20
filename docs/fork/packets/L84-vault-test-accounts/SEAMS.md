@@ -1,21 +1,20 @@
 # L84 seams
 
-## Extension points
+All implementation is fork-owned. Existing contracts/RPC group, scope maps, runtime construction,
+capability list, client commands, web settings/palette and mobile Vault settings register the new
+service without any upstream-owned edit or seam marker. No FORK.md/seam-manifest row is needed.
+No package dependency, SQL migration, Library service or provider adapter is changed.
 
-Existing fork extension points are reused where present. Proposed `ext-vault` is specified in
-[LOOM-VAULT-FOUNDATION.md](../LOOM-VAULT-FOUNDATION.md); its implemented record boundary is specified in EXTENSION-POINTS.md and
-future portions must be reconciled with [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) before use.
+The independent registry uses the reserved `profiles/_test_accounts/registry-v1` branch inside
+the current environment namespace. VaultProfiles documents the reservation; cleanup regression
+coverage protects it and the operation journal while retiring a project's run selection.
 
-## Packet integration review
+No browser profile, device session, private-input or credential delivery hook is added. Values
+remain in existing VaultCore Account records. Test fixtures and screenshots are evidence only;
+no personal accounts, production policy, credentials or QA screenshots are committed.
 
-Inspect browser profile/session and device test integration before adding delivery hooks. Credential fields belong in Vault, not browser evidence or test transcript fixtures.
+Implementation base: fork main `4070ef99a2`, which includes the PR #35 upstream integration.
 
-These are candidate integration areas, not an approved list of upstream edits. Final source
-locations, marked lines and any generated files must be enumerated after the extension and
-backend decisions. Keep business logic in fork-owned paths.
-
-## Actual seams and merge status
-
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+The agent slice adds only fork-owned service/MCP registrations in ForkLayer, ForkRuntime and the
+fork MCP index. Cleanup writes the same registry via CAS; no orchestration event/schema seam,
+Library contract, OpenBao policy/path or access-policy/journal format change is introduced.

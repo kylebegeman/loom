@@ -24,6 +24,30 @@ server/repository and does not register a real account. Relevant contracts, serv
 client-runtime, web, mobile, desktop and provider-core typechecks pass. Changed-source lint and mobile
 native static checks pass. No repo-wide checks or production actions were run.
 
+## Terminal completion evidence
+
+Seven focused CLI cases exercise a real disposable loopback MCP endpoint and the actual Loom
+CLI child. Structured/text responses, sparse continuation, bounded scans (four requests), output
+caps (20 references), deduplication, canonical-reference enforcement, mixed-environment refusal,
+archived response refusal, cursor loops, missing credentials and tool failures are covered.
+Child-process failures assert exit 1, empty stdout and one fixed stderr message for tool refusal,
+malformed responses, missing connections and JSON-RPC errors containing a synthetic private body.
+The CLI prints no item labels, server error bodies or credential values. It uses only its
+inherited authenticated environment and never installs a shell function or edits a startup file.
+Parse failures (leading dash, invalid kind and unknown flag) assert exit 1 and empty stdout;
+help is routed to stderr at the CLI boundary. A query after `--` stays literal. The actual child also verifies the new account-discovery CLI alias uses the existing agent tool.
+
+```sh
+cd apps/server
+../../node_modules/.bin/vp test run src/fork/vault/references-cli.test.ts
+```
+
+This provides newline completion candidates for a terminal picker or completion integration.
+It does not modify the user's shell or complete an arbitrary embedded JSON argument. Use the
+existing paged reference search for results beyond the bounded candidate scan. Reference-service
+regressions cover canonical prefixes and mismatched environments. Wrappers must replace a label
+query with the canonical candidates, not apply shell prefix filtering to the original label.
+
 ## Client evidence and limits
 
 Web management verified at desktop and 390px width: create/review/save an incomplete profile,
@@ -87,3 +111,9 @@ form, so that control must be placed in its moved prompt section during synchron
 `v0.1.1-nightly.20261017.3238` still previews cleanly. The existing upstream-sync limitation
 remains; no merge or deployment was attempted. The paused QA schedule was deleted after
 persistence checks. iOS also displayed the saved reviewed profile in its scheduled editor.
+
+CLI test children resolve bin.ts from import.meta.url. Package-directory verification runs from
+apps/server: references-cli (seven) and TerminalConnection (four) pass eleven tests; the two real SSH-agent
+integration cases remain deliberately skipped without their explicit disposable SSH configuration.
+That integration file uses the same file-relative entrypoint. No install, SSH probe or production
+state is needed by the applicable CLI tests.

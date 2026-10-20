@@ -152,7 +152,8 @@ $unlisted"
 
 fork_tests() {
   printf '%s\n' "${BRAND_TESTS[@]}"
-  # Browser-mode tests need the browser runner, which this node run does not start.
+  # Browser-mode tests need apps/web's headless Chromium project, which the root
+  # config used here lacks; CI's web test job runs them.
   git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts' \
     ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
 }
@@ -498,16 +499,6 @@ cmd_rollback() {
   fi
 }
 
-# Posts the conflicting files to a bot trigger's webhook (docs/fork/user/bots.md), when set. A
-# failed or slow post never changes what integrate does.
-report_conflicts() {
-  [ -n "${LOOM_BOTS_CONFLICT_HOOK:-}" ] || return 0
-  git diff --name-only --diff-filter=U |
-    node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>process.stdout.write(JSON.stringify({tag:process.argv[1],branch:process.argv[2],files:s.split("\n").filter(Boolean)})))' "$1" "$2" |
-    curl -fsS --max-time 5 -H 'Content-Type: application/json' --data-binary @- "$LOOM_BOTS_CONFLICT_HOOK" >/dev/null 2>&1 &&
-    echo "Sent the conflicts to the bot trigger." || echo "Could not reach LOOM_BOTS_CONFLICT_HOOK; continuing."
-}
-
 cmd_integrate() {
   local target=stable install=1 cont=0 dry=0 pr=0 arg
   for arg in "$@"; do
@@ -556,7 +547,6 @@ cmd_integrate() {
       echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
       echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
       echo "To give up: git merge --abort && git switch main && git branch -D $branch"
-      report_conflicts "$tag" "$branch"
       exit 2
     fi
   fi

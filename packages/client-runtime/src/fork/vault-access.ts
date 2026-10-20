@@ -5,6 +5,7 @@ import {
   type VaultApprovalRequest,
   type VaultApprovalReviewContext,
   type VaultAccessAction,
+  type VaultAccessContext,
   type VaultReadinessReport,
   type VaultGrant,
 } from "@t3tools/contracts/fork";
@@ -161,4 +162,88 @@ export const vaultApprovalReviewLabels = (
           : null,
     approvalBlocked: own?.state === "changed" || own?.state === "unavailable",
   };
+};
+
+export const vaultAccessContextRows = (context: VaultAccessContext, now: number) => {
+  if (context.state === "changed" || now >= context.freshUntil)
+    return [
+      { id: "expired", text: "Related context changed or expired. Run the access check again." },
+    ];
+  if (context.state === "unavailable")
+    return [
+      {
+        id: "unavailable",
+        text: "Related context is unavailable. The policy decision above is a separate observation.",
+      },
+    ];
+  return [
+    ...(context.state === "partial"
+      ? [
+          {
+            id: "partial",
+            text: "Some related context is unavailable. Empty lists do not prove there are no consumers.",
+          },
+        ]
+      : []),
+    {
+      id: "provider",
+      text: `Provider ${context.providerInstanceId ?? "unavailable"} · Run ${context.runId ?? "none"}.`,
+    },
+    ...(context.profiles.length
+      ? context.profiles.map((p) => ({
+          id: `profile:${p.id}`,
+          text: `Profile ${p.label} (${p.id}) · ${p.state}${p.selected ? " · selected default" : ""} · Requirements ${p.requirements.join(", ")}.`,
+        }))
+      : [
+          {
+            id: "no-profiles",
+            text: "No matching profile bindings in this project were observed.",
+          },
+        ]),
+    ...(context.omittedProfiles
+      ? [
+          {
+            id: "omitted-profiles",
+            text: `${context.omittedProfiles} additional matching profiles omitted.`,
+          },
+        ]
+      : []),
+    ...(context.sessions.length
+      ? context.sessions.map((s) => ({
+          id: `workload:${s.id}`,
+          text: `Workload ${s.id} · ${s.machineLabel ?? s.machineId} · broker ${s.brokerState} when checked · ${s.destination}.`,
+        }))
+      : [{ id: "no-workloads", text: "No current matching workload sessions were observed." }]),
+    ...(context.omittedSessions
+      ? [
+          {
+            id: "omitted-sessions",
+            text: `${context.omittedSessions} additional matching workload sessions omitted.`,
+          },
+        ]
+      : []),
+    ...(context.approvals.length
+      ? context.approvals.map((r) => ({
+          id: `request:${r.id}`,
+          text: `Request ${r.id} · ${r.state}.`,
+        }))
+      : [
+          {
+            id: "no-requests",
+            text: "No retained matching requests for this thread were observed.",
+          },
+        ]),
+    ...(context.omittedApprovals
+      ? [
+          {
+            id: "omitted-requests",
+            text: `${context.omittedApprovals} additional matching requests omitted.`,
+          },
+        ]
+      : []),
+    {
+      id: "limits",
+      text: "External consumers are not discovered. Copies held by providers are unknown. This context does not authorize an operation.",
+    },
+  ];
 };

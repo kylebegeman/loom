@@ -433,3 +433,166 @@ change is included. Construction/registration remains inert. No public acquisiti
 execution endpoint is exposed. Internal handle validation does not consume a timed grant or
 implement adapter admission, remote effects, automatic resumption or true one-time enforcement;
 those limitations and the existing downgrade/recovery requirements remain explicit. L86 is partial.
+
+## Metadata-only adapter admission and revalidation
+
+Six focused suites pass **73 tests**: 23 admission cases, fresh acquisition, normal launch,
+workload and GitHub behavior, plus real MCP startup registration. The new coordinator composes
+real journal/access/workload/launch/connector services. GitHub provider/command transports throw
+if invoked; SSH uses the existing transport that throws on execution. GitHub fixtures are direct
+synthetic connection seeds, including a non-signable App key, not verified provider accounts.
+Real metadata methods are wrapped only to insert deterministic post-observation fault barriers;
+no wrapper fabricates an admission verdict.
+
+Happy paths cover SSH, Git-over-SSH, GitHub token and GitHub App proposals. They require two
+matching metadata observations, return three false gates and required-live-validation, leave
+stored payloads/versions unchanged and create no workload session. Reusing the consumed handle
+fails. Changed proposal binding fails before metadata. Other cases cover repository allowlist
+refusal, authority withdrawal during checks, provider/worktree changes between observations,
+replayed journal reconciliation, cancellation while paused, expired broker lease, disabled
+machine, broker environment mismatch, exact pinned host key and absolute Git working directory.
+Failures reconcile owned reservation evidence without reopening execution.
+
+The first checks caught existing execution authorization writing its normal audit record;
+metadata admission now uses the same evaluator's read-only explanation. Existing execution and
+networked readiness retain audited authorization. The unchanged normal-service suites cover
+that distinction. Broker age is derived from the actual fixture lease, and revoke fixtures use
+the existing required duration contract. No sleeps, provider probes or personal host actions run.
+
+Server typecheck, focused lint/format, documentation links, 392 seam rows and whitespace pass.
+No wire/client code changed, so no UI verification or client typechecks were added. The separate
+OpenBao journal proof is unchanged and was not rerun: this slice adds no persistence format,
+path, policy permission or backend operation. Constructor/registry assembly remains inert.
+All methods are internal; no MCP, RPC, CLI, provider or scheduled execution path is exposed.
+Live session capacity, signing/proofs, credential/provider validity, tool/file/repository state
+and actual network access remain unverified. One-time grant enforcement, live dispatch, L79
+host policy/production and broader client/remote acceptance remain open; L86 stays partial.
+
+## Synthetic admission result loss and recovery follow-up
+
+Three focused suites pass **59 tests**: 32 adapter-admission cases, fresh acquisition and real
+MCP registration. The added coverage reconstructs journal and admission services over the same
+retained synthetic store and dependencies. It deliberately does not claim a full process/host,
+provider, notification, workload-service or OpenBao backend restart.
+
+Across SSH, Git-over-SSH and GitHub, successful metadata observation followed by a lost internal
+result cannot resume. Serialized observations and the original handle are refused by the new
+instance; explicit acquire reconciles reserved evidence to unknown and retry preparation requires
+review. Constructors leave retained records unchanged and no extra metadata/provider call occurs.
+All three adapters also pass interruption at a deterministic metadata barrier without transport
+execution, session allocation or handle restoration.
+
+A concurrent duplicate is denied while the original metadata call is paused; it leaves the
+original reservation usable for that observation, whose result still has false gates. Storage
+outage after admission leaves ordinary approval review usable, preserves records and yields no
+acquisition; restoration forces reconciliation rather than replay. An elapsed entry is unavailable
+while its request remains approved/retained, without erasing or recreating evidence. Withdrawal
+after a successful result stays authoritative on reconstruction, and the old observation never
+becomes permission. The existing 26 fresh-acquisition cases remain green.
+
+Server typecheck, focused lint/format, changed documentation links, 392 seam rows and whitespace
+pass. This follow-up changes only tests and packet evidence, so client checks, browser/native
+passes and the unchanged real OpenBao persistence proof were not repeated. No production,
+Library, host-owner, SSH, install, release, surface, policy/path/format or gate action is included.
+L86 remains partial; full one-time intent/enforcement and compatibility design, actual adapter
+admission/execution, fresh human authentication and broader surface acceptance are still open.
+
+## One-time intent and downgrade-reader design proof
+
+The new `OperationIntent.proof.test.ts` passes seven tests. Real current-service counterexamples
+show that format-3 policy, request and grant-definition intent fields are accepted, authorization
+remains repeatable, and the normal audited writer removes those fields. A separate synthetic
+unsupported-policy-version fixture is refused by the actual reader and audited authorization
+without rewriting it. This is not a persisted format bump or historical-binary acceptance.
+The real pure evaluator still permits an alternate thread, project or delegated grant after
+removing/revoking the approval grant. No external operation or credential delivery runs.
+
+A design-only eligibility model checks 672 intent/reader/binding/human-review/evidence/authority
+combinations, each with and without an ordinary matching grant. Only a supported explicit
+one-time intent, aware reader, exact human-reviewed binding, prepared evidence and current
+authority are eligible in that model; an ordinary grant never repairs missing authority. It is
+not the production evaluator, a fresh acquisition or dispatch permission. The existing journal,
+access and dispatcher proofs remain green.
+
+Server typecheck and focused lint pass after correcting a nonexistent schema helper in the new
+test harness and hoisting its decoders. Changed-document links, seam manifest and whitespace are
+checked before landing. No runtime, contract, client, MCP or backend format/path/policy changes
+are included, so no browser/native or unchanged real OpenBao proof is repeated. Access-policy
+format 3, journal version 1 and all literal-false gates remain unchanged. L86 is partial. Future
+persisted intent/schema and host-controlled downgrade/backup rollback protection need separate
+Kyle/host-owner review; live providers and broader client/remote acceptance remain open.
+
+## Adapter-start unit and uncertain token-mint counterexamples
+
+The real GitHub transport with a synthetic in-memory HTTP client covers lost response bodies
+and invalid expiry after provider-side token issuance. Each call makes one installation lookup
+and one mint POST, returns invalid-response without exposing synthetic token/error bodies, and
+performs no automatic retry or guessed-token cleanup. A deliberately separate caller invocation
+issues a second token, demonstrating that missing session evidence cannot refund the first
+attempt. No live provider or host credential is used.
+
+The explicit-retry suite now tests both SSH and Git-over-SSH timeout outcomes. A synthetic
+transport is reached once per explicit invocation; requester recovery requires outcome review,
+keeps every gate false and creates no additional execution or retained workload session. These
+are existing timed-service tests, not a one-time executor. The transport-start design preserves
+the current one-signature limit and does not infer subprocess retry behavior from fake transports.
+
+The two focused transport/retry suites pass 17 tests after correcting the new write fixture
+to use fetch rather than read-only ls-remote. Server typecheck, focused lint/format, documentation
+links, 392 seam rows and whitespace pass. No runtime/MCP/client, policy3/journal1, path, rights,
+Library or gate change is included. Real adapter retry behavior, unknown-token cleanup and
+restart-safe cleanup evidence remain open; no UI/device or real OpenBao proof is repeated.
+
+## Mandatory intent boundary design and synthetic proof
+
+`OperationIntentBoundary.proof.test.ts` adds seven tests. Real pure-evaluator counterexamples
+show that an ordinary project grant can satisfy a reference-free child invocation, and that
+resource/action/time attenuation still accepts a child grant when hypothetical parent intent
+metadata says spent. These are current timed semantics; no runtime defect or grant behavior
+is changed by the proof.
+
+The test-local boundary model checks 2,592 path/surface/reference/mode/state combinations, each
+with and without an ordinary grant. Typed SSH/Git/GitHub bindings are independently mutated in
+14 dimensions. Coverage includes omitted/foreign/spent references, caller mode hints, unknown
+classification, incomplete coverage, raw release, reusable sessions, protected delegation,
+child/grandchild review, ordinary timed behavior and separately authorized metadata inspection.
+A child's separately reviewed example uses new request/waiting-operation identities; it does
+not copy a parent's opportunity. Every observation, including intent-eligible, keeps three
+literal-false gates. The model runs no transport, callback, broker, provider or credential release.
+
+The focused boundary, prior intent and access suites pass 59 tests. Server typecheck, focused
+lint/format, changed-document links, 392 seam rows and whitespace pass. No wire, runtime, MCP/client
+or OpenBao operation/path/policy/format changes are included. Access-policy stays 3 and journal
+stays 1; no persisted intent/classification exists. Constructor/registration behavior is unchanged,
+so real OpenBao and UI/native passes are not repeated.
+
+This proves a candidate decision model, not real endpoint coverage or implemented mandatory
+enforcement. Item-wide protection remains a product/schema recommendation. Compatible readers,
+classification persistence across retention, temporal handoff/callback revalidation, live adapters,
+restart-safe cleanup and the host rollback barrier remain open. L86 stays partial; L75 remains
+waiting on CW-1/L79 host policy. No Library, production, SSH, install or release action is included.
+
+## Temporal intent revalidation proof
+
+`OperationIntentTemporal.proof.test.ts` adds ten tests. Its test-local protocol models separate
+classification, coverage, reviewed-binding and current-authority observations, validation and
+final commit. Eleven hazards at eight positions, with and without restoration, cover 352
+handoff/callback schedules. Changes before commit refuse new starts or callback acceptance;
+changes after a start cannot recall it but prevent subsequent callbacks. Restored values,
+interruption, unknown outcome, ownership loss and duplicate callback commit cannot refund the
+opportunity. Normal unchanged context permits one abstract start and fresh same-owner callback
+checks, without claiming multiple signatures or remote effects.
+
+Counterexamples show stale cached validation and individually valid mixed reads authorizing
+unsafe commits. Restored classification/coverage/binding values retain a different symbolic
+generation, so old observations refuse. Coherent generation and final atomic commit are explicit
+model assumptions. This does not prove a production snapshot/fence, unobserved change detection,
+real callback enforcement or cancellation of in-flight external effects. Every reported gate
+stays literal false, even in successful abstract transitions.
+
+The temporal, mandatory-boundary, dispatcher and real acquisition suites pass 51 tests. Server
+typecheck, focused lint/format, changed documentation links, 392 seam rows and whitespace pass. No runtime, contracts, MCP/RPC/CLI/client, persistent schema/classification/
+intent or OpenBao format/path/policy changes are included; policy3/journal1 remain unchanged.
+No UI/native, real OpenBao or live adapter pass is inferred or repeated. The bounded synthetic
+review is complete; remaining owners and opening checks are in IMPLEMENT-NOW. L86 remains partial
+and L75 parked. No Library schema, production, SSH, install or release action is included.

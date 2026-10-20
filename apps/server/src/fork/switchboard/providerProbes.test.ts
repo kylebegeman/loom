@@ -347,6 +347,9 @@ const makeAllowanceProbePeer = Effect.fn("makeAllowanceProbePeer")(function* (
           case "model/list":
             result = { data: [] };
             break;
+          case "config/read":
+            result = { config: {}, origins: {}, layers: null };
+            break;
           case "account/rateLimits/read":
             assert.equal(request.params, null);
             result = {

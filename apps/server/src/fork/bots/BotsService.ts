@@ -783,13 +783,13 @@ export const make = Effect.gen(function* () {
     finish(entry, { status: "failed", error: errorMessage(error) });
 
   /** `permitBot` is the stored definition, whose limit holds even for a run of an older version. */
-  const execute = (
-    entry: LiveRun,
-    bot: BotDefinition,
-    launch: Omit<ThreadLaunch.ThreadLaunchInput, "commandId" | "threadId">,
-    permitBot: BotDefinition,
-  ) =>
-    Effect.gen(function* () {
+  const execute = Effect.fn("BotsService.execute")(
+    function* (
+      entry: LiveRun,
+      bot: BotDefinition,
+      launch: Omit<ThreadLaunch.ThreadLaunchInput, "commandId" | "threadId">,
+      permitBot: BotDefinition,
+    ) {
       const botSemaphore = yield* permitsFor(permitBot);
       // The bot's own permit comes first, so a run queued behind its bot holds no shared permit.
       yield* Effect.gen(function* () {
@@ -811,18 +811,21 @@ export const make = Effect.gen(function* () {
         environmentPermits.withPermits(1),
         botSemaphore.withPermits(1),
       );
-    }).pipe(
-      Effect.catchDefect(recordFailure(entry)),
-      // Shutdown also interrupts runs; those stay unfinished for restart recovery.
-      Effect.onInterrupt(() =>
-        entry.cancelRequested
-          ? (entry.started
-              ? interruptThread(entry, "The bot run was cancelled.")
-              : Effect.void
-            ).pipe(Effect.andThen(finish(entry, { status: "cancelled" })))
-          : Effect.void,
+    },
+    (effect, entry) =>
+      effect.pipe(
+        Effect.catchDefect(recordFailure(entry)),
+        // Shutdown also interrupts runs; those stay unfinished for restart recovery.
+        Effect.onInterrupt(() =>
+          entry.cancelRequested
+            ? (entry.started
+                ? interruptThread(entry, "The bot run was cancelled.")
+                : Effect.void
+              ).pipe(Effect.andThen(finish(entry, { status: "cancelled" })))
+            : Effect.void,
+        ),
       ),
-    );
+  );
 
   const resolveProject = Effect.fnUntraced(function* (
     bot: BotDefinition,

@@ -1237,12 +1237,14 @@ export const make = Effect.gen(function* () {
   });
   const checkPath = (resolved: ResolvedDesign, kind: string) =>
     path.join(checksDir, hashKey(resolved.workspaceKey, resolved.design.id, kind) + ".json");
-  const readStoredCheck = (resolved: ResolvedDesign, kind: PcbCheckKind) =>
-    Effect.gen(function* () {
+  const readStoredCheck = Effect.fn("PcbPreview.readStoredCheck")(
+    function* (resolved: ResolvedDesign, kind: PcbCheckKind) {
       const file = checkPath(resolved, kind);
       if (Number((yield* fs.stat(file)).size) > SAVED_STATE_LIMIT) return null;
       return yield* decodeCheck(yield* fs.readFileString(file));
-    }).pipe(Effect.orElseSucceed(() => null));
+    },
+    Effect.orElseSucceed(() => null),
+  );
   const runCheck = Effect.fn("PcbPreview.runCheck")(function* (
     resolved: ResolvedDesign,
     kind: PcbCheckKind,
@@ -1457,31 +1459,31 @@ export const make = Effect.gen(function* () {
             "watch-failed",
             "Live reload could not watch all design folders. Use Refresh to update the preview.",
           );
-        const reconcile = (dirs: readonly string[]) =>
-          Effect.gen(function* () {
-            for (const dir of dirs) {
-              if (watchers.has(dir)) continue;
-              const fiber = yield* fs.watch(dir).pipe(
-                Stream.filter((event) => {
-                  const parts = path
-                    .relative(resolved.root, path.resolve(dir, event.path))
-                    .split(path.sep);
-                  return !parts.some((p) => ignoredDirectories.has(p) || p.endsWith("-backups"));
-                }),
-                Stream.runForEach(() => Queue.offer(dirty, undefined)),
-                Effect.andThen(() => Queue.fail(dirty, watchFailure())),
-                Effect.catch(() => Queue.fail(dirty, watchFailure())),
-                Effect.asVoid,
-                Effect.forkIn(watchScope, { startImmediately: true }),
-              );
-              watchers.set(dir, fiber);
-            }
-            for (const [dir, fiber] of watchers) {
-              if (dirs.includes(dir)) continue;
-              yield* Fiber.interrupt(fiber);
-              watchers.delete(dir);
-            }
-          });
+        // Runs for every debounced change batch while the watch is open, so it stays untraced.
+        const reconcile = Effect.fnUntraced(function* (dirs: readonly string[]) {
+          for (const dir of dirs) {
+            if (watchers.has(dir)) continue;
+            const fiber = yield* fs.watch(dir).pipe(
+              Stream.filter((event) => {
+                const parts = path
+                  .relative(resolved.root, path.resolve(dir, event.path))
+                  .split(path.sep);
+                return !parts.some((p) => ignoredDirectories.has(p) || p.endsWith("-backups"));
+              }),
+              Stream.runForEach(() => Queue.offer(dirty, undefined)),
+              Effect.andThen(() => Queue.fail(dirty, watchFailure())),
+              Effect.catch(() => Queue.fail(dirty, watchFailure())),
+              Effect.asVoid,
+              Effect.forkIn(watchScope, { startImmediately: true }),
+            );
+            watchers.set(dir, fiber);
+          }
+          for (const [dir, fiber] of watchers) {
+            if (dirs.includes(dir)) continue;
+            yield* Fiber.interrupt(fiber);
+            watchers.delete(dir);
+          }
+        });
         const initial = yield* sourceSnapshot(resolved);
         yield* reconcile(initial.dirs);
         const current = yield* sourceSnapshot(resolved);
@@ -1516,35 +1518,36 @@ export const make = Effect.gen(function* () {
     variants: [],
     requests: [],
   });
-  const readState = <A>(
+  const readState = Effect.fn("PcbPreview.readState")(function* <A>(
     file: string,
     decode: (source: string) => Effect.Effect<A, Schema.SchemaError>,
     fallback: () => A,
-  ) =>
-    Effect.gen(function* () {
-      if (!(yield* fs.exists(file))) return fallback();
-      const info = yield* fs.stat(file);
-      if (Number(info.size) > SAVED_STATE_LIMIT)
-        return yield* failure("source-limit", "Saved PCB data exceeds its size limit.");
-      return yield* decode(yield* fs.readFileString(file)).pipe(
-        Effect.mapError(() =>
-          failure(
-            "io-failed",
-            "Saved PCB data could not be read. Restore its valid JSON before editing it.",
-          ),
+  ) {
+    if (!(yield* fs.exists(file))) return fallback();
+    const info = yield* fs.stat(file);
+    if (Number(info.size) > SAVED_STATE_LIMIT)
+      return yield* failure("source-limit", "Saved PCB data exceeds its size limit.");
+    return yield* decode(yield* fs.readFileString(file)).pipe(
+      Effect.mapError(() =>
+        failure(
+          "io-failed",
+          "Saved PCB data could not be read. Restore its valid JSON before editing it.",
         ),
+      ),
+    );
+  });
+  const writeState = Effect.fn("PcbPreview.writeState")(function* (
+    filePath: string,
+    value: unknown,
+  ) {
+    const contents = encodeJson(value);
+    if (Buffer.byteLength(contents, "utf8") > SAVED_STATE_LIMIT)
+      return yield* failure(
+        "source-limit",
+        "Saved PCB data exceeds 4 MiB. Reduce large notes or saved collections before saving.",
       );
-    });
-  const writeState = (filePath: string, value: unknown) =>
-    Effect.gen(function* () {
-      const contents = encodeJson(value);
-      if (Buffer.byteLength(contents, "utf8") > SAVED_STATE_LIMIT)
-        return yield* failure(
-          "source-limit",
-          "Saved PCB data exceeds 4 MiB. Reduce large notes or saved collections before saving.",
-        );
-      yield* writeFileStringAtomically({ filePath, contents });
-    });
+    yield* writeFileStringAtomically({ filePath, contents });
+  });
   const workspaceFile = (resolved: ResolvedDesign) =>
     path.join(workbenchDir, hashKey(resolved.workspaceKey, resolved.design.id) + ".json");
   const getWorkspace = Effect.fn("PcbPreview.getWorkspace")(function* (input: W.PcbInspectInput) {

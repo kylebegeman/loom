@@ -95,8 +95,8 @@ const make = Effect.gen(function* () {
   const configurationValid = configured && validOrigin(api) && validOrigin(issuer!);
   const lock = yield* Semaphore.make(1);
   const cached = new Map<boolean, { value: Redacted.Redacted<string>; expiresAt: number }>();
-  const token = (write = false) =>
-    Effect.gen(function* () {
+  const token = Effect.fn("SitesService.token")(
+    function* (write = false) {
       if (!configurationValid || (write && !managementConfigured))
         return yield* new SitesError({ stage: "configuration" });
       const now = yield* Clock.currentTimeMillis;
@@ -129,31 +129,37 @@ const make = Effect.gen(function* () {
       };
       cached.set(write, fresh);
       return fresh.value;
-    }).pipe(lock.withPermit);
-  const read = <A, I>(path: string, schema: Schema.Codec<A, I>) =>
-    Effect.gen(function* () {
-      const credential = yield* token();
-      const response = yield* http
-        .execute(
-          HttpClientRequest.get(`${api}${path}`).pipe(HttpClientRequest.bearerToken(credential)),
-        )
-        .pipe(
-          noRedirects,
-          Effect.timeout("15 seconds"),
-          Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
-        );
-      if (response.status === 401 || response.status === 403) {
-        cached.delete(false);
-        return yield* new SitesError({ stage: "authentication" });
-      }
-      return yield* HttpClientResponse.filterStatusOk(response).pipe(
-        Effect.flatMap((response) => response.json),
-        Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
+    },
+    // The unused parameter keeps `write` in the inferred signature. A bare `lock.withPermit`
+    // takes only the effect, and Effect.fn would infer that this function takes no arguments.
+    (effect, _write?: boolean) => lock.withPermit(effect),
+  );
+  const read = Effect.fn("SitesService.read")(function* <A, I>(
+    path: string,
+    schema: Schema.Codec<A, I>,
+  ) {
+    const credential = yield* token();
+    const response = yield* http
+      .execute(
+        HttpClientRequest.get(`${api}${path}`).pipe(HttpClientRequest.bearerToken(credential)),
+      )
+      .pipe(
+        noRedirects,
         Effect.timeout("15 seconds"),
         Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
       );
-    });
+    if (response.status === 401 || response.status === 403) {
+      cached.delete(false);
+      return yield* new SitesError({ stage: "authentication" });
+    }
+    return yield* HttpClientResponse.filterStatusOk(response).pipe(
+      Effect.flatMap((response) => response.json),
+      Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
+      Effect.timeout("15 seconds"),
+      Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
+    );
+  });
   const write = Effect.fn("SitesService.write")(function* (
     path: string,
     input: unknown,
@@ -230,18 +236,17 @@ const make = Effect.gen(function* () {
           Effect.map((snapshot) => ({ configured: true, managementConfigured, snapshot })),
         )
       : Effect.succeed({ configured: false, managementConfigured: false, snapshot: null }),
-    analytics: (input) =>
-      Effect.gen(function* () {
-        const siteId = yield* decodeSiteId(input.siteId).pipe(
-          Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
-        );
-        const result = yield* read(
-          `/v1/integrations/sites/${encodeURIComponent(siteId)}/analytics`,
-          SiteAnalytics,
-        );
-        if (result.siteId !== siteId) return yield* new SitesError({ stage: "read" });
-        return result;
-      }),
+    analytics: Effect.fn("SitesService.analytics")(function* (input) {
+      const siteId = yield* decodeSiteId(input.siteId).pipe(
+        Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
+      );
+      const result = yield* read(
+        `/v1/integrations/sites/${encodeURIComponent(siteId)}/analytics`,
+        SiteAnalytics,
+      );
+      if (result.siteId !== siteId) return yield* new SitesError({ stage: "read" });
+      return result;
+    }),
   });
 });
 export const layer = Layer.effect(SitesService, make);

@@ -17,53 +17,50 @@ export class VaultHealthObservation extends Context.Reference<{
 } | null>("loom/vault/health-observation", { defaultValue: () => null }) {}
 const isGitHub = Schema.is(VaultGitHubError),
   isSsh = Schema.is(VaultSshError);
-export const observeVaultHealth = <A, E, R>(
+// Untraced: this decorates a probe or command whose caller's span already covers the operation.
+export const observeVaultHealth = Effect.fnUntraced(function* <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   itemId: string,
   itemVersion: number,
   outageTarget?: VaultHealthOutageTarget,
-) =>
-  Effect.gen(function* () {
-    const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
-    if (Option.isNone(health)) return yield* effect;
-    const observation = (yield* VaultHealthObservation) ?? {
-      observedAt: yield* Clock.currentTimeMillis,
-    };
-    const report = (category: VaultHealthClass, healthy: boolean) =>
-      health.value
-        .report({
-          itemId,
-          itemVersion,
-          category,
-          healthy,
-          ...observation,
-          ...(category === "outage" && outageTarget ? { outageTarget } : {}),
-        })
-        .pipe(Effect.ignore);
-    return yield* effect.pipe(
-      Effect.tap((result) =>
-        typeof result === "object" &&
-        result !== null &&
-        "exitCode" in result &&
-        result.exitCode !== 0
-          ? report("configuration", false)
-          : Effect.forEach(
-              ["authentication", "outage"] as const,
-              (category) => report(category, true),
-              { discard: true },
-            ),
-      ),
-      Effect.tapError((error) => {
-        if (isGitHub(error)) {
-          if (["unavailable", "timeout"].includes(error.reason)) return report("outage", false);
-          if (["unauthorized", "invalid-credential"].includes(error.reason))
-            return report("authentication", false);
-        }
-        if (isSsh(error)) {
-          if (error.reason === "timeout") return report("outage", false);
-          if (error.reason === "failed") return report("configuration", false);
-        }
-        return Effect.void;
-      }),
-    );
-  });
+) {
+  const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
+  if (Option.isNone(health)) return yield* effect;
+  const observation = (yield* VaultHealthObservation) ?? {
+    observedAt: yield* Clock.currentTimeMillis,
+  };
+  const report = (category: VaultHealthClass, healthy: boolean) =>
+    health.value
+      .report({
+        itemId,
+        itemVersion,
+        category,
+        healthy,
+        ...observation,
+        ...(category === "outage" && outageTarget ? { outageTarget } : {}),
+      })
+      .pipe(Effect.ignore);
+  return yield* effect.pipe(
+    Effect.tap((result) =>
+      typeof result === "object" && result !== null && "exitCode" in result && result.exitCode !== 0
+        ? report("configuration", false)
+        : Effect.forEach(
+            ["authentication", "outage"] as const,
+            (category) => report(category, true),
+            { discard: true },
+          ),
+    ),
+    Effect.tapError((error) => {
+      if (isGitHub(error)) {
+        if (["unavailable", "timeout"].includes(error.reason)) return report("outage", false);
+        if (["unauthorized", "invalid-credential"].includes(error.reason))
+          return report("authentication", false);
+      }
+      if (isSsh(error)) {
+        if (error.reason === "timeout") return report("outage", false);
+        if (error.reason === "failed") return report("configuration", false);
+      }
+      return Effect.void;
+    }),
+  );
+});

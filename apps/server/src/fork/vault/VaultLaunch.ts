@@ -1,7 +1,10 @@
+import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
+  type VaultApprovalRetryInput,
+  vaultSshDestination,
   VaultSshAgentOpen,
   type VaultSshAgentSession,
   VaultError,
@@ -43,6 +46,10 @@ type Failure = HostedFailure | VaultGitHubError;
 export class VaultLaunch extends Context.Service<
   VaultLaunch,
   {
+    readonly admission: (
+      operation: Exclude<VaultApprovalRetryInput["operation"], { readonly kind: "github-api" }>,
+      threadId: ThreadId,
+    ) => Effect.Effect<string, HostedFailure>;
     readonly agent: (
       input: VaultSshAgentOpen,
       threadId: ThreadId,
@@ -79,6 +86,18 @@ const make = Effect.gen(function* () {
   const profiles = yield* VaultProfiles.VaultProfiles,
     github = yield* VaultGitHub.VaultGitHub;
   const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR;
+  const hostIdentity = Effect.gen(function* () {
+    if (!configured || !path.isAbsolute(configured))
+      return yield* new VaultWorkloadError({ reason: "not-configured" });
+    const connection = yield* identities
+      .connection(configured)
+      .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
+    const machine = yield* identities
+      .read(configured, false)
+      .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
+    if (machine.fingerprint.slice(0, 32) !== connection.machineId) return yield* denied();
+    return { connection, machine };
+  });
   const run = <A>(
     threadId: ThreadId,
     itemId: string,
@@ -92,16 +111,7 @@ const make = Effect.gen(function* () {
   ) =>
     Effect.scoped(
       Effect.gen(function* () {
-        if (!configured || !path.isAbsolute(configured))
-          return yield* new VaultWorkloadError({ reason: "not-configured" });
-        // The operator enrolls this server identity once. No agent can enroll or approve itself.
-        const connection = yield* identities
-          .connection(configured)
-          .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
-        const machine = yield* identities
-          .read(configured, false)
-          .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
-        if (machine.fingerprint.slice(0, 32) !== connection.machineId) return yield* denied();
+        const { connection, machine } = yield* hostIdentity;
         const workload = yield* keys.create.pipe(
           Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
         );
@@ -209,6 +219,56 @@ const make = Effect.gen(function* () {
     }),
   };
   return VaultLaunch.of({
+    admission: Effect.fn("VaultLaunch.admission")(function* (operation, threadId) {
+      const info = yield* ssh.info(operation.input.id);
+      const version =
+        operation.kind === "ssh"
+          ? operation.input.command.expectedVersion
+          : operation.input.expectedVersion;
+      if (
+        info.item.state !== "active" ||
+        info.item.version !== version ||
+        !info.target.hostKey ||
+        info.target.hostKey !== operation.target.hostKey ||
+        info.destination !== vaultSshDestination(operation.target)
+      )
+        return yield* denied();
+      const destination =
+        operation.kind === "ssh"
+          ? info.destination
+          : vaultGitDestination(info.target, operation.input.repository);
+      const { connection, machine } = yield* hostIdentity;
+      const workload = yield* workloads.admission(
+        { machineId: connection.machineId, itemId: operation.input.id, destination },
+        threadId,
+      );
+      if (
+        workload.environmentId !== connection.environmentId ||
+        workload.publicKey !== machine.publicKey
+      )
+        return yield* denied();
+      let cwd: string | null = null;
+      if (operation.kind === "git-ssh") {
+        const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+        if (!thread) return yield* denied();
+        const project = yield* projects.get(thread.projectId).pipe(Effect.mapError(denied));
+        if (Option.isNone(project) || project.value.deletedAt !== null) return yield* denied();
+        cwd = thread.worktreePath ?? project.value.workspaceRoot;
+        if (!path.isAbsolute(cwd)) return yield* denied();
+      }
+      // Local metadata stamp only. Capacity, challenge/proof, signing and remote access remain unchecked.
+      return yield* admissionStamp([
+        operation.kind,
+        String(info.item.version),
+        destination,
+        info.target.hostKey,
+        workload.context,
+        connection.environmentId,
+        connection.machineId,
+        machine.fingerprint,
+        cwd,
+      ]);
+    }),
     ...operations,
     agent: Effect.fn("VaultLaunch.agent")(function* (input, threadId) {
       if (!isAgentOpen(input)) return yield* new VaultSshError({ reason: "invalid-operation" });

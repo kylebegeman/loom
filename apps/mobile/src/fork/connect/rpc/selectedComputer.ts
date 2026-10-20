@@ -31,43 +31,43 @@ export interface SelectedComputerAccount {
   readonly isCurrent: () => boolean;
 }
 
-function pairedConnection(target: SelectedComputerTarget) {
-  return Effect.gen(function* () {
-    if (!target.canConfigure()) {
-      return yield* new SelectedComputerConnectError({
-        message: "Connect management permission is required on this computer.",
-      });
-    }
-    const connection = target.connection;
-    if (!connection || connection.environmentId !== target.environmentId) {
-      return yield* new SelectedComputerConnectError({
-        message: "The selected computer's connection is unavailable. Reconnect and try again.",
-      });
-    }
-    if (
-      !connection.bearerToken ||
-      connection.authenticationMethod === "dpop" ||
-      connection.relayManaged
-    ) {
-      return yield* new SelectedComputerConnectError({
-        message: "Use a directly paired route to configure this computer's account link.",
-      });
-    }
-    const environmentHttp = yield* makeEnvironmentHttpApiClient(connection.httpBaseUrl);
-    const descriptor = yield* environmentHttp.metadata.descriptor({});
-    if (descriptor.environmentId !== target.environmentId) {
-      return yield* new SelectedComputerConnectError({
-        message:
-          "This address now belongs to a different computer. Pair the selected computer again.",
-      });
-    }
-    return {
-      environmentHttp,
-      connection,
-      headers: { authorization: `Bearer ${connection.bearerToken}` },
-    };
-  });
-}
+const pairedConnection = Effect.fn("selectedComputer.pairedConnection")(function* (
+  target: SelectedComputerTarget,
+) {
+  if (!target.canConfigure()) {
+    return yield* new SelectedComputerConnectError({
+      message: "Connect management permission is required on this computer.",
+    });
+  }
+  const connection = target.connection;
+  if (!connection || connection.environmentId !== target.environmentId) {
+    return yield* new SelectedComputerConnectError({
+      message: "The selected computer's connection is unavailable. Reconnect and try again.",
+    });
+  }
+  if (
+    !connection.bearerToken ||
+    connection.authenticationMethod === "dpop" ||
+    connection.relayManaged
+  ) {
+    return yield* new SelectedComputerConnectError({
+      message: "Use a directly paired route to configure this computer's account link.",
+    });
+  }
+  const environmentHttp = yield* makeEnvironmentHttpApiClient(connection.httpBaseUrl);
+  const descriptor = yield* environmentHttp.metadata.descriptor({});
+  if (descriptor.environmentId !== target.environmentId) {
+    return yield* new SelectedComputerConnectError({
+      message:
+        "This address now belongs to a different computer. Pair the selected computer again.",
+    });
+  }
+  return {
+    environmentHttp,
+    connection,
+    headers: { authorization: `Bearer ${connection.bearerToken}` },
+  };
+});
 
 function requireAccount(account: SelectedComputerAccount) {
   return account.isCurrent() && account.clerkToken
@@ -79,12 +79,12 @@ function requireAccount(account: SelectedComputerAccount) {
       );
 }
 
-export function getSelectedComputerConnectState(target: SelectedComputerTarget) {
-  return Effect.gen(function* () {
-    const { environmentHttp, headers } = yield* pairedConnection(target);
-    return yield* environmentHttp.connect.linkState({ headers });
-  });
-}
+export const getSelectedComputerConnectState = Effect.fn(
+  "selectedComputer.getSelectedComputerConnectState",
+)(function* (target: SelectedComputerTarget) {
+  const { environmentHttp, headers } = yield* pairedConnection(target);
+  return yield* environmentHttp.connect.linkState({ headers });
+});
 
 function requireLinkedAccount(
   state: EnvironmentCloudLinkStateResult,
@@ -100,105 +100,98 @@ function requireLinkedAccount(
     : Effect.void;
 }
 
-function requireUnregistered(
+const requireUnregistered = Effect.fn("selectedComputer.requireUnregistered")(function* (
   relay: ManagedRelay.ManagedRelayClient["Service"],
   target: SelectedComputerTarget,
   account: SelectedComputerAccount,
 ) {
-  return Effect.gen(function* () {
-    const registered = yield* relay.listEnvironments({ clerkToken: account.clerkToken });
-    if (registered.some((entry) => entry.environmentId === target.environmentId)) {
-      return yield* new SelectedComputerConnectError({
-        message:
-          "This account still has a previous link for this computer. Unlink it from the account, then link it again.",
-        reason: "previous-link",
-      });
-    }
-  });
-}
+  const registered = yield* relay.listEnvironments({ clerkToken: account.clerkToken });
+  if (registered.some((entry) => entry.environmentId === target.environmentId)) {
+    return yield* new SelectedComputerConnectError({
+      message:
+        "This account still has a previous link for this computer. Unlink it from the account, then link it again.",
+      reason: "previous-link",
+    });
+  }
+});
 
-function prepareRelayClient(target: SelectedComputerTarget) {
-  return Effect.gen(function* () {
-    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-    const status = yield* registry.run(
-      target.environmentId,
-      request(WS_METHODS.cloudGetRelayClientStatus, {}),
-    );
-    if (status.status === "available") return;
-    if (status.status === "unsupported") {
-      return yield* new SelectedComputerConnectError({
-        message: `The tunnel helper is unavailable on ${status.platform}-${status.arch}.`,
-      });
-    }
-    if (!target.canConfigure()) {
-      return yield* new SelectedComputerConnectError({
-        message: "Connect management permission is required on this computer.",
-      });
-    }
-    const installed = yield* registry
-      .runStream(target.environmentId, runStream(WS_METHODS.cloudInstallRelayClient, {}))
-      .pipe(Stream.runLast);
-    if (
-      Option.isNone(installed) ||
-      installed.value.type !== "complete" ||
-      installed.value.status.status !== "available"
-    ) {
-      return yield* new SelectedComputerConnectError({
-        message: "The tunnel helper could not be installed. Try linking again.",
-      });
-    }
-  });
-}
+const prepareRelayClient = Effect.fn("selectedComputer.prepareRelayClient")(function* (
+  target: SelectedComputerTarget,
+) {
+  const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+  const status = yield* registry.run(
+    target.environmentId,
+    request(WS_METHODS.cloudGetRelayClientStatus, {}),
+  );
+  if (status.status === "available") return;
+  if (status.status === "unsupported") {
+    return yield* new SelectedComputerConnectError({
+      message: `The tunnel helper is unavailable on ${status.platform}-${status.arch}.`,
+    });
+  }
+  if (!target.canConfigure()) {
+    return yield* new SelectedComputerConnectError({
+      message: "Connect management permission is required on this computer.",
+    });
+  }
+  const installed = yield* registry
+    .runStream(target.environmentId, runStream(WS_METHODS.cloudInstallRelayClient, {}))
+    .pipe(Stream.runLast);
+  if (
+    Option.isNone(installed) ||
+    installed.value.type !== "complete" ||
+    installed.value.status.status !== "available"
+  ) {
+    return yield* new SelectedComputerConnectError({
+      message: "The tunnel helper could not be installed. Try linking again.",
+    });
+  }
+});
 
 /** New links use neutral delivery settings; observed existing links are preserved. */
-export function linkSelectedComputer(
+export const linkSelectedComputer = Effect.fn("selectedComputer.linkSelectedComputer")(function* (
   target: SelectedComputerTarget,
   account: SelectedComputerAccount,
 ) {
-  return Effect.gen(function* () {
-    yield* requireAccount(account);
-    const { environmentHttp, headers } = yield* pairedConnection(target);
-    const state = yield* environmentHttp.connect.linkState({ headers });
-    yield* requireLinkedAccount(state, account);
-    if (state.linked) return;
-    const relay = yield* ManagedRelay.ManagedRelayClient;
-    yield* requireUnregistered(relay, target, account);
-    yield* prepareRelayClient(target);
-    yield* requireAccount(account);
-    if (!target.canConfigure()) {
-      return yield* new SelectedComputerConnectError({
-        message: "Connect management permission is required on this computer.",
-      });
-    }
-    const current = yield* pairedConnection(target);
-    const currentState = yield* current.environmentHttp.connect.linkState({
-      headers: current.headers,
+  yield* requireAccount(account);
+  const { environmentHttp, headers } = yield* pairedConnection(target);
+  const state = yield* environmentHttp.connect.linkState({ headers });
+  yield* requireLinkedAccount(state, account);
+  if (state.linked) return;
+  const relay = yield* ManagedRelay.ManagedRelayClient;
+  yield* requireUnregistered(relay, target, account);
+  yield* prepareRelayClient(target);
+  yield* requireAccount(account);
+  if (!target.canConfigure()) {
+    return yield* new SelectedComputerConnectError({
+      message: "Connect management permission is required on this computer.",
     });
-    yield* requireLinkedAccount(currentState, account);
-    if (currentState.linked) return;
-    yield* requireUnregistered(relay, target, account);
-    yield* requireAccount(account);
-    if (!target.canConfigure()) {
-      return yield* new SelectedComputerConnectError({
-        message: "Connect management permission is required on this computer.",
-      });
-    }
-    yield* linkEnvironmentToCloud({
-      connection: current.connection,
-      clerkToken: account.clerkToken,
-      notificationsEnabled: false,
-      liveActivitiesEnabled: false,
-      canContinue: () => account.isCurrent() && target.canConfigure(),
-    });
+  }
+  const current = yield* pairedConnection(target);
+  const currentState = yield* current.environmentHttp.connect.linkState({
+    headers: current.headers,
   });
-}
+  yield* requireLinkedAccount(currentState, account);
+  if (currentState.linked) return;
+  yield* requireUnregistered(relay, target, account);
+  yield* requireAccount(account);
+  if (!target.canConfigure()) {
+    return yield* new SelectedComputerConnectError({
+      message: "Connect management permission is required on this computer.",
+    });
+  }
+  yield* linkEnvironmentToCloud({
+    connection: current.connection,
+    clerkToken: account.clerkToken,
+    notificationsEnabled: false,
+    liveActivitiesEnabled: false,
+    canContinue: () => account.isCurrent() && target.canConfigure(),
+  });
+});
 
 /** Stop this host first, then remove its exact account record. Failures remain visible and retryable. */
-export function unlinkSelectedComputer(
-  target: SelectedComputerTarget,
-  account: SelectedComputerAccount,
-) {
-  return Effect.gen(function* () {
+export const unlinkSelectedComputer = Effect.fn("selectedComputer.unlinkSelectedComputer")(
+  function* (target: SelectedComputerTarget, account: SelectedComputerAccount) {
     yield* requireAccount(account);
     const { environmentHttp, headers } = yield* pairedConnection(target);
     const state = yield* environmentHttp.connect.linkState({ headers });
@@ -216,5 +209,5 @@ export function unlinkSelectedComputer(
       clerkToken: account.clerkToken,
       environmentId: target.environmentId,
     });
-  });
-}
+  },
+);

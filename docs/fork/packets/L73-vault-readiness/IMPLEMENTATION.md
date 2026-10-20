@@ -6,7 +6,8 @@ server-context readiness; it does not deploy a service or migrate personal crede
 ## Delivered
 
 The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
-16 explicit item/action/destination requirements through the execution evaluator. Results name
+16 explicit item/action/destination requirements through the execution evaluator. Empty
+requirements now discover the active project profile without writing a retained run selection. Results name
 the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
 mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
 
@@ -16,8 +17,9 @@ GitHub authentication, host trust, provider tools or unattended launch readiness
 
 ## Remaining
 
-Implement enrolled broker/runner context probes, profile requirement discovery, harmless
-SSH and additional provider checks plus broader network/host-trust classification. Explicit
+Active project-profile requirement discovery and current provider/runtime checks are implemented,
+with observational enrolled-broker presence for SSH/Git use. The selected execution host and
+live SSH/additional provider checks plus broader network classification remain unverified. Explicit
 GitHub API/GH CLI/Git HTTPS checks and profile launch/schedule guards are implemented local
 milestones. Keep configuration preflight separate from external live checks. Durable long-running check operations are not
 needed by the current bounded server check, but remain required for future external probes.

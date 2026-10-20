@@ -27,7 +27,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { identity } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Cookies from "effect/http/Cookies";
 import * as HttpEffect from "effect/http/HttpEffect";
@@ -38,7 +37,7 @@ import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as PocketId from "./PocketId.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
-import { deriveAuthClientMetadata } from "./utils.ts";
+import { deriveAuthClientMetadata, isHttpsRequest, sessionCookieOptions } from "./utils.ts"; // fork: secure-session-cookies
 import { verifyRequestDpopProof } from "./dpop.ts";
 
 const CREDENTIAL_RESPONSE_HEADERS = {
@@ -54,8 +53,9 @@ const appendDpopChallengeHeader = HttpEffect.appendPreResponseHandler((_request,
   Effect.succeed(HttpServerResponse.setHeader(response, "www-authenticate", "DPoP")),
 );
 
-const appendDpopChallengeOnUnauthorized = (error: EnvironmentAuthInvalidError) =>
-  Effect.gen(function* () {
+const appendDpopChallengeOnUnauthorized =
+  /* Request instrumentation already owns the span; keep this helper in that context. */
+  Effect.fnUntraced(function* (error: EnvironmentAuthInvalidError) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const usesDpop =
       (request.originalUrl.startsWith("/oauth/token") && request.headers.dpop !== undefined) ||
@@ -71,8 +71,9 @@ const currentEnvironmentTraceId = Effect.currentParentSpan.pipe(
   Effect.orElseSucceed(() => "unavailable"),
 );
 
-export function annotateEnvironmentRequest(endpoint: string) {
-  return Effect.gen(function* () {
+export const annotateEnvironmentRequest =
+  /* Request instrumentation already owns the span; keep this helper in that context. */
+  Effect.fnUntraced(function* (endpoint: string) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
     const traceId = yield* currentEnvironmentTraceId;
@@ -94,7 +95,6 @@ export function annotateEnvironmentRequest(endpoint: string) {
       "url.path": url._tag === "Some" ? url.value.pathname : "unknown",
     });
   });
-}
 
 export function failEnvironmentAuthInvalid(
   reason: EnvironmentAuthInvalidReason,
@@ -163,8 +163,9 @@ export function failEnvironmentNotFound(reason: EnvironmentResourceNotFoundReaso
  * authenticate the way the `/ws` upgrade does: a cookie for browser sessions, or a short-lived
  * `wsTicket` minted over authenticated HTTP for bearer and DPoP clients.
  */
-export const authenticateMediaRequest = (requiredScope: AuthEnvironmentScope) =>
-  Effect.gen(function* () {
+export const authenticateMediaRequest =
+  /* Request instrumentation already owns the span; keep this helper in that context. */
+  Effect.fnUntraced(function* (requiredScope: AuthEnvironmentScope) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const session = yield* serverAuth.authenticateWebSocketUpgrade(request).pipe(
@@ -186,8 +187,9 @@ export const authenticateMediaRequest = (requiredScope: AuthEnvironmentScope) =>
     return session;
   });
 
-export function failEnvironmentInternal(reason: EnvironmentInternalErrorReason, error?: unknown) {
-  return Effect.gen(function* () {
+export const failEnvironmentInternal =
+  /* Request instrumentation already owns the span; keep this helper in that context. */
+  Effect.fnUntraced(function* (reason: EnvironmentInternalErrorReason, error?: unknown) {
     const traceId = yield* currentEnvironmentTraceId;
     if (error !== undefined) {
       yield* Effect.logError("environment api operation failed", {
@@ -198,15 +200,17 @@ export function failEnvironmentInternal(reason: EnvironmentInternalErrorReason, 
     }
     return yield* new EnvironmentInternalError({ code: "internal_error", reason, traceId });
   });
-}
 
-const appendSessionCookie = (cookieName: string, token: string, expiresAt: DateTime.DateTime) =>
+const appendSessionCookie = (
+  cookieName: string,
+  token: string,
+  expiresAt: DateTime.DateTime,
+  secure: boolean,
+) =>
   Effect.fromResult(
     Cookies.set(Cookies.empty, cookieName, token, {
+      ...sessionCookieOptions(secure), // fork: secure-session-cookies
       expires: DateTime.toDate(expiresAt),
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
     }),
   ).pipe(
     Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")),
@@ -287,7 +291,12 @@ export const layer = HttpApiBuilder.group(
               result.sessionMethod === "browser-session-cookie" &&
               result.expiresAt
             ) {
-              yield* appendSessionCookie(sessions.cookieName, credential.token, result.expiresAt);
+              yield* appendSessionCookie(
+                sessions.cookieName,
+                credential.token,
+                result.expiresAt,
+                isHttpsRequest(request), // fork: secure-session-cookies
+              );
               yield* appendCredentialResponseHeaders;
             }
             return result;
@@ -317,21 +326,16 @@ export const layer = HttpApiBuilder.group(
                 : undefined,
             );
             const cookieName = result.cookieName ?? sessions.cookieName;
+            const cookieOptions = sessionCookieOptions(isHttpsRequest(request)); // fork: secure-session-cookies
             const selectedCookie = yield* Effect.fromResult(
               Cookies.set(Cookies.empty, cookieName, result.sessionToken, {
+                ...cookieOptions, // fork: secure-session-cookies
                 expires: DateTime.toDate(result.response.expiresAt),
-                httpOnly: true,
-                path: "/",
-                sameSite: "lax",
               }),
             ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")));
             const sessionCookies = result.expireNormalCookie
               ? yield* Effect.fromResult(
-                  Cookies.expireCookie(selectedCookie, sessions.cookieName, {
-                    httpOnly: true,
-                    path: "/",
-                    sameSite: "lax",
-                  }),
+                  Cookies.expireCookie(selectedCookie, sessions.cookieName, cookieOptions), // fork: secure-session-cookies
                 ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")))
               : selectedCookie;
 

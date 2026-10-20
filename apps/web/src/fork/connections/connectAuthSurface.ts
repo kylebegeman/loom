@@ -1,6 +1,5 @@
 import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
 import type { CloudPublicConfig } from "~/cloud/publicConfig";
-import { isElectron } from "~/env";
 import { configuredHostedAppUrl } from "~/hostedPairing";
 
 type PublicAuthenticationConfig = Pick<
@@ -65,14 +64,18 @@ export function resolveConnectAuthSurface(input: {
     return { ...unavailable, kind: "invalid-config" };
   }
   const production = clerkPublishableKey.startsWith("pk_live_");
-  const primaryDomain =
-    production && frontendApi.startsWith("clerk.") ? frontendApi.slice("clerk.".length) : null;
+  // Custom Frontend API hosts use clerk.<production domain>; a provider host scopes to itself.
+  const primaryDomain = production ? frontendApi.replace(/^clerk\./u, "") : null;
   const hostedAppUrl = validHostedOrigin(input.hostedAppUrl, primaryDomain);
-  if (input.isElectron || !production) return { kind: "available", primaryDomain, hostedAppUrl };
-  if (primaryDomain === null) return { ...unavailable, kind: "invalid-config" };
+  if (input.isElectron || primaryDomain === null)
+    return { kind: "available", primaryDomain, hostedAppUrl };
   try {
     const origin = new URL(input.currentUrl ?? "");
-    if (origin.protocol === "https:" && isWithinDomain(origin.hostname, primaryDomain))
+    if (
+      origin.protocol === "https:" &&
+      origin.port === "" &&
+      isWithinDomain(origin.hostname, primaryDomain)
+    )
       return { kind: "available", primaryDomain, hostedAppUrl };
   } catch {
     /* A missing or malformed browser origin cannot establish a production session. */
@@ -84,7 +87,8 @@ export function resolveCurrentConnectAuthSurface(
 ): ConnectAuthSurface {
   return resolveConnectAuthSurface({
     config,
-    isElectron,
+    // Read at call time: non-browser contexts and the Electron shell have their own auth runtime.
+    isElectron: typeof window === "undefined" || window.desktopBridge !== undefined,
     currentUrl: typeof window === "undefined" ? null : window.location.href,
     hostedAppUrl: configuredHostedAppUrl(),
   });

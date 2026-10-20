@@ -381,8 +381,8 @@ export const make = Effect.gen(function* () {
   });
 
   /** Settles items whose run ended after the replay stopped feeding, and stops a gone bot's. */
-  const onBotsChange = (change: BotsChange) =>
-    Effect.gen(function* () {
+  const onBotsChange = Effect.fn("BotVersions.onBotsChange")(
+    function* (change: BotsChange) {
       switch (change._tag) {
         case "run": {
           const replayId = change.run.replayId;
@@ -403,7 +403,9 @@ export const make = Effect.gen(function* () {
           yield* store.pruneReplays(change.botId, 0, "9999").pipe(Effect.catch(storageError));
           return;
       }
-    }).pipe(Effect.catchCause((cause) => Effect.logWarning("Bot replay update failed", { cause })));
+    },
+    Effect.catchCause((cause) => Effect.logWarning("Bot replay update failed", { cause })),
+  );
 
   yield* bots.changes.pipe(Stream.runForEach(onBotsChange), Effect.forkIn(serviceScope));
 

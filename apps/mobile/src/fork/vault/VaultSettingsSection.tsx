@@ -1,3 +1,4 @@
+import { VaultTestAccountSettingsSection } from "./TestAccountSettingsSection";
 import { VaultMigrationInventorySettingsSection } from "./MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "./MigrationSettingsSection";
 import { VaultHealthSettingsSection } from "./HealthSettingsSection";
@@ -68,6 +69,7 @@ export function VaultSettingsSection({
           <Text>Your access to this computer does not include Vault inspection.</Text>
         )}
       </SettingsSection>
+      <VaultTestAccountSettingsSection environmentId={environmentId} connected={connected} />
       <VaultMigrationInventorySettingsSection environmentId={environmentId} connected={connected} />
       <VaultMigrationSettingsSection environmentId={environmentId} connected={connected} />
       <VaultHealthSettingsSection environmentId={environmentId} connected={connected} />

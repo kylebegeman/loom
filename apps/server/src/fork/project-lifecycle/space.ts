@@ -117,99 +117,111 @@ export const makeSpaceOps = Effect.gen(function* () {
   const lockMountPoint = (lane: LanePaths) =>
     node("lock mount point", () => NodeFSP.chmod(lane.spacePath, 0o555));
 
-  const mount = (lane: LanePaths) =>
-    Effect.gen(function* () {
-      if (yield* isMounted(lane)) {
-        // Upgrade visible mounts from older versions without detaching open files.
-        yield* runOk("/sbin/mount", ["-u", "-o", "nobrowse,noowners", lane.spacePath]);
-        return { device: yield* deviceOf(lane) };
-      }
-      const stdout = yield* runOk("diskutil", [
-        "image",
-        "attach",
-        "--nobrowse",
-        "--mountOptions",
-        "noowners",
-        "--mountPoint",
-        lane.spacePath,
-        lane.imagePath,
-      ]);
-      const device = parseAttachDevice(stdout);
-      if (!(yield* isMounted(lane)))
-        return yield* failed(`The lane image did not mount at ${lane.spacePath}.`);
-      yield* prepareSpace(lane);
-      return { device };
-    });
+  const mount = Effect.fn("ProjectLifecycleSpace.mount")(function* (lane: LanePaths) {
+    if (yield* isMounted(lane)) {
+      // Upgrade visible mounts from older versions without detaching open files.
+      yield* runOk("/sbin/mount", ["-u", "-o", "nobrowse,noowners", lane.spacePath]);
+      return { device: yield* deviceOf(lane) };
+    }
+    const stdout = yield* runOk("diskutil", [
+      "image",
+      "attach",
+      "--nobrowse",
+      "--mountOptions",
+      "noowners",
+      "--mountPoint",
+      lane.spacePath,
+      lane.imagePath,
+    ]);
+    const device = parseAttachDevice(stdout);
+    if (!(yield* isMounted(lane)))
+      return yield* failed(`The lane image did not mount at ${lane.spacePath}.`);
+    yield* prepareSpace(lane);
+    return { device };
+  });
 
-  const deviceOf = (lane: LanePaths) =>
-    Effect.gen(function* () {
+  const deviceOf = Effect.fn("ProjectLifecycleSpace.deviceOf")(
+    function* (lane: LanePaths) {
       const plist = yield* runOk("diskutil", ["info", "-plist", lane.spacePath]);
       const json = yield* run("plutil", ["-convert", "json", "-o", "-", "-"], plist);
       const info = yield* decodeDiskInfo(json.stdout);
       const store = info.APFSPhysicalStores?.[0]?.APFSPhysicalStore;
       return store === undefined ? null : wholeDisk(store);
-    }).pipe(Effect.orElseSucceed(() => null));
+    },
+    Effect.orElseSucceed(() => null),
+  );
 
-  const detach = (lane: LanePaths, knownDevice: string | null) =>
-    Effect.gen(function* () {
-      if (!(yield* isMounted(lane))) return;
-      const device = (yield* deviceOf(lane)) ?? knownDevice;
-      const unmount = yield* run("diskutil", ["unmount", lane.spacePath]);
-      if (unmount.code !== 0) {
-        const output = `${unmount.stdout}\n${unmount.stderr}`.trim();
-        return yield* unmountBusy(output)
-          ? failed(
-              "Files in this lane are open. Stop the processes using it, then try again.",
-              "busy",
-            )
-          : failed(`diskutil unmount: ${output}`);
-      }
-      if (device !== null) yield* runOk("diskutil", ["eject", device]).pipe(Effect.ignore);
-      yield* lockMountPoint(lane);
-    });
+  const detach = Effect.fn("ProjectLifecycleSpace.detach")(function* (
+    lane: LanePaths,
+    knownDevice: string | null,
+  ) {
+    if (!(yield* isMounted(lane))) return;
+    const device = (yield* deviceOf(lane)) ?? knownDevice;
+    const unmount = yield* run("diskutil", ["unmount", lane.spacePath]);
+    if (unmount.code !== 0) {
+      const output = `${unmount.stdout}\n${unmount.stderr}`.trim();
+      return yield* unmountBusy(output)
+        ? failed(
+            "Files in this lane are open. Stop the processes using it, then try again.",
+            "busy",
+          )
+        : failed(`diskutil unmount: ${output}`);
+    }
+    if (device !== null) yield* runOk("diskutil", ["eject", device]).pipe(Effect.ignore);
+    yield* lockMountPoint(lane);
+  });
 
-  const createImage = (lane: LanePaths, capBytes: number, volumeName: string) =>
-    Effect.gen(function* () {
-      yield* node("create lane", () => NodeFSP.mkdir(lane.spacePath, { recursive: true }));
-      yield* runOk("diskutil", [
-        "image",
-        "create",
-        "blank",
-        "--format",
-        "ASIF",
-        "--size",
-        sizeArg(capBytes),
-        "--volumeName",
-        volumeName,
-        lane.imagePath,
-      ]);
-      return yield* mount(lane);
-    });
+  const createImage = Effect.fn("ProjectLifecycleSpace.createImage")(function* (
+    lane: LanePaths,
+    capBytes: number,
+    volumeName: string,
+  ) {
+    yield* node("create lane", () => NodeFSP.mkdir(lane.spacePath, { recursive: true }));
+    yield* runOk("diskutil", [
+      "image",
+      "create",
+      "blank",
+      "--format",
+      "ASIF",
+      "--size",
+      sizeArg(capBytes),
+      "--volumeName",
+      volumeName,
+      lane.imagePath,
+    ]);
+    return yield* mount(lane);
+  });
 
   const image: SpaceOps = {
     backend: "image",
     isMounted,
     create: createImage,
-    attach: (lane: LanePaths, capBytes: number, volumeName: string) =>
-      Effect.gen(function* () {
-        if (yield* isMounted(lane)) return yield* mount(lane);
-        const imageExists = yield* node("stat image", () => NodeFSP.access(lane.imagePath)).pipe(
-          Effect.as(true),
-          Effect.orElseSucceed(() => false),
-        );
-        // A lane folder deleted outside Loom takes its image along.
-        return yield* imageExists ? mount(lane) : createImage(lane, capBytes, volumeName);
-      }),
+    attach: Effect.fn("ProjectLifecycleSpace.attachImage")(function* (
+      lane: LanePaths,
+      capBytes: number,
+      volumeName: string,
+    ) {
+      if (yield* isMounted(lane)) return yield* mount(lane);
+      const imageExists = yield* node("stat image", () => NodeFSP.access(lane.imagePath)).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      );
+      // A lane folder deleted outside Loom takes its image along.
+      return yield* imageExists ? mount(lane) : createImage(lane, capBytes, volumeName);
+    }),
     detach,
     /** The lane must be detached; attaching again fills the container to the new size. */
-    resize: (lane: LanePaths, capBytes: number, device: string | null) =>
-      Effect.gen(function* () {
-        yield* detach(lane, device);
-        yield* runOk("diskutil", ["image", "resize", "--size", sizeArg(capBytes), lane.imagePath]);
-        return yield* mount(lane);
-      }),
-    usage: (lane: LanePaths) =>
-      Effect.gen(function* () {
+    resize: Effect.fn("ProjectLifecycleSpace.resizeImage")(function* (
+      lane: LanePaths,
+      capBytes: number,
+      device: string | null,
+    ) {
+      yield* detach(lane, device);
+      yield* runOk("diskutil", ["image", "resize", "--size", sizeArg(capBytes), lane.imagePath]);
+      return yield* mount(lane);
+    }),
+    usage: Effect.fn("ProjectLifecycleSpace.imageUsage")(
+      function* (lane: LanePaths) {
         if (!(yield* isMounted(lane))) return null;
         const stats = yield* node("statfs", () => NodeFSP.statfs(lane.spacePath));
         const file = yield* node("stat image", () => NodeFSP.stat(lane.imagePath));
@@ -217,7 +229,9 @@ export const makeSpaceOps = Effect.gen(function* () {
           usedBytes: (stats.blocks - stats.bfree) * stats.bsize,
           imageBytes: file.blocks * 512,
         };
-      }).pipe(Effect.orElseSucceed(() => null)),
+      },
+      Effect.orElseSucceed(() => null),
+    ),
   };
 
   const folder: SpaceOps = {

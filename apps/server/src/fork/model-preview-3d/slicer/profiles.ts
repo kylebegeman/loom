@@ -277,299 +277,291 @@ export const parsePrusaConfig = (text: string): Record<string, unknown> => {
     );
   return json;
 };
-export const makeProfiles = (
+export const makeProfiles = Effect.fn("Slicer.makeProfiles")(function* (
   stateDir: string,
   home: string,
   executable: (app: SlicerApp) => Effect.Effect<string | null, ModelPreviewError>,
-) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem,
-      path = yield* Path.Path;
-    const directory = path.join(stateDir, "slicer");
-    yield* fs.makeDirectory(directory, { recursive: true });
-    const ImportedSchema = Schema.Array(
-      Schema.Struct({
-        entry: Schema.Struct({
-          name: Schema.String,
-          source: Schema.Literal("imported"),
-          nozzleMm: Schema.NullOr(Schema.Number),
-          printerModel: Schema.NullOr(Schema.String),
-        }),
-        kind: Schema.Literals(["machine", "process", "filament", "config"]),
-        filename: Schema.String,
+) {
+  const fs = yield* FileSystem.FileSystem,
+    path = yield* Path.Path;
+  const directory = path.join(stateDir, "slicer");
+  yield* fs.makeDirectory(directory, { recursive: true });
+  const ImportedSchema = Schema.Array(
+    Schema.Struct({
+      entry: Schema.Struct({
+        name: Schema.String,
+        source: Schema.Literal("imported"),
+        nozzleMm: Schema.NullOr(Schema.Number),
+        printerModel: Schema.NullOr(Schema.String),
       }),
+      kind: Schema.Literals(["machine", "process", "filament", "config"]),
+      filename: Schema.String,
+    }),
+  );
+  const decodeImported = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportedSchema));
+  type Imported = (typeof ImportedSchema.Type)[number];
+  const encodeImported = Schema.encodeEffect(Schema.fromJsonString(ImportedSchema));
+  const imports = new Map<SlicerApp, readonly Imported[]>();
+  const imported = Effect.fn("Slicer.importedProfiles")(function* (app: SlicerApp) {
+    if (imports.has(app)) return imports.get(app)!;
+    const decoded = yield* fs.readFileString(path.join(directory, `imports-${app}.json`)).pipe(
+      Effect.flatMap(decodeImported),
+      Effect.orElseSucceed(() => []),
     );
-    const decodeImported = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportedSchema));
-    type Imported = (typeof ImportedSchema.Type)[number];
-    const encodeImported = Schema.encodeEffect(Schema.fromJsonString(ImportedSchema));
-    const imports = new Map<SlicerApp, readonly Imported[]>();
-    const imported = Effect.fn("Slicer.importedProfiles")(function* (app: SlicerApp) {
-      if (imports.has(app)) return imports.get(app)!;
-      const decoded = yield* fs.readFileString(path.join(directory, `imports-${app}.json`)).pipe(
-        Effect.flatMap(decodeImported),
-        Effect.orElseSucceed(() => []),
-      );
-      const entries = decoded.filter(
-        (item) =>
-          path.dirname(item.filename) === path.join(directory, "imported", app, item.kind) &&
-          /^[a-f0-9]{64}\.(?:json|ini)$/.test(path.basename(item.filename)),
-      );
-      imports.set(app, entries);
-      return entries;
-    });
-    const roots = Effect.fn("Slicer.roots")(function* (app: SlicerApp) {
-      const file = yield* executable(app);
-      return app === "prusa-slicer" || !file ? [] : yield* slicerProfileRoots(app, home, file);
-    });
-    const resolve = Effect.fn("Slicer.resolveProfile")(function* (
-      app: SlicerApp,
-      kind: ProfileKind | "config",
-      ref: SlicerProfileRef,
-    ) {
-      const rootList = yield* roots(app);
-      if (ref.source === "imported") {
-        const stored = (yield* imported(app)).find(
-          (item) => item.kind === kind && item.entry.name === ref.name,
-        );
-        if (!stored) return yield* failure(`The imported profile ${ref.name} was not found.`);
-        if (kind === "config") {
-          const inputConfig = yield* fs.readFileString(stored.filename);
-          return {
-            json: yield* Effect.try({
-              try: () => parsePrusaConfig(inputConfig),
-              catch: (cause) =>
-                isModelError(cause) ? cause : failure("This PrusaSlicer config is invalid."),
-            }),
-            userPrice: true,
-            hash: path.basename(stored.filename).split(".")[0]!,
-            filename: stored.filename,
-            modelId: null as string | null,
-          };
-        }
-        const flat = yield* flattenProfile(
-          rootList,
-          kind,
-          ref.name,
-          yield* readProfile(stored.filename),
-        );
-        const filename = path.join(directory, "profiles", `${flat.hash}.json`);
-        yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
-        yield* fs.writeFileString(filename, canonicalProfile(flat.json));
-        return { ...flat, filename, modelId: yield* modelId(rootList, flat.json) };
-      }
-      if (kind === "config") return yield* failure("PrusaSlicer needs an imported config file.");
-      const flat = yield* flattenProfile(rootList, kind, ref.name),
-        filename = path.join(directory, "profiles", `${flat.hash}.json`);
-      yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
-      if (!(yield* fs.exists(filename)))
-        yield* fs.writeFileString(filename, canonicalProfile(flat.json));
-      return { ...flat, filename, modelId: yield* modelId(rootList, flat.json) };
-    });
-    const modelId = Effect.fn("Slicer.modelId")(function* (
-      rootList: readonly ProfileRoot[],
-      json: Readonly<Record<string, unknown>>,
-    ) {
-      if (typeof json.model_id === "string") return json.model_id;
-      if (typeof json.printer_model !== "string") return null;
-      for (const root of rootList) {
-        const files = yield* profileLocations(root, "machine_model");
-        const filename = files.get(json.printer_model);
-        if (filename) {
-          const model = yield* readProfile(filename);
-          return typeof model.model_id === "string" ? model.model_id : null;
-        }
-      }
-      return null;
-    });
-    const CachedIndex = Schema.Struct({
-      version: Schema.NullOr(Schema.String),
-      entries: Schema.Array(
-        Schema.Struct({
-          kind: Schema.Literals(["machine", "process", "filament"]),
-          entry: SlicerProfileEntry,
-          json: Json,
-        }),
-      ),
-    });
-    const decodeCachedIndex = Schema.decodeUnknownEffect(Schema.fromJsonString(CachedIndex)),
-      encodeCachedIndex = Schema.encodeEffect(Schema.fromJsonString(CachedIndex));
-    const indexes = new Map<
-      SlicerApp,
-      { at: number; key: string; value: typeof CachedIndex.Type }
-    >();
-    const list = Effect.fn("Slicer.listProfiles")(function* (app: SlicerApp, machine?: string) {
-      const now = DateTime.toEpochMillis(yield* DateTime.now);
-      let index = indexes.get(app)?.value;
-      if (!index || now - indexes.get(app)!.at >= 60000) {
-        const rootList = yield* roots(app),
-          locations = [] as {
-            root: ProfileRoot;
-            kind: ProfileKind;
-            name: string;
-            filename: string;
-          }[],
-          stamps: unknown[] = [];
-        for (const root of rootList)
-          for (const kind of ["machine", "process", "filament"] as const) {
-            for (const [name, filename] of yield* profileLocations(root, kind)) {
-              locations.push({ root, kind, name, filename });
-              const stat = yield* fs.stat(filename).pipe(Effect.option);
-              if (stat._tag === "Some")
-                stamps.push([
-                  filename,
-                  String(stat.value.size),
-                  Option.getOrNull(stat.value.mtime)?.getTime() ?? null,
-                ]);
-            }
-          }
-        const key = profileHash([rootList, stamps]),
-          cachedFile = path.join(directory, `index-${app}-${key}.json`);
-        const disk = yield* fs
-          .readFileString(cachedFile)
-          .pipe(Effect.flatMap(decodeCachedIndex), Effect.option);
-        if (disk._tag === "Some") index = disk.value;
-        else {
-          const entries = [] as (typeof CachedIndex.Type)["entries"][number][],
-            seen = new Set<string>(),
-            jsonCache = new Map<string, Record<string, unknown>>();
-          const lookups = new Map<
-            ProfileKind,
-            { root: ProfileRoot; files: Map<string, string> }[]
-          >();
-          for (const kind of ["machine", "process", "filament"] as const)
-            lookups.set(
-              kind,
-              rootList.map((root) => ({
-                root,
-                files: new Map(
-                  locations
-                    .filter((item) => item.kind === kind && item.root === root)
-                    .map((item) => [item.name, item.filename]),
-                ),
-              })),
-            );
-          for (const { root, kind, name, filename } of locations) {
-            if (seen.has(`${kind}:${name}`)) continue;
-            const leaf = yield* readProfile(filename).pipe(Effect.option);
-            if (leaf._tag === "Some") jsonCache.set(filename, leaf.value);
-            if (
-              leaf._tag === "None" ||
-              !["true", true].includes(leaf.value.instantiation as string | boolean)
-            )
-              continue;
-            const flat = yield* flattenProfile(
-              rootList,
-              kind,
-              name,
-              undefined,
-              lookups.get(kind),
-              jsonCache,
-            ).pipe(Effect.option);
-            if (flat._tag === "None") continue;
-            seen.add(`${kind}:${name}`);
-            entries.push({
-              kind,
-              entry: profileEntry(name, root.source, flat.value.json),
-              json: flat.value.json,
-            });
-            if (entries.length >= 3000) break;
-          }
-          index = { version: rootList.find((root) => root.version)?.version ?? null, entries };
-          yield* fs.writeFileString(cachedFile, yield* encodeCachedIndex(index));
-          for (const name of yield* fs.readDirectory(directory))
-            if (name.startsWith(`index-${app}-`) && name !== path.basename(cachedFile))
-              yield* fs.remove(path.join(directory, name), { force: true });
-        }
-        indexes.set(app, { at: now, key, value: index });
-      }
-      const result = {
-        app,
-        version: index.version,
-        machines: [] as SlicerProfileEntry[],
-        processes: [] as SlicerProfileEntry[],
-        filaments: [] as SlicerProfileEntry[],
-      };
-      for (const kind of ["machine", "process", "filament"] as const) {
-        const entries = new Map<string, SlicerProfileEntry>();
-        for (const item of index.entries)
-          if (
-            item.kind === kind &&
-            (kind === "machine" || (machine && profileCompatible(item.json, machine)))
-          )
-            entries.set(item.entry.name, item.entry);
-        for (const item of yield* imported(app))
-          if (item.kind === kind || (kind === "machine" && item.kind === "config"))
-            entries.set(item.entry.name, item.entry);
-        result[kind === "machine" ? "machines" : kind === "process" ? "processes" : "filaments"] = [
-          ...entries.values(),
-        ].slice(0, 1000);
-      }
-      return result;
-    });
-    const importProfile = Effect.fn("Slicer.importProfile")(function* (input: ImportSlicerProfile) {
-      if (new TextEncoder().encode(input.text).length > 2 * 1024 * 1024)
-        return yield* failure("This slicer profile is too large.");
-      if ((input.app === "prusa-slicer") !== (input.kind === "config"))
-        return yield* failure(
-          "PrusaSlicer needs an INI config; Bambu Studio and OrcaSlicer need JSON presets.",
-        );
-      const json =
-        input.kind === "config"
-          ? yield* Effect.try({
-              try: () => parsePrusaConfig(input.text),
-              catch: (cause) =>
-                isModelError(cause) ? cause : failure("This PrusaSlicer config is invalid."),
-            })
-          : yield* decodeJson(input.text).pipe(
-              Effect.mapError(() => failure("This slicer profile is not valid JSON.")),
-            );
-      const name = (typeof json.name === "string" ? json.name : input.fileName).slice(0, 200);
-      if (!name.trim()) return yield* failure("The slicer profile needs a name.");
-      const hash = NodeCrypto.createHash("sha256").update(input.text).digest("hex");
-      const filename = path.join(
-        directory,
-        "imported",
-        input.app,
-        input.kind,
-        `${hash}.${input.kind === "config" ? "ini" : "json"}`,
-      );
-      yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
-      if (input.kind !== "config")
-        yield* flattenProfile(yield* roots(input.app), input.kind, name, json);
-      yield* fs.writeFileString(filename, input.text);
-      const entry = { ...profileEntry(name, "imported", json), source: "imported" as const };
-      const rows = [
-        ...(yield* imported(input.app)).filter(
-          (row) => row.kind !== input.kind || row.entry.name !== name,
-        ),
-        { kind: input.kind, entry, filename },
-      ];
-      yield* fs.writeFileString(
-        path.join(directory, `imports-${input.app}.json`),
-        yield* encodeImported(rows),
-      );
-      imports.set(input.app, rows);
-      return entry;
-    });
-    const clearCache = Effect.fn("Slicer.clearProfileCache")(function* () {
-      indexes.clear();
-      yield* fs.remove(path.join(directory, "profiles"), { recursive: true, force: true });
-      for (const name of yield* fs.readDirectory(directory))
-        if (name.startsWith("index-"))
-          yield* fs.remove(path.join(directory, name), { force: true });
-    });
-    const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      effect.pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.provideService(Path.Path, path),
-        Effect.mapError(profileError),
-      );
-    return {
-      roots: (app: SlicerApp) => provide(roots(app)),
-      resolve: (app: SlicerApp, kind: ProfileKind | "config", ref: SlicerProfileRef) =>
-        provide(resolve(app, kind, ref)),
-      list: (app: SlicerApp, machine?: string) => provide(list(app, machine)),
-      importProfile: (input: ImportSlicerProfile) => provide(importProfile(input)),
-      clearCache: () => provide(clearCache()),
-    };
+    const entries = decoded.filter(
+      (item) =>
+        path.dirname(item.filename) === path.join(directory, "imported", app, item.kind) &&
+        /^[a-f0-9]{64}\.(?:json|ini)$/.test(path.basename(item.filename)),
+    );
+    imports.set(app, entries);
+    return entries;
   });
+  const roots = Effect.fn("Slicer.roots")(function* (app: SlicerApp) {
+    const file = yield* executable(app);
+    return app === "prusa-slicer" || !file ? [] : yield* slicerProfileRoots(app, home, file);
+  });
+  const resolve = Effect.fn("Slicer.resolveProfile")(function* (
+    app: SlicerApp,
+    kind: ProfileKind | "config",
+    ref: SlicerProfileRef,
+  ) {
+    const rootList = yield* roots(app);
+    if (ref.source === "imported") {
+      const stored = (yield* imported(app)).find(
+        (item) => item.kind === kind && item.entry.name === ref.name,
+      );
+      if (!stored) return yield* failure(`The imported profile ${ref.name} was not found.`);
+      if (kind === "config") {
+        const inputConfig = yield* fs.readFileString(stored.filename);
+        return {
+          json: yield* Effect.try({
+            try: () => parsePrusaConfig(inputConfig),
+            catch: (cause) =>
+              isModelError(cause) ? cause : failure("This PrusaSlicer config is invalid."),
+          }),
+          userPrice: true,
+          hash: path.basename(stored.filename).split(".")[0]!,
+          filename: stored.filename,
+          modelId: null as string | null,
+        };
+      }
+      const flat = yield* flattenProfile(
+        rootList,
+        kind,
+        ref.name,
+        yield* readProfile(stored.filename),
+      );
+      const filename = path.join(directory, "profiles", `${flat.hash}.json`);
+      yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
+      yield* fs.writeFileString(filename, canonicalProfile(flat.json));
+      return { ...flat, filename, modelId: yield* modelId(rootList, flat.json) };
+    }
+    if (kind === "config") return yield* failure("PrusaSlicer needs an imported config file.");
+    const flat = yield* flattenProfile(rootList, kind, ref.name),
+      filename = path.join(directory, "profiles", `${flat.hash}.json`);
+    yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
+    if (!(yield* fs.exists(filename)))
+      yield* fs.writeFileString(filename, canonicalProfile(flat.json));
+    return { ...flat, filename, modelId: yield* modelId(rootList, flat.json) };
+  });
+  const modelId = Effect.fn("Slicer.modelId")(function* (
+    rootList: readonly ProfileRoot[],
+    json: Readonly<Record<string, unknown>>,
+  ) {
+    if (typeof json.model_id === "string") return json.model_id;
+    if (typeof json.printer_model !== "string") return null;
+    for (const root of rootList) {
+      const files = yield* profileLocations(root, "machine_model");
+      const filename = files.get(json.printer_model);
+      if (filename) {
+        const model = yield* readProfile(filename);
+        return typeof model.model_id === "string" ? model.model_id : null;
+      }
+    }
+    return null;
+  });
+  const CachedIndex = Schema.Struct({
+    version: Schema.NullOr(Schema.String),
+    entries: Schema.Array(
+      Schema.Struct({
+        kind: Schema.Literals(["machine", "process", "filament"]),
+        entry: SlicerProfileEntry,
+        json: Json,
+      }),
+    ),
+  });
+  const decodeCachedIndex = Schema.decodeUnknownEffect(Schema.fromJsonString(CachedIndex)),
+    encodeCachedIndex = Schema.encodeEffect(Schema.fromJsonString(CachedIndex));
+  const indexes = new Map<SlicerApp, { at: number; key: string; value: typeof CachedIndex.Type }>();
+  const list = Effect.fn("Slicer.listProfiles")(function* (app: SlicerApp, machine?: string) {
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+    let index = indexes.get(app)?.value;
+    if (!index || now - indexes.get(app)!.at >= 60000) {
+      const rootList = yield* roots(app),
+        locations = [] as {
+          root: ProfileRoot;
+          kind: ProfileKind;
+          name: string;
+          filename: string;
+        }[],
+        stamps: unknown[] = [];
+      for (const root of rootList)
+        for (const kind of ["machine", "process", "filament"] as const) {
+          for (const [name, filename] of yield* profileLocations(root, kind)) {
+            locations.push({ root, kind, name, filename });
+            const stat = yield* fs.stat(filename).pipe(Effect.option);
+            if (stat._tag === "Some")
+              stamps.push([
+                filename,
+                String(stat.value.size),
+                Option.getOrNull(stat.value.mtime)?.getTime() ?? null,
+              ]);
+          }
+        }
+      const key = profileHash([rootList, stamps]),
+        cachedFile = path.join(directory, `index-${app}-${key}.json`);
+      const disk = yield* fs
+        .readFileString(cachedFile)
+        .pipe(Effect.flatMap(decodeCachedIndex), Effect.option);
+      if (disk._tag === "Some") index = disk.value;
+      else {
+        const entries = [] as (typeof CachedIndex.Type)["entries"][number][],
+          seen = new Set<string>(),
+          jsonCache = new Map<string, Record<string, unknown>>();
+        const lookups = new Map<ProfileKind, { root: ProfileRoot; files: Map<string, string> }[]>();
+        for (const kind of ["machine", "process", "filament"] as const)
+          lookups.set(
+            kind,
+            rootList.map((root) => ({
+              root,
+              files: new Map(
+                locations
+                  .filter((item) => item.kind === kind && item.root === root)
+                  .map((item) => [item.name, item.filename]),
+              ),
+            })),
+          );
+        for (const { root, kind, name, filename } of locations) {
+          if (seen.has(`${kind}:${name}`)) continue;
+          const leaf = yield* readProfile(filename).pipe(Effect.option);
+          if (leaf._tag === "Some") jsonCache.set(filename, leaf.value);
+          if (
+            leaf._tag === "None" ||
+            !["true", true].includes(leaf.value.instantiation as string | boolean)
+          )
+            continue;
+          const flat = yield* flattenProfile(
+            rootList,
+            kind,
+            name,
+            undefined,
+            lookups.get(kind),
+            jsonCache,
+          ).pipe(Effect.option);
+          if (flat._tag === "None") continue;
+          seen.add(`${kind}:${name}`);
+          entries.push({
+            kind,
+            entry: profileEntry(name, root.source, flat.value.json),
+            json: flat.value.json,
+          });
+          if (entries.length >= 3000) break;
+        }
+        index = { version: rootList.find((root) => root.version)?.version ?? null, entries };
+        yield* fs.writeFileString(cachedFile, yield* encodeCachedIndex(index));
+        for (const name of yield* fs.readDirectory(directory))
+          if (name.startsWith(`index-${app}-`) && name !== path.basename(cachedFile))
+            yield* fs.remove(path.join(directory, name), { force: true });
+      }
+      indexes.set(app, { at: now, key, value: index });
+    }
+    const result = {
+      app,
+      version: index.version,
+      machines: [] as SlicerProfileEntry[],
+      processes: [] as SlicerProfileEntry[],
+      filaments: [] as SlicerProfileEntry[],
+    };
+    for (const kind of ["machine", "process", "filament"] as const) {
+      const entries = new Map<string, SlicerProfileEntry>();
+      for (const item of index.entries)
+        if (
+          item.kind === kind &&
+          (kind === "machine" || (machine && profileCompatible(item.json, machine)))
+        )
+          entries.set(item.entry.name, item.entry);
+      for (const item of yield* imported(app))
+        if (item.kind === kind || (kind === "machine" && item.kind === "config"))
+          entries.set(item.entry.name, item.entry);
+      result[kind === "machine" ? "machines" : kind === "process" ? "processes" : "filaments"] = [
+        ...entries.values(),
+      ].slice(0, 1000);
+    }
+    return result;
+  });
+  const importProfile = Effect.fn("Slicer.importProfile")(function* (input: ImportSlicerProfile) {
+    if (new TextEncoder().encode(input.text).length > 2 * 1024 * 1024)
+      return yield* failure("This slicer profile is too large.");
+    if ((input.app === "prusa-slicer") !== (input.kind === "config"))
+      return yield* failure(
+        "PrusaSlicer needs an INI config; Bambu Studio and OrcaSlicer need JSON presets.",
+      );
+    const json =
+      input.kind === "config"
+        ? yield* Effect.try({
+            try: () => parsePrusaConfig(input.text),
+            catch: (cause) =>
+              isModelError(cause) ? cause : failure("This PrusaSlicer config is invalid."),
+          })
+        : yield* decodeJson(input.text).pipe(
+            Effect.mapError(() => failure("This slicer profile is not valid JSON.")),
+          );
+    const name = (typeof json.name === "string" ? json.name : input.fileName).slice(0, 200);
+    if (!name.trim()) return yield* failure("The slicer profile needs a name.");
+    const hash = NodeCrypto.createHash("sha256").update(input.text).digest("hex");
+    const filename = path.join(
+      directory,
+      "imported",
+      input.app,
+      input.kind,
+      `${hash}.${input.kind === "config" ? "ini" : "json"}`,
+    );
+    yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
+    if (input.kind !== "config")
+      yield* flattenProfile(yield* roots(input.app), input.kind, name, json);
+    yield* fs.writeFileString(filename, input.text);
+    const entry = { ...profileEntry(name, "imported", json), source: "imported" as const };
+    const rows = [
+      ...(yield* imported(input.app)).filter(
+        (row) => row.kind !== input.kind || row.entry.name !== name,
+      ),
+      { kind: input.kind, entry, filename },
+    ];
+    yield* fs.writeFileString(
+      path.join(directory, `imports-${input.app}.json`),
+      yield* encodeImported(rows),
+    );
+    imports.set(input.app, rows);
+    return entry;
+  });
+  const clearCache = Effect.fn("Slicer.clearProfileCache")(function* () {
+    indexes.clear();
+    yield* fs.remove(path.join(directory, "profiles"), { recursive: true, force: true });
+    for (const name of yield* fs.readDirectory(directory))
+      if (name.startsWith("index-")) yield* fs.remove(path.join(directory, name), { force: true });
+  });
+  const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+      Effect.mapError(profileError),
+    );
+  return {
+    roots: (app: SlicerApp) => provide(roots(app)),
+    resolve: (app: SlicerApp, kind: ProfileKind | "config", ref: SlicerProfileRef) =>
+      provide(resolve(app, kind, ref)),
+    list: (app: SlicerApp, machine?: string) => provide(list(app, machine)),
+    importProfile: (input: ImportSlicerProfile) => provide(importProfile(input)),
+    clearCache: () => provide(clearCache()),
+  };
+});

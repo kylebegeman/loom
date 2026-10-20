@@ -25,8 +25,8 @@ export const makeTerminalConnections = Effect.gen(function* () {
   if (root === undefined) return undefined;
   const remove = (file: string) => fs.remove(file, { force: true }).pipe(Effect.ignore);
   return {
-    create: (config: McpProviderSessionConfig) =>
-      Effect.gen(function* () {
+    create: Effect.fn("TerminalConnections.create")(
+      function* (config: McpProviderSessionConfig) {
         const file = yield* fs.makeTempFile({ directory: root, prefix: "session-" });
         const payload = yield* encode({
           protocol: 1,
@@ -38,7 +38,9 @@ export const makeTerminalConnections = Effect.gen(function* () {
           Effect.onError(() => remove(file)),
         );
         return file;
-      }).pipe(Effect.orElseSucceed(() => undefined)),
+      },
+      Effect.orElseSucceed(() => undefined),
+    ),
     remove,
   };
 });

@@ -48,20 +48,19 @@ export const makeGit = Effect.gen(function* () {
       );
 
   /** Uncommitted and untracked files under `cwd`, relative to it, with the raw output. */
-  const changes = (cwd: string) =>
-    Effect.gen(function* () {
-      const [out, prefix] = yield* Effect.all([
-        git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
-        git(cwd, ["rev-parse", "--show-prefix"]),
-      ]);
-      if (out === null) return null;
-      // Porcelain paths are relative to the repository root, Graphify's to the folder it scanned.
-      const base = prefix?.trim() ?? "";
-      const paths = parsePorcelainPaths(out).flatMap((path) =>
-        path.startsWith(base) ? [path.slice(base.length)] : [],
-      );
-      return { out, paths };
-    });
+  const changes = Effect.fn("CodeGraphGit.changes")(function* (cwd: string) {
+    const [out, prefix] = yield* Effect.all([
+      git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
+      git(cwd, ["rev-parse", "--show-prefix"]),
+    ]);
+    if (out === null) return null;
+    // Porcelain paths are relative to the repository root, Graphify's to the folder it scanned.
+    const base = prefix?.trim() ?? "";
+    const paths = parsePorcelainPaths(out).flatMap((path) =>
+      path.startsWith(base) ? [path.slice(base.length)] : [],
+    );
+    return { out, paths };
+  });
 
   return {
     /** Null outside a repository or before the first commit. */
@@ -74,26 +73,25 @@ export const makeGit = Effect.gen(function* () {
      * Identifies the uncommitted state: "" for a clean tree, else a hash over the changed
      * paths and their size and modification time. Null when git cannot tell.
      */
-    treeFingerprint: (cwd: string) =>
-      Effect.gen(function* () {
-        const result = yield* changes(cwd);
-        if (result === null) return null;
-        if (result.out === "") return "";
-        const stats = yield* Effect.promise(() =>
-          Promise.all(
-            result.paths.slice(0, MAX_FINGERPRINT_FILES).map((path) =>
-              NodeFSP.stat(NodePath.join(cwd, path)).then(
-                (stat) => `${stat.size}:${stat.mtimeMs}`,
-                () => "gone",
-              ),
+    treeFingerprint: Effect.fn("CodeGraphGit.treeFingerprint")(function* (cwd: string) {
+      const result = yield* changes(cwd);
+      if (result === null) return null;
+      if (result.out === "") return "";
+      const stats = yield* Effect.promise(() =>
+        Promise.all(
+          result.paths.slice(0, MAX_FINGERPRINT_FILES).map((path) =>
+            NodeFSP.stat(NodePath.join(cwd, path)).then(
+              (stat) => `${stat.size}:${stat.mtimeMs}`,
+              () => "gone",
             ),
           ),
-        );
-        return NodeCrypto.createHash("sha256")
-          .update(result.out)
-          .update(stats.join("\0"))
-          .digest("hex");
-      }),
+        ),
+      );
+      return NodeCrypto.createHash("sha256")
+        .update(result.out)
+        .update(stats.join("\0"))
+        .digest("hex");
+    }),
   };
 });
 

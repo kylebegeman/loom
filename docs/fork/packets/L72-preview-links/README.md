@@ -1,9 +1,9 @@
 # L72: Preview links
 
 Status: Slices 1 to 5 are implemented on fork `main`, with the follow-up gap fixes for
-sign-in, pages, the gateway and backings. The Library side waits for the LP-22 deploy (gate
-D4). Kyle added the DNS-only record for `pages.bagels.top` at the Library host on
-2026-10-20. Slice 6, guest links, is parked. The real-client checks in
+sign-in, pages, the gateway and backings. The Library has run them on `0.0.90` since
+20 October 2026 (LP-22) and serves `pages.bagels.top` with a Let's Encrypt certificate.
+Slice 6, guest links, is parked. The real-client checks in
 [TESTING.md](./TESTING.md#still-to-check) are pending.
 
 Selection: Hosted previews, Kyle 2026-10-18. Kyle approved slices 2 to 6 and their Library

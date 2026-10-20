@@ -68,8 +68,19 @@ context and UI deny/cancel; accessibility speech/hints remain source-only. The g
 and consumption design now has a synthetic race/crash proof, including reserve replay, but no
 runtime dispatcher or true one-time grant enforcement. Internal fresh acquisition now separates
 acknowledged CAS ownership from replay, with opaque local handles and single-use validation.
-It invokes no adapter and opens no execution gate. Durable resumption/consumption and
-live-provider acceptance remain open.
+It invokes no external adapter and opens no execution gate. Internal SSH/Git/GitHub admission
+now compares local adapter metadata with fresh authority/journal checks; it mints no credential,
+opens no workload, invokes no command/probe and returns no execution permit. Synthetic recovery
+acceptance covers lost results, service reconstruction, duplicate handles, restored storage and
+aged evidence without recreating an opportunity. Durable resumption/consumption and
+live-provider acceptance remain open. One-time intent and downgrade-reader design now rejects
+optional format-3 metadata and alternate-grant fallback using real-service counterexamples;
+its eligibility model is synthetic only. The mandatory boundary design covers omitted references, delegation and alternate entry points;
+its protected-item classification and coverage checks exist only in a synthetic model. No
+persisted intent or gate change is selected. Temporal synthetic proof now covers handoff and
+callback races, with a coherent commit explicitly assumed rather than implemented. The bounded
+synthetic review is complete; [next-owner checks](../IMPLEMENT-NOW.md#l86-next-owner-handoff)
+identify the remaining decisions and real verification. The packet remains partial.
 
 ## Scope
 

@@ -28,6 +28,7 @@ import {
   hasNotificationSound,
   playNotificationSound,
   setNotificationBadge,
+  threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
@@ -194,7 +195,7 @@ function EnvironmentNotifications({
           rawThread.latestRunId !== prior.raw.latestRunId ||
           completion !== prior.completion)
       )
-        onClear(`${environmentId}:${thread.id}`);
+        onClear(threadNotificationTag(environmentId, thread.id));
       if (!prior || thread.archivedAt !== null) continue;
       const kind =
         attention && attention !== prior.attention
@@ -287,7 +288,7 @@ function EnvironmentNotifications({
           try {
             const notification = new Notification(title, {
               body: systemNotificationBody(thread.title, "Open Loom to review this thread."),
-              tag: `${environmentId}:${thread.id}`,
+              tag: threadNotificationTag(environmentId, thread.id),
               silent: true,
             });
             onNotification(environmentId, notification);
@@ -295,6 +296,7 @@ function EnvironmentNotifications({
               notification.close();
               if (!hasDesktopNotifications(getClientSettings().notificationMode) || stale()) return;
               window.focus();
+              void window.desktopBridge?.revealWindow?.().catch(() => undefined);
               void navigate({
                 to: "/$environmentId/$threadId",
                 params: { environmentId, threadId: thread.id },
@@ -309,7 +311,8 @@ function EnvironmentNotifications({
       );
     }
     // fork: respectful-notifications
-    for (const id of previous.current.keys()) if (!next.has(id)) onClear(`${environmentId}:${id}`);
+    for (const id of previous.current.keys())
+      if (!next.has(id)) onClear(threadNotificationTag(environmentId, id));
     previous.current = next;
   }, [
     activeEnvironmentId,

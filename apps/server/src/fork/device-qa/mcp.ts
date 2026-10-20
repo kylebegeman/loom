@@ -220,15 +220,17 @@ const agentStep = (step: DeviceQaStep) => {
   };
 };
 
-const pickDevice = (threadId: ThreadId, deviceId: string | undefined) =>
-  Effect.gen(function* () {
-    const service = yield* DeviceQaService;
-    const [local, watched] = yield* Effect.all([
-      service.localDevices,
-      service.threadDeviceIds(threadId),
-    ]);
-    return yield* orFail(selectDevice(local, watched, deviceId));
-  });
+const pickDevice = Effect.fn("DeviceQaMcp.pickDevice")(function* (
+  threadId: ThreadId,
+  deviceId: string | undefined,
+) {
+  const service = yield* DeviceQaService;
+  const [local, watched] = yield* Effect.all([
+    service.localDevices,
+    service.threadDeviceIds(threadId),
+  ]);
+  return yield* orFail(selectDevice(local, watched, deviceId));
+});
 
 export const flowTool = (
   threadId: ThreadId,

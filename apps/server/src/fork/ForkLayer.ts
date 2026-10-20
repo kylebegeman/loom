@@ -1,3 +1,8 @@
+import * as VaultAccessInspector from "./vault/VaultAccessInspector.ts";
+import * as VaultReadiness from "./vault/VaultReadiness.ts";
+import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
+import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
+import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
@@ -102,9 +107,18 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
 const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 
+const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultCore, layerVaultStore)),
+);
 const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(ApprovalNotifications.stub),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
+);
+
+const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultTestAccounts, layerVaultCore, layerVaultAccess, ProjectStore.layer),
+  ),
 );
 
 const layerVaultBrokers = VaultBrokers.layer.pipe(
@@ -159,6 +173,20 @@ const layerVaultHealthContext = VaultHealthContext.layer.pipe(
     Layer.mergeAll(layerVaultCore, layerVaultProfiles, layerVaultAccess, ProjectStore.layer),
   ),
 );
+const layerVaultAccessInspector = VaultAccessInspector.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultAccess,
+      layerVaultCore,
+      layerVaultProfiles,
+      layerVaultWorkloads,
+      layerVaultBrokers,
+    ),
+  ),
+);
+const layerVaultReadiness = VaultReadiness.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultAccess, layerVaultWorkloads, layerVaultProfiles)),
+);
 const layerVaultReferences = VaultReferences.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess)),
 );
@@ -182,6 +210,28 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
+);
+
+const layerVaultJournal = OperationJournal.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultAccess, layerVaultStore)),
+);
+const layerVaultLaunch = VaultLaunch.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultProfiles,
+      layerVaultGitHub,
+      layerVaultSsh,
+      layerVaultWorkloads,
+      BrokerCrypto.layer,
+      BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
+      ProjectStore.layer,
+    ),
+  ),
+);
+const layerOperationAdmission = OperationAdmission.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerVaultJournal, layerVaultAccess, layerVaultLaunch, layerVaultGitHub),
+  ),
 );
 
 const ForkServicesLive = Layer.mergeAll(
@@ -208,27 +258,21 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),
+  layerVaultAccessInspector,
+  layerVaultReadiness,
   layerVaultProfiles,
   layerVaultReferences,
-  VaultLaunch.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerVaultProfiles,
-        layerVaultGitHub,
-        layerVaultSsh,
-        layerVaultWorkloads,
-        BrokerCrypto.layer,
-        BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
-        ProjectStore.layer,
-      ),
-    ),
-  ),
+  layerVaultLaunch,
   layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,
+  layerVaultTestAccountWorkloads,
+  VaultTestAccountWorkloads.reactor.pipe(Layer.provide(layerVaultTestAccountWorkloads)),
+  layerVaultTestAccounts,
   layerVaultCore,
   layerVaultAccess,
-  OperationJournal.layer.pipe(Layer.provide(Layer.merge(layerVaultAccess, layerVaultStore))),
+  layerVaultJournal,
+  layerOperationAdmission,
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(

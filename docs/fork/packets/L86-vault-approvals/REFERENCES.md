@@ -49,3 +49,15 @@ Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 - [Dispatcher design proof](../../../../apps/server/src/fork/vault/OperationDispatch.proof.test.ts): synthetic interleavings plus real reserve-replay and timed-grant counterexamples; no runtime dispatcher.
 
 - [Fresh acquisition service races](../../../../apps/server/src/fork/vault/OperationAcquisition.test.ts): acknowledged CAS, replay, interruption, single-use validation and handle isolation with no dispatch.
+
+- [Internal adapter admission](../../../../apps/server/src/fork/vault/OperationAdmission.ts) and [synthetic adapter acceptance](../../../../apps/server/src/fork/vault/OperationAdmission.test.ts): metadata-only checks, fresh revalidation and closed gates; no live dispatch.
+
+- [One-time intent counterexamples](../../../../apps/server/src/fork/vault/OperationIntent.proof.test.ts): current evaluator bypasses, actual format-3 reader/writer behavior and a design-only eligibility model. No persisted intent or gate change.
+
+- [Synthetic token-mint failure coverage](../../../../apps/server/src/fork/vault/GitHubTransport.test.ts) and [explicit SSH/Git retry recovery](../../../../apps/server/src/fork/vault/VaultApprovalRetry.test.ts): adapter-start effects and uncertain outcomes without live providers.
+
+- [Mandatory intent boundary proof](../../../../apps/server/src/fork/vault/OperationIntentBoundary.proof.test.ts): omitted references, real timed-delegation counterexample and synthetic coverage/binding/descendant checks; no runtime classifier.
+- [Workload sessions](../../../../apps/server/src/fork/vault/VaultWorkloads.ts), [SSH agent frames](../../../../apps/server/src/fork/vault/VaultSsh.ts) and [human credential reveal RPC](../../../../apps/server/src/fork/vault/rpc.ts): alternate credential-bearing boundaries requiring future coverage.
+
+- [Temporal revalidation proof](../../../../apps/server/src/fork/vault/OperationIntentTemporal.proof.test.ts): async reads, handoff/callback races, restored-value changes and explicit coherent-commit assumptions; test-local only.
+- [Next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff): decisions, ownership and the evidence required to reopen implementation.

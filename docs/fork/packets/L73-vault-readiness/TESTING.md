@@ -68,3 +68,23 @@ layout and expiry. Service cancellation releases the acquired provider session. 
 commands, merge baseline and live-provider/runner limits are in
 [L83 testing](../L83-vault-connectors/TESTING.md#github-terminal-and-live-readiness-milestone).
 The complete selected packet remains In progress.
+
+## Profile and enrollment integration
+
+Fourteen readiness cases cover the real profile/access services plus a retired-pin refusal.
+RPC authorization, agent-bound MCP behavior and fork registration have separate focused coverage. They prove default-profile requirement discovery,
+missing defaults/bindings, current use denial, explicit inspect independence, broker expiry,
+restricted runtime, context/profile changes across waits, no SSH execution or run-pin creation,
+unchanged decision audit, expired slow results and preservation of sealed backend reports.
+Current-run pins take precedence over defaults, including attached profiles with no default and
+subsequent default switches. Pinned credential version/destination drift blocks readiness; label-only profile edits preserve the pin, as execution does. Unreadable or
+retired pins cannot fall back to defaults. SSH and Git requirements sharing a key produce unique
+index-based grant checks that do not disclose their destinations, including without inspect access. Existing web/native views
+render the same typed check list; no new client control or simulator pass is claimed.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultReadiness.test.ts apps/server/src/fork/vault/access-rpc.test.ts apps/server/src/fork/vault/access-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts
+```
+
+These tests do not prove a selected host login, upstream provider authentication, remote tunnel
+or production unlock behavior. No live SSH/GitHub probe is invoked by this readiness check.

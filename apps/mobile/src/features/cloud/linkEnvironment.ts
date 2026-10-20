@@ -154,24 +154,24 @@ type LinkEnvironmentToCloudRequirements =
   | MobileStorage.MobileStorage;
 
 // fork: fleet-connect - Host linking and notification setup share one flow with explicit preferences.
-export function linkEnvironmentToCloud(
-  input: LinkEnvironmentToCloudInput & {
-    readonly notificationsEnabled: boolean;
-    readonly liveActivitiesEnabled: boolean;
-    readonly canContinue?: () => boolean;
-  },
-): Effect.Effect<void, CloudEnvironmentLinkError, LinkEnvironmentToCloudRequirements> {
-  function requireCurrentAccess() {
-    return input.canContinue?.() === false
-      ? Effect.fail(
-          new CloudEnvironmentLinkError({
-            message:
-              "Your account or computer access changed. Reconnect and sign in before linking again.",
-          }),
-        )
-      : Effect.void;
-  }
-  return Effect.gen(function* () {
+export const linkEnvironmentToCloud = Effect.fn("linkEnvironment.linkEnvironmentToCloud")(
+  function* (
+    input: LinkEnvironmentToCloudInput & {
+      readonly notificationsEnabled: boolean;
+      readonly liveActivitiesEnabled: boolean;
+      readonly canContinue?: () => boolean;
+    },
+  ): Effect.fn.Return<void, CloudEnvironmentLinkError, LinkEnvironmentToCloudRequirements> {
+    function requireCurrentAccess() {
+      return input.canContinue?.() === false
+        ? Effect.fail(
+            new CloudEnvironmentLinkError({
+              message:
+                "Your account or computer access changed. Reconnect and sign in before linking again.",
+            }),
+          )
+        : Effect.void;
+    }
     yield* requireCurrentAccess();
     if (!input.connection.bearerToken) {
       return yield* new CloudEnvironmentLinkError({
@@ -255,8 +255,8 @@ export function linkEnvironmentToCloud(
       .pipe(
         Effect.mapError(cloudEnvironmentLinkError("Could not configure environment relay access.")),
       );
-  });
-}
+  },
+);
 
 // fork: fleet-connect - Preserve the existing notification setup policy for its callers.
 export function linkEnvironmentToCloudWithPreference(

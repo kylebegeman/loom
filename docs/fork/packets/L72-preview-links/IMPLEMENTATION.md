@@ -46,10 +46,8 @@ packet.
 
 ## Remaining
 
-- The LP-22 Library deploy, gate D4, with `LOOM_PAGES_ORIGIN` set. The DNS-only record for
-  `pages.bagels.top` at the Library host is live since 2026-10-20; the deploy gets its
-  certificate. Until then pages and Library
-  sign-in are untested against the real Library.
+- Pages and Library sign-in in a real browser against the Library, which has run the gap
+  fixes on `0.0.90` since 20 October 2026 (LP-22).
 - The real-client checks in [TESTING.md](./TESTING.md#still-to-check), then set the index
   Status.
 

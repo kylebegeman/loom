@@ -286,153 +286,152 @@ export const makeDockerLocator = (candidates: () => ReadonlyArray<string>) => {
 };
 
 /** Commands that look at and release leases. Every query degrades to "unknown" on failure. */
-export const makeLeaseOps = (options: {
+export const makeLeaseOps = Effect.fn("ProjectLifecycleLeases.makeLeaseOps")(function* (options: {
   readonly homeDir: string;
   readonly xcrunPath: string;
   readonly lsofPath: string;
   readonly dockerPath: string | undefined;
-}) =>
-  Effect.gen(function* () {
-    const runner = yield* ProcessRunner;
+}) {
+  const runner = yield* ProcessRunner;
 
-    const run = (command: string, args: ReadonlyArray<string>) =>
-      runner
-        .run({
-          command,
-          args,
-          timeout: "30 seconds",
-          maxOutputBytes: 4 * 1024 * 1024,
-          env: { ...process.env, LC_ALL: "C" },
-        })
-        .pipe(Effect.option);
+  const run = (command: string, args: ReadonlyArray<string>) =>
+    runner
+      .run({
+        command,
+        args,
+        timeout: "30 seconds",
+        maxOutputBytes: 4 * 1024 * 1024,
+        env: { ...process.env, LC_ALL: "C" },
+      })
+      .pipe(Effect.option);
 
-    const stdoutOf = (command: string, args: ReadonlyArray<string>) =>
-      run(command, args).pipe(
-        Effect.map((output) =>
-          output._tag === "Some" && output.value.code === 0 ? output.value.stdout : null,
-        ),
-      );
-
-    const dockerPath =
-      options.dockerPath === undefined
-        ? makeDockerLocator(() => dockerCandidates(options.homeDir))
-        : Effect.succeed(options.dockerPath);
-
-    const processTable = stdoutOf("ps", ["-Ao", "pid=,ppid=,lstart="]).pipe(
-      Effect.map((stdout) => (stdout === null ? null : parseProcessTable(stdout))),
-    );
-
-    const simulators = stdoutOf(options.xcrunPath, ["simctl", "list", "devices", "-j"]).pipe(
-      Effect.flatMap((stdout) =>
-        stdout === null ? Effect.succeed(null) : parseSimulators(stdout),
+  const stdoutOf = (command: string, args: ReadonlyArray<string>) =>
+    run(command, args).pipe(
+      Effect.map((output) =>
+        output._tag === "Some" && output.value.code === 0 ? output.value.stdout : null,
       ),
-      Effect.orElseSucceed(() => null),
     );
 
-    /** Labelled containers and volumes, or null when Docker is missing or not running. */
-    const dockerResources = Effect.gen(function* () {
-      const path = yield* dockerPath;
-      if (path === null) return null;
-      const containers = yield* stdoutOf(path, [
-        "ps",
-        "-a",
-        "--filter",
-        `label=${DOCKER_LABEL}`,
-        "--format",
-        `{{.ID}}\t{{.Label "${DOCKER_LABEL}"}}\t{{.Names}}\t{{.State}}`,
-      ]);
-      if (containers === null) return null;
-      const volumes = yield* stdoutOf(path, [
-        "volume",
-        "ls",
-        "--filter",
-        `label=${DOCKER_LABEL}`,
-        "--format",
-        `{{.Name}}\t{{.Label "${DOCKER_LABEL}"}}`,
-      ]);
-      return [...parseDocker("container", containers), ...parseDocker("volume", volumes ?? "")];
-    });
+  const dockerPath =
+    options.dockerPath === undefined
+      ? makeDockerLocator(() => dockerCandidates(options.homeDir))
+      : Effect.succeed(options.dockerPath);
 
-    /** Host ports running containers publish, or null when Docker is missing or not running. */
-    const publishedPorts = Effect.gen(function* () {
-      const path = yield* dockerPath;
-      if (path === null) return null;
-      const stdout = yield* stdoutOf(path, ["ps", "--format", "{{.Ports}}"]);
-      return stdout === null ? null : parsePublishedPorts(stdout);
-    });
+  const processTable = stdoutOf("ps", ["-Ao", "pid=,ppid=,lstart="]).pipe(
+    Effect.map((stdout) => (stdout === null ? null : parseProcessTable(stdout))),
+  );
 
-    /** Container runtime processes found by name anywhere on the computer, or null on failure. */
-    const runtimeProcesses = stdoutOf("ps", ["-Ao", "pid=,comm="]).pipe(
-      Effect.map((stdout) => (stdout === null ? null : parseRuntimeProcesses(stdout))),
-    );
+  const simulators = stdoutOf(options.xcrunPath, ["simctl", "list", "devices", "-j"]).pipe(
+    Effect.flatMap((stdout) => (stdout === null ? Effect.succeed(null) : parseSimulators(stdout))),
+    Effect.orElseSucceed(() => null),
+  );
 
-    const listeners = (first: number, last: number) =>
-      stdoutOf(options.lsofPath, ["-nP", `-iTCP:${first}-${last}`, "-sTCP:LISTEN", "-Fpcn"]).pipe(
-        Effect.map((stdout) => parseLsofListeners(stdout ?? "")),
-      );
-
-    const signal = (pid: number, name: NodeJS.Signals | 0) => {
-      try {
-        process.kill(pid, name);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    /** SIGTERM, up to five seconds to exit, then SIGKILL. Returns pids still alive. */
-    const terminate = (requested: ReadonlySet<number>) =>
-      Effect.gen(function* () {
-        const pids = [...requested].filter(signallable);
-        if (pids.length === 0) return [];
-        for (const pid of pids) signal(pid, "SIGTERM");
-        let alive = pids;
-        for (let attempt = 0; attempt < 25 && alive.length > 0; attempt++) {
-          yield* Effect.sleep("200 millis");
-          alive = alive.filter((pid) => signal(pid, 0));
-        }
-        for (const pid of alive) signal(pid, "SIGKILL");
-        yield* Effect.sleep("200 millis");
-        return alive.filter((pid) => signal(pid, 0));
-      });
-
-    const checked = (label: string, command: string | null, args: ReadonlyArray<string>) =>
-      command === null
-        ? Effect.succeed(`${label}: not available`)
-        : run(command, args).pipe(
-            Effect.map((output) =>
-              output._tag === "Some" && output.value.code === 0
-                ? null
-                : `${label}: ${output._tag === "Some" ? (output.value.stderr || output.value.stdout).trim() : "could not run"}`,
-            ),
-          );
-
-    const removeDocker = (resource: Pick<DockerResource, "kind" | "ref">) =>
-      Effect.gen(function* () {
-        const path = yield* dockerPath;
-        return yield* resource.kind === "container"
-          ? checked(`docker rm ${resource.ref}`, path, ["rm", "-f", resource.ref])
-          : checked(`docker volume rm ${resource.ref}`, path, ["volume", "rm", "-f", resource.ref]);
-      });
-
-    const deleteSimulator = (udid: string) =>
-      run(options.xcrunPath, ["simctl", "shutdown", udid]).pipe(
-        Effect.andThen(
-          checked(`simctl delete ${udid}`, options.xcrunPath, ["simctl", "delete", udid]),
-        ),
-      );
-
-    return {
-      processTable,
-      simulators,
-      dockerResources,
-      publishedPorts,
-      runtimeProcesses,
-      listeners,
-      terminate,
-      removeDocker,
-      deleteSimulator,
-    };
+  /** Labelled containers and volumes, or null when Docker is missing or not running. */
+  const dockerResources = Effect.gen(function* () {
+    const path = yield* dockerPath;
+    if (path === null) return null;
+    const containers = yield* stdoutOf(path, [
+      "ps",
+      "-a",
+      "--filter",
+      `label=${DOCKER_LABEL}`,
+      "--format",
+      `{{.ID}}\t{{.Label "${DOCKER_LABEL}"}}\t{{.Names}}\t{{.State}}`,
+    ]);
+    if (containers === null) return null;
+    const volumes = yield* stdoutOf(path, [
+      "volume",
+      "ls",
+      "--filter",
+      `label=${DOCKER_LABEL}`,
+      "--format",
+      `{{.Name}}\t{{.Label "${DOCKER_LABEL}"}}`,
+    ]);
+    return [...parseDocker("container", containers), ...parseDocker("volume", volumes ?? "")];
   });
+
+  /** Host ports running containers publish, or null when Docker is missing or not running. */
+  const publishedPorts = Effect.gen(function* () {
+    const path = yield* dockerPath;
+    if (path === null) return null;
+    const stdout = yield* stdoutOf(path, ["ps", "--format", "{{.Ports}}"]);
+    return stdout === null ? null : parsePublishedPorts(stdout);
+  });
+
+  /** Container runtime processes found by name anywhere on the computer, or null on failure. */
+  const runtimeProcesses = stdoutOf("ps", ["-Ao", "pid=,comm="]).pipe(
+    Effect.map((stdout) => (stdout === null ? null : parseRuntimeProcesses(stdout))),
+  );
+
+  const listeners = (first: number, last: number) =>
+    stdoutOf(options.lsofPath, ["-nP", `-iTCP:${first}-${last}`, "-sTCP:LISTEN", "-Fpcn"]).pipe(
+      Effect.map((stdout) => parseLsofListeners(stdout ?? "")),
+    );
+
+  const signal = (pid: number, name: NodeJS.Signals | 0) => {
+    try {
+      process.kill(pid, name);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** SIGTERM, up to five seconds to exit, then SIGKILL. Returns pids still alive. */
+  const terminate = Effect.fn("ProjectLifecycleLeases.terminate")(function* (
+    requested: ReadonlySet<number>,
+  ) {
+    const pids = [...requested].filter(signallable);
+    if (pids.length === 0) return [];
+    for (const pid of pids) signal(pid, "SIGTERM");
+    let alive = pids;
+    for (let attempt = 0; attempt < 25 && alive.length > 0; attempt++) {
+      yield* Effect.sleep("200 millis");
+      alive = alive.filter((pid) => signal(pid, 0));
+    }
+    for (const pid of alive) signal(pid, "SIGKILL");
+    yield* Effect.sleep("200 millis");
+    return alive.filter((pid) => signal(pid, 0));
+  });
+
+  const checked = (label: string, command: string | null, args: ReadonlyArray<string>) =>
+    command === null
+      ? Effect.succeed(`${label}: not available`)
+      : run(command, args).pipe(
+          Effect.map((output) =>
+            output._tag === "Some" && output.value.code === 0
+              ? null
+              : `${label}: ${output._tag === "Some" ? (output.value.stderr || output.value.stdout).trim() : "could not run"}`,
+          ),
+        );
+
+  const removeDocker = Effect.fn("ProjectLifecycleLeases.removeDocker")(function* (
+    resource: Pick<DockerResource, "kind" | "ref">,
+  ) {
+    const path = yield* dockerPath;
+    return yield* resource.kind === "container"
+      ? checked(`docker rm ${resource.ref}`, path, ["rm", "-f", resource.ref])
+      : checked(`docker volume rm ${resource.ref}`, path, ["volume", "rm", "-f", resource.ref]);
+  });
+
+  const deleteSimulator = (udid: string) =>
+    run(options.xcrunPath, ["simctl", "shutdown", udid]).pipe(
+      Effect.andThen(
+        checked(`simctl delete ${udid}`, options.xcrunPath, ["simctl", "delete", udid]),
+      ),
+    );
+
+  return {
+    processTable,
+    simulators,
+    dockerResources,
+    publishedPorts,
+    runtimeProcesses,
+    listeners,
+    terminate,
+    removeDocker,
+    deleteSimulator,
+  };
+});
 
 export type LeaseOps = Effect.Success<ReturnType<typeof makeLeaseOps>>;

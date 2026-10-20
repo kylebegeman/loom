@@ -90,3 +90,22 @@ leave run access unchecked; denied runs skip external probes. This does not chan
 general readiness endpoint's conservative broker/delivery conclusions or certify a separate
 runner/provider-terminal environment. The shared execution/cleanup contract is in
 [L83 technical design](../L83-vault-connectors/TECHNICAL.md#github-terminal-routing-and-readiness).
+
+## Profile and broker context integration
+
+`VaultReadiness` composes the existing execution evaluator, project profile configuration and
+terminal enrollment-presence observation. The RPC and MCP paths use it, including the existing
+CLI alias and web/native readiness views. Explicit requirements stay authoritative; only an
+empty set discovers the active project profile. Discovery never activates a profile, writes a
+run pin, sends SSH traffic or contacts GitHub. Configuration previews use no-thread mode to
+avoid access-audit writes; the existing readiness evaluator separately checks each derived use
+scope. Missing/untrusted bindings remain blocked with repair guidance.
+
+Use checks report current provider/run permission mode. SSH/Git use additionally reports whether
+any approved broker has current presence; that is not a proof of the selected execution machine,
+unlock custody or upstream authentication. The existing unsupported delivery/live-probe check
+remains, so configuration and presence cannot produce an unattended-login success claim. Inspect
+checks need neither broker presence nor project defaults. Locked/unconfigured backend reports
+return before registry reads, preserving the useful backend state. Changed run/provider/project
+or profile revision during awaits adds a visible blocking refresh check. Reports remain finite
+observations with the original 60-second freshness window, never execution tokens.

@@ -1,8 +1,15 @@
+import * as NodeZlib from "node:zlib";
 import { MessageId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
-import { LibraryError, LibraryThreadArchive } from "@t3tools/contracts/fork";
+import {
+  LibraryCreateProjectRequest,
+  LibraryError,
+  LibraryIngestHistoryRequest,
+  type LibraryProject,
+  LibraryThreadArchive,
+} from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -12,7 +19,9 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
+import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
@@ -72,6 +81,43 @@ const canonical = (value: unknown): unknown =>
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([key, item]) => [key, canonical(item)]),
         );
+const sha256Hex = (text: string) =>
+  Crypto.Crypto.pipe(
+    Effect.flatMap((crypto) => crypto.digest("SHA-256", new TextEncoder().encode(text))),
+    Effect.map(Hex.encode),
+  );
+// Restates the service's record digest, so a change that moves both sides still fails the goldens.
+const referenceDigest = (encoded: string) =>
+  sha256Hex(JSON.stringify(canonical(JSON.parse(encoded))));
+const versionReferenceDigest = (archive: LibraryThreadArchive) =>
+  encodeArchive({ ...archive, summary: { ...archive.summary, syncedAt: VERSION_EPOCH } }).pipe(
+    Effect.flatMap(referenceDigest),
+  );
+const encodeIngest = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.toCodecJson(LibraryIngestHistoryRequest)),
+);
+const encodeCreate = Schema.encodeEffect(Schema.fromJsonString(LibraryCreateProjectRequest));
+const goldenProject: LibraryProject = {
+  id: "golden-project",
+  title: "AspectAvy",
+  brief: "",
+  resources: [resource],
+  archived: false,
+  revision: 1,
+  createdAt: VERSION_EPOCH,
+  updatedAt: VERSION_EPOCH,
+};
+const goldenArchive = Effect.fnUntraced(function* (sequence: number, text: string) {
+  const thread = yield* archiveFor(goldenProject, sequence);
+  return {
+    ...thread,
+    summary: { ...thread.summary, syncedAt: "2026-03-04T05:06:07.000Z" },
+    projection: {
+      ...thread.projection,
+      messages: [{ ...thread.projection.messages[0]!, text }],
+    },
+  } satisfies LibraryThreadArchive;
+});
 
 describe("independent Library catalog and durable history", () => {
   it.effect(
@@ -1436,6 +1482,333 @@ describe("independent Library catalog and durable history", () => {
           })).resources,
         ).toHaveLength(2);
         expect(validLibraryResources([{ ...link, url: "javascript:alert(1)" }])).toBe(false);
+      }),
+    ),
+  );
+});
+
+describe("Library history ingest", () => {
+  const historyRows = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return {
+      threads:
+        yield* sql`SELECT library_id, source_sequence, summary_json, payload_json FROM fork_library_threads`,
+      versions:
+        yield* sql`SELECT library_id, source_sequence, payload_json FROM fork_library_thread_versions ORDER BY source_sequence`,
+      blobs: yield* sql`SELECT digest FROM fork_library_history_blobs`,
+      entries:
+        yield* sql`SELECT journal_id, sequence, payload_digest FROM fork_library_ingested_entries ORDER BY journal_id, sequence`,
+      cursors: yield* sql`SELECT journal_id, last_sequence FROM fork_library_host_cursors`,
+    };
+  });
+  it.effect("keeps the request, entry, version and archive digests earlier releases saved", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* create(service);
+        const [created] = yield* sql<{
+          fingerprint: string;
+        }>`SELECT fingerprint FROM fork_library_commands WHERE request_id = 'create'`;
+        expect(created!.fingerprint).toBe(
+          yield* referenceDigest(
+            yield* encodeCreate({ requestId: "create", title: "AspectAvy", resources: [resource] }),
+          ),
+        );
+        yield* service.importShadow({
+          requestId: "golden-import",
+          sourceEnvironmentId: source,
+          journalId: "import-journal",
+          projects: [goldenProject],
+          copies: [copyFor(goldenProject)],
+          threads: [],
+          throughSequence: 0,
+        });
+        yield* TestClock.adjust("1 hour");
+        const first = yield* goldenArchive(1, 'Größe "quoted"\nnext line ✓');
+        const second = yield* goldenArchive(2, "Zweite Runde: “typographic” quotes");
+        const input = {
+          requestId: "golden-ingest",
+          sourceEnvironmentId: source,
+          journalId: "journal",
+          fromSequence: 0,
+          entries: [
+            { sequence: 1, thread: first },
+            { sequence: 2, thread: second },
+          ],
+        };
+        expect(yield* service.ingestHistory(input)).toMatchObject({ applied: 2, lastSequence: 2 });
+        const [command] = yield* sql<{
+          fingerprint: string;
+        }>`SELECT fingerprint FROM fork_library_commands WHERE request_id = 'golden-ingest'`;
+        expect(command!.fingerprint).toBe(yield* referenceDigest(yield* encodeIngest(input)));
+        const rows = yield* historyRows;
+        expect(rows.entries.map((row) => row.payload_digest)).toEqual([
+          yield* referenceDigest(yield* encodeArchive(first)),
+          yield* referenceDigest(yield* encodeArchive(second)),
+        ]);
+        expect(rows.versions.map((row) => row.payload_json)).toEqual([
+          `loom:sha256:${yield* versionReferenceDigest(first)}`,
+          `loom:sha256:${yield* versionReferenceDigest(second)}`,
+        ]);
+        const expectedPayload = yield* encodeArchive({
+          ...second,
+          summary: { ...second.summary, syncedAt: "1970-01-01T01:00:00.000Z" },
+        });
+        const payloadDigest = yield* sha256Hex(expectedPayload);
+        expect(rows.threads.map((row) => row.payload_json)).toEqual([`loom:gzip:${payloadDigest}`]);
+        // The import proof keeps its own blob; the first entry's archive was released.
+        expect(rows.blobs).toHaveLength(2);
+        const [blob] = yield* sql<{
+          bytes: Uint8Array;
+        }>`SELECT bytes FROM fork_library_history_blobs WHERE digest = ${payloadDigest}`;
+        expect(NodeZlib.gunzipSync(blob!.bytes).toString("utf8")).toBe(expectedPayload);
+        // Literal digests pin the encoding itself, not just agreement with the restated digest.
+        expect({
+          create: created!.fingerprint,
+          ingest: command!.fingerprint,
+          entries: rows.entries.map((row) => row.payload_digest),
+          versions: rows.versions.map((row) => row.payload_json),
+          archive: payloadDigest,
+        }).toEqual({
+          create: "ee449c167f9f21dea3f5b385963a43206699cb35d589bea437666c5ff3cb86dc",
+          ingest: "27d0cdb8847b02cc6dede21b475564d179bc25cde26f09e2b64713e51dbdddee",
+          entries: [
+            "2bd55dc0b2c2464aa6b51c94cb092e19c7e5dd3f455d0a6cf44ca94cba6cb559",
+            "d90a0127a9a8aa51b020f1141fce20e4f3e648f7c8b1b8f49bdf4d8434714807",
+          ],
+          versions: [
+            "loom:sha256:121af58e732f8f9133160749ab21736062ed04d254e8e5aa5e87b72529d4035f",
+            "loom:sha256:ee74346cf8860dd426e16f7442c33ac1c68d9315a7034bdd82e5916bfcc0c2bd",
+          ],
+          archive: "b3aadd3f306aec936399b067d9df9db8d80e723909eefcc2f620c2a00577c9ad",
+        });
+        expect(
+          yield* service.ingestHistory({ ...input, requestId: "golden-replay" }),
+        ).toMatchObject({ applied: 0, lastSequence: 2 });
+        expect(yield* historyRows).toEqual(rows);
+      }),
+    ),
+  );
+  it.effect("traces history writes with sizes and counts, never ids or conversation text", () => {
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    return run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        spans.length = 0;
+        const ingests: Array<LibraryIngestHistoryRequest> = [];
+        for (const sequence of [1, 2])
+          ingests.push({
+            requestId: `ingest-${sequence}`,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence: sequence - 1,
+            entries: [{ sequence, thread: yield* archiveFor(project, sequence) }],
+          });
+        const results = [];
+        for (const ingest of ingests) results.push(yield* service.ingestHistory(ingest));
+        const library = spans.filter((span) => span.name.startsWith("Library"));
+        const history = library.filter((span) =>
+          /^Library(Service|Store|Search|Timeline)\./.test(span.name),
+        );
+        expect(new Set(history.map((span) => span.name))).toEqual(
+          new Set([
+            "LibraryService.ingestHistory",
+            "LibraryService.prepareEntries",
+            "LibraryService.prepareRequest",
+            "LibraryService.mutation",
+            "LibraryService.transaction",
+            "LibraryService.readPreviousThread",
+            "LibraryStore.unpack",
+            "LibraryStore.pack",
+            "LibraryStore.indexHistory",
+            "LibraryStore.release",
+            "LibrarySearch.index",
+            "LibraryTimeline.recordTimeline",
+          ]),
+        );
+        // Digests read nothing saved, so they are taken before the write lock, not under it.
+        const ancestors = (span: Tracer.Span): Array<string> =>
+          Option.match(span.parent, {
+            onNone: () => [],
+            onSome: (parent) => (parent._tag === "Span" ? [parent.name, ...ancestors(parent)] : []),
+          });
+        for (const name of ["LibraryService.prepareEntries", "LibraryService.prepareRequest"])
+          for (const span of history.filter((candidate) => candidate.name === name))
+            expect(ancestors(span)).not.toContain("LibraryService.transaction");
+        const timeline = history.map((span) => span.name);
+        expect(timeline.indexOf("LibraryService.prepareEntries")).toBeLessThan(
+          timeline.indexOf("LibraryService.prepareRequest"),
+        );
+        expect(timeline.indexOf("LibraryService.prepareRequest")).toBeLessThan(
+          timeline.indexOf("LibraryService.transaction"),
+        );
+        const attributes = library.flatMap((span) => [...span.attributes]);
+        for (const [key, value] of attributes)
+          if (key !== "library.operation") expect(typeof value, key).toBe("number");
+        const recorded = JSON.stringify(attributes);
+        for (const secret of [
+          project.id,
+          project.title,
+          source,
+          threadId,
+          "archive-thread",
+          "journal",
+          "Preserve this complete conversation",
+        ])
+          expect(recorded).not.toContain(secret);
+        expect(attributes).toContainEqual(["library.entries", 1]);
+        // A resent batch is answered from its receipt without digesting its entries again.
+        spans.length = 0;
+        expect(yield* service.ingestHistory(ingests[1]!)).toEqual(results[1]);
+        expect(spans.map((span) => span.name)).toContain("LibraryService.prepareRequest");
+        expect(spans.map((span) => span.name)).not.toContain("LibraryService.prepareEntries");
+      }),
+    ).pipe(Effect.withTracer(tracer));
+  });
+  it.effect("commits concurrent ingests one at a time and publishes each", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const revision = service.subscribeRefreshes.pipe(Stream.runHead);
+        const before = Option.getOrThrow(yield* revision);
+        const results = yield* Effect.all(
+          [1, 2].map((sequence) =>
+            Effect.gen(function* () {
+              return yield* service.ingestHistory({
+                requestId: `concurrent-${sequence}`,
+                sourceEnvironmentId: source,
+                journalId: `journal-${sequence}`,
+                fromSequence: 0,
+                entries: [{ sequence: 1, thread: yield* archiveFor(project, sequence) }],
+              });
+            }),
+          ),
+          { concurrency: "unbounded" },
+        );
+        expect(results.map((result) => result.lastSequence)).toEqual([1, 1]);
+        expect(Option.getOrThrow(yield* revision)).toBe(before + 2);
+        const rows = yield* historyRows;
+        expect(rows.cursors).toHaveLength(2);
+        expect(rows.threads.map((row) => row.source_sequence)).toEqual([2]);
+      }),
+    ),
+  );
+  it.effect("reports ingest failures in the order earlier releases reported them", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const thread = yield* archiveFor(project);
+        const authority = yield* service.info;
+        const input = {
+          requestId: "order",
+          sourceEnvironmentId: source,
+          journalId: "journal",
+          fromSequence: 0,
+          entries: [{ sequence: 1, thread }],
+        };
+        const reason = (request: LibraryIngestHistoryRequest) =>
+          service.ingestHistory(request).pipe(
+            Effect.flip,
+            Effect.map((error) => error.reason),
+          );
+        const staleFence = {
+          authorityId: authority.authorityId,
+          authorityEpoch: authority.authorityEpoch + 1,
+        };
+        expect(
+          yield* reason({
+            ...input,
+            ...staleFence,
+            entries: Array.from({ length: 101 }, (_, index) => ({ sequence: index + 1, thread })),
+          }),
+        ).toBe("invalid");
+        expect(yield* reason({ ...input, ...staleFence, fromSequence: 5 })).toBe("blocked");
+        expect(
+          yield* reason({
+            ...input,
+            entries: [
+              { sequence: 1, thread },
+              { sequence: 3, thread },
+            ],
+          }),
+        ).toBe("sequence-gap");
+        expect(yield* service.threads({ projectId: project.id })).toEqual([]);
+        yield* service.ingestHistory(input);
+        const changed = { ...thread, summary: { ...thread.summary, title: "changed" } };
+        const wrongHost = {
+          ...thread,
+          summary: { ...thread.summary, environmentId: EnvironmentId.make("wrong") },
+        };
+        expect(
+          yield* reason({
+            ...input,
+            requestId: "conflict-first",
+            entries: [
+              { sequence: 1, thread: changed },
+              { sequence: 2, thread: wrongHost },
+            ],
+          }),
+        ).toBe("sequence-conflict");
+        expect(
+          yield* reason({
+            ...input,
+            requestId: "invalid-after-replay",
+            entries: [
+              { sequence: 1, thread },
+              { sequence: 2, thread: wrongHost },
+            ],
+          }),
+        ).toBe("invalid");
+        expect(yield* reason({ ...input, entries: [{ sequence: 1, thread: changed }] })).toBe(
+          "request-conflict",
+        );
+      }),
+    ),
+  );
+  it.effect("settles a repeated conversation sequence without saving another archive", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const thread = yield* archiveFor(project, 5);
+        const ingest = (requestId: string, fromSequence: number, archive: LibraryThreadArchive) =>
+          service.ingestHistory({
+            requestId,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence,
+            entries: [{ sequence: fromSequence + 1, thread: archive }],
+          });
+        yield* ingest("first", 0, thread);
+        const { blobs, versions, threads } = yield* historyRows;
+        yield* TestClock.adjust("1 hour");
+        expect(yield* ingest("again", 1, thread)).toMatchObject({ applied: 1, lastSequence: 2 });
+        expect(yield* historyRows).toMatchObject({ blobs, versions, threads });
+        expect(
+          (yield* ingest("rewritten", 2, {
+            ...thread,
+            projection: { ...thread.projection, messages: [] },
+          }).pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${thread.summary.id}, 6, 'loom:sha256:foreign')`;
+        expect(
+          (yield* ingest("foreign", 2, {
+            ...thread,
+            summary: { ...thread.summary, sequence: 6 },
+          }).pipe(Effect.flip)).reason,
+        ).toBe("sequence-conflict");
+        expect((yield* historyRows).blobs).toEqual(blobs);
       }),
     ),
   );

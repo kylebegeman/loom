@@ -3,10 +3,11 @@ import type {
   AuthClientMetadataDeviceType,
   AuthClientPresentationMetadata,
 } from "@t3tools/contracts";
-import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac or timingSafeEqual.
 import * as NodeCrypto from "node:crypto";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
@@ -54,6 +55,21 @@ export function resolveLegacySessionCookieName(input: {
     ? SESSION_COOKIE_NAME
     : undefined;
 }
+
+// fork: secure-session-cookies
+/**
+ * The server itself listens on plain HTTP, so a request only counts as HTTPS
+ * when a TLS-terminating proxy says so through `X-Forwarded-Proto`, the same
+ * signal MCP OAuth uses for its issuer. Session cookies set over HTTPS must be
+ * `Secure`, or a proxy that also answers plain HTTP leaks them; cookies set
+ * over LAN, tailnet or loopback HTTP must not be, or the browser drops them.
+ */
+export const isHttpsRequest = (request: HttpServerRequest.HttpServerRequest): boolean =>
+  Option.exists(HttpServerRequest.toURL(request), (url) => url.protocol === "https:");
+
+// fork: secure-session-cookies
+export const sessionCookieOptions = (secure: boolean) =>
+  ({ path: "/", httpOnly: true, sameSite: "lax", secure }) as const;
 
 export function isRemoteReachableHost(host: string | undefined): boolean {
   if (host === "0.0.0.0" || host === "::" || host === "[::]") {

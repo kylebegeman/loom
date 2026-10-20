@@ -499,23 +499,299 @@ reviewed request, never by resetting evidence.
 | Completion write/reply is lost                  | Saved completion is historical; unsaved outcome becomes unknown. Neither permits replay.                     |
 | Outage/corruption/age-out or disabled gate      | Refuse. Storage recovery does not regenerate an opportunity or restart work.                                 |
 
-### One-time grant enforcement remains an explicit decision
+### One-time intent, evaluator enforcement and downgrade readers
 
-The attempt protocol is a prerequisite, not the full allow-once feature. Before enabling it,
-choose a downgrade-safe way to distinguish one-time intent from timed access within the existing
-approved storage boundary, and make the evaluator plus **every** SSH/Git/GitHub, CLI/MCP,
-scheduled-run, provider and broker credential-delivery entry point enforce that intent. Alternate
-grants must not silently satisfy a request advertised as one-time. Decide whether consumption
-means one adapter start, one credential release or one provider-acknowledged operation, including
-SSH multi-sign/connection attempts, Git fetch writes and HTTP/provider retries. The proposed safe
-unit is one adapter start with no transparent replay of uncertain effects; provider idempotency
-or independently verified results can improve recovery later.
+This is a design boundary with executable synthetic counterexamples, not a persisted intent
+contract or a proposal to open a gate. Access-policy stays format 3 and journal stays version 1.
+Today's approvals remain ordinary five/fifteen-minute grants. Neither a journal entry nor a
+successful admission changes their meaning. The current evaluator takes no operation intent
+and returns the first matching allowed grant; adding an unknown intent field cannot restrict it.
+The actual format-3 reader accepts hypothetical intent fields on the policy, approval request
+and grant definition, then its audited writer discards those fields. A minimum-reader field
+inside that same document is equally ineffective. The proof uses synthetic records only.
 
-Those eligibility/enforcement and downgrade decisions are open. Safe default: refuse the
-one-time/resumption paths and preserve existing timed-grant behavior. No mode field, format bump,
-new path or policy right is selected or written here. A future strategy needing one requires
-Kyle's explicit approval. Cross-client/evaluator acceptance and live-adapter crash/revocation
-proofs are required before asking to open a gate; the abstract model alone cannot justify it.
+The intended future unit is **at most one request-bound adapter start** for an exact human-reviewed
+proposal, not one SSH signature, credential release, HTTP response or confirmed external effect.
+One command may require several signatures or network exchanges. A start may fail before any
+remote effect, and an unknown outcome never refunds it. An approval currently reviews
+item/version/action/destination, not a command digest. A requester choosing a digest during
+preparation therefore cannot turn today's approval into human authorization for that exact
+operation. Future intent must bind a human review to the environment, request, waiting operation,
+thread/run, item/version, action/destination, proposal digest, request/grant revisions and bounded
+expiry. Labels are display context only. Eligibility and the consumption unit still need Kyle's
+review before a persisted contract is proposed.
+
+#### Compatibility strategies
+
+| Strategy                                                                                                   | Reader and writer behavior                                                                                                                                                                                                            | Disposition                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Add optional intent/minimum-reader fields to format 3                                                      | Current readers allow the timed grant and writers erase the fields.                                                                                                                                                                   | Rejected by real-service counterexample.                                                                                                |
+| Put intent only in the version-1 journal or a sidecar                                                      | Older readers ignore that independent record; ordinary grants still allow direct use. Missing/aged evidence cannot establish unused intent.                                                                                           | Useful recovery evidence only; insufficient enforcement. No sidecar or new field is introduced.                                         |
+| Revoke the approval grant before dispatch                                                                  | Another thread/project/delegated grant can still authorize use. Policy and journal CAS cannot atomically revoke authority and start a remote effect. A crash may burn an attempt without an effect.                                   | Refusal on uncertainty remains useful, but revocation is not a one-time protocol.                                                       |
+| Store no ordinary active grant for one-time intent and use a separately understood, non-authorizing record | Legacy evaluators cannot gain authority from that record alone, but concurrent broad grants and old approval writers can still defeat a stronger global claim. It needs a trusted mandatory intent boundary and writer compatibility. | Possible future design; not a format-3 shortcut.                                                                                        |
+| Require an unsupported policy version plus a reader/writer rollout barrier                                 | Current reader/writer refuses an unsupported policy before authorization or mutation. Incompatible older versions must also be checked; replacing the document with a legacy backup remains a host recovery risk.                     | Preferred compatibility direction for further design, conditional on Kyle's separate schema approval. No version bump is selected here. |
+
+The preferred direction is an explicit, non-authorizing intent recognized by every eligible
+reader/writer, with fail-closed policy compatibility rather than optional metadata. This does
+not select fields, change a format, establish a new path or authorize implementation. The
+synthetic unsupported-version fixture tests the current reader only; it is not evidence that
+all historical binaries are safe. A rollout must prevent mixed incompatible writers, pin the
+minimum compatible server/broker set, and verify that stale runtimes cannot use an old active
+grant copy. Client capability advertisement alone cannot enforce that boundary. These are
+future host-owner/Kyle dependencies, not production actions in this slice.
+
+#### Enforcement across entry points
+
+A future one-time operation must choose that intent explicitly through a trusted service,
+require the human-reviewed binding, fresh current evaluator authority and fresh journal
+acquisition, then perform the normal adapter checks. The combined evaluator must return an
+intent-specific refusal on consumed, missing, unsupported, expired, mismatched or unreadable
+intent/evidence. It must not retry the decision against ordinary timed, project, parent or
+delegated grants. The real evaluator counterexamples cover these alternate-grant bypasses.
+Existing timed entry points retain their timed semantics until a separately approved change.
+
+The enforcement review must include SSH launch/signing and broker delivery, Git-over-SSH,
+GitHub API/token minting, direct credential delivery and workload sessions, CLI/MCP/RPC,
+provider continuations and scheduled work. Thin transports cannot mint a permit or choose a
+weaker fallback. If an entry point cannot carry and revalidate the bound intent, one-time use
+must be unsupported there. A future generic credential-use call lacking an intent reference
+cannot be marketed as one-time just because a matching request exists. Stronger restrictions
+on all use by a principal/item require mandatory enforcement even on calls that omit the
+reference, plus resolution of overlapping ordinary grants. Otherwise the claim remains limited
+to the explicitly bound operation. Full-access host processes and external credential copies
+remain outside that claim.
+
+Normal authorization must continue at the adapter's final handoff and at subsequent credential
+callbacks where supported. Policy/journal records have separate CAS domains; no ordering turns
+them into an atomic remote transaction. Revoke/expiry/context change observed before handoff
+refuses; changes after a remote start cannot recall that effect. An uncertain reservation or
+completion reconciles to unknown. No reserve replay, replacement reservation ID, copied result,
+process restart, queue pruning or bounded mutation-receipt eviction proves an opportunity unused.
+A fresh human-reviewed request is a new authorization, never a reset or refund of the old one.
+
+#### Downgrade and recovery design
+
+With today's formats, old policy readers ignore the journal safely only because all dispatch,
+resumption and allow-once gates stay false. They still permit ordinary timed use. They cannot
+safely host a future enabled one-time workflow based on an ignored sidecar or optional field.
+Before such a workflow exists, downgrade design must cover reads **and writes**: incompatible
+runtimes refuse protected policy, never rewrite it without intent, and never recreate an active
+timed grant from a retained approval or old receipt. Unknown/missing/corrupt/aged intent or
+journal evidence fails closed independently of ordinary grants.
+
+A downgrade must quiesce protected operations, retain policy/journal evidence and reconcile
+in-flight/unknown outcomes plus revocation before selecting a compatible reader. Restoring an
+older backup that predates consumption must not re-enable spent authority. A host-controlled
+recovery barrier or equivalent rollback protection remains an explicit open design dependency;
+CAS version checks alone do not protect against historical backup restoration. It requires
+host-owner review before live use. No backup is restored, capability changed, legacy binary
+started or production policy inspected here.
+
+`OperationIntent.proof.test.ts` exercises the current reader/writer and evaluator and a
+**design-only** eligibility model across 672 intent/reader/binding/review/evidence/authority
+combinations, each with and without an alternate ordinary grant. Only an aware reader, explicit
+one-time human-reviewed exact binding, fresh prepared evidence and current authority pass the
+abstract eligibility check. That is not acquisition, dispatch permission or an implemented
+runtime evaluator. The existing acquisition/dispatcher proofs remain responsible for the later
+CAS/handle/crash boundaries. All runtime gates remain literal false. Persisted intent, schema
+selection, cross-entry-point enforcement and live acceptance remain unfinished.
+
+### Mandatory intent boundary: omission, delegation and alternate paths
+
+This is a future enforcement design with a test-local trust model, not a policy field, persisted
+intent or runtime authorization change. Existing format-3 grants and all current timed workflows
+retain their semantics. No record becomes protected automatically because it has a pending
+request, journal entry, matching label or preparation digest. A future protected-mode choice must
+be explicitly reviewed before any storage contract or migration is proposed.
+
+The server must classify the destination environment's item **before** selecting an authorization
+path. A caller's absent reference, `timed` hint, transport name, thread label or project grant cannot
+select ordinary mode. Classification must distinguish known ordinary access, mandatory intent,
+and unknown/unavailable/unsupported state. Only an authoritative known-ordinary classification
+may retain ordinary timed evaluation. Missing or unreadable classification cannot stand in for
+known ordinary access. The protection decision must outlive request/journal age-out; pruning
+24-hour evidence cannot silently remove it. Its persistence and downgrade/rollback behavior are
+unresolved and are not implemented in this slice.
+
+#### Scope and trusted inputs
+
+| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                             |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                         |
+| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                     |
+| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Conservative design recommendation for the first protected workflow; requires Kyle's product/schema review before persistence. |
+
+Item-wide classification is a proposed policy tradeoff, not a claim of global isolation. Different
+items retain their ordinary policies; using an external copy of the same credential remains
+outside Loom's control. An administrator's reveal/export is also credential-bearing use, not
+metadata. In protected mode it cannot be a hidden bypass. Any emergency declassification or
+owner override must be a separately reviewed policy change, never inferred from `manage`, a
+full-access process, pairing scope or a UI toggle. The design does not implement that override.
+
+Trusted inputs come from the destination server's authenticated identity, live thread/run/project,
+current item/version and policy, reviewed intent, canonical typed proposal and verified adapter
+selection. Client-supplied thread/environment IDs, mode hints and opaque references are claims to
+validate, not classification authority. Broker or provider attestation authenticates the caller;
+it does not attest human review of a command. The selected environment must enforce locally even
+when the request arrives over relay/tunnel or another client. Missing context refuses credential
+use rather than selecting a legacy route.
+
+A protected operation needs an owned, current reference with an exact human-reviewed environment,
+item/version, project/thread/run, action/destination, proposal digest, request/waiting-operation
+identity, revisions and adapter binding. These are semantic obligations, not a selected persisted
+record shape. Wrong-owner, foreign, expired, spent, unknown or missing intent must not cause a
+search for another timed/project/delegated grant. A request advertised as one-time on a known
+ordinary item must also refuse; it cannot silently downgrade to timed access. Ordinary rights
+and current evaluator checks remain required where applicable. The model's `ordinaryGrant` flag
+tests fallback resistance only; it does not replace the runtime evaluator, permission checks,
+fresh journal acquisition, adapter admission or final revalidation.
+
+#### Delegation and descendants
+
+Ordinary grant attenuation currently restricts resources, actions, scope and time. The real
+`grantAttenuates`/`evaluateVaultPolicy` counterexample accepts a narrower child's timed grant even
+when hypothetical parent intent metadata says spent. That is existing timed behavior, not a bug
+fixed by this design. Simply copying intent metadata onto a child would either duplicate its
+budget or let an ancestor's authority bypass the child's exact reviewed binding.
+
+The conservative first one-time design refuses delegation of a protected intent or conversion
+into an ordinary child grant. Parent, child and grandchild cannot reuse the parent's reference,
+run or digest as their own authorization. Work assigned to a child needs a separately reviewed
+request with its own waiting-operation identity and exact child context; that is new human
+authorization, not a refund of the parent's attempt. The parent's opportunity remains unchanged.
+Automatic delegation, splitting a one-time budget, transferring acquisition handles and spending
+one intent concurrently across descendants remain unsupported. Ordinary delegation for known
+ordinary items continues through its existing attested direct-child and attenuation rules.
+
+#### Mandatory entry-point coverage
+
+Every credential-bearing path must participate before a protected item can become eligible;
+incomplete or unknown coverage refuses that item's use. This is stronger than adding a reference
+to one MCP tool. The current services do **not** implement this coverage yet.
+
+| Boundary                                                                          | Required future behavior                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH/Git typed launch and GitHub typed API operation                               | Enforce classification before credential-bearing work; validate the exact owned intent and adapter binding. Continue through acquisition/admission/final authority checks.                                                            |
+| SSH agent activation/frames, generic workload sessions and broker release/signing | A reusable session is not an exact operation. Refuse protected use in the first design until a bounded operation-scoped protocol can enforce intent on each callback. A signed challenge alone is insufficient.                       |
+| GitHub terminal and raw credential reveal/export                                  | Refuse protected use in the first design. A generic terminal or exported bearer credential cannot enforce one reviewed operation. Existing human RPC reveal is a separate path that must be covered.                                  |
+| Profiles, provider startup/continuations and scheduled runs                       | Selecting a profile, pin or run cannot supply review. Carry trusted intent context to a supported typed operation or report unsupported; never fall back to environment variables, a session, personal SSH agent or ordinary grant.   |
+| Web/desktop/mobile RPC, MCP, CLI and internal calls                               | Reuse destination service enforcement. Transports cannot select weaker policy or manufacture an eligible result. Being a human client is not an implicit protected-item bypass.                                                       |
+| Local status, journal recovery and safe metadata inspection                       | Remain observations under their existing metadata permissions, without consuming intent or returning a permit. Readiness/health that signs, mints, probes or releases credentials is credential-bearing work and must enforce intent. |
+
+Authority must be revalidated after asynchronous classification/context reads and immediately
+before credential-bearing handoff. A classifier or coverage change, declassification, missing
+item, new run or intent withdrawal invalidates an observation. Enforcement also belongs at
+callbacks for any future operation-scoped broker/session protocol; a prior successful check is
+not a lease against later revocation. Policy and journal CAS remain separate, so this design
+cannot recall remote effects already started. Current compatibility and host rollback barriers
+remain prerequisites; a stale runtime ignoring classification would defeat this design.
+
+`OperationIntentBoundary.proof.test.ts` is an executable **test-local** design model. It explores
+2,592 path/surface/reference/mode/state combinations with and without an alternate ordinary grant,
+mutates all 14 reviewed binding dimensions at each supported typed boundary, and checks child
+review, unknown classification, incomplete coverage and metadata separation. Every observation
+retains three literal-false gates, including `intent-eligible`. The model does not persist or
+parse a new record, prove real endpoint coverage, grant a capability, execute an adapter or
+instantiate a production classifier. Actual coverage, protected-item semantics, compatible
+storage/readers, restart-safe cleanup and host rollback protection require later review and
+implementation. No runtime eligibility or one-time claim follows from this proof.
+
+### Temporal revalidation at handoff and callbacks
+
+`OperationIntentTemporal.proof.test.ts` models asynchronous classification, coverage, reviewed
+binding and current-authority reads, validation and final handoff/callback commit. It adds no
+runtime classifier, field, schema, fence or permit. The model's coherent generation and atomic
+commit are **explicit assumptions**, not capabilities supplied by OpenBao or the existing
+separate policy/journal CAS records. Selecting an implementable consistency primitive remains
+a prerequisite for a future persisted-intent design.
+
+The captured dependency generation belongs to the acquired attempt and cannot be refreshed by
+a caller or a second read. Each component read must be both valid and from that same generation;
+final commit must still observe it and current authority. A changed classification, incomplete
+coverage, changed reviewed binding, revoked/expired/unreadable authority, interruption, crash or
+unknown outcome refuses the remaining operation and retires the local opportunity. Returning
+to the same visible values does not restore that opportunity. Declassification to ordinary mode
+cannot continue an already protected attempt through timed access. A deliberate new operation
+would need fresh authority and review under the eventual selected policy, never a reset.
+
+The proof includes two unsafe protocols as counterexamples. Individually valid reads can come
+from states in which classification and coverage were never valid together. A cached successful
+validation can also be stale by the time a handoff or callback commits. Value equality alone
+misses a protected-to-ordinary-to-protected transition, restored coverage or a changed-and-restored
+binding. A trusted monotonic dependency history would distinguish those transitions; an optional
+field, client timestamp, content hash or two equal reads cannot establish that history. The test
+generation is symbolic and is not proposed as a new persisted property.
+
+Fresh handoff and later callbacks have different ownership requirements. A handoff consumes the
+fresh local opportunity before credential-bearing work. Subsequent authorization callbacks may
+revalidate only the same live attempt, original requester/run, reviewed binding and current
+reservation/authority; they must not require or recreate an unused intent, manufacture a new
+acquisition or start another adapter. Each callback observation is itself single-use. This model
+counts authorization callbacks only, not extra signatures, token issues or remote effects; the
+existing SSH signature limits and unsupported reusable-session boundaries remain unchanged.
+Copied historical evidence or a reconstructed service without live ownership cannot authorize
+a callback. Interruption/ownership loss retires the attempt rather than leaving an implicit
+continuation to recover. Known-session cleanup remains a separately constrained obligation, not
+a callback that resumes the workload.
+
+The model places eleven hazards, both with and without value restoration, at eight positions
+across handoff and callback traces: 352 schedules. A hazard observed before commit prevents new
+starts/callback acceptance. A hazard after an accepted handoff cannot undo that start, but later
+callbacks refuse. No restored evidence refunds an opportunity. Baseline checks allow one abstract
+start and independently revalidated callbacks with unchanged context; duplicate commit, restart
+without ownership and later withdrawal refuse. Every reported observation retains three
+literal-false gates.
+
+This is a proof of the candidate transitions **given the coherent commit assumption**. It does
+not close the physical gap between a final remote authorization read and an external effect,
+make independent OpenBao reads atomic, identify unobserved changes, or recall an already
+released credential/started operation. A real design must select a writer/reader consistency
+boundary and explicitly state its remaining revocation window. Its tests must interrupt the
+actual chosen primitive and adapter callbacks, not substitute this model for it. Actual temporal
+enforcement, compatible persistence/readers, host rollback protection, restart-safe cleanup and
+live adapter behavior remain owner-gated. The bounded synthetic design review is complete;
+additional speculative models would not settle those implementation choices.
+
+### Adapter-start consumption unit and transport limits
+
+The proposed attempt boundary must precede **all credential-bearing adapter work**, not just
+command spawn. Local metadata admission can precede it because admission performs no signing,
+session allocation or provider probe. After a future fresh acquisition is burned for an admitted
+attempt, session/token acquisition, authorization callbacks, command start and cleanup belong
+to that attempt. A failure before command start may already have changed provider state. It
+cannot automatically refund the attempt or restart session acquisition. This refines the
+handoff design; no runtime dispatcher or permit is added.
+
+| Adapter             | Current boundary and evidence                                                                                                                                                                                          | Constraint for a future one-time path                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SSH                 | `SshTransport` authorizes before process spawn and on agent frames, limits signing to one response for the entire invocation and sets one connection attempt. Local workload proof/agent setup precedes transport use. | Preserve existing signing and host-binding limits. One signature is not proof a command ran; timeout/interruption leaves effects uncertain. No automatic relaunch or renewed workload after refusal.                                       |
+| Git-over-SSH        | One explicit Git child uses the scoped SSH command, exact repository and cwd. Fetch disables recursive submodules and auto-maintenance; the shared transport retains its one-signature bound.                          | A Git command can write local refs/objects and have multiple protocol exchanges. One child does not prove one remote request, and host Git behavior still needs owner acceptance. No repeat fetch after unknown outcome.                   |
+| GitHub token/App    | Session acquisition precedes `GitHubCli.run`. App acquisition reads installation metadata and issues an installation token by POST. Cleanup revokes a known temporary token.                                           | Burn before session acquisition, not after mint or at CLI spawn. A lost/malformed mint response may leave an unknown active token; do not remint automatically. Known-session cleanup remains necessary even after authority is withdrawn. |
+| GitHub CLI workload | One CLI child can perform multiple HTTP/GraphQL exchanges. Current authorization occurs at its start; Loom does not inspect every internal CLI retry or pagination step.                                               | Claim at most one bound logical command, never one HTTP request or exactly-once write. One-time eligibility for a real CLI adapter stays unsupported until retry/redirect/idempotency behavior is controlled or explicitly accepted.       |
+
+`GitHubTransport.test.ts` uses the real transport with an in-memory HTTP client. Its synthetic
+provider records a successful token issuance, then loses the body or returns invalid expiry.
+The service returns invalid-response after one mint, without retrying or inventing a releasable
+session. A deliberate second caller invocation issues another token: the first failure is not
+proof that nothing happened. With no returned token, targeted cleanup cannot run. This does not
+claim to revoke a real unknown token or establish how long one would remain active.
+`VaultApprovalRetry.test.ts` covers both SSH and Git-over-SSH timeout responses with synthetic
+transports: each explicit invocation reaches transport once, and recovery requires outcome
+review with no new execution or workload session.
+
+A cleanup request is an effect, but not another workload start. It must be restricted to the
+known session already created by that attempt, never reacquire credentials, refund intent or
+run another workload. Failure to revoke is reported as remaining exposure until provider expiry;
+this is separate from the workload's completion classification. A lost issuance response is
+unknown exposure even when the workload definitely never started. Journal version 1 has one
+bounded outcome classification and cannot express a durable provider-cleanup obligation; no
+cleanup ledger/field/path is introduced here. Selecting such persistence would need separate
+review before any live one-time design relies on restart-safe cleanup.
+
+These tests prove existing timed-service behavior with synthetic external boundaries only.
+They do not test the real SSH/Git/gh binaries, signing callbacks on a host, live GitHub, hidden
+provider retries, cleanup across crash or one-time intent enforcement. The adapter-start unit
+remains a design recommendation. All gates, schemas, paths and rights remain unchanged.
 
 ### Implemented internal acquisition contract
 
@@ -558,3 +834,63 @@ its consumed observation supplies that permission. No public MCP/RPC/CLI, queue 
 provider continuation calls acquisition in this milestone. Existing timed grants remain timed.
 Access-policy stays format 3 and journal body version 1 at the same existing path. Old runtimes
 cannot recover a handle; restart/downgrade retains only reservation evidence requiring review.
+
+### Internal adapter admission and revalidation
+
+`OperationAdmission.admit` consumes the instance-local acquisition through its single-use check,
+then decodes and snapshots the proposed operation. The request ID and canonical digest must
+match the acquired entry. Current evaluator access, request revision and reserved journal
+state/revision/digest are checked before and after adapter metadata observations. Both metadata
+passes must agree on execution context. A changed proposal, stale authority, reconciled
+reservation, changed context or interrupted check refuses; once ownership is known, failed
+admission attempts reconciliation to unknown. It never refunds the acquisition.
+
+For SSH and Git-over-SSH, `VaultLaunch.admission` checks the current active key/version, exact
+saved destination and pinned host key, configured local broker identity, environment/machine
+binding, enrolled public key, online lease and workload authority. Git also derives the current
+working directory from the thread/project and requires an absolute path. `VaultWorkloads` uses
+the same live-workload and broker checks as normal opening, without opening a session, creating
+a key, signing a challenge or checking session capacity. A schema-encoded metadata stamp binds
+run, project, provider/worktree context, broker identity, destination, key version and Git cwd.
+The stamp is a local comparison value, not a credential or execution capability.
+
+For GitHub API proposals, `VaultGitHub.admission` shares normal run-context and target validation:
+active connection/version, stored repository allowlist, current grant, run/project/provider and
+worktree identity. Its observe mode uses the same evaluator through read-only explanation;
+normal execution keeps its existing audited authorization mode. Stored connector metadata is
+decoded inside the existing service, but no credential value leaves it. Neither App signing/
+installation-token minting nor token validation, CLI invocation or provider/API probing occurs.
+The networked GitHub readiness method is deliberately not used. Account/provider identity,
+credential expiry and remote permissions remain unverified until a separately authorized live
+adapter path performs them.
+
+Successful admission performs no persistent write and creates no workload session. Existing
+execution services retain their normal proof, signing, destination, account, authorization,
+provider and outcome checks. Admission does not claim that capacity, tool availability, file
+existence, Git repository state or live access is ready. The internal result carries only adapter,
+operation digest, observation time, local-metadata-only/required-live-validation labels and three
+literal-false gates. It contains neither a handle nor a transferable permit. No public MCP, RPC,
+CLI, provider continuation or worker calls this service. Policy/journal formats, paths and rights
+are unchanged. The service layer reuses the same journal/launch instances; startup performs no
+admission. Web/mobile/desktop and remote interaction acceptance are not inferred from these
+internal checks.
+
+### Admission result loss and recovery
+
+Successful local admission leaves the durable entry reserved; it must not record execution
+completion because no operation ran. The consumed handle is gone, and the result is neither a
+continuation nor a replacement handle. Reconstructing journal/admission services creates no
+recovery opportunity. A later acquire observes reserved evidence, reconciles unknown and
+refuses even if the earlier operation probably never started. A serialized admission result
+cannot authorize metadata checking or execution. Concurrent attempts with one handle admit at
+most one caller; a refused duplicate must not invalidate the owner's still-running metadata
+observation.
+
+Backend outage leaves approval review independent. Restoring storage cannot restore a handle
+or refund a reservation. Aged journal evidence stays unavailable while a younger retained
+request may still appear approved; absence does not prove non-execution or permit recreation.
+Authority withdrawn after a successful observation remains authoritative on reconstruction.
+Interrupted metadata checks reconcile owned reservations without opening a workload or invoking
+an external transport. The synthetic tests reconstruct only journal/admission instances over
+retained storage and existing synthetic dependencies; they do not claim a full host/provider
+restart or live-adapter acceptance.

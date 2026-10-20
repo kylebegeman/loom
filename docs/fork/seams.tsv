@@ -35,6 +35,9 @@ apps/web/src/components/settings/KeybindingsSettings.logic.ts	ext-keybindings	3
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
+apps/server/src/auth/utils.ts	secure-session-cookies	2
+apps/server/src/auth/http.ts	secure-session-cookies	6
+apps/server/src/auth/http.test.ts	secure-session-cookies	3
 packages/contracts/src/settings.ts	switchboard	2
 apps/server/src/provider/codexLaunchArgs.ts	switchboard	5
 apps/server/src/provider/CodexProvider.ts	switchboard	4
@@ -65,7 +68,7 @@ packages/client-runtime/src/state/usage.test.ts	ext-core	1
 apps/server/src/processRunner.ts	pcb-preview	2
 apps/server/src/processRunner.test.ts	pcb-preview	2
 packages/client-runtime/src/state/commandPermissions.test.ts	pcb-preview	3
-apps/server/src/binCli.ts	ext-cli	2
+apps/server/src/binCli.ts	ext-cli	3
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	compaction-recovery	2
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	compaction-recovery	1
 packages/client-runtime/src/work-log/presentation.ts	compaction-recovery	1
@@ -159,6 +162,7 @@ apps/mobile/src/state/remote-environment-projections.test.ts	computer-naming	1
 apps/mobile/src/state/remote-environment-projections.ts	computer-naming	4
 apps/server/src/environment/ServerEnvironment.ts	computer-naming	5
 apps/server/src/ws.ts	computer-naming	3
+apps/server/src/ws.test.ts	computer-naming	2
 apps/web/src/cloud/publicConfig.ts	connect-compat	2
 apps/web/src/components/settings/ConnectionsSettings.tsx	fleet-connections	34
 apps/web/src/components/settings/settingsSearch.ts	fleet-connections	6
@@ -258,7 +262,9 @@ apps/mobile/src/features/home/HomeRouteScreen.tsx	library	11
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	3
 apps/mobile/src/features/home/HomeScreen.tsx	library	8
 apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
-apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	3
+apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
+apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
+apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	8
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	2
@@ -291,7 +297,7 @@ apps/server/src/storageCleanup.ts	project-checkout-management	1
 apps/server/src/storageCleanup.ts	project-lifecycle	12
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	7
-apps/web/src/components/CommandPalette.tsx	fleet-connections	31
+apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
 apps/web/src/components/Sidebar.tsx	library-projects	22
 apps/web/src/components/Sidebar.tsx	workspace-handoff	4

@@ -623,8 +623,8 @@ export const make = Effect.gen(function* () {
   });
 
   /** Keeps batch views current from run changes, and stops batches whose bot goes away. */
-  const onBotsChange = (change: BotsChange) =>
-    Effect.gen(function* () {
+  const onBotsChange = Effect.fn("BotBatches.onBotsChange")(
+    function* (change: BotsChange) {
       switch (change._tag) {
         case "run": {
           const batchId = change.run.batchId;
@@ -643,7 +643,9 @@ export const make = Effect.gen(function* () {
         case "bot-deleted":
           return yield* cancelBotBatches(change.botId, "The bot was deleted.");
       }
-    }).pipe(Effect.catchCause((cause) => Effect.logWarning("Bot batch update failed", { cause })));
+    },
+    Effect.catchCause((cause) => Effect.logWarning("Bot batch update failed", { cause })),
+  );
 
   yield* bots.changes.pipe(Stream.runForEach(onBotsChange), Effect.forkIn(serviceScope));
 

@@ -544,15 +544,20 @@ export const make = Effect.gen(function* () {
 
   /** Refuses the start when the environment already runs as many pipelines as it allows. */
   const underActiveLimit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.gen(function* () {
-      const active = yield* store.activeRunCount().pipe(Effect.catch(storageError));
-      if (active >= BOTS_MAX_ACTIVE_PIPELINES)
-        return yield* fail(
-          "invalid",
-          `${active} pipeline runs are already running. Wait for one to finish.`,
-        );
-      return yield* effect;
-    }).pipe(startPermit.withPermits(1));
+    store.activeRunCount().pipe(
+      Effect.catch(storageError),
+      Effect.flatMap((active): Effect.Effect<A, E | BotsError, R> =>
+        active >= BOTS_MAX_ACTIVE_PIPELINES
+          ? Effect.fail(
+              fail(
+                "invalid",
+                `${active} pipeline runs are already running. Wait for one to finish.`,
+              ),
+            )
+          : effect,
+      ),
+      startPermit.withPermits(1),
+    );
 
   /** Each step's bot as the run will use it, refusing any the caller could not run itself. */
   const resolveBots = Effect.fnUntraced(function* (pipeline: BotPipeline, caller: BotCaller) {

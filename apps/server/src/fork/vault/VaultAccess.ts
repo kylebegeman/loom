@@ -106,8 +106,10 @@ const EMPTY: Policy = {
 };
 const UNKNOWN = [
   "External credential copies and provider-side revocation are not tracked.",
-  "Automatic workload launch, profile bindings and external consumers are not tracked.",
+  "Automatic workload launch and external consumers are not verified by this policy observation.",
 ];
+
+const PREVIEW_UNKNOWN = [...UNKNOWN, "Profile bindings are not tracked by this change preview."];
 
 const RETRY_REPAIRS = {
   "refresh-request":
@@ -147,6 +149,14 @@ export class VaultAccess extends Context.Service<
       requester: ThreadId,
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultApprovalRequest, VaultError>;
+    readonly approvalContext: (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: string;
+      readonly itemId: string;
+      readonly itemVersion: number;
+      readonly runId: string | null;
+      readonly restrictMetadata: boolean;
+    }) => Effect.Effect<ReadonlyArray<VaultApprovalRequest>, VaultError>;
     readonly approvalInbox: Effect.Effect<VaultApprovalInbox, VaultError>;
     readonly approvalCreate: (
       input: VaultApprovalCreate,
@@ -455,35 +465,35 @@ const make = Effect.gen(function* () {
     (policy.approvals ?? []).filter(
       (r) => now < r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS,
     );
-  const trimApprovals = (policy: Policy, now: number) =>
-    Effect.gen(function* () {
-      const approvals = retainedApprovals(policy, now);
-      const removed = (policy.approvals?.length ?? 0) - approvals.length;
-      if (removed === 0) return { policy, removed };
-      const discarded = new Set(
-        (policy.approvals ?? [])
-          .filter((r) => now >= r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS)
-          .map((r) => r.request.grantId),
-      );
-      // Never discard version/run binding for a live grant, even if an inconsistent ledger claims it is old.
-      if (
-        policy.grants.some(
-          (g) =>
-            discarded.has(g.definition.id) &&
-            (g.definition.expiresAt === null || now < g.definition.expiresAt),
-        )
+  // Untraced: pure policy trimming inside callers' retry loops, covered by their spans.
+  const trimApprovals = Effect.fnUntraced(function* (policy: Policy, now: number) {
+    const approvals = retainedApprovals(policy, now);
+    const removed = (policy.approvals?.length ?? 0) - approvals.length;
+    if (removed === 0) return { policy, removed };
+    const discarded = new Set(
+      (policy.approvals ?? [])
+        .filter((r) => now >= r.request.requestedAt + VAULT_APPROVAL_RETENTION_MS)
+        .map((r) => r.request.grantId),
+    );
+    // Never discard version/run binding for a live grant, even if an inconsistent ledger claims it is old.
+    if (
+      policy.grants.some(
+        (g) =>
+          discarded.has(g.definition.id) &&
+          (g.definition.expiresAt === null || now < g.definition.expiresAt),
       )
-        return yield* new VaultError({ reason: "invalid-response" });
-      return {
-        removed,
-        policy: {
-          ...policy,
-          revision: policy.revision + 1,
-          approvals,
-          grants: policy.grants.filter((g) => !discarded.has(g.definition.id)),
-        },
-      };
-    });
+    )
+      return yield* new VaultError({ reason: "invalid-response" });
+    return {
+      removed,
+      policy: {
+        ...policy,
+        revision: policy.revision + 1,
+        approvals,
+        grants: policy.grants.filter((g) => !discarded.has(g.definition.id)),
+      },
+    };
+  });
   const approvalRetain = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
@@ -919,8 +929,8 @@ const make = Effect.gen(function* () {
     approvalPrepareRetry,
     approvalRetain,
     approvalStatus,
-    approvalCancel: (input, requester, authorize) =>
-      Effect.gen(function* () {
+    approvalCancel: Effect.fn("VaultAccess.approvalCancel")(
+      function* (input, requester, authorize) {
         if (!isApprovalCancel(input)) return yield* new VaultError({ reason: "invalid-input" });
         return yield* approvalChange(
           {
@@ -935,9 +945,30 @@ const make = Effect.gen(function* () {
           authorize,
           requester,
         );
-      }),
+      },
+    ),
     approvalCreate,
     approvalChange,
+    approvalContext: Effect.fn("VaultAccess.approvalContext")(function* (input) {
+      const { policy } = yield* load(),
+        now = yield* Clock.currentTimeMillis;
+      // This diagnostic path must not resolve context for other requesters or unrelated inbox rows.
+      return retainedApprovals(policy, now)
+        .filter(
+          ({ request: r }) =>
+            r.threadId === input.threadId &&
+            r.projectId === input.projectId &&
+            r.itemId === input.itemId &&
+            (!input.restrictMetadata || r.requestedBy === `thread:${input.threadId}`),
+        )
+        .map(({ request }) => approvalView(request, policy, now))
+        .filter(
+          (r) =>
+            !["pending", "approved"].includes(r.state) ||
+            (r.itemVersion === input.itemVersion &&
+              (!r.waitingOperation || r.waitingOperation.runId === input.runId)),
+        );
+    }),
     approvalInbox: Effect.gen(function* () {
       const { policy } = yield* load(),
         now = yield* Clock.currentTimeMillis;
@@ -1072,7 +1103,7 @@ const make = Effect.gen(function* () {
               .concat(grant.definition.itemIds),
           ),
         ],
-        unknowns: UNKNOWN,
+        unknowns: PREVIEW_UNKNOWN,
       };
     }),
     explain: Effect.fn("VaultAccess.explain")(function* (input, restrictMetadata) {
@@ -1208,11 +1239,11 @@ const make = Effect.gen(function* () {
       const decisions: VaultAccessDecision[] = [];
       if (backend.state === "ready") {
         const { policy } = yield* load();
-        for (const requirement of input.requirements) {
+        for (const [index, requirement] of input.requirements.entries()) {
           const result = yield* decision(policy, { ...requirement, threadId: input.threadId });
           decisions.push(result.result);
           checks.push({
-            id: `grant:${requirement.itemId}:${requirement.action}`,
+            id: `grant:${requirement.itemId}:${requirement.action}:${index}`,
             state: result.result.allowed ? "passed" : "blocked",
             reason: result.result.reason,
             repair: result.result.allowed

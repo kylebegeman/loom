@@ -1,3 +1,4 @@
+import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 import { type ThreadId } from "@t3tools/contracts";
 import {
@@ -38,6 +39,10 @@ type Failure = VaultError | VaultGitHubError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
+    readonly admission: (
+      input: VaultGitHubRun,
+      threadId: ThreadId,
+    ) => Effect.Effect<string, Failure>;
     readonly info: (id: string) => Effect.Effect<VaultGitHubInfo, VaultError>;
     readonly list: (
       cursor: string | null,
@@ -153,6 +158,7 @@ const make = Effect.gen(function* () {
     input: VaultGitHubTarget,
     threadId: ThreadId,
     guard: Effect.Effect<void, VaultError> = Effect.void,
+    authorization: "audit" | "observe" = "audit",
   ) {
     const initial = yield* threads
       .getThreadShell(threadId)
@@ -176,12 +182,43 @@ const make = Effect.gen(function* () {
         thread.deletedAt
       )
         return yield* fail("denied");
-      yield* access.require(threadId, input.id, "use", vaultGitHubDestination(input.repository));
+      if (authorization === "audit") {
+        yield* access.require(threadId, input.id, "use", vaultGitHubDestination(input.repository));
+      } else {
+        const explanation = yield* access.explain({
+          threadId,
+          itemId: input.id,
+          action: "use",
+          destination: vaultGitHubDestination(input.repository),
+        });
+        if (!explanation.decision.allowed) return yield* fail("denied");
+      }
       yield* check(input);
     });
     return authorize;
   });
   return VaultGitHub.of({
+    admission: Effect.fn("VaultGitHub.admission")(function* (input, threadId) {
+      if (!isRun(input)) return yield* fail("invalid-input");
+      const authorize = yield* runAuthorization(input, threadId, Effect.void, "observe");
+      yield* authorize;
+      const record = yield* check(input);
+      const thread = yield* threads
+        .getThreadShell(threadId)
+        .pipe(Effect.mapError(() => fail("denied")));
+      yield* authorize;
+      // No session minting, CLI/API probes or provider account attestation in local admission.
+      return yield* admissionStamp([
+        record.info.account,
+        record.info.mechanism,
+        String(record.info.item.version),
+        input.repository.toLowerCase(),
+        thread?.activeRunId ?? null,
+        thread?.projectId ?? null,
+        thread?.providerInstanceId ?? null,
+        thread?.worktreePath ?? null,
+      ]);
+    }),
     info: (id) => load(id).pipe(Effect.map((r) => r.info)),
     list: Effect.fn("VaultGitHub.list")(function* (cursor) {
       const page = yield* core.list({ cursor, includeArchived: true });

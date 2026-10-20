@@ -51,6 +51,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import * as LibraryStore from "./LibraryStore.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as ServerConfig from "../../config.ts";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
@@ -293,7 +294,9 @@ const make = Effect.gen(function* () {
     if (kept) yield* store.compactThreadVersion(id, sequence, kept);
   });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
-    store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);
+    store
+      .transaction(effect)
+      .pipe(Effect.mapError(io), Effect.withSpan("LibraryService.transaction"), lock.withPermit);
   const getProject = Effect.fnUntraced(function* (projectId: string, revision?: number) {
     const saved = yield* revision === undefined
       ? store.project(projectId)
@@ -308,21 +311,36 @@ const make = Effect.gen(function* () {
     yield* LibraryTimeline.recordProjectTimeline(store, project);
     return project;
   });
-  const mutation = <A>(
+  const mutation = Effect.fn("LibraryService.mutation")(function* <A>(
     operation: string,
     requestId: string,
     encoded: Effect.Effect<string, LibraryError>,
     codec: ReturnType<typeof compileCodec<A>>,
     action: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>,
-  ) =>
-    transact(
+  ): Effect.fn.Return<A, LibraryError> {
+    // Spans carry the operation, sizes and counts, never ids or conversation text.
+    yield* Effect.annotateCurrentSpan({ "library.operation": operation });
+    if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+    // Encoding and digesting a request reads nothing saved but takes seconds for a large history
+    // batch, so it runs before the lock. Its failures are raised where the transaction raised them.
+    // Each step is synchronous, so yields between them let waiting requests run.
+    const request = yield* Effect.exit(
       Effect.gen(function* () {
-        if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+        yield* Effect.yieldNow;
         const requestBody = yield* encoded;
-        yield* validateAuthority(
-          yield* decodeFence(decodeUnknownJson(requestBody)).pipe(Effect.mapError(() => invalid())),
+        yield* Effect.yieldNow;
+        const fence = yield* decodeFence(decodeUnknownJson(requestBody)).pipe(
+          Effect.mapError(() => invalid()),
         );
-        const fingerprint = yield* digest(requestBody);
+        yield* Effect.yieldNow;
+        return { fence, fingerprint: yield* Effect.exit(digest(requestBody)) };
+      }),
+    ).pipe(Effect.withSpan("LibraryService.prepareRequest"));
+    return yield* transact(
+      Effect.gen(function* () {
+        const prepared = yield* request;
+        yield* validateAuthority(prepared.fence);
+        const fingerprint = yield* prepared.fingerprint;
         const receipt = yield* store.receipt(requestId);
         if (receipt) {
           if (receipt.operation !== operation || receipt.fingerprint !== fingerprint)
@@ -334,12 +352,14 @@ const make = Effect.gen(function* () {
         return { result, changed: true };
       }),
     ).pipe(
-      // Publish only after the transaction commits, once per new command rather than receipt replay.
+      // Publish only after the transaction commits, once per new command rather than receipt
+      // replay.
       Effect.tap(({ changed }) =>
         changed ? SubscriptionRef.update(refreshes, (revision) => revision + 1) : Effect.void,
       ),
       Effect.map(({ result }) => result),
     );
+  });
   const validateAuthority = Effect.fnUntraced(function* (input: {
     authorityId?: string | undefined;
     authorityEpoch?: number | undefined;
@@ -414,10 +434,13 @@ const make = Effect.gen(function* () {
     yield* LibraryTimeline.recordTimeline(store, LibraryTimeline.copyTimeline(old, copy));
     return copy;
   });
+  /** `prepared` is the archive's version digest when the caller took it before the lock. */
   const saveThread = Effect.fnUntraced(function* (
     archive: LibraryThreadArchive,
     environmentId: string,
+    prepared?: Effect.Effect<string, LibraryError>,
   ) {
+    const archiveDigest = prepared ?? versionDigest(archive);
     if (archive.window !== undefined) return yield* invalid();
     const { summary, projection } = archive;
     if (
@@ -453,8 +476,10 @@ const make = Effect.gen(function* () {
       )
         return yield* invalid();
     }
-    const previous = yield* store.thread(environmentId, summary.threadId);
-    const old = previous ? yield* decode(codecs.archive, previous) : null;
+    const old = yield* Effect.gen(function* () {
+      const previous = yield* store.thread(environmentId, summary.threadId);
+      return previous ? yield* decode(codecs.archive, previous) : null;
+    }).pipe(Effect.withSpan("LibraryService.readPreviousThread"));
     if (old) {
       if (
         old.summary.id !== summary.id ||
@@ -473,12 +498,12 @@ const make = Effect.gen(function* () {
       // Each sequence holds one archive. The saved conversation is compared rather than its
       // version's digest, which predates any field a later contract fills with a default.
       if (old.summary.sequence === summary.sequence) {
-        if ((yield* versionDigest(old)) !== (yield* versionDigest(archive)))
+        if ((yield* versionDigest(old)) !== (yield* archiveDigest))
           return yield* new LibraryError({ reason: "sequence-conflict" });
         return old;
       }
     }
-    const fingerprint = yield* versionDigest(archive);
+    const fingerprint = yield* archiveDigest;
     const version = yield* savedVersionDigest(summary.id, summary.sequence);
     if (version !== null && version !== fingerprint)
       return yield* new LibraryError({ reason: "sequence-conflict" });
@@ -627,43 +652,43 @@ const make = Effect.gen(function* () {
       }),
     );
   // Shared by updateProject and accepted brief proposals, so both keep the saved profile.
-  const reviseProject = (input: LibraryUpdateProjectRequest) =>
-    Effect.gen(function* () {
-      const current = yield* getProject(input.projectId);
-      if (current.revision !== input.expectedRevision)
-        return yield* new LibraryError({ reason: "revision-conflict" });
-      if (!validLibraryResources(input.resources)) return yield* invalid();
-      // Omitted keeps the saved color and profile so older clients never clear them; null
-      // returns the color to automatic and removes the profile.
-      const { color: savedColor, profile: savedProfile, ...rest } = current;
-      const color = input.color === undefined ? savedColor : (input.color ?? undefined);
-      const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
-      // Only what this save adds is checked, so a profile saved under older rules still
-      // survives an unrelated edit or being resent unchanged.
-      if (input.profile) {
-        const unknownTools = libraryProfileAddedUnknownTools(input.profile, savedProfile);
-        if (unknownTools.length)
-          return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
-        const secretField = libraryProfileSecretValueField(input.profile, savedProfile);
-        if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
-      }
-      const next = {
-        ...rest,
-        ...(color ? { color } : {}),
-        ...(profile ? { profile } : {}),
-        title: input.title.trim(),
-        brief: input.brief,
-        resources: input.resources,
-      };
-      // An edit that changes nothing keeps its revision, so conversations stay current.
-      if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
-        return current;
-      return yield* putProject({
-        ...next,
-        revision: current.revision + 1,
-        updatedAt: yield* now,
-      });
+  // Untraced like the other catalog steps: it runs inside the calling request's RPC span.
+  const reviseProject = Effect.fnUntraced(function* (input: LibraryUpdateProjectRequest) {
+    const current = yield* getProject(input.projectId);
+    if (current.revision !== input.expectedRevision)
+      return yield* new LibraryError({ reason: "revision-conflict" });
+    if (!validLibraryResources(input.resources)) return yield* invalid();
+    // Omitted keeps the saved color and profile so older clients never clear them; null
+    // returns the color to automatic and removes the profile.
+    const { color: savedColor, profile: savedProfile, ...rest } = current;
+    const color = input.color === undefined ? savedColor : (input.color ?? undefined);
+    const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
+    // Only what this save adds is checked, so a profile saved under older rules still
+    // survives an unrelated edit or being resent unchanged.
+    if (input.profile) {
+      const unknownTools = libraryProfileAddedUnknownTools(input.profile, savedProfile);
+      if (unknownTools.length)
+        return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
+      const secretField = libraryProfileSecretValueField(input.profile, savedProfile);
+      if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
+    }
+    const next = {
+      ...rest,
+      ...(color ? { color } : {}),
+      ...(profile ? { profile } : {}),
+      title: input.title.trim(),
+      brief: input.brief,
+      resources: input.resources,
+    };
+    // An edit that changes nothing keeps its revision, so conversations stay current.
+    if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
+      return current;
+    return yield* putProject({
+      ...next,
+      revision: current.revision + 1,
+      updatedAt: yield* now,
     });
+  });
   const updateProject = (input: LibraryUpdateProjectRequest) =>
     mutation(
       "update-project",
@@ -745,8 +770,37 @@ const make = Effect.gen(function* () {
         Effect.map((archive) => archive.summary),
       ),
     );
-  const ingestHistory = (input: LibraryIngestHistoryRequest) =>
-    mutation(
+  const ingestHistory = Effect.fn("LibraryService.ingestHistory")(function* (
+    input: LibraryIngestHistoryRequest,
+  ) {
+    yield* Effect.annotateCurrentSpan({ "library.entries": input.entries.length });
+    const ingestDigest = (thread: LibraryThreadArchive) =>
+      encode(codecs.archive, thread).pipe(Effect.flatMap(digest));
+    // A computer resends a batch whose response it lost, and the receipt answers it without the
+    // entries, so their digests are skipped once one exists. The check uses the reader, so it does
+    // not wait behind a write. Skipped digests are taken in the transaction if it needs them.
+    const replayed =
+      !isAuthority ||
+      (yield* store.transaction(store.receipt(input.requestId)).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.orElseSucceed(() => null),
+      )) !== null;
+    // Entry digests read nothing saved either, so they are taken before the lock with the
+    // request's, and a failure is raised at the entry that raised it before.
+    const entries = replayed
+      ? input.entries.map((entry) => ({
+          entry,
+          ingested: ingestDigest(entry.thread),
+          version: undefined,
+        }))
+      : yield* Effect.forEach(input.entries, (entry) =>
+          Effect.all({
+            entry: Effect.succeed(entry),
+            ingested: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(ingestDigest(entry.thread)))),
+            version: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread)))),
+          }),
+        ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
+    return yield* mutation(
       "ingest-history",
       input.requestId,
       encode(codecs.ingest, input),
@@ -756,10 +810,10 @@ const make = Effect.gen(function* () {
         let cursor = yield* store.cursor(input.sourceEnvironmentId, input.journalId);
         if (input.fromSequence > cursor) return yield* new LibraryError({ reason: "sequence-gap" });
         let applied = 0;
-        for (const [index, entry] of input.entries.entries()) {
+        for (const [index, { entry, ingested, version }] of entries.entries()) {
           if (entry.sequence !== input.fromSequence + index + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          const fingerprint = yield* digest(yield* encode(codecs.archive, entry.thread));
+          const fingerprint = yield* ingested;
           if (entry.sequence <= cursor) {
             if (
               (yield* store.ingestedDigest(
@@ -773,7 +827,7 @@ const make = Effect.gen(function* () {
           }
           if (entry.sequence !== cursor + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          yield* saveThread(entry.thread, input.sourceEnvironmentId);
+          yield* saveThread(entry.thread, input.sourceEnvironmentId, version);
           yield* store.putIngestedDigest(
             input.sourceEnvironmentId,
             input.journalId,
@@ -798,6 +852,7 @@ const make = Effect.gen(function* () {
         };
       }),
     );
+  });
   const verifyProof = Effect.fnUntraced(function* (
     input: LibraryImportShadowRequest,
     proof: string,

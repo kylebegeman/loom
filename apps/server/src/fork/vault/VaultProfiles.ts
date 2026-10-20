@@ -6,7 +6,12 @@ import {
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import { vaultProfileFromRequirements } from "@t3tools/contracts/fork";
-import { type ProjectId, ThreadId, RunId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2ThreadShell,
+  type ProjectId,
+  ThreadId,
+  RunId,
+} from "@t3tools/contracts";
 import {
   VaultError,
   VaultSshError,
@@ -42,6 +47,9 @@ type Failure = VaultError | VaultSshError | VaultWorkloadError;
 export class VaultProfiles extends Context.Service<
   VaultProfiles,
   {
+    readonly currentPin: (
+      threadId: ThreadId,
+    ) => Effect.Effect<VaultProfileResolution | null, VaultError>;
     readonly pins: (input: VaultProfilePinList) => Effect.Effect<VaultProfilePinPage, VaultError>;
     readonly retirePin: (
       input: VaultProfilePinRetire,
@@ -135,7 +143,7 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => fail("unavailable")),
     );
-  // _operations/ is reserved; any future enumeration of profiles/ must skip it.
+  // _operations/ and _test_accounts/ are reserved; future profiles/ enumeration must skip both.
   const prefix = `environments/${yield* hash(environmentId)}/profiles`;
   const project = Effect.fnUntraced(function* (id: ProjectId) {
     const found = yield* projects.get(id).pipe(Effect.mapError(() => fail("unavailable")));
@@ -281,6 +289,34 @@ const make = Effect.gen(function* () {
     );
     return { ready: bindings.every((b) => b.state === "ready"), bindings };
   });
+  const readRunPin = Effect.fnUntraced(function* (
+    root: string,
+    thread: OrchestrationV2ThreadShell,
+  ) {
+    if (!thread.activeRunId) return null;
+    const pinPath =
+      root +
+      "/runs/" +
+      (yield* hash(
+        yield* encodeRunKey({ threadId: thread.id, runId: thread.activeRunId }).pipe(
+          Effect.mapError(() => fail("invalid-input")),
+        ),
+      ));
+    const stored = yield* store.read(pinPath);
+    if (!stored) return null;
+    const retired = decodeRetiredPin(Redacted.value(stored.value));
+    if (Option.isSome(retired)) return yield* fail("denied");
+    const decoded = decodePin(Redacted.value(stored.value));
+    if (
+      Option.isNone(decoded) ||
+      decoded.value.environmentId !== environmentId ||
+      decoded.value.threadId !== thread.id ||
+      decoded.value.runId !== thread.activeRunId ||
+      decoded.value.resolution.projectId !== thread.projectId
+    )
+      return yield* fail("invalid-response");
+    return decoded.value.resolution;
+  });
   const resolve = Effect.fn("VaultProfiles.resolve")(function* (
     threadId: ThreadId,
     requestedId: string | null,
@@ -298,22 +334,7 @@ const make = Effect.gen(function* () {
           Effect.mapError(() => fail("invalid-input")),
         ),
       ));
-    const readPin = Effect.gen(function* () {
-      const stored = yield* store.read(pinPath);
-      if (!stored) return null;
-      const retired = decodeRetiredPin(Redacted.value(stored.value));
-      if (Option.isSome(retired)) return yield* fail("denied");
-      const decoded = decodePin(Redacted.value(stored.value));
-      if (
-        Option.isNone(decoded) ||
-        decoded.value.environmentId !== environmentId ||
-        decoded.value.threadId !== threadId ||
-        decoded.value.runId !== thread.activeRunId ||
-        decoded.value.resolution.projectId !== thread.projectId
-      )
-        return yield* fail("invalid-response");
-      return decoded.value.resolution;
-    });
+    const readPin = readRunPin(registry.root, thread);
     let resolution = yield* readPin;
     if (resolution && requestedId && requestedId !== resolution.profileId)
       return yield* fail("conflict");
@@ -578,6 +599,10 @@ const make = Effect.gen(function* () {
         loaded.revision,
       );
       return snapshot(input.projectId, { ...loaded, revision, value });
+    }),
+    currentPin: Effect.fn("VaultProfiles.currentPin")(function* (threadId) {
+      const thread = yield* threadOf(threadId);
+      return yield* readRunPin(yield* project(thread.projectId), thread);
     }),
     resolve: (threadId, profileId) => resolve(threadId, profileId),
     prepare: (threadId, profileId, version, runId) => resolve(threadId, profileId, version, runId),

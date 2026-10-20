@@ -57,25 +57,24 @@ const json = (body: unknown, status = 200) =>
   HttpServerResponse.jsonUnsafe(body, { status, headers: NO_STORE });
 const done = HttpServerResponse.empty({ status: 204, headers: NO_STORE });
 
-const readBody = <A>(
+const readBody = Effect.fn("botLibraryHttp.readBody")(function* <A>(
   request: HttpServerRequest.HttpServerRequest,
   maxBytes: number,
   decode: (text: string) => Effect.Effect<A, Schema.SchemaError>,
-) =>
-  Effect.gen(function* () {
-    const length = request.headers["content-length"];
-    if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
-      return yield* new BotBodyTooLarge();
-    const text = yield* request.text.pipe(
-      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
-      Effect.mapError(() => new BotBodyTooLarge()),
-    );
-    return yield* decode(text).pipe(
-      Effect.mapError(
-        () => new BotLibraryError({ reason: "invalid", message: "The request is malformed." }),
-      ),
-    );
-  });
+) {
+  const length = request.headers["content-length"];
+  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
+    return yield* new BotBodyTooLarge();
+  const text = yield* request.text.pipe(
+    Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
+    Effect.mapError(() => new BotBodyTooLarge()),
+  );
+  return yield* decode(text).pipe(
+    Effect.mapError(
+      () => new BotLibraryError({ reason: "invalid", message: "The request is malformed." }),
+    ),
+  );
+});
 
 type BotHandler = (
   library: BotLibraryService["Service"],

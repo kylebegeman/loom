@@ -42,26 +42,25 @@ class PageBodyTooLarge extends Schema.TaggedError<PageBodyTooLarge>()("PageBodyT
 const json = (body: unknown, status = 200) =>
   HttpServerResponse.jsonUnsafe(body, { status, headers: NO_STORE });
 
-const readBody = <A>(
+const readBody = Effect.fn("PreviewPagesLibraryHttp.readBody")(function* <A>(
   request: HttpServerRequest.HttpServerRequest,
   maxBytes: number,
   decode: (text: string) => Effect.Effect<A, Schema.SchemaError>,
-) =>
-  Effect.gen(function* () {
-    const length = request.headers["content-length"];
-    // Checked before reading, so an oversized upload is refused without being buffered.
-    if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
-      return yield* new PageBodyTooLarge();
-    const text = yield* request.text.pipe(
-      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
-      Effect.mapError(() => new PageBodyTooLarge()),
-    );
-    return yield* decode(text).pipe(
-      Effect.mapError(
-        () => new PreviewPagesError({ reason: "invalid", message: "The request is malformed." }),
-      ),
-    );
-  });
+) {
+  const length = request.headers["content-length"];
+  // Checked before reading, so an oversized upload is refused without being buffered.
+  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
+    return yield* new PageBodyTooLarge();
+  const text = yield* request.text.pipe(
+    Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
+    Effect.mapError(() => new PageBodyTooLarge()),
+  );
+  return yield* decode(text).pipe(
+    Effect.mapError(
+      () => new PreviewPagesError({ reason: "invalid", message: "The request is malformed." }),
+    ),
+  );
+});
 
 type PageHandler = (
   pages: PageLibraryService["Service"],

@@ -56,8 +56,8 @@ export const handleStoredEvent = Effect.fnUntraced(function* (
  * fire. The first start reads history once to learn pull request state; a trigger never fires for
  * an event from before it was created.
  */
-const follow = (triggers: BotTriggers["Service"], threads: Threads, eventType: WatchedEvent) =>
-  Effect.gen(function* () {
+const follow = Effect.fn("BotTriggerReactor.follow")(
+  function* (triggers: BotTriggers["Service"], threads: Threads, eventType: WatchedEvent) {
     const afterSequence = (yield* triggers.store.getCursor(eventType)) ?? 0;
     // The bounded stream can drop a slow reader; the cursor makes resubscribing lossless.
     yield* threads.streamStoredEventsFrom({ afterSequence, eventType }).pipe(
@@ -68,13 +68,16 @@ const follow = (triggers: BotTriggers["Service"], threads: Threads, eventType: W
         ),
       ),
     );
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("Bot trigger stream failed; resubscribing", { eventType, cause }),
+  },
+  (effect, _triggers, _threads, eventType) =>
+    effect.pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Bot trigger stream failed; resubscribing", { eventType, cause }),
+      ),
+      Effect.andThen(Effect.sleep(RESUBSCRIBE_AFTER)),
+      Effect.forever,
     ),
-    Effect.andThen(Effect.sleep(RESUBSCRIBE_AFTER)),
-    Effect.forever,
-  );
+);
 
 export const BotTriggerReactorLive = Layer.effectDiscard(
   Effect.gen(function* () {

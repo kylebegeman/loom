@@ -477,8 +477,8 @@ export const make = Effect.gen(function* () {
    * Fires `stored` for `event` once per event key. Returns null when this key already fired.
    * The firing row is written first, so a crash mid-firing never starts a second run.
    */
-  const fireStored = (stored: StoredTrigger, event: TriggerEvent, test: boolean) =>
-    Effect.gen(function* () {
+  const fireStored = Effect.fn("BotTriggers.fireStored")(
+    function* (stored: StoredTrigger, event: TriggerEvent, test: boolean) {
       const { trigger } = stored;
       const firedAt = yield* nowIso;
       const pending: BotTriggerFiring = {
@@ -506,7 +506,9 @@ export const make = Effect.gen(function* () {
       }
       yield* publish({ _tag: "firing", firing });
       return firing;
-    }).pipe(fireLock.withPermits(1));
+    },
+    (effect) => fireLock.withPermits(1)(effect),
+  );
 
   /** Fires every enabled trigger whose event and filters match. Used by the event reactor. */
   const handleEvent = Effect.fn("BotTriggers.handleEvent")(function* (event: TriggerEvent) {

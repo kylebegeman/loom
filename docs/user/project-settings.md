@@ -184,8 +184,11 @@ computer the same way, but mobile does not name Mini workers.
 
 Saved projects and conversation history remain readable when a computer is offline.
 Conversation history shows when it was last saved to the Library; work that has not uploaded
-may be missing. Open saved attachments from the Library, and use **Save pending history**
-when newer work is waiting to upload. A disconnected Library keeps its selected identity and cached records, but
+may be missing. Very long conversations upload less often in the background. Open saved
+attachments from the Library, and use **Save pending history** to upload newer work now. A
+conversation too large for this computer's upload storage keeps waiting, and **Save pending
+history** says so.
+A disconnected Library keeps its selected identity and cached records, but
 must reconnect before you can save changes. It never silently switches to another server.
 
 ## Computer folders and earlier work
@@ -239,6 +242,9 @@ ones across your connected environments. Use the settings filter to narrow the
 list by environment or project. Each task runs on the environment you choose,
 using its project, model, and workspace settings. Fixed-time schedules use that
 environment's time zone, which may differ from your phone's.
+
+Deleting a thread also deletes tasks that post into that thread. Tasks that start
+a new thread on each run survive deletion of their previous threads.
 
 You can edit, pause, resume, run immediately, or delete a task from the list.
 Webhook tasks only run when their URL is called, so they can't be run

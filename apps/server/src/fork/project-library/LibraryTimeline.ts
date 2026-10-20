@@ -343,11 +343,11 @@ const decodeSavedThread = Schema.decodeUnknownOption(
 );
 
 /** Appends entries inside the caller's Library transaction. */
-export const recordTimeline = (
+export const recordTimeline = Effect.fn("LibraryTimeline.recordTimeline")(function* (
   store: LibraryStore.LibraryStore["Service"],
   drafts: ReadonlyArray<LibraryTimelineDraft>,
-) =>
-  Effect.forEach(
+) {
+  yield* Effect.forEach(
     drafts,
     (draft) =>
       store.appendEvent(
@@ -358,6 +358,7 @@ export const recordTimeline = (
       ),
     { discard: true },
   );
+});
 
 /** Records a project save, comparing it with the revision it replaces. */
 export const recordProjectTimeline = Effect.fnUntraced(function* (

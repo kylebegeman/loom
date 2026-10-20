@@ -153,6 +153,9 @@ it.layer(layerTest)("CodexDriver with Switchboard routing", (it) => {
                     case "skills/list":
                       result = { data: [] };
                       break;
+                    case "config/read":
+                      result = { config: {}, origins: {}, layers: null };
+                      break;
                     case "model/list":
                       result = {
                         data: [

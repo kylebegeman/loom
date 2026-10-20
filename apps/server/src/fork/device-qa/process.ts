@@ -112,61 +112,63 @@ export const spawnChild = (input: {
  * Sends `signal`, then SIGKILL when the process is still running after `graceMs`. Returns its
  * exit code, null when it had to be killed.
  */
-export const stopChild = (child: ChildProcess, signal: NodeJS.Signals, graceMs: number) =>
-  Effect.gen(function* () {
-    child.signal(signal);
-    const exit = yield* child.exit.pipe(Effect.timeoutOption(`${graceMs} millis`));
-    if (Option.isSome(exit)) return exit.value;
-    child.signal("SIGKILL");
-    yield* child.exit;
-    return null;
-  });
+export const stopChild = Effect.fn("DeviceQaProcess.stopChild")(function* (
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+  graceMs: number,
+) {
+  child.signal(signal);
+  const exit = yield* child.exit.pipe(Effect.timeoutOption(`${graceMs} millis`));
+  if (Option.isSome(exit)) return exit.value;
+  child.signal("SIGKILL");
+  yield* child.exit;
+  return null;
+});
 
 /** Runs a command with stdout written to `file` as bytes (`adb exec-out screencap`). */
-export const execToFile = (input: {
+export const execToFile = Effect.fn("DeviceQaProcess.execToFile")(function* (input: {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly file: string;
   readonly env: NodeJS.ProcessEnv;
   readonly timeoutMs: number;
-}) =>
-  Effect.gen(function* () {
-    const fd = yield* Effect.promise(() =>
-      NodeFS.promises.open(input.file, "w").then(
-        (handle) => handle,
-        () => null,
-      ),
-    );
-    if (fd === null) return null;
-    let stderr = "";
-    const child = yield* Effect.sync(() =>
-      NodeChildProcess.spawn(input.command, [...input.args], {
-        env: input.env,
-        stdio: ["ignore", fd.fd, "pipe"],
-        shell: false,
-      }),
-    );
-    child.stderr?.on("data", (chunk: Buffer) => {
-      if (stderr.length < 4000) stderr += chunk.toString("utf8");
-    });
-    const exited = new Promise<number | null>((resolve) => {
-      child.once("error", (cause) => {
-        stderr += cause.message;
-        resolve(null);
-      });
-      child.once("close", (code) => resolve(code));
-    });
-    const code = yield* Effect.promise(() => exited).pipe(
-      Effect.timeoutOption(`${input.timeoutMs} millis`),
-    );
-    if (Option.isNone(code)) {
-      child.kill("SIGKILL");
-      yield* Effect.promise(() => exited);
-    }
-    yield* Effect.promise(() => fd.close().catch(() => undefined));
-    return {
-      code: Option.isSome(code) ? code.value : null,
-      stdout: "",
-      stderr,
-    } satisfies ExecResult;
+}) {
+  const fd = yield* Effect.promise(() =>
+    NodeFS.promises.open(input.file, "w").then(
+      (handle) => handle,
+      () => null,
+    ),
+  );
+  if (fd === null) return null;
+  let stderr = "";
+  const child = yield* Effect.sync(() =>
+    NodeChildProcess.spawn(input.command, [...input.args], {
+      env: input.env,
+      stdio: ["ignore", fd.fd, "pipe"],
+      shell: false,
+    }),
+  );
+  child.stderr?.on("data", (chunk: Buffer) => {
+    if (stderr.length < 4000) stderr += chunk.toString("utf8");
   });
+  const exited = new Promise<number | null>((resolve) => {
+    child.once("error", (cause) => {
+      stderr += cause.message;
+      resolve(null);
+    });
+    child.once("close", (code) => resolve(code));
+  });
+  const code = yield* Effect.promise(() => exited).pipe(
+    Effect.timeoutOption(`${input.timeoutMs} millis`),
+  );
+  if (Option.isNone(code)) {
+    child.kill("SIGKILL");
+    yield* Effect.promise(() => exited);
+  }
+  yield* Effect.promise(() => fd.close().catch(() => undefined));
+  return {
+    code: Option.isSome(code) ? code.value : null,
+    stdout: "",
+    stderr,
+  } satisfies ExecResult;
+});

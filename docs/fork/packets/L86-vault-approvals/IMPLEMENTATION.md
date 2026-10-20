@@ -97,11 +97,54 @@ Copied, serialized or reconstructed handles cannot recover ownership. Every retu
 keeps false gates. No transport, continuation, worker or adapter calls this internal boundary.
 Controlled service races and the existing-policy synthetic OpenBao proof cover it.
 
-Next selected work: adapter admission and revalidation for SSH, Git-over-SSH and GitHub using
-synthetic transports, while live dispatch remains disabled. Preserve final authority/readiness
-checks and ensure neither an acquisition nor a consumed observation becomes a transferable
-permit. True one-time eligibility, cross-adapter enforcement and downgrade safety remain open
-design prerequisites before any gate can be enabled.
+Internal adapter admission and revalidation is implemented for SSH, Git-over-SSH and GitHub API
+proposals. It consumes the local handle, binds the proposal digest, compares real adapter metadata
+observations and rechecks current authority/journal state. Success writes nothing, opens no
+workload and returns only false gates plus a required-live-validation limit. SSH broker/key/cwd
+checks and GitHub repository/run checks execute locally; no command, signing, provider session
+or probe occurs. Existing execution authorization remains audited; admission uses the same
+read-only evaluator. No MCP/RPC/CLI or other dispatch surface was added.
+
+Synthetic admission recovery acceptance now covers all three adapters' interruption and lost
+results, reconstructed journal/admission services, copied results, concurrent use of one handle,
+backend outage/restoration, still-approved requests with aged evidence and withdrawal after a
+successful observation. It creates no runtime delta or new execution capability.
+
+One-time intent/evaluator and downgrade-reader design now includes real format-3 reader/writer
+counterexamples, alternate-grant bypasses and an abstract eligibility proof. Optional intent
+metadata and journal-only enforcement cannot constrain today's timed grants. A future exact
+human-reviewed intent needs mandatory entry-point enforcement and fail-closed reader/writer
+compatibility; a schema change, persisted contract and gate proposal are not selected. Backup
+rollback protection and historical-reader coverage remain explicit host-owner dependencies.
+
+The adapter-start consumption-unit review now covers pre-command token-mint effects, unknown
+provider exposure, known-session cleanup and subprocess-internal retry limits. Synthetic real
+transport counterexamples show an uncertain App mint is not retried internally, while a separate
+invocation can issue another token. SSH/Git-over-SSH recovery tests retain outcome review after
+timeout. This is test/design only; no permit, persisted intent or dispatcher is implemented.
+
+Mandatory intent boundary design now covers caller omissions, trusted destination classification,
+child/grandchild delegation and alternate service/transport entry points. A test-local model
+refuses fallback and unsupported reusable sessions/raw release; the real evaluator counterexample
+shows timed attenuation does not bind an intent budget. Environment/item-wide classification is
+a conservative future recommendation, not a selected persisted schema or changed product policy.
+The current services do not implement mandatory intent enforcement.
+
+The temporal design proof now covers classification/coverage/binding/authority changes during
+asynchronous reads, validation, handoff and callbacks, including restored-value races and lost
+ownership. It distinguishes a consumed attempt's same-owner callbacks from a new adapter start.
+The coherent generation/atomic commit is a test assumption, not a runtime primitive. The current
+services still do not enforce persisted one-time intent or its mandatory/temporal boundary.
+
+The selected bounded synthetic review is complete. No further independent synthetic L86 slice
+is selected: persistence/readers, protected-item semantics, an implementable consistency boundary,
+restart-safe cleanup and rollback protection require the named owners' decisions and real proofs.
+See [the next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff) for each owner and the
+check that permits the next step. Stop this lane after landing this test/docs slice; retain its
+worktree and unrelated result.json. Do not infer approval to persist new fields, change formats
+or enable execution/resumption/allow-once from these model results.
+Real adapter/provider/host verification remains owner-gated. True one-time eligibility,
+cross-adapter enforcement and downgrade safety remain prerequisites before any gate can open.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome
