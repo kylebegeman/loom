@@ -126,6 +126,22 @@ While runs started from the thread are queued or running, a bot chip in the comp
 counts them. Open it to see each run, cancel one, or open it on the Bots page. Bots are not
 offered in a new thread until its first message is sent.
 
+## Save a thread as a bot
+
+When a thread did a job you want again, choose **Save as bot…** from the thread's menu or its
+sidebar context menu, or run **Save this thread as a bot** from the command palette. The Bots page
+opens a new bot filled from the thread: its first message becomes the instructions, file paths and
+pull request numbers in it become inputs, and the thread's model, modes and workspace carry over.
+**Refine with model** asks a model to tidy the name, description, instructions and inputs; check its
+changes before saving. Nothing is saved until you choose **Save bot**. An input's description is
+shown as a hint under its field when the bot runs.
+
+When you open three threads with the same request in two weeks, differing only in files, numbers or
+quoted values, the Bots page suggests making it a bot. **Create** opens the same draft; **Dismiss**
+hides the suggestion, which comes back once if you keep opening that kind of thread. Find hidden
+ones under **Dismissed suggestions** and choose **Restore**. Agents draft a bot with
+`loom_bots_draft_from_thread` and read suggestions with `loom_bots_suggestions`.
+
 ## Usage and budgets
 
 The **Usage** tab lists every bot that ran in the last 24 hours, 7 days or 30 days: runs, how

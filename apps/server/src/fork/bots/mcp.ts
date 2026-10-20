@@ -7,6 +7,7 @@ import {
   BotBatchId,
   BotDefinition,
   BotDefinitionInput,
+  BotDraftResult,
   BotId,
   BotInputs,
   BotParameterName,
@@ -15,6 +16,7 @@ import {
   BotsDismissInput,
   BotsError,
   BotStarterId,
+  BotSuggestion,
   BotsRetryBatchInput,
   BotsRetryInput,
   BotsUsageResult,
@@ -27,11 +29,12 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
-import { loadCaller } from "../../mcp/threadAccess.ts";
+import { loadCaller, readThread } from "../../mcp/threadAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
+import { BotDrafts } from "./fromThread/BotDrafts.ts";
 
 /** A waiting run call returns the run as it stands after this, even if it is still going. */
 export const AGENT_RUN_WAIT_MAX_MS = 10 * 60 * 1000;
@@ -177,6 +180,20 @@ export const BotsToolkit = Toolkit.make(
     failure,
     dependencies: callerDependencies,
   }),
+  Tool.make("loom_bots_draft_from_thread", {
+    description:
+      "Draft a bot from a thread's opening request, by default this thread's. Pull request numbers and file paths become {{pr}} and {{file}} parameters, and the model, modes and workspace come from the thread. Nothing is saved: review the draft, generalize its instructions, then save it with loom_bots_define. notes explains what the draft changed.",
+    parameters: Schema.Struct({ threadId: Schema.optionalKey(ThreadId) }),
+    success: BotDraftResult,
+    failure,
+    dependencies: callerDependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_suggestions", {
+    description:
+      "List requests that opened three or more threads in 14 days with the same shape, the same job on different files, pull requests or values. Each is a candidate bot; draft one from its newest thread with loom_bots_draft_from_thread.",
+    success: Schema.Struct({ suggestions: Schema.Array(BotSuggestion) }),
+    failure,
+  }).annotate(Tool.Readonly, true),
 );
 
 const agentCaller = loadCaller().pipe(
@@ -327,6 +344,17 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_batch_cancel: McpToolAccess.writes((input) =>
         onHost(Effect.flatMap(BotBatches, (batches) => batches.cancel(input.batchId))),
+      ),
+      loom_bots_draft_from_thread: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          const { projection } = yield* readThread(input.threadId);
+          return yield* onHost(
+            Effect.flatMap(BotDrafts, (drafts) => drafts.draftFromThread(projection.thread.id)),
+          );
+        }),
+      ),
+      loom_bots_suggestions: McpToolAccess.reads(() =>
+        onHost(Effect.flatMap(BotDrafts, (drafts) => drafts.suggestions({}))),
       ),
     };
   }),

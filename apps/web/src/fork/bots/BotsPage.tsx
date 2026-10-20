@@ -27,6 +27,8 @@ import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
 import { BotsInbox } from "./BotsInbox";
 import { BotsUsage } from "./BotsUsage";
+import { BotFromThreadEditor } from "./fromThread/BotFromThreadEditor";
+import { BotSuggestions } from "./fromThread/BotSuggestions";
 import { botDraft } from "./draft";
 import { RunOnManyDialog } from "./RunOnManyDialog";
 import {
@@ -281,6 +283,22 @@ export function BotsPage() {
             <p role="alert" className="text-sm text-destructive-foreground">
               {actionError}
             </p>
+          ) : null}
+          {live && environmentId && host.fromThreadSupported ? (
+            <BotSuggestions
+              environmentId={environmentId}
+              canChange={canSave}
+              botChanges={botChanges}
+              pendingSuggestionId={search.suggestion ?? null}
+              onCreate={(suggestion) =>
+                go({
+                  bot: search.bot,
+                  tab: search.tab,
+                  fromThread: suggestion.threadIds[0],
+                  suggestion: suggestion.id,
+                })
+              }
+            />
           ) : null}
           {live && environmentId ? (
             <div className="grid gap-6 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
@@ -572,6 +590,20 @@ export function BotsPage() {
             setEditing(null);
             go({ bot: bot.id });
           }}
+        />
+      ) : null}
+      {search.fromThread !== undefined && environmentId && live && host.fromThreadSupported ? (
+        <BotFromThreadEditor
+          key={search.fromThread}
+          environmentId={environmentId}
+          threadId={search.fromThread}
+          suggestionId={search.suggestion ?? null}
+          canSave={canSave}
+          startersSupported={host.startersSupported}
+          verdictsSupported={host.verdictsSupported}
+          budgetsSupported={host.budgetsSupported}
+          onClose={() => go({ bot: search.bot, tab: search.tab })}
+          onSaved={(bot) => go({ bot: bot.id })}
         />
       ) : null}
       {runTarget && environmentId ? (

@@ -1,5 +1,6 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
+  BOTS_DRAFT_WS_METHODS as BD,
   BOTS_WS_METHODS as B,
   type BotBatch,
   type BotBatchChange,
@@ -288,6 +289,22 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     retryBatch: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:retry-batch",
       tag: BB.retryBatch,
+    }),
+    draftFromThread: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:draft-from-thread",
+      tag: BD.draftFromThread,
+    }),
+    refineDraft: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:refine-draft",
+      tag: BD.refineDraft,
+    }),
+    suggestions: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:suggestions",
+      tag: BD.suggestions,
+    }),
+    dismissSuggestion: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:dismiss-suggestion",
+      tag: BD.dismissSuggestion,
     }),
   };
 }

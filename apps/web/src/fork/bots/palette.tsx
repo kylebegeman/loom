@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { BotIcon, InboxIcon, LayersIcon, PlayIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   ADDON_ICON_CLASS,
   ITEM_ICON_CLASS,
@@ -8,6 +9,7 @@ import {
 } from "~/components/CommandPalette.logic";
 import { useLibraryPermission } from "../project-library/state";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
+import { canSaveAsBot } from "./fromThread/logic";
 import { bots, useBots } from "./state";
 
 /** What the Bots source needs; null leaves the palette without Bots entries. */
@@ -24,6 +26,11 @@ export interface BotsPaletteContext {
   readonly runBot: (botId: string) => Promise<void>;
   /** Null while the server cannot run batches. */
   readonly runBotOnMany: ((botId: string) => Promise<void>) | null;
+  /** Null while the server cannot draft bots from threads or this connection cannot save. */
+  readonly saveAsBot: {
+    readonly allowed: (thread: ScopedThreadRef) => boolean;
+    readonly open: (thread: ScopedThreadRef) => Promise<void>;
+  } | null;
 }
 
 const icon = (Icon: typeof BotIcon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -32,8 +39,22 @@ const icon = (Icon: typeof BotIcon, className = ITEM_ICON_CLASS): ReactNode => (
 
 export const botsPaletteSource: ForkCommandPaletteSource = {
   id: "bots",
-  items: ({ bots: context }) => {
+  items: ({ bots: context, activeThreadRef }) => {
     if (!context) return [];
+    const saveAsBot = context.saveAsBot;
+    const saveItems: CommandPaletteActionItem[] =
+      saveAsBot !== null && activeThreadRef !== null && saveAsBot.allowed(activeThreadRef)
+        ? [
+            {
+              kind: "action",
+              value: "action:loom:bots:save-thread",
+              title: "Save this thread as a bot",
+              searchTerms: ["bots", "save", "thread", "reuse", "template", "brief"],
+              icon: icon(BotIcon),
+              run: () => saveAsBot.open(activeThreadRef),
+            },
+          ]
+        : [];
     const runItems: CommandPaletteActionItem[] = context.runnable.map((bot) => ({
       kind: "action",
       value: `action:loom:bots:run:${bot.id}`,
@@ -77,6 +98,7 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
               run: context.openInbox,
             },
           ]),
+      ...saveItems,
       ...(runItems.length === 0
         ? []
         : [
@@ -112,7 +134,9 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   const navigate = useNavigate();
   const { host, live, bots: listed } = useBots();
   const canRun = useLibraryPermission(bots.run, host.environmentId) && host.connected;
+  const canSave = useLibraryPermission(bots.save, host.environmentId) && host.connected;
   if (!live) return null;
+  const capabilities = host.environment?.serverConfig?.environment.capabilities;
   return {
     runnable: canRun ? listed.filter((bot) => bot.archivedAt === null) : [],
     openBots: () => navigate({ to: "/loom/bots" }),
@@ -123,5 +147,13 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
     runBotOnMany: host.batchesSupported
       ? (botId) => navigate({ to: "/loom/bots", search: { bot: botId, many: botId } })
       : null,
+    saveAsBot:
+      host.fromThreadSupported && canSave
+        ? {
+            allowed: (thread) => canSaveAsBot(thread, capabilities, host.environmentId),
+            open: (thread) =>
+              navigate({ to: "/loom/bots", search: { fromThread: thread.threadId } }),
+          }
+        : null,
   };
 }

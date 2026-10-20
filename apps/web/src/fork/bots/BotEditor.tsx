@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import type { EnvironmentId, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import type {
   BotDefinition,
+  BotDraftResult,
   BotOutput,
   BotParameterType,
   BotStarterId,
@@ -37,6 +38,7 @@ import {
   type BotWorkspaceChoice,
 } from "./draft";
 import { budgetMeterText } from "./BotsUsage";
+import { refineInputFromDraft } from "./fromThread/logic";
 import { bots } from "./state";
 import { rollingWindow } from "./usageWindow";
 
@@ -141,6 +143,12 @@ function ParameterRow({
           <Trash2Icon />
         </Button>
       </div>
+      <Input
+        aria-label="Input description"
+        placeholder="Hint shown in the run form"
+        value={parameter.description}
+        onChange={(event) => onChange({ ...parameter, description: event.target.value })}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Choice
           id={`${parameter.key}-type`}
@@ -179,6 +187,7 @@ function ParameterRow({
 export function BotEditor({
   environmentId,
   bot,
+  fromThread,
   canSave,
   startersSupported,
   verdictsSupported,
@@ -189,6 +198,8 @@ export function BotEditor({
   readonly environmentId: EnvironmentId;
   /** Absent for a new bot. */
   readonly bot: BotDefinition | null;
+  /** A new bot drafted from a thread; offers Refine. */
+  readonly fromThread?: BotDraftResult;
   readonly canSave: boolean;
   /** Older servers know neither checkout bots nor starters. */
   readonly startersSupported: boolean;
@@ -204,9 +215,18 @@ export function BotEditor({
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
   const [draft, setDraft] = useState<BotDraft>(() =>
-    bot ? botDraft(bot) : emptyBotDraft(scheduledTaskDefaultModel(settings, null, instanceEntries)),
+    bot
+      ? botDraft(bot)
+      : fromThread
+        ? botDraft(fromThread.draft)
+        : emptyBotDraft(scheduledTaskDefaultModel(settings, null, instanceEntries)),
   );
-  const [idTouched, setIdTouched] = useState(bot !== null);
+  // A drafted id is already free on the server; renaming must not trade it for a taken one.
+  const [idTouched, setIdTouched] = useState(bot !== null || fromThread !== undefined);
+  const [notes, setNotes] = useState(fromThread?.notes ?? []);
+  const [refining, setRefining] = useState(false);
+  const refineAttempt = useRef(0);
+  const refineDraft = useAtomCommand(bots.refineDraft, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.save, { reportFailure: false });
@@ -223,8 +243,45 @@ export function BotEditor({
   const projectTitle = (id: string) =>
     projects.find((project) => project.id === id)?.title ?? (id === ANY_PROJECT ? "" : id);
 
+  const refine = async () => {
+    if (!fromThread || refining || busy || !canSave) return;
+    const checked = refineInputFromDraft(draft);
+    if (!checked.ok) {
+      setError(checked.message);
+      return;
+    }
+    const attempt = ++refineAttempt.current;
+    setRefining(true);
+    setError(null);
+    try {
+      const result = await refineDraft({
+        environmentId,
+        input: { threadId: fromThread.sourceThreadId, draft: checked.draft },
+      });
+      if (attempt !== refineAttempt.current) return;
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      setDraft(botDraft(result.value.draft));
+      setNotes(
+        result.value.notes.length > 0
+          ? result.value.notes
+          : ["Refined by the model. Check the draft before saving."],
+      );
+    } catch (cause) {
+      if (attempt === refineAttempt.current)
+        setError(cause instanceof Error ? cause.message : "Could not refine the draft.");
+    } finally {
+      if (attempt === refineAttempt.current) setRefining(false);
+    }
+  };
+
+  // Stops waiting only; the drafting thread still ends at its own time limit.
+  const cancelRefine = () => {
+    refineAttempt.current += 1;
+    setRefining(false);
+  };
+
   const submit = async () => {
-    if (busy || !canSave) return;
+    if (busy || refining || !canSave) return;
     const checked = saveInputFromDraft(draft, bot?.version);
     if (!checked.ok) {
       setError(checked.message);
@@ -292,10 +349,30 @@ export function BotEditor({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={bot ? `Edit ${bot.name}` : "New bot"}
-      description="Every run uses these instructions and settings, whoever starts it."
+      title={bot ? `Edit ${bot.name}` : fromThread ? "Save as bot" : "New bot"}
+      description={
+        fromThread
+          ? "Drafted from the thread's first message. Nothing is saved until you press Save bot."
+          : "Every run uses these instructions and settings, whoever starts it."
+      }
       actions={
         <>
+          {fromThread ? (
+            refining ? (
+              <Button variant="outline" className="sm:me-auto" onClick={cancelRefine}>
+                Cancel refining
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="sm:me-auto"
+                disabled={busy || !canSave}
+                onClick={() => void refine()}
+              >
+                Refine with model
+              </Button>
+            )
+          ) : null}
           {starterId !== undefined ? (
             <Button
               variant="outline"
@@ -309,13 +386,22 @@ export function BotEditor({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !canSave} onClick={() => void submit()}>
+          <Button disabled={busy || refining || !canSave} onClick={() => void submit()}>
             {busy ? "Saving…" : "Save bot"}
           </Button>
         </>
       }
     >
-      <div className="grid gap-4">
+      {notes.length > 0 || refining ? (
+        <div role="status" className="mb-4 grid gap-1 text-sm text-muted-foreground">
+          {refining ? (
+            <p>Refining with the thread's model. This can take up to three minutes.</p>
+          ) : (
+            notes.map((note) => <p key={note}>{note}</p>)
+          )}
+        </div>
+      ) : null}
+      <fieldset disabled={refining} className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <LibraryField label="Name">
             <Input
@@ -514,7 +600,7 @@ export function BotEditor({
             This connection cannot change bots.
           </p>
         ) : null}
-      </div>
+      </fieldset>
     </LibraryDialog>
   );
 }

@@ -1,7 +1,12 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
+  BOTS_DRAFT_WS_METHODS as BD,
   BOTS_WS_METHODS as B,
   type BotsBatchInput,
+  type BotsDismissSuggestionInput,
+  type BotsDraftFromThreadInput,
+  type BotsRefineDraftInput,
+  type BotsSuggestionsInput,
   type BotsDismissInput,
   type BotsError,
   type BotsInboxInput,
@@ -18,6 +23,7 @@ import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
+import { BotDrafts } from "./fromThread/BotDrafts.ts";
 
 export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
@@ -90,5 +96,20 @@ export const makeBotBatchesRpcHandlers = (auth: ForkRpcAuth) =>
       [BB.batchReport]: (input: { batchId: string }) =>
         auth.effect(BB.batchReport, batches.report(input.batchId)),
       [BB.watchBatches]: () => auth.stream(BB.watchBatches, batches.changes),
+    };
+  });
+
+export const makeBotDraftsRpcHandlers = (auth: ForkRpcAuth) =>
+  Effect.gen(function* () {
+    const drafts = yield* BotDrafts;
+    return {
+      [BD.draftFromThread]: (input: BotsDraftFromThreadInput) =>
+        auth.effect(BD.draftFromThread, drafts.draftFromThread(input.threadId)),
+      [BD.refineDraft]: (input: BotsRefineDraftInput) =>
+        auth.effect(BD.refineDraft, drafts.refine(input)),
+      [BD.suggestions]: (input: BotsSuggestionsInput) =>
+        auth.effect(BD.suggestions, drafts.suggestions(input)),
+      [BD.dismissSuggestion]: (input: BotsDismissSuggestionInput) =>
+        auth.effect(BD.dismissSuggestion, drafts.dismissSuggestion(input)),
     };
   });

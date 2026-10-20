@@ -89,5 +89,19 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_finished ON fork_bots_runs (bot_id, finished_at)`;
       }),
     ],
+    [
+      8,
+      "Suggestions",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // An empty shape key marks a thread seen but not counted, so it is never read twice.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_brief_threads (thread_id TEXT PRIMARY KEY, shape_key TEXT NOT NULL, created_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_brief_threads_created ON fork_bots_brief_threads (created_at)`;
+        // `entries_json` holds the 14-day window, newest first; `total_count` counts every thread.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_brief_shapes (shape_key TEXT PRIMARY KEY, shape TEXT NOT NULL, entries_json TEXT NOT NULL, total_count INTEGER NOT NULL, last_seen_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_brief_shapes_seen ON fork_bots_brief_shapes (last_seen_at)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_suggestions (shape_key TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, dismissed_at TEXT, dismissed_total INTEGER NOT NULL DEFAULT 0, reopened INTEGER NOT NULL DEFAULT 0)`;
+      }),
+    ],
   ],
 };

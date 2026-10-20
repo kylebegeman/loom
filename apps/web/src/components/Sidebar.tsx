@@ -5,6 +5,7 @@ import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewC
 import { useSidebarLibraryScope } from "~/fork/project-library/useSidebarLibraryScope"; // fork: library-projects
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
+import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
@@ -4291,6 +4292,7 @@ export default function Sidebar() {
                   serverConfigs.get(thread.environmentId)?.environment.capabilities,
                   "workspace-handoff",
                 ),
+                saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: supportsSnooze,
@@ -4316,6 +4318,8 @@ export default function Sidebar() {
           case "workspace-handoff": // fork: workspace-handoff
             openWorkspaceHandoff(threadRef);
             return;
+          case "save-as-bot":
+            return openSaveAsBot(router, threadRef); // fork: bots
           case "filter-by-project":
             if (threadProjectGroup) {
               // fork: library-projects

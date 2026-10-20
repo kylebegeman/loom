@@ -1,4 +1,5 @@
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state";
+import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "~/state/server";
@@ -124,6 +125,7 @@ export function useThreadActionMenu(input: {
       if (!thread) return;
       const now = new Date();
       const supports = {
+        saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
         workspaceHandoff: supportsLoomFeature(
           appAtomRegistry.get(environmentServerConfigsAtom).get(threadRef.environmentId)
             ?.environment.capabilities,
@@ -189,6 +191,8 @@ export function useThreadActionMenu(input: {
         case "workspace-handoff":
           openWorkspaceHandoff(threadRef);
           return;
+        case "save-as-bot":
+          return openSaveAsBot(router, threadRef); // fork: bots
         case "project-settings": {
           const project = projects.find(
             (candidate) =>

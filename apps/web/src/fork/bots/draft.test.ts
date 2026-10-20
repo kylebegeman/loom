@@ -23,7 +23,13 @@ const bot: BotDefinition = {
   description: "Reviews a file.",
   instructions: "Review {{file}} at depth {{depth}}.",
   parameters: [
-    { name: "file", label: "File", type: "string", required: true },
+    {
+      name: "file",
+      label: "File",
+      type: "string",
+      required: true,
+      description: "Path from the repository root",
+    },
     { name: "depth", label: "Depth", type: "number", required: false, default: "2" },
     { name: "strict", label: "Strict", type: "boolean", required: false },
     { name: "notes", label: "Notes", type: "text", required: false },

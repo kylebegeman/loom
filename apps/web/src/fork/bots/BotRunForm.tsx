@@ -35,16 +35,22 @@ export function ParameterField({
   readonly onChange: (value: string) => void;
 }) {
   const label = parameter.required ? parameter.label : `${parameter.label} (optional)`;
+  const hint = parameter.description ? (
+    <span className="text-xs font-normal text-muted-foreground">{parameter.description}</span>
+  ) : null;
   switch (parameter.type) {
     case "boolean":
       return (
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={value === "true"}
-            onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
-          />
-          {parameter.label}
-        </label>
+        <div className="grid gap-1">
+          <label className="flex items-center gap-2 text-sm">
+            <Switch
+              checked={value === "true"}
+              onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
+            />
+            {parameter.label}
+          </label>
+          {hint}
+        </div>
       );
     case "choice":
       return (
@@ -61,12 +67,14 @@ export function ParameterField({
               ))}
             </SelectPopup>
           </Select>
+          {hint}
         </LibraryField>
       );
     case "text":
       return (
         <LibraryField label={label}>
           <Textarea rows={5} value={value} onChange={(event) => onChange(event.target.value)} />
+          {hint}
         </LibraryField>
       );
     case "number":
@@ -77,12 +85,14 @@ export function ParameterField({
             value={value}
             onChange={(event) => onChange(event.target.value)}
           />
+          {hint}
         </LibraryField>
       );
     case "string":
       return (
         <LibraryField label={label}>
           <Input value={value} onChange={(event) => onChange(event.target.value)} />
+          {hint}
         </LibraryField>
       );
   }

@@ -207,6 +207,12 @@ L95 renders a Bots section after the Totals section of `apps/web/src/components/
 unless the primary environment supports `bots-budgets` and is selected. See the
 [L95 packet](docs/fork/packets/L95-bots-budgets/SEAMS.md).
 
+L96 adds "Save as bot…" to the thread action menu in `apps/web/src/components/threadActionMenu.logic.ts`,
+`apps/web/src/hooks/useThreadActionMenu.ts` and `apps/web/src/components/Sidebar.tsx` (`fork: bots`,
+3 marker lines each). The item, its flag and its handler call one-line helpers in
+`apps/web/src/fork/bots/fromThread/state.ts`. See the
+[L96 packet](docs/fork/packets/L96-bots-from-thread/SEAMS.md).
+
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.
 

@@ -5,6 +5,7 @@ import {
   type BotBatchSource,
   type BotBatchSourceType,
   type BotDefinition,
+  type BotDefinitionInput,
   type BotInputs,
   type BotParameter,
   type BotOutput,
@@ -27,6 +28,7 @@ export interface BotParameterDraft {
   readonly key: string;
   readonly name: string;
   readonly label: string;
+  readonly description: string;
   readonly type: BotParameterType;
   readonly required: boolean;
   readonly defaultValue: string;
@@ -61,6 +63,7 @@ export const newParameterDraft = (): BotParameterDraft => ({
   key: `parameter-${++parameterKeys}`,
   name: "",
   label: "",
+  description: "",
   type: "string",
   required: true,
   defaultValue: "",
@@ -87,7 +90,8 @@ export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft =
   tokensPerDay: "",
 });
 
-export const botDraft = (bot: BotDefinition): BotDraft => ({
+/** A saved bot, or an unsaved one such as a draft from a thread. */
+export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
   id: bot.id,
   name: bot.name,
   description: bot.description,
@@ -96,6 +100,7 @@ export const botDraft = (bot: BotDefinition): BotDraft => ({
     ...newParameterDraft(),
     name: parameter.name,
     label: parameter.label,
+    description: parameter.description ?? "",
     type: parameter.type,
     required: parameter.required,
     defaultValue: parameter.default ?? "",
@@ -139,12 +144,7 @@ const budgetFromDraft = (draft: BotDraft) => {
 };
 
 /** A readable id from the name, for new bots. */
-export const slugFromName = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+export { slugFromName } from "@t3tools/contracts/fork";
 
 const parameterInput = (parameter: BotParameterDraft): BotParameter => {
   const choices = parameter.choices
@@ -154,6 +154,7 @@ const parameterInput = (parameter: BotParameterDraft): BotParameter => {
   return {
     name: parameter.name.trim(),
     label: parameter.label.trim() || parameter.name.trim(),
+    ...(parameter.description.trim() === "" ? {} : { description: parameter.description.trim() }),
     type: parameter.type,
     required: parameter.required,
     ...(parameter.defaultValue === "" ? {} : { default: parameter.defaultValue }),

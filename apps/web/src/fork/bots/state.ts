@@ -16,6 +16,7 @@ import {
   BOTS_BATCHES_FEATURE,
   BOTS_BUDGETS_FEATURE,
   BOTS_FEATURE,
+  BOTS_FROM_THREAD_FEATURE,
   BOTS_INBOX_FEATURE,
   BOTS_INVOCATION_FEATURE,
   BOTS_LIST_RUNS_MAX_LIMIT,
@@ -45,6 +46,7 @@ export function useBotsHost() {
     batchesSupported: supportsLoomFeature(capabilities, BOTS_BATCHES_FEATURE),
     inboxSupported: supportsLoomFeature(capabilities, BOTS_INBOX_FEATURE),
     budgetsSupported: supportsLoomFeature(capabilities, BOTS_BUDGETS_FEATURE),
+    fromThreadSupported: supportsLoomFeature(capabilities, BOTS_FROM_THREAD_FEATURE),
   };
 }
 

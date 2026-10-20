@@ -34,6 +34,7 @@ import { PreviewLinksRpcGroup, PREVIEW_LINKS_WS_METHODS } from "./preview-links.
 import { DirectoryRpcGroup } from "./directory.ts";
 import {
   BotBatchesRpcGroup,
+  BotDraftsRpcGroup,
   BotsRpcGroup,
   BOTS_BATCH_WS_METHODS,
   BOTS_WS_METHODS,
@@ -100,6 +101,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   DirectoryRpcGroup,
   BotsRpcGroup,
   BotBatchesRpcGroup,
+  BotDraftsRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 

@@ -14,6 +14,7 @@ export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
 export const BOTS_BATCHES_FEATURE = "bots-batches";
 export const BOTS_INBOX_FEATURE = "bots-inbox";
 export const BOTS_BUDGETS_FEATURE = "bots-budgets";
+export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -745,5 +746,97 @@ export const BotBatchesRpcGroup = RpcGroup.make(
     success: BotBatchChange,
     error: errors,
     stream: true,
+  }),
+);
+
+export const BOTS_DRAFT_WS_METHODS = {
+  draftFromThread: "loom.bots.draftFromThread",
+  refineDraft: "loom.bots.refineDraft",
+  suggestions: "loom.bots.suggestions",
+  dismissSuggestion: "loom.bots.dismissSuggestion",
+} as const;
+
+/** A brief's shape, with inputs replaced, is cut to this many characters. */
+export const BOTS_SUGGESTION_SHAPE_MAX = 400;
+/** Threads named by one suggestion, newest first. */
+export const BOTS_SUGGESTION_MAX_THREADS = 10;
+
+/** The bot id a name suggests. Shared so a server draft and a typed name give the same id. */
+export const slugFromName = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "");
+
+/** An unsaved bot drawn from a thread, with what the editor should say about it. */
+export const BotDraftResult = Schema.Struct({
+  draft: BotDefinitionInput,
+  sourceThreadId: ThreadId,
+  notes: Schema.Array(Schema.String),
+});
+export type BotDraftResult = typeof BotDraftResult.Type;
+
+export const BotSuggestionId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+
+/** Threads that opened with the same kind of brief, offered as a bot to make. */
+export const BotSuggestion = Schema.Struct({
+  id: BotSuggestionId,
+  /** The brief with its inputs replaced by placeholders. */
+  shape: Schema.String,
+  threadIds: Schema.Array(ThreadId),
+  /** Threads with this shape in the last 14 days. */
+  count: Schema.Int,
+  firstSeenAt: Schema.String,
+  lastSeenAt: Schema.String,
+  startedBy: BotCreator,
+  dismissedAt: Schema.NullOr(Schema.String),
+});
+export type BotSuggestion = typeof BotSuggestion.Type;
+
+export const BotsDraftFromThreadInput = Schema.Struct({ threadId: ThreadId });
+export type BotsDraftFromThreadInput = typeof BotsDraftFromThreadInput.Type;
+
+export const BotsRefineDraftInput = Schema.Struct({
+  threadId: ThreadId,
+  draft: BotDefinitionInput,
+});
+export type BotsRefineDraftInput = typeof BotsRefineDraftInput.Type;
+
+export const BotsSuggestionsInput = Schema.Struct({
+  /** Dismissed suggestions instead of open ones. */
+  dismissed: Schema.optionalKey(Schema.Boolean),
+});
+export type BotsSuggestionsInput = typeof BotsSuggestionsInput.Type;
+
+export const BotsDismissSuggestionInput = Schema.Struct({
+  suggestionId: BotSuggestionId,
+  dismissed: Schema.Boolean,
+});
+export type BotsDismissSuggestionInput = typeof BotsDismissSuggestionInput.Type;
+
+const BD = BOTS_DRAFT_WS_METHODS;
+
+export const BotDraftsRpcGroup = RpcGroup.make(
+  Rpc.make(BD.draftFromThread, {
+    payload: BotsDraftFromThreadInput,
+    success: BotDraftResult,
+    error: errors,
+  }),
+  Rpc.make(BD.refineDraft, {
+    payload: BotsRefineDraftInput,
+    success: BotDraftResult,
+    error: errors,
+  }),
+  Rpc.make(BD.suggestions, {
+    payload: BotsSuggestionsInput,
+    success: Schema.Struct({ suggestions: Schema.Array(BotSuggestion) }),
+    error: errors,
+  }),
+  Rpc.make(BD.dismissSuggestion, {
+    payload: BotsDismissSuggestionInput,
+    success: BotSuggestion,
+    error: errors,
   }),
 );

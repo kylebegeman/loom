@@ -1,6 +1,7 @@
 # L96: Bots from threads
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Turn a conversation that worked into a bot. "Save as bot" on any thread opens the bot editor
 filled from that thread: the opening brief becomes the instructions, file paths and pull request

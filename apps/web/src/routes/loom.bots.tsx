@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { BotId } from "@t3tools/contracts/fork";
+import { ThreadId } from "@t3tools/contracts";
+import { BotId, BotSuggestionId } from "@t3tools/contracts/fork";
 import { BotsPage } from "~/fork/bots/BotsPage";
 
 const BotsSearch = Schema.Struct({
@@ -10,6 +11,10 @@ const BotsSearch = Schema.Struct({
   many: Schema.optional(BotId),
   tab: Schema.optional(Schema.Literals(["runs", "batches", "inbox", "usage"])),
   batch: Schema.optional(Schema.String),
+  /** A thread to draft a bot from; the editor opens with the draft. */
+  fromThread: Schema.optional(ThreadId),
+  /** The suggestion the draft came from, dismissed once the bot is saved. */
+  suggestion: Schema.optional(BotSuggestionId),
 });
 type BotsSearch = typeof BotsSearch.Type;
 const decodeSearch = Schema.decodeUnknownSync(BotsSearch);
