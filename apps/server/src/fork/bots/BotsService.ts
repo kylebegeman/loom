@@ -1010,7 +1010,7 @@ export const make = Effect.gen(function* () {
             ),
           ),
       )
-      .pipe(Effect.catchTag("SqlError", storageError));
+      .pipe(Effect.catchTags({ SqlError: storageError }));
 
   /** Settles a remote run that never reached its computer, or that its computer gave up on. */
   const settleRemote = Effect.fnUntraced(function* (run: BotRun, settled: Partial<BotRun>) {
