@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
-import { View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Platform, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { VAULT_APPROVAL_RETENTION_MS, type VaultApprovalChange } from "@t3tools/contracts/fork";
 import {
@@ -69,6 +69,22 @@ function Inbox({
   const [pending, setPending] = useState<VaultApprovalChange | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const countMessage = data
+    ? `${review.pendingCount} pending of ${review.totalCount} retained requests.`
+    : null;
+  const announcedCount = useRef(countMessage);
+  useEffect(() => {
+    const previous = announcedCount.current;
+    announcedCount.current = countMessage;
+    // Live regions reach TalkBack; VoiceOver needs an explicit announcement of later changes.
+    if (
+      Platform.OS === "ios" &&
+      previous !== null &&
+      countMessage !== null &&
+      previous !== countMessage
+    )
+      AccessibilityInfo.announceForAccessibility(countMessage);
+  }, [countMessage]);
   const refresh = () => {
     setPending(null);
     setError(null);
@@ -120,9 +136,7 @@ function Inbox({
       ) : null}
       {data ? (
         <View className="gap-2">
-          <Text accessibilityLiveRegion="polite">
-            {review.pendingCount} pending of {review.totalCount} retained requests.
-          </Text>
+          <Text accessibilityLiveRegion="polite">{countMessage}</Text>
           <Button
             label={filter === "pending" ? "Show all requests" : "Show pending requests"}
             disabled={busy}
@@ -166,7 +180,9 @@ function Inbox({
               <Text>
                 {labels.thread} · {labels.project}
               </Text>
-              {labels.warning ? <Text accessibilityRole="alert">{labels.warning}</Text> : null}
+              {state === "pending" && labels.warning ? (
+                <Text accessibilityRole="alert">{labels.warning}</Text>
+              ) : null}
               <Text>
                 Thread {r.threadId}
                 {"\n"}Project {r.projectId}

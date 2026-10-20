@@ -965,7 +965,7 @@ const make = Effect.gen(function* () {
               projects: Effect.forEach(
                 [...new Set(requests.map((r) => r.projectId))],
                 (id) =>
-                  projects.get(ProjectId.make(id)).pipe(
+                  projects.get(ProjectId.make(id), { includeDeleted: true }).pipe(
                     Effect.map(Option.getOrNull),
                     Effect.orElseSucceed(() => null),
                     Effect.map((value) => [id, value] as const),
