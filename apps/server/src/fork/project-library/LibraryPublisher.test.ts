@@ -486,6 +486,20 @@ describe("authenticated Library publishing", () => {
         }),
       ),
   );
+  it.effect("signs pages browsers out, reading a Library without that route as unavailable", () =>
+    run(configured, (f) =>
+      Effect.gen(function* () {
+        yield* f.publisher.signOutPageReaders();
+        expect(yield* Ref.get(f.pageRequests)).toEqual([
+          { method: "POST", path: "/api/loom/library/pages/sign-out", body: {} },
+        ]);
+        yield* Ref.set(f.pageAnswer, { status: 404, body: { error: "Not found" } });
+        expect((yield* f.publisher.signOutPageReaders().pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+      }),
+    ),
+  );
   it.effect("keeps pages unavailable without a Library and blocked without a token", () =>
     Effect.gen(function* () {
       yield* run({}, (f) =>

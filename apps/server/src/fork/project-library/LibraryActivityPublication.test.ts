@@ -116,6 +116,7 @@ const fixture = Effect.gen(function* () {
     updatePage: () => Effect.die("unused"),
     nextReplies: () => Effect.die("unused"),
     ackReply: () => Effect.die("unused"),
+    signOutPageReaders: () => Effect.die("unused"),
     info: Ref.get(features).pipe(
       Effect.map((list) => ({
         environmentId: source,

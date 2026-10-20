@@ -14,9 +14,12 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { createAttachmentId } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -312,6 +315,59 @@ it.layer(NodeServices.layer)("PreviewPagesService", (it) => {
         available: true,
         pages: [mine],
       });
+    }),
+  );
+
+  it.effect("counts every page change it asked the Library for, even a failed one", () =>
+    Effect.gen(function* () {
+      const f = yield* harness({
+        publisher: {
+          listPages: () => Effect.succeed([]),
+          updatePage: () =>
+            Effect.fail(new PreviewPagesError({ reason: "io", message: "Unreachable." })),
+        },
+      });
+      const revision = Stream.runHead(f.service.revisions).pipe(Effect.map(Option.getOrThrow));
+      expect(yield* revision).toBe(0);
+      const attachmentId = createAttachmentId(thread, "html")!;
+      yield* f.writeAttachment(attachmentId, "html", "<p>Plan</p>");
+      yield* f.service.publish({ threadId: thread, source: { attachmentId }, title: "Plan" });
+      expect(yield* revision).toBe(1);
+      // The Library may have applied a change whose answer never came back.
+      yield* reasonOf(f.service.update({ pageId: "page-1", action: "keep" }));
+      expect(yield* revision).toBe(2);
+      // Refused here, so the Library was never asked.
+      yield* reasonOf(f.service.update({ pageId: "page-1", action: "end" }, { threadId: thread }));
+      yield* reasonOf(
+        f.service.publish({ threadId: thread, source: { path: "missing.html" }, title: "Plan" }),
+      );
+      expect(yield* revision).toBe(2);
+    }),
+  );
+
+  it.effect("signs pages browsers out without ever failing the caller", () =>
+    Effect.gen(function* () {
+      const asked: Array<string> = [];
+      const answering = (reason: PreviewPagesError["reason"]) => () =>
+        Effect.sync(() => void asked.push(reason)).pipe(
+          Effect.andThen(Effect.fail(new PreviewPagesError({ reason, message: "No." }))),
+        );
+      const disabled = yield* harness({
+        publisher: { enabled: false, signOutPageReaders: answering("io") },
+      });
+      yield* disabled.service.signOutReaders;
+      for (const reason of ["unavailable", "blocked", "io"] as const) {
+        const f = yield* harness({ publisher: { signOutPageReaders: answering(reason) } });
+        yield* f.service.signOutReaders;
+      }
+      expect(asked).toEqual(["unavailable", "blocked", "io"]);
+
+      const signedOut = yield* harness({ publisher: { signOutPageReaders: () => Effect.void } });
+      yield* signedOut.service.signOutReaders;
+      const hung = yield* harness({ publisher: { signOutPageReaders: () => Effect.never } });
+      const waiting = yield* Effect.forkChild(hung.service.signOutReaders);
+      yield* TestClock.adjust(Duration.seconds(10));
+      yield* Fiber.join(waiting);
     }),
   );
 

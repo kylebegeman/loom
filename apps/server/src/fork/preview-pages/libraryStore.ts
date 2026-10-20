@@ -77,6 +77,8 @@ export const makeLibraryStore = Effect.gen(function* () {
     sql<PageRow>`SELECT ${pageColumns} FROM fork_preview_pages WHERE ${where}`;
   const pastRestoring = (cutoff: string) =>
     sql`(ended_at IS NOT NULL AND ended_at < ${cutoff}) OR (ended_at IS NULL AND kept = 0 AND expires_at < ${cutoff})`;
+  const openAt = (now: string) =>
+    sql`(ended_at IS NULL AND (kept = 1 OR expires_at IS NULL OR expires_at > ${now}))`;
 
   return {
     insertPage: Effect.fn("PreviewPagesLibraryStore.insertPage")(function* (
@@ -125,17 +127,48 @@ export const makeLibraryStore = Effect.gen(function* () {
     ) {
       const rows = yield* sql<{
         count: number;
-      }>`SELECT COUNT(*) AS count FROM fork_preview_pages WHERE subject = ${subject} AND ended_at IS NULL AND (kept = 1 OR expires_at IS NULL OR expires_at > ${now})`;
+      }>`SELECT COUNT(*) AS count FROM fork_preview_pages WHERE subject = ${subject} AND ${openAt(now)}`;
       return rows[0]?.count ?? 0;
     }),
-    /** Open pages and those still within the restore window, newest first. */
-    listRestorable: Effect.fn("PreviewPagesLibraryStore.listRestorable")(function* (
-      subject: string,
-      cutoff: string,
-      limit: number,
-    ) {
+    /** Every page row the subject has, open, restorable or waiting for the sweep. */
+    countStored: Effect.fn("PreviewPagesLibraryStore.countStored")(function* (subject: string) {
+      const rows = yield* sql<{
+        count: number;
+      }>`SELECT COUNT(*) AS count FROM fork_preview_pages WHERE subject = ${subject}`;
+      return rows[0]?.count ?? 0;
+    }),
+    /**
+     * Deletes up to `limit` of the subject's closed pages, the longest closed first, and returns
+     * how many went. Pages with replies still waiting stay, so no reply is lost before delivery.
+     */
+    dropOldestClosed: Effect.fn("PreviewPagesLibraryStore.dropOldestClosed")(function* (input: {
+      readonly subject: string;
+      readonly now: string;
+      readonly limit: number;
+    }) {
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const rows = yield* sql<{ readonly id: string }>`SELECT id FROM fork_preview_pages p
+            WHERE subject = ${input.subject} AND NOT ${openAt(input.now)}
+            AND NOT EXISTS (SELECT 1 FROM fork_preview_page_replies r WHERE r.page_id = p.id AND r.acked_at IS NULL)
+            ORDER BY COALESCE(ended_at, expires_at), id LIMIT ${input.limit}`;
+          if (rows.length === 0) return 0;
+          const ids = rows.map((row) => row.id);
+          yield* sql`DELETE FROM fork_preview_page_replies WHERE page_id IN ${sql.in(ids)}`;
+          yield* sql`DELETE FROM fork_preview_pages WHERE id IN ${sql.in(ids)}`;
+          return ids.length;
+        }),
+      );
+    }),
+    /** Open pages first, then those still within the restore window, each newest first. */
+    listRestorable: Effect.fn("PreviewPagesLibraryStore.listRestorable")(function* (input: {
+      readonly subject: string;
+      readonly now: string;
+      readonly cutoff: string;
+      readonly limit: number;
+    }) {
       const rows = yield* selectPages(
-        sql`subject = ${subject} AND NOT (${pastRestoring(cutoff)}) ORDER BY created_at DESC, id DESC LIMIT ${limit}`,
+        sql`subject = ${input.subject} AND NOT (${pastRestoring(input.cutoff)}) ORDER BY ${openAt(input.now)} DESC, created_at DESC, id DESC LIMIT ${input.limit}`,
       );
       return rows.map(toRecord);
     }),
@@ -199,6 +232,21 @@ export const makeLibraryStore = Effect.gen(function* () {
     ) {
       yield* sql`UPDATE fork_preview_page_replies SET acked_at = ${ackedAt}, outcome = ${ack.outcome}, detail = ${ack.detail ?? null}
         WHERE reply_id = ${ack.replyId} AND subject = ${subject} AND acked_at IS NULL`;
+    }),
+    /** Records that `subject` signed out every pages browser at `atMs`; a later time only moves it on. */
+    signOutReaders: Effect.fn("PreviewPagesLibraryStore.signOutReaders")(function* (
+      subject: string,
+      atMs: number,
+    ) {
+      yield* sql`INSERT INTO fork_preview_page_signouts (subject, signed_out_at) VALUES (${subject}, ${atMs})
+        ON CONFLICT (subject) DO UPDATE SET signed_out_at = MAX(signed_out_at, excluded.signed_out_at)`;
+    }),
+    /** The latest sign-out by any computer, in Unix milliseconds, or 0 when there was none. */
+    readersSignedOutAt: Effect.fn("PreviewPagesLibraryStore.readersSignedOutAt")(function* () {
+      const rows = yield* sql<{
+        readonly at: number | null;
+      }>`SELECT MAX(signed_out_at) AS at FROM fork_preview_page_signouts`;
+      return rows[0]?.at ?? 0;
     }),
     /** Deletes pages past restoring with all their replies, and replies acked before `ackedBefore`. */
     purge: Effect.fn("PreviewPagesLibraryStore.purge")(function* (input: {

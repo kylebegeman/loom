@@ -73,12 +73,22 @@ export class PageLibraryService extends Context.Service<
       computer: PageComputer,
       ack: LibraryPageReplyAckRequest,
     ) => Effect.Effect<void, PreviewPagesError>;
+    /** Ends every pages browser sign-in made up to now, whoever made it. */
+    readonly signOutReaders: (computer: PageComputer) => Effect.Effect<void, PreviewPagesError>;
+    /**
+     * For the pages host, on every request: Unix milliseconds of the latest sign-out, 0 when there
+     * was none. A cookie issued at or before it no longer signs anyone in.
+     */
+    readonly readersSignedOutAt: Effect.Effect<number, PreviewPagesError>;
   }
 >()("t3/fork/preview-pages/PageLibraryService") {}
 
 const PAGE_ID_BYTES = 16;
 /** Bounds what one computer can park in the Library's database. */
 const MAX_OPEN_PAGES = 500;
+// Closed pages stay restorable for a week. Past this many rows a new page makes room by dropping
+// the longest closed ones, so ending pages to publish more cannot grow storage without bound.
+const MAX_STORED_PAGES = 1000;
 const MAX_LISTED_PAGES = 500;
 const MAX_WAITING_REPLIES = 1000;
 const REPLY_BATCH = 20;
@@ -157,11 +167,8 @@ const make = Effect.gen(function* () {
   const configured = Option.isSome(setting) ? setting.value.trim() : "";
   const candidate = configured === "" ? null : httpsUrl(configured);
   // Tickets for the pages host land on `https://<host>/__loom/ticket`, which has no room for a port.
+  // PreviewAccessService already warns once about a value it cannot use.
   const pagesOrigin = authority && candidate?.port === "" ? candidate.origin : null;
-  if (authority && configured !== "" && pagesOrigin === null)
-    yield* Effect.logWarning(
-      "LOOM_PAGES_ORIGIN is not an https origin without a port; published pages are off.",
-    );
 
   const requireOrigin =
     pagesOrigin === null
@@ -196,19 +203,35 @@ const make = Effect.gen(function* () {
       return Deferred.succeed(signal, undefined);
     });
 
-  const requireRoom = (subject: string, now: number) =>
+  const requireRoom = (subject: string, now: number, opening: "publish" | "restore") =>
     store.countOpen(subject, isoAt(now)).pipe(
       Effect.flatMap((open) =>
         open >= MAX_OPEN_PAGES
           ? Effect.fail(
               new PreviewPagesError({
                 reason: "blocked",
-                message: `This computer already has ${MAX_OPEN_PAGES} open pages. End some before publishing more.`,
+                message: `This computer already has ${MAX_OPEN_PAGES} open pages. ${
+                  opening === "publish"
+                    ? "End some before publishing more."
+                    : "End one before restoring another."
+                }`,
               }),
             )
           : Effect.void,
       ),
     );
+
+  const requireStorage = Effect.fnUntraced(function* (subject: string, now: number) {
+    const stored = yield* store.countStored(subject);
+    if (stored < MAX_STORED_PAGES) return;
+    const needed = stored - MAX_STORED_PAGES + 1;
+    const dropped = yield* store.dropOldestClosed({ subject, now: isoAt(now), limit: needed });
+    if (dropped < needed)
+      return yield* new PreviewPagesError({
+        reason: "blocked",
+        message: `This computer already keeps ${MAX_STORED_PAGES} pages, counting closed ones whose replies have not reached it yet. Try again once those replies arrive.`,
+      });
+  });
 
   /** Another computer's page, and a page past restoring, look the same as one that never existed. */
   const ownedPage = Effect.fnUntraced(function* (
@@ -249,7 +272,8 @@ const make = Effect.gen(function* () {
         // Republishing is for the thread that owns the page; another thread publishes its own.
         if (existing.threadId !== request.threadId)
           return yield* new PreviewPagesError({ reason: "not-found", message: PAGE_NOT_FOUND });
-        if (lifecycleOf(existing, now).state !== "open") yield* requireRoom(computer.subject, now);
+        if (lifecycleOf(existing, now).state !== "open")
+          yield* requireRoom(computer.subject, now, "publish");
         const expiresAt = existing.kept ? null : isoAt(now + PREVIEW_PAGE_LIFETIME_MS);
         yield* store.replaceContent({
           id: existing.id,
@@ -273,7 +297,8 @@ const make = Effect.gen(function* () {
         );
       }
 
-      yield* requireRoom(computer.subject, now);
+      yield* requireRoom(computer.subject, now, "publish");
+      yield* requireStorage(computer.subject, now);
       const page: PageRecord = {
         // Unguessable, so one address never leads to another page.
         id: NodeCrypto.randomBytes(PAGE_ID_BYTES).toString("base64url"),
@@ -300,11 +325,13 @@ const make = Effect.gen(function* () {
     function* (computer: PageComputer) {
       const origin = yield* requireOrigin;
       const now = yield* Clock.currentTimeMillis;
-      const pages = yield* store.listRestorable(
-        computer.subject,
-        isoAt(now - PREVIEW_PAGE_RESTORE_WINDOW_MS),
-        MAX_LISTED_PAGES,
-      );
+      // Open pages come first, so a long tail of closed ones never pushes them past the limit.
+      const pages = yield* store.listRestorable({
+        subject: computer.subject,
+        now: isoAt(now),
+        cutoff: isoAt(now - PREVIEW_PAGE_RESTORE_WINDOW_MS),
+        limit: MAX_LISTED_PAGES,
+      });
       return pages.map((page) => toPreviewPage(origin, page, now));
     },
     Effect.catchTags({ SqlError: storageFailure }),
@@ -334,7 +361,7 @@ const make = Effect.gen(function* () {
           break;
         case "restore":
           if (state === "open") return yield* wrongState("This page is already open.");
-          yield* requireRoom(computer.subject, now);
+          yield* requireRoom(computer.subject, now, "restore");
           next = { kept: false, expiresAt: isoAt(now + PREVIEW_PAGE_LIFETIME_MS), endedAt: null };
           break;
       }
@@ -449,6 +476,18 @@ const make = Effect.gen(function* () {
     Effect.catchTags({ SqlError: storageFailure }),
   );
 
+  const signOutReaders = Effect.fn("PageLibraryService.signOutReaders")(
+    function* (computer: PageComputer) {
+      yield* requireOrigin;
+      yield* store.signOutReaders(computer.subject, yield* Clock.currentTimeMillis);
+    },
+    Effect.catchTags({ SqlError: storageFailure }),
+  );
+
+  const readersSignedOutAt = store
+    .readersSignedOutAt()
+    .pipe(Effect.catchTags({ SqlError: storageFailure }));
+
   if (pagesOrigin !== null) {
     const sweep = lock.withPermit(
       Effect.gen(function* () {
@@ -476,6 +515,8 @@ const make = Effect.gen(function* () {
     addReply,
     nextReplies,
     ackReply,
+    signOutReaders,
+    readersSignedOutAt,
   });
 });
 

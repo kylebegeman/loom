@@ -24,6 +24,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { openMediaFile, type OpenMediaFile } from "../../assets/MediaFile.ts";
 import {
   parseAttachmentFileExtension,
@@ -66,6 +68,16 @@ export class PreviewPagesService extends Context.Service<
       input: PreviewPageUpdateInput,
       scope?: { readonly threadId: ThreadId },
     ) => Effect.Effect<PreviewPage, PreviewPagesError>;
+    /**
+     * Counts this computer's attempts to publish or change a page since it started, current value
+     * first, so a client showing the list knows when to read it again.
+     */
+    readonly revisions: Stream.Stream<number>;
+    /**
+     * Asks the Library to sign out every pages browser. Best effort and never fails: links sign
+     * out either way, and an older Library that cannot do this is not an error.
+     */
+    readonly signOutReaders: Effect.Effect<void>;
   }
 >()("t3/fork/preview-pages/PreviewPagesService") {}
 
@@ -84,6 +96,8 @@ const REPLY_RETRY_MAX_MS = 5 * 60_000;
  * than this means something between them is not waiting. Pacing it keeps the loop from spinning.
  */
 const REPLY_POLL_MIN_INTERVAL_MS = 1_000;
+/** Signing out waits on this before answering, so a Library that hangs cannot hold it long. */
+const SIGN_OUT_TIMEOUT = Duration.seconds(10);
 
 /** How long the replies worker waits after a failed poll, `attempt` counting since a success. */
 export const replyRetryDelay = (
@@ -116,6 +130,9 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const revision = yield* SubscriptionRef.make(0);
+  // Bumped whatever the outcome: a request that timed out may still have changed the page.
+  const bumpRevision = SubscriptionRef.update(revision, (value) => value + 1);
 
   const threadOnComputer = Effect.fnUntraced(function* (threadId: ThreadId) {
     const shell = yield* threads
@@ -238,14 +255,16 @@ const make = Effect.gen(function* () {
         ? yield* attachmentFile(input.threadId, input.source.attachmentId)
         : yield* workspaceFile(shell, input.source.path);
     const html = yield* readHtml(file);
-    return yield* publisher.publishPage({
-      ...(input.pageId === undefined ? {} : { pageId: input.pageId }),
-      projectId: shell.projectId,
-      threadId: input.threadId,
-      title,
-      kind: input.kind ?? "html",
-      html,
-    });
+    return yield* publisher
+      .publishPage({
+        ...(input.pageId === undefined ? {} : { pageId: input.pageId }),
+        projectId: shell.projectId,
+        threadId: input.threadId,
+        title,
+        kind: input.kind ?? "html",
+        html,
+      })
+      .pipe(Effect.ensuring(bumpRevision));
   });
 
   const list = Effect.fn("PreviewPagesService.list")(function* (filter?: {
@@ -278,8 +297,23 @@ const make = Effect.gen(function* () {
       if (!pages.some((page) => page.id === input.pageId && page.threadId === scope.threadId))
         return yield* fail("not-found", "That page was not found in this thread.");
     }
-    return yield* publisher.updatePage(input);
+    return yield* publisher.updatePage(input).pipe(Effect.ensuring(bumpRevision));
   });
+
+  const signOutReaders = Effect.suspend(() =>
+    publisher.enabled
+      ? publisher.signOutPageReaders().pipe(
+          Effect.timeout(SIGN_OUT_TIMEOUT),
+          Effect.catch((error) =>
+            error._tag === "PreviewPagesError" && error.reason === "unavailable"
+              ? Effect.void
+              : Effect.logWarning("Could not sign pages browsers out through the Library", {
+                  reason: error._tag === "PreviewPagesError" ? error.reason : "timeout",
+                }),
+          ),
+        )
+      : Effect.void,
+  ).pipe(Effect.withSpan("PreviewPagesService.signOutReaders"));
 
   const deliver = Effect.fnUntraced(function* (reply: LibraryPageReply) {
     if (!REPLY_ID_PATTERN.test(reply.replyId)) return rejected("The reply id is malformed.");
@@ -373,7 +407,13 @@ const make = Effect.gen(function* () {
 
   if (publisher.enabled) yield* forkParked(relayReplies);
 
-  return PreviewPagesService.of({ publish, list, update });
+  return PreviewPagesService.of({
+    publish,
+    list,
+    update,
+    revisions: SubscriptionRef.changes(revision),
+    signOutReaders,
+  });
 });
 
 export const layer = Layer.effect(PreviewPagesService, make);

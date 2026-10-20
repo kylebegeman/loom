@@ -28,7 +28,6 @@ import { signInPage, ticketFailedPage } from "../preview-links/pages.ts";
 import {
   PREVIEW_COOKIE_MAX_AGE_SECONDS,
   previewSignInUrl,
-  randomCookieKey,
   sanitizeEntryPath,
   signPreviewCookie,
   verifyPreviewCookie,
@@ -55,6 +54,7 @@ import {
   RAW_PAGE_SANDBOX,
   renderPageShell,
   shellContentSecurityPolicy,
+  signInUnavailablePage,
   STATUS_PAGE_CONTENT_SECURITY_POLICY,
 } from "./shell.ts";
 
@@ -214,14 +214,35 @@ interface PagesServerContext {
   readonly pagesOrigin: string;
   readonly pagesHost: string;
   readonly issuerOrigin: string;
-  readonly cookieKey: Uint8Array;
+  /** Null when the secret store could not give the key: then nobody is signed in. */
+  readonly cookieKey: Uint8Array | null;
   readonly now: () => number;
   readonly pages: PageLibraryService["Service"];
   readonly access: PreviewAccessService["Service"];
   readonly run: (effect: Effect.Effect<Answer>) => Fiber.Fiber<Answer>;
 }
 
-const makePagesServer = (context: PagesServerContext) => {
+type Handler = (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => void;
+
+/**
+ * A key made up on the spot would sign browsers in until the next restart and then drop them,
+ * so without the stored one every request gets a status answer instead.
+ */
+const withoutSignIn =
+  (pagesHost: string): Handler =>
+  (request, response) => {
+    if (normalizeRequestHost(request.headers.host) !== pagesHost) {
+      return write(response, textAnswer(421, "Misdirected request"));
+    }
+    write(
+      response,
+      isDocumentNavigation(request)
+        ? htmlAnswer(503, signInUnavailablePage)
+        : textAnswer(503, "Sign-in is unavailable"),
+    );
+  };
+
+const pagesRoutes = (context: PagesServerContext & { readonly cookieKey: Uint8Array }): Handler => {
   const { pagesOrigin, pagesHost, issuerOrigin, cookieKey, now, pages, access, run } = context;
   const spent = new Map<string, number>();
   const rawContentSecurityPolicy = `sandbox ${RAW_PAGE_SANDBOX}; frame-ancestors ${pagesOrigin}`;
@@ -230,6 +251,10 @@ const makePagesServer = (context: PagesServerContext) => {
     const value = readRequestCookie(request.headersDistinct.cookie, PREVIEW_COOKIE_NAME);
     return value === null ? null : verifyPreviewCookie(value, cookieKey, pagesHost, now());
   };
+
+  /** A valid cookie can still predate a sign-out, which the Library records for every browser. */
+  const stillSignedIn = (session: { readonly issuedAtMs: number }) =>
+    pages.readersSignedOutAt.pipe(Effect.map((signedOutAt) => session.issuedAtMs > signedOutAt));
 
   /** Each answer gets a fresh nonce, so a sign-in link only works in the browser it was shown to. */
   const signInAnswer = (status: number, path: string, page: (href: string) => string) => {
@@ -264,11 +289,14 @@ const makePagesServer = (context: PagesServerContext) => {
     return true;
   };
 
-  const signedInAnswer = (subject: string, path: string): Answer => {
+  const signedInAnswer = (subject: string, path: string, signedOutAt: number): Answer => {
     const nowMs = now();
     const exp = Math.floor(nowMs / 1000) + PREVIEW_COOKIE_MAX_AGE_SECONDS;
+    // A sign-in in the same millisecond as a sign-out, or behind a clock that stepped back,
+    // still has to outlast it.
+    const iat = Math.max(nowMs, signedOutAt + 1);
     const cookie = signPreviewCookie(
-      { sub: subject, key: `${LIBRARY_KEY_PREFIX}${subject}`, host: pagesHost, iat: nowMs, exp },
+      { sub: subject, key: `${LIBRARY_KEY_PREFIX}${subject}`, host: pagesHost, iat, exp },
       cookieKey,
     );
     return {
@@ -336,23 +364,19 @@ const makePagesServer = (context: PagesServerContext) => {
     response: NodeHttp.ServerResponse,
     pageId: string,
   ) => {
-    if (sessionOf(request) === null) {
-      return write(
-        response,
-        isDocumentNavigation(request)
-          ? signInAnswer(401, `/p/${pageId}`, signInPage)
-          : textAnswer(401, "Sign in required"),
-      );
-    }
+    const signIn = () =>
+      isDocumentNavigation(request)
+        ? signInAnswer(401, `/p/${pageId}`, signInPage)
+        : textAnswer(401, "Sign in required");
+    const session = sessionOf(request);
+    if (session === null) return write(response, signIn());
     answerLater(
       response,
-      pages
-        .view(pageId)
-        .pipe(
-          Effect.map((view) =>
-            view === null ? htmlAnswer(404, pageEndedPage) : shellAnswer(view.page),
-          ),
-        ),
+      Effect.gen(function* () {
+        if (!(yield* stillSignedIn(session))) return signIn();
+        const view = yield* pages.view(pageId);
+        return view === null ? htmlAnswer(404, pageEndedPage) : shellAnswer(view.page);
+      }),
       htmlAnswer(503, pageUnavailablePage),
     );
   };
@@ -362,16 +386,15 @@ const makePagesServer = (context: PagesServerContext) => {
     response: NodeHttp.ServerResponse,
     pageId: string,
   ) => {
-    if (sessionOf(request) === null) return write(response, textAnswer(401, "Sign in required"));
+    const session = sessionOf(request);
+    if (session === null) return write(response, textAnswer(401, "Sign in required"));
     answerLater(
       response,
-      pages
-        .view(pageId)
-        .pipe(
-          Effect.map((view) =>
-            view === null ? textAnswer(404, "Not found") : rawAnswer(view.html),
-          ),
-        ),
+      Effect.gen(function* () {
+        if (!(yield* stillSignedIn(session))) return textAnswer(401, "Sign in required");
+        const view = yield* pages.view(pageId);
+        return view === null ? textAnswer(404, "Not found") : rawAnswer(view.html);
+      }),
       textAnswer(503, "Service unavailable"),
     );
   };
@@ -389,15 +412,14 @@ const makePagesServer = (context: PagesServerContext) => {
     }
     answerLater(
       response,
-      access
-        .verifyTicket({ token: ticket, host: pagesHost, nonce })
-        .pipe(
-          Effect.map((verified) =>
-            verified !== null && spend(verified, nonce)
-              ? signedInAnswer(verified.subject, path)
-              : ticketFailedAnswer(401, path),
-          ),
-        ),
+      Effect.gen(function* () {
+        // Read first, so a Library that cannot answer leaves the ticket unspent for a retry.
+        const signedOutAt = yield* pages.readersSignedOutAt;
+        const verified = yield* access.verifyTicket({ token: ticket, host: pagesHost, nonce });
+        return verified !== null && spend(verified, nonce)
+          ? signedInAnswer(verified.subject, path, signedOutAt)
+          : ticketFailedAnswer(401, path);
+      }),
       htmlAnswer(503, pageUnavailablePage),
     );
   };
@@ -445,14 +467,18 @@ const makePagesServer = (context: PagesServerContext) => {
         if (Option.isNone(reply)) return write(response, jsonAnswer(400, { reason: "invalid" }));
         answerLater(
           response,
-          pages
-            .addReply({
-              pageId,
-              replyId: reply.value.replyId,
-              text: reply.value.text,
-              viewer: session.sub,
-            })
-            .pipe(Effect.as(jsonAnswer(201, { ok: true })), Effect.catch(replyFailure)),
+          Effect.gen(function* () {
+            if (!(yield* stillSignedIn(session)))
+              return jsonAnswer(401, { reason: "unauthorized" });
+            return yield* pages
+              .addReply({
+                pageId,
+                replyId: reply.value.replyId,
+                text: reply.value.text,
+                viewer: session.sub,
+              })
+              .pipe(Effect.as(jsonAnswer(201, { ok: true })));
+          }).pipe(Effect.catch(replyFailure)),
           jsonAnswer(503, { reason: "io" }),
         );
       } catch {
@@ -462,7 +488,7 @@ const makePagesServer = (context: PagesServerContext) => {
     });
   };
 
-  const handle = (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
+  const handle: Handler = (request, response) => {
     if (normalizeRequestHost(request.headers.host) !== pagesHost) {
       return write(response, textAnswer(421, "Misdirected request"));
     }
@@ -502,7 +528,14 @@ const makePagesServer = (context: PagesServerContext) => {
     }
     write(response, textAnswer(404, "Not found"));
   };
+  return handle;
+};
 
+const makePagesServer = (context: PagesServerContext) => {
+  const handle =
+    context.cookieKey === null
+      ? withoutSignIn(context.pagesHost)
+      : pagesRoutes({ ...context, cookieKey: context.cookieKey });
   const server = guardHttpResponseWriteErrors(NodeHttp.createServer());
   server.on("request", (request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) => {
     try {
@@ -546,9 +579,10 @@ export const startPagesHost = (
       .getOrCreateRandom(COOKIE_KEY_SECRET, 32)
       .pipe(
         Effect.catch((cause) =>
-          Effect.logWarning("Using a temporary pages cookie key", { cause }).pipe(
-            Effect.as(randomCookieKey()),
-          ),
+          Effect.logError(
+            "Published pages sign no one in: the Library could not load its pages cookie key.",
+            { cause },
+          ).pipe(Effect.as(null)),
         ),
       );
     // Created before the listener, so on shutdown the listener closes first and then any

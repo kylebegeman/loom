@@ -109,6 +109,8 @@ export class LibraryPublisher extends Context.Service<
     readonly ackReply: (
       input: LibraryPageReplyAckRequest,
     ) => Effect.Effect<void, PreviewPagesError>;
+    /** Ends every pages browser sign-in; a Library that predates this answers `unavailable`. */
+    readonly signOutPageReaders: () => Effect.Effect<void, PreviewPagesError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -221,6 +223,7 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   };
   if (
@@ -289,6 +292,7 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   }
   const credentialResult = Option.isNone(credentialFile)
@@ -636,6 +640,9 @@ const make = Effect.gen(function* () {
     const body = yield* encodeReplyAck(input).pipe(Effect.mapError(invalidPageRequest));
     yield* postPage("/replies/ack", body);
   });
+  const signOutPageReaders = Effect.fnUntraced(function* () {
+    yield* postPage("/sign-out", "{}");
+  });
   return LibraryPublisher.of({
     enabled: true,
     info,
@@ -651,6 +658,7 @@ const make = Effect.gen(function* () {
     updatePage,
     nextReplies,
     ackReply,
+    signOutPageReaders,
   });
 });
 export const layer = Layer.effect(LibraryPublisher, make);
