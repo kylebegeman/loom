@@ -21,8 +21,10 @@ create, sign and release a workload automatically for SSH commands or Git ref li
 The operator must configure an enrolled broker for the server first. No workload key/session
 file transfer is required for these operations. Git uses the current thread checkout and an
 exact repository grant. See [use from an agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run).
-Ordinary terminal SSH agent routing, general shell exec, SDK delivery modes and
-per-workload OS isolation remain pending.
+Explicit terminal SSH-agent routing now runs a single local SSH/Git child with host SSH grants
+and server-side signing, including clone/fetch/push. Pi/ACP terminal connections are recognized;
+other native harnesses need explicit connection setup. Persistent shell activation, general shell
+exec, SDK delivery modes and per-workload OS isolation remain pending.
 
 ## Scope
 

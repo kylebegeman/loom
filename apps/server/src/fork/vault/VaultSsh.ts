@@ -1,4 +1,10 @@
+import type { ThreadId } from "@t3tools/contracts";
 import {
+  VaultSshAgentOpen,
+  VaultSshAgentFrame,
+  type VaultSshAgentSession,
+  type VaultWorkloadProof,
+  type VaultWorkloadSession,
   VaultError,
   VaultSshError,
   VaultWorkloadError,
@@ -26,6 +32,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Semaphore from "effect/Semaphore";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as VaultCore from "./VaultCore.ts";
@@ -37,6 +44,22 @@ type Failure = VaultError | VaultSshError | VaultWorkloadError;
 export class VaultSsh extends Context.Service<
   VaultSsh,
   {
+    readonly agentOpen: (
+      input: VaultSshAgentOpen,
+      proof: VaultWorkloadProof,
+      threadId: ThreadId,
+    ) => Effect.Effect<VaultSshAgentSession, Failure>;
+    readonly agentFrame: (
+      input: VaultSshAgentFrame,
+      threadId: ThreadId,
+    ) => Effect.Effect<{ response: string }, Failure>;
+    readonly agentClose: (
+      sessionId: string,
+      threadId: ThreadId,
+    ) => Effect.Effect<{ closed: true }, Failure>;
+    readonly agents: (
+      threadId: ThreadId,
+    ) => Effect.Effect<ReadonlyArray<VaultSshAgentSession>, Failure>;
     readonly generate: (
       input: VaultSshGenerate,
       actor: string,
@@ -77,6 +100,8 @@ const isGenerate = Schema.is(VaultSshGenerate),
   isExecute = Schema.is(VaultSshExecute),
   isProbe = Schema.is(VaultSshProbe),
   isGit = Schema.is(VaultGitExecute);
+const isAgentOpen = Schema.is(VaultSshAgentOpen),
+  isAgentFrame = Schema.is(VaultSshAgentFrame);
 const invalid = () => new VaultSshError({ reason: "invalid-key" });
 const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore,
@@ -85,6 +110,17 @@ const make = Effect.gen(function* () {
     transport = yield* SshTransport.SshTransport,
     crypto = yield* Crypto.Crypto;
   const active = yield* Ref.make(0);
+  type Activation = {
+    session: VaultWorkloadSession;
+    metadata: VaultSshAgentSession;
+    lock: Semaphore.Semaphore;
+    channels: Map<
+      string,
+      { sequence: number; binding: SshCrypto.SshBinding | null; signed: boolean }
+    >;
+  };
+  const agents = yield* Ref.make<ReadonlyMap<string, Activation>>(new Map());
+
   const load = Effect.fnUntraced(function* (id: string) {
     const item = yield* core.inspect(id);
     if (!item) return yield* new VaultError({ reason: "not-found" });
@@ -119,7 +155,108 @@ const make = Effect.gen(function* () {
       () => transport.execute(input),
       () => Ref.update(active, (count) => count - 1),
     );
+  const findAgent = Effect.fnUntraced(function* (sessionId: string, threadId: ThreadId) {
+    const activation = (yield* Ref.get(agents)).get(sessionId);
+    if (!activation || activation.session.threadId !== threadId)
+      return yield* new VaultError({ reason: "denied" });
+    yield* workloads.revalidate(activation.session);
+    return activation;
+  });
   return VaultSsh.of({
+    agentOpen: Effect.fn("VaultSsh.agentOpen")(function* (input, proof, threadId) {
+      if (!isAgentOpen(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const { session } = yield* workloads.check(proof);
+      if (session.threadId !== threadId || session.itemId !== input.id)
+        return yield* new VaultError({ reason: "denied" });
+      const record = yield* load(input.id);
+      if (
+        record.item.state !== "active" ||
+        record.item.version !== input.expectedVersion ||
+        session.destination !== vaultSshDestination(record.key.target)
+      )
+        return yield* new VaultSshError({ reason: "invalid-operation" });
+      if (!record.key.target.hostKey) return yield* new VaultSshError({ reason: "untrusted-host" });
+      yield* workloads.revalidate(session);
+      const metadata: VaultSshAgentSession = {
+        sessionId: session.id,
+        id: input.id,
+        version: input.expectedVersion,
+        expiresAt: session.expiresAt,
+        destination: session.destination,
+        target: record.key.target,
+        publicKey: record.key.publicKey,
+      };
+      const activation: Activation = {
+        session,
+        metadata,
+        lock: yield* Semaphore.make(1),
+        channels: new Map(),
+      };
+      const now = yield* Clock.currentTimeMillis;
+      const accepted = yield* Ref.modify(agents, (current) => {
+        const next = new Map([...current].filter(([, value]) => value.session.expiresAt > now));
+        if (next.size >= 64 || next.has(session.id)) return [false, next] as const;
+        next.set(session.id, activation);
+        return [true, next] as const;
+      });
+      if (!accepted) return yield* new VaultSshError({ reason: "capacity" });
+      return metadata;
+    }),
+    agents: Effect.fn("VaultSsh.agents")(function* (threadId) {
+      const live = new Set((yield* workloads.list(threadId)).map((session) => session.id));
+      return [...(yield* Ref.get(agents)).values()]
+        .filter((value) => live.has(value.session.id))
+        .map((value) => value.metadata);
+    }),
+    agentClose: Effect.fn("VaultSsh.agentClose")(function* (sessionId, threadId) {
+      const held = (yield* Ref.get(agents)).get(sessionId);
+      if (held && held.session.threadId !== threadId)
+        return yield* new VaultError({ reason: "denied" });
+      if (held) yield* workloads.close(sessionId, threadId);
+      yield* Ref.update(agents, (current) => {
+        const next = new Map(current);
+        next.delete(sessionId);
+        return next;
+      });
+      return { closed: true as const };
+    }),
+    agentFrame: Effect.fn("VaultSsh.agentFrame")(function* (input, threadId) {
+      if (!isAgentFrame(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const held = yield* findAgent(input.sessionId, threadId);
+      return yield* Effect.gen(function* () {
+        const authorize = Effect.gen(function* () {
+          if ((yield* Ref.get(agents)).get(input.sessionId) !== held)
+            return yield* new VaultError({ reason: "denied" });
+          yield* workloads.revalidate(held.session);
+          const current = yield* core.inspect(held.metadata.id);
+          if (!current || current.state !== "active" || current.version !== held.metadata.version)
+            return yield* new VaultError({ reason: "conflict" });
+        });
+        yield* authorize;
+        const frame = Buffer.from(input.frame, "base64");
+        if (!frame.length || frame.length > 16384 || frame.toString("base64") !== input.frame)
+          return yield* new VaultSshError({ reason: "invalid-operation" });
+        let channel = held.channels.get(input.channelId);
+        if (!channel) {
+          if (input.sequence !== 0 || held.channels.size >= 32)
+            return yield* new VaultSshError({ reason: "capacity" });
+          channel = { sequence: 0, binding: null, signed: false };
+          held.channels.set(input.channelId, channel);
+        }
+        if (input.sequence !== channel.sequence || (channel.signed && frame[0] === 13))
+          return yield* new VaultSshError({ reason: "invalid-operation" });
+        channel.sequence++;
+        const record = yield* load(held.metadata.id);
+        if (record.item.state !== "active" || record.item.version !== held.metadata.version)
+          return yield* new VaultError({ reason: "conflict" });
+        yield* authorize;
+        const result = yield* keys.respond({ ...record.key, frame, binding: channel.binding });
+        channel.binding = result.binding;
+        channel.signed ||= result.signed;
+        yield* authorize;
+        return { response: result.response.toString("base64") };
+      }).pipe(held.lock.withPermits(1));
+    }),
     git: Effect.fn("VaultSsh.git")(function* (input, guard = Effect.void) {
       yield* guard;
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });

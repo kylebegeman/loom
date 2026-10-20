@@ -16,9 +16,13 @@ schema and live infrastructure changes still follow the repository's authorizati
 
 Client management is verified on web/iOS. The approved follow-up now provides automatic
 workload setup/release through existing provider/task MCP connections and Git ref listing/fetch
-with repository-specific grants. Next suggested section for Kyle's approval: Project environment profiles and searchable references (L75/L73), starting with selecting approved SSH/Git bindings for a project without repeatedly supplying item IDs and destination strings.
-Ordinary terminal routing, clone/push, imports,
-additional algorithms, Windows, direct runner sockets and production registration remain pending.
+with repository-specific grants. Project profiles and searchable references are implemented in L75/L73. The terminal-agent
+section now provides explicit per-child ordinary SSH/Git routing, including clone/fetch/push,
+with run-owned host-bound signing and live policy checks. The real CLI path is verified against
+disposable OpenSSH/OpenBao. Pi/ACP terminal connections are recognized; automatic terminal
+connection propagation for remaining native harnesses is the next proposed section. Imports,
+additional algorithms, persistent shell attachment, Windows and production registration remain
+pending. The narrower hosted Git tool continues to support ref listing/fetch.
 No existing Git remote or personal 1Password configuration was changed.
 
 ## Steps

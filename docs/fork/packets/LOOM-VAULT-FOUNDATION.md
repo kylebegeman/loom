@@ -167,6 +167,21 @@ Presence alone does not attest a workload, issue credential-use leases, sign SSH
 an old backend snapshot can restore older approvals; revocation reconciliation remains part of
 recovery. Those limits apply even when the UI shows Online.
 
+## Explicit terminal SSH activation
+
+L81 now adds run-owned SSH agent activation for one local SSH/Git child, using the existing
+MCP authority and a signed five-minute workload check. Host-bound signing and current grants
+remain on the server; private keys never enter the terminal. This requires host SSH access,
+since an SSH authentication message cannot bind a repository path. Exact repository-only use
+stays on the mediated Git path. Pi/ACP terminal connections work with their existing variables;
+remaining native harnesses need explicit terminal configuration. See
+[L81](./L81-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for lifecycle and trust limits.
+
+The shared OpenBao adapter now uses a versioned serialized payload to avoid engine JSON
+string-count limits for bounded audit/registry records. It reads legacy records, preserves
+paths/CAS and rejects unknown formats. Older readers cannot read newly encoded records;
+rollback requires matching application/backend recovery versions. No live data was converted.
+
 ## Implemented workload authorization checks
 
 L84 adds five-minute sessions bound to the authenticated active run, provider, project, enrolled

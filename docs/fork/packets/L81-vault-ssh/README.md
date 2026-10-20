@@ -1,6 +1,6 @@
 # L81: SSH key management and Loom SSH agent
 
-Status: In progress. OpenBao-backed Ed25519 keys, signed mediated SSH commands and web/mobile key/trust management with authenticated probes implemented; full packet scope retained.
+Status: In progress. OpenBao-backed Ed25519 keys, mediated SSH/Git, web/mobile management and explicit terminal SSH-agent activation are implemented locally; full packet scope retained.
 
 Use dedicated Loom-managed SSH keys for development connections and Git operations.
 
@@ -22,8 +22,12 @@ version and pin, returning safe authentication evidence. It requires Vault write
 does not give workloads a use grant. The target must be reachable from the Loom server.
 Existing provider launches now expose authenticated SSH/Git tools with automatic workload
 setup/release. Git supports ref listing and fetch into the thread checkout using an exact
-repository grant. Ordinary terminal routing, clone/push, imports, general runner sockets,
-Windows and unattended boot remain pending.
+repository grant. Explicit `loom vault ssh-agent-exec` activation now runs ordinary terminal SSH/Git, including
+clone/fetch/push, through a temporary POSIX agent and the authenticated current run. A host SSH
+use grant is required; repository-only grants continue using the narrower hosted Git tool.
+The private key remains on the control plane. Pi and ACP terminal connections are recognized;
+other native harnesses need explicit terminal MCP configuration. Imports, additional key formats,
+Windows, persistent shell activation and stronger OS isolation remain open.
 See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and [TESTING.md](./TESTING.md).
 
 ## Scope

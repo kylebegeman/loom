@@ -75,6 +75,18 @@ text or lacks a particular instruction channel. Guidance names tools only when e
 contains no item values or authority, and does not cause another MCP process per provider.
 No secret environment variable is added to provider processes.
 
+## Explicit terminal agent delivery
+
+L81 adds `loom vault ssh-agent-exec` and run-owned agent open/frame/list/close tools. A successful
+signed workload check retains the five-minute session until explicit close or expiry; failed
+activation releases it. The terminal gets public metadata and signatures, never private key
+material. New frame requests revalidate the active run, provider, host, item version and grant.
+The temporary local socket and ordinary SSH/Git child run on the invoking host. Host SSH grants
+are required because generic SSH authentication contains no repository path. The hosted Git
+operation below remains the repository-scoped option. See
+[L81](../L81-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for client setup, transport and
+revocation limits. Existing provider processes receive no new credential environment variables.
+
 ## Git operation boundary
 
 Git supports `ls-remote` and `fetch` from the thread's current server checkout. The service

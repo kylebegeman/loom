@@ -3027,8 +3027,17 @@ authentication; generic signing and forwarding are unsupported. Private key byte
 the server/OpenBao through this operation. Only public temporary files are written. The target
 must be reachable from the Loom server. Commands are bounded to four concurrent executions,
 eight seconds and 2 KiB stdout. Cancellation/timeout closes local resources but cannot promise
-remote rollback. Already-issued signatures cannot be recalled. Provider/Git attachment, Windows
-and general runner-side sockets remain unfinished.
+remote rollback. Already-issued signatures cannot be recalled. The explicit terminal agent below extends this operation boundary. Windows, persistent shell
+attachment and other runner-side transports remain unfinished.
+
+`vault-ssh-agent` advertises fork-owned activation and ordered frame/list/close MCP tools.
+`VaultLaunch` proves and retains a five-minute workload check; `VaultSsh` keeps current-run,
+host, grant and item-version authority on every frame. A command-scoped POSIX relay forwards
+only host-bound agent requests and never receives a private key. The terminal wrapper validates
+its destination, isolates SSH/Git configuration and preserves child streams/exit status. Host SSH
+grants are required because authentication signatures cannot enforce repository paths. Pi/ACP
+terminal connections are recognized; remaining native-harness setup is explicit. No new
+upstream seam or client RPC is added. See [L81](./L81-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
 
 `vault-ssh-management` separately advertises public-info and key/trust/probe RPCs, protected by
 environment access:read/access:write. Web/desktop and mobile use the shared client-runtime

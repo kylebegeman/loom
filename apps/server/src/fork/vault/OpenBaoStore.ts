@@ -36,6 +36,14 @@ export class OpenBaoStore extends Context.Service<
   }
 >()("t3/fork/vault/OpenBaoStore") {}
 
+// OpenBao limits JSON complexity by string count, including repeated object keys.
+// A versioned JSON payload keeps bounded policy/audit registries below that engine limit.
+const StoredValue = Schema.Struct({
+  loomVaultEncoding: Schema.Literal("json-v1"),
+  payload: Schema.fromJsonString(Schema.Unknown),
+});
+const encodeValue = Schema.encodeEffect(StoredValue),
+  decodeValue = Schema.decodeUnknownOption(StoredValue);
 const ReadResponse = Schema.Struct({
   data: Schema.Struct({
     data: Schema.RedactedFromValue(Schema.Unknown),
@@ -182,7 +190,18 @@ const make = Effect.gen(function* () {
       yield* check(response);
       const decoded = decodeRead(yield* json(response));
       if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-response" });
-      return { value: decoded.value.data.data, version: decoded.value.data.metadata.version };
+      let value = decoded.value.data.data;
+      const raw = Redacted.value(value);
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        Object.prototype.hasOwnProperty.call(raw, "loomVaultEncoding")
+      ) {
+        const envelope = decodeValue(raw);
+        if (Option.isNone(envelope)) return yield* new VaultError({ reason: "invalid-response" });
+        value = Redacted.make(envelope.value.payload);
+      }
+      return { value, version: decoded.value.data.metadata.version };
     }),
     write: Effect.fn("OpenBaoStore.write")(function* (key, value, expectedVersion) {
       if (!validKey(key) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
@@ -190,7 +209,10 @@ const make = Effect.gen(function* () {
       }
       const serialized = yield* encodeWrite({
         options: { cas: expectedVersion },
-        data: Redacted.value(value),
+        data: yield* encodeValue({
+          loomVaultEncoding: "json-v1",
+          payload: Redacted.value(value),
+        }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" }))),
       }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));
       const bytes = new TextEncoder().encode(serialized);
       if (bytes.length > 8 * 1024 * 1024) return yield* new VaultError({ reason: "invalid-input" });

@@ -42,8 +42,9 @@ file is created. Remote command effects can survive disconnect; a lost response 
 outcome. Consumed challenges reject retry; a fresh proof can repeat the remote effect.
 
 Revocation prevents new signatures/operations when checked. It does not recall an already
-issued signature or roll back an authenticated remote command. No generic socket is exposed to
-workloads, and the returned JSON contains no key or bearer capability. Same-user processes can
+issued signature or roll back an authenticated remote command. The mediated operation exposes no generic socket to
+workloads; explicit terminal activation adds the restricted local relay described below. Neither
+path returns a private key or bearer capability in its result. Same-user processes can
 still read backend token/identity files or interfere with server memory/sockets; this is not an
 OS isolation boundary. Production host isolation, boot custody and operational recovery remain
 separate design gates.
@@ -52,8 +53,8 @@ The HTTP endpoint is `/api/loom/vault-brokers/workloads/ssh-exec`. Administrator
 and trust require a human full-access client; threads can inspect public metadata only with an
 inspect grant. Existing signed runner/CLI transport makes execution available to authenticated
 Loom agent terminals without an administrator/backend token. Existing provider/task launches
-also expose hosted tools that create/release the operation's session automatically. General
-terminal credential attachment remains unfinished. General readiness stays conservative and does not perform this probe
+also expose hosted tools that create/release the operation's session automatically. Explicit per-command terminal attachment is described below; persistent shell attachment and
+remaining native-harness environment setup remain unfinished. General readiness stays conservative and does not perform this probe
 automatically.
 
 The separate `vault-ssh-management` capability advertises `loom.vault-ssh.info`, `generate`,
@@ -81,6 +82,61 @@ version. It verifies the exact repository grant and rechecks active policy/item 
 transport/signing and after completion. The shared transport runs Git ref listing/fetch through
 the scoped pinned agent, with 30-second/64-KiB limits and process-group cleanup. SSH remains
 8-second/2-KiB. Neither operation installs a persistent socket or changes the personal vault.
+
+## Explicit terminal SSH agent
+
+`VaultSsh` owns activation, ordered channel frames, inspection and close. `VaultLaunch.agent`
+uses the configured enrolled server identity and a fresh workload key to prove a normal
+`check` challenge. The resulting five-minute workload session is retained only after successful
+activation; a failed open releases it. The authenticated MCP caller must own the session's
+current full-access/default run. Each frame rechecks host presence/approval, current run,
+provider, item state/version and use policy. Closing removes both activation and workload.
+Restart invalidates all activations. Metadata/session references alone confer no access.
+
+A session exposes one public identity. Each channel permits one verified session binding and
+one host-bound authentication signature, with strict increasing sequence numbers. Replay,
+generic signing, forwarded bindings, wrong hosts/users and stale item versions fail. Per-session
+serialization prevents concurrent signing/replay races. Sessions are capped at 64 globally,
+with the workload limit of eight per thread; each retains at most 32 channels and 65 frames per
+channel. Frames are canonical base64 with at most 16 KiB decoded bytes. Private key material is
+loaded behind the service boundary and is never returned to the local terminal.
+
+OpenSSH authentication does not sign a Git repository path. Agent activation therefore needs a
+use grant covering the SSH host destination, rather than treating a repository-specific grant
+as general signing authority. The existing mediated Git proof still enforces exact repository
+scope. Session binding proves the pinned host key and username, not network hostname/port.
+The local launcher's argument validation enforces the configured hostname/port, while the
+signing service enforces host-key/user identity. Neither is an isolation boundary against a
+same-user full-access process with access to server files, memory or sockets.
+
+`SshAgentClient` recognizes complete explicit `LOOM_MCP_ENDPOINT`/`LOOM_MCP_AUTHORIZATION`, ACP
+`T3_ACP_MCP_ENDPOINT`/`T3_ACP_MCP_AUTHORIZATION`, or Pi `T3_MCP_URL`/`T3_MCP_BEARER_TOKEN`
+pairs, in that order. It never mixes partial credentials from different families. Authenticated
+requests reject redirects, bound responses and timeouts, and surface normalized errors.
+
+`SshAgentTerminal` runs on the invoking host. It creates a private local socket, public identity,
+known-hosts file and destination-validating SSH launcher for one child. Git uses that launcher
+through `GIT_SSH`; direct SSH uses it too. OpenSSH ignores personal configuration, passwords,
+forwarding and multiplexing and requires pinned Ed25519 host-bound authentication. The child
+receives its own HOME/config, safe Git defaults and socket, with no inherited personal agent or
+MCP bearer credentials. Git executes its ordinary argv in the invoking terminal's checkout;
+clone/fetch/push do not rewrite existing remotes. This activation grants host authentication,
+not repository-specific control of arbitrary Git arguments or filesystem/checkout attestation.
+
+Four local sockets and eight queued frames are allowed per activation. The foreground CLI
+preserves child streams and exit status, prints safe activation failures to stderr, and closes
+the socket, public files and owned process group on normal exit, timeout or cancellation. The
+selected timeout is at most five minutes and never extends server expiry. An unreachable close
+can leave a server session until expiry; it cannot grant offline signing. Abrupt SIGKILL can
+leave public temporary files. Revocation blocks future signatures, but cannot recall a signature,
+terminate an already authenticated remote connection or undo remote effects.
+
+This is explicit per-command activation; it does not alter the enclosing provider shell. Pi and
+ACP already expose usable terminal connection variables. Native Codex, Claude, Cursor, Grok,
+OpenCode and Muse still use their MCP tools directly or need explicitly configured terminal
+connection variables. Their automatic terminal environment propagation remains a separate
+follow-up. Antigravity follows ACP. Web/desktop/mobile retain the existing key, host-trust and
+grant management entry points; no new client UI or upstream provider seam is introduced.
 
 ## Overview
 

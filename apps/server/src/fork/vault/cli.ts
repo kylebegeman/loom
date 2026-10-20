@@ -1,3 +1,4 @@
+import { sshAgentExecCommand } from "./ssh-agent-cli.ts";
 import { githubExecCommand } from "./terminal-cli.ts";
 import { brokerCommand } from "./broker-cli.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI process boundary reads its authenticated connection environment.
@@ -5,6 +6,8 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "ssh-agents": "loom_vault_ssh_agents",
+  "ssh-agent-close": "loom_vault_ssh_agent_close",
   "references-search": "loom_vault_references_search",
   "references-describe": "loom_vault_references_describe",
   github: "loom_vault_github",
@@ -47,6 +50,7 @@ export const vaultCommand = Command.make("vault").pipe(
     "Inspect Loom Vault or change item lifecycle through the authenticated Loom connection. Enter secret values privately in Loom.",
   ),
   Command.withSubcommands([
+    sshAgentExecCommand,
     brokerCommand,
     githubExecCommand,
     ...Object.entries(actions).map(([action, tool]) =>

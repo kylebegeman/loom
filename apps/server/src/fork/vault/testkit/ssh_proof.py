@@ -84,7 +84,7 @@ def main() -> None:
                 LOOM_VAULT_TEST_SSH_HOST_KEY=" ".join((root / "host.pub").read_text().split()[:2]),
                 LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS=str(authorized),
             )
-            subprocess.run([str(REPOSITORY / "node_modules/.bin/vp"), "test", "run", "apps/server/src/fork/vault/VaultSsh.integration.test.ts"], cwd=REPOSITORY, env=environment, check=True)
+            subprocess.run([str(REPOSITORY / "node_modules/.bin/vp"), "test", "run", "--no-file-parallelism", "apps/server/src/fork/vault/VaultSsh.integration.test.ts", "apps/server/src/fork/vault/SshAgentTerminal.integration.test.ts"], cwd=REPOSITORY, env=environment, check=True)
             fixture.stop()
             fixture = None
             for path in (root / "bao-data").rglob("*"):

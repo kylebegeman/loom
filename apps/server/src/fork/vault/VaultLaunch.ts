@@ -1,6 +1,8 @@
 import * as VaultProfiles from "./VaultProfiles.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
+  VaultSshAgentOpen,
+  type VaultSshAgentSession,
   VaultError,
   VaultWorkloadError,
   VaultSshError,
@@ -40,6 +42,10 @@ type Failure = HostedFailure | VaultGitHubError;
 export class VaultLaunch extends Context.Service<
   VaultLaunch,
   {
+    readonly agent: (
+      input: VaultSshAgentOpen,
+      threadId: ThreadId,
+    ) => Effect.Effect<VaultSshAgentSession, HostedFailure>;
     readonly profile: (
       input: VaultProfileRun,
       threadId: ThreadId,
@@ -57,6 +63,7 @@ export class VaultLaunch extends Context.Service<
 const denied = () => new VaultError({ reason: "denied" });
 const isSsh = Schema.is(VaultSshRun),
   isGit = Schema.is(VaultGitRun);
+const isAgentOpen = Schema.is(VaultSshAgentOpen);
 const isProfileRun = Schema.is(VaultProfileRun);
 const make = Effect.gen(function* () {
   const identities = yield* BrokerIdentity.BrokerIdentity,
@@ -75,11 +82,12 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
     itemId: string,
     destination: string,
-    operation: "ssh-exec" | "git-exec",
+    operation: "ssh-exec" | "git-exec" | "check",
     message: string,
     execute: (
       proof: Parameters<VaultSsh.VaultSsh["Service"]["execute"]>[0]["proof"],
     ) => Effect.Effect<A, HostedFailure>,
+    retainSession = false,
   ) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -90,18 +98,20 @@ const make = Effect.gen(function* () {
           .connection(configured)
           .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
         const machine = yield* identities
-          .read(configured)
+          .read(configured, false)
           .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "not-configured" })));
         if (machine.fingerprint.slice(0, 32) !== connection.machineId) return yield* denied();
         const workload = yield* keys.create.pipe(
           Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
         );
+        let retained = false;
         const session = yield* Effect.acquireRelease(
           workloads.open(
             { machineId: connection.machineId, publicKey: workload.publicKey, itemId, destination },
             threadId,
           ),
-          (session) => workloads.close(session.id, threadId).pipe(Effect.ignore),
+          (session) =>
+            retained ? Effect.void : workloads.close(session.id, threadId).pipe(Effect.ignore),
         );
         if (session.environmentId !== connection.environmentId) return yield* denied();
         const payloadDigest = yield* crypto
@@ -131,10 +141,12 @@ const make = Effect.gen(function* () {
           ...request,
           ...(yield* signed(vaultWorkloadRequestMessage(request))),
         });
-        return yield* execute({
+        const result = yield* execute({
           challenge,
           ...(yield* signed(vaultWorkloadProofMessage(challenge))),
         });
+        retained = retainSession;
+        return result;
       }),
     );
   const operations = {
@@ -187,6 +199,19 @@ const make = Effect.gen(function* () {
   };
   return VaultLaunch.of({
     ...operations,
+    agent: Effect.fn("VaultLaunch.agent")(function* (input, threadId) {
+      if (!isAgentOpen(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const info = yield* ssh.info(input.id);
+      return yield* run(
+        threadId,
+        input.id,
+        info.destination,
+        "check",
+        "",
+        (proof) => ssh.agentOpen(input, proof, threadId),
+        true,
+      );
+    }),
     profile: Effect.fn("VaultLaunch.profile")(function* (input, threadId) {
       if (!isProfileRun(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const initial = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));

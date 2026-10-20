@@ -66,10 +66,19 @@ heartbeat diagnostics. Native plist parsing, actual CLI subprocesses and isolate
 provide local evidence. Linux/Pi execution and real login/logout/reboot acceptance remain pending;
 no live service was installed. These host-local controls do not claim workload-use readiness.
 
-The next proposed section for Kyle's approval is a dedicated Vault SSH agent for ordinary
-terminal SSH/Git: explicit activation, current run/use grants, host/destination checks and
-revocation, across supported provider launches. Preserve the current mediated SSH path and make
-same-user isolation limits explicit. Broader packet scopes remain In progress.
+The terminal-agent section is now implemented locally. Explicit `ssh-agent-exec` activation
+runs ordinary SSH/Git, including clone/fetch/push, with a temporary local relay and live run,
+version, host and SSH-use-grant checks. Real CLI/protocol/revocation and cleanup evidence passes.
+Private keys remain on the server; repository-only grants retain the mediated Git boundary.
+Pi and ACP terminal connections are recognized. A discovered OpenBao JSON-complexity limit is
+fixed by a versioned, legacy-readable storage envelope; encrypted persistence/restore passes.
+No live backend conversion, credential registration, service installation or deployment ran.
+
+The next proposed section for Kyle's approval is automatic terminal MCP connection setup and
+readiness for the remaining native provider harnesses, beginning with Codex and Claude. Keep
+credentials session-bound, refresh/revoke on provider lifecycle changes and verify real launched
+terminal contexts, so explicit Vault commands do not require manual connection configuration.
+Broader packet scopes remain In progress.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and

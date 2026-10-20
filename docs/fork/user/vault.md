@@ -270,6 +270,41 @@ print sensitive remote values. Timeout, cancellation or a lost response can leav
 effects, and a fresh retry can repeat them. Revocation blocks new authorization/signatures;
 it cannot undo an already authenticated command. Release the workload session when finished.
 
+## Use SSH and Git from an agent terminal
+
+Use explicit terminal activation when ordinary SSH/Git output or commands are needed on the
+invoking host. The administrator must grant the selected key for its SSH host destination,
+such as `ssh://git@dev.example.test:22`, and pin that host's Ed25519 key. A repository-only Git
+grant uses the hosted `loom vault git` path instead.
+
+From an active full-access/default agent terminal, replace the item ID, version and host with
+the managed key's current details:
+
+```sh
+loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"ssh","argv":["git@dev.example.test","uname -a"]}}'
+loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"git","argv":["fetch","origin"]}}'
+```
+
+Git clone/push and other ordinary Git argv also use this command. The key's host, user and port
+must match the SSH remote; existing remotes are retained. Direct SSH supports the pinned host,
+optional matching `-p`/`-l`, `-T` and verbosity flags. Forwarding, proxy/config overrides and
+interactive authentication are unavailable. Each child gets temporary configuration and one
+agent; its output and exit status are preserved. The command runs in that terminal's current
+checkout and connects from that host, which may differ from the Loom server.
+
+Pi and ACP use their existing terminal MCP connection. Other native harnesses need an explicit
+`LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION` pair configured privately in the terminal, or
+can continue using their existing hosted MCP tools. This command requires an authenticated
+active agent run; an unrelated shell or context-free scheduled command does not gain access.
+Never paste connection credentials into a prompt or command argument.
+
+Each activation expires within five minutes. Completion or cancellation cleans the local agent;
+Ctrl+C stops its child. Inspect with `loom vault ssh-agents` and close an owned reference with
+`loom vault ssh-agent-close '{"sessionId":"your-session-id"}'`. Closing or revoking prevents
+new signatures; an already authenticated remote connection or its effects may continue. If the
+server cannot be reached for close, the server reference expires. No surrounding shell or
+personal SSH configuration is changed, and private keys stay in Vault's control plane.
+
 ## Find references and configure a project profile
 
 In web or desktop **Settings → Loom**, use **Vault references** to search names or item IDs

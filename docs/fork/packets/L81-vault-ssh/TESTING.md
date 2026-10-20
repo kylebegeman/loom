@@ -3,6 +3,40 @@
 Status: mediated SSH and client-management milestones are verified against disposable OpenSSH
 and OpenBao, web and native iOS. Complete packet acceptance remains pending.
 
+## Current terminal-agent milestone
+
+The focused regression run passes **95 tests in ten files**: new server activation/protocol,
+local process and authenticated client tests; existing SSH/launch/crypto tests; OpenBao adapter
+coverage; shared provider-instruction and Pi launch/system-prompt regressions. Tests cover
+host-bound signatures, owner/run/version checks, grant revocation, host disable, archive,
+expiry, replay, generic/forwarded signing denial, foreign MCP callers, repository-only grant
+rejection, local cancellation/timeouts, no personal/MCP credentials in child configuration,
+connection-family separation, authenticated redirect refusal and oversized response cancellation.
+
+The disposable `ssh_proof.py` now runs two files sequentially because they share one temporary
+authorized-keys file. All **five real integration tests pass**. The added proof drives actual
+CLI subprocesses through a synthetic authenticated MCP endpoint backed by real Vault services
+and OpenBao, and uses real OpenSSH for host-bound authentication. It preserves exact stdout,
+stderr and exit 7; exercises Git clone, fetch and push to a synthetic repository; revokes a
+grant before signing; and proves workload/socket/public-directory cleanup. Pi's existing
+terminal connection variables are used in the SSH proof. No personal keys or live host change.
+A separate OpenBao proof passes encrypted persistence, CAS and clean stopped-data restore.
+
+Repeated signing first exposed OpenBao's default JSON string-count complexity limit in the
+policy audit record. The adapter now stores a versioned serialized payload and reads legacy
+records; the full audit regression and real Git push pass without increasing backend limits or
+dropping audit events. Temporary diagnostic instrumentation is removed. A cleanup assertion
+also now checks directories rather than unrelated log files with the same prefix.
+
+Contracts, client-runtime, server, web, mobile, desktop and provider-core typechecks pass.
+Scoped source lint, formatting, local document links and seam checks pass. No frontend code is
+changed, so no new browser/device interaction pass is claimed. No repo-wide suite is run.
+
+These tests use a synthetic active provider run. Actual paid provider/model executions, native
+Linux/Pi/Windows binaries, complete relay/tunnel routes and remaining native-harness terminal
+connection propagation are not verified. Local key custody and same-user OS isolation limits
+remain as documented. Full packet acceptance remains pending.
+
 ## Focused automated behavior
 
 `SshCrypto.test.ts` independently constructs host-bound agent frames and verifies real Ed25519
@@ -98,7 +132,7 @@ GitHub account, personal credential or global Git/SSH setting is changed.
 
 - Extend client coverage to Android, Electron-specific behavior and interactive read-only,
   sealed/offline and older-server connection matrices.
-- Complete live installed-provider/scheduler acceptance and ordinary terminal Git attachment.
+- Complete live installed-provider/scheduler acceptance and remaining native-harness terminal setup.
   Synthetic Pi/Codex callers and project-granted future task threads are verified below.
 - Verify chosen OS boundaries, imports/algorithms and Windows support or explicit unsupported
   behavior on real Windows; exercise remote/relay/tunnel matrices and skewed capabilities.
@@ -107,8 +141,10 @@ GitHub account, personal credential or global Git/SSH setting is changed.
 ## Merge safety
 
 The implementation uses fork-owned paths and existing registries, with no new upstream seam.
-Source commit `30ac9197b6` previews cleanly against the newest local upstream nightly,
-`v0.1.1-nightly.20261017.3238`, using `git merge-tree --write-tree --name-only --no-messages`.
-The hosted SSH/Git follow-up, source commit `fe77b4fb01`, also previews cleanly against that
-nightly. Full post-landing rehearsal remains a separate integration check. No fetch, landing, push,
-production registration or deployment was performed.
+Read-only previews against the latest fetched nightly `v0.1.1-nightly.20261019.3373` show the
+same 68 conflicting files for the starting commit `5b9abf5ef6` and the completed terminal-agent
+change, with no added or removed conflict paths. The branch is not cleanly mergeable with
+that nightly; pre-existing conflicts remain separate integration work. No actual
+merge, push, PR, production registration, backend conversion or deployment was performed.
+Full post-landing rehearsal remains a clean-main integration step. This local milestone does
+not mark the full L81 packet complete.

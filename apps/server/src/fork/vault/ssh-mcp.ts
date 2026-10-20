@@ -1,6 +1,12 @@
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
+  VaultSshAgentOpen,
+  VaultSshAgentSession,
+  VaultSshAgentFrame,
+  VaultSshAgentResponse,
+  VaultSshAgentClose,
+  VaultSshAgentClosed,
   VaultError,
   VaultSshError,
   VaultWorkloadError,
@@ -32,6 +38,38 @@ const failure = Schema.Union([
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
+  Tool.make("loom_vault_ssh_agent_open", {
+    description:
+      "Explicitly activate one five-minute SSH agent session for this current full-access/default run, dedicated key/version and pinned host. Requires a host SSH use grant; repository-only grants do not authorize agent signing. Use the Loom ssh-agent-exec CLI to run ordinary terminal SSH/Git with local socket cleanup. Returns public metadata, never private keys. Already authenticated remote connections are not recalled by revocation.",
+    parameters: VaultSshAgentOpen,
+    success: VaultSshAgentSession,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_vault_ssh_agent_frame", {
+    description:
+      "Relay one bounded SSH agent protocol frame for an owned activation/channel with strict sequence order. The server verifies session/host-bound authentication and live grants before releasing a signature. Used by the Loom terminal agent; no generic signing or forwarding.",
+    parameters: VaultSshAgentFrame,
+    success: VaultSshAgentResponse,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_vault_ssh_agent_close", {
+    description:
+      "Close an owned terminal SSH agent activation and its workload session. Prevents new signing; does not undo authenticated remote operations.",
+    parameters: VaultSshAgentClose,
+    success: VaultSshAgentClosed,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_vault_ssh_agents", {
+    description:
+      "List public terminal-agent activations for this authenticated active run. References alone grant no signing access.",
+    parameters: Schema.Struct({}),
+    success: Schema.Array(VaultSshAgentSession),
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_ssh_exec", {
     description:
       "Run bounded SSH argv using a dedicated Vault item and its current version for this authenticated active thread/run. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Requires a current exact-destination use grant and full-access/default mode. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
@@ -99,6 +137,42 @@ export const vaultSshHandlers = McpToolAccess.toLayer(
       return caller.thread.threadId;
     });
     return {
+      loom_vault_ssh_agent_open: McpToolAccess.writesEnvironment((input) =>
+        callingThread.pipe(
+          Effect.flatMap((threadId) =>
+            onHost(
+              Effect.flatMap(VaultLaunch.VaultLaunch, (launch) => launch.agent(input, threadId)),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_ssh_agent_frame: McpToolAccess.writesEnvironment((input) =>
+        callingThread.pipe(
+          Effect.flatMap((threadId) =>
+            onHost(
+              Effect.flatMap(VaultSsh.VaultSsh, (service) => service.agentFrame(input, threadId)),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_ssh_agent_close: McpToolAccess.writesEnvironment((input) =>
+        callingThread.pipe(
+          Effect.flatMap((threadId) =>
+            onHost(
+              Effect.flatMap(VaultSsh.VaultSsh, (service) =>
+                service.agentClose(input.sessionId, threadId),
+              ),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_ssh_agents: McpToolAccess.reads(() =>
+        callingThread.pipe(
+          Effect.flatMap((threadId) =>
+            onHost(Effect.flatMap(VaultSsh.VaultSsh, (service) => service.agents(threadId))),
+          ),
+        ),
+      ),
       loom_vault_ssh_exec: McpToolAccess.writesEnvironment((input) =>
         callingThread.pipe(
           Effect.flatMap((threadId) =>

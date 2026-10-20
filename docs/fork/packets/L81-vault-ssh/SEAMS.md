@@ -23,5 +23,9 @@ No upstream file, SQL schema, application dependency, global SSH setting or pers
 store is changed. Client key/trust UI, protected RPCs, palette navigation and shared refresh
 reuse existing fork-owned registries. Hosted SSH/Git access and automatic session setup use
 these same services. L84 owns the two-line `ext-vault` marker boundary in shared provider
-instructions; L81 adds no upstream file. Full terminal/Git support still needs review. Focused merge verification
+instructions; L81 adds no upstream file. Explicit terminal activation registers in fork-owned contracts, SSH services, CLI/MCP and
+capability lists. Provider guidance stays in `packages/provider-core/src/fork/vaultInstructions.ts`
+through the existing shared seam. No new upstream file or seam is added. The OpenBao adapter
+encoding fix is shared with L78 and documented there. Remaining harness setup, persistent
+activation, imports and Windows transports still need implementation. Focused merge verification
 is recorded in TESTING.md; no landing or deployment is implied.

@@ -168,7 +168,10 @@ it.effect("writes CAS requests without exposing secret bodies to request inspect
         const content = chunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
         expect(JSON.parse(content)).toEqual({
           options: { cas: 3 },
-          data: { password: privateValue },
+          data: {
+            loomVaultEncoding: "json-v1",
+            payload: JSON.stringify({ password: privateValue }),
+          },
         });
       }),
     { reply: () => [200, { data: { version: 4 } }] },
@@ -231,5 +234,91 @@ it.effect("re-reads a rotated service token instead of caching expired credentia
         expect(requests[1]!.headers.authorization).toBe("Bearer replacement-service-token");
       }),
     { reply: () => [404, {}] },
+  ),
+);
+
+it.effect(
+  "reads complex versioned JSON records while retaining legacy record compatibility",
+  () => {
+    const payload = {
+      audit: Array.from({ length: 256 }, (_, i) => ({
+        id: String(i),
+        actor: "synthetic",
+        type: "decision",
+        itemId: "item",
+        reason: "allowed",
+      })),
+      secret: privateValue,
+    };
+    return withStore(
+      ({ store }) =>
+        Effect.gen(function* () {
+          const result = yield* store.read("environments/test/access-policy");
+          expect(Redacted.value(result!.value)).toEqual(payload);
+          expect(JSON.stringify(result)).not.toContain(privateValue);
+        }),
+      {
+        reply: () => [
+          200,
+          {
+            data: {
+              data: { loomVaultEncoding: "json-v1", payload: JSON.stringify(payload) },
+              metadata: { version: 2 },
+            },
+          },
+        ],
+      },
+    );
+  },
+);
+it.effect.each([
+  { loomVaultEncoding: "json-v1", payload: "not JSON synthetic-private-value" },
+  { loomVaultEncoding: "future", payload: "{}" },
+])("fails closed on malformed or unknown stored envelope %j", (envelope) =>
+  withStore(
+    ({ store }) =>
+      Effect.gen(function* () {
+        const error = yield* store.read("items/test").pipe(Effect.flip);
+        expect(error.reason).toBe("invalid-response");
+        expect(JSON.stringify(error)).not.toContain("synthetic-private-value");
+      }),
+    { reply: () => [200, { data: { data: envelope, metadata: { version: 2 } } }] },
+  ),
+);
+it.effect("writes a full audit registry within OpenBao's JSON complexity bound", () =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        const payload = {
+          audit: Array.from({ length: 256 }, (_, i) => ({
+            id: String(i),
+            actor: "synthetic",
+            type: "decision",
+            itemId: "item",
+            reason: "allowed",
+            policyRevision: 1,
+          })),
+        };
+        yield* store.write("environments/test/access-policy", Redacted.make(payload), 1);
+        const body = requests[0]!.body;
+        if (body._tag !== "Stream") return yield* Effect.die("Expected protected stream body");
+        const chunks = yield* Stream.runCollect(body.stream.pipe(Stream.orDie));
+        const encoded = JSON.parse(chunks.map((chunk) => new TextDecoder().decode(chunk)).join(""));
+        const strings = (value: unknown): number =>
+          typeof value === "string"
+            ? 1
+            : Array.isArray(value)
+              ? value.reduce<number>((n, child) => n + strings(child), 0)
+              : value !== null && typeof value === "object"
+                ? Object.entries(value).reduce(
+                    (n, [key, child]) => n + strings(key) + strings(child),
+                    0,
+                  )
+                : 0;
+        expect(strings(payload)).toBeGreaterThan(1000);
+        expect(strings(encoded)).toBeLessThan(1000);
+        expect(JSON.parse(encoded.data.payload)).toEqual(payload);
+      }),
+    { reply: () => [200, { data: { version: 2 } }] },
   ),
 );

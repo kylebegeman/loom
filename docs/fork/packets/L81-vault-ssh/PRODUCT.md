@@ -28,6 +28,21 @@ their own trust or invoke the administrator probe. Automatic operation-scoped SS
 provider/task launch. Ordinary terminal routing, clone/push, imports and the remaining
 complete packet outcome stay selected.
 
+## Available terminal activation
+
+From an authenticated active agent terminal, choose a dedicated key and its current version,
+then explicitly run ordinary SSH or Git through `loom vault ssh-agent-exec`. The command gets
+one temporary agent, pinned host trust and isolated configuration. Output and exit status are
+preserved. Completion, cancellation or timeout removes local activation state; inspection and
+close are also available through the authenticated CLI/MCP connection.
+
+This requires a host SSH use grant. A repository-only Git grant remains appropriate for the
+mediated Git tool and does not authorize unrestricted host authentication. Pi and ACP work with
+their existing terminal connection; other native harnesses need explicit terminal setup or use
+hosted MCP operations. No personal key-manager prompt or automatic personal-key fallback is
+part of the flow. The connection originates on the invoking host. Five-minute expiry and live
+signing checks do not revoke an already authenticated connection or undo its remote effects.
+
 ## How it works
 
 Generate or explicitly import keys, keep private material behind the broker signing interface, and track public-key registrations and host trust independently. Give workloads a restricted identity set through platform-appropriate agent transport. Validate destination constraints using supported SSH mechanisms or a mediated connection, not an assumed hostname in generic signing requests.
@@ -78,7 +93,7 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Initial generated keys and host pins use Ed25519. Private keys are stored as PKCS8 inside the encrypted item payload. Imports and additional algorithms remain open.
-- D7 is resolved for this milestone: mediated connections from the Loom server, operation-scoped POSIX sockets, verified OpenSSH host-bound authentication and no forwarding. General runner-side sockets and Windows transports remain open.
+- D7 is resolved for this milestone: mediated connections from the Loom server, operation-scoped POSIX sockets, verified OpenSSH host-bound authentication and no forwarding. Explicit POSIX terminal relay sockets are now implemented with host SSH grants; persistent shell attachment, additional runner modes and Windows transports remain open.
 - Is commit signing part of a later extension of this packet? It is not required by the current SSH outcome.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

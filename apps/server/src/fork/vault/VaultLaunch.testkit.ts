@@ -101,5 +101,5 @@ export const launchFixture = (
       "admin",
       Effect.void,
     );
-    return { ...f, launch, identity, project, key };
+    return { ...f, launch, identity, project, key, host };
   });

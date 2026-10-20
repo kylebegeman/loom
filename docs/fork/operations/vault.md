@@ -39,6 +39,16 @@ Status checks health and KV v2 configuration, not all path privileges. A ready c
 still receive a denied item operation if its policy is incomplete. A sealed backend reports
 locked. Loom neither auto-unseals it nor asks an SSH key manager to unlock it.
 
+## Payload compatibility
+
+New writes use a versioned serialized JSON envelope inside KV v2. This avoids OpenBao's JSON
+string-count limit for bounded policy/audit registries; paths, CAS and retention are unchanged.
+Existing records remain readable and are encoded on their next normal write. No live backend
+is converted by the local milestone. Older Loom versions cannot read newly encoded records.
+Use a compatible application reader for rollback, or restore a matching pre-upgrade snapshot
+and reconcile revocations before resuming traffic. Keep backend and application recovery
+versions together; do not lower backend JSON checks to work around audit growth.
+
 ## Trust and retention
 
 OpenBao encrypts records at rest. Loom's service process can decrypt authorized records through

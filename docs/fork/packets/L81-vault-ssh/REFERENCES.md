@@ -39,3 +39,13 @@ Initial review against `2f385ee835`; the mediated implementation starts from `c2
 External engines and specs in the foundation are evaluation references. No external code or
 assets are copied. Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0) for the shared backend;
 this packet adds no application dependency.
+
+## Terminal agent implementation
+
+- [Activation contracts](../../../../packages/contracts/src/fork/vault-ssh-agent.ts).
+- [Terminal adapter](../../../../apps/server/src/fork/vault/SshAgentTerminal.ts),
+  [MCP client](../../../../apps/server/src/fork/vault/SshAgentClient.ts) and
+  [SSH launcher](../../../../apps/server/src/fork/vault/ssh-agent-launcher.ts).
+- [Agent policy/protocol tests](../../../../apps/server/src/fork/vault/VaultSshAgent.test.ts),
+  [local process tests](../../../../apps/server/src/fork/vault/SshAgentTerminal.test.ts) and
+  [real CLI proof](../../../../apps/server/src/fork/vault/SshAgentTerminal.integration.test.ts).

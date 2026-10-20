@@ -2,7 +2,7 @@
 
 Status: **Implementation authorized**. Kyle selected all 16 packets for implementation on
 2026-10-17 and chose self-hosted OpenBao. L78/shared encrypted records, L79 public-key enrollment,
-L84 hosted run access, L81 mediated SSH/Git and key/trust management, L80/L77/L72 grants,
+L84 hosted run access, L81 mediated/terminal SSH/Git and key/trust management, L80/L77/L72 grants,
 inspection and server readiness, and L73/L75 reference search, project profiles, explicit launch attachments, scheduled outcome recovery, portable SSH/Git/GitHub requirements, retained-selection retirement and L82 dedicated GitHub/mediated GH access with named project bindings, explicit terminal gh/Git HTTPS and live readiness are in progress; the other packets are selected and queued. No deployment is authorized. The V01 to V16 identifiers remain stable
 from the brainstorm; L72 to L87 are their repository packet IDs.
 
@@ -124,7 +124,7 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 | D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L79, L84      | User-service matrix implemented locally; real-host acceptance and other modes open |
 | D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L79, L80      | Open                                                                               |
 | D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L80           | Local policy resolved; platform/isolation open                                     |
-| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Mediated Ed25519/host-bound slice resolved; general transports open                |
+| D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L81           | Host-bound mediated/terminal POSIX resolved; other transports open                 |
 | D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L82, L83, L86 | App/token implemented locally; broader onboarding/adapters open                    |
 | D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L78, L87      | Open                                                                               |
 

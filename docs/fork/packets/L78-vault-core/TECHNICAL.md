@@ -24,6 +24,21 @@ show payloads. Errors normalize backend failures without echoing response bodies
 pages read at most 25 records, with concurrency 4; key enumeration is capped at 4096 entries.
 Values are capped at 1 MiB; client file import is capped at 512 KiB before base64 encoding.
 
+## OpenBao payload encoding compatibility
+
+OpenBao's default JSON complexity budget counts strings, including repeated object keys.
+Bounded policy/registry audit arrays can exceed that count even at modest byte sizes. The
+adapter therefore writes KV data as `{loomVaultEncoding:"json-v1",payload:<serialized JSON>}`.
+This keeps engine-side JSON simple without raising limits or reducing history. The application
+still validates the decoded domain records, bounds bytes, redacts values and uses the same
+paths/CAS versions. Unknown or malformed encoding envelopes fail closed.
+
+Reads accept existing unwrapped records. The next normal mutation writes the versioned encoding;
+no live conversion or eager migration is performed. Older Loom readers cannot interpret newly
+encoded records. Rollback requires a compatible reader or a matching pre-upgrade backend
+snapshot, with the usual revocation reconciliation. Encrypted persistence and clean restore
+are verified with the new encoding against disposable OpenBao 2.7.1.
+
 ## Authorization and private ingress
 
 Authenticated environment access:read permits status/list. Access:write permits save, lifecycle
