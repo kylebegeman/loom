@@ -90,13 +90,10 @@ export const emptyBotDraft = (modelSelection: ModelSelection | null): BotDraft =
   tokensPerDay: "",
 });
 
-/** A saved bot, or an unsaved one such as a draft from a thread. */
-export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
-  id: bot.id,
-  name: bot.name,
-  description: bot.description,
-  instructions: bot.instructions,
-  parameters: bot.parameters.map((parameter) => ({
+export const parameterDrafts = (
+  parameters: ReadonlyArray<BotParameter>,
+): ReadonlyArray<BotParameterDraft> =>
+  parameters.map((parameter) => ({
     ...newParameterDraft(),
     name: parameter.name,
     label: parameter.label,
@@ -105,7 +102,15 @@ export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
     required: parameter.required,
     defaultValue: parameter.default ?? "",
     choices: (parameter.choices ?? []).join("\n"),
-  })),
+  }));
+
+/** A saved bot, or an unsaved one such as a draft from a thread. */
+export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
+  id: bot.id,
+  name: bot.name,
+  description: bot.description,
+  instructions: bot.instructions,
+  parameters: parameterDrafts(bot.parameters),
   modelSelection: bot.modelSelection,
   runtimeMode: bot.runtimeMode,
   interactionMode: bot.interactionMode,
@@ -146,7 +151,7 @@ const budgetFromDraft = (draft: BotDraft) => {
 /** A readable id from the name, for new bots. */
 export { slugFromName } from "@t3tools/contracts/fork";
 
-const parameterInput = (parameter: BotParameterDraft): BotParameter => {
+export const parameterInput = (parameter: BotParameterDraft): BotParameter => {
   const choices = parameter.choices
     .split(/\r?\n/)
     .map((choice) => choice.trim())
@@ -241,7 +246,7 @@ const describeProblem = (draft: BotDraft): string => {
 };
 
 /** Form values start from each input's default. */
-export const initialRunValues = (bot: BotDefinition): Record<string, string> =>
+export const initialRunValues = (bot: Pick<BotDefinition, "parameters">): Record<string, string> =>
   Object.fromEntries(
     bot.parameters.map((parameter) => [
       parameter.name,
@@ -250,7 +255,10 @@ export const initialRunValues = (bot: BotDefinition): Record<string, string> =>
   );
 
 /** Form strings become typed inputs; blank optional inputs are left out for the server's default. */
-export const runInputs = (bot: BotDefinition, values: Record<string, string>): BotInputs =>
+export const runInputs = (
+  bot: Pick<BotDefinition, "parameters">,
+  values: Record<string, string>,
+): BotInputs =>
   Object.fromEntries(
     bot.parameters.flatMap((parameter): Array<[string, string | number | boolean]> => {
       const raw = values[parameter.name] ?? "";

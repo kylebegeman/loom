@@ -141,5 +141,22 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_runs_version ON fork_bots_runs (bot_id, bot_version)`;
       }),
     ],
+    [
+      11,
+      "Pipelines",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_pipelines (id TEXT PRIMARY KEY, version INTEGER NOT NULL, definition_json TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`;
+        // `definition_json` and `versions_json` snapshot the pipeline and each step's bot at start,
+        // so saving either mid-run changes nothing for the run.
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_pipeline_runs (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL, pipeline_version INTEGER NOT NULL, pipeline_name TEXT NOT NULL, definition_json TEXT NOT NULL, versions_json TEXT NOT NULL, inputs_json TEXT NOT NULL, project_id TEXT, checkout_thread_id TEXT, status TEXT NOT NULL, retry_at TEXT, cursor_step_id TEXT, final_verdict TEXT, stopped_run_id TEXT, error TEXT, started_by TEXT NOT NULL, caller_runtime_mode TEXT, caller_thread_id TEXT, trigger_id TEXT, created_at TEXT NOT NULL, finished_at TEXT)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_pipeline_runs_pipeline ON fork_bots_pipeline_runs (pipeline_id, created_at DESC)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_bots_pipeline_runs_status ON fork_bots_pipeline_runs (status)`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_pipeline_attempts (pipeline_run_id TEXT NOT NULL, seq INTEGER NOT NULL, step_id TEXT NOT NULL, round INTEGER NOT NULL, state TEXT NOT NULL, bot_version INTEGER, run_id TEXT, batch_id TEXT, outcome_json TEXT, notes_json TEXT NOT NULL DEFAULT '[]', started_at TEXT, finished_at TEXT, PRIMARY KEY (pipeline_run_id, seq))`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN pipeline_run_id TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN pipeline_stopped INTEGER NOT NULL DEFAULT 0`;
+        yield* sql`ALTER TABLE fork_bots_batches ADD COLUMN pipeline_run_id TEXT`;
+      }),
+    ],
   ],
 };

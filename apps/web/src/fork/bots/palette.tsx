@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BotIcon, InboxIcon, LayersIcon, PlayIcon, ZapIcon } from "lucide-react";
+import { BotIcon, InboxIcon, LayersIcon, PlayIcon, WorkflowIcon, ZapIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -10,7 +10,7 @@ import {
 import { useLibraryPermission } from "../project-library/state";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { canSaveAsBot } from "./fromThread/logic";
-import { bots, useBots } from "./state";
+import { bots, useBots, usePipelines } from "./state";
 
 /** What the Bots source needs; null leaves the palette without Bots entries. */
 export interface BotsPaletteContext {
@@ -26,6 +26,13 @@ export interface BotsPaletteContext {
   readonly runBot: (botId: string) => Promise<void>;
   /** Null while the server cannot run batches. */
   readonly runBotOnMany: ((botId: string) => Promise<void>) | null;
+  /** Pipelines the user may run; empty while the server has none. */
+  readonly pipelines: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+  }>;
+  readonly runPipeline: (pipelineId: string) => Promise<void>;
   /** Null while the server has no triggers or this connection cannot change them. */
   readonly newTrigger: ((botId: string) => Promise<void>) | null;
   /** Null while the server cannot draft bots from threads or this connection cannot save. */
@@ -92,6 +99,15 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
             icon: icon(BotIcon),
             run: () => newTrigger(bot.id),
           }));
+    const pipelineItems: CommandPaletteActionItem[] = context.pipelines.map((pipeline) => ({
+      kind: "action",
+      value: `action:loom:bots:run-pipeline:${pipeline.id}`,
+      title: pipeline.name,
+      ...(pipeline.description ? { description: pipeline.description } : {}),
+      searchTerms: [pipeline.name, pipeline.id],
+      icon: icon(WorkflowIcon),
+      run: () => context.runPipeline(pipeline.id),
+    }));
     return [
       {
         kind: "action",
@@ -140,6 +156,19 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
               groups: [{ value: "bots-run-many", label: "Bots", items: manyItems }],
             },
           ]),
+      ...(pipelineItems.length === 0
+        ? []
+        : [
+            {
+              kind: "submenu" as const,
+              value: "action:loom:bots:run-pipeline",
+              title: "Run pipeline...",
+              searchTerms: ["bots", "pipeline", "chain", "steps", "review", "fix", "verify"],
+              icon: icon(WorkflowIcon),
+              addonIcon: icon(WorkflowIcon, ADDON_ICON_CLASS),
+              groups: [{ value: "bots-run-pipeline", label: "Pipelines", items: pipelineItems }],
+            },
+          ]),
       ...(triggerItems.length === 0
         ? []
         : [
@@ -164,6 +193,10 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   const canRun = useLibraryPermission(bots.run, host.environmentId) && host.connected;
   const canSave = useLibraryPermission(bots.save, host.environmentId) && host.connected;
   const canTrigger = useLibraryPermission(bots.saveTrigger, host.environmentId) && host.connected;
+  const canRunPipeline =
+    useLibraryPermission(bots.runPipeline, host.environmentId) && host.connected;
+  const pipelinesLive = live && host.pipelinesSupported;
+  const { pipelines } = usePipelines(host.environmentId, pipelinesLive, host.connected);
   if (!live) return null;
   const capabilities = host.environment?.serverConfig?.environment.capabilities;
   return {
@@ -173,6 +206,9 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
       ? () => navigate({ to: "/loom/bots", search: { tab: "inbox" } })
       : null,
     runBot: (botId) => navigate({ to: "/loom/bots", search: { bot: botId, run: botId } }),
+    pipelines: pipelinesLive && canRunPipeline ? pipelines : [],
+    runPipeline: (pipelineId) =>
+      navigate({ to: "/loom/bots", search: { tab: "pipelines", runPipeline: pipelineId } }),
     runBotOnMany: host.batchesSupported
       ? (botId) => navigate({ to: "/loom/bots", search: { bot: botId, many: botId } })
       : null,

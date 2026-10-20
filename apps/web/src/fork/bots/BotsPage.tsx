@@ -25,6 +25,7 @@ import { useLibraryPermission } from "../project-library/state";
 import { BatchList, BatchView } from "./BotBatches";
 import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
 import { BotHistory } from "./BotHistory";
+import { BotPipelines } from "./BotPipelines";
 import { BotReplayDialog, type BotReplaySourceChoice } from "./BotReplay";
 import { BotRunForm } from "./BotRunForm";
 import { BotRuns, VerdictFilter } from "./BotRuns";
@@ -35,6 +36,7 @@ import { BotsUsage } from "./BotsUsage";
 import { BotFromThreadEditor } from "./fromThread/BotFromThreadEditor";
 import { BotSuggestions } from "./fromThread/BotSuggestions";
 import { botDraft } from "./draft";
+import { PipelineRunForm } from "./PipelineRunView";
 import { RunOnManyDialog } from "./RunOnManyDialog";
 import {
   bots,
@@ -42,6 +44,7 @@ import {
   useBots,
   useBotTriggerChanges,
   useBotsAttentionCount,
+  usePipelines,
   useWaitingBotRuns,
 } from "./state";
 
@@ -52,6 +55,7 @@ const TAB_LABELS = {
   runs: "Runs",
   history: "History",
   batches: "Batches",
+  pipelines: "Pipelines",
   triggers: "Triggers",
   inbox: "Inbox",
   usage: "Usage",
@@ -131,6 +135,7 @@ export function BotsPage() {
   const canCancel = useLibraryPermission(bots.cancel, environmentId) && host.connected;
   const canRate = useLibraryPermission(bots.rateRun, environmentId) && host.connected;
   const canReplay = useLibraryPermission(bots.replay, environmentId) && host.connected;
+  const canRunPipelines = useLibraryPermission(bots.runPipeline, environmentId) && host.connected;
   const versionsLive = live && host.versionsSupported;
   const archive = useAtomCommand(bots.archive, { reportFailure: false });
   const remove = useAtomCommand(bots.delete, { reportFailure: false });
@@ -138,6 +143,8 @@ export function BotsPage() {
   const batchesLive = live && host.batchesSupported;
   const inboxLive = live && host.inboxSupported;
   const triggersLive = live && host.triggersSupported;
+  const pipelinesLive = live && host.pipelinesSupported;
+  const { pipelines } = usePipelines(environmentId, pipelinesLive, host.connected);
   const triggerChanges = useBotTriggerChanges(environmentId, triggersLive && host.connected);
   const canOperateTriggers =
     useLibraryPermission(bots.saveTrigger, environmentId) && host.connected;
@@ -146,6 +153,7 @@ export function BotsPage() {
     "runs" as const,
     ...(versionsLive && selectedId !== undefined ? (["history"] as const) : []),
     ...(batchesLive ? (["batches"] as const) : []),
+    ...(pipelinesLive ? (["pipelines"] as const) : []),
     ...(triggersLive ? (["triggers"] as const) : []),
     ...(inboxLive ? (["inbox"] as const) : []),
     ...(live && host.budgetsSupported ? (["usage"] as const) : []),
@@ -229,6 +237,12 @@ export function BotsPage() {
     editingTrigger === null
       ? null
       : (allBots.find((bot) => bot.id === editingTrigger.botId) ?? null);
+  const runPipelineTarget =
+    search.runPipeline === undefined || !pipelinesLive
+      ? null
+      : (pipelines.find((pipeline) => pipeline.id === search.runPipeline) ?? null);
+  const pipelinesStartingWith = (botId: string) =>
+    pipelines.filter((pipeline) => pipeline.steps[0]?.botId === botId);
   const latestVersionOf = (botId: string) =>
     allBots.find((bot) => bot.id === botId && bot.archivedAt === null)?.version ?? null;
 
@@ -527,6 +541,20 @@ export function BotsPage() {
                     onNew={(bot) => go({ bot: bot.id, tab: "triggers", newTrigger: bot.id })}
                     onEdit={setEditingTrigger}
                   />
+                ) : tab === "pipelines" ? (
+                  <BotPipelines
+                    environmentId={environmentId}
+                    allBots={allBots}
+                    connected={host.connected}
+                    selectedRunId={search.pipelineRun}
+                    onSelectRun={(pipelineRun) =>
+                      go({ bot: search.bot, tab: "pipelines", pipelineRun })
+                    }
+                    onRun={(pipeline) =>
+                      go({ bot: search.bot, tab: "pipelines", runPipeline: pipeline.id })
+                    }
+                    onOpenBatch={(batch) => go({ bot: search.bot, tab: "batches", batch })}
+                  />
                 ) : tab === "batches" ? (
                   <section className="space-y-3" aria-label="Batches">
                     {search.batch !== undefined ? (
@@ -687,6 +715,7 @@ export function BotsPage() {
           trigger={null}
           canSave={canOperateTriggers}
           stableSupported={host.versionsSupported}
+          pipelines={pipelinesStartingWith(newTriggerBot.id)}
           onClose={() => go({ bot: search.bot, tab: search.tab })}
           onSaved={(trigger) => go({ bot: trigger.botId, tab: "triggers" })}
         />
@@ -699,6 +728,7 @@ export function BotsPage() {
           trigger={editingTrigger}
           canSave={canOperateTriggers}
           stableSupported={host.versionsSupported}
+          pipelines={pipelinesStartingWith(editingTriggerBot.id)}
           onClose={() => setEditingTrigger(null)}
           onSaved={() => setEditingTrigger(null)}
         />
@@ -710,6 +740,17 @@ export function BotsPage() {
           source={replaying.source}
           canRun={canReplay}
           onClose={() => setReplaying(null)}
+        />
+      ) : null}
+      {runPipelineTarget && environmentId ? (
+        <PipelineRunForm
+          key={runPipelineTarget.id}
+          environmentId={environmentId}
+          pipeline={runPipelineTarget}
+          allBots={allBots}
+          canRun={canRunPipelines}
+          onClose={() => go({ bot: search.bot, tab: search.tab })}
+          onStarted={(run) => go({ bot: search.bot, tab: "pipelines", pipelineRun: run.id })}
         />
       ) : null}
       {manyTarget && environmentId ? (

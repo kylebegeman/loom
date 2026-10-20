@@ -72,7 +72,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import { budgetRefusal, budgetState, BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT, VERSIONS_KEPT_PER_BOT } from "./BotsStore.ts";
 import { checkParameters, renderPrompt, validateInputs } from "./render.ts";
-import { summarizeRunUsage, summarizeUsage } from "./usage.ts";
+import { summarizePipelineUsage, summarizeRunUsage, summarizeUsage } from "./usage.ts";
 import { decodeVerdictReply } from "./verdict.ts";
 import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
 import { changedFields } from "./versions/compare.ts";
@@ -239,6 +239,7 @@ export const make = Effect.gen(function* () {
   const botPermits = new Map<string, { readonly semaphore: Semaphore.Semaphore; size: number }>();
   const live = new Map<string, LiveRun>();
   const recovered = yield* Deferred.make<void>();
+  const seeded = yield* Deferred.make<void>();
   const retryPermit = yield* Semaphore.make(1);
   // Serializes a budget check with the run row it admits, so two starts cannot both take the last run.
   const budgetPermit = yield* Semaphore.make(1);
@@ -885,6 +886,11 @@ export const make = Effect.gen(function* () {
     readonly retryOf?: string | undefined;
     readonly triggerId?: string | undefined;
     readonly replayId?: string | undefined;
+    readonly pipelineRunId?: string | undefined;
+    /** Inputs framed as untrusted data in the prompt; a trigger's run frames them all. */
+    readonly untrusted?:
+      | { readonly names: ReadonlyArray<string>; readonly origin: string }
+      | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
   }
@@ -970,6 +976,7 @@ export const make = Effect.gen(function* () {
         ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
         ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
         ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
+        ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
         modelSelection,
         checkoutThreadId: checkout?.threadId ?? null,
       },
@@ -1004,9 +1011,11 @@ export const make = Effect.gen(function* () {
           text: renderPrompt(
             bot,
             checked.values,
-            options.triggerId === undefined
-              ? undefined
-              : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
+            options.untrusted !== undefined
+              ? { ...options.untrusted, frameId: runId.replaceAll("-", "") }
+              : options.triggerId === undefined
+                ? undefined
+                : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
           ),
           attachments: [],
           ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
@@ -1059,6 +1068,7 @@ export const make = Effect.gen(function* () {
       ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
       ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
       ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
+      ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
       ...(input.checkoutThreadId === undefined ? {} : { checkoutThreadId: input.checkoutThreadId }),
     };
     yield* insertRun(failed, options);
@@ -1124,6 +1134,19 @@ export const make = Effect.gen(function* () {
   const ratedRuns = (botId: string, rating: BotRunRating, limit: number) =>
     store.listRatedRuns(botId, rating, limit).pipe(Effect.catch(storageError));
 
+  /** Marks the finished run that stopped its pipeline, its one inbox item, or clears the mark. */
+  const setPipelineStopped = Effect.fn("BotsService.setPipelineStopped")(function* (
+    runId: string,
+    stopped: boolean,
+  ) {
+    const run = yield* getRun(runId);
+    yield* store.setPipelineStopped(runId, stopped).pipe(Effect.catch(storageError));
+    const { pipelineStopped: _pipelineStopped, ...rest } = run;
+    const next: BotRun = stopped ? { ...rest, pipelineStopped: true } : rest;
+    yield* publish({ _tag: "run", run: next });
+    return next;
+  });
+
   const cancel = Effect.fn("BotsService.cancel")(function* (runId: string) {
     const entry = live.get(runId);
     if (entry === undefined) return yield* getRun(runId);
@@ -1151,6 +1174,11 @@ export const make = Effect.gen(function* () {
   ) {
     return yield* Effect.gen(function* () {
       const old = yield* getRun(input.runId);
+      if (old.pipelineRunId != null)
+        return yield* fail(
+          "invalid",
+          "This run belongs to a pipeline. Resume the pipeline instead.",
+        );
       if (old.retriedBy != null)
         return yield* fail("invalid", "This run was already retried; retry the newer run.");
       if (!isBotInboxRun(old))
@@ -1348,7 +1376,27 @@ export const make = Effect.gen(function* () {
     );
     const budgets: Record<string, BotsUsageResult["budgets"][string]> = {};
     for (const bot of budgeted) budgets[bot.id] = yield* budgetFor(bot, nowMs);
-    return { ...summarizeUsage(runs, bots), budgets } satisfies BotsUsageResult;
+    // A pipeline spans several bots, so a view of one bot leaves pipelines out.
+    const pipelineRuns =
+      input.botId === undefined
+        ? yield* store
+            .listPipelineRunsCreatedBetween({ since: isoAt(since), until: isoAt(until) })
+            .pipe(Effect.catch(storageError))
+        : [];
+    const pipelines = summarizePipelineUsage(
+      pipelineRuns.map((row) => ({
+        id: row.id,
+        pipelineId: row.pipeline_id,
+        pipelineName: row.pipeline_name,
+        status: row.status,
+      })),
+      runs,
+    );
+    return {
+      ...summarizeUsage(runs, bots),
+      budgets,
+      ...(pipelines.length === 0 ? {} : { pipelines }),
+    } satisfies BotsUsageResult;
   });
 
   return {
@@ -1366,6 +1414,7 @@ export const make = Effect.gen(function* () {
     delete: remove,
     run,
     startRunWith,
+    setPipelineStopped,
     recordUnstarted,
     checkCaller,
     checkRunnable,
@@ -1387,6 +1436,9 @@ export const make = Effect.gen(function* () {
     /** Marks recovery done, whatever its outcome, so work that depends on it can go ahead. */
     markRecovered: Deferred.succeed(recovered, undefined).pipe(Effect.asVoid),
     whenRecovered: Deferred.await(recovered),
+    /** Marks starter seeding done, whatever its outcome. */
+    markSeeded: Deferred.succeed(seeded, undefined).pipe(Effect.asVoid),
+    whenSeeded: Deferred.await(seeded),
     seedStarters,
     listStarters,
     restoreStarter,
@@ -1411,13 +1463,12 @@ export const BotsRecoveryLive = Layer.effectDiscard(
         Effect.catchCause((cause) => Effect.logWarning("Bot run recovery failed", { cause })),
         Effect.ensuring(bots.markRecovered),
         Effect.andThen(
-          bots
-            .seedStarters()
-            .pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Seeding starter bots failed", { cause }),
-              ),
+          bots.seedStarters().pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Seeding starter bots failed", { cause }),
             ),
+            Effect.ensuring(bots.markSeeded),
+          ),
         ),
       ),
     );

@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
   type BotDefinition,
+  type BotPipeline,
   type BotTrigger,
   type BotTriggerEventKind,
 } from "@t3tools/contracts/fork";
@@ -48,6 +49,7 @@ export function BotTriggerEditor({
   trigger,
   canSave,
   stableSupported,
+  pipelines,
   onClose,
   onSaved,
 }: {
@@ -57,15 +59,22 @@ export function BotTriggerEditor({
   readonly canSave: boolean;
   /** Older servers keep no stable version. */
   readonly stableSupported: boolean;
+  /** Pipelines whose first step runs this bot; a trigger can start one instead. */
+  readonly pipelines: ReadonlyArray<BotPipeline>;
   readonly onClose: () => void;
   readonly onSaved: (trigger: BotTrigger) => void;
 }) {
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
+  const pipelineOf = (pipelineId: string | null | undefined) =>
+    pipelines.find((pipeline) => pipeline.id === pipelineId);
   const [draft, setDraft] = useState<TriggerDraft>(() =>
-    trigger === null ? emptyTriggerDraft(bot) : triggerDraftFrom(bot, trigger),
+    trigger === null
+      ? emptyTriggerDraft(bot)
+      : triggerDraftFrom(bot, trigger, pipelineOf(trigger.pipelineId) ?? bot),
   );
+  const target = pipelineOf(draft.pipelineId) ?? bot;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.saveTrigger, { reportFailure: false });
@@ -80,7 +89,7 @@ export function BotTriggerEditor({
       },
     }));
 
-  const result = triggerInputFromDraft(bot, draft, trigger);
+  const result = triggerInputFromDraft(bot, draft, trigger, target);
   const submit = async () => {
     if (busy || !canSave) return;
     if ("error" in result) {
@@ -134,6 +143,26 @@ export function BotTriggerEditor({
         <LibraryField label="Name">
           <Input value={draft.name} onChange={(event) => update({ name: event.target.value })} />
         </LibraryField>
+        {pipelines.length > 0 || draft.pipelineId !== "" ? (
+          <Choice
+            label="Starts"
+            value={draft.pipelineId}
+            disabled={trigger !== null}
+            options={[
+              ["", bot.name] as const,
+              ...pipelines.map((pipeline) => [pipeline.id as string, pipeline.name] as const),
+              ...(draft.pipelineId !== "" && pipelineOf(draft.pipelineId) === undefined
+                ? [[draft.pipelineId, draft.pipelineId] as const]
+                : []),
+            ]}
+            onChange={(pipelineId) =>
+              update({
+                pipelineId,
+                mapping: guessMapping(pipelineOf(pipelineId) ?? bot, draft.kind),
+              })
+            }
+          />
+        ) : null}
         <Choice
           label="When"
           value={draft.kind}
@@ -143,7 +172,7 @@ export function BotTriggerEditor({
           onChange={(kind) =>
             update({
               kind,
-              mapping: trigger === null ? guessMapping(bot, kind) : draft.mapping,
+              mapping: trigger === null ? guessMapping(target, kind) : draft.mapping,
             })
           }
         />
@@ -271,10 +300,10 @@ export function BotTriggerEditor({
             ) : null}
           </div>
         ) : null}
-        {bot.parameters.length > 0 ? (
+        {target.parameters.length > 0 ? (
           <fieldset className="grid gap-3">
             <legend className="mb-2 text-sm font-medium">Inputs</legend>
-            {bot.parameters.map((parameter) => {
+            {target.parameters.map((parameter) => {
               const entry = draft.mapping[parameter.name] ?? {
                 mode: "none" as const,
                 field: "",
@@ -357,21 +386,23 @@ export function BotTriggerEditor({
             />
           </LibraryField>
         </div>
-        <Choice<TriggerFollow>
-          label="Version to run"
-          value={draft.follow}
-          options={[
-            [
-              "pinned",
-              trigger ? `v${trigger.pinnedVersion}, saved with this trigger` : `v${bot.version}`,
-            ],
-            ["latest", "The latest version"],
-            ...(stableSupported || draft.follow === "stable"
-              ? [["stable", "The stable version, or the latest while none is marked"] as const]
-              : []),
-          ]}
-          onChange={(follow) => update({ follow })}
-        />
+        {draft.pipelineId !== "" ? null : (
+          <Choice<TriggerFollow>
+            label="Version to run"
+            value={draft.follow}
+            options={[
+              [
+                "pinned",
+                trigger ? `v${trigger.pinnedVersion}, saved with this trigger` : `v${bot.version}`,
+              ],
+              ["latest", "The latest version"],
+              ...(stableSupported || draft.follow === "stable"
+                ? [["stable", "The stable version, or the latest while none is marked"] as const]
+                : []),
+            ]}
+            onChange={(follow) => update({ follow })}
+          />
+        )}
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} />
           On

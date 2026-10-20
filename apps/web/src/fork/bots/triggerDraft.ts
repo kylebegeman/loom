@@ -3,6 +3,7 @@ import {
   BOTS_TRIGGER_MIN_INTERVAL_MS,
   checkTriggerMapping,
   type BotDefinition,
+  type BotPipelineId,
   type BotsSaveTriggerInput,
   type BotTrigger,
   type BotTriggerEvent,
@@ -53,7 +54,12 @@ export interface TriggerDraft {
   readonly cooldownMinutes: string;
   readonly dailyLimit: string;
   readonly follow: TriggerFollow;
+  /** Empty runs the bot; otherwise the pipeline the trigger starts, whose inputs it maps. */
+  readonly pipelineId: string;
 }
+
+/** What a trigger fills: the bot's inputs, or its pipeline's. */
+export type TriggerTarget = Pick<BotDefinition, "name" | "parameters">;
 
 /** Which version a run starts: the one saved with the trigger, the latest, or the stable one. */
 export type TriggerFollow = "pinned" | "latest" | "stable";
@@ -113,9 +119,14 @@ export const emptyTriggerDraft = (bot: BotDefinition): TriggerDraft => ({
   cooldownMinutes: "10",
   dailyLimit: "20",
   follow: "pinned",
+  pipelineId: "",
 });
 
-export const triggerDraftFrom = (bot: BotDefinition, trigger: BotTrigger): TriggerDraft => {
+export const triggerDraftFrom = (
+  bot: BotDefinition,
+  trigger: BotTrigger,
+  target: TriggerTarget = bot,
+): TriggerDraft => {
   const base = emptyTriggerDraft(bot);
   const event = trigger.event;
   const filters =
@@ -158,7 +169,7 @@ export const triggerDraftFrom = (bot: BotDefinition, trigger: BotTrigger): Trigg
     name: trigger.name,
     kind: event.kind,
     mapping: Object.fromEntries(
-      bot.parameters.map((parameter) => {
+      target.parameters.map((parameter) => {
         const entry = trigger.mapping[parameter.name];
         if (entry === undefined) return [parameter.name, EMPTY_MAPPING];
         return [
@@ -173,6 +184,7 @@ export const triggerDraftFrom = (bot: BotDefinition, trigger: BotTrigger): Trigg
     cooldownMinutes: String(trigger.cooldownMinutes),
     dailyLimit: String(trigger.dailyLimit),
     follow: followOf(trigger),
+    pipelineId: trigger.pipelineId ?? "",
   };
 };
 
@@ -226,9 +238,12 @@ const eventFromDraft = (draft: TriggerDraft): BotTriggerEvent | string => {
   }
 };
 
-const mappingFromDraft = (bot: BotDefinition, draft: TriggerDraft): BotTriggerMapping | string => {
+const mappingFromDraft = (
+  target: TriggerTarget,
+  draft: TriggerDraft,
+): BotTriggerMapping | string => {
   const mapping: Record<string, BotTriggerMapping[string]> = {};
-  for (const parameter of bot.parameters) {
+  for (const parameter of target.parameters) {
     const entry = draft.mapping[parameter.name] ?? EMPTY_MAPPING;
     if (entry.mode === "field" && entry.field.trim() !== "")
       mapping[parameter.name] = { field: entry.field.trim() };
@@ -251,13 +266,16 @@ export const triggerInputFromDraft = (
   bot: BotDefinition,
   draft: TriggerDraft,
   existing: BotTrigger | null,
+  target: TriggerTarget = bot,
 ): { readonly input: BotsSaveTriggerInput } | { readonly error: string } => {
   if (draft.name.trim() === "") return { error: "Name the trigger." };
   const event = eventFromDraft(draft);
   if (typeof event === "string") return { error: event };
-  const mapping = mappingFromDraft(bot, draft);
+  if (draft.pipelineId !== "" && event.kind === "merge-conflict")
+    return { error: "A pipeline runs once per event, not once per conflicting file." };
+  const mapping = mappingFromDraft(target, draft);
   if (typeof mapping === "string") return { error: mapping };
-  const mappingError = checkTriggerMapping(bot, event, mapping);
+  const mappingError = checkTriggerMapping(target, event, mapping);
   if (mappingError !== null) return { error: mappingError };
   const cooldownMinutes = wholeNumber(draft.cooldownMinutes);
   if (cooldownMinutes === null || cooldownMinutes > 1440)
@@ -276,6 +294,7 @@ export const triggerInputFromDraft = (
       cooldownMinutes,
       dailyLimit,
       followLatest: draft.follow === "latest",
+      ...(draft.pipelineId === "" ? {} : { pipelineId: draft.pipelineId as BotPipelineId }),
       // Servers keep the stored choice when this is absent, and older ones do not know it.
       ...(draft.follow === "stable" || existing?.followStable === true
         ? { followStable: draft.follow === "stable" }

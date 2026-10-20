@@ -41,6 +41,7 @@ import {
   verifyWebhookSignature,
 } from "../../../scheduledTasks/webhookVerification.ts";
 import { BotBatches } from "../BotBatches.ts";
+import { BotPipelines } from "../pipelines/BotPipelines.ts";
 import { isoAt } from "../BotBudgets.ts";
 import { BotsService, type BotCaller } from "../BotsService.ts";
 import { makeBotTriggersStore, type StoredTrigger } from "./BotTriggersStore.ts";
@@ -56,6 +57,7 @@ const INTERRUPTED = "The server stopped before this firing finished.";
 export const BATCH_NEEDS_LATEST =
   "A batch runs the bot's latest version; pin this trigger to it or let it follow the latest.";
 const BOTH_FOLLOWS = "A trigger follows either the latest or the stable version, not both.";
+const PIPELINE_PER_FILE = "A pipeline runs once per event, not once per conflicting file.";
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
 
@@ -117,6 +119,7 @@ export const make = Effect.gen(function* () {
   const store = yield* makeBotTriggersStore;
   const bots = yield* BotsService;
   const batches = yield* BotBatches;
+  const pipelines = yield* BotPipelines;
   const readOrigin = yield* ScheduledTaskWebhookOrigin;
   const serviceScope = yield* Effect.scope;
   const changes = yield* PubSub.unbounded<BotTriggerChange>();
@@ -199,6 +202,9 @@ export const make = Effect.gen(function* () {
       existing.trigger.updatedAt !== input.expectedUpdatedAt
     )
       return yield* fail("invalid", "This trigger changed since you opened it. Reload it first.");
+    const pipelineId = input.pipelineId ?? null;
+    if (existing !== null && (existing.trigger.pipelineId ?? null) !== pipelineId)
+      return yield* fail("invalid", "A trigger cannot move to another pipeline.");
     const bot = yield* bots.get(input.botId);
     yield* bots.checkRunnable(
       bot,
@@ -206,7 +212,15 @@ export const make = Effect.gen(function* () {
     );
     if (input.followLatest && input.followStable === true)
       return yield* fail("invalid", BOTH_FOLLOWS);
-    const mappingError = checkTriggerMapping(bot, input.event, input.mapping);
+    const pipeline = pipelineId === null ? null : yield* pipelines.get(pipelineId);
+    if (pipeline !== null && pipeline.steps[0]?.botId !== input.botId)
+      return yield* fail(
+        "invalid",
+        "A pipeline trigger names the bot of the pipeline's first step.",
+      );
+    if (pipeline !== null && input.event.kind === "merge-conflict")
+      return yield* fail("invalid", PIPELINE_PER_FILE);
+    const mappingError = checkTriggerMapping(pipeline ?? bot, input.event, input.mapping);
     if (mappingError !== null) return yield* fail("invalid", mappingError);
 
     const hook = usesHook(input.event);
@@ -239,6 +253,7 @@ export const make = Effect.gen(function* () {
       dailyLimit: input.dailyLimit,
       followLatest: input.followLatest,
       ...(input.followStable === true ? { followStable: true } : {}),
+      ...(pipelineId === null ? {} : { pipelineId }),
       pinnedVersion: existing?.trigger.pinnedVersion ?? bot.version,
       createdBy: existing?.trigger.createdBy ?? caller.actor,
       createdAt: existing?.trigger.createdAt ?? now,
@@ -394,6 +409,26 @@ export const make = Effect.gen(function* () {
           `Already started ${trigger.dailyLimit} run${trigger.dailyLimit === 1 ? "" : "s"} in the last 24 hours.`,
         );
     }
+    // The pipeline pins its own steps' bots, so the trigger's version does not apply.
+    if (trigger.pipelineId != null) {
+      if (event.items !== undefined) return yield* skip(PIPELINE_PER_FILE);
+      return yield* pipelines
+        .run(
+          {
+            pipelineId: trigger.pipelineId,
+            inputs: input.inputs,
+            ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
+            ...(event.threadId === undefined ? {} : { checkoutThreadId: event.threadId }),
+          },
+          caller,
+          { triggerId: trigger.id },
+        )
+        .pipe(
+          Effect.as<Outcome>({ outcome: "run", runId: null, reason: "Started a pipeline run." }),
+          Effect.catch((error) => skip(error.message)),
+        );
+    }
+
     if (pinned.problem !== null) return yield* skip(pinned.problem);
     const runnable = yield* bots.checkRunnable(definition, caller).pipe(Effect.flip, Effect.option);
     if (runnable._tag === "Some") return yield* skip(runnable.value.message);

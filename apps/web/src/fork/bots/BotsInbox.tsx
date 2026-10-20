@@ -148,7 +148,21 @@ function InboxRow({
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
-          {dismissed ? null : (
+          {dismissed ? null : run.pipelineRunId != null ? (
+            // The server refuses to retry a pipeline's run; resuming the pipeline reruns it.
+            <Button
+              size="xs"
+              variant="ghost"
+              render={
+                <Link
+                  to="/loom/bots"
+                  search={{ tab: "pipelines", pipelineRun: run.pipelineRunId }}
+                />
+              }
+            >
+              Open pipeline run
+            </Button>
+          ) : (
             <>
               <Button
                 size="xs"

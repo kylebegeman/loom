@@ -1,6 +1,7 @@
 # L99: Pipelines
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build differs
+from this plan.
 
 Durable chains of bots, such as review, fix, verify. A pipeline is a saved list of steps; each
 step runs a bot, and its structured result fills the next step's inputs. A step can fan out over

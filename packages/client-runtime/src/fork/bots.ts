@@ -1,6 +1,7 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
+  BOTS_PIPELINE_WS_METHODS as BP,
   BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
@@ -9,6 +10,10 @@ import {
   type BotBatchItem,
   type BotDefinition,
   type BotDefinitionInput,
+  type BotPipeline,
+  type BotPipelineAttempt,
+  type BotPipelineChange,
+  type BotPipelineRun,
   type BotReplay,
   type BotRun,
   type BotsChange,
@@ -378,6 +383,96 @@ export const applyFiringChanges = (
   return [...watched, ...listed.filter((firing) => !byId.has(firing.id))];
 };
 
+/** Pipeline changes seen since the watch started; a null pipeline was deleted. */
+export interface BotPipelineChanges {
+  readonly pipelines: ReadonlyMap<string, BotPipeline | null>;
+  readonly runs: ReadonlyMap<string, BotPipelineRun>;
+  readonly attempts: ReadonlyMap<string, ReadonlyMap<number, BotPipelineAttempt>>;
+}
+
+export const EMPTY_BOT_PIPELINE_CHANGES: BotPipelineChanges = {
+  pipelines: new Map(),
+  runs: new Map(),
+  attempts: new Map(),
+};
+
+export const foldBotPipelineChange = (
+  changes: BotPipelineChanges,
+  change: BotPipelineChange,
+): BotPipelineChanges => {
+  switch (change._tag) {
+    case "pipeline":
+      return {
+        ...changes,
+        pipelines: new Map(changes.pipelines).set(change.pipeline.id, change.pipeline),
+      };
+    case "pipeline-deleted":
+      return { ...changes, pipelines: new Map(changes.pipelines).set(change.pipelineId, null) };
+    case "pipeline-run":
+      return { ...changes, runs: new Map(changes.runs).set(change.run.id, change.run) };
+    case "pipeline-attempt": {
+      const attempts = new Map(changes.attempts.get(change.pipelineRunId)).set(
+        change.attempt.seq,
+        change.attempt,
+      );
+      return {
+        ...changes,
+        attempts: new Map(changes.attempts).set(change.pipelineRunId, attempts),
+      };
+    }
+  }
+};
+
+/** Listed pipelines with watched changes applied, oldest first like the server's list. */
+export const applyPipelineChanges = (
+  listed: ReadonlyArray<BotPipeline>,
+  changes: BotPipelineChanges,
+): ReadonlyArray<BotPipeline> => {
+  const merged = new Map(listed.map((pipeline) => [pipeline.id, pipeline]));
+  for (const [id, pipeline] of changes.pipelines) {
+    if (pipeline === null) merged.delete(id);
+    else merged.set(id, pipeline);
+  }
+  return [...merged.values()].sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+  );
+};
+
+/** A page of pipeline runs with watched progress applied; new runs join the first page. */
+export const applyPipelineRunChanges = (
+  listed: ReadonlyArray<BotPipelineRun>,
+  changes: BotPipelineChanges,
+  options: { readonly pipelineId?: string | undefined; readonly includeNew: boolean },
+): ReadonlyArray<BotPipelineRun> => {
+  const merged = new Map(listed.map((run) => [run.id, run]));
+  for (const [id, run] of changes.runs) {
+    if (merged.has(id)) merged.set(id, run);
+    else if (
+      options.includeNew &&
+      (options.pipelineId === undefined || run.pipelineId === options.pipelineId)
+    )
+      merged.set(id, run);
+  }
+  return [...merged.values()].sort(
+    (left, right) =>
+      right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+  );
+};
+
+/** One pipeline run as fetched, with its watched state and attempts applied, in order. */
+export const applyPipelineAttemptChanges = (
+  fetched: { readonly run: BotPipelineRun; readonly attempts: ReadonlyArray<BotPipelineAttempt> },
+  changes: BotPipelineChanges,
+): { readonly run: BotPipelineRun; readonly attempts: ReadonlyArray<BotPipelineAttempt> } => {
+  const run = changes.runs.get(fetched.run.id) ?? fetched.run;
+  const watched = changes.attempts.get(fetched.run.id);
+  if (watched === undefined) return { run, attempts: fetched.attempts };
+  const merged = new Map(fetched.attempts.map((attempt) => [attempt.seq, attempt]));
+  for (const [seq, attempt] of watched) merged.set(seq, attempt);
+  return { run, attempts: [...merged.values()].sort((left, right) => left.seq - right.seq) };
+};
+
 /** Bots live on one environment, which runs them; every request stays on that host. */
 export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   return {
@@ -526,6 +621,48 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     suggestEdit: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:suggest-edit",
       tag: BV.suggestEdit,
+    }),
+    listPipelines: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:list-pipelines",
+      tag: BP.listPipelines,
+    }),
+    checkPipeline: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:check-pipeline",
+      tag: BP.checkPipeline,
+    }),
+    listPipelineRuns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:list-pipeline-runs",
+      tag: BP.listPipelineRuns,
+    }),
+    getPipelineRun: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:get-pipeline-run",
+      tag: BP.getPipelineRun,
+    }),
+    pipelineChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:bots:pipeline-changes",
+      tag: BP.watchPipelines,
+      transform: (stream) =>
+        stream.pipe(Stream.scan(() => EMPTY_BOT_PIPELINE_CHANGES, foldBotPipelineChange)),
+    }),
+    savePipeline: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:save-pipeline",
+      tag: BP.savePipeline,
+    }),
+    deletePipeline: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:delete-pipeline",
+      tag: BP.deletePipeline,
+    }),
+    runPipeline: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:run-pipeline",
+      tag: BP.runPipeline,
+    }),
+    cancelPipelineRun: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:cancel-pipeline-run",
+      tag: BP.cancelPipelineRun,
+    }),
+    resumePipelineRun: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:resume-pipeline-run",
+      tag: BP.resumePipelineRun,
     }),
   };
 }

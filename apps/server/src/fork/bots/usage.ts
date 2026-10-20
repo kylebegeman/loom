@@ -2,6 +2,7 @@ import type { TurnTokenUsage } from "@t3tools/contracts";
 import type {
   BotDefinition,
   BotModelUsage,
+  BotPipelineUsageRow,
   BotRun,
   BotRunUsage,
   BotUsageRow,
@@ -180,4 +181,60 @@ export const summarizeUsage = (
       usageComplete: !runs.some(lacksUsage),
     },
   };
+};
+
+export interface PipelineRunSummary {
+  readonly id: string;
+  readonly pipelineId: string;
+  readonly pipelineName: string;
+  readonly status: string;
+}
+
+/** One row per pipeline with runs in the window, with the bot runs its steps started. */
+export const summarizePipelineUsage = (
+  pipelineRuns: ReadonlyArray<PipelineRunSummary>,
+  runs: ReadonlyArray<BotRun>,
+): Array<BotPipelineUsageRow> => {
+  const stepRuns = new Map<string, Array<BotRun>>();
+  for (const run of runs)
+    if (run.pipelineRunId != null) {
+      const list = stepRuns.get(run.pipelineRunId) ?? [];
+      list.push(run);
+      stepRuns.set(run.pipelineRunId, list);
+    }
+  const rows = new Map<string, { row: BotPipelineUsageRow; botRuns: Array<BotRun> }>();
+  for (const pipelineRun of pipelineRuns) {
+    const entry = rows.get(pipelineRun.pipelineId) ?? {
+      row: {
+        pipelineId: pipelineRun.pipelineId,
+        pipelineName: pipelineRun.pipelineName,
+        runs: 0,
+        completed: 0,
+        botRuns: 0,
+        tokens: sumTokens([]),
+        usageComplete: true,
+      },
+      botRuns: [],
+    };
+    entry.row = {
+      ...entry.row,
+      runs: entry.row.runs + 1,
+      completed: entry.row.completed + (pipelineRun.status === "completed" ? 1 : 0),
+    };
+    entry.botRuns.push(...(stepRuns.get(pipelineRun.id) ?? []));
+    rows.set(pipelineRun.pipelineId, entry);
+  }
+  return [...rows.values()]
+    .map(({ row, botRuns }) => ({
+      ...row,
+      botRuns: botRuns.length,
+      tokens: sumTokens(botRuns),
+      usageComplete: !botRuns.some(lacksUsage),
+    }))
+    .toSorted(
+      (a, b) =>
+        b.tokens.total - a.tokens.total ||
+        b.runs - a.runs ||
+        a.pipelineName.localeCompare(b.pipelineName),
+    );
 };

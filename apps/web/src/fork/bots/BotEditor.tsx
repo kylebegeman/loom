@@ -79,7 +79,7 @@ const PARAMETER_TYPE_LABELS: Record<BotParameterType, string> = {
 
 const ANY_PROJECT = "";
 
-function Choice<T extends string>({
+export function Choice<T extends string>({
   id,
   value,
   labels,
@@ -116,7 +116,7 @@ function Choice<T extends string>({
   );
 }
 
-function ParameterRow({
+export function ParameterRow({
   parameter,
   onChange,
   onRemove,

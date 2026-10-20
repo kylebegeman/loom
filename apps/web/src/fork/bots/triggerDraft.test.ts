@@ -138,6 +138,54 @@ describe("trigger drafts", () => {
     });
   });
 
+  it("maps a pipeline's inputs and keeps the pipeline when an existing trigger is saved", () => {
+    const pipeline = {
+      name: "Review and fix",
+      parameters: [{ name: "file", label: "File", type: "string" as const, required: true }],
+    };
+    const draft = { ...emptyTriggerDraft(bot), kind: "webhook" as const, pipelineId: "review-fix" };
+    expect(
+      triggerInputFromDraft(
+        bot,
+        { ...draft, mapping: { file: { mode: "field", field: "body.file", value: "" } } },
+        null,
+        pipeline,
+      ),
+    ).toMatchObject({
+      input: {
+        botId: "fixer",
+        pipelineId: "review-fix",
+        mapping: { file: { field: "body.file" } },
+      },
+    });
+    expect(
+      triggerInputFromDraft(bot, { ...draft, kind: "merge-conflict" }, null, pipeline),
+    ).toEqual({ error: "A pipeline runs once per event, not once per conflicting file." });
+
+    const saved: BotTrigger = {
+      id: "trg_00000000000000000002",
+      botId: "fixer",
+      name: "Pipeline hook",
+      event: { kind: "webhook" },
+      mapping: { file: { field: "body.file" } },
+      enabled: true,
+      cooldownMinutes: 0,
+      dailyLimit: 5,
+      followLatest: false,
+      pinnedVersion: 3,
+      pipelineId: "review-fix",
+      createdBy: "agent",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      updatedAt: "2026-10-20T11:00:00.000Z",
+      lastFiredAt: null,
+    };
+    const reopened = triggerDraftFrom(bot, saved, pipeline);
+    expect(reopened.mapping.file).toEqual({ mode: "field", field: "body.file", value: "" });
+    expect(triggerInputFromDraft(bot, reopened, saved, pipeline)).toMatchObject({
+      input: { id: saved.id, pipelineId: "review-fix", mapping: saved.mapping },
+    });
+  });
+
   it("describes when a trigger fires", () => {
     const title = () => "Loom";
     expect(

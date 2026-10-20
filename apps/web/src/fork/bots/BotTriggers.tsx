@@ -327,7 +327,9 @@ function TriggerRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{trigger.name}</span>
             {trigger.enabled ? null : <Badge variant="secondary">Off</Badge>}
-            {trigger.followLatest ? (
+            {trigger.pipelineId != null ? (
+              <Badge variant="outline">Starts pipeline {trigger.pipelineId}</Badge>
+            ) : trigger.followLatest ? (
               <Badge variant="outline">Latest version</Badge>
             ) : trigger.followStable === true ? (
               <Badge variant="outline">Stable version</Badge>

@@ -78,6 +78,8 @@ export interface RunRow {
   readonly replay_id: string | null;
   readonly rating: string | null;
   readonly note: string | null;
+  readonly pipeline_run_id?: string | null;
+  readonly pipeline_stopped?: number;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -205,6 +207,8 @@ export const toRun = (row: RunRow): BotRun | null => {
     ...(row.replay_id == null ? {} : { replayId: row.replay_id }),
     ...(isRating(row.rating) ? { rating: row.rating } : {}),
     ...(row.note == null ? {} : { note: row.note }),
+    ...(row.pipeline_run_id == null ? {} : { pipelineRunId: row.pipeline_run_id }),
+    ...(Number(row.pipeline_stopped ?? 0) === 1 ? { pipelineStopped: true } : {}),
   };
 };
 
@@ -214,7 +218,7 @@ const inboxCondition = (sql: SqlClient.SqlClient, dismissed: boolean) =>
     sql`retried_by IS NULL`,
     sql`replay_id IS NULL`,
     dismissed ? sql`dismissed_at IS NOT NULL` : sql`dismissed_at IS NULL`,
-    sql`(status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))`,
+    sql`((pipeline_run_id IS NULL AND (status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))) OR (pipeline_run_id IS NOT NULL AND pipeline_stopped = 1))`,
   ]);
 
 const definitionFields = ({
@@ -382,7 +386,7 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id,replay_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null},${run.replayId ?? null})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify,batch_id,retry_of,model_selection_json,checkout_thread_id,trigger_id,replay_id,pipeline_run_id) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0},${run.batchId ?? null},${run.retryOf ?? null},${run.modelSelection === undefined ? null : encodeModelSelection(run.modelSelection)},${run.checkoutThreadId ?? null},${run.triggerId ?? null},${run.replayId ?? null},${run.pipelineRunId ?? null})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
@@ -516,15 +520,38 @@ export const makeBotsStore = Effect.gen(function* () {
       return rows.flatMap((row) => toRun(row) ?? []);
     }),
 
+    /** Pipeline runs started in the window, for usage. */
+    listPipelineRunsCreatedBetween: Effect.fn("BotsStore.listPipelineRunsCreatedBetween")(
+      function* (input: { readonly since: string; readonly until: string }) {
+        return yield* sql<{
+          readonly id: string;
+          readonly pipeline_id: string;
+          readonly pipeline_name: string;
+          readonly status: string;
+        }>`SELECT id, pipeline_id, pipeline_name, status FROM fork_bots_pipeline_runs WHERE created_at >= ${input.since} AND created_at < ${input.until} ORDER BY created_at`;
+      },
+    ),
+
     listUnfinishedRuns: Effect.fn("BotsStore.listUnfinishedRuns")(function* () {
       const rows =
         yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE status IN ('queued', 'running') ORDER BY created_at`;
       return rows.flatMap((row) => toRun(row) ?? []);
     }),
 
-    /** Deletes finished runs beyond the newest `keep` of a bot, except those of a running batch. */
+    /** Marks the run that stopped its pipeline, or clears the mark when the pipeline resumes. */
+    setPipelineStopped: Effect.fn("BotsStore.setPipelineStopped")(function* (
+      id: string,
+      stopped: boolean,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET pipeline_stopped = ${stopped ? 1 : 0} WHERE id = ${id}`;
+    }),
+
+    /**
+     * Deletes finished runs beyond the newest `keep` of a bot, except those of a running batch or
+     * an active pipeline run.
+     */
     pruneRuns: Effect.fn("BotsStore.pruneRuns")(function* (botId: string, keep: number) {
-      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
     }),
   };
 });

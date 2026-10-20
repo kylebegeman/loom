@@ -17,6 +17,7 @@ import {
   type BotsRetryBatchInput,
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import type { SqlError } from "effect/sql/SqlError";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -44,6 +45,8 @@ import { cutLabel, makeBatchSources, type SourceCheckout } from "./batchSources.
 import { validateInputs } from "./render.ts";
 
 const PREVIEW_ITEMS = 20;
+/** A fan-out step's items come from an earlier step's output, so every input is framed. */
+export const PIPELINE_ITEM_ORIGIN = "an earlier step of this run's pipeline";
 const PREVIEW_INVALID = 5;
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
@@ -290,6 +293,12 @@ export const make = Effect.gen(function* () {
         callerOf(stored),
         {
           batchId,
+          ...(stored.batch.pipelineRunId == null
+            ? {}
+            : {
+                pipelineRunId: stored.batch.pipelineRunId,
+                untrusted: { names: Object.keys(item.inputs), origin: PIPELINE_ITEM_ORIGIN },
+              }),
           onInserted: (inserted) => store.setItemState(batchId, item.index, "started", inserted.id),
         },
       )
@@ -442,6 +451,59 @@ export const make = Effect.gen(function* () {
     return batch;
   });
 
+  /**
+   * Starts a batch over items a pipeline step already rendered and checked, with the definition
+   * the pipeline pinned. `onInserted` runs in the batch row's transaction.
+   */
+  const startItems = Effect.fn("BotBatches.startItems")(function* (input: {
+    readonly definition: BotDefinition;
+    readonly items: ReadonlyArray<NewBatchItem>;
+    readonly projectId: ProjectId | null;
+    readonly checkoutThreadId: ThreadId | null;
+    readonly caller: BotCaller;
+    readonly pipelineRunId: string;
+    readonly onInserted: (batchId: string) => Effect.Effect<void, SqlError>;
+  }) {
+    const { definition } = input;
+    const stored: StoredBatch = {
+      batch: {
+        id: yield* randomUuidV4,
+        botId: definition.id,
+        botVersion: definition.version,
+        botName: definition.name,
+        projectId: input.projectId,
+        sourceType: "inputs",
+        sourceSummary: `Pipeline step, ${input.items.length} item${input.items.length === 1 ? "" : "s"}`,
+        itemParameter: null,
+        sharedInputs: {},
+        status: "running",
+        note: null,
+        startedBy: input.caller.actor,
+        callerThreadId: input.caller.threadId,
+        createdAt: yield* nowIso,
+        finishedAt: null,
+        pipelineRunId: input.pipelineRunId,
+      },
+      definition,
+      source: { type: "inputs", items: input.items.map((item) => item.inputs) },
+      checkoutThreadId: input.checkoutThreadId,
+    };
+    yield* store
+      .withTransaction(
+        store
+          .insertBatch(stored, input.items)
+          .pipe(Effect.andThen(input.onInserted(stored.batch.id))),
+      )
+      .pipe(Effect.catch(storageError));
+    yield* store
+      .pruneBatches(definition.id, BATCHES_KEPT_PER_BOT)
+      .pipe(Effect.ignore({ log: true }));
+    const { batch } = yield* load(stored.batch.id);
+    yield* publish({ _tag: "batch", batch });
+    yield* startFeeder(batch.id);
+    return batch;
+  });
+
   const cancel = Effect.fn("BotBatches.cancel")(function* (batchId: string) {
     const stored = yield* requireStored(batchId);
     if (stored.batch.status === "running") {
@@ -523,8 +585,8 @@ export const make = Effect.gen(function* () {
     return renderBatchReport(batch, items);
   });
 
-  /** Waits up to `timeoutMs` for the batch to stop running and returns it as it stands. */
-  const awaitBatch = (batchId: string, timeoutMs: number) =>
+  /** Waits, up to `timeoutMs` when given, for the batch to stop running, and returns it. */
+  const awaitBatch = (batchId: string, timeoutMs?: number) =>
     Effect.scoped(
       Effect.gen(function* () {
         // Subscribe before reading so a finish between the two is not missed.
@@ -541,7 +603,7 @@ export const make = Effect.gen(function* () {
             )
               return;
           }
-        }).pipe(Effect.timeoutOption(timeoutMs));
+        }).pipe(timeoutMs === undefined ? Effect.asSome : Effect.timeoutOption(timeoutMs));
         return (yield* load(batchId)).batch;
       }),
     );
@@ -606,6 +668,7 @@ export const make = Effect.gen(function* () {
   return {
     preview,
     runBatch,
+    startItems,
     list,
     get,
     cancel,

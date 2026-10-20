@@ -4,6 +4,9 @@ import type {
   BotBatch,
   BotBatchItem,
   BotDefinition,
+  BotPipeline,
+  BotPipelineAttempt,
+  BotPipelineRun,
   BotRun,
   BotTrigger,
   BotTriggerFiring,
@@ -14,14 +17,19 @@ import {
   applyBotChanges,
   applyFiringChanges,
   applyInboxChanges,
+  applyPipelineAttemptChanges,
+  applyPipelineChanges,
+  applyPipelineRunChanges,
   applyRunChanges,
   applyTriggerChanges,
   botVersionDiff,
   botVersionLabel,
   EMPTY_BOT_BATCH_CHANGES,
+  EMPTY_BOT_PIPELINE_CHANGES,
   EMPTY_BOT_TRIGGER_CHANGES,
   EMPTY_BOTS_CHANGES,
   foldBotBatchChange,
+  foldBotPipelineChange,
   foldBotTriggerChange,
   foldBotsChange,
   formatReplaySummary,
@@ -204,6 +212,90 @@ describe("bot batch changes", () => {
     );
     expect(applied.batch.status).toBe("finished");
     expect(applied.items.map(({ state }) => state)).toEqual(["started", "skipped"]);
+  });
+});
+
+describe("bot pipeline changes", () => {
+  const pipeline = (id: string, createdAt: string): BotPipeline => ({
+    id,
+    name: id,
+    description: "",
+    parameters: [],
+    steps: [{ id: "review", botId: "reviewer", inputs: {} }],
+    version: 1,
+    createdBy: "user",
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const pipelineRun = (
+    id: string,
+    pipelineId: string,
+    createdAt: string,
+    status: BotPipelineRun["status"],
+  ): BotPipelineRun => ({
+    id,
+    pipelineId,
+    pipelineVersion: 1,
+    pipelineName: pipelineId,
+    inputs: {},
+    projectId: null,
+    checkoutThreadId: null,
+    status,
+    retryAt: null,
+    cursorStepId: null,
+    finalVerdict: null,
+    stoppedRunId: null,
+    error: null,
+    startedBy: "user",
+    callerThreadId: null,
+    createdAt,
+    finishedAt: null,
+  });
+  const attempt = (seq: number, state: BotPipelineAttempt["state"]): BotPipelineAttempt => ({
+    seq,
+    stepId: "review",
+    round: 1,
+    state,
+    botVersion: 1,
+    runId: null,
+    batchId: null,
+    outcome: null,
+    notes: [],
+    startedAt: null,
+    finishedAt: null,
+  });
+
+  it("drops deleted pipelines, adds new runs to pages that show them and orders attempts", () => {
+    const at = "2026-10-20T10:00:00.000Z";
+    const later = "2026-10-20T11:00:00.000Z";
+    const listed = pipelineRun("old", "a", at, "running");
+    const changes = [
+      { _tag: "pipeline", pipeline: pipeline("b", later) },
+      { _tag: "pipeline-deleted", pipelineId: "a" },
+      { _tag: "pipeline-run", run: pipelineRun("old", "a", at, "stopped") },
+      { _tag: "pipeline-run", run: pipelineRun("new", "b", later, "running") },
+      { _tag: "pipeline-attempt", pipelineRunId: "old", attempt: attempt(3, "pending") },
+      { _tag: "pipeline-attempt", pipelineRunId: "old", attempt: attempt(1, "done") },
+    ] as const;
+    const folded = changes.reduce(foldBotPipelineChange, EMPTY_BOT_PIPELINE_CHANGES);
+
+    expect(applyPipelineChanges([pipeline("a", at)], folded).map(({ id }) => id)).toEqual(["b"]);
+    expect(
+      applyPipelineRunChanges([listed], folded, { includeNew: true }).map(({ id }) => id),
+    ).toEqual(["new", "old"]);
+    expect(
+      applyPipelineRunChanges([listed], folded, { pipelineId: "a", includeNew: true }),
+    ).toHaveLength(1);
+    const applied = applyPipelineAttemptChanges(
+      { run: listed, attempts: [attempt(1, "started"), attempt(2, "done")] },
+      folded,
+    );
+    expect(applied.run.status).toBe("stopped");
+    expect(applied.attempts.map(({ seq, state }) => `${seq}:${state}`)).toEqual([
+      "1:done",
+      "2:done",
+      "3:pending",
+    ]);
   });
 });
 

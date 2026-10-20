@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { ThreadId } from "@t3tools/contracts";
-import { BotId, BotSuggestionId } from "@t3tools/contracts/fork";
+import { BotId, BotPipelineId, BotSuggestionId } from "@t3tools/contracts/fork";
 import { BotsPage } from "~/fork/bots/BotsPage";
 
 const BotsSearch = Schema.Struct({
@@ -10,9 +10,12 @@ const BotsSearch = Schema.Struct({
   /** The bot whose "Run on many" dialog is open. */
   many: Schema.optional(BotId),
   tab: Schema.optional(
-    Schema.Literals(["runs", "history", "batches", "triggers", "inbox", "usage"]),
+    Schema.Literals(["runs", "history", "batches", "pipelines", "triggers", "inbox", "usage"]),
   ),
   batch: Schema.optional(Schema.String),
+  pipelineRun: Schema.optional(Schema.String),
+  /** The pipeline whose run form is open. */
+  runPipeline: Schema.optional(BotPipelineId),
   /** The bot whose new trigger editor is open. */
   newTrigger: Schema.optional(BotId),
   /** A thread to draft a bot from; the editor opens with the draft. */

@@ -33,6 +33,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
+  BOTS_PIPELINE_WS_METHODS as PIPELINE,
   BOTS_TRIGGER_WS_METHODS as TRIGGER,
   BOTS_VERSION_WS_METHODS as BOT_VERSION,
   BOTS_WS_METHODS as BOT,
@@ -237,4 +238,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [BOT_VERSION.cancelReplay]: AuthOrchestrationOperateScope,
   [BOT_VERSION.rateRun]: AuthOrchestrationOperateScope,
   [BOT_VERSION.suggestEdit]: AuthOrchestrationOperateScope,
+  [PIPELINE.savePipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.deletePipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.runPipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.cancelPipelineRun]: AuthOrchestrationOperateScope,
+  [PIPELINE.resumePipelineRun]: AuthOrchestrationOperateScope,
 } as const;

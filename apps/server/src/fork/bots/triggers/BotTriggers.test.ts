@@ -12,6 +12,7 @@ import { GitVcsDriver } from "../../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
 import { BotsService, USER_CALLER } from "../BotsService.ts";
+import { BotPipelines, make as makeBotPipelines } from "../pipelines/BotPipelines.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotTriggers.ts";
 import type { TriggerEvent } from "./matchers.ts";
@@ -35,10 +36,16 @@ const makeTriggers = (harness: Harness) =>
           Effect.provideService(WorkspaceEntries, {} as WorkspaceEntries["Service"]),
         );
     const batches = yield* provideBatchDeps(makeBotBatches);
-    const triggers = yield* provideBatchDeps(make).pipe(Effect.provideService(BotBatches, batches));
+    const pipelines = yield* provideBatchDeps(makeBotPipelines).pipe(
+      Effect.provideService(BotBatches, batches),
+    );
+    const triggers = yield* provideBatchDeps(make).pipe(
+      Effect.provideService(BotBatches, batches),
+      Effect.provideService(BotPipelines, pipelines),
+    );
     // The service follows bot changes on a forked fiber; let it subscribe.
     yield* Effect.yieldNow;
-    return { bots, batches, triggers };
+    return { bots, batches, pipelines, triggers };
   });
 
 const trigger = (fields: Partial<BotsSaveTriggerInput> = {}): BotsSaveTriggerInput => ({
@@ -252,6 +259,69 @@ describe("BotTriggers", () => {
         });
         const [batch] = (yield* batches.list({ limit: 1 })).batches;
         expect(batch).toMatchObject({ total: 2, sourceType: "inputs" });
+      }),
+    ),
+  );
+
+  it.effect("starts a pipeline run whose first step sees the event as untrusted data", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, pipelines, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer({ output: "verdict" }), USER_CALLER);
+        yield* bots.save(reviewer({ id: "verifier", name: "Verifier" }), USER_CALLER);
+        yield* pipelines.save(
+          {
+            pipeline: {
+              id: "checks",
+              name: "Checks",
+              description: "",
+              parameters: [{ name: "file", label: "File", type: "string", required: true }],
+              steps: [
+                { id: "review", botId: "reviewer", inputs: { file: "{{input.file}}" } },
+                { id: "verify", botId: "verifier", inputs: { file: "{{input.file}}" } },
+              ],
+            },
+          },
+          USER_CALLER,
+        );
+        const misnamed = yield* triggers
+          .save(trigger({ botId: "verifier", pipelineId: "checks" }), USER_CALLER)
+          .pipe(Effect.flip);
+        expect(misnamed.message).toBe(
+          "A pipeline trigger names the bot of the pipeline's first step.",
+        );
+        const conflicts = yield* triggers
+          .save(
+            trigger({
+              pipelineId: "checks",
+              event: { kind: "merge-conflict" },
+              mapping: { file: { field: "file" } },
+            }),
+            USER_CALLER,
+          )
+          .pipe(Effect.flip);
+        expect(conflicts.message).toBe(
+          "A pipeline runs once per event, not once per conflicting file.",
+        );
+
+        const saved = yield* triggers.save(trigger({ pipelineId: "checks" }), USER_CALLER);
+        yield* triggers.handleEvent(checksFailing("a", "pr/2"));
+        const review = yield* harness.nextLaunch;
+        expect(review.initialMessage?.text).toContain("Review <event-data-");
+        yield* harness.end(review.threadId!, {
+          status: "completed",
+          reply: '{"verdict":"pass","summary":"Fine.","findings":[]}',
+        });
+        const verify = yield* harness.nextLaunch;
+        yield* harness.end(verify.threadId!, { status: "completed", reply: "Done." });
+
+        const [run] = (yield* pipelines.listRuns({ pipelineId: "checks", limit: 1 })).runs;
+        expect(yield* pipelines.awaitRun(run!.id, 60_000)).toMatchObject({
+          status: "completed",
+          inputs: { file: "pr/2" },
+        });
+        const [firing] = (yield* triggers.firings({ triggerId: saved.id, limit: 1 })).firings;
+        expect(firing).toMatchObject({ outcome: "run", reason: "Started a pipeline run." });
       }),
     ),
   );

@@ -40,6 +40,7 @@ interface BatchRow {
   readonly caller_thread_id: string | null;
   readonly created_at: string;
   readonly finished_at: string | null;
+  readonly pipeline_run_id?: string | null;
 }
 
 interface ItemRow {
@@ -113,6 +114,7 @@ const toStoredBatch = (row: BatchRow): StoredBatch | null => {
       callerThreadId: row.caller_thread_id === null ? null : ThreadId.make(row.caller_thread_id),
       createdAt: row.created_at,
       finishedAt: row.finished_at,
+      ...(row.pipeline_run_id == null ? {} : { pipelineRunId: row.pipeline_run_id }),
     },
     definition: definition.value,
     source: source.value,
@@ -226,7 +228,7 @@ export const makeBotBatchesStore = Effect.gen(function* () {
       const { batch } = stored;
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          yield* sql`INSERT INTO fork_bots_batches (id,bot_id,bot_version,bot_name,definition_json,project_id,checkout_thread_id,source_json,source_summary,item_parameter,shared_inputs_json,status,note,started_by,caller_thread_id,created_at,finished_at) VALUES (${batch.id},${batch.botId},${batch.botVersion},${batch.botName},${encodeDefinition(stored.definition)},${batch.projectId},${stored.checkoutThreadId},${encodeSource(stored.source)},${batch.sourceSummary},${batch.itemParameter},${encodeInputs(batch.sharedInputs)},${batch.status},${batch.note},${batch.startedBy},${batch.callerThreadId},${batch.createdAt},${batch.finishedAt})`;
+          yield* sql`INSERT INTO fork_bots_batches (id,bot_id,bot_version,bot_name,definition_json,project_id,checkout_thread_id,source_json,source_summary,item_parameter,shared_inputs_json,status,note,started_by,caller_thread_id,created_at,finished_at,pipeline_run_id) VALUES (${batch.id},${batch.botId},${batch.botVersion},${batch.botName},${encodeDefinition(stored.definition)},${batch.projectId},${stored.checkoutThreadId},${encodeSource(stored.source)},${batch.sourceSummary},${batch.itemParameter},${encodeInputs(batch.sharedInputs)},${batch.status},${batch.note},${batch.startedBy},${batch.callerThreadId},${batch.createdAt},${batch.finishedAt},${batch.pipelineRunId ?? null})`;
           for (const [index, item] of items.entries())
             yield* sql`INSERT INTO fork_bots_batch_items (batch_id,item_index,label,inputs_json,state,run_id,previous_run_ids_json) VALUES (${batch.id},${index},${item.label},${encodeInputs(item.inputs)},'pending',NULL,'[]')`;
         }),

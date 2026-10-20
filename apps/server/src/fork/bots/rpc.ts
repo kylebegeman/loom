@@ -1,6 +1,7 @@
 import {
   BOTS_BATCH_WS_METHODS as BB,
   BOTS_DRAFT_WS_METHODS as BD,
+  BOTS_PIPELINE_WS_METHODS as BP,
   BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
@@ -16,6 +17,10 @@ import {
   type BotsRetryBatchInput,
   type BotsRetryInput,
   type BotsListRunsInput,
+  type BotPipelineInput,
+  type BotsListPipelineRunsInput,
+  type BotsRunPipelineInput,
+  type BotsSavePipelineInput,
   type BotsRunInput,
   type BotsSaveInput,
   type BotStarterId,
@@ -41,6 +46,7 @@ import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
+import { BotPipelines } from "./pipelines/BotPipelines.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
 import { BotVersions } from "./versions/BotVersions.ts";
 
@@ -190,5 +196,47 @@ export const makeBotVersionsRpcHandlers = (auth: ForkRpcAuth) =>
       [BV.rateRun]: (input: BotsRateRunInput) => auth.effect(BV.rateRun, service.rateRun(input)),
       [BV.suggestEdit]: (input: BotsSuggestEditInput) =>
         auth.effect(BV.suggestEdit, versions.suggestEdit(input)),
+    };
+  });
+
+export const makeBotPipelinesRpcHandlers = (auth: ForkRpcAuth) =>
+  Effect.gen(function* () {
+    const bots = yield* BotsService;
+    const pipelines = yield* BotPipelines;
+    return {
+      [BP.listPipelines]: () =>
+        auth.effect(
+          BP.listPipelines,
+          pipelines.list().pipe(Effect.map((list) => ({ pipelines: list }))),
+        ),
+      [BP.checkPipeline]: (input: { pipeline: BotPipelineInput }) =>
+        auth.effect(
+          BP.checkPipeline,
+          pipelines.check(input.pipeline).pipe(Effect.map((problems) => ({ problems }))),
+        ),
+      [BP.savePipeline]: (input: BotsSavePipelineInput) =>
+        auth.effect(BP.savePipeline, pipelines.save(input, USER_CALLER)),
+      [BP.deletePipeline]: (input: { pipelineId: string }) =>
+        auth.effect(BP.deletePipeline, pipelines.delete(input.pipelineId).pipe(Effect.as({}))),
+      [BP.runPipeline]: (input: BotsRunPipelineInput) =>
+        auth.effect(
+          BP.runPipeline,
+          Effect.gen(function* () {
+            const caller =
+              input.callerThreadId === undefined
+                ? USER_CALLER
+                : yield* bots.threadCaller(input.callerThreadId);
+            return yield* pipelines.run(input, caller);
+          }),
+        ),
+      [BP.listPipelineRuns]: (input: BotsListPipelineRunsInput) =>
+        auth.effect(BP.listPipelineRuns, pipelines.listRuns(input)),
+      [BP.getPipelineRun]: (input: { pipelineRunId: string }) =>
+        auth.effect(BP.getPipelineRun, pipelines.getRun(input.pipelineRunId)),
+      [BP.cancelPipelineRun]: (input: { pipelineRunId: string }) =>
+        auth.effect(BP.cancelPipelineRun, pipelines.cancel(input.pipelineRunId)),
+      [BP.resumePipelineRun]: (input: { pipelineRunId: string }) =>
+        auth.effect(BP.resumePipelineRun, pipelines.resume(input.pipelineRunId, USER_CALLER)),
+      [BP.watchPipelines]: () => auth.stream(BP.watchPipelines, pipelines.changes),
     };
   });

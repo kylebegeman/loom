@@ -5,8 +5,10 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import {
   applyBotChanges,
   applyInboxChanges,
+  applyPipelineChanges,
   createBotsAtoms,
   EMPTY_BOT_BATCH_CHANGES,
+  EMPTY_BOT_PIPELINE_CHANGES,
   EMPTY_BOT_TRIGGER_CHANGES,
   EMPTY_BOTS_CHANGES,
   makeWaitingBotRunsAtom,
@@ -20,6 +22,7 @@ import {
   BOTS_FROM_THREAD_FEATURE,
   BOTS_INBOX_FEATURE,
   BOTS_INVOCATION_FEATURE,
+  BOTS_PIPELINES_FEATURE,
   BOTS_LIST_RUNS_MAX_LIMIT,
   BOTS_STARTERS_FEATURE,
   BOTS_TRIGGERS_FEATURE,
@@ -52,6 +55,7 @@ export function useBotsHost() {
     fromThreadSupported: supportsLoomFeature(capabilities, BOTS_FROM_THREAD_FEATURE),
     triggersSupported: supportsLoomFeature(capabilities, BOTS_TRIGGERS_FEATURE),
     versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
+    pipelinesSupported: supportsLoomFeature(capabilities, BOTS_PIPELINES_FEATURE),
   };
 }
 
@@ -85,6 +89,31 @@ export function useBotTriggerChanges(environmentId: EnvironmentId | null, enable
       : NO_TRIGGER_CHANGES,
   );
   return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOT_TRIGGER_CHANGES);
+}
+
+const NO_PIPELINE_CHANGES = Atom.make(AsyncResult.success(EMPTY_BOT_PIPELINE_CHANGES));
+
+/** Pipeline edits and run progress watched while connected, overlaid on lists fetched once. */
+export function useBotPipelineChanges(environmentId: EnvironmentId | null, enabled: boolean) {
+  const result = useAtomValue(
+    environmentId && enabled
+      ? bots.pipelineChanges({ environmentId, input: {} })
+      : NO_PIPELINE_CHANGES,
+  );
+  return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOT_PIPELINE_CHANGES);
+}
+
+/** The host's pipelines with watched changes applied, while it supports them. */
+export function usePipelines(
+  environmentId: EnvironmentId | null,
+  live: boolean,
+  connected: boolean,
+) {
+  const changes = useBotPipelineChanges(environmentId, live && connected);
+  const list = useEnvironmentQuery(
+    environmentId && live ? bots.listPipelines({ environmentId, input: {} }) : null,
+  );
+  return { changes, list, pipelines: applyPipelineChanges(list.data?.pipelines ?? [], changes) };
 }
 
 /** The host, its watched changes, and its bots with those changes applied. */

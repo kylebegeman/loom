@@ -18,6 +18,7 @@ export const BOTS_BUDGETS_FEATURE = "bots-budgets";
 export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
 export const BOTS_TRIGGERS_FEATURE = "bots-triggers";
 export const BOTS_VERSIONS_FEATURE = "bots-versions";
+export const BOTS_PIPELINES_FEATURE = "bots-pipelines";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -219,6 +220,7 @@ export const isTerminalBotRunStatus = (status: BotRunStatus): boolean =>
 
 export const BotRunId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
 export const BotBatchId = BotRunId;
+export const BotPipelineRunId = BotRunId;
 
 export const BotVerdictValue = Schema.Literals(["pass", "fail", "needs_attention"]);
 export type BotVerdictValue = typeof BotVerdictValue.Type;
@@ -304,6 +306,10 @@ export const BotRun = Schema.Struct({
   replayId: Schema.optionalKey(Schema.NullOr(Schema.String)),
   rating: Schema.optionalKey(Schema.NullOr(BotRunRating)),
   note: Schema.optionalKey(Schema.NullOr(shortText(BOTS_RUN_NOTE_MAX))),
+  /** The pipeline run that started this run as one of its steps. */
+  pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
+  /** Set on the run that stopped its pipeline, the pipeline's one inbox item until resumed. */
+  pipelineStopped: Schema.optionalKey(Schema.Boolean),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -318,9 +324,16 @@ export const needsBotAttention = (run: BotRun): boolean =>
     run.status === "timed_out" ||
     (run.status === "completed" && run.verdict?.verdict === "needs_attention"));
 
-/** The server's inbox query selects the same runs in SQL; keep the two in step. */
+/**
+ * The server's inbox query selects the same runs in SQL; keep the two in step. A pipeline's runs
+ * stay out, since its gates handle their outcomes, except the one that stopped it.
+ */
 export const isBotInboxRun = (run: BotRun): boolean =>
-  run.dismissedAt == null && run.replayId == null && needsBotAttention(run);
+  run.dismissedAt == null &&
+  run.replayId == null &&
+  (run.pipelineRunId == null
+    ? needsBotAttention(run)
+    : run.pipelineStopped === true && run.retriedBy == null);
 
 export const BotsChange = Schema.Union([
   Schema.TaggedStruct("bot", { bot: BotDefinition }),
@@ -473,8 +486,23 @@ export const BotBudgetState = Schema.Struct({
 });
 export type BotBudgetState = typeof BotBudgetState.Type;
 
+/** A pipeline's runs in the window, with the bot runs its steps started. */
+export const BotPipelineUsageRow = Schema.Struct({
+  pipelineId: BotId,
+  pipelineName: Schema.String,
+  runs: Schema.Int,
+  completed: Schema.Int,
+  /** Bot runs its steps started, which the bot rows also count. */
+  botRuns: Schema.Int,
+  tokens: BotUsageTokens,
+  usageComplete: Schema.Boolean,
+});
+export type BotPipelineUsageRow = typeof BotPipelineUsageRow.Type;
+
 export const BotsUsageResult = Schema.Struct({
   rows: Schema.Array(BotUsageRow),
+  /** Absent from servers without pipelines. */
+  pipelines: Schema.optionalKey(Schema.Array(BotPipelineUsageRow)),
   totals: Schema.Struct({
     runs: Schema.Int,
     tokens: BotUsageTokens,
@@ -670,6 +698,8 @@ export const BotBatch = Schema.Struct({
   finishedAt: Schema.NullOr(Schema.String),
   /** Set while the bot's budget holds the batch back: when it tries the next item again. */
   pausedUntil: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The pipeline run whose fan-out step started the batch. */
+  pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
 });
 export type BotBatch = typeof BotBatch.Type;
 
@@ -1007,6 +1037,11 @@ const TriggerFields = {
   followLatest: Schema.Boolean,
   /** Run the bot's stable version, or its latest while none is marked. Never with `followLatest`. */
   followStable: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Starts this pipeline instead of the bot. `botId` then names the first step's bot, so clients
+   * that predate pipelines still read the trigger, and `mapping` fills the pipeline's inputs.
+   */
+  pipelineId: Schema.optionalKey(Schema.NullOr(BotId)),
 };
 
 export const BotTrigger = Schema.Struct({
@@ -1288,5 +1323,273 @@ export const BotVersionsRpcGroup = RpcGroup.make(
     payload: BotsSuggestEditInput,
     success: BotDraftResult,
     error: errors,
+  }),
+);
+
+export const BOTS_PIPELINE_WS_METHODS = {
+  listPipelines: "loom.bots.listPipelines",
+  checkPipeline: "loom.bots.checkPipeline",
+  savePipeline: "loom.bots.savePipeline",
+  deletePipeline: "loom.bots.deletePipeline",
+  runPipeline: "loom.bots.runPipeline",
+  listPipelineRuns: "loom.bots.listPipelineRuns",
+  getPipelineRun: "loom.bots.getPipelineRun",
+  cancelPipelineRun: "loom.bots.cancelPipelineRun",
+  resumePipelineRun: "loom.bots.resumePipelineRun",
+  watchPipelines: "loom.bots.watchPipelines",
+} as const;
+
+export const BOTS_PIPELINE_MAX_STEPS = 12;
+export const BOTS_PIPELINE_MAX_ROUNDS = 5;
+export const BOTS_MAX_ACTIVE_PIPELINES = 5;
+export const BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT = 50;
+export const BOTS_PIPELINE_TEMPLATE_MAX = 20_000;
+
+/** The slug shape bot ids use. */
+export const BotPipelineId = BotId;
+export type BotPipelineId = typeof BotPipelineId.Type;
+
+export const BotPipelineStepId = BotId;
+
+/** Absent means `latest`. */
+export const BotPipelineVersion = Schema.Union([
+  Schema.Literals(["stable", "latest"]),
+  Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+]);
+export type BotPipelineVersion = typeof BotPipelineVersion.Type;
+
+export const BotPipelineGate = Schema.Literals(["stop", "continue"]);
+export type BotPipelineGate = typeof BotPipelineGate.Type;
+
+export const BotPipelineLoop = Schema.Struct({
+  /** An earlier step, or this one, to run again with the next round. */
+  goTo: BotPipelineStepId,
+  maxRounds: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_PIPELINE_MAX_ROUNDS })),
+});
+export type BotPipelineLoop = typeof BotPipelineLoop.Type;
+
+export const BotPipelineStep = Schema.Struct({
+  id: BotPipelineStepId,
+  botId: BotId,
+  version: Schema.optionalKey(BotPipelineVersion),
+  /** A template per bot input, such as `{{input.target}}` or `{{steps.review.summary}}`. */
+  inputs: Schema.Record(BotParameterName, shortText(BOTS_PIPELINE_TEMPLATE_MAX)),
+  /** Runs the step once per item, as a batch. */
+  forEach: Schema.optionalKey(
+    Schema.Struct({
+      /** `{{steps.<id>.findings}}` or `{{input.<name>}}` of a text input, one item per line. */
+      from: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+      itemLabel: Schema.optionalKey(shortText(200)),
+    }),
+  ),
+  /** Absent gates stop the pipeline. Gates apply only to steps whose bot gives a verdict. */
+  onFail: Schema.optionalKey(Schema.Union([BotPipelineGate, BotPipelineLoop])),
+  onNeedsAttention: Schema.optionalKey(BotPipelineGate),
+  /** When the run fails, times out or is cancelled, or a fan-out item does. */
+  onError: Schema.optionalKey(BotPipelineGate),
+  /** Runs the step on this model instead of its bot's. */
+  modelSelection: Schema.optionalKey(ModelSelection),
+});
+export type BotPipelineStep = typeof BotPipelineStep.Type;
+
+export const BotPipelineInput = Schema.Struct({
+  id: BotPipelineId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
+  description: shortText(1000),
+  parameters: Schema.Array(BotParameter).check(Schema.isMaxLength(BOTS_MAX_PARAMETERS)),
+  steps: Schema.Array(BotPipelineStep).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(BOTS_PIPELINE_MAX_STEPS),
+  ),
+});
+export type BotPipelineInput = typeof BotPipelineInput.Type;
+
+export const BotPipeline = Schema.Struct({
+  ...BotPipelineInput.fields,
+  version: Schema.Int,
+  createdBy: BotCreator,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type BotPipeline = typeof BotPipeline.Type;
+
+export const BotPipelineProblem = Schema.Struct({
+  /** Null for a problem with the pipeline as a whole. */
+  stepId: Schema.NullOr(Schema.String),
+  /** The field to mark, such as `botId`, `inputs.target` or `onFail`. */
+  field: Schema.String,
+  message: Schema.String,
+  /** A warning does not block saving. */
+  severity: Schema.Literals(["error", "warning"]),
+});
+export type BotPipelineProblem = typeof BotPipelineProblem.Type;
+
+export const BotPipelineAttemptState = Schema.Literals(["pending", "started", "done", "skipped"]);
+export type BotPipelineAttemptState = typeof BotPipelineAttemptState.Type;
+
+export const BotPipelineOutcome = Schema.Struct({
+  /** A fan-out step is `completed` when every item completed, else `failed`. */
+  status: BotRunStatus,
+  /** A fan-out step's worst item verdict. */
+  verdict: Schema.NullOr(BotVerdictValue),
+  summary: Schema.NullOr(Schema.String),
+});
+export type BotPipelineOutcome = typeof BotPipelineOutcome.Type;
+
+export const BotPipelineAttempt = Schema.Struct({
+  seq: Schema.Int,
+  stepId: BotPipelineStepId,
+  round: Schema.Int,
+  state: BotPipelineAttemptState,
+  botVersion: Schema.NullOr(Schema.Int),
+  runId: Schema.NullOr(BotRunId),
+  batchId: Schema.NullOr(BotBatchId),
+  outcome: Schema.NullOr(BotPipelineOutcome),
+  /** For example an input cut to its limit. */
+  notes: Schema.Array(Schema.String),
+  startedAt: Schema.NullOr(Schema.String),
+  finishedAt: Schema.NullOr(Schema.String),
+});
+export type BotPipelineAttempt = typeof BotPipelineAttempt.Type;
+
+/** `waiting` is a budget pause; `stopped` means a gate stopped it and `failed` an error did. */
+export const BotPipelineRunStatus = Schema.Literals([
+  "running",
+  "waiting",
+  "completed",
+  "stopped",
+  "failed",
+  "cancelled",
+]);
+export type BotPipelineRunStatus = typeof BotPipelineRunStatus.Type;
+
+export const isActiveBotPipelineRunStatus = (status: BotPipelineRunStatus): boolean =>
+  status === "running" || status === "waiting";
+
+export const BotPipelineRun = Schema.Struct({
+  id: BotPipelineRunId,
+  pipelineId: BotPipelineId,
+  pipelineVersion: Schema.Int,
+  pipelineName: Schema.String,
+  inputs: BotInputs,
+  projectId: Schema.NullOr(ProjectId),
+  checkoutThreadId: Schema.NullOr(ThreadId),
+  status: BotPipelineRunStatus,
+  /** Set while waiting: when the step is tried again. */
+  retryAt: Schema.NullOr(Schema.String),
+  cursorStepId: Schema.NullOr(BotPipelineStepId),
+  /** The verdict of the last verdict step that ran. */
+  finalVerdict: Schema.NullOr(BotVerdictValue),
+  /** The run whose outcome stopped the pipeline. */
+  stoppedRunId: Schema.NullOr(BotRunId),
+  error: Schema.NullOr(Schema.String),
+  startedBy: BotCreator,
+  callerThreadId: Schema.NullOr(ThreadId),
+  createdAt: Schema.String,
+  finishedAt: Schema.NullOr(Schema.String),
+});
+export type BotPipelineRun = typeof BotPipelineRun.Type;
+
+/** Its own stream, since an older client fails to decode a tag added to {@link BotsChange}. */
+export const BotPipelineChange = Schema.Union([
+  Schema.TaggedStruct("pipeline", { pipeline: BotPipeline }),
+  Schema.TaggedStruct("pipeline-deleted", { pipelineId: BotPipelineId }),
+  Schema.TaggedStruct("pipeline-run", { run: BotPipelineRun }),
+  Schema.TaggedStruct("pipeline-attempt", {
+    pipelineRunId: BotPipelineRunId,
+    attempt: BotPipelineAttempt,
+  }),
+]);
+export type BotPipelineChange = typeof BotPipelineChange.Type;
+
+export const BotsSavePipelineInput = Schema.Struct({
+  pipeline: BotPipelineInput,
+  /** Rejects the save when the stored version differs; omit to create or overwrite. */
+  expectedVersion: Schema.optionalKey(Schema.Int),
+});
+export type BotsSavePipelineInput = typeof BotsSavePipelineInput.Type;
+
+export const BotsRunPipelineInput = Schema.Struct({
+  pipelineId: BotPipelineId,
+  inputs: BotInputs,
+  projectId: Schema.optionalKey(ProjectId),
+  /** The thread whose checkout `caller` checkout steps share. */
+  checkoutThreadId: Schema.optionalKey(ThreadId),
+  /** The thread the run is started from, for people; agents are always their own thread. */
+  callerThreadId: Schema.optionalKey(ThreadId),
+});
+export type BotsRunPipelineInput = typeof BotsRunPipelineInput.Type;
+
+export const BotsListPipelineRunsInput = Schema.Struct({
+  pipelineId: Schema.optionalKey(BotPipelineId),
+  /** Returns runs created strictly before this ISO timestamp. */
+  before: Schema.optionalKey(Schema.String),
+  limit: Schema.Int.check(
+    Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT }),
+  ),
+});
+export type BotsListPipelineRunsInput = typeof BotsListPipelineRunsInput.Type;
+
+export const BotPipelineRunDetail = Schema.Struct({
+  run: BotPipelineRun,
+  attempts: Schema.Array(BotPipelineAttempt),
+  report: BotBatchReport,
+});
+export type BotPipelineRunDetail = typeof BotPipelineRunDetail.Type;
+
+const BP = BOTS_PIPELINE_WS_METHODS;
+const PipelineRunRef = Schema.Struct({ pipelineRunId: BotPipelineRunId });
+
+export const BotPipelinesRpcGroup = RpcGroup.make(
+  Rpc.make(BP.listPipelines, {
+    payload: Schema.Struct({}),
+    success: Schema.Struct({ pipelines: Schema.Array(BotPipeline) }),
+    error: errors,
+  }),
+  Rpc.make(BP.checkPipeline, {
+    payload: Schema.Struct({ pipeline: BotPipelineInput }),
+    success: Schema.Struct({ problems: Schema.Array(BotPipelineProblem) }),
+    error: errors,
+  }),
+  Rpc.make(BP.savePipeline, {
+    payload: BotsSavePipelineInput,
+    success: BotPipeline,
+    error: errors,
+  }),
+  Rpc.make(BP.deletePipeline, {
+    payload: Schema.Struct({ pipelineId: BotPipelineId }),
+    success: Schema.Struct({}),
+    error: errors,
+  }),
+  Rpc.make(BP.runPipeline, {
+    payload: BotsRunPipelineInput,
+    success: BotPipelineRun,
+    error: errors,
+  }),
+  Rpc.make(BP.listPipelineRuns, {
+    payload: BotsListPipelineRunsInput,
+    success: Schema.Struct({ runs: Schema.Array(BotPipelineRun), hasMore: Schema.Boolean }),
+    error: errors,
+  }),
+  Rpc.make(BP.getPipelineRun, {
+    payload: PipelineRunRef,
+    success: BotPipelineRunDetail,
+    error: errors,
+  }),
+  Rpc.make(BP.cancelPipelineRun, {
+    payload: PipelineRunRef,
+    success: BotPipelineRun,
+    error: errors,
+  }),
+  Rpc.make(BP.resumePipelineRun, {
+    payload: PipelineRunRef,
+    success: BotPipelineRun,
+    error: errors,
+  }),
+  Rpc.make(BP.watchPipelines, {
+    payload: Schema.Struct({}),
+    success: BotPipelineChange,
+    error: errors,
+    stream: true,
   }),
 );

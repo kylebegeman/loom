@@ -48,15 +48,21 @@ export function Choice<T extends string>({
   value,
   options,
   onChange,
+  disabled,
 }: {
   readonly label: string;
   readonly value: T;
   readonly options: ReadonlyArray<readonly [T, string]>;
   readonly onChange: (value: T) => void;
+  readonly disabled?: boolean;
 }) {
   return (
     <LibraryField label={label}>
-      <Select value={value} onValueChange={(next) => next !== null && onChange(next as T)}>
+      <Select
+        value={value}
+        disabled={disabled}
+        onValueChange={(next) => next !== null && onChange(next as T)}
+      >
         <SelectTrigger size="sm">
           <SelectValue>{options.find(([key]) => key === value)?.[1] ?? "Choose…"}</SelectValue>
         </SelectTrigger>

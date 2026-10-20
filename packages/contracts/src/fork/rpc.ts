@@ -35,10 +35,12 @@ import { DirectoryRpcGroup } from "./directory.ts";
 import {
   BotBatchesRpcGroup,
   BotDraftsRpcGroup,
+  BotPipelinesRpcGroup,
   BotsRpcGroup,
   BotTriggersRpcGroup,
   BotVersionsRpcGroup,
   BOTS_BATCH_WS_METHODS,
+  BOTS_PIPELINE_WS_METHODS,
   BOTS_TRIGGER_WS_METHODS,
   BOTS_WS_METHODS,
 } from "./bots.ts";
@@ -107,6 +109,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   BotDraftsRpcGroup,
   BotTriggersRpcGroup,
   BotVersionsRpcGroup,
+  BotPipelinesRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -140,7 +143,8 @@ export type ForkSubscriptionRpcTag =
   | typeof PREVIEW_LINKS_WS_METHODS.watch
   | typeof BOTS_WS_METHODS.watch
   | typeof BOTS_BATCH_WS_METHODS.watchBatches
-  | typeof BOTS_TRIGGER_WS_METHODS.watchTriggers;
+  | typeof BOTS_TRIGGER_WS_METHODS.watchTriggers
+  | typeof BOTS_PIPELINE_WS_METHODS.watchPipelines;
 export type ForkStreamCommandRpcTag =
   | typeof APPLE_BUILD_TOOLING_WS_METHODS.tailLog
   | typeof DEVICE_QA_WS_METHODS.runEvents;

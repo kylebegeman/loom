@@ -11,6 +11,12 @@ import {
   BotId,
   BotInputs,
   BotParameterName,
+  BotPipeline,
+  BotPipelineId,
+  BotPipelineProblem,
+  BotPipelineRun,
+  BotPipelineRunDetail,
+  BotPipelineRunId,
   BotRun,
   BotRunId,
   BotsDismissInput,
@@ -19,6 +25,7 @@ import {
   BotSuggestion,
   BotsRetryBatchInput,
   BotsRetryInput,
+  BotsSavePipelineInput,
   BotsSaveTriggerInput,
   BotsUsageResult,
   BotTrigger,
@@ -44,6 +51,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotsService, type BotCaller } from "./BotsService.ts";
 import { BotDrafts } from "./fromThread/BotDrafts.ts";
+import { BotPipelines } from "./pipelines/BotPipelines.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
 import { BotVersions } from "./versions/BotVersions.ts";
 
@@ -214,7 +222,7 @@ export const BotsToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_bots_save_trigger", {
     description:
-      "Create or update a trigger that runs a bot when an event happens: a pull request's checks start failing, a pull request opens, a thread settles in a project, a schedule comes due, a webhook arrives, or `scripts/fork/loom.sh integrate` hits merge conflicts. mapping fills each bot input from an event field ({field}) or a fixed value ({value}); every required input needs one. Webhook and merge conflict triggers return webhook.url (or webhook.path on this server) to give the sender. Runs start with this thread's runtime mode as their ceiling. A trigger runs the version it was saved with, even after the bot changes; set followLatest to run the bot as saved now, or followStable to run its stable version.",
+      "Create or update a trigger that runs a bot when an event happens: a pull request's checks start failing, a pull request opens, a thread settles in a project, a schedule comes due, a webhook arrives, or `scripts/fork/loom.sh integrate` hits merge conflicts. mapping fills each bot input from an event field ({field}) or a fixed value ({value}); every required input needs one. Webhook and merge conflict triggers return webhook.url (or webhook.path on this server) to give the sender. Runs start with this thread's runtime mode as their ceiling. A trigger runs the version it was saved with, even after the bot changes; set followLatest to run the bot as saved now, or followStable to run its stable version. Set pipelineId to start that pipeline instead, with botId naming its first step's bot and mapping filling the pipeline's inputs.",
     parameters: BotsSaveTriggerInput,
     success: BotTrigger,
     failure,
@@ -257,6 +265,58 @@ export const BotsToolkit = Toolkit.make(
       "Mark a finished bot run as good (up) or bad (down) with an optional note, or clear the mark with null. Bad runs are what a suggested edit learns from and good replay candidates.",
     parameters: BotsRateRunInput,
     success: BotRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_pipelines", {
+    description:
+      "List bot pipelines: each one's inputs and steps, which bot each step runs, which steps fan out over an earlier step's findings, and where a failed verdict loops back to.",
+    success: Schema.Struct({ pipelines: Schema.Array(BotPipeline) }),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_define_pipeline", {
+    description:
+      "Create or replace a pipeline: bots run one after another, each step's inputs filled from the pipeline's inputs ({{input.name}}) and earlier steps ({{steps.id.summary}}, .findings, .verdict, .result). forEach runs a step once per item of an earlier step's findings, with {{item}} as the item. onFail stops, continues, or goes back to an earlier step for at most maxRounds rounds. Pin a step to a bot version with version. Returns the saved pipeline, or fails with the first problem; warnings come back in problems.",
+    parameters: BotsSavePipelineInput,
+    success: Schema.Struct({
+      pipeline: BotPipeline,
+      problems: Schema.Array(BotPipelineProblem),
+    }),
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_run_pipeline", {
+    description:
+      "Start a pipeline run. Each step runs as its bot, capped by this thread's runtime mode. wait returns once the run ends, or after 10 minutes with the run as it stands; follow a longer run with loom_bots_pipeline_status. The report gives the path the run took and each step's result.",
+    parameters: Schema.Struct({
+      pipelineId: BotPipelineId,
+      inputs: BotInputs,
+      projectId: Schema.optionalKey(ProjectId),
+      checkoutThreadId: Schema.optionalKey(ThreadId),
+      wait: Schema.optionalKey(Schema.Boolean),
+    }),
+    success: BotPipelineRunDetail,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_pipeline_status", {
+    description: "Read a pipeline run: its status, each step's attempt, and the report.",
+    parameters: Schema.Struct({ pipelineRunId: BotPipelineRunId }),
+    success: BotPipelineRunDetail,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_bots_pipeline_cancel", {
+    description: "Cancel a running pipeline run and the bot run or batch its current step started.",
+    parameters: Schema.Struct({ pipelineRunId: BotPipelineRunId }),
+    success: BotPipelineRun,
+    failure,
+    dependencies: callerDependencies,
+  }),
+  Tool.make("loom_bots_pipeline_resume", {
+    description:
+      "Resume a stopped or failed pipeline run from the step that stopped it, in the same round, with the bot versions the run started with.",
+    parameters: Schema.Struct({ pipelineRunId: BotPipelineRunId }),
+    success: BotPipelineRun,
     failure,
     dependencies: callerDependencies,
   }),
@@ -467,6 +527,54 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_rate_run: McpToolAccess.writes((input) =>
         onHost(Effect.flatMap(BotsService, (service) => service.rateRun(input))),
+      ),
+      loom_bots_pipelines: McpToolAccess.reads(() =>
+        onHost(
+          Effect.flatMap(BotPipelines, (pipelines) =>
+            pipelines.list().pipe(Effect.map((list) => ({ pipelines: list }))),
+          ),
+        ),
+      ),
+      loom_bots_define_pipeline: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.gen(function* () {
+              const pipelines = yield* BotPipelines;
+              const pipeline = yield* pipelines.save(input, caller);
+              return { pipeline, problems: yield* pipelines.check(input.pipeline) };
+            }),
+          );
+        }),
+      ),
+      loom_bots_run_pipeline: McpToolAccess.writes(({ wait, ...input }) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.gen(function* () {
+              const pipelines = yield* BotPipelines;
+              const run = yield* pipelines.run(input, caller);
+              if (wait === true) yield* pipelines.awaitRun(run.id, AGENT_RUN_WAIT_MAX_MS);
+              return yield* pipelines.getRun(run.id);
+            }),
+          );
+        }),
+      ),
+      loom_bots_pipeline_status: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(BotPipelines, (pipelines) => pipelines.getRun(input.pipelineRunId))),
+      ),
+      loom_bots_pipeline_cancel: McpToolAccess.writes((input) =>
+        onHost(Effect.flatMap(BotPipelines, (pipelines) => pipelines.cancel(input.pipelineRunId))),
+      ),
+      loom_bots_pipeline_resume: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotPipelines, (pipelines) =>
+              pipelines.resume(input.pipelineRunId, caller),
+            ),
+          );
+        }),
       ),
       loom_bots_set_trigger_enabled: McpToolAccess.writes((input) =>
         onHost(

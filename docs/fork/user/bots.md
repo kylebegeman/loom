@@ -191,6 +191,10 @@ pinned to an older version keeps running it; choose **Use version N** on the tri
 the current one. A merge conflict trigger runs a batch, which always uses the latest version, so
 pinned to an older one its firings are skipped.
 
+**Starts** chooses whether a trigger runs the bot or a pipeline that begins with it; the inputs
+then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions, and
+cannot start from merge conflicts. This choice is fixed once the trigger is saved.
+
 **Test** fires the trigger once with event fields you enter. It skips the filters, cooldown and
 daily limit, and starts a real run.
 
@@ -231,6 +235,40 @@ toward the bot's budget, and the whole replay must fit in it before it starts. R
 in the run list with a **Replay** badge but never reach the inbox. **Cancel replay** stops runs in
 flight and skips the rest.
 
+## Pipelines
+
+A pipeline runs bots one after another and passes what each found to the next, such as review,
+fix, verify. Choose the **Pipelines** tab on the Bots page and **New pipeline**. Give it inputs as
+you would a bot, then add steps. Each step runs one bot and fills that bot's inputs from
+templates:
+
+- `{{input.target}}`: a pipeline input.
+- `{{steps.review.summary}}`, `{{steps.review.findings}}`, `{{steps.review.verdict}}` and
+  `{{steps.review.result}}`: what an earlier step returned.
+- `{{item}}`: the item a step runs on when it runs once per item.
+- `{{round}}`: the current round of a loop, starting at 1.
+
+The editor checks the pipeline as you type and marks each problem on its step. Warnings, such as
+a step that edits in its own worktree and so will not see an earlier step's changes, do not block
+saving.
+
+Turn on **Run once per item, as a batch** to run a step once per finding of an earlier step, or
+once per line of a text input. For a step whose bot returns a verdict, **On a fail verdict** and
+**On needs attention** choose whether the pipeline stops, carries on, or goes back to an earlier
+step for another round, at most 5 rounds. **When the run fails or times out** chooses the same
+for errors. A step can pin a version of its bot and run on another model than the bot's own.
+
+**Run** asks for the pipeline's inputs and, when a step needs one, a project. The run view shows
+each step as it goes, with its verdict, links to its run or batch, and a report once the pipeline
+ends. A step held back by its bot's budget waits until the budget allows it. **Cancel pipeline**
+stops the run in flight. A pipeline that stopped or failed shows one inbox item, its stopping
+run, with **Open pipeline run**; **Resume** there runs the stopped step again without repeating
+earlier steps. At most 5 pipelines run at once. Pipelines keep running across server restarts.
+
+Run **Run pipeline...** from the command palette to start one from anywhere. Loom adds a
+**Review, fix, verify** starter pipeline, with a **Fixer** bot, when the starter reviewer and
+verifier bots exist.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over
@@ -241,6 +279,8 @@ Agents list and save triggers with `loom_bots_triggers`, `loom_bots_save_trigger
 `loom_bots_set_trigger_enabled`.
 They read history with `loom_bots_versions`, rate runs with `loom_bots_rate_run`, and start a
 replay with `loom_bots_replay`, then follow it with `loom_bots_replay_status`.
+Pipelines have `loom_bots_pipelines`, `loom_bots_define_pipeline`, `loom_bots_run_pipeline`,
+`loom_bots_pipeline_status`, `loom_bots_pipeline_cancel` and `loom_bots_pipeline_resume`.
 
 ## Archiving and deleting
 
