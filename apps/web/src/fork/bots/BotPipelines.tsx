@@ -66,7 +66,7 @@ export function BotPipelines({
     setError(null);
     try {
       const confirmed = await ensureLocalApi().dialogs.confirm(
-        `Delete ${pipeline.name}? Its past runs stay listed; the pipeline itself cannot be restored.`,
+        `Delete ${pipeline.name}? Its triggers, with their webhook URLs and secrets, are deleted too. Its past runs stay listed; the pipeline itself cannot be restored.`,
       );
       if (!confirmed) return;
       const result = await remove({ environmentId, input: { pipelineId: pipeline.id } });

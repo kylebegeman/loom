@@ -834,6 +834,8 @@ export const make = Effect.gen(function* () {
   return {
     list,
     get: requirePipeline,
+    /** Whether the pipeline is stored, including one a newer Loom saved that this build cannot read. */
+    exists: (pipelineId: string) => store.hasPipeline(pipelineId).pipe(Effect.catch(storageError)),
     check,
     save,
     delete: remove,

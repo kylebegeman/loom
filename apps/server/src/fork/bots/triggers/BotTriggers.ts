@@ -719,11 +719,15 @@ export const make = Effect.gen(function* () {
   yield* bots.changes.pipe(Stream.runForEach(onBotsChange), Effect.forkIn(serviceScope));
   yield* pipelines.changes.pipe(Stream.runForEach(onPipelinesChange), Effect.forkIn(serviceScope));
   // Triggers left by a pipeline deleted before its cleanup ran.
-  yield* pipelines.list().pipe(
-    Effect.flatMap((all) => {
-      const known = new Set<string>(all.map((pipeline) => pipeline.id));
-      return removePipelineTriggers((pipelineId) => !known.has(pipelineId));
-    }),
+  yield* Effect.filter(
+    new Set(
+      [...cache.values()].flatMap(({ trigger }) =>
+        trigger.pipelineId == null ? [] : [trigger.pipelineId],
+      ),
+    ),
+    (pipelineId) => pipelines.exists(pipelineId).pipe(Effect.map((exists) => !exists)),
+  ).pipe(
+    Effect.flatMap((gone) => removePipelineTriggers((pipelineId) => gone.includes(pipelineId))),
     Effect.catchCause((cause) => Effect.logWarning("Bot trigger cleanup failed", { cause })),
   );
 

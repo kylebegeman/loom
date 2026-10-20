@@ -475,8 +475,15 @@ describe("BotTriggers", () => {
           list.map((entry) => entry.id).toSorted();
         expect(ids(yield* triggers.list("reviewer"))).toEqual([direct.id, triage.id].toSorted());
 
-        // Its row gone without the cleanup, as when the server stopped in between.
+        // A row this build cannot read, as a newer Loom writes, still holds its triggers.
         const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE fork_bots_pipelines SET definition_json = '{}' WHERE id = 'triage'`;
+        const reopened = yield* makeTriggers(harness);
+        expect(ids(yield* reopened.triggers.list("reviewer"))).toEqual(
+          [direct.id, triage.id].toSorted(),
+        );
+
+        // Its row gone without the cleanup, as when the server stopped in between.
         yield* sql`DELETE FROM fork_bots_pipelines WHERE id = 'triage'`;
         const restarted = yield* makeTriggers(harness);
         expect(ids(yield* restarted.triggers.list("reviewer"))).toEqual([direct.id]);

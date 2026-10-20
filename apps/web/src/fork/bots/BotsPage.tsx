@@ -276,7 +276,7 @@ export function BotsPage() {
     act(async () => {
       if (!environmentId) return;
       const confirmed = await ensureLocalApi().dialogs.confirm(
-        `Delete ${bot.name}? Its run history stays on the Bots page; the bot itself cannot be restored.`,
+        `Delete ${bot.name}? Its triggers, with their webhook URLs and secrets, are deleted too. Its run history stays on the Bots page; the bot itself cannot be restored.`,
       );
       if (!confirmed) return;
       const result = await remove({ environmentId, input: { botId: bot.id } });
