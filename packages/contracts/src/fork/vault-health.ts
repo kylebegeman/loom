@@ -14,6 +14,7 @@ export type VaultHealthClass = typeof VaultHealthClass.Type;
 export const VaultHealthIssue = Schema.Struct({
   id: Schema.String,
   itemId: VaultItemId,
+  itemLabel: Schema.String,
   itemVersion: Schema.Int,
   category: VaultHealthClass,
   state: Schema.Literals(["open", "snoozed", "dismissed", "resolved"]),

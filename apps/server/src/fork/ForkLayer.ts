@@ -103,10 +103,15 @@ const layerVaultSsh = VaultSsh.layer.pipe(
   ),
 );
 
+const layerVaultHealth = VaultHealth.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultStore, layerVaultCore)),
+);
+
 const layerVaultGitHub = VaultGitHub.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerVaultCore,
+      layerVaultHealth,
       layerVaultAccess,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       GitHubCli.layer,
@@ -147,9 +152,6 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 );
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
-const layerVaultHealth = VaultHealth.layer.pipe(
-  Layer.provide(Layer.merge(layerVaultStore, layerVaultCore)),
-);
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.merge(layerVaultHealth, layerVaultGitHub)),
 );

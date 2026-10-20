@@ -39,7 +39,15 @@ export class VaultHealth extends Context.Service<
     readonly claim: (
       itemId: string,
       force?: boolean,
-    ) => Effect.Effect<{ rule: VaultHealthRule; itemVersion: number } | null, VaultError>;
+    ) => Effect.Effect<
+      {
+        rule: VaultHealthRule;
+        itemVersion: number;
+        observedAt: number;
+        checkDeadline: number;
+      } | null,
+      VaultError
+    >;
   }
 >()("t3/fork/vault/VaultHealth") {}
 const Receipt = Schema.Struct({ id: Schema.String, fingerprint: Schema.String });
@@ -57,6 +65,7 @@ const decode = Schema.decodeUnknownOption(State),
 const encodeMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ input: VaultHealthMutation, actor: Schema.String })),
 );
+const isMutation = Schema.is(VaultHealthMutation);
 const invalid = () => new VaultError({ reason: "invalid-input" }),
   conflict = () => new VaultError({ reason: "conflict" });
 const CHECK_INTERVAL_MS = 15 * 60_000;
@@ -116,7 +125,7 @@ const make = Effect.gen(function* () {
     apply: (input, actor) =>
       lock.withPermit(
         Effect.gen(function* () {
-          if (!Schema.is(VaultHealthMutation)(input)) return yield* invalid();
+          if (!isMutation(input)) return yield* invalid();
           const fingerprint = yield* hash(
             yield* encodeMutation({ input, actor }).pipe(Effect.mapError(invalid)),
           );
@@ -224,6 +233,7 @@ const make = Effect.gen(function* () {
             : {
                 id,
                 itemId: input.itemId,
+                itemLabel: item.label,
                 itemVersion: item.version,
                 category: input.category,
                 state:

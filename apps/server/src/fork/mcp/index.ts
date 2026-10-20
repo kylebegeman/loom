@@ -1,3 +1,4 @@
+import { VaultHealthToolkit, vaultHealthHandlers } from "../vault/health-mcp.ts";
 import { VaultGitHubToolkit, vaultGitHubHandlers } from "../vault/github-mcp.ts";
 import { VaultProfileToolkit, vaultProfileHandlers } from "../vault/profile-mcp.ts";
 import { VaultSshToolkit, vaultSshHandlers } from "../vault/ssh-mcp.ts";
@@ -22,6 +23,12 @@ import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: VaultHealthToolkit,
+    handlers: vaultHealthHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultHealthToolkit, vaultHealthHandlers),
+  },
   {
     toolkit: VaultGitHubToolkit,
     handlers: vaultGitHubHandlers,

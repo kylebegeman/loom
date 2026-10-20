@@ -1,3 +1,4 @@
+import { VaultHealthSettingsSection } from "./HealthSettingsSection";
 import { VaultGitHubSettingsSection } from "./GitHubSettingsSection";
 import { VaultProfileSettingsSection } from "./ProfileSettingsSection";
 import { VaultSshSheet } from "./SshSheet";
@@ -65,6 +66,7 @@ export function VaultSettingsSection({
           <Text>Your access to this computer does not include Vault inspection.</Text>
         )}
       </SettingsSection>
+      <VaultHealthSettingsSection environmentId={environmentId} connected={connected} />
       <VaultBrokerSettingsSection environmentId={environmentId} connected={connected} />
       <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
       <VaultGitHubSettingsSection environmentId={environmentId} connected={connected} />

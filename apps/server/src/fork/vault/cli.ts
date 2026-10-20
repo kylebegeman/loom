@@ -6,6 +6,9 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  health: "loom_vault_health",
+  "health-apply": "loom_vault_health_apply",
+  "health-recheck": "loom_vault_health_recheck",
   "terminal-readiness": "loom_vault_terminal_readiness",
   "ssh-agents": "loom_vault_ssh_agents",
   "ssh-agent-close": "loom_vault_ssh_agent_close",
