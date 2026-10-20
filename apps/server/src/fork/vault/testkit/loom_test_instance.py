@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import pwd
 import shutil
 import subprocess
 import sys
@@ -25,12 +26,17 @@ class InstanceError(Exception):
     """Only fixed, credential-free errors leave this harness."""
 
 
-def isolated_environment(source: dict[str, str]) -> dict[str, str]:
+def isolated_environment(source: dict[str, str], home: Path) -> dict[str, str]:
     # An allowlist also excludes future credentials, relay enrollment and process-launch markers.
-    names = ("HOME", "PATH", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "SYSTEMROOT")
+    names = ("PATH", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "SYSTEMROOT")
     env = {name: source[name] for name in names if name in source}
     env["PATH"] = str(REPOSITORY / "node_modules" / ".bin") + os.pathsep + env.get("PATH", "")
-    env.update(T3CODE_RELEASE_PUBLIC_CONFIG="1", T3CODE_DEV_INSTANCE="1940",
+    sandbox = home / "sandbox-home"
+    env.update(HOME=str(sandbox), XDG_CONFIG_HOME=str(sandbox / ".config"),
+               GH_CONFIG_DIR=str(sandbox / ".config" / "gh"),
+               GIT_CONFIG_GLOBAL=str(sandbox / ".gitconfig"), GIT_CONFIG_NOSYSTEM="1",
+               GIT_TERMINAL_PROMPT="0", GIT_CEILING_DIRECTORIES=str(home / "fixtures"),
+               T3CODE_RELEASE_PUBLIC_CONFIG="1", T3CODE_DEV_INSTANCE="1940",
                PYTHONDONTWRITEBYTECODE="1")
     return env
 
@@ -62,13 +68,57 @@ def read_json(path: Path) -> Any:
         raise InstanceError("The dedicated test fixture is missing or invalid.") from None
 
 
+def ensure_sandbox(home: Path) -> None:
+    for path in (home / "sandbox-home", home / "sandbox-home" / ".config",
+                 home / "sandbox-home" / ".config" / "gh"):
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            raise InstanceError("The test process home must not redirect elsewhere.")
+        path.mkdir(mode=0o700, exist_ok=True)
+
+
+def require_stopped(home: Path) -> None:
+    path = home / "userdata" / "server-runtime.json"
+    if not path.exists():
+        return
+    state = read_json(path)
+    process_id = state.get("pid")
+    if not isinstance(process_id, int) or process_id < 0:
+        raise InstanceError("Inspect the invalid test runtime record before preparing state.")
+    if process_id == 0:
+        return
+    try:
+        os.kill(process_id, 0)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        pass
+    raise InstanceError("Stop the dedicated test instance before preparing or starting it again.")
+
+
+def require_git_boundary(home: Path) -> None:
+    workspace = home / "fixtures" / "sample-project"
+    env = isolated_environment(dict(os.environ), home)
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
+               GIT_CEILING_DIRECTORIES=str(workspace.parent))
+    try:
+        result = subprocess.run(["git", "-C", str(workspace), "rev-parse", "--show-toplevel"],
+                                env=env, capture_output=True, text=True, timeout=15, check=False)
+        valid = result.returncode == 0 and Path(result.stdout.strip()).resolve() == workspace.resolve()
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        valid = False
+    if not valid:
+        raise InstanceError("The synthetic workspace has no valid independent Git boundary.")
+
+
 def run_node(repository: Path, args: list[str]) -> str:
     executable = shutil.which("node")
     if executable is None:
         raise InstanceError("The existing Node installation is required.")
+    home = instance_home(repository)
+    ensure_sandbox(home)
     try:
         result = subprocess.run([executable, *args], cwd=repository,
-                                env=isolated_environment(dict(os.environ)),
+                                env=isolated_environment(dict(os.environ), home),
                                 capture_output=True, text=True, timeout=90, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise InstanceError("A local Loom command did not finish; inspect the isolated target privately.") from None
@@ -86,8 +136,9 @@ def initialize_git_fixture(home: Path) -> None:
     if (workspace / ".git").exists():
         if not (workspace / ".git").is_dir():
             raise InstanceError("The synthetic workspace must have its own Git directory.")
+        require_git_boundary(home)
         return
-    env = isolated_environment(dict(os.environ))
+    env = isolated_environment(dict(os.environ), home)
     env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     try:
         # An uninitialized directory would resolve Git operations to the enclosing checkout.
@@ -97,26 +148,58 @@ def initialize_git_fixture(home: Path) -> None:
         raise InstanceError("The synthetic Git repository could not be initialized.") from None
     if result.returncode != 0:
         raise InstanceError("The synthetic Git repository could not be initialized.")
+    require_git_boundary(home)
 
 
 def prepare(repository: Path) -> Path:
     home = instance_home(repository)
     if home.exists():
-        if (home / "userdata" / "dev-fixture.json").exists():
-            validate_home(repository, require_repository=False)
-            initialize_git_fixture(home)
-            validate_home(repository)
-            return home
-        # An interrupted first seed may be retried, but never adopt an unrelated directory.
-        if read_json(home / "vault-test-instance.json") != MARKER or any(
-                path.name != "vault-test-instance.json" for path in home.iterdir()):
-            raise InstanceError("Refusing an incomplete or unrelated test directory.")
+        if read_json(home / "vault-test-instance.json") != MARKER:
+            raise InstanceError("Refusing an unrelated test directory.")
     else:
         home.mkdir(parents=True, mode=0o700)
         private_json(home / "vault-test-instance.json", MARKER)
-    run_node(repository, ["apps/server/scripts/seed-dev-db.ts", "--base-dir", str(home),
-                          "--scenario", "sample"])
-    private_json(home / "userdata" / "settings.json", SETTINGS)
+    userdata = home / "userdata"
+    for path in (userdata, home / "fixtures", home / "fixtures" / "sample-project"):
+        if path.is_symlink():
+            raise InstanceError("The dedicated test state must not redirect elsewhere.")
+    for name in ("statev2.sqlite", "statev2.sqlite-wal", "statev2.sqlite-shm"):
+        if (userdata / name).is_symlink():
+            raise InstanceError("The dedicated test state must not redirect elsewhere.")
+    require_stopped(home)
+    marker = userdata / "dev-fixture.json"
+    if marker.is_symlink():
+        raise InstanceError("The seed completion marker must not redirect elsewhere.")
+    if not marker.exists() and (userdata / "statev2.sqlite").exists():
+        # Keep a published-but-unmarked seed intact rather than adopt or delete an unknown database.
+        recovery = home / "incomplete-seeds"
+        if recovery.is_symlink():
+            raise InstanceError("The incomplete-seed archive must not redirect elsewhere.")
+        recovery.mkdir(mode=0o700, exist_ok=True)
+        userdata.rename(recovery / uuid.uuid4().hex)
+    userdata.mkdir(mode=0o700, exist_ok=True)
+    settings = userdata / "settings.json"
+    if not settings.exists():
+        # Defaults precede publication of the seeder's completion marker, including interrupted retries.
+        private_json(settings, SETTINGS)
+    current_settings = read_json(settings)
+    if (current_settings.get("providerInstances") != SETTINGS["providerInstances"]
+            or current_settings.get("projectSettingsOverrides")):
+        raise InstanceError("The isolated target settings changed; providers must remain disabled.")
+    ensure_sandbox(home)
+    if not marker.exists():
+        # Child HOME is sandboxed. Pin the seeder's live-state guard to the account's actual home.
+        shared_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve() / ".t3"
+        script = '''import { createRequire } from "node:module";
+import { runSeedDevDb } from "./apps/server/scripts/seed-dev-db.ts";
+const resolve = createRequire(new URL("./apps/server/package.json", import.meta.url)).resolve;
+const Effect = await import(resolve("effect/Effect"));
+const NodeServices = await import(resolve("@effect/platform-node/NodeServices"));
+const NodeRuntime = await import(resolve("@effect/platform-node/NodeRuntime"));
+runSeedDevDb(JSON.parse(process.argv[1]), { sharedHome: process.argv[2] }).pipe(
+  Effect.provide(NodeServices.layer), NodeRuntime.runMain);'''
+        run_node(repository, ["--input-type=module", "--eval", script,
+                              json.dumps({"baseDir": str(home), "scenario": "sample"}), str(shared_home)])
     initialize_git_fixture(home)
     validate_home(repository)
     return home
@@ -145,6 +228,8 @@ def validate_home(repository: Path, *, require_repository: bool = True) -> Path:
     git_directory = home / "fixtures" / "sample-project" / ".git"
     if (require_repository or git_directory.exists()) and not git_directory.is_dir():
         raise InstanceError("The synthetic workspace must have its own Git directory.")
+    if require_repository:
+        require_git_boundary(home)
     return home
 
 
@@ -258,12 +343,14 @@ def main() -> None:
             print(f"Prepared Loom test target at {home}; synthetic data and disabled providers.")
         elif args.command == "start":
             home = validate_home(REPOSITORY)
+            require_stopped(home)
+            ensure_sandbox(home)
             os.chdir(REPOSITORY)
             executable = shutil.which("node")
             require(executable is not None, "The existing Node installation is required.")
             os.execve(str(executable), [str(executable), "scripts/dev-runner.ts", "dev",
                       "--home-dir", str(home), "--host", "127.0.0.1",
-                      "--no-auto-bootstrap-project-from-cwd"], isolated_environment(dict(os.environ)))
+                      "--no-auto-bootstrap-project-from-cwd"], isolated_environment(dict(os.environ), home))
         else:
             print(json.dumps(prove(REPOSITORY), indent=2))
     except InstanceError as error:

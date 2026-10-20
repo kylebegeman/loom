@@ -4,6 +4,7 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -17,18 +18,18 @@ class TestLoomInstance(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="loom-target-test-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.home = self.root / ".t3" / target.HOME_NAME
         self.home.mkdir(parents=True, mode=0o700)
         self.userdata = self.home / "userdata"
         self.userdata.mkdir()
         self.workspace = self.home / "fixtures" / "sample-project"
         self.workspace.mkdir(parents=True)
-        (self.workspace / ".git").mkdir()
+        target.initialize_git_fixture(self.home)
         target.private_json(self.home / "vault-test-instance.json", target.MARKER)
         target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
         target.private_json(self.userdata / "settings.json", target.SETTINGS)
-        target.private_json(self.userdata / "server-runtime.json", {"origin": "http://127.0.0.1:15713"})
+        target.private_json(self.userdata / "server-runtime.json", {"origin": "http://127.0.0.1:15713", "pid": 0})
         (self.userdata / "environment-id").write_text("fixture-environment")
 
     def test_existing_fixture_is_preserved_and_defaults_do_not_enable_providers(self) -> None:
@@ -78,8 +79,8 @@ class TestLoomInstance(unittest.TestCase):
         self.assertEqual(unrelated.read_bytes(), b"do-not-touch")
 
     def test_synthetic_workspace_has_its_own_git_root_without_personal_config(self) -> None:
-        (self.workspace / ".git").rmdir()
-        env = target.isolated_environment(dict(target.os.environ))
+        shutil.rmtree(self.workspace / ".git")
+        env = target.isolated_environment(dict(target.os.environ), self.home)
         env.update(GIT_CONFIG_GLOBAL=target.os.devnull, GIT_CONFIG_NOSYSTEM="1")
         subprocess.run(["git", "init", "--initial-branch=parent-test"], cwd=self.root,
                        env=env, capture_output=True, check=True)
@@ -91,7 +92,7 @@ class TestLoomInstance(unittest.TestCase):
 
     def test_missing_git_boundary_and_redirecting_git_file_refuse(self) -> None:
         git_directory = self.workspace / ".git"
-        git_directory.rmdir()
+        shutil.rmtree(git_directory)
         with self.assertRaises(target.InstanceError):
             target.validate_home(self.root)
         git_directory.write_text("gitdir: /unrelated/checkout")
@@ -100,6 +101,91 @@ class TestLoomInstance(unittest.TestCase):
         with self.assertRaises(target.InstanceError):
             target.validate_home(self.root)
         self.assertEqual(git_directory.read_text(), "gitdir: /unrelated/checkout")
+
+    def test_partial_git_directory_and_missing_head_refuse_prepare_and_start_validation(self) -> None:
+        env = target.isolated_environment(dict(target.os.environ), self.home)
+        subprocess.run(["git", "init", "--initial-branch=outer"], cwd=self.root,
+                       env=env, capture_output=True, check=True)
+        git_directory = self.workspace / ".git"
+        for partial in ("empty", "missing-head"):
+            shutil.rmtree(git_directory)
+            if partial == "empty":
+                git_directory.mkdir()
+            else:
+                subprocess.run(["git", "init", "--initial-branch=partial"], cwd=self.workspace,
+                               env=env, capture_output=True, check=True)
+                (git_directory / "HEAD").unlink()
+            with self.subTest(partial=partial):
+                with self.assertRaisesRegex(target.InstanceError, "Git boundary"):
+                    target.prepare(self.root)
+                with self.assertRaisesRegex(target.InstanceError, "Git boundary"):
+                    target.validate_home(self.root)
+
+    def test_start_child_env_is_sandboxed_without_changing_the_parent_home(self) -> None:
+        source_home = target.os.environ.get("HOME")
+        with patch.object(target, "REPOSITORY", self.root), \
+             patch.object(target.sys, "argv", ["loom_test_instance.py", "start"]), \
+             patch.object(target.os, "chdir"), patch.object(target.os, "execve") as execute:
+            target.main()
+        env = execute.call_args.args[2]
+        sandbox = self.home / "sandbox-home"
+        self.assertEqual(env["HOME"], str(sandbox))
+        self.assertEqual(env["XDG_CONFIG_HOME"], str(sandbox / ".config"))
+        self.assertEqual(env["GH_CONFIG_DIR"], str(sandbox / ".config" / "gh"))
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], str(sandbox / ".gitconfig"))
+        self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(env["GIT_CEILING_DIRECTORIES"], str(self.workspace.parent))
+        self.assertEqual(target.os.environ.get("HOME"), source_home)
+
+    def test_empty_userdata_and_leftover_seed_files_are_retryable(self) -> None:
+        for child in self.userdata.iterdir():
+            child.unlink()
+        leftover = self.userdata / "seed-interrupted.sqlite"
+        leftover.write_bytes(b"partial-seed-canary")
+
+        def seed(repository: Path, args: list[str]) -> str:
+            self.assertEqual(target.read_json(self.userdata / "settings.json"), target.SETTINGS)
+            self.assertIn("sharedHome", args[2])
+            self.assertEqual(Path(args[-1]), Path(target.pwd.getpwuid(target.os.getuid()).pw_dir).resolve() / ".t3")
+            self.assertNotEqual(Path(args[-1]), self.home / "sandbox-home" / ".t3")
+            target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
+            (self.userdata / "statev2.sqlite").write_bytes(b"complete-synthetic-seed")
+            return ""
+        with patch.object(target, "run_node", side_effect=seed):
+            self.assertEqual(target.prepare(self.root), self.home)
+        self.assertEqual(leftover.read_bytes(), b"partial-seed-canary")
+
+    def test_published_fixture_missing_settings_is_repaired_before_validation(self) -> None:
+        (self.userdata / "settings.json").unlink()
+        with patch.object(target, "run_node") as seed:
+            self.assertEqual(target.prepare(self.root), self.home)
+            seed.assert_not_called()
+        self.assertEqual(target.read_json(self.userdata / "settings.json"), target.SETTINGS)
+
+    def test_unmarked_published_database_is_preserved_before_reseeding(self) -> None:
+        (self.userdata / "dev-fixture.json").unlink()
+        (self.userdata / "statev2.sqlite").write_bytes(b"unmarked-seed-canary")
+
+        def seed(repository: Path, args: list[str]) -> str:
+            target.private_json(self.userdata / "dev-fixture.json", {"version": 1, "scenario": "sample"})
+            (self.userdata / "statev2.sqlite").write_bytes(b"complete-synthetic-seed")
+            return ""
+        with patch.object(target, "run_node", side_effect=seed):
+            target.prepare(self.root)
+        archives = list((self.home / "incomplete-seeds").glob("*/statev2.sqlite"))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), b"unmarked-seed-canary")
+        self.assertEqual((self.userdata / "statev2.sqlite").read_bytes(), b"complete-synthetic-seed")
+
+    def test_preparation_refuses_a_live_instance_before_changing_settings(self) -> None:
+        target.private_json(self.userdata / "server-runtime.json", {"pid": target.os.getpid()})
+        (self.userdata / "settings.json").unlink()
+        with patch.object(target, "run_node") as seed:
+            with self.assertRaisesRegex(target.InstanceError, "Stop the dedicated"):
+                target.prepare(self.root)
+            seed.assert_not_called()
+        self.assertFalse((self.userdata / "settings.json").exists())
 
     def test_private_writes_refuse_symlinks_and_keep_owner_only_permissions(self) -> None:
         path = self.home / "private.json"
@@ -117,8 +203,8 @@ class TestLoomInstance(unittest.TestCase):
             "LOOM_IDENTITY_CLIENT_SECRET": "personal", "LOOM_VAULT_OPENBAO_TOKEN_FILE": "/personal",
             "SSH_AUTH_SOCK": "/personal", "HTTPS_PROXY": "https://personal",
             "T3_ACP_MCP_TOKEN": "personal", "NODE_OPTIONS": "--require=personal",
-            "VITE_HTTP_URL": "https://personal", "UNKNOWN_FUTURE_SECRET": "personal"})
-        self.assertEqual(env["HOME"], "/Users/example")
+            "VITE_HTTP_URL": "https://personal", "UNKNOWN_FUTURE_SECRET": "personal"}, self.home)
+        self.assertEqual(env["HOME"], str(self.home / "sandbox-home"))
         self.assertEqual(env["T3CODE_RELEASE_PUBLIC_CONFIG"], "1")
         self.assertNotIn("personal", json.dumps(env))
         self.assertTrue(env["PATH"].startswith(str(target.REPOSITORY / "node_modules" / ".bin")))
@@ -189,6 +275,44 @@ class TestLoomInstance(unittest.TestCase):
         self.assertEqual(revoked, ["s0", "s1"])
         self.assertNotEqual(issued[0]["sessionId"], issued[1]["sessionId"])
         self.assertNotIn("secret-canary", json.dumps(report))
+
+    def rejected_proof(self, mutate) -> None:
+        cli, http, sessions, issued, revoked = self.auth_fixture()
+
+        def changed(origin, path, token=None):
+            return mutate(path, token, http(origin, path, token), issued, revoked)
+        with patch.object(target, "run_node", side_effect=cli), patch.object(target, "request", side_effect=changed):
+            with self.assertRaises(target.InstanceError):
+                target.prove(self.root)
+        self.assertEqual(set(sessions), {"unrelated"})
+
+    def test_proof_rejects_unauthenticated_success(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, {"threads": []}) if path.endswith("/shell") and token is None else response)
+
+    def test_proof_rejects_access_administration_success(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, []) if path.endswith("/clients") else response)
+
+    def test_proof_rejects_the_wrong_fixture_thread_count(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, {"threads": [{"activeRunId": None}] * 2})
+                            if path.endswith("/shell") and response[0] == 200 else response)
+
+    def test_proof_rejects_an_active_fixture_run(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, {"threads": [{"activeRunId": "unexpected-live-run"}] * 3})
+                            if path.endswith("/shell") and response[0] == 200 else response)
+
+    def test_proof_rejects_access_with_the_just_revoked_original(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, {}) if path.endswith("/shell") and token == "secret-canary-0"
+                            and "s0" in revoked and len(issued) == 1 else response)
+
+    def test_proof_rejects_replacement_access_after_final_cleanup(self) -> None:
+        self.rejected_proof(lambda path, token, response, issued, revoked:
+                            (200, {}) if path.endswith("/shell") and token == "secret-canary-1"
+                            and "s1" in revoked else response)
 
     def test_lost_mint_reply_is_reconciled_by_invocation_subject(self) -> None:
         cli, http, sessions, _, revoked = self.auth_fixture(lose_mint=True)

@@ -29,8 +29,8 @@ backend restart. TESTING records focused checks and integrated web evidence.
    cancellation/late-result reconciliation and reset-before-reuse before enabling that adapter.
    Manual mark-clean remains an operator attestation until then.
 3. Implement the selected Migadu inbox adapter after dedicated mailbox-scoped credentials are
-   available. `vault@begam.in` and per-run plus addressing are the proposed configuration, not
-   a verified live mailbox. The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+   available under L79's approved custody and audit controls. Kyle confirmed that `vault@begam.in`
+   exists and is dedicated to Vault tests; live reader identity and message acceptance are pending. The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
    keeps organization-management credentials out of workers. Message deletion/retention policy,
    session/TOTP/recovery field structures, fixture selectors and optional browser/native test
    integration remain to build.

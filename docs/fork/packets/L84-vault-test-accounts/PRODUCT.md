@@ -56,10 +56,10 @@ identities are scoped client sessions, not email/password users. The first local
 provisions, revokes and replaces a session against synthetic data, independently of gated Vault
 login delivery. The local target is available without a VPS deployment.
 
-The proposed dedicated mailbox is `vault@begam.in`, with per-run plus addresses. Its existence,
-mailbox-scoped credentials and live mail delivery are not yet verified. Remaining choices:
+Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests. Mailbox-scoped
+reader credentials and live delivery acceptance remain pending. Remaining choices:
 
-- Confirm the dedicated mailbox and ownership; decide message retention and cleanup before deletion is enabled.
+- Decide message and per-tag folder retention/cleanup before deletion is enabled.
 - How should shared accounts differ from exclusive reservations, and which sessions may be reused?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

@@ -22,15 +22,24 @@ runtime session provisioning/reset, not an email/password account, browser logou
 provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
 session until the five-minute TTL. No execution, resumption or allow-once flag changes.
 
-Fifteen Python cases cover environment sanitization, existing fixture preservation, disabled
-providers, unmarked/redirected fixture refusal, independent Git-root initialization and refusal
-of missing/redirecting Git state, owner-only files, origin refusal, environment
-identity mismatch, private command failures, lost mint response cleanup, reset restoring old
-access, failed cleanup and a real loopback redirect/proxy refusal. Seven tests in two server suites
-cover the fixture guard and the real seed/reset paths, run from the server package CWD. The new
-descendant-home guard initially failed, then passed after the fix; installed userdata, sibling
-state and escaped paths continue to refuse. Server typecheck and changed-file TypeScript lint
-pass. No other package source or MCP tool changes in this slice.
+Twenty-seven focused Python cases now pass from `apps/server`, also rerun with `TMPDIR=/var/tmp`
+to exercise macOS's `/var` symlink. They include real Git repositories under resolved temporary paths, empty/missing-HEAD refusal at prepare and start, the actual child exec
+environment with sandboxed HOME/XDG/gh/Git config, and independent negative proof cases for
+unauthenticated access, admin scope, thread count, active runs, revoked originals and final
+replacement cleanup. Recovery cases cover empty userdata, leftover temporary seed files,
+published fixtures missing settings and preservation/reseeding of an unmarked database. A live
+target refuses preparation before settings can change. Earlier origin, environment identity,
+private-output, lost mint, reset/revocation, cleanup and real redirect/proxy cases remain.
+
+A fresh real seed uses sandboxed child HOME while explicitly passing the actual account's `.t3`
+to the exported seeder's shared-home guard. The old target was stopped before replacing its
+synthetic QA state and kept separately for review. The current target was relaunched with the
+new environment. Actual server-process inspection confirms sandboxed HOME, XDG, gh, global Git,
+system-config suppression, prompt suppression and the fixture-parent Git ceiling. The fresh
+session issue/access/revoke/replacement/final-cleanup proof also passes. No real userdata,
+credentials or production services were changed. Prior
+seven server fixture/seed tests, package typecheck and TypeScript lint are earlier evidence;
+this follow-up changes only Python and docs, so they are not claimed as new runs here.
 
 ```sh
 # From the repository root:
@@ -42,18 +51,19 @@ PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_i
 ../../node_modules/.bin/vp run typecheck
 ```
 
-Using the `test-t3-app` skill and authorized Browser panel, an isolated incognito tab first showed
-Loom's pairing page, then consumed this target's private startup pairing link and rendered the
+Using the `test-t3-app` skill and authorized Browser panel, a new isolated incognito tab showed
+Loom's pairing page, then consumed a fresh private pairing link for the relaunched target and rendered the
 three synthetic thread titles, the isolated `loom-test` checkout and disabled-provider guidance.
 Screenshot:
-`/Users/kyle/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh4ehig-babc67b0.png`.
+`/Users/kyle/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh5hd7p-b3cc41cf.png`.
 The screenshot is QA evidence outside git, not runtime state used by this target. Browser startup
 showed expected unauthenticated WebSocket refusals; a source-watch restart also briefly returned
-502 before recovery. Pause server source edits during the proof. No native pass is claimed;
+502 before recovery. Pause edits to server `src/`, `packages/` and `apps/server/package.json` during the proof. No native pass is claimed;
 native acceptance remains with the release owner.
 
-Migadu is selected but no mailbox, IMAP credential or live verification-message delivery is
-claimed. The [mailbox-owner handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+Kyle confirmed the dedicated mailbox exists. No IMAP reader credential or live message delivery
+has been verified. Live credential custody stays Kyle-only in 1Password until L79 approval;
+no live credential may enter the disposable proof backend or test fixture. The [mailbox-owner handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
 records the dedicated-mail setup and remaining live acceptance.
 
 ## Authenticated workload evidence

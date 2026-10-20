@@ -719,8 +719,18 @@ PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_i
 `start` stays in the foreground; retain its terminal session. It uses only
 `.t3/vault-app-test`, with a marker, a synthetic project, three stopped threads and all agent
 providers disabled. Its synthetic workspace has its own local Git repository with no remotes;
-startup refuses a missing or redirecting Git boundary. Existing marked fixtures are preserved; unrelated, redirected or modified
-provider settings refuse. Nothing installs or builds a release. Read actual ports from the
+startup proves the Git toplevel with an isolated discovery ceiling and refuses a missing,
+redirecting, empty or incomplete Git boundary. The child process uses a separate `sandbox-home`
+for HOME, XDG, gh and provider state; global Git config is sandboxed, system config disabled and
+Git prompts disabled. The parent process HOME is unchanged. This is configuration isolation,
+not an OS sandbox for programs with full host access.
+
+Existing marked fixtures are preserved and modified provider settings refuse. Preparation runs
+only while the target is stopped. Empty/partial seed directories can be retried; disabled-provider
+settings are written before the completion marker. A completed fixture missing its settings gets
+those disabled defaults restored. A database published without a completion marker is preserved
+under `incomplete-seeds/<id>/` before a fresh seed, rather than adopted or deleted. The seeder's
+installed-state guard always uses the actual account's `.t3`, independently of child HOME. Nothing installs or builds a release. Read actual ports from the
 `[dev-runner]` line; the preferred web/backend ports are 7673/15713, and occupied ports can shift.
 Use the private startup pairing link in an isolated browser profile. Do not publish the token.
 Do not set `VITE_HTTP_URL` or `VITE_WS_URL`. Keep runtime logs private.
@@ -740,35 +750,41 @@ a killed harness may leave a credential valid until its five-minute expiry. Do n
 this as durable cleanup, browser logout, pool reset, data wipe or authority to mark an account
 clean. The test target needs no Vault backend and changes no execution gate.
 
-Pause code edits under server `src/` while running the proof: the dev runner watches them and
-restarts the target. If a restart interrupts the proof, wait for its next listening message and
+Pause edits to `apps/server/src/`, `packages/` and `apps/server/package.json` while running the
+proof: the server dev script watches all three and restarts the target. If a restart interrupts the proof, wait for its next listening message and
 rerun; the partial invocation's session expires within five minutes. Keep the instance for local
 inspection, then stop its retained terminal session or the exact PID captured at launch. Never
 kill by name or substitute installed userdata. The harness has no delete/reset-database command.
 
 ## Dedicated Migadu test mailbox handoff
 
-Migadu is selected. `vault@begam.in` is the proposed dedicated mailbox, pending owner confirmation
-that it is separate from personal mail. Live mail integration is not configured. Runtime session
+Kyle confirmed that `vault@begam.in` exists in Migadu and is dedicated to Vault tests. Live
+reader setup and message acceptance are not yet configured. Runtime session
 provisioning above does not send verification email; email tests will be a separate adapter proof.
 No VPS or Library deployment is needed for the local target.
 
 The mail owner can prepare the following in the existing Migadu dashboard:
 
-1. Verify `begam.in` belongs to the organization. Create the dedicated `vault` mailbox if absent;
-   if it already serves another purpose, preserve it and choose a separate test mailbox.
+1. Preserve the existing dedicated `vault@begam.in` mailbox. No mailbox creation is needed.
 2. Create a custom-password identity for the test reader, scoped to that mailbox, with IMAP
    access enabled. Disable sending, POP and ManageSieve for that identity. Keep the organization
    API key and the mailbox administrator password outside worker access.
 3. Verify a harmless message to `vault+loom-<run-id>@begam.in` arrives in that mailbox. Migadu
-   supports plus addressing without creating aliases for each run. Do not add catch-all routing,
+   supports plus addressing without creating aliases for each run and normally sorts each tag
+   into an auto-created `loom-<run-id>` folder, rather than Inbox. A domain Pattern Rewrite
+   `vault+*@begam.in => vault@begam.in` can route it to Inbox instead; the mail owner must review
+   that rule before changing it. Do not add catch-all routing,
    forward personal mail or change working DNS for this check.
-4. Store the reader credential through private input in the approved development Vault backend;
-   never send it in a thread or commit it. The planned reader connects to `imap.migadu.com:993`
-   with TLS and validates the certificate. Its first milestone should read without marking seen
-   or deleting messages and correlate each message with the exact test recipient and run.
-5. Before enabling deletion or reuse, choose the retention/cleanup policy and prove that another
-   run's messages cannot be selected or removed. No mail deletion policy is silently assumed.
+4. Until L79's production backend, controls and audit path are explicitly approved by the host
+   owner, custody of any live reader secret is **Kyle-only in 1Password**. It is not an agent
+   credential or an input to this lane's synthetic fixtures. Never put it in the disposable
+   OpenBao proof backend, this worktree's test state, a thread or git. No live reader secret
+   has been created or exported by this work. The future reader uses verified TLS to
+   `imap.migadu.com:993` and must correlate the exact test recipient/run in the selected tag
+   folder or the explicitly configured Inbox route, without marking seen or deleting messages.
+5. Before enabling deletion or reuse, choose a retention/cleanup policy covering both per-tag
+   folders and Inbox-routed mail. Prove that another run's folder/messages cannot be selected
+   or removed. No folder or message deletion policy is silently assumed.
 
 The Migadu [management API](https://www.migadu.com/api/),
 [identities](https://www.migadu.com/guides/identities/),

@@ -200,9 +200,13 @@ The operator-only [local harness](../../../../apps/server/src/fork/vault/testkit
 uses the existing auth CLI and authenticated HTTP API against its fixed worktree-local
 `.t3/vault-app-test` home. It seeds stopped synthetic threads through the event sink, disables all
 configured providers, suppresses root `.env` loading and excludes inherited identity, Vault,
-relay, SSH-agent and provider variables. The sample workspace gets its own local Git repository
-with no remotes, without reading personal/system Git configuration during initialization; the
-harness refuses a missing or redirecting Git boundary at start/proof. Canonical fixture guards permit a dedicated descendant
+relay, SSH-agent and provider variables. Child HOME, XDG and gh configuration live in a private
+`sandbox-home`; provider dotfiles are resolved there. Git uses sandboxed global configuration,
+no system configuration, no prompts and a fixture-parent discovery ceiling. This is configuration
+isolation, not an OS sandbox against full-access host programs. The sample workspace gets its own local Git repository
+with no remotes. An isolated `rev-parse --show-toplevel` must resolve to that exact workspace at
+prepare, start and proof; empty metadata, missing HEAD and escapes refuse. Global/system config
+is disabled during this probe. Canonical fixture guards permit a dedicated descendant
 of the recognized worktree home while refusing installed state or escapes from that descendant.
 The target accepts loopback traffic only. Proof requests refuse proxies and redirects, bind to
 the persisted environment identity, and mint only five-minute `orchestration:read` sessions.
