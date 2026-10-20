@@ -179,7 +179,8 @@ export interface BotsAnywhereHooks {
     bot: BotDefinition,
     untrusted: Omit<UntrustedInputs, "frameId"> | undefined,
   ) => Effect.Effect<void, BotsError>;
-  readonly cancel: (run: BotRun) => Effect.Effect<void>;
+  /** True when the Library withdrew the run before its target took it, so no ending comes back. */
+  readonly cancel: (run: BotRun) => Effect.Effect<boolean>;
   /** The Vault reference lines a run's first message carries, one per bound slot. */
   readonly vaultLines: (bot: BotDefinition) => Effect.Effect<ReadonlyArray<string>, BotsError>;
 }
@@ -1395,8 +1396,13 @@ export const make = Effect.gen(function* () {
     if (entry === undefined) {
       const run = yield* getRun(runId);
       // The other computer reports the cancelled run back like any other ending.
-      if (run.ranOn != null && !isTerminalBotRunStatus(run.status) && anywhere !== null)
-        yield* anywhere.cancel(run);
+      if (
+        run.ranOn != null &&
+        !isTerminalBotRunStatus(run.status) &&
+        anywhere !== null &&
+        (yield* anywhere.cancel(run))
+      )
+        return yield* settleRemote(run, { status: "cancelled", finishedAt: yield* nowIso });
       return run;
     }
     entry.cancelRequested = true;

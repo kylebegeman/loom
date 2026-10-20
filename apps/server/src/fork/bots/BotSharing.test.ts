@@ -452,6 +452,39 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("ends a run the Library never took when it is cancelled", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const lost = new BotLibraryError({ reason: "io", message: "The Library timed out." });
+        const reachable = { value: false };
+        const { library, bots, sharing } = yield* setup(harness, (client) => ({
+          ...client,
+          submit: () => Effect.fail(lost),
+          cancel: (requestId) => (reachable.value ? client.cancel(requestId) : Effect.fail(lost)),
+        }));
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        yield* library.reportStatus(studio, studioReport());
+        const run = yield* bots.startRunWith(
+          yield* bots.get("reviewer"),
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          {},
+        );
+        expect(run.status).toBe("queued");
+
+        reachable.value = true;
+        expect(yield* bots.cancel(run.id)).toMatchObject({ status: "cancelled" });
+        expect(yield* bots.getRun(run.id)).toMatchObject({ status: "cancelled" });
+      }),
+    ),
+  );
+
   it.effect("still takes cancels for runs it accepted after it stops taking runs", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

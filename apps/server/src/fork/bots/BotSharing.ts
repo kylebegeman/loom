@@ -446,7 +446,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
             ? Effect.fail(fail("launch", error.message))
             : // The Library may have queued the run anyway. Withdrawing it makes the failure true.
               // When the target already took it, or the cancel fails too, the run stays queued until
-              // the target's report or its deadline settles it.
+              // the target's report, a later cancel or its deadline settles it.
               client.cancel(run.id).pipe(
                 Effect.matchEffect({
                   onSuccess: (withdrawn) =>
@@ -720,7 +720,14 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     publish: publishEdit,
     resolveTarget,
     submit,
-    cancel: (run) => client.cancel(run.id).pipe(Effect.ignore({ log: true })),
+    cancel: (run) =>
+      client.cancel(run.id).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Could not cancel a bot run on another computer", { cause }).pipe(
+            Effect.as(false),
+          ),
+        ),
+      ),
     vaultLines,
   };
 
