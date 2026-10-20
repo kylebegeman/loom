@@ -5,7 +5,9 @@ full implementation on 2026-10-17 and approved this section on 2026-10-20. Provi
 mail and login-delivery adapters and broader acceptance remain selected work. Kyle selected a
 separate Loom test instance and Migadu; the [local operator proof](../../operations/vault.md#isolated-loom-account-test-target)
 now issues, revokes and replaces real scoped sessions against stopped synthetic data. This does
-not enable the pool's broker login path or configure live email.
+not enable the pool's broker login path or configure live email. A test-only Migadu inbox
+contract now proves bounded read-only selection over synthetic messages and loopback IMAP/TLS.
+Its default live connection remains unavailable pending custody, reader setup and L79 approval.
 
 Manage application test identities as reusable, isolated QA resources.
 

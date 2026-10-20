@@ -28,10 +28,13 @@ backend restart. TESTING records focused checks and integrated web evidence.
    not integrated with pool leases or broker login delivery. Add durable idempotent creation,
    cancellation/late-result reconciliation and reset-before-reuse before enabling that adapter.
    Manual mark-clean remains an operator attestation until then.
-3. Implement the selected Migadu inbox adapter after dedicated mailbox-scoped credentials are
-   available under L79's approved custody and audit controls. Kyle confirmed that `vault@begam.in`
-   exists and is dedicated to Vault tests; live reader identity and message acceptance are pending. The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
-   keeps organization-management credentials out of workers. Message deletion/retention policy,
+3. The read-only Migadu transport contract now passes synthetic message and real loopback
+   IMAP/TLS proof. It has no default live connector, credential ingress or product integration.
+   Kyle confirmed the dedicated `vault@begam.in` mailbox, but the reader identity, live routing/
+   authentication/flag acceptance and approved custody/audit path remain pending behind L79.
+   The [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) keeps
+   live secrets Kyle-only in 1Password, outside disposable OpenBao and this lane's test state.
+   Broker/Vault-reference/grant integration, authenticated sender checks, retention/deletion,
    session/TOTP/recovery field structures, fixture selectors and optional browser/native test
    integration remain to build.
 4. Complete native iOS/Android, Electron shell, remote/tunnel, assistive-technology and live QA

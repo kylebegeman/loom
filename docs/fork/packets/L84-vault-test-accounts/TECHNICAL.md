@@ -227,6 +227,45 @@ and aliases and is not the inbox transport. Keep management credentials out of w
 The [mail handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) records the
 remaining external setup. No personal mailbox, DNS or production identity was accessed.
 
+## Gated Migadu inbox contract
+
+The [read-only transport contract](../../../../apps/server/src/fork/vault/testkit/migadu_inbox.py)
+is imported only by synthetic tests. It has no runtime registration, background worker, product
+CLI/RPC/MCP endpoint, credential-file reader or live default connector. Calling it without an
+explicit test connection refuses before authentication. Its fixed-host verified-TLS transport
+is exercised against a disposable loopback server; no live Migadu session is opened. Python
+3.13 or newer is required for strict address parsing, with an explicit refusal on older versions.
+
+A request binds a fresh 32-hex run ID, the derived `vault+loom-<run-id>@begam.in` recipient, an
+expected sender and a fifteen-minute window. It EXAMINEs the exact tag folder, then Inbox if that
+folder is unavailable; it never enumerates folders. UID SEARCH covers at most the latest 64
+possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient and server
+INTERNALDATE before fetching a bounded body. Conflicting run aliases refuse selection; sender
+Date headers do not set freshness. A final STATUS observes UIDVALIDITY independently of the
+cached EXAMINE response. Changed epoch, message identity/body metadata or expiry across reads
+and logout withdraw the result. This is an observation, not an atomic verification transaction.
+
+Bounds are three matching messages, 256 KiB per body, 16 KiB per header and 64 KiB decoded plain
+text per message. The transport caps literals and aggregate bytes, verifies the certificate and
+hostname for `imap.migadu.com:993`, uses a ten-second socket timeout and checks an elapsed budget
+at read boundaries. It never downgrades to plaintext or accepts a prompt-selected host. MIME
+plain text is decoded without rendering HTML, fetching resources or descending into attachments
+or forwarded bodies. HTML-only messages produce empty text; no OTP or link is selected or used.
+
+The result identifies its bounded coverage. An empty scan does not prove absence from older
+mail, Spam or other folders. Sender-header matching is correlation, not authenticated sender
+identity. `canReadLive`, `canExecute`, automatic resumption, automatic verification and allow-once
+consumption stay literal false. No STORE, MOVE, COPY, APPEND, CLOSE, EXPUNGE or flag mutation is
+issued. Provider failures disclose only fixed errors. The transcript and message tests use only
+synthetic credentials and message content.
+
+Kyle confirmed that the dedicated mailbox exists; live reader identity, custody/audit controls,
+authenticated-sender handling, mailbox routing/header acceptance and broker/Vault-reference/grant
+integration remain unfinished. Custody stays Kyle-only in 1Password until L79 approval, as the
+[operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) requires. The
+prototype adds no live credential export and does not clear the pool cleanup/reuse barrier.
+Policy3, journal1, registry1, existing gates and Library behavior are unchanged.
+
 ## Contracts and authorization
 
 Collection/account CRUD plus reserve/renew/release/quarantine/reset/retire. Reservation returns a lease and safe account summary; login delivery is separate. Provisioning uses request IDs so retries cannot create duplicate accounts. Destructive resets apply only to dedicated test environments.

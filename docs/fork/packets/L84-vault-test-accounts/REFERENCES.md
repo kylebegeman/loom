@@ -37,3 +37,12 @@ this packet adds no application dependency.
   [HTTP contracts](../../../../packages/contracts/src/environmentHttp.ts): existing Loom identity paths.
 - [Local setup and Migadu handoff](../../operations/vault.md#isolated-loom-account-test-target):
   chosen target/provider and the remaining mailbox-owner setup.
+
+- [Gated Migadu inbox contract](../../../../apps/server/src/fork/vault/testkit/migadu_inbox.py),
+  [message/failure cases](../../../../apps/server/src/fork/vault/testkit/test_migadu_inbox.py) and
+  [loopback IMAP/TLS proof](../../../../apps/server/src/fork/vault/testkit/test_migadu_imap.py):
+  synthetic read-only provider proof with no live default or credential ingress.
+- [Migadu IMAP settings](https://www.migadu.com/support/) and
+  [plus-folder routing](https://www.migadu.com/guides/plus_addressing/): fixed verified destination
+  and default per-tag folders. [Python IMAP documentation](https://docs.python.org/3/library/imaplib.html)
+  and installed stdlib source define EXAMINE, PEEK, UID responses and verified TLS configuration.

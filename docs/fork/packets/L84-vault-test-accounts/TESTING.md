@@ -66,6 +66,45 @@ has been verified. Live credential custody stays Kyle-only in 1Password until L7
 no live credential may enter the disposable proof backend or test fixture. The [mailbox-owner handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
 records the dedicated-mail setup and remaining live acceptance.
 
+## Migadu contract evidence
+
+Twenty-five focused Python tests pass from `apps/server`: 23 message/selection/failure cases
+and two real stdlib IMAP-over-TLS cases against a disposable loopback server. The combined
+local-target and Migadu suites pass 52 tests at this tip. A temporary
+certificate is trusted only in the positive synthetic test. An untrusted certificate fails
+before LOGIN. The connector keeps the fixed Migadu hostname/SNI while its socket is redirected
+to loopback for this proof. The wire transcript exercises EXAMINE, UID SEARCH/FETCH with
+BODY.PEEK, STATUS and LOGOUT; any mutation command would fail the synthetic server. Temporary
+TLS keys are removed by fixture cleanup. No live provider or personal credential is used.
+
+Cases prove the default plus folder and Inbox fallback; exact sender/run recipients; conflicting
+and case-variant aliases; another run's body refusal; server arrival filtering independent of
+Date headers; invalid/expired requests and expiry during body read or logout; UID epoch/identity
+and body drift; search/literal/header/body/text bounds; MIME plain text without HTML, attachments
+or forwarded messages; fixed private errors; password protocol-injection refusal; reader identity;
+explicit unsupported-Python refusal; and default live-connection refusal before authentication.
+HTML-only content is not rendered or followed and exports empty plain text. Sender authentication
+and automatic verification are not claimed.
+
+```sh
+# From apps/server:
+PYTHONDONTWRITEBYTECODE=1 python3 -W error::ResourceWarning -m unittest discover \
+  -s src/fork/vault/testkit -p 'test_migadu*.py' -v
+```
+
+The adapter is a test-only contract with no credential ingress or runtime/public transport.
+Python syntax, documentation references, seam manifest and whitespace are checked. No TypeScript
+or client code changes in this slice, so previous package typechecks and browser/native evidence
+are not claimed as new checks. Native acceptance stays with the release owner.
+
+Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests. No live reader
+identity, authentication, folder routing/header preservation or unchanged live flags have been
+verified. [Kyle-only credential custody and L79 approval](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+remain required before any live acceptance. The default connector stays unavailable, and the
+contract has no credential-file export, product CLI/MCP/RPC surface, backend path, policy or
+format change. `canReadLive`, `canExecute`, resumption, verification and allow-once gates remain
+false; L84 remains partial.
+
 ## Authenticated workload evidence
 
 Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract
