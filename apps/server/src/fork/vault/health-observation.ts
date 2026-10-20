@@ -1,8 +1,15 @@
 import { VaultGitHubError, VaultSshError, type VaultHealthClass } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as VaultHealth from "./VaultHealth.ts";
+// Probes carry their CAS claim through connectors, whose delivery observers also report results.
+export class VaultHealthObservation extends Context.Reference<{
+  readonly observedAt: number;
+  readonly checkDeadline?: number;
+} | null>("loom/vault/health-observation", { defaultValue: () => null }) {}
 const isGitHub = Schema.is(VaultGitHubError),
   isSsh = Schema.is(VaultSshError);
 export const observeVaultHealth = <A, E, R>(
@@ -13,8 +20,13 @@ export const observeVaultHealth = <A, E, R>(
   Effect.gen(function* () {
     const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
     if (Option.isNone(health)) return yield* effect;
+    const observation = (yield* VaultHealthObservation) ?? {
+      observedAt: yield* Clock.currentTimeMillis,
+    };
     const report = (category: VaultHealthClass, healthy: boolean) =>
-      health.value.report({ itemId, itemVersion, category, healthy }).pipe(Effect.ignore);
+      health.value
+        .report({ itemId, itemVersion, category, healthy, ...observation })
+        .pipe(Effect.ignore);
     return yield* effect.pipe(
       Effect.tap((result) =>
         typeof result === "object" &&

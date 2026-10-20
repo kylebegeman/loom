@@ -29,9 +29,16 @@ export const vaultHealthMessage = (issue: VaultHealthIssue) =>
     outage:
       "The provider was unreachable or timed out. Check connectivity before changing credentials.",
     configuration:
-      "Access needs review. Check the selected destination, connection and trust settings.",
+      "An operation failed or configuration needs review. Inspect command results and connection settings before retrying.",
   })[issue.category];
 export const vaultHealthVisibleState = (issue: VaultHealthIssue, now: number) =>
   issue.state === "snoozed" && issue.snoozedUntil !== null && issue.snoozedUntil <= now
     ? "open"
     : issue.state;
+
+export const vaultHealthRecheckMessage = (outcome: "checked" | "rate-limited" | "unconfigured") =>
+  ({
+    checked: "Check finished. Review the current issues for its result.",
+    "rate-limited": "This item was checked recently. Wait before checking again.",
+    unconfigured: "Configure an expiry or validation rule for this item before rechecking.",
+  })[outcome];

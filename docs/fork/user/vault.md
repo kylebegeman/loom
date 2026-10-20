@@ -502,3 +502,16 @@ Continue using explicit `loom vault github-exec` or `loom vault ssh-agent-exec` 
 a selected item, current version and destination. Readiness does not grant access or establish
 that GitHub/SSH authentication will succeed. Other shells do not automatically acquire the
 agent session's access. Pi and ACP use the connection attached to their own sessions.
+
+## Maintenance inbox
+
+Open **Settings → Loom → Vault maintenance**, or search for “Vault maintenance inbox” in
+the command palette. Review expiry warnings and failed development access, recheck a configured
+item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
+item's grant and destination. An outage warning does not mean the credential was revoked.
+
+Choose a Vault item and declare its expiry, optionally adding a dedicated GitHub repository
+for validation. Enable automatic checks explicitly; otherwise checks run only when requested.
+Warnings begin seven days before declared expiry. Recent checks can be rate limited, and an
+item without a rule must be configured before rechecking. Removing a rule stops future automatic
+checks. Health actions never sign into personal accounts, rotate credentials or retry writes.

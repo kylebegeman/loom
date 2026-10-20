@@ -50,3 +50,31 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## Implemented boundary
+
+`VaultHealth` owns the environment-scoped OpenBao `health` CAS record. It bounds rules to 128,
+issues to 256 and mutation receipts to 32; omitted issue counts are visible. Repeated failures
+update the same item/category issue. Safe labels, versions and timestamps are retained, never
+provider bodies, command output, tokens or login URLs. Issue disposition changes are reversible.
+Snooze expiry is evaluated against the clock; clients use deadline timers rather than repaint loops.
+
+`VaultHealthChecks` scans at most 25 opted-in due rules per minute with concurrency two and a
+15-minute interval per item. Explicit rechecks also enforce a 30-second burst limit. Read-only
+snapshot calls perform no login. Claim CAS is committed before a provider probe. Completion
+rechecks the item version, claim deadline and newer observations, so removed rules, replacements
+or newer resolutions cannot be overwritten by an older probe. A sealed/unreachable backend
+leaves the worker unable to check rather than authorizing credential use.
+
+Default expiry warning is seven days; the typed rule supports one to ninety. The initial
+notification destination is the inbox, with no external messages. Automatic provider validation
+requires explicit administrator opt-in for a dedicated GitHub connection and named repository.
+Unattended checks use that recorded authorization and do not grant agent access. Local client
+management requires access:read/write. CLI/MCP management is limited to authenticated full-access
+administrator clients; an agent thread cannot change global health state or trigger an admin probe.
+
+Operation observation is diagnostic. A health-store failure never converts a completed remote
+write into a failure that could cause duplicate retries. Nonzero child exits do not resolve
+credential health. Network/timeouts remain separate from authentication; generic SSH connection
+failures become review issues without claiming that the key was revoked. Account/provider revocation
+is never performed by this service. Broader affected-project discovery remains selected work.

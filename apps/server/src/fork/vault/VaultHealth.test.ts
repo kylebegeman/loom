@@ -19,6 +19,7 @@ import * as VaultCore from "./VaultCore.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultHealthChecks from "./VaultHealthChecks.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
+import { observeVaultHealth } from "./health-observation.ts";
 const itemId = "a".repeat(32);
 const fixture = Effect.sync(() => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
@@ -205,15 +206,16 @@ it.effect(
   () =>
     test((f, health, checks) =>
       Effect.gen(function* () {
+        expect((yield* checks.recheck(itemId)).outcome).toBe("unconfigured");
         yield* configure(health);
         yield* checks.sweep;
         expect(f.state.probeCalls).toBe(0);
         f.state.failure = "unavailable";
-        yield* checks.recheck(itemId);
+        expect((yield* checks.recheck(itemId)).outcome).toBe("checked");
         expect(f.state.probeCalls).toBe(1);
         let snapshot = yield* health.snapshot;
         expect(snapshot.issues.map((i) => i.category).sort()).toEqual(["expiry", "outage"]);
-        yield* checks.recheck(itemId);
+        expect((yield* checks.recheck(itemId)).outcome).toBe("rate-limited");
         expect(f.state.probeCalls).toBe(1);
         yield* TestClock.adjust("15 minutes");
         f.state.failure = null;
@@ -233,9 +235,14 @@ it.effect(
         const started = yield* Deferred.make<void>(),
           finish = yield* Deferred.make<void>();
         f.state.failure = "unauthorized";
-        f.state.probe = Deferred.succeed(started, undefined).pipe(
-          Effect.andThen(Deferred.await(finish)),
-        );
+        f.state.probe = observeVaultHealth(
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(finish)),
+            Effect.andThen(Effect.fail(new VaultGitHubError({ reason: "unauthorized" }))),
+          ),
+          itemId,
+          1,
+        ).pipe(Effect.ignore);
         const running = yield* checks.recheck(itemId).pipe(Effect.forkChild);
         yield* Deferred.await(started);
         yield* TestClock.adjust("1 second");

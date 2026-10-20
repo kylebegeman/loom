@@ -1,5 +1,5 @@
 import {
-  type VaultHealthSnapshot,
+  type VaultHealthRecheckResult,
   VaultError,
   type VaultHealthClass,
 } from "@t3tools/contracts/fork";
@@ -8,12 +8,13 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import { VaultHealthObservation } from "./health-observation.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 export class VaultHealthChecks extends Context.Service<
   VaultHealthChecks,
   {
-    readonly recheck: (itemId: string) => Effect.Effect<VaultHealthSnapshot, VaultError>;
+    readonly recheck: (itemId: string) => Effect.Effect<VaultHealthRecheckResult, VaultError>;
     readonly sweep: Effect.Effect<void, VaultError>;
   }
 >()("t3/fork/vault/VaultHealthChecks") {}
@@ -22,7 +23,7 @@ const make = Effect.gen(function* () {
     github = yield* VaultGitHub.VaultGitHub;
   const check = Effect.fn("VaultHealthChecks.check")(function* (itemId: string, force: boolean) {
     const claim = yield* health.claim(itemId, force);
-    if (!claim) return;
+    if (!claim) return false;
     const now = yield* Clock.currentTimeMillis;
     yield* health.report({
       itemId,
@@ -34,13 +35,19 @@ const make = Effect.gen(function* () {
       observedAt: claim.observedAt,
       checkDeadline: claim.checkDeadline,
     });
-    if (!claim.rule.githubRepository) return;
+    if (!claim.rule.githubRepository) return true;
     const result = yield* github
       .test(
         { id: itemId, expectedVersion: claim.itemVersion, repository: claim.rule.githubRepository },
         Effect.void,
       )
-      .pipe(Effect.result);
+      .pipe(
+        Effect.provideService(VaultHealthObservation, {
+          observedAt: claim.observedAt,
+          checkDeadline: claim.checkDeadline,
+        }),
+        Effect.result,
+      );
     if (result._tag === "Success") {
       for (const category of ["authentication", "outage", "configuration"] as const)
         yield* health.report({
@@ -69,9 +76,22 @@ const make = Effect.gen(function* () {
         checkDeadline: claim.checkDeadline,
       });
     }
+    return true;
   });
   return VaultHealthChecks.of({
-    recheck: (itemId) => check(itemId, true).pipe(Effect.andThen(health.snapshot)),
+    recheck: (itemId) =>
+      Effect.gen(function* () {
+        const checked = yield* check(itemId, true),
+          snapshot = yield* health.snapshot;
+        return {
+          snapshot,
+          outcome: checked
+            ? "checked"
+            : snapshot.rules.some((rule) => rule.itemId === itemId)
+              ? "rate-limited"
+              : "unconfigured",
+        };
+      }),
     sweep: Effect.gen(function* () {
       const snapshot = yield* health.snapshot,
         now = yield* Clock.currentTimeMillis;

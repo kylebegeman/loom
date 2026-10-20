@@ -10,6 +10,7 @@ import {
   createVaultCoreAtoms,
   supportsLoomFeature,
   vaultHealthMessage,
+  vaultHealthRecheckMessage,
   vaultHealthVisibleState,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -170,9 +171,7 @@ function Inbox({
                 void act(async () => {
                   const result = await recheck({ environmentId, input: { itemId: issue.itemId } });
                   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                  setNotice(
-                    "Recheck completed or is rate limited. Credential writes are not retried.",
-                  );
+                  setNotice(vaultHealthRecheckMessage(result.value.outcome));
                 })
               }
             />
@@ -246,6 +245,17 @@ function Inbox({
             setNotice(
               "Health rule saved. Expiry warnings begin seven days before the declared date.",
             );
+          })
+        }
+      />
+      <Button
+        label="Check selected item"
+        disabled={locked || !itemId}
+        onPress={() =>
+          void act(async () => {
+            const result = await recheck({ environmentId, input: { itemId } });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            setNotice(vaultHealthRecheckMessage(result.value.outcome));
           })
         }
       />

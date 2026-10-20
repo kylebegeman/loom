@@ -44,6 +44,11 @@ export const VaultHealthSnapshot = Schema.Struct({
   omittedIssues: Schema.Int,
 });
 export type VaultHealthSnapshot = typeof VaultHealthSnapshot.Type;
+export const VaultHealthRecheckResult = Schema.Struct({
+  snapshot: VaultHealthSnapshot,
+  outcome: Schema.Literals(["checked", "rate-limited", "unconfigured"]),
+});
+export type VaultHealthRecheckResult = typeof VaultHealthRecheckResult.Type;
 export const VaultHealthMutation = Schema.Struct({
   operationId: VaultItemId,
   expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -76,7 +81,7 @@ export const VaultHealthRpcGroup = RpcGroup.make(
   }),
   Rpc.make(VAULT_HEALTH_WS_METHODS.recheck, {
     payload: Schema.Struct({ itemId: VaultItemId }),
-    success: VaultHealthSnapshot,
+    success: VaultHealthRecheckResult,
     error: Schema.Union([VaultError, EnvironmentAuthorizationError]),
   }),
 );

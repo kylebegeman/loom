@@ -1,10 +1,21 @@
 # L77: Credential health and maintenance inbox
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: **In progress** on `feat/loom-vault-health`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented locally.
 
 Collect expiration and authentication maintenance into one actionable inbox.
 
 V05 | Minor improvement | Complexity: Medium | Impact: High
+
+## Delivered and remaining scope
+
+Encrypted per-environment expiry rules and deduplicated issues now cover declared expiry,
+GitHub validation and safe GH/mediated SSH/Git operation outcomes. Web/desktop and mobile have
+inbox/rule management, snooze/unsnooze, dismiss/reopen, recheck and access-review entry points.
+Administrator CLI/MCP use the same services. Reads never initiate provider login.
+
+The current adapter validates explicitly configured GitHub repositories. Affected-project
+aggregation, additional validation adapters and native interaction acceptance remain incomplete.
+This is not a full packet completion or a production rollout. See TESTING for exact evidence.
 
 ## Scope
 
@@ -30,7 +41,7 @@ Uses item metadata, usage events and optional validation adapters. Can work with
 
 ## Packet seams
 
-No code seams have been added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
+No new upstream seams were added. [SEAMS.md](./SEAMS.md) identifies review areas rather than
 claiming an approved seam inventory. Source baseline: `2f385ee835`.
 
 ## Documents

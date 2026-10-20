@@ -9,6 +9,7 @@ import {
   createVaultCoreAtoms,
   supportsLoomFeature,
   vaultHealthMessage,
+  vaultHealthRecheckMessage,
   vaultHealthVisibleState,
 } from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
@@ -162,13 +163,11 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 disabled={locked}
                 onClick={() =>
                   void act(async () => {
-                    await runVault(atoms.recheck, {
+                    const result = await runVault(atoms.recheck, {
                       environmentId,
                       input: { itemId: issue.itemId },
                     });
-                    setNotice(
-                      "Recheck completed or is rate limited. Checks never retry credential writes.",
-                    );
+                    setNotice(vaultHealthRecheckMessage(result.outcome));
                   })
                 }
               >
@@ -244,6 +243,11 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
         }}
       >
         <p className="font-medium">Expiry and validation rules</p>
+        {pageResult.waiting ? <p role="status">Loading Vault items…</p> : null}
+        {pageResult._tag === "Failure" ? (
+          <p role="alert">Could not load Vault items. Refresh and retry.</p>
+        ) : null}
+        {page?.items.length === 0 ? <p>No active items on this page.</p> : null}
         <label>
           Vault item
           <select
@@ -318,6 +322,20 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
         <div className="flex flex-wrap gap-2">
           <Button type="submit" size="sm" disabled={locked || !itemId}>
             Save health rule
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={locked || !itemId}
+            onClick={() =>
+              void act(async () => {
+                const result = await runVault(atoms.recheck, { environmentId, input: { itemId } });
+                setNotice(vaultHealthRecheckMessage(result.outcome));
+              })
+            }
+          >
+            Check selected item
           </Button>
           <Button
             type="button"

@@ -2,6 +2,7 @@ import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
   VaultHealthSnapshot,
+  VaultHealthRecheckResult,
   VaultHealthMutation,
   VaultItemId,
 } from "@t3tools/contracts/fork";
@@ -36,7 +37,7 @@ export const VaultHealthToolkit = Toolkit.make(
     description:
       "Explicitly recheck a configured item. Administrator clients only; probes are bounded and rate limited. Does not retry a credential write.",
     parameters: Schema.Struct({ itemId: VaultItemId }),
-    success: VaultHealthSnapshot,
+    success: VaultHealthRecheckResult,
     failure,
     dependencies,
   }),

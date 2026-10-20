@@ -43,3 +43,17 @@ repo-wide checks. Use worker drains, persisted milestones or controlled clocks f
 Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
 created here. At implementation, record the actual focused results and required upstream merge
 preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+
+## Local implementation evidence, 2026-10-20
+
+Focused service/observation/GitHub/launch/permission/palette/settings checks passed: 62 tests
+in eight files. Controlled-clock and Deferred tests cover 100 repeated failures, separate
+network outages, snooze/reverse actions, stale revisions, rate limiting, removed/replaced
+selection and rejection of an old probe after newer resolution. Observation tests preserve
+remote outcomes when the health store fails and reject nonzero child exits as proof of health.
+The real fork MCP registration test is required before every push touching tools.
+
+Native iOS interaction verification is pending: `mobile-native-client.ts check` reports the
+installed client stale, and Kyle's current instruction forbids installation. No native build
+or installation was attempted. Web interaction evidence and final package/static results must
+be recorded before this section is landed. Affected-project aggregation remains incomplete.
