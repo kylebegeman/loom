@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ThreadId, type RuntimeMode } from "@t3tools/contracts";
 import { botRunThreadId, type BotsSaveTriggerInput } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
 import { PullRequestService } from "../../../pullRequest/PullRequestService.ts";
@@ -65,6 +66,16 @@ const agent = (
   runtimeMode: RuntimeMode,
   threadId: ThreadId = ThreadId.make("thread-a"),
 ): BotCaller => ({ actor: "agent", threadId, projectId, runtimeMode });
+
+const checksPipeline = (id: string) => ({
+  pipeline: {
+    id,
+    name: "Checks",
+    description: "",
+    parameters: [{ name: "file", label: "File", type: "string" as const, required: true }],
+    steps: [{ id: "review", botId: "reviewer", inputs: { file: "{{input.file}}" } }],
+  },
+});
 
 const checksFailing = (key: string, url: string, occurredAt?: string): TriggerEvent => ({
   kind: "pull-request-checks-failing",
@@ -387,6 +398,32 @@ describe("BotTriggers", () => {
         const enabled = yield* triggers.setEnabled(saved.id, true, run).pipe(Effect.flip);
         expect(enabled.message).toBe("A bot run cannot start another bot.");
         expect(yield* triggers.list("reviewer")).toMatchObject([{ id: saved.id, enabled: false }]);
+      }),
+    ),
+  );
+
+  it.effect("deletes a pipeline's triggers with the pipeline, and any an earlier one left", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, pipelines, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* pipelines.save(checksPipeline("checks"), USER_CALLER);
+        yield* pipelines.save(checksPipeline("triage"), USER_CALLER);
+        const direct = yield* triggers.save(trigger(), USER_CALLER);
+        yield* triggers.save(trigger({ pipelineId: "checks" }), USER_CALLER);
+        const triage = yield* triggers.save(trigger({ pipelineId: "triage" }), USER_CALLER);
+
+        yield* pipelines.delete("checks");
+        yield* Effect.yieldNow;
+        const ids = (list: ReadonlyArray<{ readonly id: string }>) =>
+          list.map((entry) => entry.id).toSorted();
+        expect(ids(yield* triggers.list("reviewer"))).toEqual([direct.id, triage.id].toSorted());
+
+        // Its row gone without the cleanup, as when the server stopped in between.
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DELETE FROM fork_bots_pipelines WHERE id = 'triage'`;
+        const restarted = yield* makeTriggers(harness);
+        expect(ids(yield* restarted.triggers.list("reviewer"))).toEqual([direct.id]);
       }),
     ),
   );

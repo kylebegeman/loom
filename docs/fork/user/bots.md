@@ -193,7 +193,8 @@ pinned to an older one its firings are skipped.
 
 **Starts** chooses whether a trigger runs the bot or a pipeline that begins with it; the inputs
 then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions, and
-cannot start from merge conflicts. This choice is fixed once the trigger is saved.
+cannot start from merge conflicts. This choice is fixed once the trigger is saved. Deleting a
+pipeline deletes its triggers.
 
 **Test** fires the trigger once with event fields you enter. It skips the filters, cooldown and
 daily limit, and starts a real run.

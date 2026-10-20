@@ -8,6 +8,7 @@ import {
   type BotDefinition,
   type BotInputs,
   type BotInputValue,
+  type BotPipelineChange,
   type BotsChange,
   type BotsRepinTriggerInput,
   type BotsRunInput,
@@ -680,7 +681,31 @@ export const make = Effect.gen(function* () {
           Effect.catchCause((cause) => Effect.logWarning("Bot trigger cleanup failed", { cause })),
         );
 
+  /** Removes pipeline triggers whose pipeline is gone, so none fires into a reused pipeline id. */
+  const removePipelineTriggers = (gone: (pipelineId: string) => boolean) =>
+    removeAll(
+      [...cache.values()]
+        .filter(({ trigger }) => trigger.pipelineId != null && gone(trigger.pipelineId))
+        .map(({ trigger }) => trigger.id),
+    ).pipe(
+      Effect.catchCause((cause) => Effect.logWarning("Bot trigger cleanup failed", { cause })),
+    );
+
+  const onPipelinesChange = (change: BotPipelineChange) =>
+    change._tag !== "pipeline-deleted"
+      ? Effect.void
+      : removePipelineTriggers((pipelineId) => pipelineId === change.pipelineId);
+
   yield* bots.changes.pipe(Stream.runForEach(onBotsChange), Effect.forkIn(serviceScope));
+  yield* pipelines.changes.pipe(Stream.runForEach(onPipelinesChange), Effect.forkIn(serviceScope));
+  // Triggers left by a pipeline deleted before its cleanup ran.
+  yield* pipelines.list().pipe(
+    Effect.flatMap((all) => {
+      const known = new Set<string>(all.map((pipeline) => pipeline.id));
+      return removePipelineTriggers((pipelineId) => !known.has(pipelineId));
+    }),
+    Effect.catchCause((cause) => Effect.logWarning("Bot trigger cleanup failed", { cause })),
+  );
 
   return {
     list,
