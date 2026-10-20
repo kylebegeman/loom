@@ -701,3 +701,101 @@ this support or explicitly quarantine affected leases before downgrading. Access
 journal 1 remain unchanged. No new host policy, path, mount or Library rollout is needed for
 this slice. This is pool coordination only; generic credential use and external sessions are
 not governed or revoked by it.
+
+## Isolated Loom account test target
+
+Kyle selected Loom as the first L84 target and Migadu for test email. The Loom runtime uses
+pairing/scoped client sessions; it does not create email/password users. The following local
+operator workflow proves session provisioning and reset without enabling the pool's gated login
+adapter or contacting live identity, the Library, OpenBao or the VPS.
+
+From this checkout, using installed Node/Python and dependencies:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prepare
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py start
+```
+
+`start` stays in the foreground; retain its terminal session. It uses only
+`.t3/vault-app-test`, with a marker, a synthetic project, three stopped threads and all agent
+providers disabled. Its synthetic workspace has its own local Git repository with no remotes;
+startup proves the Git toplevel with an isolated discovery ceiling and refuses a missing,
+redirecting, empty or incomplete Git boundary. The child process uses a separate `sandbox-home`
+for HOME, XDG, gh and provider state; global Git config is sandboxed, system config disabled and
+Git prompts disabled. The parent process HOME is unchanged. This is configuration isolation,
+not an OS sandbox for programs with full host access.
+
+Existing marked fixtures are preserved and modified provider settings refuse. Preparation runs
+only while the target is stopped. Empty/partial seed directories can be retried; disabled-provider
+settings are written before the completion marker. A completed fixture missing its settings gets
+those disabled defaults restored. A database published without a completion marker is preserved
+under `incomplete-seeds/<id>/` before a fresh seed, rather than adopted or deleted. The seeder's
+installed-state guard always uses the actual account's `.t3`, independently of child HOME. Nothing installs or builds a release. Read actual ports from the
+`[dev-runner]` line; the preferred web/backend ports are 7673/15713, and occupied ports can shift.
+Use the private startup pairing link in an isolated browser profile. Do not publish the token.
+Do not set `VITE_HTTP_URL` or `VITE_WS_URL`. Keep runtime logs private.
+
+Once the target is listening, run in a second terminal:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prove
+```
+
+The proof checks target identity and unauthenticated refusal, creates a five-minute read-only
+session, reads the three synthetic threads, revokes it, verifies refusal, issues a replacement,
+verifies the old credential still refuses and revokes the replacement. Reports contain results,
+never tokens. Cleanup queries only the invocation's unique subject, including after a lost mint
+reply, and verifies that no matching active session remains. Cleanup failure fails the proof;
+a killed harness may leave a credential valid until its five-minute expiry. Do not interpret
+this as durable cleanup, browser logout, pool reset, data wipe or authority to mark an account
+clean. The test target needs no Vault backend and changes no execution gate.
+
+Pause edits to `apps/server/src/`, `packages/` and `apps/server/package.json` while running the
+proof: the server dev script watches all three and restarts the target. If a restart interrupts the proof, wait for its next listening message and
+rerun; the partial invocation's session expires within five minutes. Keep the instance for local
+inspection, then stop its retained terminal session or the exact PID captured at launch. Never
+kill by name or substitute installed userdata. The harness has no delete/reset-database command. Its Git transport is file-only, but it is not
+an OpenSSH sandbox: do not configure Mini SSH workers or SSH device hosts in this target,
+because direct SSH features still resolve the account's real passwd-home `.ssh` paths.
+A hard-killed fixture writer can leave a non-secret temporary file under userdata or beside the
+test home in `.t3`. It is never adopted. Remove only the exact orphan identified from your own
+stopped run; do not sweep other instances' temporary files.
+
+## Dedicated Migadu test mailbox handoff
+
+Kyle confirmed that `vault@begam.in` exists in Migadu and is dedicated to Vault tests. Live
+reader setup and message acceptance are not yet configured. Runtime session
+provisioning above does not send verification email; email tests will be a separate adapter proof.
+No VPS or Library deployment is needed for the local target.
+
+The mail owner can prepare the following in the existing Migadu dashboard:
+
+1. Preserve the existing dedicated `vault@begam.in` mailbox. No mailbox creation is needed.
+2. Create a custom-password identity for the test reader, scoped to that mailbox, with IMAP
+   access enabled. The gated contract expects the proposed login `vault-reader@begam.in`; its
+   creation and access have not been verified. Disable sending, POP and ManageSieve for that identity. Keep the organization
+   API key and the mailbox administrator password outside worker access.
+3. Verify a harmless message to `vault+loom-<run-id>@begam.in` arrives in that mailbox. Migadu
+   supports plus addressing without creating aliases for each run and normally sorts each tag
+   into an auto-created `loom-<run-id>` folder, rather than Inbox. A domain Pattern Rewrite
+   `vault+*@begam.in => vault@begam.in` can route it to Inbox instead; the mail owner must review
+   that rule before changing it. Do not add catch-all routing,
+   forward personal mail or change working DNS for this check.
+4. Until L79's production backend, controls and audit path are explicitly approved by the host
+   owner, custody of any live reader secret is **Kyle-only in 1Password**. It is not an agent
+   credential or an input to this lane's synthetic fixtures. Never put it in the disposable
+   OpenBao proof backend, this worktree's test state, a thread or git. No live reader secret
+   has been created or exported by this work. The future reader uses verified TLS to
+   `imap.migadu.com:993` and must correlate the exact test recipient/run in the selected tag
+   folder or the explicitly configured Inbox route, without marking seen or deleting messages.
+5. Before enabling deletion or reuse, choose a retention/cleanup policy covering both per-tag
+   folders and Inbox-routed mail. Prove that another run's folder/messages cannot be selected
+   or removed. No folder or message deletion policy is silently assumed.
+
+The Migadu [management API](https://www.migadu.com/api/),
+[identities](https://www.migadu.com/guides/identities/),
+[plus addressing](https://www.migadu.com/guides/plus_addressing/) and
+[connection settings](https://www.migadu.com/support/) describe these separate responsibilities.
+The API manages mailboxes/identities; incoming messages use IMAP. No live mailbox, management API,
+SMTP or IMAP request has been made by this lane. A later hosted test instance remains a host-owner
+handoff behind the applicable L79 identity/custody/policy gates; this local setup does not clear them.

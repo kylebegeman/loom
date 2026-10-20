@@ -3,6 +3,204 @@
 Status: **Local pool and authenticated run reservation milestones verified within the limits below.** Full
 packet acceptance remains unfinished. Implementation base is current fork main `4070ef99a2`.
 
+## Selected Loom target evidence
+
+On 2026-10-20 the operator-only `loom_test_instance.py prepare/start/prove` workflow ran against
+its own `.t3/vault-app-test` home, backend `127.0.0.1:15713`, web `localhost:7673`. This is a
+second target application, separate from the earlier Vault controller QA instance. It seeds one
+synthetic project and three stopped threads through the existing fixture seeder. The sample
+workspace has its own local Git repository with no remotes, preventing ancestor-repository discovery. All configured
+agent providers are disabled; inherited personal credentials and root `.env` loading are excluded.
+No real userdata, production identity, Library or OpenBao backend is used by the target.
+
+The actual session proof passes: unauthenticated shell access refuses; a five-minute
+`orchestration:read` session reads the three stopped fixture threads; access administration
+refuses; revocation makes the original credential refuse; a new session works while the old one
+continues to refuse; final cleanup removes every active session for that invocation's subject
+and the replacement then refuses too. The output contains no credential. This proves real Loom
+runtime session provisioning/reset, not an email/password account, browser logout, pool-integrated
+provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
+session until the five-minute TTL. No execution, resumption or allow-once flag changes.
+
+Fifty-three focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
+to exercise macOS's `/var` symlink. Cases cover independent Git metadata, core.worktree escapes,
+foreign common/absolute Git directories, symlinked objects/refs, alternates, owned interrupted-init
+repair and unowned-init refusal. Start refuses a live PID and creates the HOME/XDG/gh sandbox;
+its environment restricts Git transport to file. Atomic JSON publication preserves existing
+settings on interrupted writes and leaves a new home retryable. Invalid seed markers are
+preserved with unmarked databases before reseeding; incomplete unmarked settings recover.
+
+The proof's negative cases separately refuse replacement HTTP failure, overbroad issued scopes,
+foreign subjects, non-string token/session IDs, reused replacement IDs and a cleanup revoke that
+appears successful while re-list still retains the session. Earlier unauthenticated/admin access,
+thread count, active runs, revoked originals, final replacement cleanup, lost mint, origin,
+environment identity, private-output and redirect/proxy cases remain.
+
+An in-memory mutation pass removed or weakened each review safeguard without changing the
+worktree source. All **22 mutants were killed** by the named regressions below; these are
+synthetic tests, not additional live target or mail acceptance.
+
+| Re-review item | Removed/weakened behavior caught by the tests                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1              | Replacement-session HTTP 200 requirement.                                                                                             |
+| 2              | Exact read-only scopes, invocation subject, token type and session-ID type, each separately.                                          |
+| 3              | Distinct replacement-session identity.                                                                                                |
+| 4              | Post-cleanup re-list must contain no session for the invocation.                                                                      |
+| 5              | Common-directory equality, absolute-Git-directory equality, symlinked storage refusal and object-alternates refusal, each separately. |
+| 6              | Exact toplevel equality with a real core.worktree escape.                                                                             |
+| 7              | File-only Git transport in the child environment.                                                                                     |
+| 8              | Valid version/scenario seed marker rather than marker existence.                                                                      |
+| 9              | Atomic settings publication and incomplete-settings retry, each separately.                                                           |
+| 10             | Owned interrupted-init repair and foreign-init refusal, each separately.                                                              |
+| 11             | Empty-home retry and atomic ownership-marker publication, each separately.                                                            |
+| 12             | Start's live-PID refusal and sandbox creation, each separately.                                                                       |
+
+Item 13 is documentation reconciliation: the mailbox is confirmed, plus-folder routing is
+explicit, and live credentials remain Kyle-only in 1Password until L79 approval.
+
+The harness round-1 follow-up adds nine in-memory mutation checks, all killed: acceptance of
+403/500 replacement responses despite valid stopped-thread data; omitted replacement fixture
+validation; non-object issue decoding; skipped unlistable/shared Git storage; swallowed scandir
+failure; ancestor-containment substitution for exact toplevel equality; marker staging inside
+the home; omitted live-PID refusal; and omitted sandbox-symlink refusal. These extend the earlier
+22-mutant evidence above. Replacement HTTP failures assert the intended message, and non-object
+issue replies retain subject-scoped cleanup. Core.worktree tests now cover sibling and ancestor
+escapes. Real mode-0300 directories and an injected listing error both refuse Git inspection.
+Start's live-PID test checks its specific stderr message; sandbox-home, .config and gh symlinks
+refuse before exec. A mid-write staging assertion pins the temporary marker outside the home.
+
+A no-sleep subprocess proof waits for a staged-write notification, then SIGKILLs only its own
+child. Existing settings remain intact; a new home remains empty/retryable. Non-secret orphan
+temporaries persist in the expected directory and are neither read nor automatically deleted.
+This is a documented cleanup limit. Git's file-only restriction does not sandbox direct SSH
+features elsewhere in the test server; Mini workers and SSH device hosts are outside this flow.
+
+The seed suite adds an interrupted marker-write regression using real isolated files and a
+single filesystem fault: the old database and completion marker remain intact, the temporary
+marker is removed on ordinary failure, and a later reset succeeds. Restoring the former
+truncating marker writer makes this regression fail. A crash between database and marker
+publication remains a separate recovery window; the harness preserves that unmarked state.
+
+A fresh real seed uses sandboxed child HOME while explicitly passing the actual account's `.t3`
+to the exported seeder's shared-home guard. The old target was stopped before replacing its
+synthetic QA state and kept separately for review. The current target was relaunched with the
+new environment. Actual server-process inspection confirms sandboxed HOME, XDG, gh, global Git,
+system-config suppression, prompt suppression and the fixture-parent Git ceiling at that earlier
+tip. File-only transport and the subsequent recovery fixes are regression-tested in this
+follow-up; no new live-process or browser pass is claimed for them. The fresh
+session issue/access/revoke/replacement/final-cleanup proof also passes. No real userdata,
+credentials or production services were changed. The latest harness follow-up also changes atomic marker publication in the TypeScript seeder.
+Its five seed tests and three fixture-home tests pass from the server package directory; server
+typecheck and changed-file lint pass. These checks do not add new live or native acceptance.
+
+```sh
+# From the repository root:
+PYTHONDONTWRITEBYTECODE=1 python3 -W error::ResourceWarning -m unittest discover \
+  -s apps/server/src/fork/vault/testkit -p test_loom_test_instance.py -v
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/loom_test_instance.py prove
+# Current Python follow-up, from apps/server (repeat with TMPDIR=/var/tmp):
+PYTHONPATH=src/fork/vault/testkit PYTHONDONTWRITEBYTECODE=1 \
+  python3 -W error::ResourceWarning -m unittest -q \
+  test_loom_test_instance test_migadu_inbox test_migadu_imap
+# Earlier TypeScript seed milestone, not rerun for the Python/docs follow-up:
+../../node_modules/.bin/vp test run src/fork/dev-fixtures/fixtureHome.test.ts scripts/seed-dev-db.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
+Using the `test-t3-app` skill and authorized Browser panel, a new isolated incognito tab showed
+Loom's pairing page, then consumed a fresh private pairing link for the relaunched target and rendered the
+three synthetic thread titles, the isolated `loom-test` checkout and disabled-provider guidance.
+Screenshot:
+`/Users/kyle/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mvh5hd7p-b3cc41cf.png`.
+The screenshot is QA evidence outside git, not runtime state used by this target. Browser startup
+showed expected unauthenticated WebSocket refusals; a source-watch restart also briefly returned
+502 before recovery. Pause edits to server `src/`, `packages/` and `apps/server/package.json` during the proof. No native pass is claimed;
+native acceptance remains with the release owner.
+
+Kyle confirmed the dedicated mailbox exists. No IMAP reader credential or live message delivery
+has been verified. Live credential custody stays Kyle-only in 1Password until L79 approval;
+no live credential may enter the disposable proof backend or test fixture. The [mailbox-owner handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+records the dedicated-mail setup and remaining live acceptance.
+
+## Migadu contract evidence
+
+Thirty-nine focused Migadu Python tests pass from `apps/server`: 35 message/selection/budget
+cases and four stdlib IMAP-over-TLS cases against a disposable loopback server. Together with
+the 53 local-target cases, **92 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
+cases also pass using stock macOS `/usr/bin/openssl` through `PATH=/usr/bin:/bin` and the current
+Python executable. Temporary certificates use portable `-nodes`; fixture keys are removed on
+cleanup. Both untrusted certificates and a trusted certificate for another hostname refuse
+before any IMAP verb reaches the server. Fixed Migadu hostname/SNI is retained while socket
+destinations are redirected to loopback. No live provider or personal credential is used.
+
+Both fixtures honor the actual requested HEADER.FIELDS, preserving raw address syntax instead
+of rebuilding it through the contract's recipient list. Conflicts in Cc, Delivered-To and
+X-Original-To prevent body reads, including on the real loopback wire. Raw encoded From CR/LF,
+semicolon-separated recipients and trailing-dot aliases cannot abort or cross-match a read.
+
+Per-candidate regressions cover body-only MIME defects, invalid base64, unknown charset, more
+than 32 parts, decoded-text and message-size bounds, both UID orderings around a valid message,
+and all-unusable versus pending. Old unrelated oversized headers are skipped before parsing;
+in-window oversized headers report unclassified coverage. Vanished/header-or-body FETCH and NO
+responses preserve another UID's text and report unavailable coverage; an all-unavailable scan
+reports incomplete, not pending. Same-second INTERNALDATE is accepted despite a microsecond
+request start. Signed/unknown multipart text is read while forwarded/attached text stays closed.
+
+Independent body cases change INTERNALDATE, RFC822.SIZE and literal length while preserving
+routing headers, each withdrawing the entire observation. A three-message expiry case proves
+only the first body is fetched. Private-provider failures check formatted traceback, cause and
+suppressed context, in addition to fixed public error text. Finite flooding-socket fixtures drive
+both untagged lines (5 MB offered) and repeated literals (10 MB offered) through actual imaplib
+parsing and stop near the 2 MB logical-byte budget, allowing one stdlib receive buffer of read-ahead.
+Expired readline refuses before socket access. No sleeps or live network destinations are used.
+
+A separate no-sleep slow-drip reproduction confirms optional s1: one read can finish after 45
+simulated seconds despite a thirty-second boundary budget. This remains explicitly documented,
+not claimed fixed. No live-read gate is opened. The proposed `vault-reader@begam.in` login is
+now named in the mail-owner handoff; its setup is not claimed.
+
+An in-memory mutation pass kills **28/28 mutants**, without changing the disk source:
+
+| Review item | Mutations caught                                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| m1          | Body-only defects treated as drift; unusable candidate abort; removed part/text/MIME-defect limits. Separate unknown-charset and body-defect regressions also pass. |
+| m2          | From parsing moved outside the guarded block.                                                                                                                       |
+| m3          | Same-second start truncation removed.                                                                                                                               |
+| m4          | Oversized matched candidate silently discarded.                                                                                                                     |
+| m5          | Oversized-header abort restored, or header classification moved before arrival filtering.                                                                           |
+| m6          | Traversal restricted to the original three multipart subtypes.                                                                                                      |
+| m8          | `-nodes` replaced with `-noenc` under stock macOS PATH, failing certificate setup.                                                                                  |
+| m9          | Requested fields reduced to FROM/TO; Cc, Delivered-To or X-Original-To removed from correlation separately.                                                         |
+| m10         | Byte accounting removed; readline override removed; readline deadline check removed.                                                                                |
+| m11         | Whole body-metadata check removed, then each arrival, size and length guard removed separately.                                                                     |
+| m12         | Certificate hostname verification disabled despite a trusted wrong-host certificate.                                                                                |
+| m13         | In-loop request expiry removed; provider exception-context suppression removed.                                                                                     |
+| c2, c3      | Header-object defects ignored; vanished-FETCH handling removed.                                                                                                     |
+
+m7 is the tracker correction restoring durable broker delivery alongside broker mail integration.
+c1 is the explicit proposed reader identity in the handoff. Existing search/epoch/identity,
+request validation, credential-ingress refusal, default-live refusal and no-mutation coverage
+remain. Sender authentication and automatic verification are not claimed.
+
+```sh
+# From apps/server:
+PYTHONDONTWRITEBYTECODE=1 python3 -W error::ResourceWarning -m unittest discover \
+  -s src/fork/vault/testkit -p 'test_migadu*.py' -v
+```
+
+The adapter is a test-only contract with no credential ingress or runtime/public transport.
+Python syntax, documentation references, seam manifest and whitespace are checked. No TypeScript
+or client code changes in this slice, so previous package typechecks and browser/native evidence
+are not claimed as new checks. Native acceptance stays with the release owner.
+
+Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests. No live reader
+identity, authentication, folder routing/header preservation or unchanged live flags have been
+verified. [Kyle-only credential custody and L79 approval](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff)
+remain required before any live acceptance. The default connector stays unavailable, and the
+contract has no credential-file export, product CLI/MCP/RPC surface, backend path, policy or
+format change. `canReadLive`, `canExecute`, resumption, verification and allow-once gates remain
+false; L84 remains partial.
+
 ## Authenticated workload evidence
 
 Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract

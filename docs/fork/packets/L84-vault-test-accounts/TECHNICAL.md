@@ -64,8 +64,9 @@ manual quarantine and expiry all require a new clean review before another reser
 cancels the local lease; restore returns to quarantine. Archiving/restoring collections refuses
 while they have active reservations. Nothing terminates an external login, resets app data,
 revokes an upstream token or promises isolation of a full-access process. Reset/provision/mail
-and browser/native login adapters remain unavailable; no first application or mail domain has
-been selected for them.
+and browser/native login adapters remain unavailable. Kyle selected an isolated Loom target
+and Migadu. Kyle confirmed that `vault@begam.in` exists and is dedicated to Vault tests.
+That confirmation does not enable the adapters or prove reader access or live delivery.
 
 Web and mobile use a shared action/expiry helper, bounded metadata snapshots and explicit
 refresh. A deadline timer updates visible expiry without continuous polling. All changes have
@@ -144,8 +145,8 @@ literal false, and no MCP/RPC/CLI login endpoint, live adapter, credential revea
 login intent is added. The synthetic transport proof opens only a local fixture session and
 cleans it on a rejected callback; it proves no real provider logout or crash recovery.
 
-The revalidation effect is not an atomic transaction with an external provider. Live login must
-wait for a selected test app and a reviewed durable cleanup/unknown-outcome policy. A lost mint
+The revalidation effect is not an atomic transaction with an external provider. Loom is the
+selected test app; live login still requires a reviewed durable cleanup/unknown-outcome policy. A lost mint
 response cannot be treated as not-started, retried into another session or refunded by lease
 release. The L86 protected-item and temporal-consistency decisions remain separate owner gates;
 this account boundary does not bypass them.
@@ -192,6 +193,118 @@ adapter decisions, not a new OpenBao permission/path/schema proposal.
 
 All delivery, automatic-resumption and allow-once gates remain literal false. Policy3, journal1,
 registry1 and existing runtime behavior are unchanged by this test/docs slice. L75 stays parked.
+
+## Selected Loom test target and email boundary
+
+The operator-only [local harness](../../../../apps/server/src/fork/vault/testkit/loom_test_instance.py)
+uses the existing auth CLI and authenticated HTTP API against its fixed worktree-local
+`.t3/vault-app-test` home. It seeds stopped synthetic threads through the event sink, disables all
+configured providers, suppresses root `.env` loading and excludes inherited identity, Vault,
+relay, SSH-agent and provider variables. Child HOME, XDG and gh configuration live in a private
+`sandbox-home`; provider dotfiles are resolved there. Git uses sandboxed global configuration,
+no system configuration, no prompts, file-only Git transport and a fixture-parent discovery
+ceiling. Git cannot invoke SSH and its passwd-based personal configuration through this target.
+This is configuration isolation, not an OS sandbox against full-access host programs. Direct
+non-Git SSH features (Mini offload and SSH device hosts) still use passwd-home OpenSSH paths.
+This target does not configure or exercise them; do not register those connections in it. The sample
+workspace gets its own local Git repository with no remotes. Isolated `rev-parse` checks require
+the exact workspace toplevel and its own absolute Git and common directories at prepare, start
+and proof. An explicit scandir walk refuses symlinked metadata, object alternates and any
+unlistable metadata directory; silently skipped glob results are not sufficient. Start/proof refuse incomplete Git
+metadata; preparation may re-run init for an empty or HEAD-less directory only with a prior
+harness ownership stamp and no redirected/shared layout. Existing valid fixtures need no new
+stamp until creation/repair is needed. Global/system config is disabled during the probe.
+Private JSON is published by owner-only temporary file and rename. Initial home-marker staging
+stays outside the new home so an interrupted publication leaves an empty, retryable home.
+Malformed/wrong seed markers count as incomplete. Unmarked published databases are preserved
+before reseeding, and incomplete unmarked settings can be repaired without adopting unrelated
+state. SIGKILL may leave non-secret temporary JSON in userdata or an initial marker temporary
+file beside the dedicated home under `.t3`. These files are never adopted; automatic sweeping
+would risk a concurrent writer. Remove only an orphan positively identified from a stopped
+owned run. Atomic seeder marker publication preserves an existing marker on interrupted writes,
+but database and marker publication are still separate operations. A hard kill between them
+can leave an unmarked database, which this harness preserves before reseeding; plain seed CLI
+reset still refuses unknown databases. A live runtime refuses preparation/start before writes or exec. Canonical fixture guards permit a dedicated descendant
+of the recognized worktree home while refusing installed state or escapes from that descendant.
+The target accepts loopback traffic only. Proof requests refuse proxies and redirects, bind to
+the persisted environment identity, and mint only five-minute `orchestration:read` sessions.
+
+Session reset means revoke and replace, with real HTTP refusal of the old credential before
+and after replacement. Final cleanup revokes only sessions bearing the invocation's unique
+subject, including a successful mint whose reply was lost. Tokens are kept in subprocess output
+capture/memory and never included in the proof report. A process crash can leave a session until
+its five-minute TTL expires; this operator proof has no durable cleanup barrier and does not
+mark any pool account clean. It is neither a live broker adapter nor proof of human OIDC/passkey
+account provisioning, browser-session revocation, application data reset or worker isolation.
+No Vault store, policy, journal, schema, execution flag or public transport is changed.
+
+Migadu is selected independently of Loom runtime pairing, which has no email verification step.
+Kyle confirmed `vault@begam.in` exists and is dedicated to Vault tests. A dedicated read
+credential and real delivery check are still required. Migadu plus recipients normally route to
+auto-created `loom-<run-id>` folders, unless the mail owner applies the reviewed Pattern Rewrite
+to Inbox. Reader correlation, retention and cleanup must cover the chosen routing. Use IMAP for
+message reads; Migadu's management API manages mailboxes and aliases and is not the inbox
+transport. Live credential custody remains Kyle-only in 1Password until L79 backend/custody/audit
+approval. Never put that credential into the disposable OpenBao proof backend, fixtures, chat or
+git. Keep management credentials out of worker access.
+The [mail handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) records the
+remaining external setup. No personal mailbox, DNS or production identity was accessed.
+
+## Gated Migadu inbox contract
+
+The [read-only transport contract](../../../../apps/server/src/fork/vault/testkit/migadu_inbox.py)
+is imported only by synthetic tests. It has no runtime registration, background worker, product
+CLI/RPC/MCP endpoint, credential-file reader or live default connector. Calling it without an
+explicit test connection refuses before authentication. Its fixed-host verified-TLS transport
+is exercised against a disposable loopback server; no live Migadu session is opened. Python
+3.13 or newer is required for strict address parsing, with an explicit refusal on older versions.
+
+A request binds a fresh 32-hex run ID, the derived `vault+loom-<run-id>@begam.in` recipient, an
+expected sender and a fifteen-minute window. It EXAMINEs the exact tag folder, then Inbox if that
+folder is unavailable; it never enumerates folders. UID SEARCH covers at most the latest 64
+possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient and server
+INTERNALDATE before fetching a bounded body. Conflicting run aliases refuse selection; sender
+Date headers do not set freshness. INTERNALDATE has second precision, so arrival filtering
+floors the request start to its second; no wider clock-skew allowance is implied. Malformed
+address-header objects refuse correlation, including semicolon-separated or trailing-dot aliases.
+A final STATUS observes UIDVALIDITY independently of the cached EXAMINE response. Changed epoch,
+routing headers, body metadata or expiry across reads and logout withdraw the result. This is an observation, not an atomic verification transaction.
+
+The result distinguishes usable messages from per-candidate outcomes. An unusable matched MIME
+body, part/encoding/text limit or oversized message is visible as `unusable`, while another UID's
+usable text remains available. With no usable message, such candidates produce `unusable-candidates`,
+not pending. Oversized in-window headers are skipped as `unclassified`; arrival filtering happens
+first so old unrelated mail produces no candidate. A missing UID or FETCH NO becomes
+`unavailable`, without assuming that NO proves expungement. With no usable/unusable message,
+these observations produce `incomplete-in-bounded-window`. All candidate reasons are fixed
+codes, with no provider error or unusable body content. Candidate outcomes are bounded by the
+64-UID scan; at most three usable messages are returned.
+
+Other bounds are 256 KiB per body, 16 KiB per header, 32 visited MIME parts and 64 KiB decoded
+plain text per message. The transport caps literals and aggregate logical bytes, plus stdlib
+socket read-ahead, and verifies the certificate and hostname for `imap.migadu.com:993`. It uses
+a ten-second socket inactivity timeout and checks a thirty-second elapsed budget at logical
+read boundaries. This is not a hard wall-clock bound: one imaplib read with continuous slow
+progress can outlast it. A custom deadline-aware receive layer is not implemented; this remains
+a live-read acceptance limit. The stdlib TLS handshake has its own timeout. The reader never
+downgrades to plaintext or accepts a prompt-selected host. MIME multipart subtypes, including
+signed/unknown ones, are traversed as mixed without validating signatures. Plain text is decoded
+without rendering HTML, fetching resources or descending into attachments or message/rfc822
+forwarded bodies. HTML-only messages produce empty text; no OTP or link is selected or used.
+
+The result identifies its bounded coverage. An empty scan does not prove absence from older
+mail, Spam or other folders. Sender-header matching is correlation, not authenticated sender
+identity. `canReadLive`, `canExecute`, automatic resumption, automatic verification and allow-once
+consumption stay literal false. No STORE, MOVE, COPY, APPEND, CLOSE, EXPUNGE or flag mutation is
+issued. Provider failures disclose only fixed errors. The transcript and message tests use only
+synthetic credentials and message content.
+
+Kyle confirmed that the dedicated mailbox exists; live reader identity, custody/audit controls,
+authenticated-sender handling, mailbox routing/header acceptance and broker/Vault-reference/grant
+integration remain unfinished. Custody stays Kyle-only in 1Password until L79 approval, as the
+[operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) requires. The
+prototype adds no live credential export and does not clear the pool cleanup/reuse barrier.
+Policy3, journal1, registry1, existing gates and Library behavior are unchanged.
 
 ## Contracts and authorization
 
