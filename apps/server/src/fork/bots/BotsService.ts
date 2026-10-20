@@ -804,6 +804,12 @@ export const make = Effect.gen(function* () {
       yield* Effect.gen(function* () {
         entry.started = true;
         if (entry.cancelRequested) return yield* finish(entry, { status: "cancelled" });
+        // A run another computer sent can wait for a permit past the switch being turned off.
+        if (entry.run.requestedBy != null && !(yield* store.remoteSettings()).acceptRemote)
+          return yield* finish(entry, {
+            status: "failed",
+            error: "This computer stopped running bots for other computers before the run started.",
+          });
         entry.run = { ...entry.run, status: "running", startedAt: yield* nowIso };
         yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
         yield* publish({ _tag: "run", run: entry.run });

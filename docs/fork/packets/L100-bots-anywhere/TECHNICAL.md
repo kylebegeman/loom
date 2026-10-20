@@ -156,8 +156,10 @@ A batch with a target feeds items as remote runs with window `min(bot limit, tar
 
 ### Target
 
-`BotRemoteExecutor` runs under `forkParked` only while `acceptRemote` is on. It long-polls
-`requests/next` and handles each leased message:
+`BotRemoteExecutor` runs under `forkParked` while `acceptRemote` is on, and after it is turned off
+until the remote-requested runs already started end, so their requesters can still cancel them.
+Turned off, it refuses new requests, and a queued remote-requested run fails instead of starting.
+It long-polls `requests/next` and handles each leased message:
 
 1. **Dedupe.** `fork_bots_runs.remote_request_id` is unique; a redelivered request returns the
    existing run.

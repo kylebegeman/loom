@@ -430,6 +430,35 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("does not start a queued run from another computer after it stops taking runs", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* studioPublishes(library);
+        yield* sharing.sync();
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
+        for (const requestId of ["first", "second"])
+          yield* library.submit(studio, {
+            targetEnvironmentId: laptop,
+            request: studioRequest(requestId),
+          });
+        for (const received of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(received);
+        const launch = yield* harness.nextLaunch;
+        expect((yield* bots.getRun("second")).status).toBe("queued");
+
+        yield* sharing.setRemoteSettings({ acceptRemote: false, runtimeModeCeiling: "auto" });
+        yield* harness.end(launch.threadId!, { status: "completed", reply: "Clean." });
+        expect(yield* bots.awaitRun("second", 60_000)).toMatchObject({
+          status: "failed",
+          error: "This computer stopped running bots for other computers before the run started.",
+        });
+        expect(harness.launches).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("records a pinned remote run as the revision the other computer runs", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

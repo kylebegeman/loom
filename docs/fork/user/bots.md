@@ -282,8 +282,9 @@ as an ordinary bot, and deleting a shared bot on one computer removes only that 
 
 A computer runs bots for the others only after you allow it. On that computer, open the
 **Computers** tab on the Bots page, turn on **Run bots for other computers**, and choose the
-highest permissions their runs may use. A run that asks for more is refused. **Sync shared bots**
-fetches changes from the Library at once instead of waiting.
+highest permissions their runs may use. A run that asks for more is refused. Turning the switch
+off refuses new runs and those still waiting to start; runs already going finish. **Sync shared
+bots** fetches changes from the Library at once instead of waiting.
 
 **Run**, **Run on many** and each pipeline step then offer **Run on**: this computer, one of your
 other computers, or **Best available**, the ready computer with the most free slots. Each
