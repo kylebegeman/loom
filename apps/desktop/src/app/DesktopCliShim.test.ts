@@ -1,3 +1,4 @@
+// fork: brand: moved-install copy uses the Loom product name.
 // @effect-diagnostics nodeBuiltinImport:off - Runs the rendered launcher in a real shell.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

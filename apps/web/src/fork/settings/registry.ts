@@ -1,3 +1,10 @@
+import { VaultHealthSettingsSection } from "../vault/HealthSettingsSection";
+import { VaultGitHubSettingsSection } from "../vault/GitHubSettingsSection";
+import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
+import { VaultReferenceSettingsSection } from "../vault/ReferenceSettingsSection";
+import { VaultBrokerSettingsSection } from "../vault/BrokerSettingsSection";
+import { VaultAccessSettingsSection } from "../vault/AccessSettingsSection";
+import { VaultSettingsSection } from "../vault/SettingsSection";
 import { MiniOffloadSettingsSection } from "../mini-offload/settings";
 import { PcbPreviewSettingsSection } from "../pcb-preview/settings";
 import type { ComponentType } from "react";
@@ -14,6 +21,13 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "vault-health", title: "Vault maintenance", Component: VaultHealthSettingsSection },
+  { id: "vault-github", title: "Vault GitHub connections", Component: VaultGitHubSettingsSection },
+  { id: "vault-profiles", title: "Vault project profiles", Component: VaultProfileSettingsSection },
+  { id: "vault-references", title: "Vault references", Component: VaultReferenceSettingsSection },
+  { id: "vault-brokers", title: "Vault brokers", Component: VaultBrokerSettingsSection },
+  { id: "vault", title: "Vault", Component: VaultSettingsSection },
+  { id: "vault-access", title: "Vault access", Component: VaultAccessSettingsSection },
   { id: "mini-offload", title: "Command workers", Component: MiniOffloadSettingsSection },
   { id: "pcb-preview", title: "PCB preview", Component: PcbPreviewSettingsSection },
   { id: "model-preview-3d", title: "3D model", Component: ModelPreviewSettingsSection },

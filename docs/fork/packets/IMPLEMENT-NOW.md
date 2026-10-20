@@ -4,6 +4,86 @@ This is the entry point for selecting the next Loom packet. It overrides older b
 and individual packet labels. Kyle completed this selection review on 2026-09-27. Only packets in the selected queue
 are designated for implementation; retained proposals remain parked.
 
+## Loom Vault implementation selection
+
+Kyle authorized implementation of all sixteen Loom Vault packets on 2026-10-17 and selected
+**self-hosted OpenBao** behind Loom's UI, identity model and agent broker. V01 to V16 remain
+mapped to L73 to L88 in the [Vault index](./LOOM-VAULT.md). No packet was dropped.
+
+L79 encrypted records and L81/L78/L73 grants, access explanations and server-context readiness
+are **In progress** with local web/mobile flows and synthetic OpenBao verification. This chunk
+delivers thread/project policy and inspection; the complete packet PRODUCT scopes stay selected.
+L80 now adds reviewed public-key enrollment, permanent disable and online heartbeat presence
+with web/mobile management and a foreground macOS/Linux runner. Hosted SSH/Git use is now
+implemented below; GitHub account authentication and remaining delivery modes stay selected. The current readiness
+check explicitly does not prove unattended SSH or provider authentication.
+L85 now adds signed workload authorization-check sessions bound to active runs and current
+use grants, with CLI/MCP cleanup. Existing provider/task launches now expose authenticated
+tools with automatic on-demand session setup/release for hosted SSH and Git ref listing/fetch.
+The server's enrolled broker must be configured and online. General terminal delivery remains pending;
+L82 supplies the bounded SSH operation described below.
+
+L82 now adds dedicated Ed25519 generation and independent trust replacement/removal, with keys
+stored in OpenBao. Dual-proof runner requests execute bounded commands from the Loom server
+through a strict host-bound SSH agent. Web/desktop and native mobile now provide dedicated
+key creation, copying, reviewed host trust and a fixed authenticated connection test. Synthetic
+web/iOS and disposable SSH/OpenBao checks pass. Real Git ref listing/repeated fetches also
+pass with exact repository grants, wrong-pin/revocation/timeout denial and cleanup. Ordinary
+terminal routing, clone/push and production registration remain unfinished.
+
+L74/L76 now add searchable metadata references and environment/project-local SSH/Git profiles,
+with web/desktop/native management and MCP/CLI named execution. First use durably pins run
+selection and key versions; current grants, host trust, item state and profile archive remain
+live checks. Full scopes remain In progress. Portable requirements now import/export without local bindings; other credential kinds stay selected. Explicit standalone Vault attachments now cover interactive/scheduled prompts and common
+provider launch/steering preflight. Required profile versions and current grants are checked;
+ordinary prompts skip Vault. Safe labels remain in transcripts. Scheduled status now follows
+the exact latest Vault-attached provider run, with review and explicit retry. Portable SSH/Git
+requirements export without local bindings and import into a fresh reviewed profile.
+Retained selections now have paged administrator inspection and explicit terminal-run retirement.
+Retirement replaces the current snapshot with a durable no-reselection tombstone; OpenBao history
+remains. L83 adds dedicated github.com App/token management and scoped headless GH operations,
+with repository grants, isolated CLI configuration and short-lived App token release attempts.
+Both sections remain local milestones within the complete selected packet scopes.
+
+GitHub requirements now bind dedicated connections/repositories in project profiles, pin versions
+for each run, participate in launch preflight and execute by name. Version 2 portable declarations
+carry requirement names/kinds without local bindings; SSH/Git-only exports retain version 1.
+Configuration/grant checks deliberately do not claim live GitHub API or CLI readiness.
+
+Explicit command-scoped terminal gh/Git HTTPS routing and provider-specific readiness are now
+implemented locally. The wrapper preserves output/exit status, uses the selected connection and
+repository, and rechecks current active-run authority. Web/mobile can check API, GH CLI and Git
+HTTPS separately, select a thread and see denied or stale results. Persistent shell activation,
+automatic credential migration and independent runner readiness remain selected work.
+
+Managed broker startup/recovery is now implemented locally: plan/install/start/stop/restart/
+status/uninstall for launchd GUI-user and systemd-user hosts, bounded retry after outage or
+sealed OpenBao, terminal disable, preserved enrollment and separate process/autostart/linger/
+heartbeat diagnostics. Native plist parsing, actual CLI subprocesses and isolated manager tests
+provide local evidence. Linux/Pi execution and real login/logout/reboot acceptance remain pending;
+no live service was installed. These host-local controls do not claim workload-use readiness.
+
+The terminal-agent section is now implemented locally. Explicit `ssh-agent-exec` activation
+runs ordinary SSH/Git, including clone/fetch/push, with a temporary local relay and live run,
+version, host and SSH-use-grant checks. Real CLI/protocol/revocation and cleanup evidence passes.
+Private keys remain on the server; repository-only grants retain the mediated Git boundary.
+Pi and ACP terminal connections are recognized. A discovered OpenBao JSON-complexity limit is
+fixed by a versioned, legacy-readable storage envelope; encrypted persistence/restore passes.
+No live backend conversion, credential registration, service installation or deployment ran.
+
+Kyle authorized completing all remaining Vault sections and landing the branch on 2026-10-20.
+No additional section approvals are required. Native Codex/Claude terminal setup is implemented
+with session-owned private connection files; focused native adapter/lifecycle checks cover
+rotation, cleanup and readiness. All complete packet scopes remain tracked below. The runtime
+publication gate is cleared: 0.0.85-nightly.20261019.3348 ships the MCP startup correction from
+main `cc05b69aed`, with archive smoke passing on all three platforms. Kyle alone owns nightly
+release cuts; this thread must not run `loom.sh land`.
+
+Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
+production dependencies beyond the selected OpenBao service, personal-vault migration and
+production credential registration are separate actions. Browser/device verification follows
+the repository's explicit-authorization rule. This selection leaves non-Vault priorities below intact.
+
 ## Selected queue
 
 | Order | Packet                                                | Status                                        | Decision                                                                                        |
@@ -55,6 +135,27 @@ Kyle selected hosted previews on 2026-10-18 and approved the later slices on 202
 | Order | Packet                                    | Status                                                          | Decision                                                                              |
 | ----- | ----------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 11    | [L72 Preview links](./L72-preview-links/) | Implemented on `main`; Library deploy and client checks pending | Slices 1 to 5 are built. Slice 6, guest links, is parked under the one-operator rule. |
+
+Kyle selected all Vault packets; stable V identifiers map to these collision-free packet IDs:
+
+| Order | Packet                                                                                  | Status                             | Note                                                                                                       |
+| ----- | --------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 12    | [L73 Headless readiness checks](./L73-vault-readiness/)                                 | In progress                        | Vault V01; full scope selected.                                                                            |
+| 13    | [L74 Searchable credential references everywhere](./L74-vault-references/)              | In progress                        | Vault V02; full scope selected.                                                                            |
+| 14    | [L75 Guided migration from personal credential stores](./L75-vault-migration/)          | Selected; remaining implementation | Vault V03; full scope selected.                                                                            |
+| 15    | [L76 Project environment profiles](./L76-vault-profiles/)                               | In progress                        | Vault V04; full scope selected.                                                                            |
+| 16    | [L77 Credential health and maintenance inbox](./L77-vault-health/)                      | In progress; local inbox/checks    | V05; project/retained references and SSH/GitHub validation implemented; broader/native acceptance remains. |
+| 17    | [L78 Explain access and preview changes](./L78-vault-access-inspector/)                 | In progress                        | Vault V06; full scope selected.                                                                            |
+| 18    | [L79 Encrypted Vault and self-hosted control plane](./L79-vault-core/)                  | In progress; waiting on deploy     | Vault V07; full scope selected.                                                                            |
+| 19    | [L80 Enrolled machines and headless brokers](./L80-vault-brokers/)                      | In progress                        | Vault V08; full scope selected.                                                                            |
+| 20    | [L81 Agent identities and persistent access grants](./L81-vault-grants/)                | In progress                        | Vault V09; full scope selected.                                                                            |
+| 21    | [L82 SSH key management and Loom SSH agent](./L82-vault-ssh/)                           | In progress                        | Vault V10; full scope selected.                                                                            |
+| 22    | [L83 Developer service accounts and authentication connectors](./L83-vault-connectors/) | In progress                        | Vault V11; full scope selected.                                                                            |
+| 23    | [L84 Test account collections and provisioning](./L84-vault-test-accounts/)             | Selected; remaining implementation | Vault V12; full scope selected.                                                                            |
+| 24    | [L85 Credential delivery API, CLI, and runner integrations](./L85-vault-delivery/)      | In progress                        | Vault V13; full scope selected.                                                                            |
+| 25    | [L86 Remote approvals and temporary access](./L86-vault-approvals/)                     | Selected; remaining implementation | Vault V14; full scope selected.                                                                            |
+| 26    | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Selected; remaining implementation | Vault V15; full scope selected.                                                                            |
+| 27    | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Selected; remaining implementation | Vault V16; full scope selected.                                                                            |
 
 ## Candidates for the queue
 

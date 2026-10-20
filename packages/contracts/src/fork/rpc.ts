@@ -1,3 +1,11 @@
+import { VaultHealthRpcGroup } from "./vault-health.ts";
+import { VaultGitHubRpcGroup } from "./vault-github.ts";
+import { VaultProfileRpcGroup } from "./vault-profiles.ts";
+import { VaultReferenceRpcGroup } from "./vault-references.ts";
+import { VaultSshRpcGroup } from "./vault-ssh.ts";
+import { VaultBrokerRpcGroup } from "./vault-brokers.ts";
+import { VaultAccessRpcGroup } from "./vault-access.ts";
+import { VaultCoreRpcGroup } from "./vault-core.ts";
 import { SitesRpcGroup } from "./sites.ts";
 import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
 import { ProjectLibraryHealthRpcGroup } from "./project-library-health.ts";
@@ -49,6 +57,14 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  VaultHealthRpcGroup,
+  VaultGitHubRpcGroup,
+  VaultProfileRpcGroup,
+  VaultReferenceRpcGroup,
+  VaultSshRpcGroup,
+  VaultCoreRpcGroup,
+  VaultBrokerRpcGroup,
+  VaultAccessRpcGroup,
   SitesRpcGroup,
   ProjectLibraryRpcGroup,
   ProjectLibraryHealthRpcGroup,

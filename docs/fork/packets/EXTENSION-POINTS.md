@@ -2955,3 +2955,237 @@ without router context so upstream static card tests keep working. Register a pa
 Existence check: `test -f apps/web/src/fork/changedFiles/registry.ts` and
 `git grep -c 'fork: ext-changed-files' -- apps/web/src/components/chat/ChangedFilesTree.tsx`
 prints 2. Run the existing ChangedFilesTree tests when altering the seam.
+
+## Loom Vault foundation (`ext-vault`)
+
+Status: **Encrypted records, online workload policy, inspection and reviewed host enrollment implemented; broader foundation in progress.** Kyle
+selected all sixteen packets for implementation and OpenBao as the backend on 2026-10-17.
+The active shared boundary lives outside the feature packet folders:
+
+- Contracts: `packages/contracts/src/fork/vault-core.ts`, exported through the fork group.
+  `VaultItemSummary` contains no value; `VaultItemSave.value` is redacted and optional for
+  metadata-only updates. Mutations carry stable item/operation IDs and expected versions.
+  `VaultPrivateSave` takes a one-use secretRef. Explicit `VaultItemReveal` is separate.
+- Storage: `apps/server/src/fork/vault/OpenBaoStore.ts` implements status, read, CAS write
+  and bounded key listing for the selected KV v2 mount. It owns backend token access.
+- Domain: `VaultCore` implements environment-owned records and atomic mutation receipts;
+  `VaultPrivateInput` binds private ingress to authenticated thread/project/environment/backend
+  context. Other packets consume these shared services, not L79 UI internals.
+- Private handoff seam: `SecretRequests.transfer(input, callback)` durably claims a ref for
+  one destination operation before the callback. A callback must be idempotent. Failure retains
+  the claim for that operation only; success removes the source. Source deletion failures
+  retain the claim, and Vault receipts recover already-committed saves.
+- Registries: ForkLayer/ForkRuntime publish the services; fork RPC, MCP and CLI registries
+  provide thin authenticated adapters. Client-runtime exposes protected commands shared by
+  web/desktop and mobile. No global replacement of ServerSecretStore/provider auth occurs.
+
+Shared `vault-access.ts` contracts and `VaultAccess`/`VaultPolicy` add thread/project grants,
+ancestry attenuation, permanent revocation, bounded audited decisions, previews and 60-second
+server-context readiness. These services share the same environment namespace and OpenBao
+adapter as records. Policy uses a separate CAS document; policy revisions change only on edits.
+Grant state, receipts and decision history persist across restart and restore. No new upstream
+seams are needed; services and transports register through existing fork-owned extension points.
+
+Human management uses environment access:read for inspection and access:write for changes and
+explicit reveal. Threads need item inspect/manage grants on the existing metadata, private
+input and lifecycle paths, while full-access/default requirements still apply to mutations.
+MCP threads cannot administer root grants or reveal raw values. Direct-child delegation is
+attested through ThreadManagement and never increases the existing T3 permission ceiling.
+These checks do not isolate same-user full-access processes from host credential files.
+
+Limits: 128 grants, 32 item IDs per grant, 256 operational history events, 32 mutation receipts,
+50 history entries in the management snapshot and 10 recent decisions in an item explanation.
+Shared `vault-brokers.ts` contracts and `VaultBrokers` provide a separate encrypted CAS
+registry, reviewed public-key invitation/claim/approval, cancellation and permanent disable.
+`BrokerIdentity` and `BrokerRunner` own private host identity files and signed online heartbeat
+HTTP; the macOS/Linux foreground or managed-user-service CLI uses no administrator/backend token. Web/mobile management
+is gated by `vault-brokers`, with access:read/access:write scopes. MCP administrator clients
+manage hosts, while calling threads cannot enroll or approve themselves. Snapshots omit nonce
+material and cap machines/invitations/activity. Presence renews every minute for two minutes;
+it is not a workload credential lease. Fork-owned `BrokerService` and `BrokerDaemon` add explicit
+host-local user-service lifecycle and bounded safe diagnostics. macOS requires a GUI login;
+Linux/Pi continuity depends on operator-configured linger. No live service installation or
+offline decrypted cache is included. See [L80](./L80-vault-brokers/TECHNICAL.md).
+
+Shared `vault-workloads.ts` and `VaultWorkloads` now provide active-run/item/destination-bound
+check sessions. Machine and workload Ed25519 proofs are both required; current host state,
+run/mode and persisted use-policy decisions are rechecked. Process-local sessions expire after
+five minutes or control-plane restart. `WorkloadRunner` and the common `BrokerHttpClient` expose
+signed check/release routes under `/api/loom/vault-brokers/workloads/`, while MCP opens/lists/
+closes only the authenticated thread's sessions. `vault-workload-checks` advertises this limited
+capability. No raw values or reusable use tokens are returned. Actual delivery must authenticate
+its own operation payload and current policy, rather than trusting a prior check result.
+
+Shared `vault-ssh.ts`, `VaultSsh`, `SshCrypto` and `SshTransport` add the `vault-ssh-mediated`
+capability. Full-access administrator clients manage generated Ed25519 keys and independent
+host pins using MCP; existing Vault core actions archive/restore/delete items. Agent public
+inspection requires an inspect grant. Signed `ssh-exec` HTTP/runner requests bind exact argv,
+key version and timeout to a fresh single-use workload challenge. Current policy, host/run
+state and item version are rechecked before spawn and agent signing. The server mediates the
+connection using a scoped POSIX socket, verified OpenSSH session-bind and host-bound user
+authentication; generic signing and forwarding are unsupported. Private key bytes never leave
+the server/OpenBao through this operation. Only public temporary files are written. The target
+must be reachable from the Loom server. Commands are bounded to four concurrent executions,
+eight seconds and 2 KiB stdout. Cancellation/timeout closes local resources but cannot promise
+remote rollback. Already-issued signatures cannot be recalled. The explicit terminal agent below extends this operation boundary. Windows, persistent shell
+attachment and other runner-side transports remain unfinished.
+
+`vault-ssh-agent` advertises fork-owned activation and ordered frame/list/close MCP tools.
+`VaultLaunch` proves and retains a five-minute workload check; `VaultSsh` keeps current-run,
+host, grant and item-version authority on every frame. A command-scoped POSIX relay forwards
+only host-bound agent requests and never receives a private key. The terminal wrapper validates
+its destination, isolates SSH/Git configuration and preserves child streams/exit status. Host SSH
+grants are required because authentication signatures cannot enforce repository paths. Pi/ACP
+terminal connections are recognized; remaining native-harness setup is explicit. No new
+upstream seam or client RPC is added. See [L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
+
+`vault-ssh-management` separately advertises public-info and key/trust/probe RPCs, protected by
+environment access:read/access:write. Web/desktop and mobile use the shared client-runtime
+commands and item-change signal so core lifecycle and SSH edits refresh one another. A fixed
+administrator probe runs only `/usr/bin/true`, rechecking current authority and item version
+before, during and after transport. It returns safe evidence without stdout. MCP allows this
+probe only for human full-access administrators; arbitrary agent commands keep the signed
+workload/use-grant boundary. Older servers without this capability hide management entry points.
+The server registers the SSH handler layer separately to bound TypeScript RPC-union inference.
+
+`VaultLaunch` now uses the provider's existing authenticated MCP connection to create a
+memory-only workload identity and fresh signed operation, then closes the session on every
+exit. `vault-run-access` advertises hosted SSH and Git ref-list/fetch tools; CLI dispatch uses
+the same handlers. The operator enrolls the Loom server broker and configures its private
+`LOOM_VAULT_EXECUTION_BROKER_DIR`; no thread can enroll/approve itself. Current online presence,
+run/mode, item version and use grants remain required. Git signs its own `git-exec` payload,
+uses the thread checkout, and requires its exact repository destination. Workloads are not
+OS-isolated and unprefixed terminal commands receive no secret environment or socket.
+
+Shared `vault-references.ts`/`VaultReferences` add environment-scoped metadata search and
+stable reference text. Agent search/describe require inspect grants; unknown/forbidden IDs
+both describe as null. Search scans at most four 25-record pages and preserves sparse cursors.
+Client-runtime queries share the item-change signal; web/native pickers are reusable consumers.
+
+Shared `vault-profiles.ts`/`VaultProfiles` add project-local CAS registries, named required
+SSH/Git/GitHub bindings, active defaults and archive/restore. Profiles contain references only.
+The first active-run resolution persists a CAS-created profile/key-version pin in OpenBao;
+later edits/default switches apply to later runs. Every use rechecks current authority and
+key versions, and profile archive is checked at transport/signing. Management requires
+access:write; agents list only their own project and cannot change bindings. `VaultLaunch.profile`
+uses existing signed workload cleanup. Registry/pin paths live under the environment's
+`profiles/<project-hash>/` namespace and need explicit operator policy rights. Pins have no
+automatic retention cleanup yet. Administrator inspection/terminal-run retirement replaces
+current pins with durable no-reselection tombstones; older OpenBao versions remain. Clients gate
+on vault-profile-history. Web/desktop/mobile, palette, MCP and CLI reuse existing registries.
+Composer/task launch selection is implemented below; other credential kinds remain open.
+The vault-profile-github capability adds dedicated connection/repository selection and pinned
+GH execution through the shared profile boundary. Preview/preflight checks saved configuration
+and exact use grants, never live provider health. GitHub profile execution passes a guard to
+VaultGitHub so profile archive and originating run identity remain live through token acquisition
+and CLI spawn. Portable GitHub declarations use version 2 with no local bindings; legacy SSH/Git
+exports remain version 1. Older servers cannot decode stored GitHub profile kinds.
+
+Shared vault-github contracts and VaultGitHub expose dedicated github.com connections, not
+ambient terminal credentials. App/token material uses encrypted service-connection records;
+metadata, administrator management and exact repository use grants remain separate rights.
+GitHubTransport and GitHubCli own provider/API and isolated subprocess adaptation. The
+vault-github capability gates clients. App tokens are repository-limited and released best
+effort; local disconnection never claims provider revocation. Existing upstream GitHub credential
+precedence is untouched. New credential kinds should extend shared profiles/delivery contracts
+rather than import packet UI or bypass current run authority.
+
+The `vault-github-terminal` capability adds explicit supported gh/Git HTTPS argv and cancellable
+readiness through the same connection service. Terminal execution is agent-thread only; live
+readiness requires access:write for client callers and an agent's own authenticated thread for
+MCP. Neither can authorize from cached readiness. CLI output/exit codes preserve command
+semantics. A private exact-repository Git helper and current run checks govern scoped children;
+ordinary shells and independent runners receive no persistent credentials. MCP-native providers
+can call the tool directly; terminal fallback requires its authenticated MCP environment, which
+ACP supplies. The interface does not claim that every native harness propagates that environment.
+No new upstream seam or shared runtime is needed.
+
+`packages/provider-core/src/fork/vaultInstructions.ts` supplies static, capability-aware
+instructions to the existing common provider prompt channel. The two marked `ext-vault` lines
+in `packages/provider-core/src/server/orchestrationInstructions.ts` import/prepend that string.
+Pi uses its native system-prompt hook; other adapters retain their existing common instruction
+paths. No per-provider seam or additional MCP process is added. FORK.md and the seam manifest
+record the file. This extension does not alter upstream wire/events or provider permissions.
+
+`ext-vault-preflight` is a blocking launch guard, distinct from optional text contributors.
+`ProviderTurnStartService` calls the fork-owned guard after reading the current run/message
+and before provider session open or workspace preparation. Ordinary prompts perform no Vault
+lookup. Only standalone `[Vault profile: label](loom-vault-profile:<encoded-environment>:<id>:<version>)`
+and `[Vault reference: label](loom-vault:<encoded-environment>:<id>)` links declare requirements;
+fenced/quoted/inline examples do not. Links contain references only and remain visible in the
+transcript. Current environment identity selects a scoped registered guard; absent guard or
+backend denies explicit requirements. Registration belongs to ForkLayer and is removed with its
+scope, avoiding a dependency cycle with the earlier-constructed orchestration workers.
+
+A profile attachment checks its reviewed version, pins the complete configuration to the
+specific run, and checks all current use grants, keys and host trust. Item attachments require
+current inspect access and active metadata; they grant no credential use. Failure settles the
+run through the existing failed-run event path with a safe repair message. Full-access/default
+requirements remain in the shared profile service. Scheduled agent runs, queued messages,
+MCP/CLI launches and every provider pass through the same guard. No upstream scheduler wire/storage
+change or automatic personal-credential fallback is introduced. Provider steering reuses the same guard and cannot change a pinned profile mid-run.
+Command-only jobs and upstream servers do not gain this preflight guarantee.
+
+`vault-launch-ui` adds two marked lines per client entry point: an import and a fork-owned
+attachment control in the web/native composer and scheduled-task prompt editor. The control
+reviews profiles and edits only the existing prompt, preserving normal draft, retry, queue and
+schedule persistence. There are no new event fields, database migrations or dependencies.
+Unlike `ext-turn-input`, this guard must never time out and silently skip a required check.
+
+`vault-scheduled-outcomes` owns the scheduler integration for explicit Vault-attached runs.
+The marked scheduler construction initializes the fork service and its idempotent SQLite
+migration before ForkLayer. The same migration set is registered in the normal fork ledger.
+Track the exact generated message before dispatch, including rendered webhook prompts; bind
+ownership to task creation/firing timestamps and project identity. Project the matching V2 run
+into the existing task list/manual result, keeping queued runs running and terminal failures
+failed. Use the scheduler's existing source/notification path to publish changes. Raw task
+rows, run counts, cadence and webhook delivery logs retain dispatch semantics. Upstream event
+and task schemas are unchanged. Web/native recovery reuses task editing and explicit retry;
+webhook repair requires a new request. Keep one metadata-only ownership row per task and delete
+stale ownership. Earlier untracked firings retain dispatch status; no automatic replay occurs.
+
+Portable requirements use the versioned contracts in `vault-profiles.ts`. They export only
+user-reviewed labels and requirement names/kinds; never bindings, grants, environment identity,
+repositories or pins. Import into an unbound local profile through existing preview/save, or
+use the create-only administrator import mutation. Agents cannot change bindings or expand
+their project scope. Library publication and project-file distribution remain separate design.
+
+No immutable audit ledger, platform membership, workload delivery lease or provider
+probe exists. General readiness with credential-use requirements reports an unsupported execution probe.
+Mediated SSH is a separate operation with its own proof; it is not run by readiness. Do not infer unattended SSH readiness from a policy decision.
+
+Existence checks:
+
+```sh
+test -f packages/contracts/src/fork/vault-core.ts
+test -f apps/server/src/fork/vault/OpenBaoStore.ts
+test -f apps/server/src/fork/vault/VaultCore.ts
+test -f apps/server/src/fork/vault/VaultPrivateInput.ts
+test -f packages/contracts/src/fork/vault-access.ts
+test -f apps/server/src/fork/vault/VaultAccess.ts
+rg 'transfer|claimedBy' apps/server/src/secrets/SecretRequests.ts
+rg 'VaultCoreRpcGroup' packages/contracts/src/fork/rpc.ts
+```
+
+[LOOM-VAULT-FOUNDATION.md](./LOOM-VAULT-FOUNDATION.md) records the larger target model.
+Promote additional shared contracts independently as their consumers arrive. Do not fabricate
+workload, credential lease, platform identity, remote approval or delivery capabilities because
+records or enrolled hosts already exist.
+
+## Vault native terminal sessions (`ext-vault-terminal`)
+
+The provider MCP session owns an optional private connection descriptor. `McpProviderSessions`
+creates it under a scoped private temporary directory when filesystem support is available,
+replaces it with a new descriptor on credential rotation, and removes it on clear/shutdown.
+Existing session-registry revocation still rejects a stale token, including files left by a
+crash. The descriptor is plaintext and readable by the same operating-system user.
+
+Native Codex applies its path through thread-local `shell_environment_policy.set` on
+start/resume; Claude applies it to the query environment. Changed MCP identity already
+invalidates Claude's query policy key. Both clear inherited alternate connection variables
+when installing this managed connection. Pi and ACP retain their existing environment paths;
+other native adapters retain hosted tools and explicit terminal configuration.
+
+All Vault terminal paths use the same validated connection-family resolver. A specified broken
+file cannot fall back to another identity. Terminal readiness is a service-backed authenticated
+context check; it is not permission to use an arbitrary item or proof of an upstream login.

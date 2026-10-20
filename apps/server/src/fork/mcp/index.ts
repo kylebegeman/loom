@@ -1,3 +1,11 @@
+import { VaultHealthToolkit, vaultHealthHandlers } from "../vault/health-mcp.ts";
+import { VaultGitHubToolkit, vaultGitHubHandlers } from "../vault/github-mcp.ts";
+import { VaultProfileToolkit, vaultProfileHandlers } from "../vault/profile-mcp.ts";
+import { VaultSshToolkit, vaultSshHandlers } from "../vault/ssh-mcp.ts";
+import { VaultWorkloadToolkit, vaultWorkloadHandlers } from "../vault/workload-mcp.ts";
+import { VaultBrokerToolkit, vaultBrokerHandlers } from "../vault/broker-mcp.ts";
+import { VaultAccessToolkit, vaultAccessHandlers } from "../vault/access-mcp.ts";
+import { VaultCoreToolkit, vaultCoreHandlers } from "../vault/mcp.ts";
 import { SitesToolkit, sitesHandlers } from "../sites/mcp.ts";
 import { ProjectLibraryToolkit, projectLibraryHandlers } from "../project-library/mcp.ts";
 import { ProjectCheckoutToolkit, projectCheckoutHandlers } from "../project-checkout/mcp.ts";
@@ -15,6 +23,53 @@ import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: VaultHealthToolkit,
+    handlers: vaultHealthHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultHealthToolkit, vaultHealthHandlers),
+  },
+  {
+    toolkit: VaultGitHubToolkit,
+    handlers: vaultGitHubHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultGitHubToolkit, vaultGitHubHandlers),
+  },
+  {
+    toolkit: VaultProfileToolkit,
+    handlers: vaultProfileHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultProfileToolkit, vaultProfileHandlers),
+  },
+  {
+    toolkit: VaultSshToolkit,
+    handlers: vaultSshHandlers,
+    register: (register: typeof toolkitRegistration) => register(VaultSshToolkit, vaultSshHandlers),
+  },
+  {
+    toolkit: VaultWorkloadToolkit,
+    handlers: vaultWorkloadHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultWorkloadToolkit, vaultWorkloadHandlers),
+  },
+  {
+    toolkit: VaultBrokerToolkit,
+    handlers: vaultBrokerHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultBrokerToolkit, vaultBrokerHandlers),
+  },
+  {
+    toolkit: VaultAccessToolkit,
+    handlers: vaultAccessHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultAccessToolkit, vaultAccessHandlers),
+  },
+  {
+    toolkit: VaultCoreToolkit,
+    handlers: vaultCoreHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(VaultCoreToolkit, vaultCoreHandlers),
+  },
   {
     toolkit: SitesToolkit,
     handlers: sitesHandlers,

@@ -1,3 +1,5 @@
+// fork: ext-vault-preflight
+import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
@@ -389,6 +391,32 @@ export const layer: Layer.Layer<
           });
         },
       );
+      // fork: ext-vault-preflight
+      const vaultPreflight = yield* applyVaultPromptContext({
+        threadId: input.threadId,
+        runId: run.id,
+        text: message.text,
+      }).pipe(Effect.result);
+      // fork: ext-vault-preflight
+      if (vaultPreflight._tag === "Failure") {
+        yield* settleRunBeforeStart({
+          signal: "vault-preflight-failed",
+          status: "failed",
+          now: yield* DateTime.now,
+          providerInstanceId: run.providerInstanceId,
+          itemProviderThreadId: providerThread.id,
+          item: {
+            type: "error",
+            title: "Vault launch blocked",
+            failure: makeProviderFailure({
+              class: "validation_error",
+              message: vaultPreflight.failure.message,
+              retryable: false,
+            }),
+          },
+        });
+        return;
+      }
       if (message.attachments.length === 0 && message.text.trimStart().startsWith("/")) {
         const isEmptyCompaction =
           message.text.trim().toLowerCase() === "/compact" && !projection.hasConversation;

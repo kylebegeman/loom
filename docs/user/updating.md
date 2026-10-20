@@ -61,7 +61,8 @@ A client and server must speak the same orchestration protocol. If they do not, 
 refused rather than running half-upgraded:
 
 - An app newer than the server is blocked before connecting, with a notice telling you to update
-  T3 Code on the machine named in the notice.
+  T3 Code on the machine named in the notice, or, for a computer whose operating system ships
+  Loom, to update it through that operating system.
 - A server newer than your app refuses the connection with an update message.
 
 Update the side the notice names, then reconnect.
@@ -92,6 +93,12 @@ or `--tailscale-serve`.
 If you run the server with `npx` rather than an installed `t3`, there is
 nothing to update on the host: stop the server and relaunch it as
 `npx t3@<client-version>` with the same subcommand and options.
+
+A computer whose operating system ships its Loom runtime, such as LoomOS, offers none of these
+actions, and `t3 update` refuses there. Current Loom apps show a notice that the server's
+operating system manages its runtime; install the operating system's update instead. An app
+built before that notice may still offer **Copy relaunch command** for such a computer. Do not
+run it there.
 
 ## If an update fails
 

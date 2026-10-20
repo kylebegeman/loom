@@ -1,3 +1,5 @@
+// fork: ext-vault-preflight
+import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
   MessageId,
@@ -349,6 +351,22 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
+          // fork: ext-vault-preflight
+          yield* applyVaultPromptContext({
+            threadId: input.threadId,
+            runId: run.id,
+            text: message.text,
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderTurnControlError({
+                  threadId: input.threadId,
+                  operation: "steer",
+                  providerTurnId: input.providerTurnId,
+                  cause,
+                }),
+            ),
+          );
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,

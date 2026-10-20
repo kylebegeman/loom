@@ -163,15 +163,14 @@ describe("environment release checks", () => {
   it("keeps stable hosts on stable releases and ignores drafts", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockImplementation(async () =>
-          Response.json([
-            { tag_name: "v2.0.0-nightly.20260923.1" },
-            { tag_name: "v1.2.0", draft: true },
-            { tag_name: "v1.1.0" },
-          ]),
-        ),
+      vi.fn().mockImplementation(async () =>
+        // fork: fleet-connect
+        Response.json([
+          { tag_name: "2.0.0-nightly.20260923.1" },
+          { tag_name: "1.2.0", draft: true },
+          { tag_name: "1.1.0" },
+        ]),
+      ),
     );
     expect(await findEnvironmentUpdate("1.0.0", signal)).toBe("1.1.0");
     expect(await findEnvironmentUpdate("1.1.0", signal)).toBeNull();
@@ -182,9 +181,10 @@ describe("environment release checks", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        Response.json(Array.from({ length: 100 }, () => ({ tag_name: "v2.0.0" }))),
+        // fork: fleet-connect
+        Response.json(Array.from({ length: 100 }, () => ({ tag_name: "2.0.0" }))),
       )
-      .mockResolvedValueOnce(Response.json([{ tag_name: "v1.0.0-preview.20260923.2" }]));
+      .mockResolvedValueOnce(Response.json([{ tag_name: "1.0.0-preview.20260923.2" }]));
     vi.stubGlobal("fetch", fetchMock);
     expect(await findEnvironmentUpdate("1.0.0-preview.20260923.1", signal)).toBe(
       "1.0.0-preview.20260923.2",

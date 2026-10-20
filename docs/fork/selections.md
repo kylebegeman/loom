@@ -115,3 +115,28 @@ Reviewed for reuse or inspiration: xtool-org/xtool, withastro/flue, block/buzz,
 dmno-dev/varlock, PromptBranch/promptbranch, h4ckf0r0day/obscura,
 software-mansion/argent, pbakaus/impeccable, Graphify-Labs/graphify,
 teng-lin/notebooklm-py, DietrichGebert/ponytail, baairon/torlink.
+
+## Loom Vault
+
+Kyle selected all sixteen ideas for implementation on 2026-10-17. OpenBao is the selected
+backend. V identifiers remain stable; the packet IDs were moved to L73-L88 on 2026-10-20
+because L72 belongs to Preview links. Selection is not a production deployment.
+
+| Idea | Packet                                                                                          |
+| ---- | ----------------------------------------------------------------------------------------------- |
+| V01  | [L73 Headless readiness checks](./packets/L73-vault-readiness/)                                 |
+| V02  | [L74 Searchable credential references everywhere](./packets/L74-vault-references/)              |
+| V03  | [L75 Guided migration from personal credential stores](./packets/L75-vault-migration/)          |
+| V04  | [L76 Project environment profiles](./packets/L76-vault-profiles/)                               |
+| V05  | [L77 Credential health and maintenance inbox](./packets/L77-vault-health/)                      |
+| V06  | [L78 Explain access and preview changes](./packets/L78-vault-access-inspector/)                 |
+| V07  | [L79 Encrypted Vault and self-hosted control plane](./packets/L79-vault-core/)                  |
+| V08  | [L80 Enrolled machines and headless brokers](./packets/L80-vault-brokers/)                      |
+| V09  | [L81 Agent identities and persistent access grants](./packets/L81-vault-grants/)                |
+| V10  | [L82 SSH key management and Loom SSH agent](./packets/L82-vault-ssh/)                           |
+| V11  | [L83 Developer service accounts and authentication connectors](./packets/L83-vault-connectors/) |
+| V12  | [L84 Test account collections and provisioning](./packets/L84-vault-test-accounts/)             |
+| V13  | [L85 Credential delivery API, CLI, and runner integrations](./packets/L85-vault-delivery/)      |
+| V14  | [L86 Remote approvals and temporary access](./packets/L86-vault-approvals/)                     |
+| V15  | [L87 Credential lifecycle automation and short-lived access](./packets/L87-vault-lifecycle/)    |
+| V16  | [L88 Backup, recovery, and portability](./packets/L88-vault-recovery/)                          |

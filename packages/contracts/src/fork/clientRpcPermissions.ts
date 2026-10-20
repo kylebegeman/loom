@@ -1,3 +1,11 @@
+import { VAULT_HEALTH_WS_METHODS as VH } from "./vault-health.ts";
+import { VAULT_GITHUB_WS_METHODS as VG } from "./vault-github.ts";
+import { VAULT_PROFILE_WS_METHODS as VP } from "./vault-profiles.ts";
+import { VAULT_SSH_WS_METHODS as VS } from "./vault-ssh.ts";
+import { VAULT_BROKER_WS_METHODS as VB } from "./vault-brokers.ts";
+import { VAULT_ACCESS_WS_METHODS as VA } from "./vault-access.ts";
+import { VAULT_CORE_WS_METHODS as V } from "./vault-core.ts";
+import { AuthAccessWriteScope } from "../auth.ts";
 import { SITES_WS_METHODS as S } from "./sites.ts";
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
@@ -22,6 +30,23 @@ import { AuthPreviewOperateScope } from "../auth.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [VH.apply]: AuthAccessWriteScope,
+  [VH.recheck]: AuthAccessWriteScope,
+  [VG.save]: AuthAccessWriteScope,
+  [VG.test]: AuthAccessWriteScope,
+  [VG.readiness]: AuthAccessWriteScope,
+  [VG.change]: AuthAccessWriteScope,
+  [VP.apply]: AuthAccessWriteScope,
+  [VP.retirePin]: AuthAccessWriteScope,
+  [VS.generate]: AuthAccessWriteScope,
+  [VS.trust]: AuthAccessWriteScope,
+  [VS.probe]: AuthAccessWriteScope,
+  [VB.begin]: AuthAccessWriteScope,
+  [VB.apply]: AuthAccessWriteScope,
+  [VA.apply]: AuthAccessWriteScope,
+  [V.save]: AuthAccessWriteScope,
+  [V.change]: AuthAccessWriteScope,
+  [V.reveal]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

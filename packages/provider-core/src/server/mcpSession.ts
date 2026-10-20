@@ -1,3 +1,4 @@
+import { terminalEnvironmentFor } from "../fork/terminalConnections.ts"; // fork: ext-vault-terminal
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
 export interface McpProviderSessionConfig {
@@ -5,6 +6,7 @@ export interface McpProviderSessionConfig {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly terminalConnectionFile?: string; // fork: ext-vault-terminal
   readonly endpoint: string;
   readonly authorizationHeader: string;
   /**
@@ -32,3 +34,6 @@ export function withAgentDeviceEnvironment(
     ...(shimDir ? { PATH: basePath ? `${shimDir}${separator}${basePath}` : shimDir } : {}),
   };
 }
+
+// fork: ext-vault-terminal
+export const vaultTerminalEnvironment = terminalEnvironmentFor;

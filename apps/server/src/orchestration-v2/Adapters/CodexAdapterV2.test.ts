@@ -642,6 +642,7 @@ describe("CodexAdapterV2 process spawning", () => {
       environmentId: EnvironmentId.make("environment-codex-mcp"),
       threadId,
       providerSessionId: "mcp-session-codex",
+      terminalConnectionFile: "/private/tmp/loom-mcp-test/session", // fork: ext-vault-terminal
       providerInstanceId: ProviderInstanceId.make("codex"),
       endpoint: "http://127.0.0.1:43123/mcp",
       authorizationHeader: "Bearer secret-codex-token",
@@ -662,6 +663,18 @@ describe("CodexAdapterV2 process spawning", () => {
         cwd: "/workspace/thread-codex-mcp",
         model: "gpt-5.4",
         config: {
+          // fork: ext-vault-terminal
+          shell_environment_policy: {
+            set: {
+              LOOM_MCP_CONNECTION_FILE: "/private/tmp/loom-mcp-test/session",
+              LOOM_MCP_ENDPOINT: "",
+              LOOM_MCP_AUTHORIZATION: "",
+              T3_ACP_MCP_ENDPOINT: "",
+              T3_ACP_MCP_AUTHORIZATION: "",
+              T3_MCP_URL: "",
+              T3_MCP_BEARER_TOKEN: "",
+            },
+          },
           "tools.update_plan.enabled": true,
           // Codex waits up to 10 s, not 1 s, for MCP servers before the first request (#13437).
           mcp_optional_startup_grace_ms: 10_000,

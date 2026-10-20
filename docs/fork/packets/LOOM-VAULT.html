@@ -1,0 +1,1156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Loom Vault product and implementation packets</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: var(--font-sans, system-ui, sans-serif);
+        color: var(--foreground, #24272b);
+        --local-muted: #626a73;
+        --local-card: #f4f5f6;
+        --local-border: #dce0e4;
+        --local-link: #3156a8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color: #e6e8ec;
+          --local-muted: #adb4c1;
+          --local-card: #202329;
+          --local-border: #3d424b;
+          --local-link: #acc3ff;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      body {
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      main {
+        max-width: 940px;
+        margin: auto;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+        color: var(--foreground, inherit);
+      }
+      h1 {
+        font-size: 2rem;
+        margin: 0 0 12px;
+      }
+      h2 {
+        font-size: 1.5rem;
+        margin: 32px 0 16px;
+      }
+      h3 {
+        font-size: 1.15rem;
+        margin: 4px 0 10px;
+      }
+      h4 {
+        font-size: 1rem;
+        margin: 20px 0 6px;
+      }
+      p {
+        margin: 10px 0 16px;
+      }
+      .lede {
+        font-size: 1.1rem;
+      }
+      .muted,
+      .eyebrow {
+        color: var(--muted-foreground, var(--local-muted));
+      }
+      .eyebrow {
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        margin: 0 0 8px;
+      }
+      a {
+        color: var(--foreground, var(--local-link));
+        text-underline-offset: 3px;
+      }
+      a:focus-visible,
+      summary:focus-visible,
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--ring, var(--local-link));
+        outline-offset: 4px;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+        margin: 18px 0 22px;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .metric,
+      article,
+      .decision {
+        background: var(--card, var(--local-card));
+        padding: 20px;
+        border-radius: var(--radius, 10px);
+        border: 1px solid var(--border, var(--local-border));
+      }
+      .metric strong {
+        font-size: 1.8rem;
+        display: block;
+      }
+      .metric span {
+        font-size: 0.85rem;
+        color: var(--muted-foreground, var(--local-muted));
+      }
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 22px 0 8px;
+      }
+      .filters label {
+        font-weight: 600;
+      }
+      input {
+        font: inherit;
+        min-width: 0;
+        flex: 1 1 180px;
+        background: var(--background, transparent);
+        color: inherit;
+        border: 1px solid var(--border, var(--local-border));
+        border-radius: 6px;
+        padding: 9px 12px;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        border: 1px solid var(--border, var(--local-border));
+        border-radius: 6px;
+        background: var(--card, var(--local-card));
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        background: var(--primary, #3156a8);
+        color: var(--primary-foreground, #fff);
+      }
+      article {
+        margin: 12px 0;
+      }
+      article p:last-child {
+        margin-bottom: 0;
+      }
+      details {
+        margin-top: 14px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      ul,
+      ol {
+        padding-left: 22px;
+      }
+      li {
+        margin: 7px 0;
+      }
+      .decision {
+        margin: 12px 0;
+      }
+      .decision strong {
+        display: block;
+      }
+      #count {
+        font-size: 0.85rem;
+        margin: 8px 0 16px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .architecture section {
+        padding: 16px;
+        background: var(--secondary, var(--local-card));
+        border-radius: var(--radius, 10px);
+      }
+      .architecture h3 {
+        font-size: 1rem;
+      }
+      .architecture p {
+        font-size: 0.9rem;
+        margin-bottom: 0;
+      }
+      footer {
+        margin: 30px 0 20px;
+        color: var(--muted-foreground, var(--local-muted));
+        font-size: 0.85rem;
+      }
+      @media (max-width: 520px) {
+        h1 {
+          font-size: 1.6rem;
+        }
+        .architecture {
+          grid-template-columns: 1fr;
+        }
+        .metric {
+          padding: 14px;
+        }
+        .metric strong {
+          font-size: 1.5rem;
+        }
+        article {
+          padding: 16px;
+        }
+      }
+      html:not([data-inline]) {
+        background: var(--background, light-dark(#ffffff, #16181c));
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">IMPLEMENTATION · ALL SIXTEEN SELECTED · 17 OCTOBER 2026</p>
+      <h1>Loom Vault</h1>
+      <p class="lede">
+        Development credentials, accounts and secure records for agents and people, managed on
+        infrastructure you control.
+      </p>
+      <p>
+        All sixteen proposals are documented. Key custody and operating policies remain
+        implementation decisions. All sixteen packets are selected to build; OpenBao is selected.
+        Encrypted records, access policy, reviewed host enrollment, signed workload checks and
+        mediated SSH/GH commands, profile launch/recovery and retained-selection retirement are
+        implemented milestones; full delivery and the platform remain in progress. No deployment is
+        authorized.
+      </p>
+      <nav aria-label="Document links">
+        <a href="./LOOM-VAULT.md">Product index</a
+        ><a href="./LOOM-VAULT-FOUNDATION.md">Shared foundation</a
+        ><a href="./IMPLEMENT-NOW.md">Implementation queue</a>
+      </nav>
+      <div class="metrics">
+        <div class="metric"><strong>16</strong><span>selected packets</span></div>
+        <div class="metric"><strong>112</strong><span>packet documents</span></div>
+        <div class="metric"><strong>9</strong><span>shared design decisions</span></div>
+      </div>
+      <h2>Proposed platform shape</h2>
+      <div class="architecture" aria-label="Three responsibilities in the proposed platform">
+        <section>
+          <h3>Central authority</h3>
+          <p>Your VPS and platform: encrypted records, policy, requests and history.</p>
+        </section>
+        <section>
+          <h3>Execution brokers</h3>
+          <p>Dorothy and enrolled workers: authenticated workload access and tool delivery.</p>
+        </section>
+        <section>
+          <h3>Shared clients</h3>
+          <p>Loom web, desktop, mobile and CLI: management and consistent references.</p>
+        </section>
+      </div>
+      <p class="muted">
+        This is a proposed division of responsibilities. No live platform integration or deployment
+        topology is assumed.
+      </p>
+      <h2>Review the complete scope</h2>
+      <div class="filters">
+        <label for="query">Find an idea</label
+        ><input id="query" type="search" placeholder="SSH, accounts, recovery, V01…" /><button
+          type="button"
+          data-filter="all"
+          aria-pressed="true"
+        >
+          All</button
+        ><button type="button" data-filter="minor" aria-pressed="false">Minor</button
+        ><button type="button" data-filter="major" aria-pressed="false">Major</button>
+      </div>
+      <p id="count" role="status" aria-live="polite">16 proposals shown</p>
+      <section id="minor">
+        <h2>Minor Features &amp; Improvements</h2>
+        <article
+          data-group="minor"
+          data-search="v01 l72 headless readiness checks prove an environment can perform its configured unattended work before launching a task."
+        >
+          <p class="eyebrow">V01 · L73 · Medium effort · High impact</p>
+          <h3>Headless readiness checks</h3>
+          <p>
+            Prove an environment can perform its configured unattended work before launching a task.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Run bounded checks inside the actual broker or runner context. Resolve profile
+              requirements, verify unlock and grant state, and exercise harmless provider-specific
+              operations such as repository reads. Classify authentication, authorization, network,
+              host-trust and missing-tool failures separately; record check time and environment
+              identity.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Open Vault readiness from the environment, project, command palette or task preflight.
+              See a concise result with a repair action for each failure, retry a single check, or
+              cancel an active run. A stale successful check is visibly stale.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Prevents a terminal login from being mistaken for proof that a background runner is
+              ready.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses shared inspection and connector-check interfaces. Can check existing GitHub setup
+              before Vault migration; absent optional adapters report unsupported, not success.
+              Unlocks preflight for schedules and newly enrolled machines.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which checks block a launch versus warn, and what freshness window is acceptable?
+              </li>
+              <li>
+                Should scheduled tasks require preflight by default or only when their profile
+                requests it?
+              </li>
+            </ul>
+            <p><a href="./L73-vault-readiness/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="minor"
+          data-search="v02 l73 searchable credential references everywhere attach named vault items without copying their values into prompts or settings."
+        >
+          <p class="eyebrow">V02 · L74 · Medium effort · High impact</p>
+          <h3>Searchable credential references everywhere</h3>
+          <p>
+            <strong>In progress:</strong> environment search/copy and profile pickers work locally.
+            Composer/scheduled links and provider preflight are implemented locally; wider consumers
+            remain selected.
+          </p>
+          <p>Attach named Vault items without copying their values into prompts or settings.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Use opaque stable IDs and a shared metadata picker. Search authorized labels, account
+              roles and environments with bounded queries. Renames preserve bindings; a new secret
+              version does not change the reference. Resolving a reference still checks the
+              destination principal at execution.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Choose a credential from project settings, a composer attachment, the command palette
+              or CLI completion. Inspect its intended consumer, remove the attachment, or replace a
+              binding. The transcript contains a safe reference summary.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Makes Vault available where work starts and avoids brittle names or pasted tokens.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses metadata search, reference resolution and access summaries from the shared
+              foundation. Unlocks profiles, task templates and plugin consumers without requiring
+              their implementation.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which metadata may be shown in saved conversations after an item is retired or
+                access is lost?
+              </li>
+              <li>
+                Choose composer presentation and CLI naming without overloading existing skill
+                syntax.
+              </li>
+            </ul>
+            <p><a href="./L74-vault-references/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="minor"
+          data-search="v03 l74 guided migration from personal credential stores replace selected interactive development dependencies with dedicated vault credentials."
+        >
+          <p class="eyebrow">V03 · L75 · Medium effort · High impact</p>
+          <h3>Guided migration from personal credential stores</h3>
+          <p>
+            Replace selected interactive development dependencies with dedicated Vault credentials.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Inventory configured credential sources without extracting personal vault contents.
+              Prepare a reviewed change set for dedicated key generation, service reconnection,
+              explicit imports and optional repository configuration updates. Record prior
+              non-secret configuration for rollback and test replacement access before cutover.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              See which projects depend on 1Password or a personal CLI account, choose replacements,
+              inspect each proposed change and apply only selected changes. Cancel before cutover,
+              retry a failed step or restore the prior configuration.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Makes the personal/development separation achievable without breaking unrelated tools.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses foundation import, connector and SSH adapter interfaces when available; missing
+              adapters leave a clear unconverted item. Unlocks migration of existing projects and
+              additional hosts.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which initial import formats are worth supporting, and how should user-selected
+                imports enter from mobile?
+              </li>
+              <li>
+                Should the default flow always create a new development identity rather than reuse
+                an existing one?
+              </li>
+            </ul>
+            <p><a href="./L75-vault-migration/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="minor"
+          data-search="v04 l75 project environment profiles bind a complete set of development accounts, credentials and endpoints to a named project environment."
+        >
+          <p class="eyebrow">V04 · L76 · Medium effort · High impact</p>
+          <h3>Project environment profiles</h3>
+          <p>
+            <strong>In progress:</strong> project SSH/Git/GitHub profile management and durable run
+            selection work locally. Explicit launch checks, scheduled outcome recovery and portable
+            requirement import/export are implemented locally. Other credential kinds, Library
+            publication and automatic retention remain selected. Retained selections now support
+            inspection and explicit terminal-run retirement with durable tombstones.
+          </p>
+          <p>
+            Bind a complete set of development accounts, credentials and endpoints to a named
+            project environment.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Projects declare named requirements such as GitHub access, a staging API key and
+              test-account roles. Environment-local profiles map requirements to Vault references
+              and non-secret endpoints. Resolve one reviewed profile revision per run so mid-run
+              edits do not silently switch identities.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Choose Local development or Staging QA, review account labels and missing
+              requirements, and launch with the selected profile. Clone, edit, unbind, deactivate or
+              restore a profile revision without duplicating secret values.
+            </p>
+            <h4>Product value</h4>
+            <p>Reduces account mix-ups and repeated configuration across worktrees and machines.</p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses reference and grant interfaces; connectors supply validation when installed.
+              Unlocks reproducible task templates, previews and onboarding. Degrades to missing
+              requirements when optional account provisioning is absent.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which profile metadata should be shared through Library, and which stays strictly
+                environment-local?
+              </li>
+              <li>
+                Should runs pin a credential version or follow rotation through a stable binding?
+                Define this by credential kind.
+              </li>
+            </ul>
+            <p><a href="./L76-vault-profiles/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="minor"
+          data-search="v05 l76 credential health and maintenance inbox collect expiration and authentication maintenance into one actionable inbox."
+        >
+          <p class="eyebrow">V05 · L77 · Medium effort · High impact</p>
+          <h3>Credential health and maintenance inbox</h3>
+          <p>Collect expiration and authentication maintenance into one actionable inbox.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Combine declared expiry, connector validation and delivery failures into deduplicated
+              issues keyed by item and failure class. Perform bounded, rate-aware background checks.
+              Close resolved issues, preserve useful history and distinguish provider outages from
+              revoked credentials.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              See expiring or broken access with affected projects and a repair action. Snooze,
+              unsnooze, dismiss a stale warning or recheck after a fix. Repeated failures update one
+              issue instead of sending repeated alerts.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Reduces interruptions and prevents authentication failures from becoming scattered
+              chores.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses item metadata, usage events and optional validation adapters. Can work with
+              manual expiry before automated rotation exists. Unlocks maintenance planning and
+              renewal automation.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>Choose warning windows, history retention and notification destinations.</li>
+              <li>
+                When may a connector check automatically, and which services require an explicit
+                check?
+              </li>
+            </ul>
+            <p><a href="./L77-vault-health/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="minor"
+          data-search="v06 l77 explain access and preview changes explain effective credential access and the impact of changing it."
+        >
+          <p class="eyebrow">V06 · L78 · Medium effort · High impact</p>
+          <h3>Explain access and preview changes</h3>
+          <p>Explain effective credential access and the impact of changing it.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Expose the same policy evaluator used at execution as an authorized explanation
+              service. Join grant provenance, bindings, recent safe usage and pending requests.
+              Preview a versioned policy or removal against known consumers without claiming
+              knowledge of external copies.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Open Why this access? from an item, denial or run. See the actual account, granting
+              rule and affected projects; preview a change, inspect its scope, then apply or abandon
+              it.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Keeps Vault understandable as access relationships grow and makes denials repairable.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses the shared evaluator, metadata and minimum audit interfaces. Approval and
+              rotation features add relationships when present. Unlocks access reviews and more
+              reliable support diagnostics.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>Which usage details may project members see versus Vault administrators?</li>
+              <li>What audit history window should explanations include by default?</li>
+            </ul>
+            <p>
+              <a href="./L78-vault-access-inspector/README.md">Read the seven-document packet</a>
+            </p>
+          </details>
+        </article>
+      </section>
+      <section id="major">
+        <h2>Major Features, Systems &amp; Refactors</h2>
+        <article
+          data-group="major"
+          data-search="v07 l78 encrypted vault and self-hosted control plane create the shared home for development credentials and extensible secure records on kyle&#x27;s infrastructure."
+        >
+          <p class="eyebrow">V07 · L79 · Large effort · Transformational impact</p>
+          <h3>Encrypted Vault and self-hosted control plane</h3>
+          <p>
+            Create the shared home for development credentials and extensible secure records on
+            Kyle&#x27;s infrastructure.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Provide authenticated metadata and encrypted versioned payload storage behind a
+              backend adapter. Host the authority alongside the begam.in/Loom platform on the VPS if
+              that deployment is selected. Separate human platform identity, machine enrollment,
+              storage-key custody and workload grants.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Manage named SSH keys, service connections, account records, secure notes and secure
+              files through one Vault surface. Create, inspect metadata, replace, archive, restore
+              and explicitly delete records, with clear locked and unavailable states.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Establishes a reusable platform capability instead of a separate secret store for each
+              integration.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Owns the storage/control-plane implementation of proposed ext-vault interfaces. All
+              other proposals consume that boundary rather than this packet&#x27;s UI. Baseline
+              audit, durable writes and a proven backup/restore path are required before real
+              credentials; V16 adds full recovery management.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                D1 resolved: self-hosted OpenBao selected by Kyle; production custody remains open.
+              </li>
+              <li>
+                D2: Who can decrypt stored values, where are wrapping keys kept, and how is
+                unattended unlock recovered?
+              </li>
+              <li>
+                D3: How does the existing platform identify a human Vault owner without assuming
+                unverified production auth contracts?
+              </li>
+            </ul>
+            <p><a href="./L79-vault-core/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v08 l79 enrolled machines and headless brokers give each execution host a durable identity and reliable unattended credential access."
+        >
+          <p class="eyebrow">V08 · L80 · Large effort · Transformational impact</p>
+          <h3>Enrolled machines and headless brokers</h3>
+          <p>
+            <strong>In progress:</strong> reviewed public-key enrollment, fingerprint approval,
+            permanent disable and online heartbeat presence are implemented across web/mobile and a
+            foreground macOS/Linux runner. Workload delivery, SSH and boot startup remain pending.
+          </p>
+          <p>
+            Give each execution host a durable identity and reliable unattended credential access.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Enroll a host through a reviewed, expiring challenge, then issue a renewable machine
+              identity held outside projects. A local broker exposes authenticated per-workload
+              channels and obtains bounded use leases. Report boot, unlock, reconnect, disable and
+              re-enrollment states explicitly.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Enroll Dorothy from a remote client, see whether its service can start unattended, and
+              inspect the actual runner context. Disable a lost host, re-enroll a replacement and
+              see the limits of outstanding leases.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Removes reliance on an interactive personal desktop session and gives remote workers a
+              consistent setup.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Implements the broker portion of ext-vault; optional delivery adapters register
+              capabilities. Unlocks SSH, CI and runner integrations. Must work without V14
+              interactive approvals by accepting already granted access or returning a precise
+              denial.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                D4: Which macOS, Linux and Windows broker modes are in the initial supported matrix?
+              </li>
+              <li>
+                D5: Is offline use required at launch, and what maximum revocation delay is
+                acceptable?
+              </li>
+            </ul>
+            <p><a href="./L80-vault-brokers/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v09 l80 agent identities and persistent access grants authorize recurring agent work at a useful scope without granting access to the personal vault."
+        >
+          <p class="eyebrow">V09 · L81 · Large effort · Transformational impact</p>
+          <h3>Agent identities and persistent access grants</h3>
+          <p>
+            Authorize recurring agent work at a useful scope without granting access to the personal
+            vault.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Authenticate machine and workload principals separately. Evaluate grants against
+              immutable item IDs, actions, intended destinations, project identity and time bounds.
+              Child tasks receive a provable subset; human approval creates a specific grant or
+              single-use decision rather than a blanket bypass.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Grant a runner access to selected repositories or hosts, inspect inherited
+              permissions, suspend a grant, shorten it or revoke it. A request outside the grant
+              yields one clear explanation.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Makes unattended work predictable while keeping access ownership visible and
+              changeable.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Implements ext-vault policy and principal interfaces. Metadata readers, SSH and
+              connectors share the evaluator. Optional approvals consume its decisions; missing
+              approval UI means a typed denial, not automatic permission.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                D6: What are the initial grant scopes and conflict precedence, and are deny rules
+                necessary?
+              </li>
+              <li>
+                Which workloads need OS-user or container isolation beyond broker authorization?
+              </li>
+            </ul>
+            <p><a href="./L81-vault-grants/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v10 l81 ssh key management and loom ssh agent use dedicated loom-managed ssh keys for development connections and git operations."
+        >
+          <p class="eyebrow">V10 · L82 · Large effort · High impact</p>
+          <h3>SSH key management and Loom SSH agent</h3>
+          <p>Use dedicated Loom-managed SSH keys for development connections and Git operations.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Generate or explicitly import keys, keep private material behind the broker signing
+              interface, and track public-key registrations and host trust independently. Give
+              workloads a restricted identity set through platform-appropriate agent transport.
+              Validate destination constraints using supported SSH mechanisms or a mediated
+              connection, not an assumed hostname in generic signing requests.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Create a development key, copy its public key, register it on selected hosts, test
+              access and replace or revoke it. A changed host key is a separate reviewed trust
+              action. Personal 1Password settings remain untouched.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Directly addresses repeated personal key-manager approvals while retaining SSH
+              workflows.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses storage, broker and policy interfaces plus SSH adapters. Account connectors may
+              automate public-key registration when available; otherwise provide explicit manual
+              registration. Unlocks remote workers and optional future commit signing.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Generated keys and host pins use Ed25519; imports and further algorithms remain
+                open.
+              </li>
+              <li>
+                D7: The implemented slice uses mediated host-bound connections with no forwarding.
+                General runner sockets and Windows transports remain open.
+              </li>
+              <li>
+                Is commit signing part of a later extension of this packet? It is not required by
+                the current SSH outcome.
+              </li>
+            </ul>
+            <p><a href="./L82-vault-ssh/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v11 l82 developer service accounts and authentication connectors manage github and other developer service identities as tested, renewable connections."
+        >
+          <p class="eyebrow">V11 · L83 · Large effort · High impact</p>
+          <h3>Developer service accounts and authentication connectors</h3>
+          <p>
+            <strong>In progress:</strong> dedicated github.com App/token connections, verified
+            repository API access and scoped headless GH operations work locally. Web and native
+            management keep personal credentials separate. Named project bindings, version 2
+            portable requirements and configuration/grant launch checks are implemented. Explicit
+            terminal gh/Git HTTPS routing and cancellable live readiness work locally. Persistent
+            shell activation, broader onboarding and provider revocation remain selected.
+          </p>
+          <p>
+            Manage GitHub and other developer service identities as tested, renewable connections.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Use service-supported OAuth, app installations, tokens or service accounts. Store
+              identity metadata and refresh material through Vault; supply API and Git credentials
+              through the selected broker adapter. Record supported operations and repository reach
+              instead of interpreting sign-in as universal access.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Connect GitHub, review the account and permissions, select it for a project and test
+              API plus Git access. Reconnect, replace, disconnect or request provider revocation
+              with an explicit result.
+            </p>
+            <h4>Product value</h4>
+            <p>Fixes the split where pull requests work but fetch/push or another runner fails.</p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses shared storage, grants and delivery interfaces. Starts with GitHub; other
+              connectors register independently and do not become compulsory dependencies. Unlocks
+              registries, deployments and infrastructure providers.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                D8: App/token mechanisms are implemented locally. Broader onboarding and
+                service-account ownership remain open.
+              </li>
+              <li>
+                Which additional services are initial commitments versus later connector
+                implementations?
+              </li>
+            </ul>
+            <p><a href="./L83-vault-connectors/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v12 l83 test account collections and provisioning manage application test identities as reusable, isolated qa resources."
+        >
+          <p class="eyebrow">V12 · L84 · Massive effort · Transformational impact</p>
+          <h3>Test account collections and provisioning</h3>
+          <p>Manage application test identities as reusable, isolated QA resources.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Organize accounts by app, environment and role, with encrypted login and optional
+              TOTP/session material. Adapters can provision, reset, reserve and retire accounts.
+              Reserve atomically with an expiring lease and quarantine dirty accounts until reset
+              succeeds. Optional development inbox adapters retrieve verification messages for
+              dedicated test domains.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Ask for an unused staging editor account, inspect the selected identity, use it for a
+              test, then release it. A failed reset shows why the account is unavailable. Personal
+              accounts stay out of the collection.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Makes multi-role and parallel QA repeatable without filling a personal password
+              manager with test identities.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses account records, grants and delivery interfaces. Provisioning and mail adapters
+              are optional capabilities; stored accounts remain usable without automatic creation.
+              Unlocks disposable environments, seeded scenarios and parallel test workers.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which application and test environment should supply the first provisioning adapter?
+              </li>
+              <li>
+                Which owned test-mail domain and mail service should be used, and what cleanup rules
+                apply?
+              </li>
+              <li>
+                How should shared accounts differ from exclusive reservations, and which sessions
+                may be reused?
+              </li>
+            </ul>
+            <p><a href="./L84-vault-test-accounts/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v13 l84 credential delivery api, cli, and runner integrations give agents, developer tools and automation one consistent way to consume vault access."
+        >
+          <p class="eyebrow">V13 · L85 · Large effort · Transformational impact</p>
+          <h3>Credential delivery API, CLI, and runner integrations</h3>
+          <p>
+            <strong>In progress:</strong> active-run-bound workload check sessions now require
+            machine and workload proofs and current use grants. Actual SSH/Git delivery and
+            automatic launch attachment remain pending.
+          </p>
+          <p>
+            Give agents, developer tools and automation one consistent way to consume Vault access.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Provide a broker-backed CLI, SDK and MCP facade over shared use requests. Prefer
+              purpose-specific SSH agents, Git helpers and authenticated service calls; support
+              scoped environment and temporary-file delivery where tools require raw secrets. Keep
+              management APIs separate from delivery and attach workload identity at launch.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Attach a profile to a Loom task or run a CLI command under a selected profile. See
+              which account and delivery method are in use. Cancel the command and clean up its
+              temporary material. Pi and other runners use the same bindings.
+            </p>
+            <h4>Product value</h4>
+            <p>Prevents bespoke credential plumbing across every provider, script and plugin.</p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Implements ext-vault delivery adapters and workload launch integration. Uses storage,
+              broker and grants interfaces without requiring every connector. Unlocks external
+              developer tooling, CI and plugins.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which delivery modes must the initial SDK support, and which tools require
+                unavoidable raw-value delivery?
+              </li>
+              <li>
+                How are externally launched CLI processes authenticated without treating a project
+                path as identity?
+              </li>
+            </ul>
+            <p><a href="./L85-vault-delivery/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v14 l85 remote approvals and temporary access resolve exceptional vault access requests from the device kyle is using."
+        >
+          <p class="eyebrow">V14 · L86 · Large effort · High impact</p>
+          <h3>Remote approvals and temporary access</h3>
+          <p>Resolve exceptional Vault access requests from the device Kyle is using.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Persist a request bound to principal, item/action, destination, policy revision and
+              expiry. Notify eligible approvers through the platform; allow once, grant a bounded
+              duration, deny or cancel. Resume only the still-valid requesting operation after the
+              decision is committed.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              Approve a new development access request from mobile while Dorothy waits visibly.
+              Inspect the requesting task and account. Cancel, deny or let the request expire;
+              existing grants continue without new prompts.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Removes physical proximity from supported authorization workflows without
+              reintroducing approval fatigue.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses the shared grant evaluator and durable request interface. Existing grants work
+              without this packet. Notification transports are adapters, so absence does not block
+              viewing requests in Loom. Unlocks step-up access for sensitive operations.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Who may approve an agent request, and which actions require fresh human
+                authentication?
+              </li>
+              <li>Choose the initial notification channel and the lifetime of pending requests.</li>
+            </ul>
+            <p><a href="./L86-vault-approvals/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v15 l86 credential lifecycle automation and short-lived access issue temporary access and rotate long-lived credentials without losing track of consumers."
+        >
+          <p class="eyebrow">V15 · L87 · Massive effort · High impact</p>
+          <h3>Credential lifecycle automation and short-lived access</h3>
+          <p>
+            Issue temporary access and rotate long-lived credentials without losing track of
+            consumers.
+          </p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Adapters issue expiring credentials or certificates where supported. Rotation prepares
+              a replacement, validates selected consumers, cuts over bindings, then retires the old
+              version when the provider permits overlap. Track partial results and reconcile
+              retries; providers allowing only one valid secret require an explicit interruption
+              strategy.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              See leases and renewal status, review a prepared rotation and its affected projects,
+              pause automation or repair a failed consumer. Emergency revoke reports which upstream
+              credentials were actually revoked.
+            </p>
+            <h4>Product value</h4>
+            <p>Reduces manual renewal and static-secret sprawl as automation grows.</p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses provider capability, lease, usage and versioned-binding interfaces. Works with
+              one selected issuance adapter; cannot claim rotation for an unsupported service.
+              Unlocks task-duration SSH certificates, temporary database users and disposable
+              infrastructure.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                Which issuer should ship first: SSH certificates, a development service token or
+                temporary database users?
+              </li>
+              <li>What renewal, overlap and emergency-revocation policies are acceptable?</li>
+            </ul>
+            <p><a href="./L87-vault-lifecycle/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+        <article
+          data-group="major"
+          data-search="v16 l87 backup, recovery, and portability make the self-hosted vault recoverable and movable without losing access control."
+        >
+          <p class="eyebrow">V16 · L88 · Large effort · High impact</p>
+          <h3>Backup, recovery, and portability</h3>
+          <p>Make the self-hosted Vault recoverable and movable without losing access control.</p>
+          <details>
+            <summary>Product details and design questions</summary>
+            <h4>How it works</h4>
+            <p>
+              Create encrypted consistent backups covering payloads, metadata and required policy
+              state. Keep recovery material separately managed. Restore into an isolated
+              destination, verify decryption and policy integrity, then explicitly promote it with
+              old-machine trust reviewed or invalidated.
+            </p>
+            <h4>User experience</h4>
+            <p>
+              See last verified recovery, download an encrypted export, perform a recovery exercise
+              and move servers through a reviewed workflow. Lost-device recovery shows what access
+              can be disabled and what downstream credentials need rotation.
+            </p>
+            <h4>Product value</h4>
+            <p>
+              Preserves ownership and makes Vault dependable as a shared infrastructure dependency.
+            </p>
+            <h4>Dependencies and opportunities</h4>
+            <p>
+              Uses backend snapshot/export, key-custody and machine-revocation interfaces. Builds on
+              the minimum restore capability required by ext-vault rather than postponing all
+              backups. Unlocks server migration and future hosting changes.
+            </p>
+            <h4>Open decisions</h4>
+            <ul>
+              <li>
+                D9: Choose backup destination, retention, recovery owner and acceptable recovery
+                time/data loss.
+              </li>
+              <li>
+                How is authoritative revocation state recovered when the original server and its
+                latest log are unavailable?
+              </li>
+            </ul>
+            <p><a href="./L88-vault-recovery/README.md">Read the seven-document packet</a></p>
+          </details>
+        </article>
+      </section>
+      <section>
+        <h2>Implementation decisions</h2>
+        <div class="decision">
+          <strong>D1 · Engine selected</strong>Self-hosted OpenBao behind Loom UI, account model and
+          broker. The 2.7.1 encrypted-record proof passed. L79 is in progress.
+        </div>
+        <div class="decision">
+          <strong>D2–D4 · Identity and operation</strong>Settle key custody and recovery, verify
+          platform auth, and choose the supported host/service matrix.
+        </div>
+        <div class="decision">
+          <strong>D5–D7 · Access guarantees</strong>Decide offline lease bounds, grant/delegation
+          semantics and enforceable SSH destination controls.
+        </div>
+        <div class="decision">
+          <strong>D8–D9 · Integrations and recovery</strong>Select first service and account
+          adapters, backup destination and recovery ownership.
+        </div>
+      </section>
+      <section>
+        <h2>Highest ROI</h2>
+        <p>
+          Headless broker and SSH agent, GitHub integration, readiness checks and reusable
+          environment profiles, backed by adequate storage and policy foundations.
+        </p>
+        <h2>Strategic long-term value</h2>
+        <p>
+          Shared Vault authority, broker and grants; test-account provisioning; consistent delivery;
+          lifecycle automation; verified recovery and portability.
+        </p>
+        <h2>Quick wins</h2>
+        <p>
+          Runner-context diagnostics, personal-credential dependency inventory, stable references
+          for stored secrets and consolidated expiration warnings. These are early slices, not
+          substitutes for the complete scope.
+        </p>
+      </section>
+      <footer>
+        Packet Markdown is authoritative. Filters only change this view; they do not select or
+        authorize deployment.
+      </footer>
+    </main>
+    <script>
+      (function () {
+        const query = document.getElementById("query");
+        const cards = Array.from(document.querySelectorAll("article"));
+        const buttons = Array.from(document.querySelectorAll("[data-filter]"));
+        let group = "all";
+        function update() {
+          const words = query.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+          let visible = 0;
+          for (const card of cards) {
+            const match =
+              (group === "all" || card.dataset.group === group) &&
+              words.every((word) => card.dataset.search.includes(word));
+            card.hidden = !match;
+            if (match) visible++;
+          }
+          for (const id of ["minor", "major"])
+            document.getElementById(id).hidden = !cards.some(
+              (card) => card.dataset.group === id && !card.hidden,
+            );
+          document.getElementById("count").textContent =
+            visible + " proposal" + (visible === 1 ? "" : "s") + " shown";
+        }
+        query.addEventListener("input", update);
+        for (const button of buttons)
+          button.addEventListener("click", function () {
+            group = button.dataset.filter;
+            for (const other of buttons)
+              other.setAttribute("aria-pressed", String(other === button));
+            update();
+          });
+      })();
+    </script>
+  </body>
+</html>

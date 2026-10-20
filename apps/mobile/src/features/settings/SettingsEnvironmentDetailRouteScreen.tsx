@@ -1,3 +1,4 @@
+import { VaultSettingsSection } from "../../fork/vault/VaultSettingsSection"; // fork: vault-core
 // fork: brand - Remote hosts may run upstream T3 Code or Loom.
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
@@ -9,6 +10,10 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  OS_MANAGED_RUNTIME_NOTE,
+  runtimeManagedByOperatingSystem,
+} from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -95,6 +100,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const version = config?.environment.serverVersion;
   const checkedRelease = release?.fromVersion === version ? release : null;
   const capabilities = config?.environment.capabilities;
+  const osManaged = runtimeManagedByOperatingSystem(capabilities); // fork: runtime-owner
 
   async function run(label: string, action: () => Promise<void>) {
     if (pendingRef.current) return;
@@ -196,6 +202,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             {/* fork: computer-naming - One name follows the computer across clients. */}
             <ComputerNameSection environmentId={environmentId} connected={connected} />
             <ComputerConnectSection environmentId={environmentId} connected={connected} />
+            {/* fork: vault-core */}
+            <VaultSettingsSection environmentId={environmentId} connected={connected} />
             <SettingsSection title="Connection">
               <ConnectionEnvironmentRow
                 environment={environment}
@@ -264,7 +272,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           : "You are up to date."}
                       </Text>
                     ) : null}
-                    {!supportsEnvironmentUpdate(config.environment.capabilities) ? (
+                    {osManaged ? ( // fork: runtime-owner
+                      <Text className="text-sm text-foreground-muted">
+                        {OS_MANAGED_RUNTIME_NOTE}
+                      </Text> // fork: runtime-owner
+                    ) : !supportsEnvironmentUpdate(config.environment.capabilities) ? ( // fork: runtime-owner
                       <Text className="text-sm text-foreground-muted">
                         {capabilities?.serverSelfUpdate === "desktop-managed"
                           ? "Update the desktop app on this machine."
@@ -275,7 +287,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   <SettingsActionRow
                     icon="arrow.clockwise"
                     label="Check for updates"
-                    disabled={disabled}
+                    disabled={disabled || osManaged} // fork: runtime-owner
                     loading={pending === "check"}
                     onPress={() => {
                       if (disabled) return;

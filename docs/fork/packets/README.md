@@ -10,6 +10,11 @@ Start with [IMPLEMENT-NOW.md](./IMPLEMENT-NOW.md) for the current selected queue
 pending decisions. Older readiness labels and build waves do not authorize starting a
 packet outside that queue.
 
+[Loom Vault](./LOOM-VAULT.md) tracks all sixteen selected implementation packets (V01 to V16,
+L73 to L88). Kyle authorized implementation and selected OpenBao. L79 encrypted records and
+L81/L78/L73 policy, inspector and server-readiness milestones are **In progress**. Other Vault
+packets remain selected and queued; no deployment is authorized.
+
 Read these before touching a packet:
 
 - [CONVENTIONS.md](./CONVENTIONS.md): where fork code lives, naming, seam markers, commits,
@@ -223,13 +228,30 @@ means the packet registers nothing in server core and needs it only as the prere
 | L70 | [`pcb-variant-sweeps`](./L70-pcb-variant-sweeps/)         | Sweep tscircuit parameters into a thumbnail grid, compare and promote.                                                     | PCB follow-ups, Kyle 2026-10-10  | none new (L24's)                                                        | Implemented locally; client/CAD checks pending                      |
 | L71 | [`model-preview-parity`](./L71-model-preview-parity/)     | Bring the Loom 3D widget's feature packets F1 to F8 into the 3D panel.                                                     | 3D parity, Kyle 2026-10-14       | none new (L23's)                                                        | Implemented; real-client checks pending                             |
 | L72 | [`preview-links`](./L72-preview-links/)                   | Share ports, built folders and containers at private HTTPS links, and publish pages to the Library.                        | Hosted previews, Kyle 2026-10-18 | core, root, settings, palette, mcp                                      | Implemented on `main`; Library deploy and client checks pending     |
+| L73 | [`vault-readiness`](./L73-vault-readiness/)               | Prove an environment can perform its configured unattended work before launching a task.                                   | Vault V01, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; local milestone                                        |
+| L74 | [`vault-references`](./L74-vault-references/)             | Attach named Vault items without copying their values into prompts or settings.                                            | Vault V02, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; SSH/Git/GitHub profiles, launch/recovery, retention    |
+| L75 | [`vault-migration`](./L75-vault-migration/)               | Replace selected interactive development dependencies with dedicated Vault credentials.                                    | Vault V03, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
+| L76 | [`vault-profiles`](./L76-vault-profiles/)                 | Bind a complete set of development accounts, credentials and endpoints to a named project environment.                     | Vault V04, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; SSH/Git/GitHub profiles, launch/recovery, retention    |
+| L77 | [`vault-health`](./L77-vault-health/)                     | Collect expiration and authentication maintenance into one actionable inbox.                                               | Vault V05, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
+| L78 | [`vault-access-inspector`](./L78-vault-access-inspector/) | Explain effective credential access and the impact of changing it.                                                         | Vault V06, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; local milestone                                        |
+| L79 | [`vault-core`](./L79-vault-core/)                         | Create the shared home for development credentials and extensible secure records on Kyle's infrastructure.                 | Vault V07, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; encrypted-record foundation                            |
+| L80 | [`vault-brokers`](./L80-vault-brokers/)                   | Give each execution host a durable identity and reliable unattended credential access.                                     | Vault V08, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; enrollment/heartbeat foundation                        |
+| L81 | [`vault-grants`](./L81-vault-grants/)                     | Authorize recurring agent work at a useful scope without granting access to the personal vault.                            | Vault V09, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; local milestone                                        |
+| L82 | [`vault-ssh`](./L82-vault-ssh/)                           | Use dedicated Loom-managed SSH keys for development connections and Git operations.                                        | Vault V10, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; mediated/terminal SSH/Git and client management        |
+| L83 | [`vault-connectors`](./L83-vault-connectors/)             | Manage GitHub and other developer service identities as tested, renewable connections.                                     | Vault V11, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; GitHub profiles, terminal routing and readiness        |
+| L84 | [`vault-test-accounts`](./L84-vault-test-accounts/)       | Manage application test identities as reusable, isolated QA resources.                                                     | Vault V12, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
+| L85 | [`vault-delivery`](./L85-vault-delivery/)                 | Give agents, developer tools and automation one consistent way to consume Vault access.                                    | Vault V13, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | In progress; hosted run and command-scoped GitHub access            |
+| L86 | [`vault-approvals`](./L86-vault-approvals/)               | Resolve exceptional Vault access requests from the device Kyle is using.                                                   | Vault V14, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
+| L87 | [`vault-lifecycle`](./L87-vault-lifecycle/)               | Issue temporary access and rotate long-lived credentials without losing track of consumers.                                | Vault V15, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
+| L88 | [`vault-recovery`](./L88-vault-recovery/)                 | Make the self-hosted Vault recoverable and movable without losing access control.                                          | Vault V16, Kyle 2026-10-17       | existing fork registries; `ext-vault`                                   | Selected; queued                                                    |
 
 L22, L25 and L26 came from the review of the reference repositories, and L29 (retired on
 2026-10-09) from settling the packet questions; Kyle confirmed all four on 2026-09-24.
 
 ## Settled decisions
 
-Every open question was settled with Kyle on 2026-09-24. Each packet records its answers in
+For the packets reviewed on 2026-09-24, the open questions were settled with Kyle. Later
+proposals, including Loom Vault, retain their own explicit open decisions. Each reviewed packet records its answers in
 the "Decisions" list of its `PRODUCT.md` (L15 also in `DESIGN-SESSION.md`, section 7), and
 features deferred by an answer appear in its README as "Follow-up: ...". Decisions that span
 packets:
