@@ -203,7 +203,7 @@ it.effect("Mini workers require admin maintenance and job dispatch requires term
       invoked = true;
       return "executed";
     });
-    for (const method of [O.register, O.setEnabled, O.prepare]) {
+    for (const method of [O.register, O.setEnabled, O.prepare, O.updateWorker, O.removeWorker]) {
       const error = yield* auth([AuthOrchestrationReadScope, AuthTerminalOperateScope])
         .effect(method, work)
         .pipe(Effect.flip);

@@ -7,6 +7,9 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
+/** Computers advertise this when a worker's connection can be changed and a worker removed. */
+export const MINI_WORKER_EDIT_FEATURE = "mini-worker-edit";
+
 export function createMiniOffloadAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -53,6 +56,14 @@ export function createMiniOffloadAtoms<R, E>(
     setEnabled: createEnvironmentRpcCommand(runtime, {
       label: "loom:mini-enabled",
       tag: M.setEnabled,
+    }),
+    updateWorker: createEnvironmentRpcCommand(runtime, {
+      label: "loom:mini-update-worker",
+      tag: M.updateWorker,
+    }),
+    removeWorker: createEnvironmentRpcCommand(runtime, {
+      label: "loom:mini-remove-worker",
+      tag: M.removeWorker,
     }),
     submit: createEnvironmentRpcCommand(runtime, { label: "loom:mini-submit", tag: M.submit }),
     recover: createEnvironmentRpcCommand(runtime, { label: "loom:mini-recover", tag: M.recover }),

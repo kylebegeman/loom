@@ -39,8 +39,15 @@ An administrator can add a destination under **Worker connections** or
 **Settings → Loom → Command workers**. SSH keys and verified
 host keys must already work on the Loom server. Enter a name and its SSH host alias, then use the connection check to see capacity and missing project tools. An administrator can start an already installed queue worker from the setup result. Mini's SSD storage and job queue
 must be enabled on the worker. Disabling a worker prevents new submissions;
-existing jobs remain inspectable, cancellable and recoverable. A destination's
-connection cannot change under its existing ID.
+existing jobs remain inspectable, cancellable and recoverable.
+
+If the same worker moved or its SSH setup changed, choose **Change connection**
+on its row and enter the new host alias. Its earlier jobs use the new connection
+too. Add a different computer as a new worker instead. **Remove** stops new
+commands to a worker; its earlier jobs stay listed and keep the connection saved
+with them. When the connection check says SSH refused the worker's host key,
+the worker was probably reinstalled or replaced: confirm its new key, update
+`known_hosts` on the Loom server, then check again.
 
 The snapshot contains the committed revision only, up to 1 GiB before
 compression. Loom sends it compressed, which needs LoomOS 0.1.13 or later on the
@@ -78,12 +85,15 @@ Agents can use `loom_mini_workers`, `loom_mini_submit`, `loom_mini_recover`,
 a verified file manifest and missing-file list. Binary content is omitted by
 default; `includeBundle: true` explicitly returns the tar as base64.
 Their jobs belong to the calling thread. Submit and recover require a live
-full-access thread in default mode. Agents cannot register SSH connections.
-Command-worker registration requires environment maintenance access; submit,
-recover and cancel require terminal access. Reads require orchestration read access.
+full-access thread in default mode. Agents cannot register new workers. With
+full access, `loom_mini_worker_update` changes a moved worker's connection and
+`loom_mini_worker_remove` removes a worker.
+Registering, changing and removing command workers requires environment
+maintenance access; submit, recover and cancel require terminal access. Reads
+require orchestration read access.
 
 Computers and Command jobs are available in web and desktop Loom. Native mobile
-uses its existing environment connections and has no dedicated Computers page or
-Command jobs panel in this release. Automatic worker selection and moving an
+lists its environment connections under **Settings → Computers**, but has no
+Command jobs panel or command-worker controls in this release. Automatic worker selection and moving an
 existing conversation between computers remain separate features; starting a
 new conversation on a native environment uses the ordinary Loom flow.

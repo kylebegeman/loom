@@ -260,6 +260,9 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(newRequestId);
   const enabledWorkers = workers.filter((worker) => worker.enabled);
+  // A chosen worker that was since disabled or removed falls back to the first enabled one.
+  const destinationId =
+    (enabledWorkers.find((worker) => worker.id === workerId) ?? enabledWorkers[0])?.id ?? "";
   const selectedReceipt =
     receipts.find((receipt) => receipt.request.requestId === selected) ?? receipts[0];
   const refresh = useCallback(() => {
@@ -326,7 +329,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                   input: {
                     threadId,
                     requestId,
-                    workerId: workerId || enabledWorkers[0]?.id || "",
+                    workerId: destinationId,
                     label:
                       label.trim() ||
                       command.trim().split("\n")[0]!.replace(/\s+/g, " ").slice(0, 80),
@@ -364,10 +367,8 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                 key={worker.id}
                 type="button"
                 size="sm"
-                variant={
-                  (workerId || enabledWorkers[0]?.id) === worker.id ? "secondary" : "outline"
-                }
-                aria-pressed={(workerId || enabledWorkers[0]?.id) === worker.id}
+                variant={destinationId === worker.id ? "secondary" : "outline"}
+                aria-pressed={destinationId === worker.id}
                 disabled={action.busy}
                 onClick={() => setWorkerId(worker.id)}
               >

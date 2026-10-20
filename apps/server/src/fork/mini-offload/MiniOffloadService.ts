@@ -23,6 +23,8 @@ import {
   type MiniAgentArtifacts,
   MiniWorkerRef,
   MiniWorkerReadiness,
+  type MiniWorkerConnection,
+  MINI_HOST_KEY_MISMATCH,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -231,6 +233,13 @@ export class MiniOffloadService extends Context.Service<
       workerId: string;
       enabled: boolean;
     }) => Effect.Effect<Pick<MiniWorker, "id" | "name" | "enabled">, MiniOffloadError>;
+    readonly updateWorker: (
+      input: MiniWorkerConnection,
+    ) => Effect.Effect<Pick<MiniWorker, "id" | "name" | "enabled">, MiniOffloadError>;
+    /** Removes a worker. Its receipts stay, so earlier jobs can still be inspected while it is gone. */
+    readonly removeWorker: (
+      input: MiniWorkerRef,
+    ) => Effect.Effect<Pick<MiniWorker, "id" | "name" | "enabled">, MiniOffloadError>;
     readonly submit: (input: MiniSubmit) => Effect.Effect<MiniReceipt, MiniOffloadError>;
     readonly recover: (input: MiniRef) => Effect.Effect<MiniReceipt, MiniOffloadError>;
     readonly list: (
@@ -338,6 +347,17 @@ const make = Effect.gen(function* () {
           if (--entry.count === 0) requestLocks.delete(rid);
         }),
     );
+  // A receipt reaches its worker the way the registry says now, so changing a moved worker's
+  // connection also reaches its earlier jobs. A removed worker keeps the connection saved with them.
+  const destination = (stored: Stored) =>
+    registryLock.withPermit(source.list).pipe(
+      Effect.map((workers) => {
+        const current = workers.find((worker) => worker.id === stored.worker.id);
+        return current
+          ? { ...stored.worker, target: current.target, sshConfig: current.sshConfig }
+          : stored.worker;
+      }),
+    );
   const send = Effect.fn("MiniOffload.send")(function* (stored: Stored) {
     const receipt = stored.receipt;
     const request = receipt.request;
@@ -350,7 +370,7 @@ const make = Effect.gen(function* () {
     if (!valid) return yield* fail("storage");
     const response = yield* decode(
       Received,
-      yield* ssh.request(stored.worker, "receive", receiveSpec(stored), archive),
+      yield* ssh.request(yield* destination(stored), "receive", receiveSpec(stored), archive),
     );
     if (
       response.request_id !== request.requestId ||
@@ -368,12 +388,13 @@ const make = Effect.gen(function* () {
     return next.receipt;
   });
   const rpc = (stored: Stored, action: "show" | "cancel" | "logs" | "patch" | "artifacts") => {
-    if (stored.receipt.job === null) return fail("transfer");
-    return ssh.request(stored.worker, "rpc", {
-      schema_version: 1,
-      action,
-      job_id: stored.receipt.job.id,
-    });
+    const job = stored.receipt.job;
+    if (job === null) return fail("transfer");
+    return destination(stored).pipe(
+      Effect.flatMap((worker) =>
+        ssh.request(worker, "rpc", { schema_version: 1, action, job_id: job.id }),
+      ),
+    );
   };
   const refresh = Effect.fn("MiniOffload.refresh")(function* (
     input: MiniRef,
@@ -418,7 +439,13 @@ const make = Effect.gen(function* () {
         nativeServerRunning: false,
         outputBundles: false,
         missingTools: [],
-        reasons: [prepare ? "prepare_failed" : "connection_failed"],
+        reasons: [
+          Ssh.isHostKeyRejected(result.failure)
+            ? MINI_HOST_KEY_MISMATCH
+            : prepare
+              ? "prepare_failed"
+              : "connection_failed",
+        ],
       };
     }
     const caps = result.success;
@@ -484,6 +511,10 @@ const make = Effect.gen(function* () {
     register: (input) => registryLock.withPermit(source.register(input)).pipe(Effect.map(summary)),
     setEnabled: (input) =>
       registryLock.withPermit(source.setEnabled(input)).pipe(Effect.map(summary)),
+    updateWorker: (input) =>
+      registryLock.withPermit(source.update(input)).pipe(Effect.map(summary)),
+    removeWorker: (input) =>
+      registryLock.withPermit(source.remove(input)).pipe(Effect.map(summary)),
     submit: (input) =>
       decode(MiniSubmit, input).pipe(
         Effect.flatMap((request) =>

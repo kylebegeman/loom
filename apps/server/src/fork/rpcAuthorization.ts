@@ -144,6 +144,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [O.workers]: AuthOrchestrationReadScope,
   [O.register]: AuthEnvironmentMaintainScope,
   [O.setEnabled]: AuthEnvironmentMaintainScope,
+  [O.updateWorker]: AuthEnvironmentMaintainScope,
+  [O.removeWorker]: AuthEnvironmentMaintainScope,
   [O.submit]: AuthTerminalOperateScope,
   [O.recover]: AuthTerminalOperateScope,
   [O.cancel]: AuthTerminalOperateScope,

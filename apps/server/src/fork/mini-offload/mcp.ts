@@ -7,6 +7,7 @@ import {
   MiniAgentArtifacts,
   MiniWorkerSummary,
   MiniWorkerRef,
+  MiniWorkerConnection,
   MiniWorkerReadiness,
   MiniOffloadError,
 } from "@t3tools/contracts/fork";
@@ -24,7 +25,7 @@ const failure = Schema.Union([MiniOffloadError, OrchestratorMcpFailure]);
 export const MiniOffloadToolkit = Toolkit.make(
   Tool.make("loom_mini_workers", {
     description:
-      "List registered LoomOS Mini destinations. Registration is administrator controlled; these jobs run trusted repository commands, not a new Loom conversation.",
+      "List registered LoomOS Mini destinations. Registering, changing and removing workers is administrator controlled; these jobs run trusted repository commands, not a new Loom conversation.",
     parameters: Tool.EmptyParams,
     success: Schema.Array(MiniWorkerSummary),
     failure,
@@ -38,6 +39,24 @@ export const MiniOffloadToolkit = Toolkit.make(
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_mini_worker_update", {
+    description:
+      "Point a registered worker at a new SSH host alias, with an optional absolute SSH config path on this computer, after the same worker moved or its connection broke. Its ID, name and enabled state stay, and its earlier jobs use the new connection. Register a different computer as a new worker instead. Requires full access.",
+    parameters: MiniWorkerConnection,
+    success: MiniWorkerSummary,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_mini_worker_remove", {
+    description:
+      "Remove a registered worker from this computer so it gets no new jobs. Its earlier jobs stay listed and keep the connection saved with them. Requires full access.",
+    parameters: MiniWorkerRef,
+    success: MiniWorkerSummary,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  }).annotate(Tool.Destructive, true),
   Tool.make("loom_mini_submit", {
     description:
       "Offload this thread's committed repository snapshot, up to 1 GiB, to a registered Mini worker. Supply a stable 32-character lowercase hex requestId. Save it before calling. Local changes need a commit or explicit committedOnly. Use recover after uncertain acceptance, never a different worker or request ID. SDKs and provider credentials must already exist on the worker. Optional outputs lists up to 32 exact repository-relative files to retain, including ignored build files, up to 60 MiB total.",
@@ -134,10 +153,23 @@ export const miniOffloadHandlers = McpToolAccess.toLayer(
           return yield* action(service, threadId);
         }),
       ).pipe(Effect.provideService(ForkRuntime, runtime));
+    // Registry changes act on this computer, not a thread, so a full-access client may make them too.
+    const onHost = <A, E>(
+      action: (service: Mini.MiniOffloadService["Service"]) => Effect.Effect<A, E>,
+    ) =>
+      withForkRuntime(Effect.flatMap(Mini.MiniOffloadService, action)).pipe(
+        Effect.provideService(ForkRuntime, runtime),
+      );
     return {
       loom_mini_workers: McpToolAccess.readsAsCaller(() => call((service) => service.workers)),
       loom_mini_worker_check: McpToolAccess.readsAsCaller((input) =>
         call((service) => service.check(input)),
+      ),
+      loom_mini_worker_update: McpToolAccess.writesEnvironment((input) =>
+        onHost((service) => service.updateWorker(input)),
+      ),
+      loom_mini_worker_remove: McpToolAccess.writesEnvironment((input) =>
+        onHost((service) => service.removeWorker(input)),
       ),
       loom_mini_submit: McpToolAccess.actsAsCaller((input) =>
         requireDispatchAccess.pipe(

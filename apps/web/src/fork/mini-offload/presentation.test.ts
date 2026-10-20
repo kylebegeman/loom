@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { MiniReceipt } from "@t3tools/contracts/fork";
-import { jobStateLabel, parseOutputFiles } from "./presentation";
+import { jobStateLabel, parseOutputFiles, workerCheckStatus } from "./presentation";
 const receipt: MiniReceipt = {
   request: {
     threadId: "fixture" as MiniReceipt["request"]["threadId"],
@@ -57,5 +57,15 @@ describe("output file declarations", () => {
       Array.from({ length: 33 }, (_, i) => `file-${i}`).join("\n"),
     ])
       expect(parseOutputFiles(text).error).not.toBeNull();
+  });
+});
+describe("workerCheckStatus", () => {
+  it("asks for the new host key to be confirmed instead of reporting a generic failure", () => {
+    expect(workerCheckStatus({ status: "unreachable", reasons: ["host_key_mismatch"] })).toMatch(
+      /^SSH refused this worker's host key\..*known_hosts/,
+    );
+    expect(workerCheckStatus({ status: "unreachable", reasons: ["connection_failed"] })).toBe(
+      "Connection or setup check failed. Check SSH access and Mini installation on the worker.",
+    );
   });
 });

@@ -1,7 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off - The worker registry is a private file on the host.
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { MiniOffloadError, MiniWorker } from "@t3tools/contracts/fork";
+import {
+  MiniOffloadError,
+  MiniWorker,
+  MiniWorkerConnection,
+  MiniWorkerRef,
+} from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,6 +32,10 @@ export class MiniWorkerSource extends Context.Service<
       readonly workerId: string;
       readonly enabled: boolean;
     }) => Effect.Effect<MiniWorker, MiniOffloadError>;
+    /** Points a registered worker at a new SSH connection, for when the same worker moved. */
+    readonly update: (input: MiniWorkerConnection) => Effect.Effect<MiniWorker, MiniOffloadError>;
+    /** Forgets a worker and returns it. Receipts keep a copy of its connection. */
+    readonly remove: (input: MiniWorkerRef) => Effect.Effect<MiniWorker, MiniOffloadError>;
   }
 >()("t3/fork/mini-offload/MiniWorkerSource") {}
 
@@ -41,6 +50,11 @@ const makeFile = Effect.gen(function* () {
     const value = yield* disk(() => readJson(file));
     return value === null ? [] : yield* decode(Workers, value);
   });
+  const write = (workers: ReadonlyArray<MiniWorker>) =>
+    disk(async () => {
+      await NodeFSP.mkdir(root, { recursive: true, mode: 0o700 });
+      await atomicJson(file, workers);
+    });
   return MiniWorkerSource.of({
     list,
     register: (input) =>
@@ -53,10 +67,7 @@ const makeFile = Effect.gen(function* () {
           const old = workers.find((row) => row.id === worker.id);
           if (old && (old.target !== worker.target || old.sshConfig !== worker.sshConfig))
             return yield* new MiniOffloadError({ reason: "worker" });
-          yield* disk(async () => {
-            await NodeFSP.mkdir(root, { recursive: true, mode: 0o700 });
-            await atomicJson(file, [...workers.filter((row) => row.id !== worker.id), worker]);
-          });
+          yield* write([...workers.filter((row) => row.id !== worker.id), worker]);
           return worker;
         }),
       ),
@@ -67,13 +78,35 @@ const makeFile = Effect.gen(function* () {
           const worker = workers.find((row) => row.id === input.workerId);
           if (!worker) return yield* new MiniOffloadError({ reason: "worker" });
           const next = { ...worker, enabled: input.enabled };
-          yield* disk(() =>
-            atomicJson(
-              file,
-              workers.map((row) => (row.id === next.id ? next : row)),
-            ),
-          );
+          yield* write(workers.map((row) => (row.id === next.id ? next : row)));
           return next;
+        }),
+      ),
+    update: (input) =>
+      writeLock.withPermit(
+        Effect.gen(function* () {
+          const connection = yield* decode(MiniWorkerConnection, input);
+          if (connection.sshConfig !== null && !NodePath.isAbsolute(connection.sshConfig))
+            return yield* new MiniOffloadError({ reason: "worker" });
+          const workers = yield* list;
+          const worker = workers.find((row) => row.id === connection.workerId);
+          if (!worker) return yield* new MiniOffloadError({ reason: "worker" });
+          if (worker.target === connection.target && worker.sshConfig === connection.sshConfig)
+            return worker;
+          const next = { ...worker, target: connection.target, sshConfig: connection.sshConfig };
+          yield* write(workers.map((row) => (row.id === next.id ? next : row)));
+          return next;
+        }),
+      ),
+    remove: (input) =>
+      writeLock.withPermit(
+        Effect.gen(function* () {
+          const { workerId } = yield* decode(MiniWorkerRef, input);
+          const workers = yield* list;
+          const worker = workers.find((row) => row.id === workerId);
+          if (!worker) return yield* new MiniOffloadError({ reason: "worker" });
+          yield* write(workers.filter((row) => row.id !== workerId));
+          return worker;
         }),
       ),
   });
