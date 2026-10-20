@@ -204,10 +204,13 @@ relay, SSH-agent and provider variables. Child HOME, XDG and gh configuration li
 `sandbox-home`; provider dotfiles are resolved there. Git uses sandboxed global configuration,
 no system configuration, no prompts, file-only Git transport and a fixture-parent discovery
 ceiling. Git cannot invoke SSH and its passwd-based personal configuration through this target.
-This is configuration isolation, not an OS sandbox against full-access host programs. The sample
+This is configuration isolation, not an OS sandbox against full-access host programs. Direct
+non-Git SSH features (Mini offload and SSH device hosts) still use passwd-home OpenSSH paths.
+This target does not configure or exercise them; do not register those connections in it. The sample
 workspace gets its own local Git repository with no remotes. Isolated `rev-parse` checks require
 the exact workspace toplevel and its own absolute Git and common directories at prepare, start
-and proof. Symlinked metadata and object alternates refuse. Start/proof refuse incomplete Git
+and proof. An explicit scandir walk refuses symlinked metadata, object alternates and any
+unlistable metadata directory; silently skipped glob results are not sufficient. Start/proof refuse incomplete Git
 metadata; preparation may re-run init for an empty or HEAD-less directory only with a prior
 harness ownership stamp and no redirected/shared layout. Existing valid fixtures need no new
 stamp until creation/repair is needed. Global/system config is disabled during the probe.
@@ -215,7 +218,13 @@ Private JSON is published by owner-only temporary file and rename. Initial home-
 stays outside the new home so an interrupted publication leaves an empty, retryable home.
 Malformed/wrong seed markers count as incomplete. Unmarked published databases are preserved
 before reseeding, and incomplete unmarked settings can be repaired without adopting unrelated
-state. A live runtime refuses both preparation and start before writes or exec. Canonical fixture guards permit a dedicated descendant
+state. SIGKILL may leave non-secret temporary JSON in userdata or an initial marker temporary
+file beside the dedicated home under `.t3`. These files are never adopted; automatic sweeping
+would risk a concurrent writer. Remove only an orphan positively identified from a stopped
+owned run. Atomic seeder marker publication preserves an existing marker on interrupted writes,
+but database and marker publication are still separate operations. A hard kill between them
+can leave an unmarked database, which this harness preserves before reseeding; plain seed CLI
+reset still refuses unknown databases. A live runtime refuses preparation/start before writes or exec. Canonical fixture guards permit a dedicated descendant
 of the recognized worktree home while refusing installed state or escapes from that descendant.
 The target accepts loopback traffic only. Proof requests refuse proxies and redirects, bind to
 the persisted environment identity, and mint only five-minute `orchestration:read` sessions.

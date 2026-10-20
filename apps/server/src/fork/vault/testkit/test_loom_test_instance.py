@@ -130,9 +130,12 @@ class TestLoomInstance(unittest.TestCase):
         escaped.mkdir()
         with (self.workspace / ".git" / "config").open("a") as config:
             config.write("\n[core]\n\tworktree = " + str(escaped) + "\n")
-        for check in (lambda: target.prepare(self.root), lambda: target.validate_home(self.root)):
-            with self.assertRaises(target.InstanceError):
-                check()
+        for location in (escaped, self.root, self.home, self.workspace.parent):
+            with (self.workspace / ".git" / "config").open("a") as config:
+                config.write("\n[core]\n\tworktree = " + str(location) + "\n")
+            for check in (lambda: target.prepare(self.root), lambda: target.validate_home(self.root)):
+                with self.subTest(location=str(location)), self.assertRaises(target.InstanceError):
+                    check()
 
     def test_git_boundary_refuses_foreign_git_directory_result(self) -> None:
         result = subprocess.CompletedProcess(["git"], 0,
@@ -166,6 +169,114 @@ class TestLoomInstance(unittest.TestCase):
                     target.prepare(self.root)
                 local.unlink()
                 foreign.rename(local)
+
+    def test_git_metadata_scan_refuses_unlistable_shared_storage(self) -> None:
+        for name in ("refs", "objects"):
+            directory = self.workspace / ".git" / name
+            outside = self.root / ("outside-" + name)
+            outside.mkdir()
+            link = directory / "hidden-shared"
+            link.symlink_to(outside, target_is_directory=True)
+            directory.chmod(0o300)
+            try:
+                for validate in (lambda: target.require_git_boundary(self.home),
+                                 lambda: target.validate_home(self.root),
+                                 lambda: target.initialize_git_fixture(self.home)):
+                    with self.subTest(name=name), self.assertRaises(target.InstanceError):
+                        validate()
+            finally:
+                directory.chmod(0o700)
+                link.unlink()
+
+    def test_git_metadata_listing_failure_is_not_silently_skipped(self) -> None:
+        original = target.os.scandir
+
+        def fail_refs(path):
+            if Path(path) == self.workspace / ".git" / "refs":
+                raise PermissionError("synthetic unlistable metadata")
+            return original(path)
+        with patch.object(target.os, "scandir", side_effect=fail_refs):
+            with self.assertRaisesRegex(target.InstanceError, "fully inspected"):
+                target.require_git_boundary(self.home)
+
+    def test_start_refuses_sandbox_symlinks_before_exec(self) -> None:
+        for suffix in ("", ".config", ".config/gh"):
+            sandbox = self.home / "sandbox-home"
+            if sandbox.exists():
+                shutil.rmtree(sandbox)
+            link = sandbox / suffix
+            link.parent.mkdir(parents=True, exist_ok=True)
+            outside = self.root / "outside-home"
+            outside.mkdir(exist_ok=True)
+            link.symlink_to(outside, target_is_directory=True)
+            try:
+                with self.subTest(suffix=suffix), patch.object(target, "REPOSITORY", self.root), \
+                     patch.object(target.sys, "argv", ["loom_test_instance.py", "start"]), \
+                     patch.object(target.sys, "stderr", io.StringIO()) as stderr, \
+                     patch.object(target.os, "chdir"), patch.object(target.os, "execve") as execute:
+                    with self.assertRaises(SystemExit) as error:
+                        target.main()
+                    self.assertEqual(error.exception.code, 1)
+                    self.assertIn("test process home must not redirect", stderr.getvalue())
+                    execute.assert_not_called()
+            finally:
+                link.unlink()
+
+    def test_hard_kill_keeps_published_json_and_initial_home_retryable(self) -> None:
+        source = Path(target.__file__).resolve().parent
+        for initial in (False, True):
+            if initial:
+                shutil.rmtree(self.home)
+            original = None if initial else (self.userdata / "settings.json").read_bytes()
+            script = """import json,sys
+from pathlib import Path
+import loom_test_instance as target
+def pause(value, stream, **kwargs):
+ stream.write('{"partial":')
+ stream.flush()
+ print('staged',flush=True)
+ sys.stdin.read(1)
+target.json.dump=pause
+root=Path(sys.argv[1])
+if sys.argv[2]=='initial': target.prepare(root)
+else: target.private_json(target.instance_home(root)/'userdata'/'settings.json',target.SETTINGS)
+"""
+            with self.subTest(initial=initial), subprocess.Popen(
+                [target.sys.executable, "-u", "-c", script, str(self.root), "initial" if initial else "settings"],
+                env={"PYTHONPATH": str(source), "PYTHONDONTWRITEBYTECODE": "1", "PATH": target.os.environ.get("PATH", "")},
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ) as process:
+                try:
+                    self.assertEqual(process.stdout.readline(), b"staged\n")
+                finally:
+                    process.kill()
+                    process.communicate(timeout=5)
+            directory = self.home.parent if initial else self.userdata
+            name = "vault-test-instance" if initial else "settings"
+            litter = list(directory.glob("." + name + ".json.*.tmp"))
+            self.assertEqual(len(litter), 1)
+            if initial:
+                self.assertEqual(list(self.home.iterdir()), [])
+                self.test_empty_home_before_marker_publication_is_retryable()
+            else:
+                self.assertEqual((self.userdata / "settings.json").read_bytes(), original)
+            # A crashed writer's non-secret orphan is never adopted or automatically swept.
+            self.assertTrue(litter[0].exists())
+
+    def test_initial_marker_is_staged_outside_home_before_publication(self) -> None:
+        shutil.rmtree(self.home)
+        staged = []
+
+        def interrupted_dump(value, stream, **kwargs):
+            staged.extend(self.home.parent.glob(".vault-test-instance.json.*.tmp"))
+            self.assertEqual(list(self.home.iterdir()), [])
+            raise OSError("synthetic interruption")
+        with patch.object(target.json, "dump", side_effect=interrupted_dump):
+            with self.assertRaises(OSError):
+                target.prepare(self.root)
+        self.assertEqual(len(staged), 1)
+        self.assertEqual(staged[0].parent, self.home.parent)
+        self.assertFalse(staged[0].exists())
 
     def test_git_boundary_refuses_object_alternates(self) -> None:
         alternates = self.workspace / ".git" / "objects" / "info" / "alternates"
@@ -201,12 +312,13 @@ class TestLoomInstance(unittest.TestCase):
         target.private_json(self.userdata / "server-runtime.json", {"pid": target.os.getpid()})
         with patch.object(target, "REPOSITORY", self.root), \
              patch.object(target.sys, "argv", ["loom_test_instance.py", "start"]), \
-             patch.object(target.sys, "stderr", io.StringIO()), \
+             patch.object(target.sys, "stderr", io.StringIO()) as stderr, \
              patch.object(target.os, "chdir"), patch.object(target.os, "execve") as execute:
             with self.assertRaises(SystemExit) as error:
                 target.main()
             self.assertEqual(error.exception.code, 1)
             execute.assert_not_called()
+            self.assertIn("Stop the dedicated test instance", stderr.getvalue())
 
     def test_empty_home_before_marker_publication_is_retryable(self) -> None:
         shutil.rmtree(self.home)
@@ -409,13 +521,13 @@ class TestLoomInstance(unittest.TestCase):
         self.assertNotEqual(issued[0]["sessionId"], issued[1]["sessionId"])
         self.assertNotIn("secret-canary", json.dumps(report))
 
-    def rejected_proof(self, mutate) -> None:
+    def rejected_proof(self, mutate, message: str = "") -> None:
         cli, http, sessions, issued, revoked = self.auth_fixture()
 
         def changed(origin, path, token=None):
             return mutate(path, token, http(origin, path, token), issued, revoked)
         with patch.object(target, "run_node", side_effect=cli), patch.object(target, "request", side_effect=changed):
-            with self.assertRaises(target.InstanceError):
+            with self.assertRaisesRegex(target.InstanceError, message):
                 target.prove(self.root)
         self.assertEqual(set(sessions), {"unrelated"})
 
@@ -443,9 +555,32 @@ class TestLoomInstance(unittest.TestCase):
                             and "s0" in revoked and len(issued) == 1 else response)
 
     def test_proof_rejects_a_replacement_that_cannot_read(self) -> None:
-        self.rejected_proof(lambda path, token, response, issued, revoked:
-                            (401, None) if path.endswith("/shell") and token == "secret-canary-1"
-                            and "s1" not in revoked else response)
+        for status in (401, 403, 500):
+            with self.subTest(status=status):
+                self.rejected_proof(lambda path, token, response, issued, revoked:
+                                    (status, {"threads": [{"activeRunId": None}] * 3}) if path.endswith("/shell") and token == "secret-canary-1"
+                                    and "s1" not in revoked else response, "replacement test session cannot access")
+
+    def test_proof_rejects_a_replacement_without_stopped_fixture_data(self) -> None:
+        for shell in ({"threads": []}, {"threads": [{"activeRunId": "live"}] * 3},
+                      {"threads": [None] * 3}, {"threads": None}, [], None):
+            with self.subTest(shell=shell):
+                self.rejected_proof(lambda path, token, response, issued, revoked:
+                                    (200, shell) if path.endswith("/shell") and token == "secret-canary-1"
+                                    and "s1" not in revoked else response, "replacement test session cannot access")
+
+    def test_proof_rejects_non_object_issue_response(self) -> None:
+        for value in (None, [], "unexpected", 1):
+            cli, http, sessions, _, _ = self.auth_fixture()
+
+            def malformed(repository, args):
+                output = cli(repository, args)
+                return json.dumps(value) if args[3] == "issue" else output
+            with self.subTest(value=value), patch.object(target, "run_node", side_effect=malformed), \
+                 patch.object(target, "request", side_effect=http):
+                with self.assertRaisesRegex(target.InstanceError, "Unexpected test session"):
+                    target.prove(self.root)
+            self.assertEqual(set(sessions), {"unrelated"})
 
     def rejected_issue(self, change) -> None:
         cli, http, sessions, _, _ = self.auth_fixture()

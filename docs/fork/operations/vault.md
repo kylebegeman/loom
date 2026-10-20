@@ -754,7 +754,12 @@ Pause edits to `apps/server/src/`, `packages/` and `apps/server/package.json` wh
 proof: the server dev script watches all three and restarts the target. If a restart interrupts the proof, wait for its next listening message and
 rerun; the partial invocation's session expires within five minutes. Keep the instance for local
 inspection, then stop its retained terminal session or the exact PID captured at launch. Never
-kill by name or substitute installed userdata. The harness has no delete/reset-database command.
+kill by name or substitute installed userdata. The harness has no delete/reset-database command. Its Git transport is file-only, but it is not
+an OpenSSH sandbox: do not configure Mini SSH workers or SSH device hosts in this target,
+because direct SSH features still resolve the account's real passwd-home `.ssh` paths.
+A hard-killed fixture writer can leave a non-secret temporary file under userdata or beside the
+test home in `.t3`. It is never adopted. Remove only the exact orphan identified from your own
+stopped run; do not sweep other instances' temporary files.
 
 ## Dedicated Migadu test mailbox handoff
 

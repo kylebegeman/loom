@@ -1,8 +1,11 @@
 # L84 seams
 
-All implementation is fork-owned. Existing contracts/RPC group, scope maps, runtime construction,
+Product implementation is fork-owned. Existing contracts/RPC group, scope maps, runtime construction,
 capability list, client commands, web settings/palette and mobile Vault settings register the new
-service without any upstream-owned edit or seam marker. No FORK.md/seam-manifest row is needed.
+service without an upstream-owned product seam. The fixture harness also uses the existing
+`dev-fixtures` seam in `apps/server/scripts/seed-dev-db.ts`: marker JSON is staged before database
+publication and renamed atomically, with temporary cleanup on ordinary failure. Its markers are
+listed in FORK.md and the seam manifest.
 No package dependency, SQL migration, Library service or provider adapter is changed.
 
 The independent registry uses the reserved `profiles/_test_accounts/registry-v1` branch inside

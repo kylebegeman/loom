@@ -311,6 +311,12 @@ export const runSeedDevDb = Effect.fn("runSeedDevDb")(function* (
     // preparation created meanwhile. Only an explicit reset may replace existing state.
     if (exists) yield* ensureDevDbNotInUse(databasePath);
     const published = yield* io(async () => {
+      // fork: dev-fixtures: Never expose a partially written completion marker.
+      await NodeFSP.writeFile(
+        `${temporaryPath}.marker`,
+        JSON.stringify({ version: 1, scenario }) + "\n",
+        { flag: "wx", mode: 0o600 },
+      );
       if (exists) {
         for (const suffix of ["-wal", "-shm"])
           await NodeFSP.rm(`${databasePath}${suffix}`, { force: true });
@@ -323,14 +329,16 @@ export const runSeedDevDb = Effect.fn("runSeedDevDb")(function* (
           throw cause;
         }
       }
-      await NodeFSP.writeFile(markerPath, JSON.stringify({ version: 1, scenario }) + "\n");
+      // fork: dev-fixtures
+      await NodeFSP.rename(`${temporaryPath}.marker`, markerPath);
       return true;
     });
     return { ...counts, published };
   }).pipe(
     Effect.ensuring(
       io(async () => {
-        for (const suffix of ["", "-wal", "-shm"])
+        // fork: dev-fixtures
+        for (const suffix of ["", "-wal", "-shm", ".marker"])
           await NodeFSP.rm(`${temporaryPath}${suffix}`, { force: true });
       }).pipe(Effect.ignore),
     ),

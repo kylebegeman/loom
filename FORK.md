@@ -116,9 +116,9 @@ with owner-only POSIX permissions, not same-user process isolation. See
 
 ### Development fixture seam
 
-| File                                 | Marker         | Why                                                                                         |
-| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
-| `apps/server/scripts/seed-dev-db.ts` | `dev-fixtures` | Permit recognized worktree fixture homes while retaining live-state and symlink protection. |
+| File                                 | Marker         | Why                                                                                                                |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `apps/server/scripts/seed-dev-db.ts` | `dev-fixtures` | Permit recognized worktree fixture homes with live-state/symlink protection and atomic fixture marker publication. |
 
 ### Vault seams
 

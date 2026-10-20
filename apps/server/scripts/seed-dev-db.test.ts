@@ -3,6 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { vi } from "vite-plus/test";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -12,6 +13,11 @@ import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import * as Layer from "effect/Layer";
 import { runSeedDevDb } from "./seed-dev-db.ts";
 import { isAutoSettlementCandidate } from "../src/orchestration-v2/ThreadSettlementService.ts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, writeFile: vi.fn(actual.writeFile) };
+});
 
 const isolatedHome = Effect.acquireRelease(
   Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-fixture-test-"))),
@@ -109,6 +115,51 @@ it.layer(NodeServices.layer)("development fixtures", (it) => {
         const state = yield* inspect(results[0]!.databasePath);
         assert.equal(state.shells.length, winner?.threads);
         assert.equal(state.pending, 0);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "preserves the completion marker and database if replacement marker writing is interrupted",
+    () =>
+      Effect.gen(function* () {
+        const baseDir = yield* isolatedHome;
+        const original = yield* runSeedDevDb({ baseDir });
+        const stateDir = NodePath.join(baseDir, "userdata");
+        const markerPath = NodePath.join(stateDir, "dev-fixture.json");
+        const marker = yield* Effect.promise(() => NodeFSP.readFile(markerPath, "utf8"));
+        const database = yield* Effect.promise(() => NodeFSP.readFile(original.databasePath));
+        const writeFile = (yield* Effect.promise(() =>
+          vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"),
+        )).writeFile;
+        const spy = vi
+          .mocked(NodeFSP.writeFile)
+          .mockImplementation(async (path, value, options) => {
+            if (typeof value === "string" && value.startsWith('{"version":1,"scenario":')) {
+              await writeFile(path, '{"version":', options);
+              throw new Error("synthetic interrupted marker write");
+            }
+            return writeFile(path, value, options);
+          });
+        try {
+          const failure = yield* runSeedDevDb({ baseDir, scenario: "empty", reset: true }).pipe(
+            Effect.flip,
+          );
+          assert.equal(failure._tag, "SeedDevDbError");
+        } finally {
+          spy.mockImplementation(writeFile);
+        }
+        assert.equal(yield* Effect.promise(() => NodeFSP.readFile(markerPath, "utf8")), marker);
+        assert.deepEqual(
+          yield* Effect.promise(() => NodeFSP.readFile(original.databasePath)),
+          database,
+        );
+        assert.isFalse(
+          (yield* Effect.promise(() => NodeFSP.readdir(stateDir))).some((name) =>
+            name.endsWith(".marker"),
+          ),
+        );
+        const reset = yield* runSeedDevDb({ baseDir, scenario: "empty", reset: true });
+        assert.equal(reset.status, "seeded");
       }).pipe(Effect.scoped),
   );
 

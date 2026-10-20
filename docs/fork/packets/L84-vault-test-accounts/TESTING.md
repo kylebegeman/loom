@@ -22,7 +22,7 @@ runtime session provisioning/reset, not an email/password account, browser logou
 provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
 session until the five-minute TTL. No execution, resumption or allow-once flag changes.
 
-Forty-six focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
+Fifty-three focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
 to exercise macOS's `/var` symlink. Cases cover independent Git metadata, core.worktree escapes,
 foreign common/absolute Git directories, symlinked objects/refs, alternates, owned interrupted-init
 repair and unowned-init refusal. Start refuses a live PID and creates the HOME/XDG/gh sandbox;
@@ -58,6 +58,29 @@ synthetic tests, not additional live target or mail acceptance.
 Item 13 is documentation reconciliation: the mailbox is confirmed, plus-folder routing is
 explicit, and live credentials remain Kyle-only in 1Password until L79 approval.
 
+The harness round-1 follow-up adds nine in-memory mutation checks, all killed: acceptance of
+403/500 replacement responses despite valid stopped-thread data; omitted replacement fixture
+validation; non-object issue decoding; skipped unlistable/shared Git storage; swallowed scandir
+failure; ancestor-containment substitution for exact toplevel equality; marker staging inside
+the home; omitted live-PID refusal; and omitted sandbox-symlink refusal. These extend the earlier
+22-mutant evidence above. Replacement HTTP failures assert the intended message, and non-object
+issue replies retain subject-scoped cleanup. Core.worktree tests now cover sibling and ancestor
+escapes. Real mode-0300 directories and an injected listing error both refuse Git inspection.
+Start's live-PID test checks its specific stderr message; sandbox-home, .config and gh symlinks
+refuse before exec. A mid-write staging assertion pins the temporary marker outside the home.
+
+A no-sleep subprocess proof waits for a staged-write notification, then SIGKILLs only its own
+child. Existing settings remain intact; a new home remains empty/retryable. Non-secret orphan
+temporaries persist in the expected directory and are neither read nor automatically deleted.
+This is a documented cleanup limit. Git's file-only restriction does not sandbox direct SSH
+features elsewhere in the test server; Mini workers and SSH device hosts are outside this flow.
+
+The seed suite adds an interrupted marker-write regression using real isolated files and a
+single filesystem fault: the old database and completion marker remain intact, the temporary
+marker is removed on ordinary failure, and a later reset succeeds. Restoring the former
+truncating marker writer makes this regression fail. A crash between database and marker
+publication remains a separate recovery window; the harness preserves that unmarked state.
+
 A fresh real seed uses sandboxed child HOME while explicitly passing the actual account's `.t3`
 to the exported seeder's shared-home guard. The old target was stopped before replacing its
 synthetic QA state and kept separately for review. The current target was relaunched with the
@@ -66,9 +89,9 @@ system-config suppression, prompt suppression and the fixture-parent Git ceiling
 tip. File-only transport and the subsequent recovery fixes are regression-tested in this
 follow-up; no new live-process or browser pass is claimed for them. The fresh
 session issue/access/revoke/replacement/final-cleanup proof also passes. No real userdata,
-credentials or production services were changed. Prior
-seven server fixture/seed tests, package typecheck and TypeScript lint are earlier evidence;
-this follow-up changes only Python and docs, so they are not claimed as new runs here.
+credentials or production services were changed. The latest harness follow-up also changes atomic marker publication in the TypeScript seeder.
+Its five seed tests and three fixture-home tests pass from the server package directory; server
+typecheck and changed-file lint pass. These checks do not add new live or native acceptance.
 
 ```sh
 # From the repository root:
@@ -103,7 +126,7 @@ records the dedicated-mail setup and remaining live acceptance.
 
 Thirty-nine focused Migadu Python tests pass from `apps/server`: 35 message/selection/budget
 cases and four stdlib IMAP-over-TLS cases against a disposable loopback server. Together with
-the 46 local-target cases, **85 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
+the 53 local-target cases, **92 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
 cases also pass using stock macOS `/usr/bin/openssl` through `PATH=/usr/bin:/bin` and the current
 Python executable. Temporary certificates use portable `-nodes`; fixture keys are removed on
 cleanup. Both untrusted certificates and a trusted certificate for another hostname refuse

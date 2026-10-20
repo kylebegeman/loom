@@ -108,11 +108,22 @@ def require_stopped(home: Path) -> None:
 
 def require_git_layout(workspace: Path) -> None:
     git_directory = workspace / ".git"
-    # Git also shares storage through alternates and symlinks, outside rev-parse's common-dir.
-    if (git_directory.is_symlink() or not git_directory.is_dir()
-            or any(path.is_symlink() for path in git_directory.rglob("*"))
-            or (git_directory / "objects" / "info" / "alternates").exists()):
-        raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
+    # pathlib globbing can silently omit unlistable directories, which Git can still traverse.
+    try:
+        if git_directory.is_symlink() or not git_directory.is_dir():
+            raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
+        pending = [git_directory]
+        while pending:
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    if entry.is_symlink():
+                        raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
+        if (git_directory / "objects" / "info" / "alternates").exists():
+            raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
+    except OSError:
+        raise InstanceError("The synthetic Git metadata could not be fully inspected.") from None
 
 
 def require_git_boundary(home: Path) -> None:
@@ -359,8 +370,13 @@ def prove(repository: Path) -> dict[str, object]:
         require(status == 401, "The revoked test credential still permits access.")
         replacement = issue()
         require(replacement["sessionId"] != original["sessionId"], "Reset reused the original session.")
-        status, _ = request(origin, "/api/orchestration/shell", replacement["token"])
-        require(status == 200, "The replacement test session cannot access the fixture.")
+        status, replacement_shell = request(origin, "/api/orchestration/shell", replacement["token"])
+        require(status == 200 and isinstance(replacement_shell, dict)
+                and isinstance(replacement_shell.get("threads"), list)
+                and len(replacement_shell["threads"]) == 3
+                and all(isinstance(thread, dict) and thread.get("activeRunId") is None
+                        for thread in replacement_shell["threads"]),
+                "The replacement test session cannot access the fixture.")
         status, _ = request(origin, "/api/orchestration/shell", original["token"])
         require(status == 401, "Replacement unexpectedly restored the revoked credential.")
     finally:
