@@ -15,4 +15,6 @@ export const isProtectedFixturePath = (
   sharedHome: string,
   baseDir: string,
   recognizedHome: string | null,
-) => contains(sharedHome, target) && (baseDir !== recognizedHome || !contains(baseDir, target));
+) =>
+  contains(sharedHome, target) &&
+  (recognizedHome === null || !contains(recognizedHome, baseDir) || !contains(baseDir, target));

@@ -18,3 +18,18 @@ it("protects live state, arbitrary nested homes and symlinks resolving outside t
   ).toBe(true);
   expect(isProtectedFixturePath(isolated, shared, isolated, null)).toBe(true);
 });
+
+it("permits dedicated test homes only inside the canonical recognized worktree home", () => {
+  const dedicated = isolated + "/vault-app-test";
+  expect(isProtectedFixturePath(dedicated, shared, dedicated, isolated)).toBe(false);
+  expect(
+    isProtectedFixturePath(dedicated + "/userdata/statev2.sqlite", shared, dedicated, isolated),
+  ).toBe(false);
+  expect(isProtectedFixturePath(isolated + "/userdata", shared, dedicated, isolated)).toBe(true);
+  expect(
+    isProtectedFixturePath(isolated + "-other/userdata", shared, isolated + "-other", isolated),
+  ).toBe(true);
+  expect(
+    isProtectedFixturePath(shared + "/userdata/statev2.sqlite", shared, dedicated, isolated),
+  ).toBe(true);
+});
