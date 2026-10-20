@@ -117,8 +117,8 @@ function SelectionPage({
           ))}
           {page.unattributableSelections > 0 ? (
             <Text>
-              {page.unattributableSelections} retired selections have no binding snapshot and cannot
-              be attributed to an item.
+              Retired selections without binding snapshots: {page.unattributableSelections}. Their
+              item references are unknown.
             </Text>
           ) : null}
           {page.items.length === 0 ? (
