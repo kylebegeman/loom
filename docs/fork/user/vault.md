@@ -463,11 +463,9 @@ with existing output and time limits. GitHub uses the dedicated connection witho
 
 ## Attach Vault requirements before an agent run
 
-Use **Vault attachments** above the web/desktop composer or in the mobile composer. The same
-control is available in the scheduled-task prompt editor. Review a profile and attach its
-current version, or choose a Vault reference. The prompt contains readable links with no
-credential values. Remove/replace them through the control, or delete their lines in the
-prompt. Keep attachment links on their own lines; inline or quoted examples are not requirements.
+Existing prompts and scheduled tasks can contain readable Vault reference or versioned profile
+links with no credential values. Edit or delete their lines directly in the prompt. Keep
+attachment links on their own lines; inline or quoted examples are not requirements.
 
 A profile requires a full-access/default agent run. Every required SSH/Git binding must have
 an active key, verified host trust and a matching use grant. GitHub bindings need an active connection and exact repository use

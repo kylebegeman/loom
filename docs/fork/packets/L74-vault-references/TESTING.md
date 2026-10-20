@@ -1,5 +1,14 @@
 # L74 testing
 
+## Attachment button removal
+
+The dedicated Vault attachment buttons and dialogs are removed from web/desktop and mobile
+composers and scheduled-task editors, with no replacement control. Historical picker acceptance
+below describes the earlier UI. Existing prompt-link parsing and server preflight are unchanged.
+Web and mobile package typechecks pass. Changed-file lint has no errors; two existing mobile
+composer warnings remain outside the removed code. Seam and whitespace checks pass. No browser
+or simulator pass was run for this removal.
+
 Status: **Local milestone verified; full packet acceptance remains open.** Synthetic state only.
 
 ## Automated evidence

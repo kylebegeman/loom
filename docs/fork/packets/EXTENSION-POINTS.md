@@ -3126,11 +3126,10 @@ MCP/CLI launches and every provider pass through the same guard. No upstream sch
 change or automatic personal-credential fallback is introduced. Provider steering reuses the same guard and cannot change a pinned profile mid-run.
 Command-only jobs and upstream servers do not gain this preflight guarantee.
 
-`vault-launch-ui` adds two marked lines per client entry point: an import and a fork-owned
-attachment control in the web/native composer and scheduled-task prompt editor. The control
-reviews profiles and edits only the existing prompt, preserving normal draft, retry, queue and
-schedule persistence. There are no new event fields, database migrations or dependencies.
-Unlike `ext-turn-input`, this guard must never time out and silently skip a required check.
+The dedicated Vault attachment buttons and their `vault-launch-ui` seams have been removed
+from web/native composers and scheduled-task prompt editors. Existing standalone links still
+use normal prompt persistence and the server preflight guard. Unlike `ext-turn-input`, this
+guard must never time out and silently skip a required check.
 
 `vault-scheduled-outcomes` owns the scheduler integration for explicit Vault-attached runs.
 The marked scheduler construction initializes the fork service and its idempotent SQLite

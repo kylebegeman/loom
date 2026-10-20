@@ -65,9 +65,9 @@ fork seams, keep secrets out of upstream events, and keep management separate fr
 
 The shared `vault-prompt.ts` formatter/parser defines standalone Markdown links with safe
 labels and environment/item IDs. Profile links additionally carry the reviewed profile version.
-The web/native composer and scheduled prompt editor reuse the picker. Attach, replace and
-remove edit the existing prompt, so draft restoration, queued messages, schedule persistence
-and transcript summaries use the established text path. There is no secret value, new event
+The dedicated attachment buttons have been removed from web/native composers and scheduled
+prompt editors. Existing standalone links remain ordinary prompt text, so draft restoration,
+queued messages, schedule persistence and transcript summaries use the established text path. There is no secret value, new event
 field or schema migration. Fenced, quoted, inline and indented code examples are not launch
 requirements. Keep attachment links on their own lines; moving a link into prose detaches it.
 

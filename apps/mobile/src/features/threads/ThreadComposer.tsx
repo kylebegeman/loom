@@ -1,4 +1,3 @@
-import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -746,15 +745,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           />
         ) : null}
 
-        {/* fork: vault-launch-ui */}
-        <VaultPromptAttachments
-          environmentId={props.environmentId}
-          projectId={props.selectedThread.projectId}
-          threadId={props.selectedThread.id}
-          prompt={draftMessage}
-          onChange={props.onChangeDraftMessage}
-          disabled={!props.canOperateThread}
-        />
         <ComposerSurface
           style={
             isExpanded
