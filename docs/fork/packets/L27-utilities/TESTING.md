@@ -85,3 +85,29 @@ desktop:
 - Before review: the `git merge-tree` preview in SEAMS.md against the newest nightly tag.
 - After Kyle merges to main: `scripts/fork/loom.sh integrate nightly --dry-run` from a clean,
   synced `main`. Record the result here.
+
+## Results
+
+Run on 2026-10-20 after rebasing onto `main` (`147e83e3f6`), before landing.
+
+- **Tests:** the command above ran 20 files and 696 tests, all passing. Tool files:
+  encode 83, convert 77, web 69, cron 67, chmod 62, text 60, generate 45, cidr 37,
+  hash 31, regexMatch 31, limits 14, bytes 12, time 6. Also regexRunner 22, registry 45 and
+  runtime 2, plus the extension point tests (panels 6, palette 24, keybindings 3).
+- **Review:** every tool family was written by one agent and then reviewed adversarially by a
+  second agent, which checked vectors against `shasum`, `md5`, `node:crypto`, native
+  `decodeURI`, cronie's source and Python's `ipaddress`, fuzzed round trips, and timed 1 MiB
+  inputs. The reviews fixed quadratic regexes in the timestamp, case and CIDR parsers,
+  daylight-saving resolution, JWT decoding that differed between browsers and Node, stack
+  overflow on deeply nested JWT payloads, silent U+FFFD substitution in hashes, and cron
+  weekday ranges ending on Sunday. Each fix has a regression test.
+- **React Compiler coverage:** `apps/web/src/reactCompilerCoverage.test.ts` compiles all 32
+  `fork/utilities` files. The run reports 76 failures, all in files this packet does not
+  touch (for example `components/NoProjectsHero.tsx` and `fork/code-graph/parts.tsx`).
+- **Lint:** `vp lint apps/web/src/fork packages/contracts/src/fork` reports nothing.
+- **Typecheck:** contracts, web, server, client-runtime and mobile all pass on the tree
+  rebased onto `main`.
+- **Not run:** the manual check above. It needs a dev server and a browser, which need Kyle's
+  permission. Untested as a result: real worker isolation in a browser, the `fromBase64` path
+  that browsers take in `jose` (Node lacks it; the checks before `jose` make both paths agree),
+  layout at panel widths, focus handling in the dialog, and remote use over plain `http`.
