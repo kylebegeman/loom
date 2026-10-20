@@ -1,10 +1,11 @@
-import { ScheduledTaskWebhookDeliveryId } from "@t3tools/contracts";
+import { ScheduledTaskWebhookDeliveryId, type RuntimeMode } from "@t3tools/contracts";
 import {
   botTriggerHookId,
   BOT_TRIGGER_HOOK_PREFIX,
   isBotTriggerHookId,
   BotsError,
   checkTriggerMapping,
+  type BotDefinition,
   type BotInputs,
   type BotInputValue,
   type BotsChange,
@@ -43,7 +44,7 @@ import {
 import { BotBatches } from "../BotBatches.ts";
 import { BotPipelines } from "../pipelines/BotPipelines.ts";
 import { isoAt } from "../BotBudgets.ts";
-import { BotsService, type BotCaller } from "../BotsService.ts";
+import { BotsService, outranks, type BotCaller } from "../BotsService.ts";
 import { makeBotTriggersStore, type StoredTrigger } from "./BotTriggersStore.ts";
 import { eventPasses, type TriggerEvent } from "./matchers.ts";
 import { firstFireAt } from "./scheduleStep.ts";
@@ -67,6 +68,10 @@ const storageError = (cause: unknown) =>
   );
 
 const hex = (uuid: string) => uuid.replaceAll("-", "");
+
+/** The narrower of two runtime mode ceilings; null is none. */
+const narrower = (a: RuntimeMode | null, b: RuntimeMode | null) =>
+  a === null ? b : b === null || outranks(b, a) ? a : b;
 
 /** Webhook and merge-conflict triggers listen on a hook URL. */
 const usesHook = (event: BotTriggerEvent) =>
@@ -188,6 +193,24 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  /**
+   * Refuses arming a trigger whose runs its caller could not start: a bot run never arms one, and
+   * an agent cannot re-arm a person's trigger, which has no ceiling, for a bot broader than itself.
+   */
+  const checkArming = Effect.fnUntraced(function* (
+    bot: BotDefinition,
+    stored: StoredTrigger | null,
+    caller: BotCaller,
+  ) {
+    yield* bots.checkCaller({ botId: bot.id, inputs: {} }, caller);
+    yield* bots.checkRunnable(
+      bot,
+      stored === null
+        ? caller
+        : { ...caller, runtimeMode: narrower(caller.runtimeMode, stored.creatorRuntimeMode) },
+    );
+  });
+
   /** Creates or updates a trigger. The creator and their runtime mode are kept from creation. */
   const save = Effect.fn("BotTriggers.save")(function* (
     input: BotsSaveTriggerInput,
@@ -206,10 +229,7 @@ export const make = Effect.gen(function* () {
     if (existing !== null && (existing.trigger.pipelineId ?? null) !== pipelineId)
       return yield* fail("invalid", "A trigger cannot move to another pipeline.");
     const bot = yield* bots.get(input.botId);
-    yield* bots.checkRunnable(
-      bot,
-      existing === null ? caller : { ...caller, runtimeMode: existing.creatorRuntimeMode },
-    );
+    yield* checkArming(bot, existing, caller);
     if (input.followLatest && input.followStable === true)
       return yield* fail("invalid", BOTH_FOLLOWS);
     const pipeline = pipelineId === null ? null : yield* pipelines.get(pipelineId);
@@ -289,8 +309,10 @@ export const make = Effect.gen(function* () {
   const setEnabled = Effect.fn("BotTriggers.setEnabled")(function* (
     triggerId: string,
     enabled: boolean,
+    caller: BotCaller,
   ) {
     const stored = yield* requireStored(triggerId);
+    if (enabled) yield* checkArming(yield* bots.get(stored.trigger.botId), stored, caller);
     const { trigger } = stored;
     return yield* write({
       ...stored,

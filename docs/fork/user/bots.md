@@ -304,7 +304,9 @@ briefing a new thread. An agent cannot give a bot broader permissions than its o
 An agent that starts a run without waiting for it can ask to be told when it ends; the result
 then arrives in its thread like a finished delegated task. A bot run cannot start another bot.
 Agents list and save triggers with `loom_bots_triggers`, `loom_bots_save_trigger` and
-`loom_bots_set_trigger_enabled`.
+`loom_bots_set_trigger_enabled`. An agent can only turn on a trigger whose bot fits within its own
+permissions and the permissions of whoever saved the trigger, and a bot run cannot save or turn on
+triggers.
 They read history with `loom_bots_versions`, rate runs with `loom_bots_rate_run`, and start a
 replay with `loom_bots_replay`, then follow it with `loom_bots_replay_status`.
 Pipelines have `loom_bots_pipelines`, `loom_bots_define_pipeline`, `loom_bots_run_pipeline`,

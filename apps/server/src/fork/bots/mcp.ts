@@ -611,11 +611,14 @@ export const botsHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_bots_set_trigger_enabled: McpToolAccess.writes((input) =>
-        onHost(
-          Effect.flatMap(BotTriggers, (triggers) =>
-            triggers.setEnabled(input.triggerId, input.enabled),
-          ),
-        ),
+        Effect.gen(function* () {
+          const caller = yield* agentCaller;
+          return yield* onHost(
+            Effect.flatMap(BotTriggers, (triggers) =>
+              triggers.setEnabled(input.triggerId, input.enabled, caller),
+            ),
+          );
+        }),
       ),
     };
   }),

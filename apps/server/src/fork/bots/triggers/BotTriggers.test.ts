@@ -2,7 +2,8 @@
 import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
-import type { BotsSaveTriggerInput } from "@t3tools/contracts/fork";
+import { ThreadId, type RuntimeMode } from "@t3tools/contracts";
+import { botRunThreadId, type BotsSaveTriggerInput } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
@@ -11,7 +12,7 @@ import type { WebhookTriggerRequest } from "../../../scheduledTasks/ScheduledTas
 import { GitVcsDriver } from "../../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
-import { BotsService, USER_CALLER } from "../BotsService.ts";
+import { BotsService, USER_CALLER, type BotCaller } from "../BotsService.ts";
 import { BotPipelines, make as makeBotPipelines } from "../pipelines/BotPipelines.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotTriggers.ts";
@@ -59,6 +60,11 @@ const trigger = (fields: Partial<BotsSaveTriggerInput> = {}): BotsSaveTriggerInp
   followLatest: false,
   ...fields,
 });
+
+const agent = (
+  runtimeMode: RuntimeMode,
+  threadId: ThreadId = ThreadId.make("thread-a"),
+): BotCaller => ({ actor: "agent", threadId, projectId, runtimeMode });
 
 const checksFailing = (key: string, url: string, occurredAt?: string): TriggerEvent => ({
   kind: "pull-request-checks-failing",
@@ -201,7 +207,7 @@ describe("BotTriggers", () => {
           _tag: "not_found",
         });
 
-        yield* triggers.setEnabled(saved.id, false);
+        yield* triggers.setEnabled(saved.id, false, USER_CALLER);
         expect(yield* triggers.webhook(delivery(path, { file: "b.ts" }))).toEqual({
           _tag: "disabled",
         });
@@ -322,6 +328,49 @@ describe("BotTriggers", () => {
         });
         const [firing] = (yield* triggers.firings({ triggerId: saved.id, limit: 1 })).firings;
         expect(firing).toMatchObject({ outcome: "run", reason: "Started a pipeline run." });
+      }),
+    ),
+  );
+
+  it.effect("refuses an agent arming a person's trigger for a bot broader than itself", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer({ runtimeMode: "full-access" }), USER_CALLER);
+        const saved = yield* triggers.save(trigger({ enabled: false }), USER_CALLER);
+        const narrow = agent("approval-required");
+
+        const enabled = yield* triggers.setEnabled(saved.id, true, narrow).pipe(Effect.flip);
+        expect(enabled.reason).toBe("permission");
+        const resaved = yield* triggers
+          .save(trigger({ id: saved.id, enabled: true }), narrow)
+          .pipe(Effect.flip);
+        expect(resaved.reason).toBe("permission");
+        expect(yield* triggers.get(saved.id)).toMatchObject({ enabled: false });
+
+        expect(yield* triggers.setEnabled(saved.id, true, agent("full-access"))).toMatchObject({
+          enabled: true,
+        });
+        expect(yield* triggers.setEnabled(saved.id, false, narrow)).toMatchObject({
+          enabled: false,
+        });
+      }),
+    ),
+  );
+
+  it.effect("refuses a bot run saving or turning on a trigger", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const saved = yield* triggers.save(trigger({ enabled: false }), USER_CALLER);
+        const run = agent("auto", botRunThreadId("run-1"));
+
+        const created = yield* triggers.save(trigger(), run).pipe(Effect.flip);
+        expect(created.message).toBe("A bot run cannot start another bot.");
+        const enabled = yield* triggers.setEnabled(saved.id, true, run).pipe(Effect.flip);
+        expect(enabled.message).toBe("A bot run cannot start another bot.");
+        expect(yield* triggers.list("reviewer")).toMatchObject([{ id: saved.id, enabled: false }]);
       }),
     ),
   );

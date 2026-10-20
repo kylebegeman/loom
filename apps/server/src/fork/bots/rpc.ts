@@ -167,7 +167,10 @@ export const makeBotTriggersRpcHandlers = Effect.fn("BotTriggers.makeRpcHandlers
     [BT.deleteTrigger]: (input: { triggerId: string }) =>
       auth.effect(BT.deleteTrigger, triggers.delete(input.triggerId).pipe(Effect.as({}))),
     [BT.setTriggerEnabled]: (input: { triggerId: string; enabled: boolean }) =>
-      auth.effect(BT.setTriggerEnabled, triggers.setEnabled(input.triggerId, input.enabled)),
+      auth.effect(
+        BT.setTriggerEnabled,
+        triggers.setEnabled(input.triggerId, input.enabled, USER_CALLER),
+      ),
     [BT.repinTrigger]: (input: BotsRepinTriggerInput) =>
       auth.effect(BT.repinTrigger, triggers.repin(input)),
     [BT.testTrigger]: (input: BotsTestTriggerInput) =>
