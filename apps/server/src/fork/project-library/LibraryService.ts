@@ -321,12 +321,16 @@ const make = Effect.gen(function* () {
       if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
       // Encoding and digesting a request reads nothing saved but takes seconds for a large history
       // batch, so it runs before the lock. Its failures are raised where the transaction raised them.
+      // Each step is synchronous, so yields between them let waiting requests run.
       const request = yield* Effect.exit(
         Effect.gen(function* () {
+          yield* Effect.yieldNow;
           const requestBody = yield* encoded;
+          yield* Effect.yieldNow;
           const fence = yield* decodeFence(decodeUnknownJson(requestBody)).pipe(
             Effect.mapError(() => invalid()),
           );
+          yield* Effect.yieldNow;
           return { fence, fingerprint: yield* Effect.exit(digest(requestBody)) };
         }),
       ).pipe(Effect.withSpan("LibraryService.prepareRequest"));
@@ -776,8 +780,13 @@ const make = Effect.gen(function* () {
       const entries = yield* Effect.forEach(input.entries, (entry) =>
         Effect.all({
           entry: Effect.succeed(entry),
-          ingested: Effect.exit(Effect.flatMap(encode(codecs.archive, entry.thread), digest)),
-          version: Effect.exit(versionDigest(entry.thread)),
+          ingested: Effect.exit(
+            Effect.yieldNow.pipe(
+              Effect.andThen(encode(codecs.archive, entry.thread)),
+              Effect.flatMap(digest),
+            ),
+          ),
+          version: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread)))),
         }),
       ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
       return yield* mutation(
