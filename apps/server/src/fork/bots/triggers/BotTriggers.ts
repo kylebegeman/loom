@@ -617,7 +617,7 @@ export const make = Effect.gen(function* () {
       const githubEvent = request.headers["x-github-event"];
       event = {
         kind: "webhook",
-        key: webhookEventKey(request, yield* sha256(request.bodyText)),
+        key: webhookEventKey(request) ?? `delivery:${yield* randomUuidV4}`,
         summary: githubEvent === undefined ? `${request.method} delivery` : `GitHub ${githubEvent}`,
         fields,
       };

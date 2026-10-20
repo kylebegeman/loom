@@ -63,14 +63,14 @@ stream of `BotTriggerChange` (`trigger`, `trigger-deleted`, `firing`), because a
 
 Each kind exposes a fixed set of fields for mapping and for the dedupe key:
 
-| Kind                        | Fields                                                                                                      | Dedupe key                                                             |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| pull-request-checks-failing | `repository`, `number`, `url`, `title`, `headBranch`, `baseBranch`, `failedChecks` (comma list), `threadId` | `host/repository#number@headSha` (or `@syncedAt` day when no head sha) |
-| pull-request-opened         | same without `failedChecks`                                                                                 | `host/repository#number`                                               |
-| thread-settled              | `threadId`, `title`, `branch`, `projectId`                                                                  | `threadId@settledSequence`                                             |
-| merge-conflict              | `tag`, `branch`, `file` (one firing per file)                                                               | `tag:file`                                                             |
-| webhook                     | `body.<path>`, `headers.<name>`, `query.<name>`                                                             | `x-github-delivery`, else the relay delivery id, else a body hash      |
-| schedule                    | `firedAt`                                                                                                   | the due time                                                           |
+| Kind                        | Fields                                                                                                      | Dedupe key                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| pull-request-checks-failing | `repository`, `number`, `url`, `title`, `headBranch`, `baseBranch`, `failedChecks` (comma list), `threadId` | `host/repository#number@headSha` (or `@syncedAt` day when no head sha)   |
+| pull-request-opened         | same without `failedChecks`                                                                                 | `host/repository#number`                                                 |
+| thread-settled              | `threadId`, `title`, `branch`, `projectId`                                                                  | `threadId@settledSequence`                                               |
+| merge-conflict              | `tag`, `branch`, `file` (one firing per file)                                                               | `tag:file`                                                               |
+| webhook                     | `body.<path>`, `headers.<name>`, `query.<name>`                                                             | `x-github-delivery`, else the relay delivery id, else a new id each time |
+| schedule                    | `firedAt`                                                                                                   | the due time                                                             |
 
 ## Reading the event store
 

@@ -185,11 +185,14 @@ describe("BotTriggers", () => {
     ),
   );
 
-  it.effect("answers webhook deliveries by token, maps body fields and drops repeats", () =>
+  it.effect("answers webhook deliveries by token, maps body fields and drops resent ones", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
         const { bots, triggers } = yield* makeTriggers(harness);
-        yield* bots.save(scratchReviewer, USER_CALLER);
+        yield* bots.save(
+          reviewer({ workspace: { type: "scratch" }, maxConcurrentRuns: 5 }),
+          USER_CALLER,
+        );
         const saved = yield* triggers.save(
           trigger({ event: { kind: "webhook" }, mapping: { file: { field: "body.file" } } }),
           USER_CALLER,
@@ -200,9 +203,16 @@ describe("BotTriggers", () => {
         const first = yield* triggers.webhook(delivery(path, { file: "a.ts" }));
         expect(first).toMatchObject({ _tag: "accepted", outcome: "accepted" });
         expect((yield* harness.nextLaunch).initialMessage?.text).toContain("a.ts");
+        // A direct delivery carries no id, so the same body again is a new request, as from cron.
         expect(yield* triggers.webhook(delivery(path, { file: "a.ts" }))).toMatchObject({
-          outcome: "duplicate",
+          outcome: "accepted",
         });
+        yield* harness.nextLaunch;
+        const resent = delivery(path, { file: "a.ts" }, { "x-github-delivery": "d1" });
+        expect(yield* triggers.webhook(resent)).toMatchObject({ outcome: "accepted" });
+        yield* harness.nextLaunch;
+        expect(yield* triggers.webhook(resent)).toMatchObject({ outcome: "duplicate" });
+        expect(harness.launches).toHaveLength(3);
         expect(yield* triggers.webhook(delivery(`${path}x`, { file: "b.ts" }))).toEqual({
           _tag: "not_found",
         });

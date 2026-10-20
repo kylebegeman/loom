@@ -54,13 +54,15 @@ export const makeWebhookFieldReader = (request: WebhookRequest) => {
   };
 };
 
-/** GitHub's delivery id, else the relay's, else the body: a resent delivery fires once. */
+/**
+ * GitHub's delivery id, else the relay's, so a resent delivery fires once. Null for a direct
+ * delivery: nothing tells its resend from a new request with the same body, as from a cron job.
+ */
 export const webhookEventKey = (
   request: WebhookRequest & { readonly relayDeliveryId?: string | undefined },
-  bodyHash: string,
 ) => {
   const github = request.headers["x-github-delivery"];
   if (github !== undefined && github !== "") return `github:${github}`;
   if (request.relayDeliveryId !== undefined) return `relay:${request.relayDeliveryId}`;
-  return `body:${bodyHash}`;
+  return null;
 };

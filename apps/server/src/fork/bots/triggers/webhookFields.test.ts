@@ -34,9 +34,9 @@ describe("webhook fields", () => {
     expect(form("body.file")).toBe("a.ts");
   });
 
-  it("keys a delivery by GitHub's id, then the relay's, then the body", () => {
-    expect(webhookEventKey(request("{}", { "x-github-delivery": "g1" }), "h")).toBe("github:g1");
-    expect(webhookEventKey({ ...request("{}"), relayDeliveryId: "r1" }, "h")).toBe("relay:r1");
-    expect(webhookEventKey(request("{}"), "h")).toBe("body:h");
+  it("keys a delivery by GitHub's id, then the relay's, and leaves a direct one unkeyed", () => {
+    expect(webhookEventKey(request("{}", { "x-github-delivery": "g1" }))).toBe("github:g1");
+    expect(webhookEventKey({ ...request("{}"), relayDeliveryId: "r1" })).toBe("relay:r1");
+    expect(webhookEventKey(request("{}"))).toBeNull();
   });
 });

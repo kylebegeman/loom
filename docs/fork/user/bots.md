@@ -204,7 +204,8 @@ After saving a webhook or merge conflict trigger, its address is shown on the tr
 **Copy**; only people who can run bots see it. To start a bot from GitHub, add a webhook in the
 repository's settings, paste the address as the payload URL, choose `application/json`, and set a
 secret. On the trigger, turn on the signature check with the header `x-hub-signature-256`,
-prefix `sha256=` and the same secret. A delivery GitHub resends fires once. **Rotate** replaces
+prefix `sha256=` and the same secret. A delivery GitHub resends fires once; a service that sends
+no delivery id fires on every request. **Rotate** replaces
 the address; the old one stops working.
 
 For merge conflicts, set `LOOM_BOTS_CONFLICT_HOOK` to the address before running
