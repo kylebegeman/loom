@@ -1,3 +1,4 @@
+import { OriginalRouteReview } from "./OriginalRouteReview";
 import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
@@ -38,6 +39,10 @@ export function VaultMigrationInventorySettingsSection() {
       key={environment.environmentId}
       environmentId={environment.environmentId}
       computer={environment.label}
+      recoverySupported={supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-migration-recovery-design",
+      )}
       previewsSupported={supportsLoomFeature(
         configs.get(environment.environmentId)?.environment.capabilities,
         "vault-migration-previews",
@@ -54,11 +59,13 @@ function Inventory({
   computer,
   verificationSupported,
   previewsSupported,
+  recoverySupported,
 }: {
   environmentId: EnvironmentId;
   computer: string;
   verificationSupported: boolean;
   previewsSupported: boolean;
+  recoverySupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -328,6 +335,13 @@ function Inventory({
           ) : (
             <p>Verification needs a newer Vault server.</p>
           )}
+          {recoverySupported ? (
+            <OriginalRouteReview
+              key={`original:${result.plan.id}`}
+              environmentId={environmentId}
+              plan={result.plan}
+            />
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"

@@ -23,7 +23,18 @@ it.effect(
       const threadId = ThreadId.make("maintenance-acceptance");
       let reads = 0,
         receiptReads = 0;
+      let recoveryReads = 0;
       const migration = Layer.mock(VaultMigrationInventory.VaultMigrationInventory)({
+        recoveryPreview: () =>
+          Effect.sync(() => {
+            recoveryReads++;
+          }).pipe(
+            Effect.andThen(
+              Effect.fail(new VaultReplacementError({ reason: "verification-required" })),
+            ),
+          ),
+        originalVerification: () =>
+          Effect.fail(new VaultReplacementError({ reason: "verification-required" })),
         preview: () => Effect.fail(new VaultReplacementError({ reason: "verification-required" })),
         verification: (id) =>
           Effect.sync(() => {
@@ -120,9 +131,28 @@ it.effect(
       expect(reads).toBe(0);
       expect((yield* inspect(admin))[0]?.result).toEqual({ items: [], nextCursor: null });
       expect(reads).toBe(1);
+      const recovery = (scope: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_migration_recovery_preview", {
+            id: "a".repeat(32),
+            expectedOriginalOperationId: "b".repeat(32),
+            expectedReplacementOperationId: "c".repeat(32),
+          })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(threads),
+            Effect.provideService(McpInvocationContext, scope),
+          );
+      expect((yield* recovery(agent).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* recovery(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect(recoveryReads).toBe(0);
+      expect((yield* recovery(admin).pipe(Effect.flip))._tag).toBe("VaultReplacementError");
+      expect(recoveryReads).toBe(1);
       expect(Object.keys(VaultMigrationInventoryToolkit.tools).sort()).toEqual([
         "loom_vault_migration_inventory",
+        "loom_vault_migration_original_verification",
         "loom_vault_migration_preview",
+        "loom_vault_migration_recovery_preview",
         "loom_vault_migration_replacement_status",
         "loom_vault_migration_replacements",
         "loom_vault_migration_verification",

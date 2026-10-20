@@ -111,6 +111,24 @@ shows a hypothetical inverse, with original credential access unverified and no 
 backup captured. It is not a recovery bundle. Ordinary terminal Git, personal SSH configuration,
 workload grants and repository settings stay as they are.
 
+## Verify an original development route
+
+Open a reviewed SSH fetch replacement plan and use **Original development route**. Select a
+separate original development SSH record already in Vault. Its user, host and port must match
+the explicit source URL, with pinned trust and access to the exact repository path. Review the
+selection, then separately allow the repository-read check. Missing trust blocks before SSH
+access. Refresh inspects its receipt without contacting the provider again.
+
+This verifies the selected development key. It does not identify the key an old terminal used,
+resolve SSH aliases/defaults or contact a personal key manager. Do not supply personal or
+production credentials. Workloads still need current grants, and provider access can change
+after a check. GitHub API evidence cannot substitute for Git transport evidence.
+
+With fresh successful original and replacement receipts, choose **Preview recovery snapshot
+design**. It describes proposed bounded capture and recovery safeguards. Nothing is captured or
+written, and no backup exists. Close the design or cancel the plan to leave it. Real capture,
+cutover and rollback execution remain unavailable.
+
 ## Grant recurring access
 
 Open **Vault access** in the selected computer's settings. Add a grant for one thread or all

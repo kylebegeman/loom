@@ -187,7 +187,7 @@ Neither preview contacts providers or writes a ledger, file, profile, grant or a
 OpenBao path or permission is needed; the replacement subtree remains a deferred host-owner
 step behind L79.
 
-Rollback is a hypothetical inverse of the proposed Vault-mediated read route. It declares that
+The legacy single-receipt rollback view is a hypothetical inverse of the proposed Vault-mediated read route. It declares that
 original access is unverified, no restorable configuration snapshot was captured, and a future
 writer must match the exact source and applied forward route. A fresh replacement read receipt
 binds the preview context only; it cannot prove the old identity works. Execution remains
@@ -227,3 +227,74 @@ A typed review requires a runtime that understands protocol two. Upgraded server
 client APIs, but downgrading to an older server does not teach it to read new typed ledgers.
 Keep a compatible runtime for review history; do not delete history to make a downgrade appear
 compatible. L79's host-owner rollout/recovery gates still apply.
+
+## Independent original development-route verification
+
+`original-verify` is a destination-write RPC with development, original-route-review and contact
+literals. It selects an active SSH item/version distinct from the replacement item. The selected
+key must match the explicit SSH username, host and port at the reviewed fetch entry, with the
+exact original Git path preserved. The bounded private metadata parser extracts only an explicit
+username; it never resolves defaults, includes, helpers, SSH config or an agent. Missing users,
+local SSH-command overrides, omitted entries, embedded authentication and URL rewrites are refused.
+Personal and production credentials must not be supplied to this development-only flow.
+
+The existing verifier now uses independent original/replacement receipt slots within the same
+replacement record. Old records decode without the optional original slot. Actor, expected prior
+receipt and selected item/version bind retries; concurrent original and replacement checks do
+not replace one another. Acceptance is persisted before any provider read. Repeated source/item
+and permission checks, pinned host transport, thirty-second provider deadline, eight-second SSH
+limit, sixty-second evidence bound and interrupted-outcome behavior apply to both roles. Status
+reads never rerun probes. Cancellation invalidates both roles, including late completion.
+
+The new original status identifies an `explicit-development-selection` and leaves ambient
+terminal authentication unevaluated. A passing receipt proves that selected key can read the
+original repository route; it does not discover historical shell-key use or provide a workload
+grant. API receipts and the replacement record cannot substitute for this evidence.
+
+`recovery-preview` requires current matching original and replacement receipt IDs, item versions,
+host pins, source fingerprint and reviewed plan. Its stable design hash binds those inputs and
+the environment, and its lifetime ends with the earlier receipt/plan deadline. It performs no
+provider call or ledger/configuration write. The capability is `vault-migration-recovery-design`;
+administrator MCP/CLI expose original status and the design preview only. Shared client queries
+invalidate both receipt roles after review, cancellation or a verification settlement. Older
+preview APIs retain their original unevaluated-original-access semantics.
+
+## Proposed recoverable snapshot format and journal
+
+This is a design, not a stored field or capture implementation. The proposed optional artifact
+belongs in the existing encrypted replacement ledger, reusing its permissions and CAS revision.
+It would bind a versioned snapshot ID, environment/project/resolved-worktree identity, resolved
+Git-directory identity, selected key and ordinal, explicit absence/presence, duplicate ordering,
+nonsecret preimage, planned route references, preimage/postimage digests, operation/actor and
+journal phase. Current metadata fingerprints alone cannot restore configuration.
+
+The capture scope is the selected nonsecret local fetch entry and an explicitly selected managed
+route manifest. Do not copy whole Git files, global/personal SSH configuration, includes, hooks,
+helper bodies or private credential material. Preserve unrelated entries when rendering a future
+patch. If an exact bounded owned span, ordering or nonsecret value cannot be established, refuse
+capture. The actual managed-route writer and its manifest representation must be selected before
+this proposed format is finalized; changing a remote URL alone does not install Vault mediation.
+
+Proposed phases, all unimplemented:
+
+| Phase               | Required durable evidence                                                    | Interrupted recovery decision                                                               |
+| ------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Captured            | Validated nonsecret preimage, identity and intended route                    | No host mutation has started. Reverify and explicitly retry or abandon.                     |
+| Applying            | Intent stored before any host write; expected preimage and planned postimage | Preimage match means unapplied; postimage match means applied; neither means conflict.      |
+| Applied             | Actual postimage confirmed before completion is recorded                     | Preserve the artifact and require fresh original-route evidence before rollback.            |
+| Rolling back        | Explicit rollback intent and exact applied postimage guard                   | Preimage match means restored; postimage match means still applied; neither means conflict. |
+| Rolled back         | Original preimage confirmed after the guarded inverse                        | Retain the receipt; do not repeat host writes on an identical retry.                        |
+| Conflict or unknown | Both expected digests, observed category and last accepted intent            | Stop automatic mutation. Preserve evidence and request explicit reconciliation.             |
+
+Every future transition must recheck source identity, item versions, trust and applicable grants.
+A no-op must be recognized before intent; identical preimage/postimage cannot distinguish an
+interrupted write. An unavailable ledger blocks new writes. Future retention must preserve the
+last recoverable artifact through conflict/unknown outcomes; backup and revocation semantics
+remain subject to L79/L88 rather than being inferred from a preview.
+
+An advisory file lock does not exclude uncooperative external Git editors. The compare-and-write
+primitive, conflict detection and treatment of worktrees/symlinks must be designed and proven
+with synthetic fixtures before any host capture or writer is authorized. The preview explicitly
+reports `captureEngine: unimplemented` and `concurrentWriterStrategy: unresolved`. It is not a
+promise of atomicity or rollback readiness. All execution gates remain literal false. No new
+OpenBao paths, policy permissions, Library deployment or production action is introduced.

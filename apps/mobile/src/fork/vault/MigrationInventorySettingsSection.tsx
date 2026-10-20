@@ -1,3 +1,4 @@
+import { OriginalRouteReview } from "./OriginalRouteReview";
 import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
@@ -50,6 +51,10 @@ export function VaultMigrationInventorySettingsSection({
           key={`${environmentId}:${connected}`}
           environmentId={environmentId}
           connected={connected}
+          recoverySupported={supportsLoomFeature(
+            config?.environment.capabilities,
+            "vault-migration-recovery-design",
+          )}
           previewsSupported={supportsLoomFeature(
             config?.environment.capabilities,
             "vault-migration-previews",
@@ -70,11 +75,13 @@ function Inventory({
   connected,
   verificationSupported,
   previewsSupported,
+  recoverySupported,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   verificationSupported: boolean;
   previewsSupported: boolean;
+  recoverySupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -329,6 +336,14 @@ function Inventory({
           ) : (
             <Text>Verification needs a newer Vault server.</Text>
           )}
+          {recoverySupported ? (
+            <OriginalRouteReview
+              key={`original:${result.plan.id}`}
+              environmentId={environmentId}
+              plan={result.plan}
+              connected={connected}
+            />
+          ) : null}
           <Button
             label="Refresh replacement status"
             disabled={busy || !connected}

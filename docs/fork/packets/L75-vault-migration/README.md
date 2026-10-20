@@ -1,6 +1,6 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed manual and typed development imports, local inventory, replacement plans, receipts and read-route previews implemented; waiting on host policy.** Kyle selected the full packet. Configuration cutover remains unfinished; live verification acceptance is pending.
+Status: **In progress; reviewed manual and typed development imports, local inventory, replacement plans, independent route receipts and recovery design previews implemented; waiting on host policy.** Kyle selected the full packet. Configuration cutover remains unfinished; live verification acceptance is pending.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
@@ -28,14 +28,19 @@ shell interaction acceptance remain pending.
 
 Cutover and rollback previews now bind one selected fetch entry to a fresh exact SSH
 repository-read receipt, source fingerprint, item/version and pinned host. GitHub API evidence
-and push entries cannot produce these previews. The inverse is hypothetical: original access
-is unverified, no configuration backup is captured, and both execution paths remain unavailable.
+and push entries cannot produce these previews. The legacy inverse is hypothetical and does not evaluate original access; no configuration backup is captured, and both execution paths remain unavailable.
 Previews perform no provider probes, ledger writes, grant changes or configuration writes.
 
 Reviewed typed imports now accept dedicated unencrypted Ed25519 PEM/OpenSSH keys and GitHub
 App/token credentials into new items. Reviews retain public metadata and a canonical-material
 fingerprint, never private values. A second confirmation reenters the same material before commit.
 No provider verification, grant, configuration change or production operation is implied.
+
+Original development-route verification now uses a separately selected existing Vault SSH key,
+explicit development/review/contact attestations, and the source URL's explicit user/host/port/path.
+It does not discover the old shell's key or use a personal agent. Fresh original and replacement
+read receipts can produce a recovery snapshot design preview. No configuration is captured or
+written, and no backup or recovery engine exists. Concurrent-writer protection remains unresolved.
 
 Dedicated replacement provisioning, live verification acceptance,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer

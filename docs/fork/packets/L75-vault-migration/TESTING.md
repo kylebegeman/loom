@@ -202,6 +202,33 @@ change, new backend permission or Git transport mutation was used.
 Typed import work starts from fork main `6b66ed8bd5`; the final fetch found main already in
 its ancestry, with no additional merge changes requiring integration checks.
 
+## Original development-route evidence and snapshot design
+
+The eight-file focused suite passed **74 tests**, including real fork MCP startup registration.
+New cases reject replacement-record substitution, mismatched/implicit users, local SSH command
+overrides and API-only plans before provider access. Separate original and replacement receipts
+can run concurrently without overwriting one another. Cases cover host-trust failure, lost final
+write, idempotent retry, interrupted outcomes, item/source/receipt changes, expiry and late
+completion after cancellation. A recovery preview requires both exact current receipt IDs and
+performs no provider probe or ledger write. Contracts reject executable, captured, expired or
+API-based recovery claims. The existing replacement acceptance suite remains green after sharing
+the verifier. All five affected package typechecks, focused lint and native mobile static checks
+passed. Documentation links, 390 seam rows and whitespace checks pass; no repo-wide checks ran.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigrationInventory.test.ts apps/server/src/fork/vault/MigrationGitMetadata.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts packages/client-runtime/src/fork/vault-migration-inventory.permissions.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts
+```
+
+Authorized isolated Browser-panel acceptance passed separate original review/contact consent,
+key-list refresh, missing-host-trust failure before SSH access, independent receipt inspection,
+and recovery design display using injected synthetic successful receipts. Failed ledger refresh
+hides the cached design, restoration recovers it and plan cancellation removes it. The 390 CSS-
+pixel layout has no horizontal overflow. Synthetic item/plan payloads were restored and their
+private temporary backup removed. No real host Git/SSH configuration was captured or written,
+no live SSH probe or provider login ran, and no Library or production action occurred. Native,
+Electron shell, remote/relay/tunnel and live-provider acceptance remain pending. No browser
+result establishes native acceptance or a recoverable configuration artifact.
+
 ## Full packet acceptance still required
 
 Live acceptance must confirm the implemented binding between reviewed source, replacement

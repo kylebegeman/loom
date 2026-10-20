@@ -174,3 +174,24 @@ it.effect(
       Effect.scoped,
     ),
 );
+
+it("requires an explicit exact SSH username without inspecting helpers or ambient configuration", () => {
+  const dep = MigrationGitMetadata.parseMigrationGitMetadata(
+    "remote.origin.url\ngit@host.invalid:team/repo.git\0",
+  ).dependencies[0]!;
+  for (const [url, user] of [
+    ["git@host.invalid:team/repo.git", "git"],
+    ["ssh://qa@host.invalid/team/repo.git", "qa"],
+    ["host.invalid:team/repo.git", null],
+    ["ssh://host.invalid/team/repo.git", null],
+    ["ssh://%67it@host.invalid/team/repo.git", null],
+    ["ssh://git:private@host.invalid/team/repo.git", null],
+  ] as const) {
+    expect(
+      MigrationGitMetadata.migrationOriginalSshUsername(
+        Redacted.make(`remote.origin.url\n${url}\0`),
+        dep,
+      ),
+    ).toBe(user);
+  }
+});

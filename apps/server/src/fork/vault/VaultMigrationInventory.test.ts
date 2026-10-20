@@ -24,6 +24,7 @@ import * as VaultCore from "./VaultCore.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 const itemId = "a".repeat(32);
+const originalItemId = "9".repeat(32);
 const project = (i = 0): OrchestrationProjectShell => ({
   id: ProjectId.make(`project-${String(i).padStart(2, "0")}`),
   title: `Project ${i}`,
@@ -47,6 +48,12 @@ const fixture = Effect.sync(() => {
     pinned: false,
     permit: true,
     probeCalls: 0,
+    originalVersion: 1,
+    originalActive: true,
+    originalPinned: true,
+    originalUsername: "git",
+    failOriginalReceipt: false,
+    probeIds: [] as string[],
     failReceipt: false,
     upstreamExpiry: null as string | null,
     onProbe: Effect.void as Effect.Effect<void, VaultError>,
@@ -58,12 +65,12 @@ const fixture = Effect.sync(() => {
     reads: [] as string[],
   };
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
-  const item = (): VaultItemSummary => ({
-    id: itemId,
+  const item = (id = itemId): VaultItemSummary => ({
+    id,
     label: "Dedicated development",
-    kind: state.github ? "service-connection" : "ssh-key",
-    state: state.active ? "active" : "archived",
-    version: state.version,
+    kind: id === originalItemId ? "ssh-key" : state.github ? "service-connection" : "ssh-key",
+    state: (id === originalItemId ? state.originalActive : state.active) ? "active" : "archived",
+    version: id === originalItemId ? state.originalVersion : state.version,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   });
@@ -93,34 +100,48 @@ const fixture = Effect.sync(() => {
               });
         }),
     }),
-    Layer.mock(VaultCore.VaultCore)({ inspect: () => Effect.succeed(item()) }),
+    Layer.mock(VaultCore.VaultCore)({ inspect: (id) => Effect.succeed(item(id)) }),
     Layer.mock(VaultSsh.VaultSsh)({
       verifyGit: (input, authorize) =>
         Effect.gen(function* () {
           yield* authorize;
           state.probeCalls++;
+          state.probeIds.push(input.id);
           yield* state.onProbe;
           yield* authorize;
           return {
             id: input.id,
             version: input.expectedVersion,
             repository: input.repository,
-            destination: `ssh://git@${state.host}:22`,
+            destination: `ssh://${input.id === originalItemId ? state.originalUsername : "git"}@${state.host}:22`,
             fingerprint: "synthetic-key",
-            hostFingerprint: "synthetic-host",
+            hostFingerprint:
+              input.id === originalItemId ? "synthetic-original-host" : "synthetic-host",
             checkedAt: yield* Clock.currentTimeMillis,
             authenticated: true as const,
             readable: true as const,
           };
         }),
-      info: () =>
+      info: (id) =>
         Effect.succeed({
-          item: item(),
-          target: { hostname: state.host, username: "git", port: 22, hostKey: null },
+          item: item(id),
+          target: {
+            hostname: state.host,
+            username: id === originalItemId ? state.originalUsername : "git",
+            port: 22,
+            hostKey: null,
+          },
           publicKey: "",
           fingerprint: "synthetic",
-          hostFingerprint: state.pinned ? "synthetic-host" : null,
-          destination: `ssh://git@${state.host}:22`,
+          hostFingerprint:
+            id === originalItemId
+              ? state.originalPinned
+                ? "synthetic-original-host"
+                : null
+              : state.pinned
+                ? "synthetic-host"
+                : null,
+          destination: `ssh://${id === originalItemId ? state.originalUsername : "git"}@${state.host}:22`,
         }),
     }),
     Layer.mock(VaultGitHub.VaultGitHub)({
@@ -156,7 +177,12 @@ const fixture = Effect.sync(() => {
         ),
       write: (key, value, expected) =>
         Effect.suspend(() => {
-          const stored = Redacted.value(value) as { verification?: { receipt: { state: string } } };
+          const stored = Redacted.value(value) as {
+            verification?: { receipt: { state: string } };
+            originalVerification?: { receipt: { state: string } };
+          };
+          if (state.failOriginalReceipt && stored.originalVerification?.receipt.state === "passed")
+            return Effect.fail(new VaultError({ reason: "unavailable" }));
           if (state.failReceipt && stored.verification?.receipt.state === "passed")
             return Effect.fail(new VaultError({ reason: "unavailable" }));
           const version = records.get(key)?.version ?? 0;
@@ -780,4 +806,275 @@ it.effect(
         expect(f.state.probeCalls).toBe(1);
       }).pipe(Effect.provide(f.layer));
     }),
+);
+
+const originalAttempt = (id: string, expectedOperationId: string | null = null, letter = "d") => ({
+  ...attempt(id, expectedOperationId, letter),
+  original: { itemId: originalItemId, expectedVersion: 1 },
+  developmentOnly: true as const,
+  reviewedOriginalRoute: true as const,
+});
+it.effect(
+  "requires independent original development evidence and previews a design without capturing configuration",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        const design = {
+          id: input.id,
+          expectedReplacementOperationId: "c".repeat(32),
+          expectedOriginalOperationId: "d".repeat(32),
+        };
+        expect((yield* service.recoveryPreview(design, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "verification-required",
+        );
+        const original = yield* service.originalVerify(
+          originalAttempt(input.id),
+          "admin",
+          Effect.void,
+        );
+        expect(original).toMatchObject({
+          role: "original-development-route",
+          freshness: "current",
+          identityBinding: "explicit-development-selection",
+          ambientAuthentication: "not-evaluated",
+          canCutover: false,
+          canRollback: false,
+          configurationWrites: false,
+          receipt: {
+            itemId: originalItemId,
+            scope: "ssh-git-transport",
+            gitPath: "dev/repo.git",
+            hostFingerprint: "synthetic-original-host",
+          },
+        });
+        expect(f.state.probeIds).toEqual([itemId, originalItemId]);
+        expect(
+          yield* service.originalVerify(originalAttempt(input.id), "admin", Effect.void),
+        ).toEqual(original);
+        expect(f.state.probeCalls).toBe(2);
+        const before = [...f.records.entries()];
+        const preview = yield* service.recoveryPreview(design, Effect.void);
+        expect(preview).toMatchObject({
+          snapshotState: "design-only",
+          configurationSnapshot: "not-captured",
+          captureEngine: "unimplemented",
+          concurrentWriterStrategy: "unresolved",
+          configurationWrites: false,
+          canCutover: false,
+          canRollback: false,
+          original: { operationId: "d".repeat(32) },
+          replacement: { operationId: "c".repeat(32) },
+        });
+        expect(yield* service.recoveryPreview(design, Effect.void)).toEqual(preview);
+        expect((yield* service.originalVerification(input.id)).freshness).toBe("current");
+        expect([...f.records.entries()]).toEqual(before);
+        expect(f.state.probeCalls).toBe(2);
+        expect(JSON.stringify(preview)).not.toContain("remote.origin.url");
+        expect(
+          (yield* service
+            .recoveryPreview(
+              { ...design, expectedOriginalOperationId: "c".repeat(32) },
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("receipt-changed");
+        f.state.originalVersion++;
+        expect((yield* service.recoveryPreview(design, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "item-changed",
+        );
+        f.state.originalVersion = 1;
+        expect([...f.records.keys()]).toHaveLength(1);
+        yield* TestClock.adjust("61 seconds");
+        expect((yield* service.recoveryPreview(design, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "verification-required",
+        );
+        const [key, stored] = [...f.records.entries()][0]!;
+        const malformed = Redacted.value(stored.value) as {
+          originalVerification: { receipt: { gitPath: string } };
+        };
+        f.records.set(key, {
+          ...stored,
+          value: Redacted.make({
+            ...malformed,
+            originalVerification: {
+              ...malformed.originalVerification,
+              receipt: { ...malformed.originalVerification.receipt, gitPath: "dev/other.git" },
+            },
+          }),
+        });
+        expect((yield* service.originalVerification(input.id).pipe(Effect.flip)).reason).toBe(
+          "invalid-response",
+        );
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect.each(["same-key", "wrong-user", "implicit-user", "local-command", "api-plan"] as const)(
+  "refuses %s original-route claims before a provider probe",
+  (kind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      if (kind === "implicit-user") f.state.raw = "remote.origin.url\ngithub.com:dev/repo.git\0";
+      if (kind === "local-command") f.state.raw += "core.sshcommand\nnever-run-this\0";
+      if (kind === "wrong-user") f.state.originalUsername = "wrong-user";
+      if (kind === "api-plan") f.state.github = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = {
+          ...prepareInput(f.state.raw),
+          replacement: {
+            adapter: f.state.github ? ("github" as const) : ("ssh" as const),
+            itemId,
+            expectedVersion: 1,
+          },
+        };
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        const request = originalAttempt(input.id);
+        const result = yield* service
+          .originalVerify(
+            kind === "same-key"
+              ? { ...request, original: { itemId, expectedVersion: 1 } }
+              : request,
+            "admin",
+            Effect.void,
+          )
+          .pipe(Effect.flip);
+        expect(result.reason).toBe(
+          kind === "api-plan"
+            ? "verification-scope"
+            : kind === "local-command"
+              ? "unsafe-source"
+              : "original-identity-required",
+        );
+        expect(f.state.probeCalls).toBe(0);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect(
+  "persists original failures and interrupted outcomes independently, and invalidates snapshot prerequisites",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      f.state.originalPinned = false;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+          input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        const failed = yield* service.originalVerify(
+          originalAttempt(input.id),
+          "admin",
+          Effect.void,
+        );
+        expect(failed).toMatchObject({
+          freshness: "failed",
+          receipt: { failure: "untrusted-host" },
+        });
+        expect((yield* service.verification(input.id)).freshness).toBe("current");
+        f.state.originalPinned = true;
+        f.state.failOriginalReceipt = true;
+        expect(
+          (yield* service
+            .originalVerify(originalAttempt(input.id, "d".repeat(32), "e"), "admin", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        expect((yield* service.originalVerification(input.id)).freshness).toBe("running");
+        const calls = f.state.probeCalls;
+        expect(
+          (yield* service.originalVerify(
+            originalAttempt(input.id, "d".repeat(32), "e"),
+            "admin",
+            Effect.void,
+          )).freshness,
+        ).toBe("running");
+        expect(f.state.probeCalls).toBe(calls);
+        yield* TestClock.adjust("31 seconds");
+        expect((yield* service.originalVerification(input.id)).freshness).toBe("interrupted");
+        f.state.failOriginalReceipt = false;
+        yield* service.originalVerify(
+          originalAttempt(input.id, "e".repeat(32), "f"),
+          "admin",
+          Effect.void,
+        );
+        f.state.originalVersion++;
+        expect((yield* service.originalVerification(input.id)).freshness).toBe("invalidated");
+        f.state.originalVersion = 1;
+        yield* service.cancel(input.id);
+        expect((yield* service.originalVerification(input.id)).freshness).toBe("invalidated");
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+it.effect("cannot restore cancelled original verification from a late completion", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.state.pinned = true;
+    yield* Effect.gen(function* () {
+      const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+        input = prepareInput(f.state.raw);
+      yield* service.prepare(input, "admin");
+      yield* service.review({ id: input.id, reviewed: true }, "admin");
+      f.state.onProbe = service.cancel(input.id).pipe(
+        Effect.asVoid,
+        Effect.mapError(() => new VaultError({ reason: "conflict" })),
+      );
+      const result = yield* service.originalVerify(originalAttempt(input.id), "admin", Effect.void);
+      expect(result).toMatchObject({
+        freshness: "invalidated",
+        planState: "cancelled",
+        receipt: { state: "failed", failure: "cancelled" },
+      });
+    }).pipe(Effect.provide(f.layer));
+  }),
+);
+
+it.effect("keeps concurrently accepted original and replacement receipts independent", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.state.pinned = true;
+    yield* Effect.gen(function* () {
+      const service = yield* VaultMigrationInventory.VaultMigrationInventory,
+        input = prepareInput(f.state.raw);
+      yield* service.prepare(input, "admin");
+      yield* service.review({ id: input.id, reviewed: true }, "admin");
+      const entered = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      let calls = 0;
+      f.state.onProbe = Effect.gen(function* () {
+        if (++calls === 2) yield* Deferred.succeed(entered, undefined);
+        yield* Deferred.await(release);
+      });
+      const replacement = yield* Effect.forkChild(
+        service.verify(attempt(input.id), "admin", Effect.void),
+      );
+      const original = yield* Effect.forkChild(
+        service.originalVerify(originalAttempt(input.id), "admin", Effect.void),
+      );
+      yield* Deferred.await(entered);
+      expect((yield* service.verification(input.id)).freshness).toBe("running");
+      expect((yield* service.originalVerification(input.id)).freshness).toBe("running");
+      yield* Deferred.succeed(release, undefined);
+      expect((yield* Fiber.join(replacement)).freshness).toBe("current");
+      expect((yield* Fiber.join(original)).freshness).toBe("current");
+      expect(
+        (yield* service.recoveryPreview(
+          {
+            id: input.id,
+            expectedOriginalOperationId: "d".repeat(32),
+            expectedReplacementOperationId: "c".repeat(32),
+          },
+          Effect.void,
+        )).configurationSnapshot,
+      ).toBe("not-captured");
+    }).pipe(Effect.provide(f.layer));
+  }),
 );

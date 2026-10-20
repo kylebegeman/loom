@@ -9,6 +9,7 @@ export class VaultReplacementError extends Schema.TaggedError<VaultReplacementEr
   "VaultReplacementError",
   {
     reason: Schema.Literals([
+      "original-identity-required",
       "source-changed",
       "source-unavailable",
       "item-changed",
@@ -29,6 +30,8 @@ export class VaultReplacementError extends Schema.TaggedError<VaultReplacementEr
 ) {
   override get message() {
     switch (this.reason) {
+      case "original-identity-required":
+        return "Choose a separate development SSH key matching the explicit original user, host and port. Personal agents and replacement credentials are not fallbacks.";
       case "verification-required":
         return "A fresh successful verification receipt is required. Verify the replacement and refresh.";
       case "verification-scope":
@@ -276,7 +279,81 @@ export const VaultReplacementPreview = Schema.Struct({
   ),
 );
 export type VaultReplacementPreview = typeof VaultReplacementPreview.Type;
+export const VaultOriginalVerify = Schema.Struct({
+  ...VaultReplacementVerify.fields,
+  original: Schema.Struct({ itemId: VaultItemId, expectedVersion: PositiveInt }),
+  developmentOnly: Schema.Literal(true),
+  reviewedOriginalRoute: Schema.Literal(true),
+});
+export type VaultOriginalVerify = typeof VaultOriginalVerify.Type;
+export const VaultOriginalVerificationStatus = Schema.Struct({
+  ...VaultReplacementVerificationStatus.fields,
+  role: Schema.Literal("original-development-route"),
+  identityBinding: Schema.Literal("explicit-development-selection"),
+  ambientAuthentication: Schema.Literal("not-evaluated"),
+  canRollback: Schema.Literal(false),
+  configurationWrites: Schema.Literal(false),
+}).check(
+  Schema.makeFilter(
+    (status) => status.receipt === null || status.receipt.scope === "ssh-git-transport",
+  ),
+);
+export type VaultOriginalVerificationStatus = typeof VaultOriginalVerificationStatus.Type;
+export const VaultRecoverySnapshotInput = Schema.Struct({
+  id: VaultItemId,
+  expectedReplacementOperationId: VaultItemId,
+  expectedOriginalOperationId: VaultItemId,
+});
+export type VaultRecoverySnapshotInput = typeof VaultRecoverySnapshotInput.Type;
+export const VaultRecoverySnapshotPreview = Schema.Struct({
+  planId: VaultItemId,
+  projectId: ProjectId,
+  designId: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  checkedAt: Schema.Int,
+  validUntil: Schema.Int,
+  source: VaultMigrationDependency,
+  original: VaultReplacementVerificationReceipt,
+  replacement: VaultReplacementVerificationReceipt,
+  originalAccess: Schema.Literal("selected-development-key-read-verified"),
+  ambientAuthentication: Schema.Literal("not-evaluated"),
+  workloadAuthorization: Schema.Literal("not-evaluated"),
+  snapshotState: Schema.Literal("design-only"),
+  configurationSnapshot: Schema.Literal("not-captured"),
+  proposedStorage: Schema.Literal("existing-replacement-ledger"),
+  proposedCapture: Schema.Literal("selected-nonsecret-fetch-entry-and-route-manifest"),
+  proposedRecovery: Schema.Literal("journal-with-preimage-and-postimage-reconciliation"),
+  captureEngine: Schema.Literal("unimplemented"),
+  concurrentWriterStrategy: Schema.Literal("unresolved"),
+  privateMaterial: Schema.Literal("references-only"),
+  globalSshConfiguration: Schema.Literal("excluded"),
+  canCutover: Schema.Literal(false),
+  canRollback: Schema.Literal(false),
+  configurationWrites: Schema.Literal(false),
+}).check(
+  Schema.makeFilter(
+    (preview) =>
+      preview.validUntil > preview.checkedAt &&
+      preview.source.direction === "fetch" &&
+      preview.original.state === "passed" &&
+      preview.replacement.state === "passed" &&
+      preview.original.scope === "ssh-git-transport" &&
+      preview.replacement.scope === "ssh-git-transport" &&
+      preview.original.planId === preview.planId &&
+      preview.replacement.planId === preview.planId &&
+      preview.original.itemId !== preview.replacement.itemId &&
+      preview.original.gitPath === preview.source.gitPath &&
+      preview.replacement.gitPath === preview.source.gitPath &&
+      preview.original.validUntil !== null &&
+      preview.replacement.validUntil !== null &&
+      preview.validUntil <= preview.original.validUntil &&
+      preview.validUntil <= preview.replacement.validUntil,
+  ),
+);
+export type VaultRecoverySnapshotPreview = typeof VaultRecoverySnapshotPreview.Type;
 export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
+  originalVerify: "loom.vault-migration.original-verify",
+  originalVerification: "loom.vault-migration.original-verification",
+  recoveryPreview: "loom.vault-migration.recovery-preview",
   preview: "loom.vault-migration.replacement-preview",
   verify: "loom.vault-migration.replacement-verify",
   verification: "loom.vault-migration.replacement-verification",
@@ -290,6 +367,21 @@ export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
 const V = VAULT_MIGRATION_INVENTORY_WS_METHODS;
 const error = Schema.Union([VaultError, VaultReplacementError, EnvironmentAuthorizationError]);
 export const VaultMigrationInventoryRpcGroup = RpcGroup.make(
+  Rpc.make(V.originalVerify, {
+    payload: VaultOriginalVerify,
+    success: VaultOriginalVerificationStatus,
+    error,
+  }),
+  Rpc.make(V.originalVerification, {
+    payload: Schema.Struct({ id: VaultItemId }),
+    success: VaultOriginalVerificationStatus,
+    error,
+  }),
+  Rpc.make(V.recoveryPreview, {
+    payload: VaultRecoverySnapshotInput,
+    success: VaultRecoverySnapshotPreview,
+    error,
+  }),
   Rpc.make(V.preview, {
     payload: VaultReplacementPreviewInput,
     success: VaultReplacementPreview,

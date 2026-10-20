@@ -17,6 +17,29 @@ proposed route only; it is not an applied rollback, a restorable backup or proof
 credential still works. Future execution must independently verify original access and compare
 the exact applied forward state. Neither preview authorizes any write or creates a workload grant.
 
+## Original development route and recovery design
+
+A reviewed SSH fetch plan can verify a separately selected original development key already in
+Vault. The source must name the SSH user explicitly, and the key's user/host/port must match.
+The selected record must be active, pinned and distinct from the replacement record. Separate
+human review and provider-contact confirmations precede a fixed repository read. Missing trust
+fails before SSH access. Default users, local SSH-command overrides, aliases, ambiguous routing,
+personal agents and API-only evidence cannot establish this route.
+
+The receipt identifies the explicitly selected development key, not whichever key an old shell
+happened to use. Development-only ownership is a human attestation. The surrounding terminal's
+authentication and workload grants remain unevaluated. Original and replacement attempts have
+independent identities and retry/recovery state; expiry, source/item changes and cancellation
+invalidate usable evidence. No private credentials are returned.
+
+With fresh passing evidence for both routes, inspect a recovery snapshot design. It proposes
+capturing the selected nonsecret fetch entry and a future managed-route manifest in the existing
+encrypted ledger. It captures nothing now and is not a restorable backup. Proposed recovery
+uses intent and preimage/postimage reconciliation, with conflicts requiring review. The capture
+engine, actual route-writer integration and protection against concurrent external writers remain
+open decisions. Preview refresh hides failed or expired evidence; close the preview or cancel
+the plan to leave it. Cutover, rollback and configuration writes remain unavailable.
+
 ## Summary
 
 Replace selected interactive development dependencies with dedicated Vault credentials.

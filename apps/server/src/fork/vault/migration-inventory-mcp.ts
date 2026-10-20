@@ -10,6 +10,9 @@ import {
   VaultReplacementVerificationStatus,
   VaultReplacementPreviewInput,
   VaultReplacementPreview,
+  VaultOriginalVerificationStatus,
+  VaultRecoverySnapshotInput,
+  VaultRecoverySnapshotPreview,
   VaultItemId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -23,6 +26,22 @@ import * as VaultMigrationInventory from "./VaultMigrationInventory.ts";
 const failure = Schema.Union([VaultError, VaultReplacementError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultMigrationInventoryToolkit = Toolkit.make(
+  Tool.make("loom_vault_migration_original_verification", {
+    description:
+      "Inspect independently selected original development route evidence without a provider probe. Administrator clients only. Does not identify ambient shell credentials, capture configuration or authorize execution.",
+    parameters: Schema.Struct({ id: VaultItemId }),
+    success: VaultOriginalVerificationStatus,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_migration_recovery_preview", {
+    description:
+      "Preview a recovery snapshot design bound to fresh original and replacement SSH repository-read evidence. Administrator clients only. No configuration capture or writes, no provider probe or execution. Concurrent writer strategy and capture engine remain unimplemented; this is not a backup.",
+    parameters: VaultRecoverySnapshotInput,
+    success: VaultRecoverySnapshotPreview,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_migration_preview", {
     description:
       "Preview a per-repository read route or its hypothetical rollback, bound to a fresh matching SSH repository-read receipt. Administrator clients only. No provider contact, writes, grants or execution. GitHub API and push evidence are ineligible; original access is unverified and no restorable configuration snapshot is captured.",
@@ -76,6 +95,31 @@ export const vaultMigrationInventoryHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_migration_original_verification: McpToolAccess.reads((input) =>
+        admin.pipe(
+          Effect.andThen(
+            onHost(
+              Effect.flatMap(VaultMigrationInventory.VaultMigrationInventory, (service) =>
+                service.originalVerification(input.id),
+              ),
+            ),
+          ),
+        ),
+      ),
+      loom_vault_migration_recovery_preview: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          yield* admin;
+          const scope = yield* McpInvocationContext;
+          return yield* onHost(
+            Effect.flatMap(VaultMigrationInventory.VaultMigrationInventory, (service) =>
+              service.recoveryPreview(
+                input,
+                admin.pipe(Effect.provideService(McpInvocationContext, scope)),
+              ),
+            ),
+          );
+        }),
+      ),
       loom_vault_migration_preview: McpToolAccess.reads((input) =>
         Effect.gen(function* () {
           yield* admin;

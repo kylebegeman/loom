@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; reviewed manual/typed imports, local inventory, replacement intent, verification receipts and read-route previews implemented locally.** The sequence below describes the full packet outcome;
+Status: **In progress; reviewed manual/typed imports, local inventory, replacement intent, independent route receipts and recovery design previews implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -22,17 +22,24 @@ claimed. Receipts never enable cutover or establish workload grants.
 
 Per-repository read-route and hypothetical rollback previews now require fresh matching SSH
 repository-read receipts. Source/item/trust/permission checks, scope rejection and explicit
-non-executable inverse limitations are implemented. There is no configuration writer, captured
-backup or original-credential verifier. The preview adds no backend namespace or policy rights.
+non-executable inverse limitations are implemented. There is no configuration writer or captured
+backup; this legacy preview does not evaluate original credentials. The preview adds no backend namespace or policy rights.
 
 Typed development imports now validate SSH PEM/OpenSSH and GitHub App/token material locally,
 bind a public review to canonical private material, commit only new typed items after a second
 confirmation, and recover/guard archive through existing core receipts. Existing paths/policy
 rights and legacy client schemas are preserved. Native/live/remote acceptance remains incomplete.
 
-Next: original-route verification and recoverable configuration snapshot design before any
-future cutover writer. Keep execution disabled until that scope is separately selected. Native/remote/live acceptance, dedicated replacement provisioning and host rollout
-remain open. Interrupted configuration-cutover recovery and source-specific cleanup remain open.
+Original development-route verification is implemented with an explicit separate SSH record,
+source user/host/port/path matching and independent expiring receipts. It leaves historical and
+ambient shell authentication unknown. A design-only recovery preview binds both current route
+receipts; no snapshot is captured or stored and no host configuration is written.
+
+Next: prove the proposed journal, conflict rules and bounded capture representation against
+synthetic configurations, then resolve the actual route writer and concurrent-writer strategy.
+Keep real capture and cutover/rollback execution disabled until separately selected. Native,
+remote and live acceptance, dedicated replacement provisioning and host rollout remain open.
+Interrupted real configuration recovery and source-specific cleanup remain unfinished.
 Full scope is retained; the manual import slice does not complete L75.
 
 ## Before starting

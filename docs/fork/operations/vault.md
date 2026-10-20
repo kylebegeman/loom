@@ -607,3 +607,20 @@ false. Typed reviews use protocol two and separate APIs so older clients can use
 manual imports against an upgraded server. Older server versions cannot inspect protocol-two
 reviews; retain a compatible runtime/history when planning rollback. No new production commands
 are required for this slice beyond the already deferred L79-gated host rollout.
+
+## Original-route evidence and recovery design limits
+
+Original development-route checks select a separate existing Vault SSH item and persist only
+safe evidence in the optional original receipt field of the existing replacement record. They
+never use a personal agent or infer the historical shell identity. Explicit source user/host/
+port/path, live item version and pinned host trust are required. The normal transient local
+metadata read remains; neither it nor the design preview captures a restorable configuration.
+
+Recovery snapshot storage, journal phases and conflict rules are proposed in the
+[L75 technical design](../packets/L75-vault-migration/TECHNICAL.md#proposed-recoverable-snapshot-format-and-journal).
+The current preview has no capture engine or host writer. An advisory lock is not proof against
+external editors; that strategy and actual route integration remain unresolved. Keep cutover,
+rollback and configurationWrites false. Existing migration/replacement rollout stays with the
+host owner behind L79. This slice adds no OpenBao path, policy permission, Library deployment or
+host command. Retain a runtime that understands the new optional evidence when preserving it;
+older runtime rewrites may omit fields they do not recognize.

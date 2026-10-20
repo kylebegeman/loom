@@ -2,6 +2,8 @@ import {
   VAULT_MIGRATION_INVENTORY_WS_METHODS as V,
   VaultError,
   type VaultReplacementVerify,
+  type VaultOriginalVerify,
+  type VaultRecoverySnapshotInput,
   type VaultReplacementPreviewInput,
   type VaultMigrationInventoryInput,
   type VaultReplacementPrepare,
@@ -20,7 +22,19 @@ export const makeVaultMigrationInventoryRpcHandlers = (auth: ForkRpcAuth, actor:
     const previewAuthorization = Effect.suspend(() => auth.effect(V.preview, Effect.void)).pipe(
       Effect.mapError(() => new VaultError({ reason: "denied" })),
     );
+    const originalAuthorization = Effect.suspend(() =>
+      auth.effect(V.originalVerify, Effect.void),
+    ).pipe(Effect.mapError(() => new VaultError({ reason: "denied" })));
+    const recoveryAuthorization = Effect.suspend(() =>
+      auth.effect(V.recoveryPreview, Effect.void),
+    ).pipe(Effect.mapError(() => new VaultError({ reason: "denied" })));
     return {
+      [V.originalVerify]: (input: VaultOriginalVerify) =>
+        auth.effect(V.originalVerify, service.originalVerify(input, actor, originalAuthorization)),
+      [V.originalVerification]: (input: { id: string }) =>
+        auth.effect(V.originalVerification, service.originalVerification(input.id)),
+      [V.recoveryPreview]: (input: VaultRecoverySnapshotInput) =>
+        auth.effect(V.recoveryPreview, service.recoveryPreview(input, recoveryAuthorization)),
       [V.preview]: (input: VaultReplacementPreviewInput) =>
         auth.effect(V.preview, service.preview(input, previewAuthorization)),
       [V.verify]: (input: VaultReplacementVerify) =>

@@ -31,3 +31,6 @@ dependency, Library deployment or SQL migration. Personal password managers rema
 
 - Typed lifecycle and compatibility filtering: [typed helper](../../../../apps/server/src/fork/vault/TypedMigration.ts) and [migration service](../../../../apps/server/src/fork/vault/VaultMigration.ts).
 - Local credential codec and OpenSSH validation: [typed codec](../../../../apps/server/src/fork/vault/TypedMigrationCredential.ts) and [SSH crypto](../../../../apps/server/src/fork/vault/SshCrypto.ts).
+
+- Explicit source username extraction: [metadata adapter](../../../../apps/server/src/fork/vault/MigrationGitMetadata.ts).
+- Independent evidence and design-only preview: [inventory service](../../../../apps/server/src/fork/vault/VaultMigrationInventory.ts) and [contracts](../../../../packages/contracts/src/fork/vault-migration-inventory.ts).

@@ -6,6 +6,8 @@ import {
   VaultReplacementReview,
   VaultReplacementResult,
   VaultReplacementVerify,
+  VaultOriginalVerify,
+  VaultRecoverySnapshotPreview,
   VaultReplacementPreviewInput,
   VaultReplacementPreview,
   VaultReplacementVerificationReceipt,
@@ -156,6 +158,87 @@ it("requires an exact receipt and only represents a preview without execution or
     { kind: "rollback" },
     { source: { ...request.dependency, direction: "push" } },
     { replacement: { ...value.replacement, repository: "other/repo.git" } },
+  ])
+    expect(Option.isNone(preview({ ...value, ...patch }))).toBe(true);
+});
+
+it("cannot treat original development evidence or a recovery design as a captured or executable snapshot", () => {
+  const originalRequest = Schema.decodeUnknownOption(VaultOriginalVerify);
+  const input = {
+    id: "a".repeat(32),
+    operationId: "d".repeat(32),
+    expectedOperationId: null,
+    contactDestination: true,
+    original: { itemId: "e".repeat(32), expectedVersion: 1 },
+    developmentOnly: true,
+    reviewedOriginalRoute: true,
+  };
+  expect(Option.isSome(originalRequest(input))).toBe(true);
+  for (const patch of [
+    { developmentOnly: false },
+    { reviewedOriginalRoute: false },
+    { contactDestination: false },
+  ])
+    expect(Option.isNone(originalRequest({ ...input, ...patch }))).toBe(true);
+  const proof = {
+    operationId: "c".repeat(32),
+    planId: input.id,
+    itemId: "b".repeat(32),
+    itemVersion: 1,
+    scope: "ssh-git-transport",
+    destination: "ssh://git@github.com:22",
+    gitPath: "dev/repo.git",
+    state: "passed",
+    startedAt: 0,
+    deadlineAt: 30000,
+    completedAt: 1,
+    validUntil: 60001,
+    failure: null,
+    hostFingerprint: "synthetic-host",
+  };
+  const preview = Schema.decodeUnknownOption(VaultRecoverySnapshotPreview);
+  const value = {
+    planId: input.id,
+    projectId: request.projectId,
+    designId: "f".repeat(64),
+    checkedAt: 1,
+    validUntil: 60001,
+    source: request.dependency,
+    original: { ...proof, itemId: "e".repeat(32), operationId: "d".repeat(32) },
+    replacement: proof,
+    originalAccess: "selected-development-key-read-verified",
+    ambientAuthentication: "not-evaluated",
+    workloadAuthorization: "not-evaluated",
+    snapshotState: "design-only",
+    configurationSnapshot: "not-captured",
+    proposedStorage: "existing-replacement-ledger",
+    proposedCapture: "selected-nonsecret-fetch-entry-and-route-manifest",
+    proposedRecovery: "journal-with-preimage-and-postimage-reconciliation",
+    captureEngine: "unimplemented",
+    concurrentWriterStrategy: "unresolved",
+    privateMaterial: "references-only",
+    globalSshConfiguration: "excluded",
+    canCutover: false,
+    canRollback: false,
+    configurationWrites: false,
+  };
+  expect(Option.isSome(preview(value))).toBe(true);
+  for (const patch of [
+    { canCutover: true },
+    { canRollback: true },
+    { configurationWrites: true },
+    { configurationSnapshot: "captured" },
+    { snapshotState: "captured" },
+    { validUntil: 70000 },
+    { original: proof },
+    {
+      original: {
+        ...value.original,
+        scope: "github-api-and-gh-only",
+        gitPath: null,
+        hostFingerprint: null,
+      },
+    },
   ])
     expect(Option.isNone(preview({ ...value, ...patch }))).toBe(true);
 });

@@ -34,6 +34,11 @@ Typed imports add no upstream seam. `ForkLayer` supplies the existing local SSH 
 to `VaultMigration`; fork-owned schemas, RPC/scope/client/MCP/CLI registries and settings handle
 the new protocol. Existing item and migration subtrees are reused, with no policy extension.
 
+Original development-route receipts add one optional field to the existing replacement record.
+Recovery design previews reuse fork-owned services, contracts, RPC/scope/client/MCP/CLI registries
+and settings. No snapshot field, capture path, filesystem writer or new OpenBao permission is
+added. Existing metadata inspection is transient; no raw configuration enters a snapshot.
+
 ## Remaining integration review
 
 Verified cutover must inspect GitHubHostSetup and SSH configuration writers.

@@ -52,6 +52,27 @@ const endpoint = (raw: string) => {
     return unknown;
   }
 };
+export const migrationOriginalSshUsername = (
+  raw: Redacted.Redacted<string>,
+  dependency: VaultMigrationDependency,
+): string | null => {
+  const key = `remote.${dependency.remote}.${dependency.direction === "fetch" ? "url" : "pushurl"}`;
+  const values = Redacted.value(raw)
+    .split("\0")
+    .filter((entry) => entry.startsWith(`${key}\n`));
+  const value = values[dependency.position]?.slice(key.length + 1);
+  if (!value || endpoint(value).transport !== "ssh" || endpoint(value).embeddedAuthentication)
+    return null;
+  let username: string | undefined;
+  if (value.startsWith("ssh://")) {
+    try {
+      username = new URL(value).username;
+    } catch {
+      return null;
+    }
+  } else username = /^([^@/:]+)@[a-zA-Z0-9.-]+:/.exec(value)?.[1];
+  return username && /^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63}$/.test(username) ? username : null;
+};
 // This parser only sees selected local config keys. It never returns URLs, helper bodies or SSH command text.
 export const parseMigrationGitMetadata = (raw: string) => {
   const dependencies: VaultMigrationDependency[] = [];

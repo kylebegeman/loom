@@ -10,6 +10,10 @@ import {
 export function createVaultMigrationInventoryAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const originalVerification = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:vault:original-verification",
+    tag: V.originalVerification,
+  });
   const verification = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:vault:replacement-verification",
     tag: V.verification,
@@ -18,8 +22,21 @@ export function createVaultMigrationInventoryAtoms<R, E>(
     { environmentId, input }: { environmentId: EnvironmentId; input: { readonly id: string } },
     registry: AtomRegistry.AtomRegistry,
   ) =>
-    Effect.sync(() => registry.refresh(verification({ environmentId, input: { id: input.id } })));
+    Effect.sync(() => {
+      registry.refresh(verification({ environmentId, input: { id: input.id } }));
+      registry.refresh(originalVerification({ environmentId, input: { id: input.id } }));
+    });
   return {
+    originalVerification,
+    originalVerify: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:original-verify",
+      tag: V.originalVerify,
+      onSettled: refreshVerification,
+    }),
+    recoveryPreview: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:recovery-preview",
+      tag: V.recoveryPreview,
+    }),
     preview: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:replacement-preview",
       tag: V.preview,
