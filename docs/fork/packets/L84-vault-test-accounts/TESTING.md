@@ -22,7 +22,7 @@ runtime session provisioning/reset, not an email/password account, browser logou
 provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
 session until the five-minute TTL. No execution, resumption or allow-once flag changes.
 
-Fifty-three focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
+Fifty-six focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
 to exercise macOS's `/var` symlink. Cases cover independent Git metadata, core.worktree escapes,
 foreign common/absolute Git directories, symlinked objects/refs, alternates, owned interrupted-init
 repair and unowned-init refusal. Start refuses a live PID and creates the HOME/XDG/gh sandbox;
@@ -124,9 +124,9 @@ records the dedicated-mail setup and remaining live acceptance.
 
 ## Migadu contract evidence
 
-Thirty-nine focused Migadu Python tests pass from `apps/server`: 35 message/selection/budget
+Forty-six focused Migadu Python tests pass from `apps/server`: 42 message/selection/budget
 cases and four stdlib IMAP-over-TLS cases against a disposable loopback server. Together with
-the 53 local-target cases, **92 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
+the 56 local-target cases, **102 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
 cases also pass using stock macOS `/usr/bin/openssl` through `PATH=/usr/bin:/bin` and the current
 Python executable. Temporary certificates use portable `-nodes`; fixture keys are removed on
 cleanup. Both untrusted certificates and a trusted certificate for another hostname refuse
@@ -150,8 +150,10 @@ Independent body cases change INTERNALDATE, RFC822.SIZE and literal length while
 routing headers, each withdrawing the entire observation. A three-message expiry case proves
 only the first body is fetched. Private-provider failures check formatted traceback, cause and
 suppressed context, in addition to fixed public error text. Finite flooding-socket fixtures drive
-both untagged lines (5 MB offered) and repeated literals (10 MB offered) through actual imaplib
-parsing and stop near the 2 MB logical-byte budget, allowing one stdlib receive buffer of read-ahead.
+short untagged lines (5 MB offered), near-maximum 999 KB lines (about 8 MB offered) and repeated
+literals (10 MB offered) through actual imaplib parsing. Delivery is bounded by the logical-byte
+budget plus one stdlib maximum line and socket read-ahead, rather than by one receive buffer
+alone. The long-line case fails the former one-buffer assertion.
 Expired readline refuses before socket access. No sleeps or live network destinations are used.
 
 A separate no-sleep slow-drip reproduction confirms optional s1: one read can finish after 45
@@ -159,7 +161,7 @@ simulated seconds despite a thirty-second boundary budget. This remains explicit
 not claimed fixed. No live-read gate is opened. The proposed `vault-reader@begam.in` login is
 now named in the mail-owner handoff; its setup is not claimed.
 
-An in-memory mutation pass kills **28/28 mutants**, without changing the disk source:
+The earlier in-memory mutation pass killed **28/28 mutants**, without changing the disk source:
 
 | Review item | Mutations caught                                                                                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -176,6 +178,23 @@ An in-memory mutation pass kills **28/28 mutants**, without changing the disk so
 | m12         | Certificate hostname verification disabled despite a trusted wrong-host certificate.                                                                                |
 | m13         | In-loop request expiry removed; provider exception-context suppression removed.                                                                                     |
 | c2, c3      | Header-object defects ignored; vanished-FETCH handling removed.                                                                                                     |
+
+The round-2 residual follow-up adds seven inbox cases and three local-target cases. Parser
+failures in From/To/Cc and malformed MIME parameters preserve a different UID's valid text in
+both UID orders. Server-style field selection continues past malformed fields until the first
+blank line, exposing the before-routing structural defect. Display names with periods/raw UTF-8
+remain usable; noncanonical aliases in Delivered-To/X-Original-To refuse correlation. Metadata-only
+or empty FETCH replies report unavailable rather than aborting. Stamped, stopped, HEAD-less Git
+fixtures recover stale config/HEAD locks and Git's exact symlink probe; foreign layouts and live
+runtime records refuse before artifact cleanup or an init subprocess.
+
+A fresh in-memory mutation pass catches **13/13 mutations**: narrow header-object exceptions,
+unguarded header parse, omitted body IndexError handling, restored structural-defect drift,
+blanket display-name rejection, excluded noncanonical aliases, all-None-only FETCH handling,
+omitted transfer accounting, the former one-buffer assertion, omitted init-artifact cleanup,
+refused init probe, omitted pre-init layout scan and omitted live-process refusal. Each is caught
+by a focused regression; disk source is not mutated. The normal and `/var/tmp` runs both pass
+102 tests. No live reads, runtime registration, persistent format or access gate changes.
 
 m7 is the tracker correction restoring durable broker delivery alongside broker mail integration.
 c1 is the explicit proposed reader identity in the handoff. Existing search/epoch/identity,

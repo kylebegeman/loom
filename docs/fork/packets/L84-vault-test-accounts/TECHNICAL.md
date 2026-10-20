@@ -319,8 +319,11 @@ the exact workspace toplevel and its own absolute Git and common directories at 
 and proof. An explicit scandir walk refuses symlinked metadata, object alternates and any
 unlistable metadata directory; silently skipped glob results are not sufficient. Start/proof refuse incomplete Git
 metadata; preparation may re-run init for an empty or HEAD-less directory only with a prior
-harness ownership stamp and no redirected/shared layout. Existing valid fixtures need no new
-stamp until creation/repair is needed. Global/system config is disabled during the probe.
+harness ownership stamp and no redirected/shared layout. A stopped, stamped, HEAD-less fixture
+may remove only `config.lock`, `HEAD.lock` and Git's top-level `tXXXXXX -> testing` symlink probe
+before retrying init. The full metadata scan must succeed before cleanup or Git runs; other
+symlinks, shared layouts and live runtime records refuse. Existing valid fixtures need no new
+stamp until creation/repair is needed. Do not run concurrent preparation of the same test home. Global/system config is disabled during the probe.
 Private JSON is published by owner-only temporary file and rename. Initial home-marker staging
 stays outside the new home so an interrupted publication leaves an empty, retryable home.
 Malformed/wrong seed markers count as incomplete. Unmarked published databases are preserved
@@ -373,9 +376,14 @@ possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient 
 INTERNALDATE before fetching a bounded body. Conflicting run aliases refuse selection; sender
 Date headers do not set freshness. INTERNALDATE has second precision, so arrival filtering
 floors the request start to its second; no wider clock-skew allowance is implied. Malformed
-address-header objects refuse correlation, including semicolon-separated or trailing-dot aliases.
+address parsing failures refuse correlation as non-matches, including stdlib index/recursion
+errors. Benign display-name punctuation and UTF-8 are accepted only through strict address
+parsing and exact sender/recipient checks. Semicolon-separated or noncanonical run aliases,
+including trailing-dot aliases in unstructured routing fields, refuse correlation.
 A final STATUS observes UIDVALIDITY independently of the cached EXAMINE response. Changed epoch,
-routing headers, body metadata or expiry across reads and logout withdraw the result. This is an observation, not an atomic verification transaction.
+routing headers, body metadata or expiry across reads and logout withdraw the result.
+A structurally malformed body that truncates Python's header parse reports an unusable candidate,
+not drift; malformed MIME parameters are also isolated to that candidate. This is an observation, not an atomic verification transaction.
 
 The result distinguishes usable messages from per-candidate outcomes. An unusable matched MIME
 body, part/encoding/text limit or oversized message is visible as `unusable`, while another UID's
@@ -388,8 +396,11 @@ codes, with no provider error or unusable body content. Candidate outcomes are b
 64-UID scan; at most three usable messages are returned.
 
 Other bounds are 256 KiB per body, 16 KiB per header, 32 visited MIME parts and 64 KiB decoded
-plain text per message. The transport caps literals and aggregate logical bytes, plus stdlib
-socket read-ahead, and verifies the certificate and hostname for `imap.migadu.com:993`. It uses
+plain text per message. The transport checks a 2,000,000-byte aggregate logical-read budget.
+Because a line is counted after reading it, socket delivery can exceed that budget by up to one
+stdlib maximum line (1,000,000 bytes), plus stdlib socket read-ahead. Literal reads have their own
+pre-read cap. This is a finite transfer bound, not an exact 2 MB wire cap. The transport verifies
+the certificate and hostname for `imap.migadu.com:993`. It uses
 a ten-second socket inactivity timeout and checks a thirty-second elapsed budget at logical
 read boundaries. This is not a hard wall-clock bound: one imaplib read with continuous slow
 progress can outlast it. A custom deadline-aware receive layer is not implemented; this remains
