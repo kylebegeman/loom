@@ -6,6 +6,7 @@ import {
   applyBotChanges,
   applyInboxChanges,
   applyPipelineChanges,
+  type BotsChanges,
   createBotsAtoms,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOT_PIPELINE_CHANGES,
@@ -69,6 +70,17 @@ export function useBotsChanges(environmentId: EnvironmentId | null, enabled: boo
     environmentId && enabled ? bots.changes({ environmentId, input: {} }) : NO_CHANGES,
   );
   return Option.getOrElse(AsyncResult.value(result), () => EMPTY_BOTS_CHANGES);
+}
+
+/** Refetches a list overlaid with watched changes once the watch dropped some of them. */
+export function useRefreshWhenBotsChangesPruned(changes: BotsChanges, refresh: () => void) {
+  const { pruned } = changes;
+  const seen = useRef(pruned);
+  useEffect(() => {
+    if (seen.current === pruned) return;
+    seen.current = pruned;
+    refresh();
+  }, [pruned, refresh]);
 }
 
 const NO_BATCH_CHANGES = Atom.make(AsyncResult.success(EMPTY_BOT_BATCH_CHANGES));
@@ -166,6 +178,7 @@ export function useBotsAttentionCount() {
     if (host.connected && !wasConnected.current) refresh();
     wasConnected.current = host.connected;
   }, [host.connected, refresh]);
+  useRefreshWhenBotsChangesPruned(changes, refresh);
   const total = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }).total : 0;
   return total + waiting.length;
 }

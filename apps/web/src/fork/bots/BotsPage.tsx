@@ -46,6 +46,7 @@ import {
   useBotTriggerChanges,
   useBotsAttentionCount,
   usePipelines,
+  useRefreshWhenBotsChangesPruned,
   useWaitingBotRuns,
 } from "./state";
 
@@ -218,10 +219,12 @@ export function BotsPage() {
 
   const visibleBots = allBots.filter((bot) => showArchived || bot.archivedAt === null);
   const selected = selectedId === undefined ? null : allBots.find((bot) => bot.id === selectedId);
+  useRefreshWhenBotsChangesPruned(changes, runsQuery.refresh);
   const runs = applyRunChanges(runsQuery.data?.runs ?? [], changes, {
     botId: selectedId,
     verdict,
     includeNew: true,
+    limit: BOTS_LIST_RUNS_MAX_LIMIT,
   });
   const batches = applyBatchChanges(batchesQuery.data?.batches ?? [], batchChanges, {
     botId: selectedId,
@@ -669,7 +672,7 @@ export function BotsPage() {
                         }
                       />
                     )}
-                    {runsQuery.data?.hasMore ? (
+                    {runsQuery.data?.hasMore || runs.length >= BOTS_LIST_RUNS_MAX_LIMIT ? (
                       <p className="text-xs text-muted-foreground">
                         Showing the {BOTS_LIST_RUNS_MAX_LIMIT} most recent runs.
                       </p>

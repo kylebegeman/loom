@@ -39,13 +39,23 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../state/runtime.ts";
 
-/** Changes seen since the watch started; always newer than any list fetched before them. */
+/**
+ * The watch lives as long as the connection, so it keeps only the most recently changed runs.
+ * Dropping half at once keeps each list's refetch after a prune rare.
+ */
+export const BOTS_CHANGES_MAX_RUNS = 500;
+const BOTS_CHANGES_KEPT_RUNS = BOTS_CHANGES_MAX_RUNS / 2;
+
+/** Changes seen since the watch started, overlaid on lists fetched once. */
 export interface BotsChanges {
   readonly bots: ReadonlyMap<string, BotDefinition | null>;
+  /** Least recently changed first. */
   readonly runs: ReadonlyMap<string, BotRun>;
+  /** Moves each time older run changes are dropped; a list overlaid with them must refetch. */
+  readonly pruned: number;
 }
 
-export const EMPTY_BOTS_CHANGES: BotsChanges = { bots: new Map(), runs: new Map() };
+export const EMPTY_BOTS_CHANGES: BotsChanges = { bots: new Map(), runs: new Map(), pruned: 0 };
 
 export const foldBotsChange = (changes: BotsChanges, change: BotsChange): BotsChanges => {
   switch (change._tag) {
@@ -53,8 +63,17 @@ export const foldBotsChange = (changes: BotsChanges, change: BotsChange): BotsCh
       return { ...changes, bots: new Map(changes.bots).set(change.bot.id, change.bot) };
     case "bot-deleted":
       return { ...changes, bots: new Map(changes.bots).set(change.botId, null) };
-    case "run":
-      return { ...changes, runs: new Map(changes.runs).set(change.run.id, change.run) };
+    case "run": {
+      const runs = new Map(changes.runs);
+      runs.delete(change.run.id);
+      runs.set(change.run.id, change.run);
+      if (runs.size <= BOTS_CHANGES_MAX_RUNS) return { ...changes, runs };
+      return {
+        ...changes,
+        runs: new Map([...runs].slice(-BOTS_CHANGES_KEPT_RUNS)),
+        pruned: changes.pruned + 1,
+      };
+    }
   }
 };
 
@@ -77,9 +96,10 @@ const newestFirst = (left: BotRun, right: BotRun) =>
   right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
 
 /**
- * A page of runs with watched progress applied. Runs started after the page was fetched join it
- * when they match its bot; older pages only update the runs they already hold. A page filtered by
- * verdict keeps only runs that still carry that verdict.
+ * A page of runs, newest first, with watched progress applied. With `includeNew`, unlisted runs
+ * that match its bot join it; a page of `limit` runs stays the newest `limit`, so a change to a run
+ * older than its last one leaves it out. A page filtered by verdict keeps only runs that still
+ * carry that verdict.
  */
 export const applyRunChanges = (
   listed: ReadonlyArray<BotRun>,
@@ -88,19 +108,27 @@ export const applyRunChanges = (
     readonly botId?: string | undefined;
     readonly verdict?: BotVerdictValue | undefined;
     readonly includeNew: boolean;
+    readonly limit?: number | undefined;
   },
 ): ReadonlyArray<BotRun> => {
+  const { limit, verdict } = options;
+  const oldest =
+    limit !== undefined && listed.length >= limit ? listed.at(-1)?.createdAt : undefined;
   const merged = new Map(listed.map((run) => [run.id, run]));
   for (const [id, run] of changes.runs) {
     if (merged.has(id)) merged.set(id, run);
-    else if (options.includeNew && (options.botId === undefined || run.botId === options.botId))
+    else if (
+      options.includeNew &&
+      (options.botId === undefined || run.botId === options.botId) &&
+      (oldest === undefined || run.createdAt >= oldest)
+    )
       merged.set(id, run);
   }
   const runs = [...merged.values()];
-  const { verdict } = options;
-  return (
+  const sorted = (
     verdict === undefined ? runs : runs.filter((run) => run.verdict?.verdict === verdict)
   ).sort(newestFirst);
+  return limit === undefined ? sorted : sorted.slice(0, limit);
 };
 
 /**

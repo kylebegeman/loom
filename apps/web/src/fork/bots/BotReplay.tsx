@@ -19,7 +19,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog } from "../project-library/LibraryControls";
 import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
 import { defaultReplaySelection, replayCandidates } from "./replay";
-import { bots, useBotsChanges } from "./state";
+import { bots, useBotsChanges, useRefreshWhenBotsChangesPruned } from "./state";
 import { VerdictChip } from "./VerdictChip";
 
 export type BotReplaySourceChoice =
@@ -85,9 +85,11 @@ export function BotReplayDialog({
   const runsQuery = useEnvironmentQuery(
     bots.listRuns({ environmentId, input: { botId: bot.id, limit: BOTS_LIST_RUNS_MAX_LIMIT } }),
   );
+  useRefreshWhenBotsChangesPruned(changes, runsQuery.refresh);
   const runs = applyRunChanges(runsQuery.data?.runs ?? [], changes, {
     botId: bot.id,
     includeNew: true,
+    limit: BOTS_LIST_RUNS_MAX_LIMIT,
   });
   const candidates = replayCandidates(runs, bot.id);
   const [selected, setSelected] = useState<ReadonlyArray<string> | null>(null);

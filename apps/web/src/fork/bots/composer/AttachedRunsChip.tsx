@@ -23,7 +23,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerBlock, ForkComposerContext } from "../../composer/registry";
 import { useLibraryPermission } from "../../project-library/state";
-import { bots, useBotsChanges } from "../state";
+import { bots, useBotsChanges, useRefreshWhenBotsChangesPruned } from "../state";
 import { useComposerBotsAccess } from "./slashSource";
 
 function AttachedRun({
@@ -142,6 +142,7 @@ export function useAttachedBotRunsBlock(context: ForkComposerContext): ForkCompo
     if (host.connected && !wasConnected.current) refresh();
     wasConnected.current = host.connected;
   }, [host.connected, refresh]);
+  useRefreshWhenBotsChangesPruned(changes, refresh);
 
   const threadId = context.threadRef?.threadId ?? null;
   const listed = query.data?.runs;

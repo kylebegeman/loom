@@ -25,6 +25,7 @@ import {
   applyRunChanges,
   applyTriggerChanges,
   botVersionDiff,
+  BOTS_CHANGES_MAX_RUNS,
   botVersionLabel,
   dismissRunIdBatches,
   EMPTY_BOT_BATCH_CHANGES,
@@ -123,6 +124,46 @@ describe("bots changes", () => {
     expect(status(applyRunChanges(listed, changes, { includeNew: false }))).toEqual([
       ["old", "completed"],
     ]);
+  });
+
+  it("keeps a full page to its newest runs as old runs change and new ones start", () => {
+    const at = (minute: number) => `2026-10-20T10:${String(minute).padStart(2, "0")}:00.000Z`;
+    const listed = [run("r3", "x", at(3), "completed"), run("r2", "x", at(2), "completed")];
+    const changes = fold(
+      { _tag: "run", run: run("r1", "x", at(1), "completed") },
+      { _tag: "run", run: run("r4", "x", at(4), "queued") },
+      { _tag: "run", run: run("r5", "x", at(5), "queued") },
+    );
+    const ids = (runs: ReadonlyArray<BotRun>) => runs.map((entry) => entry.id);
+    expect(ids(applyRunChanges(listed, changes, { includeNew: true, limit: 2 }))).toEqual([
+      "r5",
+      "r4",
+    ]);
+    expect(ids(applyRunChanges(listed, changes, { includeNew: true, limit: 3 }))).toEqual([
+      "r5",
+      "r4",
+      "r3",
+    ]);
+    expect(
+      ids(applyRunChanges(listed.slice(0, 1), changes, { includeNew: true, limit: 2 })),
+    ).toEqual(["r5", "r4"]);
+  });
+
+  it("drops the least recently changed runs once the watch holds too many", () => {
+    const at = "2026-10-20T10:00:00.000Z";
+    let changes = fold({ _tag: "run", run: run("first", "x", at, "queued") });
+    for (let index = 1; index < BOTS_CHANGES_MAX_RUNS; index++)
+      changes = foldBotsChange(changes, { _tag: "run", run: run(`r${index}`, "x", at, "queued") });
+    changes = foldBotsChange(changes, { _tag: "run", run: run("first", "x", at, "running") });
+    expect(changes).toMatchObject({ pruned: 0 });
+    expect(changes.runs.size).toBe(BOTS_CHANGES_MAX_RUNS);
+
+    const pruned = foldBotsChange(changes, { _tag: "run", run: run("latest", "x", at, "queued") });
+    expect(pruned.pruned).toBe(1);
+    expect(pruned.runs.size).toBeLessThan(BOTS_CHANGES_MAX_RUNS);
+    expect(pruned.runs.has("r1")).toBe(false);
+    expect(pruned.runs.get("first")?.status).toBe("running");
+    expect([...pruned.runs.keys()].at(-1)).toBe("latest");
   });
 
   it("keeps a verdict page to runs that end with that verdict", () => {

@@ -16,7 +16,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
 import { BotModelPicker } from "./BotModelPicker";
 import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
-import { bots, inboxQueryInput } from "./state";
+import { bots, inboxQueryInput, useRefreshWhenBotsChangesPruned } from "./state";
 import { VerdictChip } from "./VerdictChip";
 
 const failureMessage = (cause: unknown, fallback: string) =>
@@ -289,6 +289,7 @@ export function BotsInbox({
     if (connected && !wasConnected.current) refresh();
     wasConnected.current = connected;
   }, [connected, refresh]);
+  useRefreshWhenBotsChangesPruned(changes, refresh);
   const page = query.data
     ? applyInboxChanges(query.data, changes, { dismissed: showDismissed })
     : null;
