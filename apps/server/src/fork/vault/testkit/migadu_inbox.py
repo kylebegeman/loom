@@ -277,4 +277,3 @@ def read_once(credentials: Credentials, request: Request, *,
                     pass
     validate_request(request, clock())
     return result
-
