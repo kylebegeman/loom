@@ -10,6 +10,7 @@ import { McpInvocationContext, type McpInvocationScope } from "../../mcp/McpInvo
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
+import { VaultAccessInspector } from "./VaultAccessInspector.ts";
 import { VaultAccess } from "./VaultAccess.ts";
 import * as OperationJournal from "./OperationJournal.ts";
 import { VaultAccessToolkit, vaultAccessHandlers } from "./access-mcp.ts";
@@ -105,7 +106,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const serviceContext = yield* Layer.build(
-        Layer.mock(VaultAccess)({
+        Layer.mock(VaultAccessInspector)({
           explain: (request, restrictMetadata) =>
             Effect.gen(function* () {
               expect(request.threadId).toBe(threadId);

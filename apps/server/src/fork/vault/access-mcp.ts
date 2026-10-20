@@ -25,6 +25,7 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as VaultAccessInspector from "./VaultAccessInspector.ts";
 import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as OperationJournal from "./OperationJournal.ts";
@@ -254,8 +255,8 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
             if (!input.threadId) return yield* new VaultError({ reason: "invalid-input" });
           }
           return yield* onHost(
-            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
-              access.explain(
+            Effect.flatMap(VaultAccessInspector.VaultAccessInspector, (inspector) =>
+              inspector.explain(
                 { ...input, threadId: caller.thread?.threadId ?? input.threadId! },
                 caller.thread !== undefined,
               ),

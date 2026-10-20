@@ -32,9 +32,15 @@ uses access:read and mutation uses access:write. MCP names are `loom_vault_grant
 
 ## Remaining target design
 
-Join profile bindings, enrolled broker leases, pending approvals, provider identity and
-rotation impact when their owning packets provide authoritative contracts. Add complete audit
-retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+The inspector now observes matching project profiles, the current provider/run, current item
+workload sessions and enrolled-broker presence, and retained requests for the selected thread/item.
+These bounded, read-only observations expire within 60 seconds and carry explicit omitted counts.
+Inspect access bounds related metadata; async context/version drift withdraws relationship labels.
+Partial or unavailable context never changes the separate evaluator decision. Profiles are labelled
+as project defaults, not inferred current-run selections. No credential delivery or new storage is added.
+
+Remaining: versioned rotation impact across those consumers, complete audit retention and platform
+member visibility. Remote relay/tunnel, Electron shell and Android
 interaction checks remain separate coverage. A preview cannot inventory external copies.
 
 The following sections retain the complete target design where it exceeds this milestone.

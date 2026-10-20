@@ -129,6 +129,46 @@ export const VaultGrantPreview = Schema.Struct({
   unknowns: Schema.Array(Schema.String),
 });
 export type VaultGrantPreview = typeof VaultGrantPreview.Type;
+export const VaultAccessContext = Schema.Struct({
+  checkedAt: Time,
+  freshUntil: Time,
+  state: Schema.Literals(["current", "partial", "changed", "unavailable"]),
+  providerInstanceId: Schema.NullOr(Id),
+  runId: Schema.NullOr(Id),
+  profiles: Schema.Array(
+    Schema.Struct({
+      id: VaultItemId,
+      label: VaultItemSummary.fields.label,
+      version: PositiveInt,
+      state: Schema.Literals(["active", "archived"]),
+      selected: Schema.Boolean,
+      requirements: Schema.Array(Schema.String).check(Schema.isMaxLength(16)),
+    }),
+  ).check(Schema.isMaxLength(16)),
+  sessions: Schema.Array(
+    Schema.Struct({
+      id: VaultItemId,
+      machineId: VaultItemId,
+      machineLabel: Schema.NullOr(Schema.String),
+      destination: Schema.String,
+      expiresAt: Time,
+      brokerState: Schema.Literals(["online", "offline", "disabled", "unknown"]),
+    }),
+  ).check(Schema.isMaxLength(8)),
+  approvals: Schema.Array(
+    Schema.Struct({
+      id: VaultItemId,
+      state: Schema.Literals(["pending", "approved", "denied", "cancelled", "expired", "revoked"]),
+      until: Time,
+    }),
+  ).check(Schema.isMaxLength(16)),
+  omittedProfiles: NonNegativeInt,
+  omittedSessions: NonNegativeInt,
+  omittedApprovals: NonNegativeInt,
+  externalConsumers: Schema.Literal("not-discovered"),
+  providerCopies: Schema.Literal("unknown"),
+});
+export type VaultAccessContext = typeof VaultAccessContext.Type;
 export const VaultAccessExplanation = Schema.Struct({
   environmentId: Id,
   threadId: ThreadId,
@@ -136,6 +176,7 @@ export const VaultAccessExplanation = Schema.Struct({
   item: Schema.NullOr(VaultItemSummary),
   decision: VaultAccessDecision,
   recentDecisions: Schema.Array(VaultAuditEvent),
+  context: Schema.optionalKey(VaultAccessContext),
   unknowns: Schema.Array(Schema.String),
 });
 export type VaultAccessExplanation = typeof VaultAccessExplanation.Type;

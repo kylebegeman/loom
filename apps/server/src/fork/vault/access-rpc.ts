@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
+import * as VaultAccessInspector from "./VaultAccessInspector.ts";
 import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers")(function* (
@@ -17,6 +18,7 @@ export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers
 ) {
   const access = yield* VaultAccess.VaultAccess;
   const readiness = yield* VaultReadiness.VaultReadiness;
+  const inspector = yield* VaultAccessInspector.VaultAccessInspector;
   return {
     [V.approvalInbox]: () => auth.effect(V.approvalInbox, access.approvalInbox),
     [V.approvalCreate]: (input: VaultApprovalCreate) =>
@@ -46,7 +48,7 @@ export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers
     [V.apply]: (input: VaultGrantMutation) => auth.effect(V.apply, access.apply(input, actor)),
     [V.preview]: (input: VaultGrantMutation) =>
       auth.effect(V.preview, access.preview(input, actor)),
-    [V.explain]: (input: VaultDecisionInput) => auth.effect(V.explain, access.explain(input)),
+    [V.explain]: (input: VaultDecisionInput) => auth.effect(V.explain, inspector.explain(input)),
     [V.readiness]: (input: VaultReadinessInput) => auth.effect(V.readiness, readiness.check(input)),
   };
 });

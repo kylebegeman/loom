@@ -727,6 +727,11 @@ These agent tools return account references and leases, not passwords or a logge
 Login delivery remains unavailable. Other runs' reservations and accounts without the required
 grants do not appear in discovery.
 
+The access inspector also shows related project profiles, the current provider/run, observed
+workload and broker sessions, and retained requests for the selected item and thread. Context can
+be partial and expires; refresh it before relying on labels. An empty list does not establish that
+there are no consumers. External credential copies remain unknown, and this view grants no access.
+
 ## Find references from an authenticated terminal
 
 Run `loom vault references-complete editor --kind account` to get active reference candidates

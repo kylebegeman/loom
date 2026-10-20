@@ -1,3 +1,4 @@
+import * as VaultAccessInspector from "./vault/VaultAccessInspector.ts";
 import * as VaultReadiness from "./vault/VaultReadiness.ts";
 import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
 import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
@@ -160,6 +161,17 @@ const layerVaultHealthContext = VaultHealthContext.layer.pipe(
     Layer.mergeAll(layerVaultCore, layerVaultProfiles, layerVaultAccess, ProjectStore.layer),
   ),
 );
+const layerVaultAccessInspector = VaultAccessInspector.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultAccess,
+      layerVaultCore,
+      layerVaultProfiles,
+      layerVaultWorkloads,
+      layerVaultBrokers,
+    ),
+  ),
+);
 const layerVaultReadiness = VaultReadiness.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultAccess, layerVaultWorkloads, layerVaultProfiles)),
 );
@@ -234,6 +246,7 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),
+  layerVaultAccessInspector,
   layerVaultReadiness,
   layerVaultProfiles,
   layerVaultReferences,

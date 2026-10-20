@@ -26,6 +26,7 @@ import {
   vaultGrantExpiry,
   vaultDecisionMessage,
   vaultReadinessIsStale,
+  vaultAccessContextLines,
 } from "@t3tools/client-runtime/fork";
 import { RegistryContext } from "@effect/atom-react";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -741,7 +742,10 @@ function AccessCheck({
     [report, setReport] = useState<VaultReadinessReport | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
-  const checkedTime = useVaultTime([report?.freshUntil ?? null]);
+  const checkedTime = useVaultTime([
+    report?.freshUntil ?? null,
+    explanation?.context?.freshUntil ?? null,
+  ]);
   const policyChanged =
     policyRevision !== undefined &&
     explanation !== null &&
@@ -894,8 +898,10 @@ function AccessCheck({
       {explanation && !policyChanged ? (
         <>
           <Text>
-            {explanation.decision.allowed ? "Allowed by policy" : "Denied by policy"}:{" "}
-            {vaultDecisionMessage(explanation.decision.reason)} Policy{" "}
+            {explanation.decision.allowed
+              ? "Allowed by policy when checked"
+              : "Denied by policy when checked"}
+            : {vaultDecisionMessage(explanation.decision.reason)} Policy{" "}
             {explanation.decision.policyRevision}.
           </Text>
           {explanation.decision.grantId ? (
@@ -903,6 +909,16 @@ function AccessCheck({
               Grant {explanation.decision.grantId}, revision {explanation.decision.grantRevision}.
               Lineage: {explanation.decision.lineage.join(", ")}
             </Text>
+          ) : null}
+          {explanation.context ? (
+            <View className="gap-2">
+              <Text accessibilityRole="header">Related Vault context</Text>
+              {vaultAccessContextLines(explanation.context, checkedTime).map((line) => (
+                <Text key={line} selectable className="text-foreground-muted">
+                  {line}
+                </Text>
+              ))}
+            </View>
           ) : null}
           {explanation.unknowns.map((text) => (
             <Text key={text} className="text-foreground-muted">

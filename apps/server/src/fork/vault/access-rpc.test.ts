@@ -9,6 +9,7 @@ import { VAULT_ACCESS_WS_METHODS as V, VaultError } from "@t3tools/contracts/for
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
+import { VaultAccessInspector } from "./VaultAccessInspector.ts";
 import { VaultReadiness } from "./VaultReadiness.ts";
 import { VaultAccess } from "./VaultAccess.ts";
 import { makeVaultAccessRpcHandlers } from "./access-rpc.ts";
@@ -34,7 +35,15 @@ it.effect("keeps access explanations readable and rejects policy writes before s
         scopes: [AuthAccessReadScope],
       }),
       "human",
-    ).pipe(Effect.provide(Layer.merge(service, Layer.mock(VaultReadiness)({ check: () => work }))));
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          service,
+          Layer.mock(VaultReadiness)({ check: () => work }),
+          Layer.mock(VaultAccessInspector)({ explain: () => work }),
+        ),
+      ),
+    );
     const input = {
       operationId: "a".repeat(32),
       expectedRevision: 0,

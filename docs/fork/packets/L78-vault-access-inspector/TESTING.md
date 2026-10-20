@@ -51,10 +51,27 @@ Complete the remaining PRODUCT outcomes documented in README/IMPLEMENTATION. Ele
 Android interactions, relay/tunnel behavior, upstream-server version skew, screen-reader use,
 readiness cancellation during a delayed request and permission loss during a pending UI operation
 were not independently verified in this pass. Do not infer those from the native build or a
-passing typecheck. No enrolled runner, SSH signing, external service authentication, profile
-binding, approval workflow or full immutable audit is implemented by this chunk.
+passing typecheck. Those results do not establish live enrolled-runner login, SSH signing, external authentication,
+remote approval acceptance or immutable audit coverage.
 
 Changed Markdown links, whitespace and the seam manifest were checked. No new upstream seams
 were added by these three features. The committed merge-tree preview against the newest locally available nightly,
 `v0.1.1-nightly.20261017.3238`, exited 0 with no conflicts. No fetch or full production
 integration rehearsal was run.
+
+## Related-context milestone
+
+The inspector joins existing authoritative interfaces without a persisted graph or policy change.
+Focused server suites pass 63 tests (inspector, evaluator, RPC, MCP and actual fork registration),
+and shared display helpers pass two tests. Tests cover metadata denial, requester/provider
+filtering, caps with omitted counts, partial context, and run/profile/policy/item/expiry changes
+across awaited reads. No transport executes, and policy snapshots remain unchanged by inspection.
+Contracts, server, client-runtime, web and mobile typechecks, changed-file lint and native static
+checks pass. No simulator pass was run in this lane.
+
+The existing isolated Browser-panel setup verifies denied policy plus partial/empty context,
+the explicit external-consumer limits, and a 430-pixel layout without horizontal overflow.
+Desktop-sized capture: browser-screenshot-localhost-mvgzqelf-5795b394.png. Narrow capture:
+browser-screenshot-localhost-mvgzqr9i-c0d25840.png. These are local browser artifacts, not committed
+assets. Matching profile/session/request labels and concurrent drift have service-test evidence;
+this browser fixture has a stopped run and does not prove live broker behavior.

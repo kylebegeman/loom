@@ -1,3 +1,4 @@
+import type { VaultAccessInspector } from "./vault/VaultAccessInspector.ts";
 import type { VaultReadiness } from "./vault/VaultReadiness.ts";
 import type { VaultTestAccountWorkloads } from "./vault/VaultTestAccountWorkloads.ts";
 import type { VaultTestAccounts } from "./vault/VaultTestAccounts.ts";
@@ -51,6 +52,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | VaultAccessInspector
   | VaultReadiness
   | VaultTestAccountWorkloads
   | VaultTestAccounts

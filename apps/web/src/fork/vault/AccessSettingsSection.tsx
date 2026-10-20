@@ -25,6 +25,7 @@ import {
   vaultGrantExpiry,
   vaultDecisionMessage,
   vaultReadinessIsStale,
+  vaultAccessContextLines,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import * as Cause from "effect/Cause";
@@ -725,7 +726,10 @@ function AccessCheck({
   const [controller, setController] = useState<AbortController | null>(null);
   useEffect(() => () => controller?.abort(), [controller]);
   const [error, setError] = useState<string | null>(null);
-  const checkedTime = useVaultTime([report?.freshUntil ?? null]);
+  const checkedTime = useVaultTime([
+    report?.freshUntil ?? null,
+    explanation?.context?.freshUntil ?? null,
+  ]);
   const policyChanged =
     explanation !== null && explanation.decision.policyRevision !== policyRevision;
   const changed = () => {
@@ -921,8 +925,10 @@ function AccessCheck({
       {explanation && !policyChanged ? (
         <div role="status" className="flex flex-col gap-2">
           <p className="text-sm">
-            {explanation.decision.allowed ? "Allowed by policy" : "Denied by policy"}:{" "}
-            {vaultDecisionMessage(explanation.decision.reason)} Policy revision{" "}
+            {explanation.decision.allowed
+              ? "Allowed by policy when checked"
+              : "Denied by policy when checked"}
+            : {vaultDecisionMessage(explanation.decision.reason)} Policy revision{" "}
             {explanation.decision.policyRevision}.
           </p>
           {explanation.decision.grantId ? (
@@ -930,6 +936,16 @@ function AccessCheck({
               Grant {explanation.decision.grantId}, revision {explanation.decision.grantRevision}.
               Lineage: {explanation.decision.lineage.join(", ")}
             </p>
+          ) : null}
+          {explanation.context ? (
+            <section aria-label="Related Vault context" className="flex flex-col gap-2">
+              <h4 className="text-sm font-medium">Related Vault context</h4>
+              {vaultAccessContextLines(explanation.context, checkedTime).map((line) => (
+                <p key={line} className="break-all text-xs text-muted-foreground">
+                  {line}
+                </p>
+              ))}
+            </section>
           ) : null}
           {explanation.unknowns.map((text) => (
             <p key={text} className="text-xs text-muted-foreground">

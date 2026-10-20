@@ -106,7 +106,7 @@ const EMPTY: Policy = {
 };
 const UNKNOWN = [
   "External credential copies and provider-side revocation are not tracked.",
-  "Automatic workload launch, profile bindings and external consumers are not tracked.",
+  "Automatic workload launch and external consumers are not verified by this policy observation.",
 ];
 
 const RETRY_REPAIRS = {

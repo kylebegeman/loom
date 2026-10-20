@@ -5,6 +5,7 @@ import {
   type VaultApprovalRequest,
   type VaultApprovalReviewContext,
   type VaultAccessAction,
+  type VaultAccessContext,
   type VaultReadinessReport,
   type VaultGrant,
 } from "@t3tools/contracts/fork";
@@ -161,4 +162,42 @@ export const vaultApprovalReviewLabels = (
           : null,
     approvalBlocked: own?.state === "changed" || own?.state === "unavailable",
   };
+};
+
+export const vaultAccessContextLines = (context: VaultAccessContext, now: number): string[] => {
+  if (context.state === "changed" || now >= context.freshUntil)
+    return ["Related context changed or expired. Run the access check again."];
+  if (context.state === "unavailable")
+    return ["Related context is unavailable. The policy decision above is a separate observation."];
+  return [
+    ...(context.state === "partial"
+      ? ["Some related context is unavailable. Empty lists do not prove there are no consumers."]
+      : []),
+    `Provider ${context.providerInstanceId ?? "unavailable"} · Run ${context.runId ?? "none"}.`,
+    ...(context.profiles.length
+      ? context.profiles.map(
+          (p) =>
+            `Profile ${p.label} · ${p.state}${p.selected ? " · selected default" : ""} · Requirements ${p.requirements.join(", ")}.`,
+        )
+      : ["No matching profile bindings in this project were observed."]),
+    ...(context.omittedProfiles
+      ? [`${context.omittedProfiles} additional matching profiles omitted.`]
+      : []),
+    ...(context.sessions.length
+      ? context.sessions.map(
+          (s) =>
+            `Workload ${s.id} · ${s.machineLabel ?? s.machineId} · broker ${s.brokerState} when checked · ${s.destination}.`,
+        )
+      : ["No current matching workload sessions were observed."]),
+    ...(context.omittedSessions
+      ? [`${context.omittedSessions} additional matching workload sessions omitted.`]
+      : []),
+    ...(context.approvals.length
+      ? context.approvals.map((r) => `Request ${r.id} · ${r.state}.`)
+      : ["No retained matching requests for this thread were observed."]),
+    ...(context.omittedApprovals
+      ? [`${context.omittedApprovals} additional matching requests omitted.`]
+      : []),
+    "External consumers are not discovered. Copies held by providers are unknown. This context does not authorize an operation.",
+  ];
 };
