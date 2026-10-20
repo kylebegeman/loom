@@ -130,7 +130,9 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const revision = yield* SubscriptionRef.make(0);
+  // Starts from the boot time so a client that reconnects after a restart cannot meet the same
+  // revision it last read and skip the refetch.
+  const revision = yield* SubscriptionRef.make(yield* Clock.currentTimeMillis);
   // Bumped whatever the outcome: a request that timed out may still have changed the page.
   const bumpRevision = SubscriptionRef.update(revision, (value) => value + 1);
 

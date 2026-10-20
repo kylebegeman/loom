@@ -627,6 +627,14 @@ describe("pages host", () => {
         headers: { ...navigation, cookie: session },
       });
       expect(again.status).toBe(200);
+
+      // The Library records the next sign-out at least one past the latest, which ends that cookie.
+      state.signedOutAt += 1;
+      const ended = yield* send(port, {
+        path: `/p/${PAGE_ID}`,
+        headers: { ...navigation, cookie: session },
+      });
+      expect(ended.status).toBe(401);
     }),
   );
 

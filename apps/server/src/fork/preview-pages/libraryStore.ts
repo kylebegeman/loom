@@ -233,13 +233,16 @@ export const makeLibraryStore = Effect.gen(function* () {
       yield* sql`UPDATE fork_preview_page_replies SET acked_at = ${ackedAt}, outcome = ${ack.outcome}, detail = ${ack.detail ?? null}
         WHERE reply_id = ${ack.replyId} AND subject = ${subject} AND acked_at IS NULL`;
     }),
-    /** Records that `subject` signed out every pages browser at `atMs`; a later time only moves it on. */
+    /** Records that `subject` signed out every pages browser at `atMs`, or just past the latest sign-out. */
     signOutReaders: Effect.fn("PreviewPagesLibraryStore.signOutReaders")(function* (
       subject: string,
       atMs: number,
     ) {
-      yield* sql`INSERT INTO fork_preview_page_signouts (subject, signed_out_at) VALUES (${subject}, ${atMs})
-        ON CONFLICT (subject) DO UPDATE SET signed_out_at = MAX(signed_out_at, excluded.signed_out_at)`;
+      // The host mints cookies at max(now, latest sign-out + 1), so a sign-out in the same
+      // millisecond, or after the clock stepped back, must still pass the latest one to end them.
+      yield* sql`INSERT INTO fork_preview_page_signouts (subject, signed_out_at)
+        VALUES (${subject}, MAX(${atMs}, (SELECT COALESCE(MAX(signed_out_at), 0) FROM fork_preview_page_signouts) + 1))
+        ON CONFLICT (subject) DO UPDATE SET signed_out_at = excluded.signed_out_at`;
     }),
     /** The latest sign-out by any computer, in Unix milliseconds, or 0 when there was none. */
     readersSignedOutAt: Effect.fn("PreviewPagesLibraryStore.readersSignedOutAt")(function* () {

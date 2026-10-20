@@ -423,10 +423,13 @@ describe("PageLibraryService", () => {
         yield* TestClock.adjust(HOUR);
         yield* pages.signOutReaders(nora);
         expect(yield* pages.readersSignedOutAt).toBe(START + HOUR);
-        // A clock that stepped back cannot undo a sign-out.
+        // A browser signed in after a sign-out holds a cookie from just past it, so a second
+        // sign-out in the same millisecond, or after the clock stepped back, must still pass it.
+        yield* pages.signOutReaders(dorothy);
+        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 1);
         yield* TestClock.setTime(START + MINUTE);
         yield* pages.signOutReaders(nora);
-        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR);
+        expect(yield* pages.readersSignedOutAt).toBe(START + HOUR + 2);
       }),
     ),
   );

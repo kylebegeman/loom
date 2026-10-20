@@ -328,20 +328,20 @@ it.layer(NodeServices.layer)("PreviewPagesService", (it) => {
         },
       });
       const revision = Stream.runHead(f.service.revisions).pipe(Effect.map(Option.getOrThrow));
-      expect(yield* revision).toBe(0);
+      const start = yield* revision;
       const attachmentId = createAttachmentId(thread, "html")!;
       yield* f.writeAttachment(attachmentId, "html", "<p>Plan</p>");
       yield* f.service.publish({ threadId: thread, source: { attachmentId }, title: "Plan" });
-      expect(yield* revision).toBe(1);
+      expect(yield* revision).toBe(start + 1);
       // The Library may have applied a change whose answer never came back.
       yield* reasonOf(f.service.update({ pageId: "page-1", action: "keep" }));
-      expect(yield* revision).toBe(2);
+      expect(yield* revision).toBe(start + 2);
       // Refused here, so the Library was never asked.
       yield* reasonOf(f.service.update({ pageId: "page-1", action: "end" }, { threadId: thread }));
       yield* reasonOf(
         f.service.publish({ threadId: thread, source: { path: "missing.html" }, title: "Plan" }),
       );
-      expect(yield* revision).toBe(2);
+      expect(yield* revision).toBe(start + 2);
     }),
   );
 
