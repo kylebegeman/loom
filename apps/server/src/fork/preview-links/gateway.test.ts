@@ -805,7 +805,8 @@ describe("preview gateway", () => {
 
       const closed = new Promise<void>((resolve) => second.socket.once("close", () => resolve()));
       gateway.destroyConnections(({ host }) => host === LINK_HOST);
-      yield* Effect.promise(() => closed);
+      // Well inside the gateway's own 5 second keep-alive timeout, which would close it anyway.
+      yield* Effect.promise(() => closed).pipe(Effect.timeout("1 second"));
     }),
   );
 
