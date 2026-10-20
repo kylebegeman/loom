@@ -542,3 +542,32 @@ to use fetch rather than read-only ls-remote. Server typecheck, focused lint/for
 links, 392 seam rows and whitespace pass. No runtime/MCP/client, policy3/journal1, path, rights,
 Library or gate change is included. Real adapter retry behavior, unknown-token cleanup and
 restart-safe cleanup evidence remain open; no UI/device or real OpenBao proof is repeated.
+
+## Mandatory intent boundary design and synthetic proof
+
+`OperationIntentBoundary.proof.test.ts` adds seven tests. Real pure-evaluator counterexamples
+show that an ordinary project grant can satisfy a reference-free child invocation, and that
+resource/action/time attenuation still accepts a child grant when hypothetical parent intent
+metadata says spent. These are current timed semantics; no runtime defect or grant behavior
+is changed by the proof.
+
+The test-local boundary model checks 2,592 path/surface/reference/mode/state combinations, each
+with and without an ordinary grant. Typed SSH/Git/GitHub bindings are independently mutated in
+14 dimensions. Coverage includes omitted/foreign/spent references, caller mode hints, unknown
+classification, incomplete coverage, raw release, reusable sessions, protected delegation,
+child/grandchild review, ordinary timed behavior and separately authorized metadata inspection.
+A child's separately reviewed example uses new request/waiting-operation identities; it does
+not copy a parent's opportunity. Every observation, including intent-eligible, keeps three
+literal-false gates. The model runs no transport, callback, broker, provider or credential release.
+
+The focused boundary, prior intent and access suites pass 59 tests. Server typecheck, focused
+lint/format, changed-document links, 392 seam rows and whitespace pass. No wire, runtime, MCP/client
+or OpenBao operation/path/policy/format changes are included. Access-policy stays 3 and journal
+stays 1; no persisted intent/classification exists. Constructor/registration behavior is unchanged,
+so real OpenBao and UI/native passes are not repeated.
+
+This proves a candidate decision model, not real endpoint coverage or implemented mandatory
+enforcement. Item-wide protection remains a product/schema recommendation. Compatible readers,
+classification persistence across retention, temporal handoff/callback revalidation, live adapters,
+restart-safe cleanup and the host rollback barrier remain open. L86 stays partial; L75 remains
+waiting on CW-1/L79 host policy. No Library, production, SSH, install or release action is included.

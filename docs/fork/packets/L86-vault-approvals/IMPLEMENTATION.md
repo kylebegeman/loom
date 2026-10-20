@@ -123,10 +123,17 @@ transport counterexamples show an uncertain App mint is not retried internally, 
 invocation can issue another token. SSH/Git-over-SSH recovery tests retain outcome review after
 timeout. This is test/design only; no permit, persisted intent or dispatcher is implemented.
 
-Next design work is the mandatory intent boundary for omitted references, delegation and
-alternative entry points, including how a human-reviewed exact proposal differs from today's
-timed approvals. Keep it synthetic and non-persistent. Any persisted intent/schema choice,
-restart-safe cleanup record or host rollback barrier needs separate Kyle/host-owner review.
+Mandatory intent boundary design now covers caller omissions, trusted destination classification,
+child/grandchild delegation and alternate service/transport entry points. A test-local model
+refuses fallback and unsupported reusable sessions/raw release; the real evaluator counterexample
+shows timed attenuation does not bind an intent budget. Environment/item-wide classification is
+a conservative future recommendation, not a selected persisted schema or changed product policy.
+The current services do not implement mandatory intent enforcement.
+
+Next suggested synthetic section: temporal revalidation of classification, coverage and reviewed
+binding across asynchronous handoff/callbacks. It must keep all runtime gates false and add no
+persisted schema/intent. Selecting protected-item semantics, compatible persistence/readers,
+restart-safe cleanup or the host rollback barrier still needs separate Kyle/host-owner review.
 Real adapter/provider/host verification remains owner-gated. True one-time eligibility,
 cross-adapter enforcement and downgrade safety remain prerequisites before any gate can open.
 The journal must

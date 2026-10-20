@@ -596,6 +596,106 @@ runtime evaluator. The existing acquisition/dispatcher proofs remain responsible
 CAS/handle/crash boundaries. All runtime gates remain literal false. Persisted intent, schema
 selection, cross-entry-point enforcement and live acceptance remain unfinished.
 
+### Mandatory intent boundary: omission, delegation and alternate paths
+
+This is a future enforcement design with a test-local trust model, not a policy field, persisted
+intent or runtime authorization change. Existing format-3 grants and all current timed workflows
+retain their semantics. No record becomes protected automatically because it has a pending
+request, journal entry, matching label or preparation digest. A future protected-mode choice must
+be explicitly reviewed before any storage contract or migration is proposed.
+
+The server must classify the destination environment's item **before** selecting an authorization
+path. A caller's absent reference, `timed` hint, transport name, thread label or project grant cannot
+select ordinary mode. Classification must distinguish known ordinary access, mandatory intent,
+and unknown/unavailable/unsupported state. Only an authoritative known-ordinary classification
+may retain ordinary timed evaluation. Missing or unreadable classification cannot stand in for
+known ordinary access. The protection decision must outlive request/journal age-out; pruning
+24-hour evidence cannot silently remove it. Its persistence and downgrade/rollback behavior are
+unresolved and are not implemented in this slice.
+
+#### Scope and trusted inputs
+
+| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                             |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                         |
+| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                     |
+| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Conservative design recommendation for the first protected workflow; requires Kyle's product/schema review before persistence. |
+
+Item-wide classification is a proposed policy tradeoff, not a claim of global isolation. Different
+items retain their ordinary policies; using an external copy of the same credential remains
+outside Loom's control. An administrator's reveal/export is also credential-bearing use, not
+metadata. In protected mode it cannot be a hidden bypass. Any emergency declassification or
+owner override must be a separately reviewed policy change, never inferred from `manage`, a
+full-access process, pairing scope or a UI toggle. The design does not implement that override.
+
+Trusted inputs come from the destination server's authenticated identity, live thread/run/project,
+current item/version and policy, reviewed intent, canonical typed proposal and verified adapter
+selection. Client-supplied thread/environment IDs, mode hints and opaque references are claims to
+validate, not classification authority. Broker or provider attestation authenticates the caller;
+it does not attest human review of a command. The selected environment must enforce locally even
+when the request arrives over relay/tunnel or another client. Missing context refuses credential
+use rather than selecting a legacy route.
+
+A protected operation needs an owned, current reference with an exact human-reviewed environment,
+item/version, project/thread/run, action/destination, proposal digest, request/waiting-operation
+identity, revisions and adapter binding. These are semantic obligations, not a selected persisted
+record shape. Wrong-owner, foreign, expired, spent, unknown or missing intent must not cause a
+search for another timed/project/delegated grant. A request advertised as one-time on a known
+ordinary item must also refuse; it cannot silently downgrade to timed access. Ordinary rights
+and current evaluator checks remain required where applicable. The model's `ordinaryGrant` flag
+tests fallback resistance only; it does not replace the runtime evaluator, permission checks,
+fresh journal acquisition, adapter admission or final revalidation.
+
+#### Delegation and descendants
+
+Ordinary grant attenuation currently restricts resources, actions, scope and time. The real
+`grantAttenuates`/`evaluateVaultPolicy` counterexample accepts a narrower child's timed grant even
+when hypothetical parent intent metadata says spent. That is existing timed behavior, not a bug
+fixed by this design. Simply copying intent metadata onto a child would either duplicate its
+budget or let an ancestor's authority bypass the child's exact reviewed binding.
+
+The conservative first one-time design refuses delegation of a protected intent or conversion
+into an ordinary child grant. Parent, child and grandchild cannot reuse the parent's reference,
+run or digest as their own authorization. Work assigned to a child needs a separately reviewed
+request with its own waiting-operation identity and exact child context; that is new human
+authorization, not a refund of the parent's attempt. The parent's opportunity remains unchanged.
+Automatic delegation, splitting a one-time budget, transferring acquisition handles and spending
+one intent concurrently across descendants remain unsupported. Ordinary delegation for known
+ordinary items continues through its existing attested direct-child and attenuation rules.
+
+#### Mandatory entry-point coverage
+
+Every credential-bearing path must participate before a protected item can become eligible;
+incomplete or unknown coverage refuses that item's use. This is stronger than adding a reference
+to one MCP tool. The current services do **not** implement this coverage yet.
+
+| Boundary                                                                          | Required future behavior                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH/Git typed launch and GitHub typed API operation                               | Enforce classification before credential-bearing work; validate the exact owned intent and adapter binding. Continue through acquisition/admission/final authority checks.                                                            |
+| SSH agent activation/frames, generic workload sessions and broker release/signing | A reusable session is not an exact operation. Refuse protected use in the first design until a bounded operation-scoped protocol can enforce intent on each callback. A signed challenge alone is insufficient.                       |
+| GitHub terminal and raw credential reveal/export                                  | Refuse protected use in the first design. A generic terminal or exported bearer credential cannot enforce one reviewed operation. Existing human RPC reveal is a separate path that must be covered.                                  |
+| Profiles, provider startup/continuations and scheduled runs                       | Selecting a profile, pin or run cannot supply review. Carry trusted intent context to a supported typed operation or report unsupported; never fall back to environment variables, a session, personal SSH agent or ordinary grant.   |
+| Web/desktop/mobile RPC, MCP, CLI and internal calls                               | Reuse destination service enforcement. Transports cannot select weaker policy or manufacture an eligible result. Being a human client is not an implicit protected-item bypass.                                                       |
+| Local status, journal recovery and safe metadata inspection                       | Remain observations under their existing metadata permissions, without consuming intent or returning a permit. Readiness/health that signs, mints, probes or releases credentials is credential-bearing work and must enforce intent. |
+
+Authority must be revalidated after asynchronous classification/context reads and immediately
+before credential-bearing handoff. A classifier or coverage change, declassification, missing
+item, new run or intent withdrawal invalidates an observation. Enforcement also belongs at
+callbacks for any future operation-scoped broker/session protocol; a prior successful check is
+not a lease against later revocation. Policy and journal CAS remain separate, so this design
+cannot recall remote effects already started. Current compatibility and host rollback barriers
+remain prerequisites; a stale runtime ignoring classification would defeat this design.
+
+`OperationIntentBoundary.proof.test.ts` is an executable **test-local** design model. It explores
+2,592 path/surface/reference/mode/state combinations with and without an alternate ordinary grant,
+mutates all 14 reviewed binding dimensions at each supported typed boundary, and checks child
+review, unknown classification, incomplete coverage and metadata separation. Every observation
+retains three literal-false gates, including `intent-eligible`. The model does not persist or
+parse a new record, prove real endpoint coverage, grant a capability, execute an adapter or
+instantiate a production classifier. Actual coverage, protected-item semantics, compatible
+storage/readers, restart-safe cleanup and host rollback protection require later review and
+implementation. No runtime eligibility or one-time claim follows from this proof.
+
 ### Adapter-start consumption unit and transport limits
 
 The proposed attempt boundary must precede **all credential-bearing adapter work**, not just

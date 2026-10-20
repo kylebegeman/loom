@@ -55,3 +55,6 @@ Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 - [One-time intent counterexamples](../../../../apps/server/src/fork/vault/OperationIntent.proof.test.ts): current evaluator bypasses, actual format-3 reader/writer behavior and a design-only eligibility model. No persisted intent or gate change.
 
 - [Synthetic token-mint failure coverage](../../../../apps/server/src/fork/vault/GitHubTransport.test.ts) and [explicit SSH/Git retry recovery](../../../../apps/server/src/fork/vault/VaultApprovalRetry.test.ts): adapter-start effects and uncertain outcomes without live providers.
+
+- [Mandatory intent boundary proof](../../../../apps/server/src/fork/vault/OperationIntentBoundary.proof.test.ts): omitted references, real timed-delegation counterexample and synthetic coverage/binding/descendant checks; no runtime classifier.
+- [Workload sessions](../../../../apps/server/src/fork/vault/VaultWorkloads.ts), [SSH agent frames](../../../../apps/server/src/fork/vault/VaultSsh.ts) and [human credential reveal RPC](../../../../apps/server/src/fork/vault/rpc.ts): alternate credential-bearing boundaries requiring future coverage.

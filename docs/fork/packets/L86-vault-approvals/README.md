@@ -75,7 +75,9 @@ acceptance covers lost results, service reconstruction, duplicate handles, resto
 aged evidence without recreating an opportunity. Durable resumption/consumption and
 live-provider acceptance remain open. One-time intent and downgrade-reader design now rejects
 optional format-3 metadata and alternate-grant fallback using real-service counterexamples;
-its eligibility model is synthetic only. No persisted intent or gate change is selected.
+its eligibility model is synthetic only. The mandatory boundary design covers omitted references, delegation and alternate entry points;
+its protected-item classification and coverage checks exist only in a synthetic model. No
+persisted intent or gate change is selected.
 
 ## Scope
 
