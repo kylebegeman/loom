@@ -6,6 +6,7 @@ import {
   createVaultAccessAtoms,
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
+  vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
@@ -134,6 +135,12 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               Record {r.itemId} · version {r.itemVersion}
               <br />
               Destination {r.destination ?? "Any destination (unrestricted)"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {vaultApprovalNotificationMessage(
+                data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                state,
+              )}
             </p>
             {r.waitingOperation ? (
               <p className="break-all text-sm">

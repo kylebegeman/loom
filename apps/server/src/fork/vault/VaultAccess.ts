@@ -939,13 +939,15 @@ const make = Effect.gen(function* () {
     approvalInbox: Effect.gen(function* () {
       const { policy } = yield* load(),
         now = yield* Clock.currentTimeMillis;
+      const requests = retainedApprovals(policy, now)
+        .map((r) => approvalView(r.request, policy, now))
+        .toReversed();
       return {
         policyRevision: policy.revision,
         retention: { maxAgeMs: VAULT_APPROVAL_RETENTION_MS, maxRequests: 128 as const },
-        requests: retainedApprovals(policy, now)
-          .map((r) => approvalView(r.request, policy, now))
-          .toReversed(),
+        requests,
         notifications: "stubbed" as const,
+        notificationOutcomes: yield* notifications.outcomes(requests),
       };
     }),
     catalog: Effect.gen(function* () {

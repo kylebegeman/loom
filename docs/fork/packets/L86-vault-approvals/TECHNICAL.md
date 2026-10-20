@@ -95,10 +95,11 @@ pause/resume a provider or deliver credentials. After approval, the caller must 
 and explicitly retry through ordinary authorized adapters. One-time consumption, resumable
 workload correlation and step-up authentication remain separate work.
 
-`ApprovalNotifications` is a service adapter supplied with a no-op stub at runtime construction.
-Only already committed requests reach it. Notification delivery and durable delivery retries
-are absent and advertised as stubbed; no external message is sent. Inbox remains discoverable
-without any notification service.
+`ApprovalNotifications` owns bounded, per-process attempt observations and uses an independently
+supplied transport adapter. Production supplies an explicit stub, never a delivery receipt.
+Only a newly committed pending request can initiate an attempt; inbox reads, identical request
+replays, service restarts and decisions never dispatch notifications. No external message is sent.
+The authoritative inbox stays usable when an attempt fails or no delivery observation exists.
 
 Capability `vault-approvals` gates web/desktop and native mobile inboxes. They use shared guarded
 commands, expiry-boundary timers, explicit refresh, loading/empty/error states, decision retry,
@@ -221,3 +222,33 @@ uncertain outcome, or recheck through the normal adapter. The guidance does not 
 bodies, trigger external inspection, mutate runtime modes, approve a request or assert that a
 write is safe. A backend outage never returns a successful prepared response. Policy revision in
 the response names the final observation, not a capability to reuse it indefinitely.
+
+## Process-local notification observations
+
+Kyle selected memory storage for this milestone. No correctness guarantee depends on a delivery
+receipt surviving restart: there is no external transport and no automatic replay. Policy remains
+format 3; no sidecar, path, permission or new downgrade caveat is introduced. A future transport
+requiring durable duplicate prevention must select an independent versioned ledger rather than
+changing access-policy. That work includes compatible-policy reader proof and missing/corrupt
+ledger handling; it is not implemented by this milestone.
+
+The notification service reserves at most one attempt per request per process. Its map has a
+128-entry cap and lazy 24-hour expiry measured from request creation, matching the request queue.
+Young entries are not evicted to admit more attempts. A full observation map suppresses additional
+attempts while the request remains visible and decidable. The adapter receives only request,
+thread, project and item IDs, the requested action and deadline, without secret values, command
+bodies, destination URLs or approval grants. The current production adapter returns `stubbed`.
+
+Concurrent duplicates observe one reservation. Attempts are limited to two seconds; typed failure,
+timeout and interruption cleanup produce `unconfirmed`, never a false delivered receipt. These
+observations do not prove a human saw an alert. Reads derive terminal/expired `not-required` from
+the current request rather than an old attempt, and filter aged requests before returning at most
+128 observations. A restart defaults pending requests to `not-delivered` for this process without
+sending anything. This means no current-process evidence, not proof that a prior process never
+sent an alert. No background retry, reminder schedule or durable exactly-once claim is made.
+
+Inbox outcomes are an optional additive RPC field for older-server compatibility. Web/desktop
+and mobile use shared status wording and derive terminal copy using their current expiry state,
+so a cached in-flight result cannot outlive the visible pending request. A failed refresh still
+hides stale data. Approval persistence, grants and every literal-false execution/resumption/
+allow-once gate stay independent of observations.

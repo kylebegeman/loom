@@ -1,4 +1,5 @@
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
+import * as ApprovalNotificationTransport from "./ApprovalNotificationTransport.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
@@ -136,14 +137,18 @@ const fixture = () => {
   const core = VaultCore.layer.pipe(Layer.provide(dependencies));
   const layer = VaultAccess.layer.pipe(
     Layer.provide(
-      Layer.succeed(ApprovalNotifications.ApprovalNotifications, {
-        pending: () =>
-          Effect.suspend(() =>
-            state.notificationsFail
-              ? Effect.fail(new VaultError({ reason: "unavailable" }))
-              : Effect.void,
-          ),
-      }),
+      ApprovalNotifications.layer.pipe(
+        Layer.provide(
+          Layer.succeed(ApprovalNotificationTransport.ApprovalNotificationTransport, {
+            pending: () =>
+              Effect.suspend(() =>
+                state.notificationsFail
+                  ? Effect.fail(new VaultError({ reason: "unavailable" }))
+                  : Effect.succeed("stubbed" as const),
+              ),
+          }),
+        ),
+      ),
     ),
     Layer.provideMerge(core),
     Layer.provide(dependencies),
@@ -728,6 +733,10 @@ it.effect("recovers lost decision replies and notification failure from the comm
     Effect.gen(function* () {
       fixture.state.notificationsFail = true;
       yield* access.approvalCreate(approvalInput, "requester", Effect.void);
+      expect((yield* access.approvalInbox).notificationOutcomes?.[0]?.delivery).toBe("unconfirmed");
+      const policyBeforeRead = [...fixture.records.entries()];
+      yield* access.approvalInbox;
+      expect([...fixture.records.entries()]).toEqual(policyBeforeRead);
       fixture.state.loseNextReply = true;
       expect(
         (yield* access.approvalChange(approveInput, "approver", Effect.void).pipe(Effect.flip))
@@ -742,6 +751,7 @@ it.effect("recovers lost decision replies and notification failure from the comm
         (service) => service.approvalInbox,
       ).pipe(Effect.provide(fixture.layer));
       expect(reopened.requests[0]?.state).toBe("approved");
+      expect(reopened.notificationOutcomes?.[0]?.delivery).toBe("not-required");
       expect(
         (yield* access.approvalChange(approveInput, "other-actor", Effect.void).pipe(Effect.flip))
           .reason,

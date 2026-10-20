@@ -27,9 +27,13 @@ persisted. Policy format stays 3.
 Recovery validation now rejects concurrent policy/status changes and backend outages, reconciles
 lost approval replies, and provides actionable repair guidance with focused failure/race coverage.
 
-Next selected work: in-app notification adapter delivery contracts and bounded outcome handling
-while external transports remain stubbed. Persisted delivery outcomes need an explicit storage
-compatibility decision before changing the existing policy value. Automatic resumption and one-time consumption remain
+Bounded process-local notification observations are implemented with an explicit stub transport,
+24h/128 limits, single in-process attempts, a two-second deadline, interruption cleanup and
+shared web/mobile status copy. Reads and restarts never resend. Kyle selected memory storage;
+policy stays 3 and no sidecar is written.
+
+Next selected work: requester-scoped notification outcome visibility and committed-request/replay
+reconciliation, with no agent delivery mutation or external transport. Automatic resumption and one-time consumption remain
 gated off. Kyle owns native acceptance and the native Threads defect; do not run a parallel
 simulator pass. Step-up authentication and remote relay/tunnel acceptance remain unfinished.
 Do not mark the full packet done.

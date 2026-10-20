@@ -2,8 +2,9 @@
 
 No upstream files or seam markers are added. Fork-owned access contracts/RPC, scope maps,
 service construction, capability registry, MCP toolkit, shared commands and web/mobile access
-settings are extended through existing registries. The notification adapter is supplied with
-a stub at production and test construction boundaries. A scoped access-service retention worker
+settings are extended through existing registries. The notification observation service uses an explicit transport stub at production construction;
+tests supply only the transport boundary. Memory outcomes are returned through an optional inbox
+field and shared web/mobile wording. A scoped access-service retention worker
 uses the existing ForkLayer lifecycle; no orchestration/resumption effect is introduced.
 
 Requests and timed grants share the existing encrypted access-policy CAS. There is no new

@@ -1,5 +1,7 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
+  type VaultApprovalNotificationOutcome,
+  type VaultApprovalRequest,
   type VaultAccessAction,
   type VaultReadinessReport,
   type VaultGrant,
@@ -81,3 +83,25 @@ const decisionMessages: Readonly<Record<string, string>> = {
   "workload-inactive": "The authenticated thread no longer has an active run.",
 };
 export const vaultDecisionMessage = (reason: string) => decisionMessages[reason] ?? reason;
+
+export const vaultApprovalNotificationMessage = (
+  outcome: VaultApprovalNotificationOutcome | undefined,
+  state: VaultApprovalRequest["state"],
+) => {
+  if (state !== "pending") return "This request no longer needs an approval notification.";
+  if (!outcome) return "Notification outcomes are unavailable on this server.";
+  switch (outcome.delivery) {
+    case "not-delivered":
+      return "No notification delivery is recorded in this server session. Review requests here.";
+    case "stubbed":
+      return "Available in this inbox. External notification delivery is not connected.";
+    case "sending":
+      return "A notification attempt is in progress. You can still decide here.";
+    case "unconfirmed":
+      return "Notification delivery is unconfirmed. Review this inbox; do not assume an alert arrived.";
+    case "delivered":
+      return "The notification adapter reported delivery. This does not mean the request was reviewed or approved.";
+    case "not-required":
+      return "This request no longer needs an approval notification.";
+  }
+};

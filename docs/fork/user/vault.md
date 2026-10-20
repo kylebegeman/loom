@@ -668,3 +668,8 @@ is comparison metadata, not proof that a command ran or permission to replay it.
 returned repair step: wait for a decision, refresh changed context, review a changed operation
 or inspect a possibly completed write. A backend outage requires a fresh check after recovery.
 Automatic resumption and one-time approval consumption remain unavailable.
+
+The approval inbox also shows notification status. External alerts are not connected yet;
+requests remain available here regardless of that status. Delivery observations reset with the
+server session. “Unconfirmed” does not mean an alert arrived, and a delivery receipt would not
+mean someone reviewed or approved the request. Refreshing or restarting does not resend alerts.

@@ -54,6 +54,8 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Initial approvers are destination environment clients with `access:write`. Fresh human authentication and platform account eligibility remain open.
-- Pending requests last ten minutes; timed approvals last five or fifteen minutes. The current request queue retains metadata for 24 hours with a 128-entry cap. Notification transports remain stubbed, with no initial external channel selected.
+- Pending requests last ten minutes; timed approvals last five or fifteen minutes. The current request queue retains metadata for 24 hours with a 128-entry cap. External notification transports remain stubbed, with no initial channel selected. Delivery
+  observations use process memory with 24h/128 bounds; restart does not replay alerts. A future
+  durable delivery requirement uses a separate versioned sidecar, never a policy-format bump.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

@@ -17,7 +17,9 @@ ordinary evaluator-enforced grant in the existing encrypted access policy. Agent
 through authenticated MCP identity; there is no agent approval tool.
 The selected environment and its access permissions remain authoritative.
 
-Notification delivery is explicitly stubbed behind an adapter. Pending requests expire after
+External notification delivery remains stubbed behind an adapter. The inbox shows bounded,
+per-process delivery observations, including unconfirmed attempts and requests that no longer
+need an alert. Restart discards these observations without automatically resending anything. Pending requests expire after
 ten minutes. An approval covers one thread, item/version at review, action and destination
 scope and, for newly run-bound requests, the captured server run. It does not resume work automatically. Credential use still rechecks item availability,
 thread activity, runtime permissions, grants and server time. No external login or provider-side

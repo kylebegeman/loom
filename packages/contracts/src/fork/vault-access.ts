@@ -306,6 +306,23 @@ export const VaultApprovalRetryReport = Schema.Struct({
   canExecute: Schema.Literal(false),
 });
 export type VaultApprovalRetryReport = typeof VaultApprovalRetryReport.Type;
+export const VaultApprovalNotificationOutcome = Schema.Struct({
+  requestId: VaultItemId,
+  requestRevision: PositiveInt,
+  storage: Schema.Literal("process"),
+  inApp: Schema.Literal("available-in-inbox"),
+  delivery: Schema.Literals([
+    "not-delivered",
+    "stubbed",
+    "sending",
+    "unconfirmed",
+    "delivered",
+    "not-required",
+  ]),
+  attemptedAt: Schema.NullOr(Time),
+  expiresAt: Time,
+});
+export type VaultApprovalNotificationOutcome = typeof VaultApprovalNotificationOutcome.Type;
 export const VaultApprovalInbox = Schema.Struct({
   retention: Schema.optionalKey(
     Schema.Struct({
@@ -316,6 +333,9 @@ export const VaultApprovalInbox = Schema.Struct({
   policyRevision: NonNegativeInt,
   requests: Schema.Array(VaultApprovalRequest).check(Schema.isMaxLength(128)),
   notifications: Schema.Literal("stubbed"),
+  notificationOutcomes: Schema.optionalKey(
+    Schema.Array(VaultApprovalNotificationOutcome).check(Schema.isMaxLength(128)),
+  ),
 });
 export type VaultApprovalInbox = typeof VaultApprovalInbox.Type;
 

@@ -7,6 +7,7 @@ import {
   createVaultAccessAtoms,
   supportsLoomFeature,
   VAULT_ACTION_LABELS,
+  vaultApprovalNotificationMessage,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -140,6 +141,12 @@ function Inbox({
               {"\n"}Project {r.projectId}
               {"\n"}Record {r.itemId} · version {r.itemVersion}
               {"\n"}Destination {r.destination ?? "Any destination (unrestricted)"}
+            </Text>
+            <Text>
+              {vaultApprovalNotificationMessage(
+                data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                state,
+              )}
             </Text>
             {r.waitingOperation ? (
               <Text>

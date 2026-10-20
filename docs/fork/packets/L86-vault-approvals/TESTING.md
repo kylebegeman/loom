@@ -114,3 +114,26 @@ steps also have focused coverage. All execution gates remain false; policy forma
 Server, contracts, client-runtime, web and mobile typechecks pass. Focused lint/format,
 documentation links, 390 seam rows and whitespace pass. Native acceptance remains with Kyle; no simulator, production,
 Library, OpenBao path or policy-permission change is part of this follow-up.
+
+## Bounded in-app notification outcome milestone
+
+Six focused suites pass **58 tests** including real MCP registration, notification service,
+access-service integration, requester transport boundaries, approval contracts and shared client
+status wording. New tests cover explicit stub versus delivery, one reserved attempt under
+concurrency, two-second timeout, interruption cleanup, adapter failure, the 128 cap without young
+entry eviction, exact 24-hour age-out, fresh service restart and status reads that never send.
+The restart test uses `Layer.fresh` so Effect cannot reuse a memoized process instance. Service
+integration proves an unconfirmed attempt does not prevent approval and inbox reads do not
+write encrypted policy. Shared client tests ensure expiry/terminal state overrides cached sending
+copy and adapter delivery never implies human approval.
+
+Server, contracts, client-runtime, web and mobile typechecks, focused lint/format, native mobile
+static checks, documentation links, 390 seam rows and whitespace pass. An isolated Browser-panel
+pass refreshed the existing synthetic cancelled/revoked/denied requests, verified terminal
+notification wording and no errors, and confirmed no horizontal overflow at 390 CSS pixels.
+No new browser fixture records were written. Pending/failure/restart behavior is covered by
+service tests, not claimed as browser interaction acceptance. Kyle retains the native pass.
+
+Outcomes are memory-only. Policy format stays 3 and no sidecar is written, so a sidecar corruption
+or compatible-policy-reader test does not apply to this milestone. No external notification,
+automatic replay, persistent duplicate guarantee, production, Library or OpenBao action is added.
