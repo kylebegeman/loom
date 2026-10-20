@@ -251,6 +251,15 @@ describe("getLatestThreadForProject", () => {
         { ...makeThread({ id: "z" }), projectId, archivedAt: null },
         { ...makeThread({ id: "zz" }), projectId, archivedAt: "2026-03-10T00:00:00Z" },
         { ...makeThread({ id: "zzz" }), projectId: ProjectId.make("other"), archivedAt: null },
+        {
+          ...makeThread({
+            id: "bot-run-a",
+            createdAt: "2026-03-10T10:00:00.000Z",
+            updatedAt: "2026-03-10T10:00:00.000Z",
+          }),
+          projectId,
+          archivedAt: null,
+        },
       ];
       expect(getLatestThreadForProject(threads, projectId, sortOrder)).toBe(threads[1]);
       expect(getLatestThreadForProject([], projectId, sortOrder)).toBeNull();

@@ -159,6 +159,7 @@ import {
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
@@ -483,9 +484,10 @@ function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId,
     primaryEnvironmentId,
     resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
   });
+  // Ordered as the sidebar orders them, which leaves bot runs out.
   return sortLogicalProjectsForSidebar(
     unsortedProjectGroups,
-    threads,
+    threads.filter((thread) => !isBotRunThreadId(thread.id)),
     clientSettings.sidebarProjectSortOrder,
   );
 }
@@ -1138,6 +1140,7 @@ function OpenCommandPaletteDialog(props: {
           threads.filter(
             (thread) =>
               thread.archivedAt === null &&
+              !isBotRunThreadId(thread.id) &&
               groupedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`),
           ),
           clientSettings.sidebarThreadSortOrder,

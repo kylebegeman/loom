@@ -1,4 +1,5 @@
 import type { ProjectId } from "@t3tools/contracts";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { EnvironmentThreadShell } from "./models.ts";
 import * as Arr from "effect/Array";
@@ -148,7 +149,9 @@ export function getLatestThreadForProject<
   let latest: T | null = null;
   let latestTimestamp = Number.NEGATIVE_INFINITY;
   for (const thread of threads) {
-    if (thread.projectId !== projectId || thread.archivedAt !== null) continue;
+    // Bot runs stay out of the sidebar, so opening a project never lands in one.
+    if (thread.projectId !== projectId || thread.archivedAt !== null || isBotRunThreadId(thread.id))
+      continue;
     const timestamp = getThreadSortTimestamp(thread, sortOrder);
     if (
       latest === null ||
