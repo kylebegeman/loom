@@ -30,12 +30,37 @@ Authorized isolated Browser-panel checks use the existing loopback synthetic Ope
 They cover empty/pending request display, five/fifteen-minute approval, denial, refresh and visible
 revocation, expired approval visibility and the revoke path after expiry. The 390 CSS-pixel
 layout has no horizontal overflow. Expiry uses synthetic fixture timestamps; no credential or provider is contacted.
-Native iOS acceptance is **pending and owner-led**. The earlier pass stopped at the Threads-screen
-"Maximum update depth exceeded" overlay before Vault. Kyle has since rebuilt the client and
-owns reproduction, the fix and native L86 acceptance. This lane does not run a simulator pass.
-Native typecheck/static evidence is not native interaction acceptance. Android,
-Electron shell, remote/relay/tunnel, keyboard/screen-reader and live-provider acceptance remain
-open. No automatic resumption, notification delivery or allow-once consumption is claimed.
+Native iOS acceptance **passed**, run by Kyle on iOS 26.5 simulator `DF1675B4`
+("Loom Vault QA 2026-10-18") with Loom Dev built from `d849f9b20a`, the same source as published
+`0.0.99-nightly.20261019.3348` (TestFlight `357.75.33`). The backend and synthetic loopback OpenBao
+were isolated from this lane's `15684`/`7645` fixture. The Threads screen rendered without the
+previous "Maximum update depth exceeded" overlay, resolving that blocker. Evidence below is
+Kyle's Device QA captures in [Loom Projects Updates](t3-thread://v1/3f336eb2-b30f-401c-ad42-241fa4b12bb5).
+
+| Native acceptance                                                                            | Evidence / read-back                               |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Empty request state                                                                          | `dqe_4aa6064d`                                     |
+| Pending-first review, "4 pending of 4 retained", card details                                | `dqe_2856f64b`                                     |
+| Approve 15 minutes (`a8`), deny (`87`) without a grant, approve 5 minutes then revoke (`86`) | Passed; `86` grant read back revoked at revision 2 |
+| Show all / Show pending                                                                      | `dqe_14b03c0c`                                     |
+| Synthetic `a8` expiry retains Revoke approval, followed by revocation                        | `dqe_698ecac2`                                     |
+| Retention notice, "0 pending of 4 retained", cancel (`88`)                                   | `dqe_cc881c66`                                     |
+| `a9` waiting-operation/run correlation, restored and cancelled                               | `dqe_ab5fd356`                                     |
+| Invalid stored correlation fails closed with a visible inbox error, recovers after restore   | `dqe_6984b114`                                     |
+
+Final synthetic store read-back: `86` revoked, `87` denied, `88` cancelled, `a8` revoked,
+`a9` cancelled and `aa` cancelled; grants `a8` and `86` revoked. Requests used
+`fixture:thread:2`. Threads `fixture:thread:4` and `fixture:thread:5` do not exist and correctly
+return "This Vault operation is not permitted". For correlation fixtures, create the request
+with `waitingOperationId` set before injecting a synthetic run: the stored operation ID must
+match `(waitingOperationId ?? id)`. A mismatched retained record deliberately fails the whole
+policy read closed; per-item recovery is not implemented or claimed.
+
+Android, Electron shell, remote/relay/tunnel, keyboard/screen-reader, live-provider and actual
+explicit-retry execution acceptance remain open. No automatic resumption, external notification
+delivery or allow-once consumption is claimed. Compatibility is unchanged from `0.0.98`:
+access-policy format 3 with process-memory notification outcomes only. This update records
+Kyle's acceptance; this lane did not run another simulator pass.
 
 ## Requester lifecycle and retention follow-up
 
