@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as Schema from "effect/Schema";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type {
   BotBatch,
@@ -11,6 +12,7 @@ import type {
   BotTrigger,
   BotTriggerFiring,
 } from "@t3tools/contracts/fork";
+import { BotsDismissInput } from "@t3tools/contracts/fork";
 import {
   applyBatchChanges,
   applyBatchItemChanges,
@@ -24,6 +26,7 @@ import {
   applyTriggerChanges,
   botVersionDiff,
   botVersionLabel,
+  dismissRunIdBatches,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOT_PIPELINE_CHANGES,
   EMPTY_BOT_TRIGGER_CHANGES,
@@ -76,6 +79,8 @@ const run = (id: string, botId: string, createdAt: string, status: BotRun["statu
   resultTruncated: false,
   error: null,
 });
+
+const decodeDismissInput = Schema.decodeUnknownSync(BotsDismissInput);
 
 const fold = (...changes: Parameters<typeof foldBotsChange>[1][]): BotsChanges =>
   changes.reduce(foldBotsChange, EMPTY_BOTS_CHANGES);
@@ -327,6 +332,14 @@ describe("bots inbox", () => {
       { dismissed: true },
     );
     expect(dismissed).toMatchObject({ total: 1, runs: [{ id: "r1" }] });
+  });
+
+  it("splits dismissing an inbox grown past one request into requests the server accepts", () => {
+    const shown = Array.from({ length: 120 }, (_, index) => ({ id: `r${index}` }));
+    const batches = dismissRunIdBatches(shown);
+    for (const runIds of batches)
+      expect(() => decodeDismissInput({ runIds, dismissed: true })).not.toThrow();
+    expect(batches.flat()).toEqual(shown.map((entry) => entry.id));
   });
 });
 

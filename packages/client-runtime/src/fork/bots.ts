@@ -23,10 +23,12 @@ import {
   type BotTriggerChange,
   type BotTriggerFiring,
   type BotVerdictValue,
+  BOTS_DISMISS_MAX_RUNS,
   isBotInboxRun,
   isBotRunThreadId,
   needsBotAttention,
 } from "@t3tools/contracts/fork";
+import * as Arr from "effect/Array";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -131,6 +133,15 @@ export const applyInboxChanges = (
     hasMore: page.hasMore,
   };
 };
+
+/** Run ids split into requests the dismiss input accepts; a live inbox can outgrow one. */
+export const dismissRunIdBatches = (
+  runs: ReadonlyArray<Pick<BotRun, "id">>,
+): ReadonlyArray<ReadonlyArray<string>> =>
+  Arr.chunksOf(
+    runs.map((run) => run.id),
+    BOTS_DISMISS_MAX_RUNS,
+  );
 
 export type WaitingBotRunThread = Pick<
   EnvironmentThreadShell,

@@ -5,6 +5,7 @@ import type { BotRun } from "@t3tools/contracts/fork";
 import {
   applyInboxChanges,
   type BotsChanges,
+  dismissRunIdBatches,
   type WaitingBotRunThread,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -296,11 +297,10 @@ export function BotsInbox({
     setDismissing(true);
     setError(null);
     try {
-      const result = await dismiss({
-        environmentId,
-        input: { runIds: runs.map((run) => run.id), dismissed: true },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      for (const runIds of dismissRunIdBatches(runs)) {
+        const result = await dismiss({ environmentId, input: { runIds, dismissed: true } });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      }
     } catch (cause) {
       setError(failureMessage(cause, "Could not dismiss these runs."));
     } finally {
