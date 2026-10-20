@@ -140,6 +140,12 @@ export type PreviewLinksSetup = typeof PreviewLinksSetup.Type;
 export const PreviewLinksSnapshot = Schema.Struct({
   setup: PreviewLinksSetup,
   links: Schema.Array(PreviewLink),
+  /**
+   * Moves each time this computer publishes or changes a page, so a client showing the pages list
+   * reads it again. Absent from servers that predate it; those clients refresh after their own
+   * changes only.
+   */
+  pagesRevision: Schema.optionalKey(NonNegativeInt),
 });
 export type PreviewLinksSnapshot = typeof PreviewLinksSnapshot.Type;
 

@@ -11,7 +11,7 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import { SecretStoreReadError, ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { PreviewAccessService } from "../preview-access/PreviewAccessService.ts";
 import { signPreviewCookie, verifyPreviewCookie } from "../preview-links/policy.ts";
@@ -75,8 +75,14 @@ interface ReplyCall {
   readonly viewer: string;
 }
 
+interface LibraryState {
+  readonly replies: Array<ReplyCall>;
+  /** The latest pages sign-out the Library recorded. */
+  signedOutAt: number;
+}
+
 /** The Library side the host depends on: one open page, one ended, and failures on demand. */
-const libraryLayer = (replies: Array<ReplyCall>) =>
+const libraryLayer = (state: LibraryState, options: { readonly keyMissing?: boolean } = {}) =>
   Layer.mergeAll(
     Layer.mock(PageLibraryService)({
       pagesOrigin: PAGES_ORIGIN,
@@ -87,7 +93,8 @@ const libraryLayer = (replies: Array<ReplyCall>) =>
       addReply: (input) =>
         input.pageId === BLOCKED_ID
           ? Effect.fail(new PreviewPagesError({ reason: "blocked", message: "Too many replies." }))
-          : Effect.sync(() => void replies.push(input)),
+          : Effect.sync(() => void state.replies.push(input)),
+      readersSignedOutAt: Effect.sync(() => state.signedOutAt),
     }),
     Layer.mock(PreviewAccessService)({
       issuerOrigin: LIBRARY_ORIGIN,
@@ -106,20 +113,27 @@ const libraryLayer = (replies: Array<ReplyCall>) =>
         ),
     }),
     Layer.mock(ServerSecretStore)({
-      getOrCreateRandom: () => Effect.succeed(Uint8Array.from(COOKIE_KEY)),
+      getOrCreateRandom: () =>
+        options.keyMissing === true
+          ? Effect.fail(
+              new SecretStoreReadError({ resource: "pages cookie key", cause: "unreadable" }),
+            )
+          : Effect.succeed(Uint8Array.from(COOKIE_KEY)),
     }),
   );
 
-const setup = Effect.gen(function* () {
-  const replies: Array<ReplyCall> = [];
-  const host = yield* startPagesHost({
-    host: "127.0.0.1",
-    port: 0,
-    pagesOrigin: PAGES_ORIGIN,
-    issuerOrigin: LIBRARY_ORIGIN,
-  }).pipe(Effect.provide(libraryLayer(replies)));
-  return { port: host.port, replies };
-});
+const setupWith = (options: { readonly keyMissing?: boolean }) =>
+  Effect.gen(function* () {
+    const state: LibraryState = { replies: [], signedOutAt: 0 };
+    const host = yield* startPagesHost({
+      host: "127.0.0.1",
+      port: 0,
+      pagesOrigin: PAGES_ORIGIN,
+      issuerOrigin: LIBRARY_ORIGIN,
+    }).pipe(Effect.provide(libraryLayer(state, options)));
+    return { port: host.port, replies: state.replies, state };
+  });
+const setup = setupWith({});
 
 const boundPort = (server: NodeNet.Server) => {
   const address = server.address();
@@ -179,6 +193,19 @@ const send = (
         request.on("error", reject);
         if (options.body !== undefined) request.write(options.body);
         if (options.end !== false) request.end();
+      }),
+  );
+
+/** Writes `data` on a bare socket and never ends it, then reads until the host closes it. */
+const sendRaw = (port: number, data: string) =>
+  Effect.promise(
+    () =>
+      new Promise<string>((resolve) => {
+        const socket = NodeNet.connect(port, "127.0.0.1", () => socket.write(data));
+        let received = "";
+        socket.on("data", (chunk: Buffer) => (received += chunk.toString("utf8")));
+        socket.on("error", () => {});
+        socket.on("close", () => resolve(received));
       }),
   );
 
@@ -461,19 +488,9 @@ describe("pages host", () => {
   it.live("closes upgrade requests instead of holding them open", () =>
     Effect.gen(function* () {
       const { port } = yield* setup;
-      const received = yield* Effect.promise(
-        () =>
-          new Promise<string>((resolve) => {
-            const socket = NodeNet.connect(port, "127.0.0.1", () => {
-              socket.write(
-                `GET /p/${PAGE_ID} HTTP/1.1\r\nHost: ${PAGES_HOST}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`,
-              );
-            });
-            let data = "";
-            socket.on("data", (chunk: Buffer) => (data += chunk.toString("utf8")));
-            socket.on("error", () => {});
-            socket.on("close", () => resolve(data));
-          }),
+      const received = yield* sendRaw(
+        port,
+        `GET /p/${PAGE_ID} HTTP/1.1\r\nHost: ${PAGES_HOST}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`,
       );
       expect(received).toBe("");
     }),
@@ -538,6 +555,7 @@ describe("pages host", () => {
         headers: { ...headers, "content-length": String(64 * 1024 + 1) },
       });
       expect(declared.status).toBe(413);
+      expect(declared.headers.connection).toBe("close");
       expect(JSON.parse(declared.body)).toEqual({ reason: "too-large" });
 
       // Chunked, so the host only learns the size by reading; the request stays open, as an
@@ -550,7 +568,112 @@ describe("pages host", () => {
         end: false,
       });
       expect(streamed.status).toBe(413);
+      expect(streamed.headers.connection).toBe("close");
+
+      // The host hangs up rather than reading the rest: this upload never ends, yet the
+      // connection closes after the answer.
+      const chunk = "x".repeat(64 * 1024 + 1);
+      const received = yield* sendRaw(
+        port,
+        [
+          `POST /p/${PAGE_ID}/replies HTTP/1.1`,
+          `Host: ${PAGES_HOST}`,
+          `Origin: ${PAGES_ORIGIN}`,
+          "Content-Type: application/json",
+          `Cookie: ${cookie.cookie}`,
+          "Transfer-Encoding: chunked",
+          "",
+          `${chunk.length.toString(16)}\r\n${chunk}\r\n`,
+        ].join("\r\n"),
+      );
+      expect(received).toMatch(/^HTTP\/1\.1 413 /);
+      expect(received).toMatch(/\r\nconnection: close\r\n/i);
+      expect(received).toContain('{"reason":"too-large"}');
       expect(replies).toEqual([]);
+    }),
+  );
+
+  it.live("refuses sessions from before a pages sign-out and signs in again after it", () =>
+    Effect.gen(function* () {
+      const { port, replies, state } = yield* setup;
+      const cookie = yield* signedIn;
+      state.signedOutAt = yield* Clock.currentTimeMillis;
+
+      const page = yield* send(port, {
+        path: `/p/${PAGE_ID}`,
+        headers: { ...navigation, ...cookie },
+      });
+      expect(page.status).toBe(401);
+      expect(signInLink(page.body)?.origin).toBe(LIBRARY_ORIGIN);
+      const raw = yield* send(port, { path: `/raw/${PAGE_ID}`, headers: cookie });
+      expect(raw.status).toBe(401);
+      const reply = yield* replyRequest(
+        port,
+        cookie,
+        JSON.stringify({ replyId: "reply-0001", text: "Hi" }),
+      );
+      expect(reply.status).toBe(401);
+      expect(JSON.parse(reply.body)).toEqual({ reason: "unauthorized" });
+      expect(replies).toEqual([]);
+
+      // A sign-out stamped ahead of this host's clock still lets the next sign-in through.
+      state.signedOutAt = (yield* Clock.currentTimeMillis) + 60 * 1000;
+      const nonce = yield* browserNonce(port);
+      const redeemed = yield* redeem(port, yield* ticketFor(nonce), nonce);
+      expect(redeemed.status).toBe(303);
+      const session = redeemed.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+      const again = yield* send(port, {
+        path: `/p/${PAGE_ID}`,
+        headers: { ...navigation, cookie: session },
+      });
+      expect(again.status).toBe(200);
+
+      // The Library records the next sign-out at least one past the latest, which ends that cookie.
+      state.signedOutAt += 1;
+      const ended = yield* send(port, {
+        path: `/p/${PAGE_ID}`,
+        headers: { ...navigation, cookie: session },
+      });
+      expect(ended.status).toBe(401);
+    }),
+  );
+
+  it.live("signs no one in without its stored cookie key", () =>
+    Effect.gen(function* () {
+      const { port, replies } = yield* setupWith({ keyMissing: true });
+      const cookie = yield* signedIn;
+
+      const page = yield* send(port, {
+        path: `/p/${PAGE_ID}`,
+        headers: { ...navigation, ...cookie },
+      });
+      expect(page.status).toBe(503);
+      expect(page.body).toContain("Sign-in is unavailable");
+      expect(page.headers["set-cookie"]).toBeUndefined();
+      expect(page.headers["cache-control"]).toBe("private, no-store");
+
+      const nonce = "n".repeat(43);
+      const redeemed = yield* redeem(port, yield* ticketFor(nonce), nonce);
+      expect(redeemed.status).toBe(503);
+      expect(redeemed.headers["set-cookie"]).toBeUndefined();
+
+      const raw = yield* send(port, { path: `/raw/${PAGE_ID}`, headers: cookie });
+      expect(raw.status).toBe(503);
+      expect(raw.body).toBe("Sign-in is unavailable");
+      const reply = yield* replyRequest(
+        port,
+        cookie,
+        JSON.stringify({ replyId: "reply-0001", text: "Hi" }),
+      );
+      expect(reply.status).toBe(503);
+      expect(replies).toEqual([]);
+
+      const misdirected = yield* send(port, {
+        host: "library.example.test",
+        path: `/p/${PAGE_ID}`,
+        headers: navigation,
+      });
+      expect(misdirected.status).toBe(421);
     }),
   );
 });
@@ -558,7 +681,7 @@ describe("pages host", () => {
 describe("PagesHostLive", () => {
   const hostLayer = (env: Record<string, string>) =>
     PagesHostLive.pipe(
-      Layer.provide(libraryLayer([])),
+      Layer.provide(libraryLayer({ replies: [], signedOutAt: 0 })),
       Layer.provide(
         ServerConfig.layerTest(process.cwd(), { prefix: "loom-pages-host-test-" }).pipe(
           Layer.provide(NodeServices.layer),

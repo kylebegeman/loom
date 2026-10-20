@@ -148,7 +148,7 @@ const SHELL_SCRIPT = `((config) => {
       case 413:
         return "This reply could not be sent. Check it and try again.";
       case 401:
-        return "Your sign-in expired. Reload the page to sign in again.";
+        return "Your sign-in ended. Reload the page to sign in again.";
       case 404:
         return "This page has ended, so replies are closed.";
       case 429:
@@ -287,6 +287,11 @@ p { margin: 0; color: var(--muted); }
 export const pageEndedPage = statusPage(
   "This page has ended or expired",
   "Restore it or publish it again from Loom.",
+);
+
+export const signInUnavailablePage = statusPage(
+  "Sign-in is unavailable",
+  "Your Library cannot sign anyone in to its pages right now. Its administrator can find the reason in the server log.",
 );
 
 export const pageUnavailablePage = statusPage(
