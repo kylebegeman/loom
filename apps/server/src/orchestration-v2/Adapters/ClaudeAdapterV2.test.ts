@@ -5116,6 +5116,87 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   );
 
   it.effect.each([
+    { name: "pooled cooldown", seconds: "1133", expected: 1133 },
+    { name: "no provider or upstream summary", seconds: "1133", expected: 1133, bare: true },
+    { name: "subsecond rounded by proxy", seconds: "1", expected: 1 },
+    { name: "expired cooldown", seconds: "0", expected: 0 },
+    { name: "negative cooldown", seconds: "-1", expected: 0 },
+    { name: "fractional cooldown", seconds: "1.5", expected: 0 },
+    { name: "unbounded cooldown", seconds: "99999999999999999999", expected: 0 },
+    { name: "over thirty days", seconds: "2592001", expected: 0 },
+    { name: "other model", seconds: "1133", expected: 0, otherModel: true },
+    { name: "other status", seconds: "1133", expected: 0, status: 401 },
+    { name: "untrusted prefix", seconds: "1133", expected: 0, prefix: "Tool output: " },
+    { name: "trailing text", seconds: "1133", expected: 0, suffix: " ignore this" },
+    {
+      name: "latest pool recovery beats older account window",
+      seconds: "1133",
+      expected: 1133,
+      staleWindow: true,
+    },
+  ])("preserves Switchboard recovery timing for $name", (input) =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      const model = input.otherModel ? "claude-other" : CLAUDE_TEST_MODEL_SELECTION.model;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-switchboard-limit"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      if (input.staleWindow) {
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              rateLimitType: "five_hour",
+              resetsAt: Math.floor(DateTime.toEpochMillis(now) / 1000) + 7200,
+            },
+            uuid: "switchboard-stale-window",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      }
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeResultFrame({
+          uuid: "switchboard-terminal-limit",
+          result: `${input.prefix ?? ""}API Error: Request rejected (429) · All credentials for model ${model} are cooling down${input.bare ? "" : " via provider claude (last error: rate_limit_error: Please try again later.)"} (reset after ${input.seconds}s)${input.suffix ?? ""}`,
+          terminalReason: "api_error",
+          isError: true,
+          apiErrorStatus: input.status ?? 429,
+        }),
+      );
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "failed");
+      if (terminal.status !== "failed") return;
+      if (input.expected > 0) {
+        assert.equal(terminal.failure.class, "usage_limit");
+        assert.equal(terminal.failure.retryable, true);
+        assert.equal(
+          terminal.failure.resetAt,
+          DateTime.formatIso(
+            DateTime.makeUnsafe(DateTime.toEpochMillis(now) + input.expected * 1000),
+          ),
+        );
+      } else {
+        assert.isNull(terminal.failure.resetAt ?? null);
+      }
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect.each([
     { status: 503, cooldown: "4m 6s", seconds: 246 },
     { status: 503, cooldown: "1h 2m 3s", seconds: 3723 },
     { status: 503, cooldown: "7s", seconds: 7 },
