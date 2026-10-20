@@ -25,7 +25,7 @@ import {
   vaultGrantExpiry,
   vaultDecisionMessage,
   vaultReadinessIsStale,
-  vaultAccessContextLines,
+  vaultAccessContextRows,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import * as Cause from "effect/Cause";
@@ -940,9 +940,9 @@ function AccessCheck({
           {explanation.context ? (
             <section aria-label="Related Vault context" className="flex flex-col gap-2">
               <h4 className="text-sm font-medium">Related Vault context</h4>
-              {vaultAccessContextLines(explanation.context, checkedTime).map((line) => (
-                <p key={line} className="break-all text-xs text-muted-foreground">
-                  {line}
+              {vaultAccessContextRows(explanation.context, checkedTime).map((row) => (
+                <p key={row.id} className="break-all text-xs text-muted-foreground">
+                  {row.text}
                 </p>
               ))}
             </section>

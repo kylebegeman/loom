@@ -78,3 +78,23 @@ it.each([["mobile", useMobileClock]] as const)(
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+it("reschedules a deadline timer that fires before the wall clock reaches expiry", () => {
+  let state = "";
+  function Probe() {
+    const now = useMobileClock(vaultTestAccountDeadlines([account]), start);
+    useLayoutEffect(() => {
+      state = vaultTestAccountState(account, now);
+    });
+    return null;
+  }
+  act(() => root.render(<Probe />));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(start);
+  act(() => vi.advanceTimersByTime(300_001));
+  expect(state).toBe("reserved");
+  expect(vi.getTimerCount()).toBe(1);
+  clock.mockRestore();
+  act(() => vi.advanceTimersByTime(300_001));
+  expect(state).toBe("quarantined");
+  expect(vi.getTimerCount()).toBe(0);
+});

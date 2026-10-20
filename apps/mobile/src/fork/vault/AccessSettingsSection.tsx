@@ -26,7 +26,7 @@ import {
   vaultGrantExpiry,
   vaultDecisionMessage,
   vaultReadinessIsStale,
-  vaultAccessContextLines,
+  vaultAccessContextRows,
 } from "@t3tools/client-runtime/fork";
 import { RegistryContext } from "@effect/atom-react";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -913,9 +913,9 @@ function AccessCheck({
           {explanation.context ? (
             <View className="gap-2">
               <Text accessibilityRole="header">Related Vault context</Text>
-              {vaultAccessContextLines(explanation.context, checkedTime).map((line) => (
-                <Text key={line} selectable className="text-foreground-muted">
-                  {line}
+              {vaultAccessContextRows(explanation.context, checkedTime).map((row) => (
+                <Text key={row.id} selectable className="text-foreground-muted">
+                  {row.text}
                 </Text>
               ))}
             </View>

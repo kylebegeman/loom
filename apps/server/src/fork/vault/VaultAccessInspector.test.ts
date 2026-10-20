@@ -1,7 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { VaultError } from "@t3tools/contracts/fork";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as VaultCore from "./VaultCore.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -90,8 +94,8 @@ it.effect(
             {
               id: f.session.id,
               machineId: f.machineId,
-              machineLabel: "Disposable runner",
-              brokerState: "online",
+              machineLabel: null,
+              brokerState: "unknown",
             },
           ],
           approvals: [{ id: f.request.id, state: "pending" }],
@@ -131,17 +135,24 @@ it.effect("filters another requester's retained approvals and unrelated profile 
   withFixture((f) =>
     Effect.gen(function* () {
       const original = Context.get(f.context, VaultAccess.VaultAccess);
-      const inbox = yield* original.approvalInbox;
+      const requests = yield* original.approvalContext({
+        threadId: f.threadId,
+        projectId: f.state.thread.projectId,
+        itemId: f.itemId,
+        itemVersion: 1,
+        runId: f.state.thread.activeRunId,
+        restrictMetadata: true,
+      });
       const foreignId = "0".repeat(32);
       const boundary = Layer.succeed(VaultAccess.VaultAccess, {
         ...original,
-        approvalInbox: Effect.succeed({
-          ...inbox,
-          requests: [
-            ...inbox.requests,
+        approvalContext: () =>
+          Effect.succeed([
+            ...requests,
             { ...f.request, id: foreignId, threadId: ThreadId.make("foreign-thread") },
-          ],
-        }),
+            { ...f.request, id: "1".repeat(32), projectId: ProjectId.make("foreign-project") },
+            { ...f.request, id: "2".repeat(32), itemId: "3".repeat(32) },
+          ]),
       });
       const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
         Effect.provide(VaultAccessInspector.layer.pipe(Layer.provide(boundary))),
@@ -238,6 +249,18 @@ it.effect.each(["profile", "policy", "item", "expiry"] as const)(
   (drift) =>
     withFixture((f) =>
       Effect.gen(function* () {
+        if (drift === "expiry") {
+          const policy = yield* f.access.snapshot;
+          const grant = policy.grants.find((g) => g.definition.id === f.grantId)!;
+          yield* f.access.apply(
+            {
+              operationId: yield* f.id,
+              expectedRevision: policy.revision,
+              change: { type: "save", grant: { ...grant.definition, expiresAt: 100 } },
+            },
+            "admin",
+          );
+        }
         const original = Context.get(f.context, VaultProfiles.VaultProfiles);
         let reads = 0;
         const boundary = Layer.succeed(VaultProfiles.VaultProfiles, {
@@ -330,4 +353,354 @@ it.effect("filters sessions by provider and reports capped workload observations
       expect(context.sessions.some((s) => s.id === foreignId)).toBe(false);
     }),
   ),
+);
+
+it.effect(
+  "does not disclose same-thread requests filed by another requester or build the full inbox",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const foreign = yield* f.access.approvalCreate(
+          {
+            id: yield* f.id,
+            threadId: f.threadId,
+            itemId: f.itemId,
+            action: "use",
+            destination: f.key.destination,
+          },
+          "client:foreign",
+          Effect.void,
+        );
+        expect(
+          (yield* f.access.approvalStatus(foreign.id, f.threadId).pipe(Effect.flip)).reason,
+        ).toBe("not-found");
+        const original = Context.get(f.context, VaultAccess.VaultAccess);
+        const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+          Effect.provide(
+            VaultAccessInspector.layer.pipe(
+              Layer.provide(
+                Layer.succeed(VaultAccess.VaultAccess, {
+                  ...original,
+                  approvalInbox: Effect.die("Inspector must not build the environment inbox"),
+                }),
+              ),
+            ),
+          ),
+          Effect.provideContext(f.context),
+        );
+        expect(
+          (yield* f.access.approvalContext({
+            threadId: f.threadId,
+            projectId: f.state.thread.projectId,
+            itemId: f.itemId,
+            itemVersion: 1,
+            runId: f.state.thread.activeRunId,
+            restrictMetadata: true,
+          })).map((r) => r.id),
+        ).toEqual([f.request.id]);
+        const agent = yield* inspector.explain(f.input, true);
+        expect(agent.context!.approvals.map((r) => r.id)).toEqual([f.request.id]);
+        const admin = yield* inspector.explain(f.input);
+        expect(admin.context!.approvals.map((r) => r.id)).toContain(foreign.id);
+      }),
+    ),
+);
+it.effect("omits live approvals bound to an old item version or a replaced run", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const bound = yield* f.access.approvalCreate(
+        {
+          id: yield* f.id,
+          waitingOperationId: yield* f.id,
+          threadId: f.threadId,
+          itemId: f.itemId,
+          action: "use",
+          destination: f.key.destination,
+        },
+        `thread:${f.threadId}`,
+        Effect.void,
+      );
+      f.state.thread = { ...f.state.thread, activeRunId: RunId.make("replacement") };
+      const runReport = yield* f.inspector.explain(f.input, true);
+      expect(runReport.context!.approvals.some((r) => r.id === bound.id)).toBe(false);
+      expect((yield* f.access.approvalStatus(bound.id, f.threadId)).operationState).toBe(
+        "stale-run",
+      );
+      yield* f.ssh.trust(
+        {
+          id: f.itemId,
+          expectedVersion: 1,
+          operationId: yield* f.id,
+          hostKey: f.key.target.hostKey,
+        },
+        "admin",
+        Effect.void,
+      );
+      const rotated = yield* f.inspector.explain(f.input, true);
+      expect(rotated.context!.approvals).toEqual([]);
+    }),
+  ),
+);
+it.effect("keeps healthy session and request context when profiles stay unavailable", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const original = Context.get(f.context, VaultProfiles.VaultProfiles);
+      const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+        Effect.provide(
+          VaultAccessInspector.layer.pipe(
+            Layer.provide(
+              Layer.succeed(VaultProfiles.VaultProfiles, {
+                ...original,
+                list: () => Effect.fail(new VaultError({ reason: "invalid-response" })),
+              }),
+            ),
+          ),
+        ),
+        Effect.provideContext(f.context),
+      );
+      const report = yield* inspector.explain(f.input);
+      expect(report.context).toMatchObject({
+        state: "partial",
+        profiles: [],
+        sessions: [{ id: f.session.id }],
+        approvals: [{ id: f.request.id }],
+      });
+    }),
+  ),
+);
+it.effect("time-bounds a slow context source and preserves the completed policy decision", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const original = Context.get(f.context, VaultProfiles.VaultProfiles),
+        started = yield* Deferred.make<void>();
+      const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+        Effect.provide(
+          VaultAccessInspector.layer.pipe(
+            Layer.provide(
+              Layer.succeed(VaultProfiles.VaultProfiles, {
+                ...original,
+                list: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+              }),
+            ),
+          ),
+        ),
+        Effect.provideContext(f.context),
+      );
+      const fiber = yield* inspector.explain(f.input).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("501 millis");
+      const report = yield* Fiber.join(fiber);
+      expect(report.decision.allowed).toBe(true);
+      expect(report.context).toMatchObject({
+        state: "partial",
+        sessions: [{ id: f.session.id }],
+        approvals: [{ id: f.request.id }],
+      });
+    }),
+  ),
+);
+it.effect(
+  "anchors context to the run before the decision instead of relabelling an older decision",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const original = Context.get(f.context, VaultAccess.VaultAccess);
+        const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+          Effect.provide(
+            VaultAccessInspector.layer.pipe(
+              Layer.provide(
+                Layer.succeed(VaultAccess.VaultAccess, {
+                  ...original,
+                  explain: (...args) =>
+                    Effect.gen(function* () {
+                      const report = yield* original.explain(...args);
+                      f.state.thread = {
+                        ...f.state.thread,
+                        activeRunId: RunId.make("started-after-decision"),
+                      };
+                      return report;
+                    }),
+                }),
+              ),
+            ),
+          ),
+          Effect.provideContext(f.context),
+        );
+        expect((yield* inspector.explain(f.input)).context).toMatchObject({
+          state: "changed",
+          profiles: [],
+          sessions: [],
+          approvals: [],
+        });
+      }),
+    ),
+);
+it.effect(
+  "filters unrelated profile records and bindings rather than treating every profile as a consumer",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const foreignItem = yield* f.id,
+          foreignProfile = yield* f.id;
+        yield* f.profiles.apply(
+          {
+            projectId: f.state.thread.projectId,
+            operationId: yield* f.id,
+            expectedRevision: 2,
+            change: {
+              type: "save",
+              profile: {
+                ...f.profile,
+                bindings: [
+                  ...f.profile.bindings,
+                  { ...f.profile.bindings[0]!, name: "foreign", itemId: foreignItem },
+                ],
+              },
+            },
+          },
+          "admin",
+        );
+        yield* f.profiles.apply(
+          {
+            projectId: f.state.thread.projectId,
+            operationId: yield* f.id,
+            expectedRevision: 3,
+            change: {
+              type: "save",
+              profile: {
+                ...f.profile,
+                id: foreignProfile,
+                label: "Unrelated profile",
+                bindings: [{ ...f.profile.bindings[0]!, itemId: foreignItem }],
+              },
+            },
+          },
+          "admin",
+        );
+        const context = (yield* f.inspector.explain(f.input)).context!;
+        expect(context.profiles).toHaveLength(1);
+        expect(context.profiles[0]!.requirements).toEqual(["server"]);
+        expect(context.profiles[0]!.id).toBe(f.profile.id);
+      }),
+    ),
+);
+it.effect("filters every session identity dimension and ignores expired sessions", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const original = Context.get(f.context, VaultWorkloads.VaultWorkloads);
+      const alternatives = [
+        { threadId: ThreadId.make("foreign") },
+        { runId: RunId.make("foreign") },
+        { providerInstanceId: ProviderInstanceId.make("foreign") },
+        { projectId: ProjectId.make("foreign") },
+        { environmentId: EnvironmentId.make("foreign") },
+        { itemId: "e".repeat(32) },
+        { expiresAt: 0 },
+      ];
+      const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+        Effect.provide(
+          VaultAccessInspector.layer.pipe(
+            Layer.provide(
+              Layer.succeed(VaultWorkloads.VaultWorkloads, {
+                ...original,
+                list: () =>
+                  Effect.succeed([
+                    f.session,
+                    ...alternatives.map((x, n) => ({
+                      ...f.session,
+                      ...x,
+                      id: n.toString(16).padStart(32, "0"),
+                    })),
+                  ]),
+              }),
+            ),
+          ),
+        ),
+        Effect.provideContext(f.context),
+      );
+      expect((yield* inspector.explain(f.input)).context!.sessions.map((s) => s.id)).toEqual([
+        f.session.id,
+      ]);
+    }),
+  ),
+);
+it.effect(
+  "sorts pending requests first then newest, without expiring context on decided history",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const original = Context.get(f.context, VaultAccess.VaultAccess),
+          newer = "d".repeat(32),
+          decided = "e".repeat(32);
+        yield* TestClock.adjust("1 second");
+        const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+          Effect.provide(
+            VaultAccessInspector.layer.pipe(
+              Layer.provide(
+                Layer.succeed(VaultAccess.VaultAccess, {
+                  ...original,
+                  approvalContext: () =>
+                    Effect.succeed([
+                      {
+                        ...f.request,
+                        id: decided,
+                        state: "denied",
+                        requestedAt: 900,
+                        requestExpiresAt: 0,
+                      },
+                      f.request,
+                      { ...f.request, id: newer, requestedAt: 500 },
+                    ]),
+                }),
+              ),
+            ),
+          ),
+          Effect.provideContext(f.context),
+        );
+        const context = (yield* inspector.explain(f.input)).context!;
+        expect(context.state).toBe("current");
+        expect(context.approvals.map((r) => r.id)).toEqual([newer, f.request.id, decided]);
+        expect(context.freshUntil).toBeGreaterThan(context.checkedAt);
+      }),
+    ),
+);
+it.effect(
+  "starts all final consistency reads concurrently and bounds unavailable verification",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        const markers = yield* Effect.all(Array.from({ length: 4 }, () => Deferred.make<void>()));
+        const gate = (n: number) =>
+          Deferred.succeed(markers[n]!, undefined).pipe(Effect.andThen(Effect.never));
+        const originalThread = Context.get(f.context, ThreadManagementService),
+          originalProfiles = Context.get(f.context, VaultProfiles.VaultProfiles),
+          originalAccess = Context.get(f.context, VaultAccess.VaultAccess),
+          originalCore = Context.get(f.context, VaultCore.VaultCore);
+        let threadReads = 0,
+          profileReads = 0;
+        const boundaries = Layer.mergeAll(
+          Layer.succeed(ThreadManagementService, {
+            ...originalThread,
+            getThreadShell: (id) =>
+              ++threadReads === 3 ? gate(0) : originalThread.getThreadShell(id),
+          }),
+          Layer.succeed(VaultProfiles.VaultProfiles, {
+            ...originalProfiles,
+            list: (id) => (++profileReads === 2 ? gate(1) : originalProfiles.list(id)),
+          }),
+          Layer.succeed(VaultAccess.VaultAccess, { ...originalAccess, snapshot: gate(2) }),
+          Layer.succeed(VaultCore.VaultCore, { ...originalCore, inspect: () => gate(3) }),
+        );
+        const inspector = yield* VaultAccessInspector.VaultAccessInspector.pipe(
+          Effect.provide(VaultAccessInspector.layer.pipe(Layer.provide(boundaries))),
+          Effect.provideContext(f.context),
+        );
+        const fiber = yield* inspector.explain(f.input).pipe(Effect.forkChild);
+        yield* Effect.all(markers.map(Deferred.await), { concurrency: 4 });
+        yield* TestClock.adjust("501 millis");
+        const report = yield* Fiber.join(fiber);
+        expect(report.decision.allowed).toBe(true);
+        expect(report.context!.state).toBe("unavailable");
+      }),
+    ),
 );

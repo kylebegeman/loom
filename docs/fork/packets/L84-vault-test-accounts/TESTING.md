@@ -5,7 +5,7 @@ packet acceptance remains unfinished. Implementation base is current fork main `
 
 ## Authenticated workload evidence
 
-Four focused suites pass **35 tests**: the existing 13 manager cases, 20 real-service workload
+Four focused suites pass **65 tests**: 13 manager cases, 50 real-service workload/contract
 cases, one MCP authorization case and real startup registration. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
@@ -16,7 +16,7 @@ outage refusal; and cleanup CAS loss preserving a newer reservation. Agent admin
 injected owner fields refuse. The MCP case drains toolkit result streams, verifies trusted caller
 identity and refuses external clients or a runtime lowered before mutation. No login is delivered.
 
-Six login-admission cases prove the separate exact-origin grant, canonical origin refusal,
+Ten login-admission cases prove the separate exact-origin grant, canonical origin refusal,
 wrong-run/lease refusal, fixed deadlines despite renewal, replacement lease refusal, grant loss
 before a synthetic callback with exactly one fixture cleanup and no continuation, changed-run
 refusal, and lease release while the login access audit is committing. Preparation writes no
@@ -135,15 +135,17 @@ action is included. This branch is prepared for the release owner's landing revi
 
 ## Landing-review regressions
 
-Queued follow-ups and waiting user questions do not end an active reserving run. Two additional
+Queued follow-ups and pending runtime requests do not end an active reserving root run. Two
 real-service cases preserve the same lease through discovery and reconciliation, then renew and
-release it while the presentation status stays queued/waiting. The binding trusts activeRunId,
+release it with status queued or running plus pendingRuntimeRequest. A reachable waiting state
+with activeRunId null and a background subagent ends that lease and quarantines the account. The binding trusts activeRunId,
 provider/project identity and permission modes rather than the thread's presentation status.
 
 Each client has a mounted clock regression: an empty manager waits twelve minutes, receives a
 new five-minute lease, then renews twice. Fresh snapshot.checkedAt rebases the clock and explicit
 renew-eligibility deadlines wake it after a fifteen-minute extension. Both renew and release
-withdraw at expiry, leaving clean review/retire and no timer. This is unit evidence for both
+withdraw at expiry, leaving clean review/retire and no timer. A callback that fires before the wall
+clock reaches its deadline reschedules; both mounted hook regressions cover that clock behavior. This is unit evidence for both
 web/native hooks, not a simulator pass. The card's lease line now uses that computed state, and
 mobile rename disables application and target edits. Both clients show and can copy the exact
 collection grant scope; the guide states full-access/default run requirements.
@@ -162,7 +164,7 @@ post-await revalidation refuses each case. These are synthetic service tests, no
 
 ## Synthetic broker contract
 
-The server package-CWD workload suite passes 48 tests, including 24 new broker-contract cases.
+The server package-CWD workload suite passes 50 tests, including 24 broker-contract cases.
 It uses the real account/grant admission service and a fake broker, with no credential reveal.
 Cases cover environment/machine/app/target/origin mismatch, offline/expired presence, registered
 origin changes at the adapter boundary, forged return correlation, grant/run/lease/expiry changes,
@@ -182,3 +184,8 @@ or account-reset/reuse safety. Those remain explicit live adapter gates in TECHN
 cd apps/server
 ../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts
 ```
+
+The landing-review regression also changes the root run during a reservation audit write and
+proves the post-require identity check refuses before registry CAS. The final Math.min deadline
+recheck has no isolated mutation proof; expiry during the earlier audit wait is covered, and no
+stronger coverage is claimed for that non-blocking review note.

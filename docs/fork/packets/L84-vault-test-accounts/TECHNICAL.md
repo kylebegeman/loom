@@ -96,6 +96,12 @@ retire, approve itself or return credentials. Release requires the exact owned l
 possible after item grant withdrawal. Mutation results pass through the same filtered discovery;
 withdrawal can hide a lease that was already committed. Inspect/reconcile before retrying.
 
+Lease ownership ends with the root run. Queued follow-ups and pending runtime requests retain
+ownership while activeRunId identifies that run. A real waiting thread with only background
+subagents has no active root run and loses its lease, even though those subagents remain live
+for other platform tools. They need a new root-run or separately manager-owned reservation;
+their general MCP credential does not extend the old pool lease.
+
 Run ownership uses a versioned `run-v1:` JSON binding in the existing owner string: environment,
 thread, provider instance, project and run IDs. It is public identity metadata, never a bearer
 credential. Bindings exceeding the existing 512-character limit refuse. No optional ownership

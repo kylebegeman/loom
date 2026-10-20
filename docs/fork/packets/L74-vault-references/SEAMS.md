@@ -33,3 +33,10 @@ available upstream nightly before handoff. The result and tag are recorded in TE
 
 FORK.md and seams.tsv enumerate these markers. The blocking guard is independent of the
 optional `ext-turn-input` contributor proposal because a required check cannot be skipped.
+
+## Completion output seam
+
+`apps/server/src/binCli.ts` uses `ext-cli` for the fork command import, registration and
+`withVaultCompletionOutput` around Command.run. The fork helper redirects this completion
+command's parse/help Console output to stderr; its successful canonical candidates write stdout
+explicitly. Other commands retain their existing output behavior. FORK.md and seams.tsv track it.

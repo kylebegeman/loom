@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId } from "@t3tools/contracts";
-import { VaultError, vaultGitDestination } from "@t3tools/contracts/fork";
+import { VaultError } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -362,34 +362,34 @@ it.effect(
       }),
     ),
 );
-it.effect(
-  "distinguishes SSH and Git grants for one key with unique destination-labelled checks",
-  () =>
-    withFixture((f) =>
-      Effect.gen(function* () {
-        yield* f.grant(f.key.destination);
-        yield* f.save([
-          f.profile.bindings[0]!,
-          { name: "repository", kind: "git", itemId: f.itemId, repository: "owner/repo" },
-        ] as never);
-        const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
-        const grants = report.checks.filter((c) => c.id.startsWith("grant:"));
-        expect(grants).toHaveLength(2);
-        expect(new Set(report.checks.map((c) => c.id)).size).toBe(report.checks.length);
-        expect(grants).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              state: "passed",
-              reason: expect.stringContaining(f.key.destination),
-            }),
-            expect.objectContaining({
-              state: "blocked",
-              reason: expect.stringContaining(vaultGitDestination(f.key.target, "owner/repo")),
-            }),
-          ]),
-        );
-      }),
-    ),
+it.effect("distinguishes SSH and Git grants for one key without disclosing destinations", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant(f.key.destination);
+      yield* f.save([
+        f.profile.bindings[0]!,
+        { name: "repository", kind: "git", itemId: f.itemId, repository: "owner/repo" },
+      ] as never);
+      const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+      const grants = report.checks.filter((c) => c.id.startsWith("grant:"));
+      expect(grants).toHaveLength(2);
+      expect(JSON.stringify(grants)).not.toContain(f.key.target.hostname);
+      expect(JSON.stringify(grants)).not.toContain("owner/repo");
+      expect(new Set(report.checks.map((c) => c.id)).size).toBe(report.checks.length);
+      expect(grants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            state: "passed",
+            reason: "allowed",
+          }),
+          expect.objectContaining({
+            state: "blocked",
+            reason: expect.any(String),
+          }),
+        ]),
+      );
+    }),
+  ),
 );
 
 it.effect(
@@ -424,17 +424,42 @@ it.effect(
       }),
     ),
 );
-it.effect("blocks a changed pinned profile version even when its bindings still exist", () =>
+it.effect("preserves a run pin through profile re-save as execution does", () =>
   withFixture((f) =>
     Effect.gen(function* () {
       yield* f.grant(f.key.destination);
       yield* f.profiles.resolve(f.threadId, f.profile.id);
-      yield* f.save();
+      yield* f.profiles.apply(
+        {
+          projectId: f.state.thread.projectId,
+          operationId: yield* f.id,
+          expectedRevision: 2,
+          change: { type: "save", profile: { ...f.profile, label: "Renamed profile" } },
+        },
+        "admin",
+      );
       const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
       expect(report.checks).toContainEqual(
-        expect.objectContaining({ id: "profile-pin", state: "blocked" }),
+        expect.objectContaining({ id: "profile-pin", state: "passed" }),
       );
-      expect(report.ready).toBe(false);
+      expect(report.checks.some((c) => c.id === "profile-changed")).toBe(false);
+      expect((yield* f.profiles.resolve(f.threadId, null)).profileVersion).toBe(1);
+    }),
+  ),
+);
+
+it.effect("does not disclose discovered destinations to a thread without item inspect", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.save([
+        f.profile.bindings[0]!,
+        { name: "repository", kind: "git", itemId: f.itemId, repository: "owner/repo" },
+      ] as never);
+      const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+      expect(report.decisions.every((d) => !d.allowed)).toBe(true);
+      expect(JSON.stringify(report.checks)).not.toContain(f.key.destination);
+      expect(JSON.stringify(report.checks)).not.toContain("owner/repo");
+      expect(new Set(report.checks.map((c) => c.id)).size).toBe(report.checks.length);
     }),
   ),
 );

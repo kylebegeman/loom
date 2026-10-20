@@ -164,40 +164,86 @@ export const vaultApprovalReviewLabels = (
   };
 };
 
-export const vaultAccessContextLines = (context: VaultAccessContext, now: number): string[] => {
+export const vaultAccessContextRows = (context: VaultAccessContext, now: number) => {
   if (context.state === "changed" || now >= context.freshUntil)
-    return ["Related context changed or expired. Run the access check again."];
+    return [
+      { id: "expired", text: "Related context changed or expired. Run the access check again." },
+    ];
   if (context.state === "unavailable")
-    return ["Related context is unavailable. The policy decision above is a separate observation."];
+    return [
+      {
+        id: "unavailable",
+        text: "Related context is unavailable. The policy decision above is a separate observation.",
+      },
+    ];
   return [
     ...(context.state === "partial"
-      ? ["Some related context is unavailable. Empty lists do not prove there are no consumers."]
+      ? [
+          {
+            id: "partial",
+            text: "Some related context is unavailable. Empty lists do not prove there are no consumers.",
+          },
+        ]
       : []),
-    `Provider ${context.providerInstanceId ?? "unavailable"} · Run ${context.runId ?? "none"}.`,
+    {
+      id: "provider",
+      text: `Provider ${context.providerInstanceId ?? "unavailable"} · Run ${context.runId ?? "none"}.`,
+    },
     ...(context.profiles.length
-      ? context.profiles.map(
-          (p) =>
-            `Profile ${p.label} · ${p.state}${p.selected ? " · selected default" : ""} · Requirements ${p.requirements.join(", ")}.`,
-        )
-      : ["No matching profile bindings in this project were observed."]),
+      ? context.profiles.map((p) => ({
+          id: `profile:${p.id}`,
+          text: `Profile ${p.label} (${p.id}) · ${p.state}${p.selected ? " · selected default" : ""} · Requirements ${p.requirements.join(", ")}.`,
+        }))
+      : [
+          {
+            id: "no-profiles",
+            text: "No matching profile bindings in this project were observed.",
+          },
+        ]),
     ...(context.omittedProfiles
-      ? [`${context.omittedProfiles} additional matching profiles omitted.`]
+      ? [
+          {
+            id: "omitted-profiles",
+            text: `${context.omittedProfiles} additional matching profiles omitted.`,
+          },
+        ]
       : []),
     ...(context.sessions.length
-      ? context.sessions.map(
-          (s) =>
-            `Workload ${s.id} · ${s.machineLabel ?? s.machineId} · broker ${s.brokerState} when checked · ${s.destination}.`,
-        )
-      : ["No current matching workload sessions were observed."]),
+      ? context.sessions.map((s) => ({
+          id: `workload:${s.id}`,
+          text: `Workload ${s.id} · ${s.machineLabel ?? s.machineId} · broker ${s.brokerState} when checked · ${s.destination}.`,
+        }))
+      : [{ id: "no-workloads", text: "No current matching workload sessions were observed." }]),
     ...(context.omittedSessions
-      ? [`${context.omittedSessions} additional matching workload sessions omitted.`]
+      ? [
+          {
+            id: "omitted-sessions",
+            text: `${context.omittedSessions} additional matching workload sessions omitted.`,
+          },
+        ]
       : []),
     ...(context.approvals.length
-      ? context.approvals.map((r) => `Request ${r.id} · ${r.state}.`)
-      : ["No retained matching requests for this thread were observed."]),
+      ? context.approvals.map((r) => ({
+          id: `request:${r.id}`,
+          text: `Request ${r.id} · ${r.state}.`,
+        }))
+      : [
+          {
+            id: "no-requests",
+            text: "No retained matching requests for this thread were observed.",
+          },
+        ]),
     ...(context.omittedApprovals
-      ? [`${context.omittedApprovals} additional matching requests omitted.`]
+      ? [
+          {
+            id: "omitted-requests",
+            text: `${context.omittedApprovals} additional matching requests omitted.`,
+          },
+        ]
       : []),
-    "External consumers are not discovered. Copies held by providers are unknown. This context does not authorize an operation.",
+    {
+      id: "limits",
+      text: "External consumers are not discovered. Copies held by providers are unknown. This context does not authorize an operation.",
+    },
   ];
 };

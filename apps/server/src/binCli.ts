@@ -1,4 +1,4 @@
-import { FORK_CLI_COMMANDS } from "./fork/cli/index.ts"; // fork: ext-cli
+import { FORK_CLI_COMMANDS, withVaultCompletionOutput } from "./fork/cli/index.ts"; // fork: ext-cli
 import { doctorCommand } from "./cli/doctor.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -107,6 +107,7 @@ export function runCli() {
   extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
+    withVaultCompletionOutput, // fork: ext-cli
     Effect.scoped,
     Effect.provide(layerCliRuntime),
     NodeRuntime.runMain,

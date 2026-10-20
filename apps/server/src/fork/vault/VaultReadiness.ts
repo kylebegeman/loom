@@ -131,12 +131,14 @@ const make = Effect.gen(function* () {
           const currentSelection = registry.profiles.find(
             (p) => p.id === selected.id && p.state === "active",
           );
-          const matchesProfile = currentSelection?.version === selected.version;
+          const matchesProfile = pinned
+            ? currentSelection !== undefined
+            : currentSelection?.version === selected.version;
           checks.push({
             id: pinned ? "profile-pin" : "profile-default",
             state: matchesProfile ? "passed" : "blocked",
             reason: !matchesProfile
-              ? "The selected profile was changed or archived since this run was pinned."
+              ? "The selected profile is archived or unavailable."
               : pinned
                 ? "Requirements were discovered from the current run's pinned profile and credential versions."
                 : "Requirements were discovered from the active project profile.",
@@ -212,12 +214,13 @@ const make = Effect.gen(function* () {
       if (observedProfile) {
         const current = yield* profiles.listForThread(input.threadId);
         if (
-          current.revision !== observedProfile.revision ||
-          (!pinned && current.activeProfileId !== observedProfile.id) ||
+          (!pinned &&
+            (current.revision !== observedProfile.revision ||
+              current.activeProfileId !== observedProfile.id)) ||
           !current.profiles.some(
             (p) =>
               p.id === observedProfile.id &&
-              p.version === observedProfile.version &&
+              (pinned !== null || p.version === observedProfile.version) &&
               p.state === "active",
           )
         )

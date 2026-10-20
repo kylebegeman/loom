@@ -258,3 +258,26 @@ it.effect(
       });
     }).pipe(Effect.scoped),
 );
+
+it.effect(
+  "keeps parse help out of completion stdout and accepts dash-prefixed queries after --",
+  () =>
+    Effect.gen(function* () {
+      for (const args of [["-query"], ["--kind", "invalid"], ["--unknown-option"]]) {
+        const result = yield* run(["references-complete", ...args], {});
+        expect(result.code).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(result.stderr.length).toBeGreaterThan(0);
+      }
+      const f = yield* fixture(() => ({
+        structuredContent: { items: [entry(1)], nextCursor: null },
+      }));
+      const result = yield* run(
+        ["references-complete", "--kind", "account", "--", "-query"],
+        f.environment,
+      );
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe(entry(1).reference);
+      expect(f.calls[0]!.arguments).toMatchObject({ query: "-query", kind: "account" });
+    }).pipe(Effect.scoped),
+);

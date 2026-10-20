@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import type { VaultAccessContext } from "@t3tools/contracts/fork";
-import { vaultAccessContextLines } from "./vault-access.ts";
+import { vaultAccessContextRows } from "./vault-access.ts";
 const context: VaultAccessContext = {
   checkedAt: 100,
   freshUntil: 200,
@@ -26,18 +26,24 @@ const context: VaultAccessContext = {
   providerCopies: "unknown",
 };
 it("withdraws relationship labels at expiry or context change while preserving the separate policy explanation", () => {
-  const expired = vaultAccessContextLines(context, 200).join(" ");
+  const expired = vaultAccessContextRows(context, 200)
+    .map((r) => r.text)
+    .join(" ");
   expect(expired).toContain("Run the access check again");
   expect(expired).not.toContain("Development");
-  expect(vaultAccessContextLines({ ...context, state: "changed" }, 101)).toEqual(
-    vaultAccessContextLines(context, 200),
+  expect(vaultAccessContextRows({ ...context, state: "changed" }, 101)).toEqual(
+    vaultAccessContextRows(context, 200),
   );
-  expect(vaultAccessContextLines({ ...context, state: "unavailable" }, 101).join(" ")).toContain(
-    "separate observation",
-  );
+  expect(
+    vaultAccessContextRows({ ...context, state: "unavailable" }, 101)
+      .map((r) => r.text)
+      .join(" "),
+  ).toContain("separate observation");
 });
 it("keeps limited coverage and omitted relationships explicit in normal and partial context", () => {
-  const lines = vaultAccessContextLines({ ...context, state: "partial" }, 101).join(" ");
+  const lines = vaultAccessContextRows({ ...context, state: "partial" }, 101)
+    .map((r) => r.text)
+    .join(" ");
   expect(lines).toContain("Empty lists do not prove there are no consumers");
   expect(lines).toContain("selected default");
   expect(lines).toContain("2 additional matching profiles omitted");
@@ -45,4 +51,18 @@ it("keeps limited coverage and omitted relationships explicit in normal and part
   expect(lines).toContain("1 additional matching requests omitted");
   expect(lines).toContain("External consumers are not discovered");
   expect(lines).toContain("does not authorize an operation");
+});
+
+it("gives identically labelled profiles stable distinct keys and visible identities", () => {
+  const other = { ...context.profiles[0]!, id: "c".repeat(32) };
+  const rows = vaultAccessContextRows({ ...context, profiles: [context.profiles[0]!, other] }, 101);
+  const profiles = rows.filter((r) => r.id.startsWith("profile:"));
+  expect(profiles.map((r) => r.id)).toEqual([
+    `profile:${context.profiles[0]!.id}`,
+    `profile:${other.id}`,
+  ]);
+  expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
+  expect(profiles[0]!.text).toContain(context.profiles[0]!.id);
+  expect(profiles[1]!.text).toContain(other.id);
+  expect(profiles[0]!.text).not.toBe(profiles[1]!.text);
 });

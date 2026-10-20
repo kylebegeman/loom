@@ -116,7 +116,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_readiness", {
     description:
-      "Check declared requirements, or discover the active project profile when none are supplied, with current provider/run and relevant enrolled-broker presence in the Loom server context. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
+      "Check declared requirements, or inspect the current run's pinned profile when none are supplied, falling back to the project default only when no pin exists (an unreadable or retired pin blocks), with current provider/run and relevant enrolled-broker presence in the Loom server context. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
     parameters: ownReadiness,
     success: VaultReadinessReport,
     failure,

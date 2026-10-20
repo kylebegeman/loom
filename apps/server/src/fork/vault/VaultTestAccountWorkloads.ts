@@ -80,6 +80,7 @@ const make = Effect.gen(function* () {
       !thread ||
       thread.deletedAt !== null ||
       thread.archivedAt !== null ||
+      // Pool leases belong to the root run; background subagents cannot extend that ownership.
       thread.activeRunId === null ||
       thread.runtimeMode !== "full-access" ||
       thread.interactionMode !== "default" ||

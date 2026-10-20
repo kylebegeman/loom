@@ -102,6 +102,19 @@ export const completeVaultReferences = Effect.fn("completeVaultReferences")(func
   }
   return [...references].slice(0, 20);
 });
+// CLI help is rendered before command handlers run. Route only this machine-readable command's
+// console output to stderr; successful candidates bypass Console and use stdout explicitly.
+export const withVaultCompletionOutput = <A, E, R>(program: Effect.Effect<A, E, R>) =>
+  NodeProcess.argv[2] === "vault" && NodeProcess.argv[3] === "references-complete"
+    ? Console.consoleWith((console) =>
+        program.pipe(
+          Effect.provideService(Console.Console, {
+            ...console,
+            log: (...args: ReadonlyArray<unknown>) => console.error(...args),
+          }),
+        ),
+      )
+    : program;
 export const referencesCompleteCommand = Command.make("references-complete", {
   query: Argument.String("query").pipe(Argument.withDefault("")),
   kind: Flag.Literals("kind", VaultItemKind.literals).pipe(Flag.optional),
@@ -112,7 +125,10 @@ export const referencesCompleteCommand = Command.make("references-complete", {
   Command.withHandler(({ query, kind }) =>
     Effect.gen(function* () {
       const values = yield* completeVaultReferences(query, Option.getOrNull(kind), NodeProcess.env);
-      if (values.length) yield* Console.log(values.join("\n"));
+      if (values.length)
+        yield* Effect.sync(() => {
+          NodeProcess.stdout.write(values.join("\n") + "\n");
+        });
     }).pipe(
       Effect.catchTags({
         ReferenceCompletionError: reportCompletionFailure,

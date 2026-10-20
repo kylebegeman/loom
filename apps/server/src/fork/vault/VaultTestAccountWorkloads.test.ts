@@ -1,6 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+  RuntimeRequestId,
+} from "@t3tools/contracts";
 import {
   VaultError,
   vaultTestAccountDestination,
@@ -30,6 +37,7 @@ import {
   type SyntheticLoginAdapter,
 } from "./testkit/SyntheticLoginDelivery.ts";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 
 const caller = {
   environmentId: EnvironmentId.make("account-workloads"),
@@ -57,6 +65,10 @@ const fixture = () => {
     runId: RunId.make("run-one"),
     active: true,
     status: "running",
+    pendingRuntimeRequest: null as ReturnType<typeof liveThreadShell>["pendingRuntimeRequest"],
+    pendingBackgroundTasks: [] as NonNullable<
+      ReturnType<typeof liveThreadShell>["pendingBackgroundTasks"]
+    >,
     archived: false,
     deleted: false,
     project: true,
@@ -80,7 +92,9 @@ const fixture = () => {
             ({
               ...liveThreadShell(id),
               projectId,
-              status: state.active ? state.status : "idle",
+              status: state.active || state.status === "waiting" ? state.status : "idle",
+              pendingRuntimeRequest: state.pendingRuntimeRequest,
+              pendingBackgroundTasks: state.pendingBackgroundTasks,
               activeRunId: state.active ? state.runId : null,
               providerInstanceId: state.provider,
               runtimeMode: state.runtimeMode,
@@ -722,6 +736,14 @@ it.effect(
             )
             .pipe(Effect.flip)).reason,
         ).toBe("invalid-input");
+        yield* f.grant({
+          destination: vaultTestAccountLoginDestination(collection.id, loginOrigin),
+          actions: ["use"],
+        });
+        yield* f.service.prepareLogin(
+          { accountId: account.id, leaseId, origin: loginOrigin },
+          caller,
+        );
         expect(
           (yield* f.service
             .prepareLogin({ accountId: account.id, leaseId: f.id(), origin: loginOrigin }, caller)
@@ -879,7 +901,7 @@ it.effect("refuses a lease released while the login access audit is committing",
   ),
 );
 
-it.effect.each(["queued", "waiting"])(
+it.effect.each(["queued", "pending-approval"])(
   "preserves the reserving run's lease while its thread is %s",
   (status) =>
     withFixture((f) =>
@@ -887,7 +909,15 @@ it.effect.each(["queued", "waiting"])(
         yield* f.grant();
         const reserved = yield* f.reserve(),
           lease = reserved.accounts[0]!.lease!;
-        f.state.status = status;
+        f.state.status = status === "queued" ? "queued" : "running";
+        f.state.pendingRuntimeRequest =
+          status === "pending-approval"
+            ? {
+                id: RuntimeRequestId.make("approval"),
+                kind: "user_input",
+                createdAt: DateTime.makeUnsafe(0),
+              }
+            : null;
         const observed = yield* f.service.discover(caller);
         expect(observed.accounts[0]!.lease).toEqual(lease);
         const before = (yield* f.manager.snapshot("client:manager")).revision;
@@ -1397,6 +1427,52 @@ it.effect.each(["complete", "interrupt"] as const)(
         expect(yield* delivery.snapshot).toBe("closed");
         expect(control.active).toBe(false);
         expect(control.starts).toBe(1);
+      }),
+    ),
+);
+
+it.effect("ends root-owned leases when a real waiting thread has no active run", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      yield* f.grant();
+      yield* f.reserve();
+      f.state.status = "waiting";
+      f.state.pendingBackgroundTasks = [
+        {
+          kind: "subagent",
+          taskId: "background-worker",
+          providerInstanceId: caller.providerInstanceId,
+        },
+      ];
+      f.state.active = false;
+      expect((yield* f.service.discover(caller).pipe(Effect.flip)).reason).toBe("denied");
+      yield* f.service.reconcile;
+      expect((yield* f.manager.snapshot("client:manager")).accounts[0]).toMatchObject({
+        state: "quarantined",
+        lease: null,
+      });
+    }),
+  ),
+);
+
+it.effect(
+  "refuses reservation when the root run changes during the access audit before registry CAS",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant();
+        const request = yield* f.input();
+        f.state.beforePolicyWrite = () =>
+          Effect.sync(() => {
+            f.state.beforePolicyWrite = null;
+            f.state.runId = RunId.make("changed-during-reservation-audit");
+          });
+        expect(
+          (yield* f.service.apply(request, caller, Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const snapshot = yield* f.manager.snapshot("client:manager");
+        expect(snapshot.revision).toBe(request.expectedRevision);
+        expect(snapshot.accounts[0]!.lease).toBeNull();
       }),
     ),
 );

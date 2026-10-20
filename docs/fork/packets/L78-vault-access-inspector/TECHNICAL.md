@@ -35,7 +35,17 @@ uses access:read and mutation uses access:write. MCP names are `loom_vault_grant
 The inspector now observes matching project profiles, the current provider/run, current item
 workload sessions and enrolled-broker presence, and retained requests for the selected thread/item.
 These bounded, read-only observations expire within 60 seconds and carry explicit omitted counts.
-Inspect access bounds related metadata; async context/version drift withdraws relationship labels.
+Inspect access bounds related metadata. Agent context filters requests by the exact requestedBy
+identity as well as thread/project/item, omits live requests for stale item versions/runs, and
+keeps broker labels/state administrator-only. A narrow policy read applies the canonical request
+view without resolving the environment-wide approver inbox. Async context/version drift withdraws
+relationship labels; the run is anchored before the policy decision.
+
+Each context read is limited to 500 ms; observation and final verification run concurrently within
+their two passes. A timed-out source is partial/unavailable rather than delaying the policy result
+until normal backend timeouts. A persistent profile failure preserves healthy session/request
+observations as partial. Required final policy/item/run verification failures withdraw context.
+Profile rows use stable IDs and show their IDs alongside labels, including duplicate imported names.
 Partial or unavailable context never changes the separate evaluator decision. Profiles are labelled
 as project defaults, not inferred current-run selections. No credential delivery or new storage is added.
 

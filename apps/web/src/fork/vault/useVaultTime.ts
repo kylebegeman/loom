@@ -14,7 +14,14 @@ export function useVaultTime(deadlines: readonly (number | null)[], observedAt =
       timer =
         remaining > 2_147_483_647
           ? setTimeout(schedule, 2_147_483_647)
-          : setTimeout(() => setNow(Date.now()), Math.max(0, remaining) + 1);
+          : setTimeout(
+              () => {
+                const current = Date.now();
+                if (current < next) schedule();
+                else setNow(current);
+              },
+              Math.max(0, remaining) + 1,
+            );
     };
     schedule();
     return () => clearTimeout(timer);

@@ -26,7 +26,7 @@ native static checks pass. No repo-wide checks or production actions were run.
 
 ## Terminal completion evidence
 
-Six focused CLI cases exercise a real disposable loopback MCP endpoint and the actual Loom
+Seven focused CLI cases exercise a real disposable loopback MCP endpoint and the actual Loom
 CLI child. Structured/text responses, sparse continuation, bounded scans (four requests), output
 caps (20 references), deduplication, canonical-reference enforcement, mixed-environment refusal,
 archived response refusal, cursor loops, missing credentials and tool failures are covered.
@@ -34,7 +34,8 @@ Child-process failures assert exit 1, empty stdout and one fixed stderr message 
 malformed responses, missing connections and JSON-RPC errors containing a synthetic private body.
 The CLI prints no item labels, server error bodies or credential values. It uses only its
 inherited authenticated environment and never installs a shell function or edits a startup file.
-The actual child also verifies the new account-discovery CLI alias uses the existing agent tool.
+Parse failures (leading dash, invalid kind and unknown flag) assert exit 1 and empty stdout;
+help is routed to stderr at the CLI boundary. A query after `--` stays literal. The actual child also verifies the new account-discovery CLI alias uses the existing agent tool.
 
 ```sh
 cd apps/server
@@ -112,7 +113,7 @@ remains; no merge or deployment was attempted. The paused QA schedule was delete
 persistence checks. iOS also displayed the saved reviewed profile in its scheduled editor.
 
 CLI test children resolve bin.ts from import.meta.url. Package-directory verification runs from
-apps/server: references-cli and TerminalConnection pass nine tests; the two real SSH-agent
+apps/server: references-cli (seven) and TerminalConnection (four) pass eleven tests; the two real SSH-agent
 integration cases remain deliberately skipped without their explicit disposable SSH configuration.
 That integration file uses the same file-relative entrypoint. No install, SSH probe or production
 state is needed by the applicable CLI tests.

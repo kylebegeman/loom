@@ -172,6 +172,11 @@ Readiness is checked in the Loom server context, expires after a minute, and mus
 after policy changes. It does not yet test SSH or GitHub; credential delivery reports unsupported
 until a supported workload delivery channel is implemented. Pending checks can be cancelled.
 
+The access inspector also shows related project profiles, the current provider/run, observed
+workload and broker sessions, and retained requests for the selected item and thread. Context can
+be partial and expires; refresh it before relying on labels. An empty list does not establish that
+there are no consumers. External credential copies remain unknown, and this view grants no access.
+
 Administrator CLI clients can use `loom vault grants`, `grant-preview`, `grant-apply`, `explain`
 and `readiness` through the same services. Agent threads can inspect their own access and
 delegate narrower grants to an authenticated direct subagent when allowed; they cannot approve
@@ -712,8 +717,10 @@ connection is replaced, an authorized manager can quarantine its abandoned reser
 This first version manages the account pool. It does not provision/reset accounts, log a test
 worker in, or revoke existing application sessions. Reserving grants no extra Vault access.
 
-Agents need an active full-access/default Loom run, including while that same run is queued or
-waiting. Supervised and plan-mode runs cannot discover or mutate account reservations.
+Agents need an active full-access/default Loom root run, including queued follow-ups and pending
+approval/user-input requests while that run remains active. Leases end when the root run ends,
+including a waiting thread with only background subagents. Those subagents cannot retain or
+renew the old lease; use a new root run or a separate manager-owned reservation. Supervised and plan-mode runs cannot discover or mutate account reservations.
 Use `loom_vault_test_accounts_discover` to find available
 accounts and their own run's reservations. Grant both inspect and use for the relevant Account
 items, scoped to the copyable **Agent grant destination** shown for each collection in web and mobile
@@ -727,16 +734,12 @@ These agent tools return account references and leases, not passwords or a logge
 Login delivery remains unavailable. Other runs' reservations and accounts without the required
 grants do not appear in discovery.
 
-The access inspector also shows related project profiles, the current provider/run, observed
-workload and broker sessions, and retained requests for the selected item and thread. Context can
-be partial and expires; refresh it before relying on labels. An empty list does not establish that
-there are no consumers. External credential copies remain unknown, and this view grants no access.
-
 ## Find references from an authenticated terminal
 
-Run `loom vault references-complete editor --kind account` to get active reference candidates
+Run `loom vault references-complete --kind account -- editor` to get active reference candidates
 for a terminal picker or completion function. It prints up to 20 canonical references, one per
-line, without labels or values. Both label queries and partial canonical references are supported.
+line, without labels or values. Put `--` before a shell-supplied query so leading dashes stay literal.
+Parse errors and help use stderr for this command. Both label queries and partial canonical references are supported.
 A shell completion wrapper must replace the current word with the returned references rather than
 filtering them again against a label fragment. Searches use the terminal's current Loom connection and the
 calling thread's inspect grants; they never combine environments. Use `references-search` with

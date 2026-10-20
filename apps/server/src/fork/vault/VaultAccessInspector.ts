@@ -24,6 +24,9 @@ export class VaultAccessInspector extends Context.Service<
     ) => Effect.Effect<VaultAccessExplanation, VaultError>;
   }
 >()("t3/fork/vault/VaultAccessInspector") {}
+const CONTEXT_READ_TIMEOUT = "500 millis";
+const observe = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.timeout(CONTEXT_READ_TIMEOUT), Effect.result);
 const sameRun = (a: OrchestrationV2ThreadShell, b: OrchestrationV2ThreadShell | null) =>
   b !== null &&
   b.archivedAt === null &&
@@ -42,6 +45,7 @@ const make = Effect.gen(function* () {
     threads = yield* ThreadManagementService;
   return VaultAccessInspector.of({
     explain: Effect.fn("VaultAccessInspector.explain")(function* (input, restrictMetadata) {
+      const evaluatedRun = yield* observe(threads.getThreadShell(input.threadId));
       const explanation = yield* access.explain(input, restrictMetadata);
       // Inspect-granted metadata is also the ceiling for related context, including counts.
       if (!explanation.item) return explanation;
@@ -61,10 +65,13 @@ const make = Effect.gen(function* () {
         externalConsumers: "not-discovered",
         providerCopies: "unknown",
       };
-      const initial = yield* threads.getThreadShell(input.threadId).pipe(Effect.result);
+      if (evaluatedRun._tag === "Failure") return { ...explanation, context: empty };
+      const initial = yield* observe(threads.getThreadShell(input.threadId));
       if (initial._tag === "Failure") return { ...explanation, context: empty };
       if (
         !initial.success ||
+        !evaluatedRun.success ||
+        !sameRun(evaluatedRun.success, initial.success) ||
         initial.success.projectId !== explanation.projectId ||
         initial.success.archivedAt !== null ||
         initial.success.deletedAt !== null
@@ -73,10 +80,19 @@ const make = Effect.gen(function* () {
       const thread = initial.success;
       const observed = yield* Effect.all(
         {
-          profiles: profiles.list(thread.projectId).pipe(Effect.result),
-          sessions: workloads.list(input.threadId).pipe(Effect.result),
-          brokers: brokers.snapshot.pipe(Effect.result),
-          approvals: access.approvalInbox.pipe(Effect.result),
+          profiles: observe(profiles.list(thread.projectId)),
+          sessions: observe(workloads.list(input.threadId)),
+          brokers: restrictMetadata ? Effect.succeed(null) : observe(brokers.snapshot),
+          approvals: observe(
+            access.approvalContext({
+              threadId: input.threadId,
+              projectId: thread.projectId,
+              itemId: input.itemId,
+              itemVersion: explanation.item.version,
+              runId: thread.activeRunId,
+              restrictMetadata: restrictMetadata === true,
+            }),
+          ),
         },
         { concurrency: 4 },
       );
@@ -116,18 +132,22 @@ const make = Effect.gen(function* () {
             )
           : [];
       const machines =
-        observed.brokers._tag === "Success" &&
+        observed.brokers?._tag === "Success" &&
         observed.brokers.success.environmentId === explanation.environmentId
           ? observed.brokers.success.machines
           : [];
       const requests =
         observed.approvals._tag === "Success"
-          ? observed.approvals.success.requests
+          ? observed.approvals.success
               .filter(
                 (r) =>
                   r.threadId === input.threadId &&
                   r.projectId === thread.projectId &&
-                  r.itemId === input.itemId,
+                  r.itemId === input.itemId &&
+                  (!restrictMetadata || r.requestedBy === `thread:${input.threadId}`) &&
+                  (!["pending", "approved"].includes(r.state) ||
+                    (r.itemVersion === explanation.item!.version &&
+                      (!r.waitingOperation || r.waitingOperation.runId === thread.activeRunId))),
               )
               .toSorted(
                 (a, b) =>
@@ -137,7 +157,9 @@ const make = Effect.gen(function* () {
           : [];
       const context: VaultAccessContext = {
         ...empty,
-        state: Object.values(observed).every((r) => r._tag === "Success") ? "current" : "partial",
+        state: Object.values(observed).every((r) => r === null || r._tag === "Success")
+          ? "current"
+          : "partial",
         freshUntil: Math.min(
           empty.freshUntil,
           ...sessions.map((s) => s.expiresAt),
@@ -180,17 +202,23 @@ const make = Effect.gen(function* () {
           .map((r) => ({ id: r.id, state: r.state, until: r.approvedUntil ?? r.requestExpiresAt })),
         omittedApprovals: Math.max(0, requests.length - 16),
       };
-      const latest = yield* Effect.all({
-        thread: threads.getThreadShell(input.threadId).pipe(Effect.result),
-        policy: access.snapshot.pipe(Effect.result),
-        item: core.inspect(input.itemId).pipe(Effect.result),
-        profiles: profiles.list(thread.projectId).pipe(Effect.result),
-      });
+      const latest = yield* Effect.all(
+        {
+          thread: observe(threads.getThreadShell(input.threadId)),
+          policy: observe(access.snapshot),
+          item: observe(core.inspect(input.itemId)),
+          profiles:
+            observed.profiles._tag === "Success"
+              ? observe(profiles.list(thread.projectId))
+              : Effect.succeed(null),
+        },
+        { concurrency: 4 },
+      );
       if (
         latest.thread._tag === "Failure" ||
         latest.policy._tag === "Failure" ||
         latest.item._tag === "Failure" ||
-        latest.profiles._tag === "Failure"
+        latest.profiles?._tag === "Failure"
       )
         return { ...explanation, context: { ...empty, state: "unavailable" as const } };
       const now = yield* Clock.currentTimeMillis;
@@ -200,7 +228,7 @@ const make = Effect.gen(function* () {
         latest.item.success?.version !== explanation.item.version ||
         now >= context.freshUntil ||
         (observed.profiles._tag === "Success" &&
-          latest.profiles._tag === "Success" &&
+          latest.profiles?._tag === "Success" &&
           observed.profiles.success.revision !== latest.profiles.success.revision) ||
         (explanation.decision.expiresAt !== null && now >= explanation.decision.expiresAt)
       )
