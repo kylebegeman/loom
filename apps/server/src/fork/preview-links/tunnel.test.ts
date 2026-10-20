@@ -306,6 +306,52 @@ describe("preview tunnel", () => {
       }),
   );
 
+  it.effect("runs an older cloudflared while the pinned one is still downloading", () =>
+    Effect.gen(function* () {
+      const dir = yield* tempDir;
+      const older = writeConnector(
+        dir,
+        [
+          `printf '%s' "$$" > "$DIR/pid"`,
+          `echo "2026-10-18T10:00:01Z INF Registered tunnel connection connIndex=0"`,
+          "exec sleep 600",
+        ].join("\n"),
+      );
+      let installs = 0;
+      const tunnel = yield* startTunnel(
+        fakeRelayClient(
+          { ...available(older), version: "2025.8.0" },
+          { resolves: 0 },
+          Effect.suspend(() => {
+            installs += 1;
+            return Effect.never;
+          }),
+        ),
+      );
+      const connecting = {
+        state: "starting",
+        message: "Connecting to Cloudflare",
+        metricsPort: null,
+      };
+      const connected = { state: "connected", message: null, metricsPort: null };
+
+      expect(yield* tunnel.next).toEqual({
+        state: "starting",
+        message: "Installing cloudflared",
+        metricsPort: null,
+      });
+      yield* TestClock.adjust(Duration.seconds(30));
+      expect(yield* tunnel.takeUntil("connected")).toEqual([connecting, connected]);
+
+      // A restart while the download runs neither waits for it again nor starts another.
+      process.kill(Number(NodeFS.readFileSync(NodePath.join(dir, "pid"), "utf8")), "SIGTERM");
+      yield* tunnel.takeUntil("error");
+      yield* TestClock.adjust(Duration.seconds(1));
+      expect(yield* tunnel.takeUntil("connected")).toEqual([connecting, connected]);
+      expect(installs).toBe(1);
+    }),
+  );
+
   it.effect("installs cloudflared when it is missing and retries a failed install", () =>
     Effect.gen(function* () {
       const calls = { resolves: 0 };
