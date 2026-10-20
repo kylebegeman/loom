@@ -122,6 +122,7 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
           const devCookies = devResponse.headers.getSetCookie();
           const devCookie = devCookies.find((cookie) => cookie.startsWith("t3_dev_session_"));
           expect(devCookie).toContain("HttpOnly");
+          expect(devCookie).not.toContain("Secure"); // fork: secure-session-cookies
           expect(devCookie).toContain(`=${DEV_TOKEN};`);
           expect(devCookies).toContainEqual(
             expect.stringMatching(/^t3_session_[^=]*=;.*Max-Age=0/),
@@ -158,6 +159,84 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
         }),
       ([environmentA, environmentB]) =>
         Effect.promise(() => Promise.all([environmentA.dispose(), environmentB.dispose()])),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+// fork: secure-session-cookies
+const cookieAttributes = (cookie: string) =>
+  cookie
+    .split(";")
+    .slice(1)
+    .map((attribute) => attribute.trim());
+
+// fork: secure-session-cookies
+it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
+      get: () => Effect.succeedNone,
+      set: () => Effect.void,
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.die("Not used by these routes."),
+      remove: () => Effect.void,
+    });
+    const requestContext = Context.make(Crypto.Crypto, crypto).pipe(
+      Context.add(ServerSecretStore.ServerSecretStore, unusedSecretStore),
+    );
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
+      (environment) =>
+        Effect.tryPromise(async () => {
+          const devResponse = await environment.handler(
+            postJson(
+              "/api/auth/browser-session",
+              { credential: DEV_TOKEN },
+              { "x-forwarded-proto": "https" },
+            ),
+            requestContext,
+          );
+          expect(devResponse.status).toBe(200);
+          const devCookies = devResponse.headers.getSetCookie();
+          expect(devCookies).toEqual([
+            expect.stringMatching(/^t3_dev_session_/),
+            expect.stringMatching(/^t3_session_[^=]*=;.*Max-Age=0/),
+          ]);
+          for (const cookie of devCookies) {
+            expect(cookieAttributes(cookie)).toEqual(
+              expect.arrayContaining(["Secure", "HttpOnly", "SameSite=Lax", "Path=/"]),
+            );
+          }
+
+          const devCookieHeader = devCookies[0]?.split(";", 1)[0] ?? "";
+          const redeemPairing = async (forwardedProto: string) => {
+            const pairingResponse = await environment.handler(
+              postJson(
+                "/api/auth/pairing-token",
+                { scopes: ["orchestration:read"] },
+                { cookie: devCookieHeader },
+              ),
+              requestContext,
+            );
+            expect(pairingResponse.status).toBe(200);
+            const pairing = (await pairingResponse.json()) as { credential: string };
+            const response = await environment.handler(
+              postJson(
+                "/api/auth/browser-session",
+                { credential: pairing.credential },
+                { "x-forwarded-proto": forwardedProto },
+              ),
+              requestContext,
+            );
+            expect(response.status).toBe(200);
+            const cookies = response.headers.getSetCookie();
+            expect(cookies).toEqual([expect.stringMatching(/^t3_session_/)]);
+            return cookieAttributes(cookies[0] ?? "");
+          };
+          expect(await redeemPairing("https")).toContain("Secure");
+          expect(await redeemPairing("http")).not.toContain("Secure");
+        }),
+      (environment) => Effect.promise(() => environment.dispose()),
     );
   }).pipe(Effect.provide(NodeServices.layer)),
 );

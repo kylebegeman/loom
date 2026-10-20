@@ -199,6 +199,13 @@ The `codex-login-email` seam in `CodexProvider.ts` names a Codex account from it
 home's `auth.json` when a custom `model_provider` makes Codex report no account, so
 usage views do not count a hub-routed subscription twice.
 
+The `secure-session-cookies` seam in `apps/server/src/auth/utils.ts` (2 marker lines),
+`http.ts` (6) and `http.test.ts` (3) marks browser session cookies `Secure` when a TLS
+proxy forwards the request with `X-Forwarded-Proto: https`. The Library sits behind an edge
+that also answers plain HTTP for its hostnames, so an unmarked session cookie set while
+redeeming a pairing link would travel in clear text. Keep the seam until upstream marks
+these cookies itself.
+
 The `switchboard` seams add Switchboard mode (`apps/server/src/fork/switchboard`,
 `apps/web/src/fork/switchboard`): one `switchboardEnabled` server setting, shown with
 the usage hubs in Settings. While it is on, every Claude and Codex launch is pointed at

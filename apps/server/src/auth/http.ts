@@ -27,7 +27,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { identity } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Cookies from "effect/http/Cookies";
 import * as HttpEffect from "effect/http/HttpEffect";
@@ -38,7 +37,7 @@ import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as PocketId from "./PocketId.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
-import { deriveAuthClientMetadata } from "./utils.ts";
+import { deriveAuthClientMetadata, isHttpsRequest, sessionCookieOptions } from "./utils.ts"; // fork: secure-session-cookies
 import { verifyRequestDpopProof } from "./dpop.ts";
 
 const CREDENTIAL_RESPONSE_HEADERS = {
@@ -200,13 +199,16 @@ export function failEnvironmentInternal(reason: EnvironmentInternalErrorReason, 
   });
 }
 
-const appendSessionCookie = (cookieName: string, token: string, expiresAt: DateTime.DateTime) =>
+const appendSessionCookie = (
+  cookieName: string,
+  token: string,
+  expiresAt: DateTime.DateTime,
+  secure: boolean,
+) =>
   Effect.fromResult(
     Cookies.set(Cookies.empty, cookieName, token, {
+      ...sessionCookieOptions(secure), // fork: secure-session-cookies
       expires: DateTime.toDate(expiresAt),
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
     }),
   ).pipe(
     Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")),
@@ -287,7 +289,12 @@ export const layer = HttpApiBuilder.group(
               result.sessionMethod === "browser-session-cookie" &&
               result.expiresAt
             ) {
-              yield* appendSessionCookie(sessions.cookieName, credential.token, result.expiresAt);
+              yield* appendSessionCookie(
+                sessions.cookieName,
+                credential.token,
+                result.expiresAt,
+                isHttpsRequest(request), // fork: secure-session-cookies
+              );
               yield* appendCredentialResponseHeaders;
             }
             return result;
@@ -317,21 +324,16 @@ export const layer = HttpApiBuilder.group(
                 : undefined,
             );
             const cookieName = result.cookieName ?? sessions.cookieName;
+            const cookieOptions = sessionCookieOptions(isHttpsRequest(request)); // fork: secure-session-cookies
             const selectedCookie = yield* Effect.fromResult(
               Cookies.set(Cookies.empty, cookieName, result.sessionToken, {
+                ...cookieOptions, // fork: secure-session-cookies
                 expires: DateTime.toDate(result.response.expiresAt),
-                httpOnly: true,
-                path: "/",
-                sameSite: "lax",
               }),
             ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")));
             const sessionCookies = result.expireNormalCookie
               ? yield* Effect.fromResult(
-                  Cookies.expireCookie(selectedCookie, sessions.cookieName, {
-                    httpOnly: true,
-                    path: "/",
-                    sameSite: "lax",
-                  }),
+                  Cookies.expireCookie(selectedCookie, sessions.cookieName, cookieOptions), // fork: secure-session-cookies
                 ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")))
               : selectedCookie;
 

@@ -35,6 +35,9 @@ apps/web/src/components/settings/KeybindingsSettings.logic.ts	ext-keybindings	3
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
+apps/server/src/auth/utils.ts	secure-session-cookies	2
+apps/server/src/auth/http.ts	secure-session-cookies	6
+apps/server/src/auth/http.test.ts	secure-session-cookies	3
 packages/contracts/src/settings.ts	switchboard	2
 apps/server/src/provider/codexLaunchArgs.ts	switchboard	5
 apps/server/src/provider/CodexProvider.ts	switchboard	4
