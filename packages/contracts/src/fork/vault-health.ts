@@ -31,12 +31,13 @@ export const VaultHealthRule = Schema.Struct({
   itemId: VaultItemId,
   expiresAt: Schema.NullOr(Time),
   warningDays: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 90 })),
+  sshValidation: Schema.optional(Schema.Boolean),
   githubRepository: Schema.NullOr(
     Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[a-zA-Z0-9_.-]{1,100}$/)),
   ),
   automatic: Schema.Boolean,
   nextCheckAt: Time,
-});
+}).check(Schema.makeFilter((rule) => !rule.sshValidation || rule.githubRepository === null));
 export type VaultHealthRule = typeof VaultHealthRule.Type;
 export const VaultHealthSnapshot = Schema.Struct({
   revision: Schema.Int,

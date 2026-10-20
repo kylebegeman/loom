@@ -159,7 +159,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
-  Layer.provide(Layer.merge(layerVaultHealth, layerVaultGitHub)),
+  Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
 
 const ForkServicesLive = Layer.mergeAll(

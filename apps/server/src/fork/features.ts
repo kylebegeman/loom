@@ -8,6 +8,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-health",
   "vault-health-context",
   "vault-health-retained",
+  "vault-health-ssh-validation",
   "vault-native-terminal",
   "vault-brokers",
   "vault-ssh-agent",

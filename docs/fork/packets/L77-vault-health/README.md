@@ -1,6 +1,6 @@
 # L77: Credential health and maintenance inbox
 
-Status: **In progress** on `feat/loom-vault-health-retained`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
+Status: **In progress** on `feat/loom-vault-health-ssh-validation`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
 
 Collect expiration and authentication maintenance into one actionable inbox.
 
@@ -17,8 +17,8 @@ Current project profile bindings and project/thread grant references are availab
 ten projects per page, with review links. Each scanned project can inspect retained selections
 in pages of 25, including projects with no current references. Earlier item/profile versions
 remain visible; retired selections with removed snapshots are counted as unattributable.
-External consumers and provider-side copies are not discovered. These references do not prove usable access. The current validation adapter targets explicitly configured
-GitHub repositories. Additional adapters and native interaction acceptance remain incomplete.
+External consumers and provider-side copies are not discovered. These references do not prove usable access. Validation now covers explicitly configured GitHub repositories and opt-in fixed SSH connection
+checks. Other connector kinds and native interaction acceptance remain incomplete.
 This is not a full packet completion or a production rollout. See TESTING for exact evidence.
 
 ## Scope

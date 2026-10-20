@@ -142,7 +142,13 @@ const make = Effect.gen(function* () {
           const change = input.change;
           if (change.action === "configure") {
             const item = yield* core.inspect(change.rule.itemId);
-            if (!item || item.state !== "active") return yield* invalid();
+            if (
+              !item ||
+              item.state !== "active" ||
+              (change.rule.sshValidation && item.kind !== "ssh-key") ||
+              (change.rule.githubRepository !== null && item.kind !== "service-connection")
+            )
+              return yield* invalid();
             if (!rules.some((r) => r.itemId === item.id) && rules.length >= 128)
               return yield* new VaultError({ reason: "invalid-input" });
             rules = [

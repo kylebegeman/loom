@@ -104,3 +104,20 @@ retains the requested project in the Vault navigation atom and routes by environ
 web pass opened the selected profile, displayed its saved requirement and focused the profile
 section. The web typecheck and scoped lint passed after this correction.
 Matched retained selection cards and native interaction retain service/static evidence only.
+
+## SSH validation follow-up
+
+The health/context/GitHub/observation/permission/MCP run passed 55 tests in seven files. The
+synthetic SSH adapter regression verifies item-kind rejection, explicit opt-in, no background
+probe while disabled, timeout versus configuration classification, successful resolution and
+mutually exclusive validation. It calls no SSH binary or remote host. After replacing an
+incompatible union of Effect success types with one composed effect, seven health/observation
+tests and the server typecheck passed. Web, mobile, contracts and client-runtime typechecks
+and scoped lint also passed. No native module changed.
+
+Web acceptance generated an untrusted synthetic Ed25519 key using the normal service command,
+then saved SSH validation with automatic checking off. Switching away and back confirmed the
+stored option; disabling and saving also passed. No explicit probe was clicked and no SSH
+command ran. Live SSH acceptance and native interaction remain unverified under Kyle's current
+no-SSH/no-install restrictions. The existing fixed probe remains responsible for actual target,
+version and trusted-host revalidation. Production policy and deployment remain with the host owner.

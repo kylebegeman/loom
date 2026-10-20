@@ -528,3 +528,9 @@ pinned. Continue through pages even when a page has no matches. Retired selectio
 binding snapshot was removed are counted as unattributable. Review the project's run selections
 to inspect or retire a stopped selection; current backend checks still decide whether retirement
 is allowed. Consumers outside Loom and provider-side credential copies are not discovered.
+
+For an SSH key, **Validate SSH connection** checks its saved destination with the pinned host key
+and a fixed no-op command. Saving this rule does not run the check unless automatic checks are
+also enabled. Use **Check selected item** for an explicit check. An untrusted host or failed SSH
+connection appears as a configuration issue; a timeout appears as an outage. Neither proves key
+revocation. Disable SSH validation and save the rule to keep expiry-only maintenance.

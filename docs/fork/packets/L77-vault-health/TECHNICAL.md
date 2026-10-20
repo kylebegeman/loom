@@ -69,7 +69,8 @@ leaves the worker unable to check rather than authorizing credential use.
 
 Default expiry warning is seven days; the typed rule supports one to ninety. The initial
 notification destination is the inbox, with no external messages. Automatic provider validation
-requires explicit administrator opt-in for a dedicated GitHub connection and named repository.
+requires explicit administrator opt-in for a dedicated GitHub connection and named repository,
+or the saved SSH connection.
 Unattended checks use that recorded authorization and do not grant agent access. Local client
 management requires access:read/write. CLI/MCP management is limited to authenticated full-access
 administrator clients; an agent thread cannot change global health state or trigger an admin probe.
@@ -107,3 +108,13 @@ so the profile picker owns project selection rather than the global settings sco
 The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
 optional on older context responses. External consumers and provider-side copies remain
 undiscovered. No field or empty page should be interpreted as proof they do not exist.
+
+SSH validation reuses the existing pinned-host probe with its fixed `/usr/bin/true` command
+and eight-second timeout. The optional rule field defaults to no SSH validation for existing
+records. SSH and GitHub validation are mutually exclusive; configure validates their item kinds.
+The current item/version and host trust are rechecked by the SSH service. These diagnostics do
+not grant workloads credential use. A timeout creates an outage issue; untrusted hosts and
+other SSH failures create configuration issues without claiming revocation or authentication
+failure. A successful probe resolves prior validation issues through the same stale-claim guard.
+The existing opt-in, interval, burst and concurrency bounds apply. Clients gate the new form
+control on `vault-health-ssh-validation` and retain explicit automatic-check consent.

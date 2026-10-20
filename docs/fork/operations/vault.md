@@ -434,3 +434,10 @@ most 25 due items each minute, two concurrently, with a 15-minute item interval.
 rechecks enforce a burst limit. There are no emails, push messages, credential rotation or
 provider revocations. Remove a rule to stop future probes; in-flight requests may finish, but
 outdated results cannot overwrite a changed rule or newer item version.
+
+SSH health validation is an explicit rule option. It uses the saved key's destination and pinned
+host key with the existing eight-second fixed no-op probe; it never falls back to a personal
+agent. Automatic validation remains separately opt-in. Deploying this code does not enable it
+for existing rules. A timeout is an outage, and untrusted-host or other SSH failures require
+configuration review. These results do not establish credential revocation. No additional
+OpenBao paths or Library changes are needed beyond the health policy above.
