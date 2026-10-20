@@ -135,6 +135,14 @@ synthetic automated evidence; no live SSH or GitHub verification ran. Native mob
 is pending under the no-install restriction; Electron shell and remote/relay/tunnel acceptance
 remain pending. A responsive browser check does not establish native mobile acceptance.
 
+## Verification integration with current main
+
+Merged fork main `f66819e867` without conflicts, preserving the code-graph registry import fix
+and Utilities documentation update. The affected panel registry and real fork MCP registration
+checks passed **9 tests**; the web package typecheck passed again. No new backend subtree,
+policy stanza or Library deployment is introduced. Existing replacement-policy rollout remains
+deferred to the host owner behind L79.
+
 ## Full packet acceptance still required
 
 Live acceptance must confirm the implemented binding between reviewed source, replacement
