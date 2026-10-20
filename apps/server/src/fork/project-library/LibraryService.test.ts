@@ -1603,14 +1603,17 @@ describe("Library history ingest", () => {
         const project = yield* create(service);
         yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
         spans.length = 0;
+        const ingests: Array<LibraryIngestHistoryRequest> = [];
         for (const sequence of [1, 2])
-          yield* service.ingestHistory({
+          ingests.push({
             requestId: `ingest-${sequence}`,
             sourceEnvironmentId: source,
             journalId: "journal",
             fromSequence: sequence - 1,
             entries: [{ sequence, thread: yield* archiveFor(project, sequence) }],
           });
+        const results = [];
+        for (const ingest of ingests) results.push(yield* service.ingestHistory(ingest));
         const library = spans.filter((span) => span.name.startsWith("Library"));
         const history = library.filter((span) =>
           /^Library(Service|Store|Search|Timeline)\./.test(span.name),
@@ -1662,6 +1665,11 @@ describe("Library history ingest", () => {
         ])
           expect(recorded).not.toContain(secret);
         expect(attributes).toContainEqual(["library.entries", 1]);
+        // A resent batch is answered from its receipt without digesting its entries again.
+        spans.length = 0;
+        expect(yield* service.ingestHistory(ingests[1]!)).toEqual(results[1]);
+        expect(spans.map((span) => span.name)).toContain("LibraryService.prepareRequest");
+        expect(spans.map((span) => span.name)).not.toContain("LibraryService.prepareEntries");
       }),
     ).pipe(Effect.withTracer(tracer));
   });

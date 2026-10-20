@@ -51,6 +51,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import * as LibraryStore from "./LibraryStore.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as ServerConfig from "../../config.ts";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
@@ -773,20 +774,32 @@ const make = Effect.gen(function* () {
     input: LibraryIngestHistoryRequest,
   ) {
     yield* Effect.annotateCurrentSpan({ "library.entries": input.entries.length });
+    const ingestDigest = (thread: LibraryThreadArchive) =>
+      encode(codecs.archive, thread).pipe(Effect.flatMap(digest));
+    // A computer resends a batch whose response it lost, and the receipt answers it without the
+    // entries, so their digests are skipped once one exists. The check uses the reader, so it does
+    // not wait behind a write. Skipped digests are taken in the transaction if it needs them.
+    const replayed =
+      !isAuthority ||
+      (yield* store.transaction(store.receipt(input.requestId)).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.orElseSucceed(() => null),
+      )) !== null;
     // Entry digests read nothing saved either, so they are taken before the lock with the
     // request's, and a failure is raised at the entry that raised it before.
-    const entries = yield* Effect.forEach(input.entries, (entry) =>
-      Effect.all({
-        entry: Effect.succeed(entry),
-        ingested: Effect.exit(
-          Effect.yieldNow.pipe(
-            Effect.andThen(encode(codecs.archive, entry.thread)),
-            Effect.flatMap(digest),
-          ),
-        ),
-        version: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread)))),
-      }),
-    ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
+    const entries = replayed
+      ? input.entries.map((entry) => ({
+          entry,
+          ingested: ingestDigest(entry.thread),
+          version: undefined,
+        }))
+      : yield* Effect.forEach(input.entries, (entry) =>
+          Effect.all({
+            entry: Effect.succeed(entry),
+            ingested: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(ingestDigest(entry.thread)))),
+            version: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread)))),
+          }),
+        ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
     return yield* mutation(
       "ingest-history",
       input.requestId,
