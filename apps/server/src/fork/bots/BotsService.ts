@@ -75,7 +75,7 @@ import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { budgetRefusal, budgetState, BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT, VERSIONS_KEPT_PER_BOT } from "./BotsStore.ts";
-import { checkParameters, renderPrompt, validateInputs } from "./render.ts";
+import { checkParameters, renderPrompt, validateInputs, type UntrustedInputs } from "./render.ts";
 import { summarizePipelineUsage, summarizeRunUsage, summarizeUsage } from "./usage.ts";
 import { decodeVerdictReply } from "./verdict.ts";
 import { BOT_STARTERS, differsFromStarter, starterById, type BotStarter } from "./starters.ts";
@@ -173,8 +173,12 @@ export interface BotsAnywhereHooks {
     target: BotTarget,
     projectId: ProjectId | null,
   ) => Effect.Effect<BotRunComputer | null, BotsError>;
-  /** Hands a queued remote run to the Library. */
-  readonly submit: (run: BotRun, bot: BotDefinition) => Effect.Effect<void, BotsError>;
+  /** Hands a queued remote run to the Library, with the inputs it frames as untrusted. */
+  readonly submit: (
+    run: BotRun,
+    bot: BotDefinition,
+    untrusted: Omit<UntrustedInputs, "frameId"> | undefined,
+  ) => Effect.Effect<void, BotsError>;
   readonly cancel: (run: BotRun) => Effect.Effect<void>;
   /** The Vault reference lines a run's first message carries, one per bound slot. */
   readonly vaultLines: (bot: BotDefinition) => Effect.Effect<ReadonlyArray<string>, BotsError>;
@@ -946,14 +950,17 @@ export const make = Effect.gen(function* () {
     readonly replayId?: string | undefined;
     readonly pipelineRunId?: string | undefined;
     /** Inputs framed as untrusted data in the prompt; a trigger's run frames them all. */
-    readonly untrusted?:
-      | { readonly names: ReadonlyArray<string>; readonly origin: string }
-      | undefined;
+    readonly untrusted?: Omit<UntrustedInputs, "frameId"> | undefined;
     /** Written in the same transaction as the queued run row. */
     readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
     /** A run another computer asked for keeps that computer's run id, and so its thread id. */
     readonly remote?: { readonly runId: string; readonly requestedBy: BotRunComputer } | undefined;
   }
+
+  // Event data reaches a trigger's run, so its text inputs are framed as untrusted.
+  const untrustedInputs = (options: StartOptions, values: BotRun["inputs"]) =>
+    options.untrusted ??
+    (options.triggerId === undefined ? undefined : { names: Object.keys(values) });
 
   const budgetFor = Effect.fnUntraced(function* (bot: BotDefinition, nowMs: number) {
     const since = isoAt(nowMs - BUDGET_WINDOW_MS);
@@ -1068,7 +1075,7 @@ export const make = Effect.gen(function* () {
           budgetPermit.withPermits(1),
         );
     yield* publish({ _tag: "run", run });
-    return yield* hooks.submit(run, bot).pipe(
+    return yield* hooks.submit(run, bot, untrustedInputs(options, values)).pipe(
       Effect.as(run),
       Effect.catch((error) =>
         settleRemote(run, { status: "failed", finishedAt: run.createdAt, error: error.message }),
@@ -1144,6 +1151,7 @@ export const make = Effect.gen(function* () {
           );
     const runId = options.remote?.runId ?? (yield* randomUuidV4);
     const modelSelection = options.modelSelection ?? bot.modelSelection;
+    const untrusted = untrustedInputs(options, checked.values);
 
     const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
       checkout !== null
@@ -1212,16 +1220,13 @@ export const make = Effect.gen(function* () {
         interactionMode: bot.interactionMode,
         workspaceStrategy,
         initialMessage: {
-          // Event data reaches a trigger's run, so its text inputs are framed as untrusted.
           text: [
             renderPrompt(
               bot,
               checked.values,
-              options.untrusted !== undefined
-                ? { ...options.untrusted, frameId: runId.replaceAll("-", "") }
-                : options.triggerId === undefined
-                  ? undefined
-                  : { names: Object.keys(checked.values), frameId: runId.replaceAll("-", "") },
+              untrusted === undefined
+                ? undefined
+                : { ...untrusted, frameId: runId.replaceAll("-", "") },
             ),
             // Standalone lines, the form Vault reads as a launch requirement.
             ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),

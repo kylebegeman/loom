@@ -296,6 +296,48 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("frames untrusted inputs on the computer that runs them", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        yield* library.reportStatus(studio, studioReport());
+        const untrusted = { names: ["file"], origin: "an earlier step of this run's pipeline" };
+
+        const sent = yield* bots.startRunWith(
+          yield* bots.get("reviewer"),
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          { untrusted },
+        );
+        const [delivery] = yield* library.nextRequests(studio, 0);
+        expect(delivery?.message).toMatchObject({
+          _tag: "run",
+          request: { requestId: sent.id, untrusted },
+        });
+
+        // Here as the target: the request's untrusted input reaches the prompt framed.
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: { ...studioRequest("framed"), untrusted },
+        });
+        for (const received of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(received);
+        const launch = yield* harness.nextLaunch;
+        expect(launch.initialMessage?.text).toMatch(/<event-data-\w+>a\.ts<\/event-data-\w+>/);
+        expect(launch.initialMessage?.text).toContain(untrusted.origin);
+      }),
+    ),
+  );
+
   it.effect("times out a remote run whose computer stops reporting", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

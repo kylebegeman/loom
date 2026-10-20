@@ -417,7 +417,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     return best.isThisComputer ? null : { environmentId: best.environmentId, label: best.label };
   });
 
-  const submit = Effect.fnUntraced(function* (run: BotRun, bot: BotDefinition) {
+  const submit: BotsAnywhereHooks["submit"] = Effect.fnUntraced(function* (run, bot, untrusted) {
     const link = bot.library;
     const ranOn = run.ranOn;
     if (link == null || ranOn == null)
@@ -437,6 +437,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
           inputs: run.inputs,
           requesterLabel: yield* client.label,
           libraryProjectId,
+          ...(untrusted === undefined ? {} : { untrusted }),
         },
       })
       .pipe(Effect.mapError((error) => fail("launch", error.message)));
@@ -568,6 +569,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
               label: request.requesterLabel,
             },
           },
+          ...(request.untrusted === undefined ? {} : { untrusted: request.untrusted }),
         },
       )
       .pipe(

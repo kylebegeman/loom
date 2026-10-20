@@ -1820,6 +1820,14 @@ export const BotRemoteRunRequest = Schema.Struct({
   requesterLabel: Schema.String.check(Schema.isMaxLength(160)),
   /** The run's project as the Library names it; the target runs in its own copy. */
   libraryProjectId: Schema.optionalKey(Schema.NullOr(LibraryId)),
+  /** Inputs the requester would frame as untrusted data, so the target frames them the same way. */
+  untrusted: Schema.optionalKey(
+    Schema.Struct({
+      names: Schema.Array(BotParameterName).check(Schema.isMaxLength(BOTS_MAX_PARAMETERS)),
+      /** Absent means the event that started the run. */
+      origin: Schema.optionalKey(shortText(200)),
+    }),
+  ),
 });
 export type BotRemoteRunRequest = typeof BotRemoteRunRequest.Type;
 
