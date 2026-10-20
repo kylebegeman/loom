@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import {
+  DIRECTORY_FEATURE,
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_PROFILE_READINESS_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import { listing, reported } from "./directory-test-fixtures.ts";
 import {
   MINI_WORKER_READINESS_FEATURE,
   libraryLaunchInputs,
+  libraryRememberedComputers,
   libraryWorkingThreadCounts,
   type LibraryLaunchHost,
 } from "./library-launch-inputs.ts";
@@ -176,5 +179,72 @@ describe("libraryLaunchInputs", () => {
       libraryLaunchInputs({ ...base, project: { ...project, profile: { allowMini: true } } })
         .miniEnvironmentIds,
     ).toEqual([MINI]);
+  });
+});
+
+describe("libraryRememberedComputers", () => {
+  const computers = [{ environmentId: SAVED, label: "Saved", supportsExecution: true }];
+  const directory = listing([
+    reported(MINI, { label: "Mini", sequence: 2 }),
+    reported(MINI, { label: "Mini (older report)", sequence: 1 }),
+    reported(OLD, { label: "Old", supportsExecution: false }),
+  ]);
+
+  it("comes from the directory when the Library advertises it", () => {
+    expect(
+      libraryRememberedComputers({
+        libraryCapabilities: capabilities(DIRECTORY_FEATURE),
+        computers,
+        directory,
+      }),
+    ).toEqual([
+      { environmentId: MINI, label: "Mini", supportsExecution: true },
+      { environmentId: OLD, label: "Old", supportsExecution: false },
+    ]);
+  });
+
+  it("keeps the Library's computers when it has no directory or no listing is known yet", () => {
+    expect(
+      libraryRememberedComputers({ libraryCapabilities: capabilities(), computers, directory }),
+    ).toBe(computers);
+    expect(
+      libraryRememberedComputers({
+        libraryCapabilities: capabilities(DIRECTORY_FEATURE),
+        computers,
+        directory: null,
+      }),
+    ).toBe(computers);
+  });
+
+  it("makes unsaved directory computers offline candidates beside this client's hosts", () => {
+    const remembered = libraryRememberedComputers({
+      libraryCapabilities: capabilities(DIRECTORY_FEATURE),
+      computers,
+      directory: listing([reported(BOOK, { label: "Book" }), reported(SAVED, { label: "Saved" })]),
+    });
+    expect(
+      libraryLaunchInputs({
+        project,
+        copies: [],
+        hosts: [host(BOOK)],
+        remembered,
+        workingThreads: new Map(),
+      }).computers,
+    ).toEqual([
+      {
+        environmentId: BOOK,
+        label: BOOK,
+        online: true,
+        supportsExecution: true,
+        workingThreads: 0,
+      },
+      {
+        environmentId: SAVED,
+        label: "Saved",
+        online: false,
+        supportsExecution: true,
+        workingThreads: 0,
+      },
+    ]);
   });
 });

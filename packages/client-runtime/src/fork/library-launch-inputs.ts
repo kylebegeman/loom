@@ -1,13 +1,16 @@
 import type { EnvironmentId, ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import {
+  DIRECTORY_FEATURE,
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_PROFILE_READINESS_FEATURE,
+  type DirectoryListing,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "../state/models.ts";
 import { supportsLoomFeature } from "./capabilities.ts";
+import { directoryEnvironments } from "./directory.ts";
 
 /** Computers advertise this when they can check a Mini worker's readiness. */
 export const MINI_WORKER_READINESS_FEATURE = "mini-worker-readiness";
@@ -28,6 +31,28 @@ export interface LibraryLaunchRememberedComputer {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly supportsExecution: boolean;
+}
+
+/**
+ * The computers the Library remembers. A Library that advertises `directory` lists them there,
+ * each from its own latest report, so the directory replaces its `computers` list. Until a
+ * listing is known, live or cached, the `computers` list still stands in.
+ */
+export function libraryRememberedComputers(input: {
+  readonly libraryCapabilities: ExecutionEnvironmentCapabilities | null | undefined;
+  readonly computers: readonly LibraryLaunchRememberedComputer[];
+  readonly directory: DirectoryListing | null;
+}): readonly LibraryLaunchRememberedComputer[] {
+  if (
+    input.directory === null ||
+    !supportsLoomFeature(input.libraryCapabilities, DIRECTORY_FEATURE)
+  )
+    return input.computers;
+  return directoryEnvironments(input.directory).map((environment) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    supportsExecution: environment.supportsExecution,
+  }));
 }
 
 export interface LibraryLaunchHealthTarget {
