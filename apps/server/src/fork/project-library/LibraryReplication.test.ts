@@ -135,6 +135,7 @@ const fixture = Effect.gen(function* () {
     updatePage: () => Effect.die("unused"),
     nextReplies: () => Effect.die("unused"),
     ackReply: () => Effect.die("unused"),
+    signOutPageReaders: () => Effect.die("unused"),
     publishAttachments: () =>
       Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "assets"]);
@@ -234,6 +235,7 @@ describe("durable Library history replication", () => {
               updatePage: () => Effect.die("unused"),
               nextReplies: () => Effect.die("unused"),
               ackReply: () => Effect.die("unused"),
+              signOutPageReaders: () => Effect.die("unused"),
               ingest: (input) =>
                 Ref.update(f.requests, (rows) => [...rows, input]).pipe(
                   Effect.as({
@@ -477,6 +479,7 @@ describe("durable Library history replication", () => {
         updatePage: () => Effect.die("unused"),
         nextReplies: () => Effect.die("unused"),
         ackReply: () => Effect.die("unused"),
+        signOutPageReaders: () => Effect.die("unused"),
       });
       const disabled = yield* Replication.LibraryReplication.pipe(
         Effect.provide(Replication.layer),

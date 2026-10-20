@@ -45,10 +45,22 @@ export function VaultHealthSettingsSection() {
       key={environment.environmentId}
       environmentId={environment.environmentId}
       canWrite={canWrite}
+      supportsSshValidation={supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-health-ssh-validation",
+      )}
     />
   );
 }
-function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canWrite: boolean }) {
+function Inbox({
+  environmentId,
+  canWrite,
+  supportsSshValidation,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+  supportsSshValidation: boolean;
+}) {
   const atom = atoms.snapshot({ environmentId, input: {} }),
     result = useAtomValue(atom),
     snapshot = Option.getOrNull(AsyncResult.value(result));
@@ -58,6 +70,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
     [expires, setExpires] = useState(""),
     [repository, setRepository] = useState(""),
     [automatic, setAutomatic] = useState(false),
+    [sshValidation, setSshValidation] = useState(false),
     [history, setHistory] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
@@ -244,13 +257,12 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 expiresAt,
                 warningDays: 7,
                 githubRepository: repository.trim() || null,
+                ...(supportsSshValidation ? { sshValidation } : {}),
                 automatic,
                 nextCheckAt: 0,
               },
             });
-            setNotice(
-              "Health rule saved. Expiry warnings begin seven days before the declared date.",
-            );
+            setNotice("Health rule saved.");
           });
         }}
       >
@@ -272,6 +284,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               setExpires(rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "");
               setRepository(rule?.githubRepository ?? "");
               setAutomatic(rule?.automatic ?? false);
+              setSshValidation(rule?.sshValidation ?? false);
             }}
           >
             <option value="">Choose an item</option>
@@ -312,6 +325,22 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
             placeholder="2027-01-01T00:00:00Z"
           />
         </label>
+        {supportsSshValidation &&
+        (sshValidation || page?.items.find((item) => item.id === itemId)?.kind === "ssh-key") ? (
+          <label>
+            <input
+              type="checkbox"
+              aria-label="Validate SSH connection"
+              checked={sshValidation}
+              disabled={locked}
+              onChange={(e) => {
+                setSshValidation(e.target.checked);
+                if (e.target.checked) setRepository("");
+              }}
+            />{" "}
+            Validate the saved SSH connection using its trusted host key and a fixed no-op command
+          </label>
+        ) : null}
         <label>
           GitHub repository to validate (optional)
           <Input
@@ -320,6 +349,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
             onChange={(e) => setRepository(e.target.value)}
             disabled={locked}
             placeholder="owner/repo"
+            readOnly={sshValidation}
           />
         </label>
         <label>

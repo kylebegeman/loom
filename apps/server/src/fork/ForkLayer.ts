@@ -71,6 +71,8 @@ import * as PageLibrary from "./preview-pages/PageLibraryService.ts";
 import { PagesHostLive } from "./preview-pages/host.ts";
 import { PageLibraryHttpRoutes } from "./preview-pages/libraryHttp.ts";
 import * as PreviewPages from "./preview-pages/PreviewPagesService.ts";
+import * as Directory from "./directory/DirectoryService.ts";
+import { DirectoryHttpRoutes } from "./directory/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -150,6 +152,7 @@ const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
   Layer.provide(layerLibraryAssets),
+  Layer.provide(PreviewAccess.layer),
 );
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
@@ -159,7 +162,7 @@ const layerMiniOffload = MiniOffload.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
-  Layer.provide(Layer.merge(layerVaultHealth, layerVaultGitHub)),
+  Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
 
 const ForkServicesLive = Layer.mergeAll(
@@ -294,6 +297,7 @@ const ForkServicesLive = Layer.mergeAll(
             Layer.provide(FetchHttpClient.layer),
             Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
             Layer.provide(layerLibraryAssets),
+            Layer.provide(PreviewAccess.layer),
           ),
         ),
         Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
@@ -301,6 +305,7 @@ const ForkServicesLive = Layer.mergeAll(
       ),
     ),
   ),
+  Directory.layer.pipe(Layer.provide(FetchHttpClient.layer)),
 );
 
 /**
@@ -325,4 +330,5 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PcbPreviewHttpRoutes,
   PreviewAccessHttpRoutes,
   PageLibraryHttpRoutes,
+  DirectoryHttpRoutes,
 );

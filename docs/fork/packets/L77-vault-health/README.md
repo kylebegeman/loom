@@ -1,6 +1,6 @@
 # L77: Credential health and maintenance inbox
 
-Status: **In progress** on `feat/loom-vault-health-retained`. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
+Status: **In progress** on fork main, with matched-history and recovery follow-up. Kyle selected the full packet; the maintenance inbox and bounded validation are implemented and verified locally; production rollout remains pending.
 
 Collect expiration and authentication maintenance into one actionable inbox.
 
@@ -17,8 +17,8 @@ Current project profile bindings and project/thread grant references are availab
 ten projects per page, with review links. Each scanned project can inspect retained selections
 in pages of 25, including projects with no current references. Earlier item/profile versions
 remain visible; retired selections with removed snapshots are counted as unattributable.
-External consumers and provider-side copies are not discovered. These references do not prove usable access. The current validation adapter targets explicitly configured
-GitHub repositories. Additional adapters and native interaction acceptance remain incomplete.
+Each response reports its page scope and unresolved discovery limits. Grants pointing to missing projects or threads are counted across the environment and can be reviewed even on an empty page. External consumers are not discovered, provider-side copies remain unknown, and current authorization is not evaluated. Older servers show an explicit coverage-unreported notice. These references do not prove usable access. Validation now covers explicitly configured GitHub repositories and opt-in fixed SSH connection
+checks. Matched retained history, review/retirement and failed-read recovery have web acceptance. Linked profile history hides stale cards and retirement controls until a successful refresh. Other connector kinds and native interaction acceptance remain incomplete.
 This is not a full packet completion or a production rollout. See TESTING for exact evidence.
 
 ## Scope

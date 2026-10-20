@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { createVaultHealthAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createVaultHealthAtoms,
+  supportsLoomFeature,
+  vaultHealthCoverageMessages,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
@@ -108,10 +112,13 @@ function SelectionPage({
             Inspected {page.inspectedSelections} selections on this page, at{" "}
             {new Date(page.checkedAt).toLocaleString()}.
           </Text>
+          {vaultHealthCoverageMessages(page.coverage).map((message) => (
+            <Text key={message}>{message}</Text>
+          ))}
           {page.unattributableSelections > 0 ? (
             <Text>
-              {page.unattributableSelections} retired selections have no binding snapshot and cannot
-              be attributed to an item.
+              Retired selections without binding snapshots: {page.unattributableSelections}. Their
+              item references are unknown.
             </Text>
           ) : null}
           {page.items.length === 0 ? (

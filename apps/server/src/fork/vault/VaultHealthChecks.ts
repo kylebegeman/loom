@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import { VaultHealthObservation } from "./health-observation.ts";
 import * as VaultHealth from "./VaultHealth.ts";
+import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 export class VaultHealthChecks extends Context.Service<
   VaultHealthChecks,
@@ -20,7 +21,8 @@ export class VaultHealthChecks extends Context.Service<
 >()("t3/fork/vault/VaultHealthChecks") {}
 const make = Effect.gen(function* () {
   const health = yield* VaultHealth.VaultHealth,
-    github = yield* VaultGitHub.VaultGitHub;
+    github = yield* VaultGitHub.VaultGitHub,
+    ssh = yield* VaultSsh.VaultSsh;
   const check = Effect.fn("VaultHealthChecks.check")(function* (itemId: string, force: boolean) {
     const claim = yield* health.claim(itemId, force);
     if (!claim) return false;
@@ -35,19 +37,18 @@ const make = Effect.gen(function* () {
       observedAt: claim.observedAt,
       checkDeadline: claim.checkDeadline,
     });
-    if (!claim.rule.githubRepository) return true;
-    const result = yield* github
-      .test(
-        { id: itemId, expectedVersion: claim.itemVersion, repository: claim.rule.githubRepository },
-        Effect.void,
-      )
-      .pipe(
-        Effect.provideService(VaultHealthObservation, {
-          observedAt: claim.observedAt,
-          checkDeadline: claim.checkDeadline,
-        }),
-        Effect.result,
-      );
+    if (!claim.rule.githubRepository && !claim.rule.sshValidation) return true;
+    const target = { id: itemId, expectedVersion: claim.itemVersion };
+    const result = yield* Effect.gen(function* () {
+      if (claim.rule.sshValidation) yield* ssh.probe(target, Effect.void);
+      else yield* github.test({ ...target, repository: claim.rule.githubRepository! }, Effect.void);
+    }).pipe(
+      Effect.provideService(VaultHealthObservation, {
+        observedAt: claim.observedAt,
+        checkDeadline: claim.checkDeadline,
+      }),
+      Effect.result,
+    );
     if (result._tag === "Success") {
       for (const category of ["authentication", "outage", "configuration"] as const)
         yield* health.report({
@@ -64,7 +65,9 @@ const make = Effect.gen(function* () {
         error._tag === "VaultGitHubError" &&
         ["unauthorized", "invalid-credential"].includes(error.reason)
           ? "authentication"
-          : error._tag === "VaultGitHubError" && ["unavailable", "timeout"].includes(error.reason)
+          : (error._tag === "VaultGitHubError" &&
+                ["unavailable", "timeout"].includes(error.reason)) ||
+              (error._tag === "VaultSshError" && error.reason === "timeout")
             ? "outage"
             : "configuration";
       yield* health.report({

@@ -69,7 +69,8 @@ leaves the worker unable to check rather than authorizing credential use.
 
 Default expiry warning is seven days; the typed rule supports one to ninety. The initial
 notification destination is the inbox, with no external messages. Automatic provider validation
-requires explicit administrator opt-in for a dedicated GitHub connection and named repository.
+requires explicit administrator opt-in for a dedicated GitHub connection and named repository,
+or the saved SSH connection.
 Unattended checks use that recorded authorization and do not grant agent access. Local client
 management requires access:read/write. CLI/MCP management is limited to authenticated full-access
 administrator clients; an agent thread cannot change global health state or trigger an admin probe.
@@ -83,7 +84,7 @@ is never performed by this service.
 `VaultHealthContext` inspects current profile bindings and grant references for one item. It
 uses the environment's project store and existing profile/access services, sorted by project ID,
 with ten projects per page and two concurrent profile reads. Thread grants resolve to the
-thread's current project; deleted or unknown threads are omitted. Suspended/revoked grants and
+thread's current project. References with deleted/unknown threads or projects contribute to an environment-wide unattributed-grant count, rather than silently disappearing. Valid grants on other pages do not contribute to that count. Suspended/revoked grants and
 archived profiles retain their labels and state, without being represented as usable authority.
 The response contains only metadata. Project and registry failures return an error rather than
 an empty-success result. Each page is a current inspection, not a transaction across registries.
@@ -106,4 +107,14 @@ Web handoff stores the requested project in the Vault navigation atom and routes
 so the profile picker owns project selection rather than the global settings scope.
 The separate `vault-health-retained` capability guards this addition; `scannedProjects` is
 optional on older context responses. External consumers and provider-side copies remain
-undiscovered. No field or empty page should be interpreted as proof they do not exist.
+undiscovered. Optional structured coverage accompanies both responses, including empty/final pages. It identifies page scope, external consumers as not discovered, provider copies as unknown and current authorization as not evaluated. Missing coverage on older servers renders an explicit unknown notice. No field or empty page should be interpreted as proof external consumers do not exist.
+
+SSH validation reuses the existing pinned-host probe with its fixed `/usr/bin/true` command
+and eight-second timeout. The optional rule field defaults to no SSH validation for existing
+records. SSH and GitHub validation are mutually exclusive; configure validates their item kinds.
+The current item/version and host trust are rechecked by the SSH service. These diagnostics do
+not grant workloads credential use. A timeout creates an outage issue; untrusted hosts and
+other SSH failures create configuration issues without claiming revocation or authentication
+failure. A successful probe resolves prior validation issues through the same stale-claim guard.
+The existing opt-in, interval, burst and concurrency bounds apply. Clients gate the new form
+control on `vault-health-ssh-validation` and retain explicit automatic-check consent.

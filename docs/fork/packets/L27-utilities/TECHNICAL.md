@@ -326,3 +326,40 @@ None.
   regex out for this reason; the worker removes it.
 - **A BIP39 mnemonic generator.** Declined by Kyle. Old Loom faked it with a small word list;
   a real one needs the 2,048-word list and a checksum, for little use in this app.
+
+## As built
+
+The implementation follows this design with these differences, each made for a concrete
+reason:
+
+- **Tools split `run` and `generate`.** A tool has `run` (live, on input change), `generate`
+  (only on Generate or Regenerate), or both, so a generator with a live validation mode
+  (UUID, ULID) cannot generate on mount by accident. `runUtilityTool` (`registry.ts`) owns
+  the 1 MiB input check, the try/catch that turns a throw into an error result, and output
+  truncation, so no tool repeats them. The view does not call `run` while both inputs are
+  empty.
+- **Custom views are chosen by tool id in `ToolView.tsx`**, not a `View` field on the tool.
+  The implementations stay free of React, and `registry.ts` stays importable from tests
+  without a DOM. Regex, diff, chmod and URL parse have custom views; the URL editor stays
+  mounted while an edit leaves the URL momentarily invalid.
+- **Metadata and implementations are separate maps** (`registry-meta.ts` and `registry.ts`,
+  joined by id and checked both ways in `registry.test.ts`), which is what keeps the palette
+  chunk free of the tool code.
+- **Small type changes.** `example.text` instead of `example.input`; text options take
+  `placeholder` instead of `secret` (no tool option is a secret, and HMAC keys are inputs).
+  Example applies the tool's default options merged with the example's own.
+- **Cron daylight saving.** A local time that does not exist that day is skipped, and a time
+  that occurs twice runs once. The user guide says so, since daemons differ.
+- **Palette search.** The submenu's `searchTerms` include every tool label, not only the
+  category names: root search does not descend into submenus, so without the labels a
+  tool's name found nothing unless it was a quick action. `searchItems` was rejected because the palette groups its
+  results under "Projects". The keybinding hint appears on the submenu only.
+- **Dialog host.** It reads the thread through `useRouteThread()` rather than
+  `useHandleNewThread`, which re-renders on streamed thread events; the root host must not.
+  The dialog is `sm:max-w-3xl` (768 px) wide and 640 px tall instead of a fixed 760 px.
+- **Diff.** `parseDiffFromFile` plus `FileDiff` from `@pierre/diffs`, inside upstream's
+  diff worker pool context when one is mounted.
+
+Dependencies: only `@noble/hashes`, `jose`, `culori` and `@pierre/diffs`, which `apps/web`
+already had. Kyle's 2026-10-20 directive to complete the packet end to end covers the ones
+this packet names; nothing else was added.

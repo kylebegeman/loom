@@ -1,10 +1,9 @@
 import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
-import { EnvironmentId, IsoDateTime, type ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import {
   LibraryBriefProposal,
-  LibraryComputerRegistration,
   LibraryConversationBriefProposal,
   LibraryProject,
   type LibraryProposeBriefRequest,
@@ -31,16 +30,13 @@ import {
   PreviewPagesError,
   PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { libraryComputerDirectory } from "./enrollment.ts";
-import * as Config from "effect/Config";
+import { PreviewAccessService } from "../preview-access/PreviewAccessService.ts";
+import { resolveLibraryConnection } from "./LibraryConnection.ts";
 import * as Context from "effect/Context";
-import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import {
   ServerEnvironment,
@@ -49,7 +45,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
+import { HttpClientRequest, type HttpClientResponse } from "effect/http";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { libraryAttachments, libraryPageUploads } from "./attachments.ts";
@@ -109,6 +105,8 @@ export class LibraryPublisher extends Context.Service<
     readonly ackReply: (
       input: LibraryPageReplyAckRequest,
     ) => Effect.Effect<void, PreviewPagesError>;
+    /** Ends every pages browser sign-in; a Library that predates this answers `unavailable`. */
+    readonly signOutPageReaders: () => Effect.Effect<void, PreviewPagesError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -166,43 +164,12 @@ const decodePageRefusal = Schema.decodeUnknownEffect(
     message: Schema.optional(Schema.String),
   }),
 );
-const HostCredential = Schema.Struct({
-  computer: Schema.optional(LibraryComputerRegistration),
-  version: Schema.Literal(1),
-  sourceEnvironmentId: EnvironmentId,
-  libraryEnvironmentId: EnvironmentId,
-  libraryUrl: Schema.String,
-  sessionId: Schema.String,
-  accessToken: Schema.RedactedFromValue(Schema.String),
-  expiresAt: IsoDateTime,
-});
-const decodeCredential = Schema.decodeEffect(Schema.fromJsonString(HostCredential));
 const make = Effect.gen(function* () {
-  const localAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
-    Config.withDefault(false),
-  );
-  const configuredUrl = yield* Config.String("LOOM_LIBRARY_URL").pipe(Config.option);
+  const connection = yield* resolveLibraryConnection;
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
-  const path = yield* Path.Path;
-  const configuredCredentialFile = yield* Config.String("LOOM_LIBRARY_CREDENTIAL_FILE").pipe(
-    Config.option,
-  );
   const sourceIdentity = yield* ServerEnvironmentIdentity;
   const sourceEnvironmentId = yield* sourceIdentity.getEnvironmentId;
-  const computerDirectory = libraryComputerDirectory(
-    yield* HostProcess.HomeDirectory,
-    sourceEnvironmentId,
-  );
-  const externalCredentialFile = path.join(computerDirectory, "publisher.json");
-  const defaultCredentialFile = (yield* fs.exists(externalCredentialFile))
-    ? externalCredentialFile
-    : path.join(config.secretsDir, "library-publisher.json");
-  const credentialFile = Option.isSome(configuredCredentialFile)
-    ? configuredCredentialFile
-    : (yield* fs.exists(defaultCredentialFile))
-      ? Option.some(defaultCredentialFile)
-      : Option.none();
   const noPages = Effect.fail(libraryPagesError("unavailable"));
   const unavailable = (enabled: boolean) => {
     const blocked = Effect.fail(new LibraryError({ reason: "blocked" }));
@@ -221,20 +188,17 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   };
-  if (
-    !localAuthority &&
-    Option.isNone(credentialFile) &&
-    (Option.isNone(configuredUrl) || configuredUrl.value.trim() === "")
-  ) {
-    return unavailable(false);
-  }
+  if (connection.kind === "none") return unavailable(false);
+  if (connection.kind === "unavailable") return unavailable(true);
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
-  if (localAuthority) {
+  if (connection.kind === "authority") {
     const localLibrary = yield* LibraryService.LibraryService;
     const localAssets = yield* Assets.LibraryAssetService;
+    const localPreviewAccess = yield* PreviewAccessService;
     const publishLocalAttachments = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
       for (const attachment of [
         ...libraryAttachments(archive),
@@ -279,9 +243,17 @@ const make = Effect.gen(function* () {
           environmentId: sourceEnvironmentId,
           threadId,
         }),
-      // Preview sign-in is answered by the Library's HTTP route, which a computer reaches over the
-      // network; a Library that is its own computer has nothing to register with in-process.
-      registerPreviews: () => Effect.fail(new LibraryError({ reason: "not-found" })),
+      // A Library that is its own computer registers in-process, with no session to outlive.
+      registerPreviews: (previews) =>
+        localPreviewAccess
+          .register({ environmentId: sourceEnvironmentId, sessionId: null, previews })
+          .pipe(
+            // Callers read not-found as "no preview sign-in here", as a remote Library answers it.
+            Effect.catchIf(
+              (error) => error.reason === "not-authority",
+              () => Effect.fail(new LibraryError({ reason: "not-found" })),
+            ),
+          ),
       // Pages are filed under the publishing computer's Library sign-in, which a Library that is
       // its own computer does not have.
       publishPage: () => noPages,
@@ -289,73 +261,10 @@ const make = Effect.gen(function* () {
       updatePage: () => noPages,
       nextReplies: () => noPages,
       ackReply: () => noPages,
+      signOutPageReaders: () => noPages,
     });
   }
-  const credentialResult = Option.isNone(credentialFile)
-    ? null
-    : yield* Effect.gen(function* () {
-        const stat = yield* fs.stat(credentialFile.value);
-        if ((stat.mode & 0o077) !== 0 || Number(stat.size) > 16 * 1024)
-          return yield* new LibraryError({ reason: "invalid" });
-        return yield* decodeCredential(yield* fs.readFileString(credentialFile.value));
-      }).pipe(
-        Effect.mapError(() => new LibraryError({ reason: "blocked" })),
-        Effect.result,
-      );
-  if (credentialResult !== null && credentialResult._tag === "Failure") return unavailable(true);
-  const credential = credentialResult === null ? null : credentialResult.success;
-  if (credential !== null) {
-    const identity = yield* ServerEnvironmentIdentity;
-    if (
-      credential.sourceEnvironmentId !== (yield* identity.getEnvironmentId) ||
-      Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis)
-    )
-      return unavailable(true);
-  }
-  const selectedUrl =
-    Option.isSome(configuredUrl) && configuredUrl.value.trim() !== ""
-      ? configuredUrl.value
-      : credential?.libraryUrl;
-  if (selectedUrl === undefined) return yield* new LibraryError({ reason: "invalid" });
-  const base = yield* Effect.try({
-    try: () => new URL(selectedUrl),
-    catch: () => new LibraryError({ reason: "invalid" }),
-  });
-  if (
-    base.username ||
-    base.password ||
-    base.search ||
-    base.hash ||
-    (base.protocol !== "https:" &&
-      !(base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)))
-  )
-    return yield* new LibraryError({ reason: "invalid" });
-  if (
-    credential !== null &&
-    base.toString() !==
-      (yield* Effect.try({
-        try: () => new URL(credential.libraryUrl).toString(),
-        catch: () => new LibraryError({ reason: "invalid" }),
-      }))
-  )
-    return unavailable(true);
-  const token =
-    credential === null
-      ? yield* Config.Redacted("LOOM_LIBRARY_TOKEN").pipe(Config.option)
-      : Option.some(credential.accessToken);
-  const http = yield* HttpClient.HttpClient;
-  const send = Effect.fnUntraced(function* (request: HttpClientRequest.HttpClientRequest) {
-    if (
-      Option.isNone(token) ||
-      (credential !== null && Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis))
-    )
-      return yield* new LibraryError({ reason: "blocked" });
-    // HTTP failures can hold a request containing its token. Do not retain that cause.
-    return yield* http.execute(request.pipe(HttpClientRequest.bearerToken(token.value))).pipe(
-      Effect.timeout("3 minutes"),
-      Effect.mapError(() => new LibraryError({ reason: "io" })),
-    );
-  });
+  const { credential, endpoint, send } = connection;
   const execute = Effect.fnUntraced(function* (
     request: HttpClientRequest.HttpClientRequest,
     /** Keep the reason the Library gave for refusing, such as a full proposal queue. */
@@ -398,7 +307,6 @@ const make = Effect.gen(function* () {
       return yield* libraryPagesError("unavailable");
     return response;
   });
-  const endpoint = (path: string) => new URL(path, base).toString();
   const descriptorService = yield* Effect.serviceOption(ServerEnvironment);
   const encodeComputer = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterComputerRequest));
   const info = Effect.gen(function* () {
@@ -585,7 +493,7 @@ const make = Effect.gen(function* () {
   const registerPreviews = Effect.fnUntraced(function* (
     previews: LibraryPreviewRegisterRequest["previews"],
   ) {
-    const body = yield* encodePreviews({ previews }).pipe(
+    const body = yield* encodePreviews({ environmentId: sourceEnvironmentId, previews }).pipe(
       Effect.mapError(() => new LibraryError({ reason: "invalid" })),
     );
     const response = yield* execute(
@@ -636,6 +544,9 @@ const make = Effect.gen(function* () {
     const body = yield* encodeReplyAck(input).pipe(Effect.mapError(invalidPageRequest));
     yield* postPage("/replies/ack", body);
   });
+  const signOutPageReaders = Effect.fnUntraced(function* () {
+    yield* postPage("/sign-out", "{}");
+  });
   return LibraryPublisher.of({
     enabled: true,
     info,
@@ -651,6 +562,7 @@ const make = Effect.gen(function* () {
     updatePage,
     nextReplies,
     ackReply,
+    signOutPageReaders,
   });
 });
 export const layer = Layer.effect(LibraryPublisher, make);

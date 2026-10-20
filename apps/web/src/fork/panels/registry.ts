@@ -4,6 +4,7 @@ import { modelPreview3dPanel } from "../model-preview-3d/panel";
 import { appleBuildToolingPanel } from "../apple-build-tooling/panel";
 import { deviceQaPanel } from "../device-qa/panel";
 import { codeGraphPanel } from "../code-graph/panel";
+import { utilitiesPanel } from "../utilities/panel";
 import type { ForkPanelDefinition, ForkRightPanelSurface } from "./types";
 
 /** One line per packet panel. Order is launcher order. */
@@ -14,6 +15,7 @@ export const FORK_PANELS: ReadonlyArray<ForkPanelDefinition> = [
   appleBuildToolingPanel,
   deviceQaPanel,
   codeGraphPanel,
+  utilitiesPanel,
 ];
 
 export const findForkPanel = (panelId: string): ForkPanelDefinition | null =>

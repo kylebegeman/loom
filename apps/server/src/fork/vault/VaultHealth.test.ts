@@ -4,6 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultGitHubError,
+  VaultSshError,
   type VaultItemSummary,
   type VaultHealthMutation,
 } from "@t3tools/contracts/fork";
@@ -18,6 +19,7 @@ import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultHealthChecks from "./VaultHealthChecks.ts";
+import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 const itemId = "a".repeat(32);
@@ -25,6 +27,9 @@ const fixture = Effect.sync(() => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = {
     version: 1,
+    kind: "service-connection" as "service-connection" | "ssh-key",
+    sshCalls: 0,
+    sshFailure: null as "timeout" | "failed" | "untrusted-host" | null,
     probeCalls: 0,
     failure: null as "unavailable" | "unauthorized" | null,
     probe: Effect.void as Effect.Effect<void>,
@@ -32,7 +37,7 @@ const fixture = Effect.sync(() => {
   const item = (): VaultItemSummary => ({
     id: itemId,
     label: "Synthetic test identity",
-    kind: "service-connection",
+    kind: state.kind,
     state: "active",
     version: state.version,
     createdAt: "2026-01-01T00:00:00Z",
@@ -68,21 +73,40 @@ const fixture = Effect.sync(() => {
   const checks = VaultHealthChecks.layer.pipe(
     Layer.provideMerge(layer),
     Layer.provide(
-      Layer.mock(VaultGitHub.VaultGitHub)({
-        test: () =>
-          Effect.gen(function* () {
-            state.probeCalls++;
-            yield* state.probe;
-            if (state.failure) return yield* new VaultGitHubError({ reason: state.failure });
-            return {
-              account: "test",
-              repository: "owner/repo",
-              checkedAt: "2026-01-01T00:00:00Z",
-              tokenExpiresAt: null,
-              api: "ready" as const,
-            };
-          }),
-      }),
+      Layer.merge(
+        Layer.mock(VaultSsh.VaultSsh)({
+          probe: () =>
+            Effect.gen(function* () {
+              state.sshCalls++;
+              yield* state.probe;
+              if (state.sshFailure) return yield* new VaultSshError({ reason: state.sshFailure });
+              return {
+                id: itemId,
+                version: state.version,
+                destination: "ssh://qa.example:22",
+                fingerprint: "synthetic-key",
+                hostFingerprint: "synthetic-host",
+                checkedAt: 0,
+                authenticated: true as const,
+              };
+            }),
+        }),
+        Layer.mock(VaultGitHub.VaultGitHub)({
+          test: () =>
+            Effect.gen(function* () {
+              state.probeCalls++;
+              yield* state.probe;
+              if (state.failure) return yield* new VaultGitHubError({ reason: state.failure });
+              return {
+                account: "test",
+                repository: "owner/repo",
+                checkedAt: "2026-01-01T00:00:00Z",
+                tokenExpiresAt: null,
+                api: "ready" as const,
+              };
+            }),
+        }),
+      ),
     ),
   );
   return { state, records, layer: checks };
@@ -264,6 +288,62 @@ it.effect(
         expect(
           (yield* health.snapshot).issues.find((i) => i.category === "outage"),
         ).toBeUndefined();
+      }),
+    ),
+);
+
+it.effect(
+  "validates only explicitly configured SSH keys, distinguishes timeout from configuration and never infers revocation",
+  () =>
+    test((f, health, checks) =>
+      Effect.gen(function* () {
+        const rule = {
+          itemId,
+          expiresAt: null,
+          warningDays: 7,
+          githubRepository: null,
+          sshValidation: true,
+          automatic: false,
+          nextCheckAt: 0,
+        };
+        expect(
+          (yield* change(health, { action: "configure", rule }).pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+        expect(f.state.sshCalls).toBe(0);
+        f.state.kind = "ssh-key";
+        yield* change(health, { action: "configure", rule });
+        yield* checks.sweep;
+        expect(f.state.sshCalls).toBe(0);
+        f.state.sshFailure = "timeout";
+        yield* checks.recheck(itemId);
+        expect(f.state.sshCalls).toBe(1);
+        expect(f.state.probeCalls).toBe(0);
+        expect((yield* health.snapshot).issues.map((i) => i.category)).toEqual(["outage"]);
+        yield* TestClock.adjust("15 minutes");
+        f.state.sshFailure = "untrusted-host";
+        yield* checks.recheck(itemId);
+        expect((yield* health.snapshot).issues.some((i) => i.category === "configuration")).toBe(
+          true,
+        );
+        expect((yield* health.snapshot).issues.some((i) => i.category === "authentication")).toBe(
+          false,
+        );
+        yield* TestClock.adjust("15 minutes");
+        f.state.sshFailure = null;
+        yield* checks.recheck(itemId);
+        expect((yield* health.snapshot).issues.every((i) => i.state === "resolved")).toBe(true);
+        yield* change(health, { action: "configure", rule: { ...rule, automatic: true } });
+        f.state.sshFailure = "failed";
+        yield* checks.sweep;
+        expect(
+          (yield* health.snapshot).issues.find((i) => i.category === "configuration")?.state,
+        ).toBe("open");
+        expect(
+          (yield* change(health, {
+            action: "configure",
+            rule: { ...rule, githubRepository: "owner/repo" },
+          }).pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
       }),
     ),
 );

@@ -46,6 +46,10 @@ export function VaultHealthSettingsSection({
           environmentId={environmentId}
           connected={connected}
           canWrite={canWrite}
+          supportsSshValidation={supportsLoomFeature(
+            config?.environment.capabilities,
+            "vault-health-ssh-validation",
+          )}
         />
       ) : (
         <Text>Your connection does not include Vault inspection.</Text>
@@ -57,10 +61,12 @@ function Inbox({
   environmentId,
   connected,
   canWrite,
+  supportsSshValidation,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   canWrite: boolean;
+  supportsSshValidation: boolean;
 }) {
   const snapshot = useEnvironmentQuery(
     connected ? atoms.snapshot({ environmentId, input: {} }) : null,
@@ -75,6 +81,7 @@ function Inbox({
     [expires, setExpires] = useState(""),
     [repository, setRepository] = useState(""),
     [automatic, setAutomatic] = useState(false),
+    [sshValidation, setSshValidation] = useState(false),
     [history, setHistory] = useState(false),
     [picking, setPicking] = useState(false),
     [busy, setBusy] = useState(false),
@@ -222,12 +229,29 @@ function Inbox({
         editable={!locked}
         placeholder="2027-01-01T00:00:00Z"
       />
+      {supportsSshValidation &&
+      (sshValidation || page.data?.items.find((item) => item.id === itemId)?.kind === "ssh-key") ? (
+        <View className="gap-2">
+          <Text>
+            Validate the saved SSH connection using its trusted host key and a fixed no-op command
+          </Text>
+          <Switch
+            accessibilityLabel="Validate SSH connection"
+            value={sshValidation}
+            disabled={locked}
+            onValueChange={(value) => {
+              setSshValidation(value);
+              if (value) setRepository("");
+            }}
+          />
+        </View>
+      ) : null}
       <Text>GitHub repository to validate (optional)</Text>
       <TextInput
         accessibilityLabel="Health GitHub repository"
         value={repository}
         onChangeText={setRepository}
-        editable={!locked}
+        editable={!locked && !sshValidation}
         autoCapitalize="none"
         placeholder="owner/repo"
       />
@@ -253,13 +277,12 @@ function Inbox({
                 expiresAt,
                 warningDays: 7,
                 githubRepository: repository.trim() || null,
+                ...(supportsSshValidation ? { sshValidation } : {}),
                 automatic,
                 nextCheckAt: 0,
               },
             });
-            setNotice(
-              "Health rule saved. Expiry warnings begin seven days before the declared date.",
-            );
+            setNotice("Health rule saved.");
           })
         }
       />
@@ -303,6 +326,7 @@ function Inbox({
                   setExpires(rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "");
                   setRepository(rule?.githubRepository ?? "");
                   setAutomatic(rule?.automatic ?? false);
+                  setSshValidation(rule?.sshValidation ?? false);
                   setPicking(false);
                 }}
               />

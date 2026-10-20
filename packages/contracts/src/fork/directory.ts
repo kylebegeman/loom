@@ -1,4 +1,7 @@
 import * as Schema from "effect/Schema";
+import * as Rpc from "effect/rpc/Rpc";
+import * as RpcGroup from "effect/rpc/RpcGroup";
+import { EnvironmentAuthorizationError } from "../auth.ts";
 import {
   EnvironmentId,
   IsoDateTime,
@@ -204,3 +207,28 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
     }
   }
 }
+
+/** Forgetting an environment drops its pinned key, so its next report pins whatever key it sends. */
+export const DirectoryForgetRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("environment"), environmentId: EnvironmentId }),
+  Schema.Struct({ kind: Schema.Literal("machine"), keyFingerprint: Sha256Hex }),
+]);
+export type DirectoryForgetRequest = typeof DirectoryForgetRequest.Type;
+
+export const DIRECTORY_WS_METHODS = {
+  list: "loom.directory.list",
+  forget: "loom.directory.forget",
+} as const;
+const error = Schema.Union([DirectoryError, EnvironmentAuthorizationError]);
+export const DirectoryRpcGroup = RpcGroup.make(
+  Rpc.make(DIRECTORY_WS_METHODS.list, {
+    payload: Schema.Struct({}),
+    success: DirectoryListing,
+    error,
+  }),
+  Rpc.make(DIRECTORY_WS_METHODS.forget, {
+    payload: DirectoryForgetRequest,
+    success: Schema.Void,
+    error,
+  }),
+);

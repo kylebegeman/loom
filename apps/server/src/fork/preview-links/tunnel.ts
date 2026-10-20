@@ -3,6 +3,7 @@ import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
@@ -18,6 +19,11 @@ const RESTART_BACKOFF_MAX_MS = 60_000;
 // Output can trail the exit by a moment; a grandchild holding the pipe must not stall a restart.
 const OUTPUT_DRAIN_TIMEOUT = Duration.seconds(2);
 const MAX_MESSAGE_LENGTH = 300;
+// Same as the cloud connector: a download that failed is not tried again on every restart.
+const PINNED_INSTALL_RETRY_MS = 10 * 60_000;
+// A download over a slow link can take minutes. The older binary meets the minimum, so the tunnel
+// waits this long and then runs it while the install finishes for the next start.
+const PINNED_INSTALL_WAIT = Duration.seconds(30);
 
 const CONNECTOR_ARGS = [
   "tunnel",
@@ -170,9 +176,68 @@ export const runPreviewTunnel = (options: RunPreviewTunnelOptions) =>
     const redact = (text: string) =>
       options.token.length > 0 ? text.replaceAll(options.token, "<redacted>") : text;
 
+    let pinnedInstallFailedAt: number | null = null;
+    let pinnedInstalling = false;
+    /**
+     * A cloudflared older than the pin, from PATH or an earlier managed install, gives way to the
+     * pinned release. Until that installs, the older one still runs: it meets the minimum.
+     */
+    const preferPinned = (resolved: RelayClient.AvailableRelayClient) =>
+      Effect.gen(function* () {
+        if (
+          pinnedInstalling ||
+          resolved.source === "override" ||
+          RelayClient.compareCloudflaredVersions(
+            resolved.version,
+            RelayClient.CLOUDFLARED_VERSION,
+          ) >= 0
+        ) {
+          return resolved.executablePath;
+        }
+        const nowMs = yield* Clock.currentTimeMillis;
+        if (
+          pinnedInstallFailedAt !== null &&
+          nowMs - pinnedInstallFailedAt < PINNED_INSTALL_RETRY_MS
+        ) {
+          return resolved.executablePath;
+        }
+        yield* options.onStatus({
+          state: "starting",
+          message: "Installing cloudflared",
+          metricsPort: null,
+        });
+        pinnedInstalling = true;
+        // A child of the tunnel's fiber, so a slow download outlives this attempt but not the tunnel.
+        const install = yield* relayClient.install.pipe(
+          Effect.map((installed): string | null => installed.executablePath),
+          Effect.catchTags({
+            RelayClientInstallError: (error) =>
+              Effect.gen(function* () {
+                pinnedInstallFailedAt = yield* Clock.currentTimeMillis;
+                yield* Effect.logWarning("Could not install the pinned cloudflared", {
+                  reason: error.reason,
+                  using: resolved.version,
+                  pinned: RelayClient.CLOUDFLARED_VERSION,
+                });
+                return null;
+              }),
+          }),
+          Effect.ensuring(
+            Effect.sync(() => {
+              pinnedInstalling = false;
+            }),
+          ),
+          Effect.forkChild,
+        );
+        const installed = yield* Fiber.join(install).pipe(
+          Effect.timeoutOption(PINNED_INSTALL_WAIT),
+        );
+        return Option.getOrNull(installed) ?? resolved.executablePath;
+      });
+
     const resolveExecutable = Effect.gen(function* () {
       const resolved = yield* relayClient.resolve;
-      if (resolved.status === "available") return resolved.executablePath;
+      if (resolved.status === "available") return yield* preferPinned(resolved);
       if (resolved.status === "unsupported") {
         yield* options.onStatus({
           state: "error",

@@ -191,3 +191,12 @@ After fetching tags, parent `c1a61e657a` has **61 baseline conflicts** against
 the committed preview has the same 61-file conflict set, with no added conflicting files.
 No working-tree merge,
 push, PR or deployment is authorized by these checks.
+
+## History refresh recovery
+
+[L77 acceptance](../L77-vault-health/TESTING.md#matched-history-and-recovery-acceptance) exercises
+the history review handoff, pinned bindings, cancel/retire, concurrent-version conflict and refresh
+recovery with isolated synthetic selections. Profile history now hides cached cards and retirement
+controls while its read is pending or failed, on web and mobile. Refresh clears an earlier mutation
+error and confirmation. Web interaction and shared-query/service regressions passed; this follow-up
+does not add native interaction evidence or authorize production retirement.

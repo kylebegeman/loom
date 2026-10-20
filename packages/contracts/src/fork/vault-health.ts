@@ -31,12 +31,13 @@ export const VaultHealthRule = Schema.Struct({
   itemId: VaultItemId,
   expiresAt: Schema.NullOr(Time),
   warningDays: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 90 })),
+  sshValidation: Schema.optional(Schema.Boolean),
   githubRepository: Schema.NullOr(
     Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[a-zA-Z0-9_.-]{1,100}$/)),
   ),
   automatic: Schema.Boolean,
   nextCheckAt: Time,
-});
+}).check(Schema.makeFilter((rule) => !rule.sshValidation || rule.githubRepository === null));
 export type VaultHealthRule = typeof VaultHealthRule.Type;
 export const VaultHealthSnapshot = Schema.Struct({
   revision: Schema.Int,
@@ -70,10 +71,22 @@ export const VaultHealthContextInput = Schema.Struct({
   cursor: Schema.NullOr(ProjectId),
 });
 export type VaultHealthContextInput = typeof VaultHealthContextInput.Type;
+const discoveryLimits = {
+  externalConsumers: Schema.Literal("not-discovered"),
+  providerCopies: Schema.Literal("unknown"),
+  authorization: Schema.Literal("not-evaluated"),
+};
 export const VaultHealthContextPage = Schema.Struct({
   itemId: VaultItemId,
   checkedAt: Time,
   inspectedProjects: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({
+      ...discoveryLimits,
+      scope: Schema.Literal("project-page"),
+      unattributedGrants: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
   scannedProjects: Schema.optional(
     Schema.Array(Schema.Struct({ id: ProjectId, title: Schema.String })).check(
       Schema.isMaxLength(10),
@@ -116,6 +129,9 @@ export const VaultHealthRetainedPage = Schema.Struct({
   projectId: ProjectId,
   checkedAt: Time,
   inspectedSelections: Schema.Int,
+  coverage: Schema.optional(
+    Schema.Struct({ ...discoveryLimits, scope: Schema.Literal("retained-page") }),
+  ),
   unattributableSelections: Schema.Int,
   nextCursor: VaultProfilePinList.fields.cursor,
   items: Schema.Array(

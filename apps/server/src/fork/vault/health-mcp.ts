@@ -33,7 +33,7 @@ export const VaultHealthToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_health_context", {
     description:
-      "Inspect current project profile and grant references to an item, ten projects per page. Administrator clients only. References are not proof of working access; retained run pins and external consumers are not enumerated.",
+      "Inspect current project profile and grant references to an item, ten projects per page. Administrator clients only. Returns page coverage and an environment-wide count of grants with no current project attribution. References do not evaluate current access; inspect retained run selections separately. External consumers are not discovered and provider copies are unknown.",
     parameters: VaultHealthContextInput,
     success: VaultHealthContextPage,
     failure,
@@ -48,7 +48,7 @@ export const VaultHealthToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_health_apply", {
     description:
-      "Configure explicitly opted-in expiry/GitHub checks, remove a rule, snooze/unsnooze, dismiss or reopen an issue. Administrator client only. Retain operationId for retries; requires expectedRevision. No provider revocation or personal credential repair.",
+      "Configure explicitly opted-in expiry, GitHub or fixed SSH connection checks, remove a rule, snooze/unsnooze, dismiss or reopen an issue. Administrator client only. Retain operationId for retries; requires expectedRevision. No provider revocation or personal credential repair.",
     parameters: VaultHealthMutation,
     success: VaultHealthSnapshot,
     failure,

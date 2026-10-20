@@ -3,8 +3,13 @@
 At the slice 5 commit, the focused suites passed: 14 files and 147 tests across
 `apps/server/src/fork/preview-links`, `apps/server/src/fork/features.test.ts`,
 `packages/client-runtime/src/fork/preview-links.test.ts`, `apps/web/src/fork/preview-links`
-and `apps/mobile/src/fork/preview-links`. That count does not include the preview-access,
-preview-pages, Library publisher or lane suites below, whose results are not recorded here.
+and `apps/mobile/src/fork/preview-links`.
+
+After the gap fixes and the merge with `main` on 2026-10-20, the server suites passed: 17 files
+and 222 tests across `preview-links`, `preview-access`, `preview-pages` and the project-library
+`LibraryPublisher`, `LibraryReplication`, `LibraryActivityPublication` and
+`LibraryCopyHealthPublication` tests. `apps/server`, `packages/contracts`,
+`packages/client-runtime`, `apps/web` and `apps/mobile` typechecked clean.
 
 ## Automated tests
 
@@ -59,12 +64,50 @@ Contracts and clients:
 | `apps/mobile/src/fork/preview-links/previewLinksLogic.test.ts`       | Which computers are listed and which relay pages, setup status, link ordering and timing, actions per state and permission (none to extend or restore a container link), which connections reach a computer's loopback, and mapping a port to its private network address. |
 | `apps/mobile/src/fork/preview-links/externalUrl.test.ts`             | A preview link swapped for an entry from the computer that serves it, or opened as is when none does.                                                                                                                                                                      |
 
+Gap fixes, by area. Each new test was checked to fail with its fix taken out.
+
+- Sign-in (`preview-access`, `ticket.test.ts`): no signing without a public origin, and 404
+  routes until one is set; a shared operator token registers the computer it names, and a
+  session that does not speak for that computer is refused; signing stops when the
+  registering session is revoked or expires, deletes the row, and comes back on
+  re-registration; a newer session's row survives a stale delete; a session-less row counts
+  only for the Library's own computer; tickets issued before a restart are refused
+  (`notBeforeMs`), on computers and on the pages host; `LibraryPublisher` sends
+  `environmentId` and registers in process as its own Library.
+- Pages (`preview-pages`, `LibraryPublisher.test.ts`): the host signs no one in without its
+  stored cookie key; a sign-out refuses older cookies, including a same-millisecond second
+  sign-out and a stepped-back clock, and signing in again works; the sign-out route takes a
+  publisher session only and answers 404 without pages; the 1,000 stored-page eviction and
+  its refusal, the 500 open-page cap on restore, open-first listing; the reply body cap,
+  declared and streamed; the pages revision counting from its start; best-effort reader
+  sign-out with its 10-second timeout under `TestClock`, and the 404 read as unavailable.
+- Gateway and tunnel: an idle keep-alive socket closes when the access it last served ends
+  (bounded at a second, so Node's own timeout cannot pass it); `configure` returns a gateway
+  that cannot listen; lane links whose lane went while the server was down end at start;
+  sessions revoked by another process end at the next minute's list, and a failed start list
+  recovers; an older `cloudflared` gives way to the pinned release, runs while it downloads
+  and falls back with a 10-minute retry.
+- Backings: byte ranges (206, 416, several ranges); `--pull never` and pulling only a missing
+  image; a share failing or cancelled during the pull leaves nothing to clean; strays removed
+  by label after an outage, and a late container from a cancelled start; containers removed
+  at shutdown within 5 seconds of a hung Docker, and their links ended at the next start;
+  folder restore refused without its lane, or when the lane moved off its port; a folder
+  link ended when its lane goes during the restore. `run --pull never` on a missing image was
+  checked against Docker 29.8.0, whose exit and message match the error mapping.
+
+The `PreviewLinksService` harness waits for the startup session list, and its lifecycle starts
+with every stored lane, so a restart test with lane links must pass the same lanes to the
+reopened harness. Its fake `docker` (`makeDocker`) can be shared across a restart.
+
 ## Commands
 
 ```sh
 vp test run apps/server/src/fork/preview-links apps/server/src/fork/features.test.ts
 vp test run apps/server/src/fork/preview-access apps/server/src/fork/preview-pages
 vp test run apps/server/src/fork/project-library/LibraryPublisher.test.ts \
+  apps/server/src/fork/project-library/LibraryReplication.test.ts \
+  apps/server/src/fork/project-library/LibraryActivityPublication.test.ts \
+  apps/server/src/fork/project-library/LibraryCopyHealthPublication.test.ts \
   apps/server/src/fork/project-library/attachments.test.ts apps/server/src/fork/project-lifecycle
 vp test run packages/contracts/src/fork/preview-links.test.ts
 vp test run packages/client-runtime/src/fork/preview-links.test.ts \
@@ -136,7 +179,11 @@ A local run of the pages host checked:
 - Mobile on cellular: Settings > Previews actions, pages and link taps.
 - A link in an MCP app. It goes through the same opener as the html_render and Files links,
   but no MCP server with an app UI was available to test.
-- The "Unregistered tunnel connection" log line has not been seen.
+- The "Unregistered tunnel connection" log line has not been seen, and neither readiness line
+  has been checked against the pinned `cloudflared` 2026.10.0.
+- After the LP-22 deploy: a computer on the shared Library token registers, and revoking a
+  computer's session ends sign-in to its links; **Sign out preview browsers** signs a pages
+  reader out.
 
 ## Merge safety
 

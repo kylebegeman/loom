@@ -6,11 +6,13 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSessionId,
+  EnvironmentId,
 } from "@t3tools/contracts";
 import { LOOM_IDENTITY_LOGIN_PATH, LibraryPreviewAccess } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -20,6 +22,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HttpRouter } from "effect/http";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import * as AuthSessions from "../../persistence/AuthSessions.ts";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
@@ -55,9 +59,31 @@ const sessionFor = (
   scopes,
 });
 
+/** Far enough out for the live-clock tests too. */
+const LONG_LIVED = DateTime.makeUnsafe("2100-01-01T00:00:00Z");
+
 const fixture = (env: Record<string, string>) =>
   Effect.gen(function* () {
     yield* runForkMigrationSet(PreviewAccessMigrations);
+    const sessions = yield* AuthSessions.AuthSessionRepository;
+    /** The Library's record of a session, which every authenticated caller already has. */
+    const enroll = (session: EnvironmentAuth.AuthenticatedSession) =>
+      sessions.createIfAbsent({
+        sessionId: session.sessionId,
+        subject: session.subject,
+        scopes: session.scopes,
+        method: session.method,
+        client: {
+          label: null,
+          ipAddress: null,
+          userAgent: null,
+          deviceType: "unknown",
+          os: null,
+          browser: null,
+        },
+        issuedAt: DateTime.makeUnsafe(0),
+        expiresAt: LONG_LIVED,
+      });
     const secretValues = new Map<string, Uint8Array>();
     const secrets = ServerSecretStore.of({
       get: (name) => Effect.sync(() => Option.fromNullishOr(secretValues.get(name))),
@@ -70,6 +96,11 @@ const fixture = (env: Record<string, string>) =>
       Effect.provide(
         PreviewAccess.layer.pipe(
           Layer.provide(Layer.succeed(ServerSecretStore, secrets)),
+          Layer.provide(
+            Layer.succeed(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-library")),
+            }),
+          ),
           Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
         ),
       ),
@@ -101,16 +132,21 @@ const fixture = (env: Record<string, string>) =>
     );
     const web = HttpRouter.toWebHandler(app, { disableLogger: true });
     yield* Effect.addFinalizer(() => Effect.promise(() => web.dispose()));
-    const register = (previews: unknown) =>
-      Effect.promise(() =>
-        web.handler(
-          new Request("http://computer-route.test/api/loom/library/previews/register", {
-            method: "POST",
-            body: JSON.stringify({ previews }),
-            headers: { "content-type": "application/json", host: "computer-route.test" },
-          }),
-        ),
-      );
+    const register = (previews: unknown, environmentId?: string) =>
+      Effect.gen(function* () {
+        yield* enroll(yield* Ref.get(caller));
+        return yield* Effect.promise(() =>
+          web.handler(
+            new Request("http://computer-route.test/api/loom/library/previews/register", {
+              method: "POST",
+              body: JSON.stringify(
+                environmentId === undefined ? { previews } : { environmentId, previews },
+              ),
+              headers: { "content-type": "application/json", host: "computer-route.test" },
+            }),
+          ),
+        );
+      });
     const ticket = (query: Record<string, string>) =>
       Effect.promise(() =>
         web.handler(
@@ -127,7 +163,7 @@ const fixture = (env: Record<string, string>) =>
         suffix: string;
       }>`SELECT subject, machine, suffix FROM fork_preview_hosts`;
     });
-    return { caller, browser, register, ticket, hosts };
+    return { caller, browser, register, ticket, hosts, sessions };
   });
 
 const run = <A, E>(
@@ -136,7 +172,12 @@ const run = <A, E>(
 ) =>
   fixture(env).pipe(
     Effect.flatMap(use),
-    Effect.provide(SqlitePersistenceMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      AuthSessions.layer.pipe(
+        Layer.provideMerge(SqlitePersistenceMemory),
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
     Effect.scoped,
   );
 
@@ -171,13 +212,16 @@ describe("Library preview registration", () => {
     ),
   );
 
-  it.effect("names the request's origin as issuer when no identity callback is configured", () =>
+  it.effect("offers no preview sign-in until the Library's public origin is configured", () =>
     run({ LOOM_LIBRARY_AUTHORITY: "true" }, (f) =>
       Effect.gen(function* () {
+        // The origin a computer happened to reach the Library on is no issuer browsers share.
         const response = yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
-        const access = yield* decodeAccess(yield* Effect.promise(() => response.json()));
-        expect(access.origin).toBe("http://computer-route.test");
-        expect(access.pagesOrigin).toBeUndefined();
+        expect(response.status).toBe(404);
+        expect(yield* Effect.promise(() => response.json())).toEqual({ reason: "not-authority" });
+        expect(yield* f.hosts).toEqual([]);
+        yield* Ref.set(f.browser, operator);
+        expect((yield* f.ticket({ host: HOST, nonce: randomPreviewNonce() })).status).toBe(404);
       }),
     ),
   );
@@ -225,16 +269,40 @@ describe("Library preview registration", () => {
     ),
   );
 
-  it.effect("refuses sessions that do not speak for a computer", () =>
+  it.effect("refuses sessions that do not speak for the computer they name", () =>
+    run(AUTHORITY_ENV, (f) =>
+      Effect.gen(function* () {
+        const previews = { machine: "dorothy", suffix: "bagels.top" };
+        // An operator token is shared by computers, so it has to say which one is registering.
+        yield* Ref.set(f.caller, operator);
+        expect((yield* f.register(previews)).status).toBe(403);
+        yield* Ref.set(f.caller, sessionFor("mcp-client", [AuthLibraryPublishScope]));
+        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(403);
+        yield* Ref.set(f.caller, sessionFor("viewer", [AuthOrchestrationReadScope]));
+        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(403);
+        yield* Ref.set(f.caller, sessionFor(COMPUTER, [AuthLibraryPublishScope]));
+        expect((yield* f.register(previews, "environment-nora")).status).toBe(403);
+        expect((yield* f.register({ machine: "Dorothy!", suffix: "bagels.top" })).status).toBe(400);
+        expect(yield* f.hosts).toEqual([]);
+        // A computer's own session may still name itself.
+        expect((yield* f.register(previews, "environment-dorothy")).status).toBe(200);
+        expect(yield* f.hosts).toEqual([{ subject: COMPUTER, ...previews }]);
+      }),
+    ),
+  );
+
+  it.effect("registers the computer a shared operator token names", () =>
     run(AUTHORITY_ENV, (f) =>
       Effect.gen(function* () {
         yield* Ref.set(f.caller, operator);
-        expect((yield* f.register({ machine: "dorothy", suffix: "bagels.top" })).status).toBe(403);
-        yield* Ref.set(f.caller, sessionFor("mcp-client", [AuthLibraryPublishScope]));
-        expect((yield* f.register({ machine: "dorothy", suffix: "bagels.top" })).status).toBe(403);
-        yield* Ref.set(f.caller, sessionFor(COMPUTER, [AuthLibraryPublishScope]));
-        expect((yield* f.register({ machine: "Dorothy!", suffix: "bagels.top" })).status).toBe(400);
-        expect(yield* f.hosts).toEqual([]);
+        const response = yield* f.register(
+          { machine: "nora", suffix: "bagels.top" },
+          "environment-nora",
+        );
+        expect(response.status).toBe(200);
+        expect(yield* f.hosts).toEqual([
+          { subject: "loom-host:environment-nora", machine: "nora", suffix: "bagels.top" },
+        ]);
       }),
     ),
   );
@@ -310,6 +378,34 @@ describe("Library preview tickets", () => {
           expect((yield* f.ticket({ host, nonce })).status).toBe(400);
         yield* Ref.set(f.browser, sessionFor("viewer", [AuthOrchestrationReadScope]));
         expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(403);
+      }),
+    ),
+  );
+
+  it.effect("stops signing for a computer once the session it registered with ends", () =>
+    run(AUTHORITY_ENV, (f) =>
+      Effect.gen(function* () {
+        const computer = sessionFor(COMPUTER, [AuthLibraryPublishScope]);
+        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        yield* Ref.set(f.browser, operator);
+        const nonce = randomPreviewNonce();
+        expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(303);
+
+        // Revoking the computer's Library session is how it leaves the Library.
+        yield* f.sessions.revoke({
+          sessionId: computer.sessionId,
+          revokedAt: DateTime.makeUnsafe(yield* Clock.currentTimeMillis),
+        });
+        expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(400);
+        expect(yield* f.hosts).toEqual([]);
+
+        // Enrolled again, it registers under its new session and signs in again.
+        yield* Ref.set(f.caller, { ...computer, sessionId: AuthSessionId.make("session-again") });
+        yield* f.register({ machine: "dorothy", suffix: "bagels.top" });
+        expect((yield* f.ticket({ host: HOST, nonce })).status).toBe(303);
+        expect(yield* f.hosts).toEqual([
+          { subject: COMPUTER, machine: "dorothy", suffix: "bagels.top" },
+        ]);
       }),
     ),
   );

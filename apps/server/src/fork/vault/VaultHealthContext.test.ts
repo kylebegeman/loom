@@ -5,9 +5,13 @@ import {
   type VaultGrant,
   type VaultProfile,
   type VaultProfilePinPage,
+  VaultHealthContextPage,
+  VaultHealthRetainedPage,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as VaultCore from "./VaultCore.ts";
@@ -15,6 +19,8 @@ import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 import * as VaultHealthContext from "./VaultHealthContext.ts";
+const isContextPage = Schema.is(VaultHealthContextPage);
+const isRetainedPage = Schema.is(VaultHealthRetainedPage);
 const itemId = "a".repeat(32),
   otherId = "b".repeat(32);
 const project = (index: number): OrchestrationProjectShell => ({
@@ -64,6 +70,14 @@ const fixture = Effect.sync(() => {
   };
   const state = {
     exists: true,
+    projects,
+    grants: [
+      grant("d".repeat(32), "project", project(1).id),
+      grant("e".repeat(32), "thread", "qa-thread"),
+    ],
+    threads: new Map([
+      ["qa-thread", { ...liveThreadShell(ThreadId.make("qa-thread")), projectId: project(2).id }],
+    ]),
     fail: false,
     profiles: [profile] as ReadonlyArray<VaultProfile>,
     pins: { items: [], nextCursor: null } as VaultProfilePinPage,
@@ -89,7 +103,7 @@ const fixture = Effect.sync(() => {
                 : null,
             ),
         }),
-        Layer.mock(ProjectStoreV2)({ listShells: () => Effect.succeed(projects) }),
+        Layer.mock(ProjectStoreV2)({ listShells: () => Effect.sync(() => state.projects) }),
         Layer.mock(VaultProfiles.VaultProfiles)({
           pins: (input) =>
             Effect.suspend(() => {
@@ -112,23 +126,16 @@ const fixture = Effect.sync(() => {
             }),
         }),
         Layer.mock(VaultAccess.VaultAccess)({
-          snapshot: Effect.succeed({
+          snapshot: Effect.sync(() => ({
             environmentId: "test",
             revision: 1,
             audit: [],
             omittedAuditEvents: 0,
-            grants: [
-              grant("d".repeat(32), "project", project(1).id),
-              grant("e".repeat(32), "thread", "qa-thread"),
-            ],
-          }),
+            grants: state.grants,
+          })),
         }),
         Layer.mock(ThreadManagementService)({
-          getThreadShell: () =>
-            Effect.succeed({
-              ...liveThreadShell(ThreadId.make("qa-thread")),
-              projectId: project(2).id,
-            }),
+          getThreadShell: (id) => Effect.sync(() => state.threads.get(id) ?? null),
         }),
       ),
     ),
@@ -277,6 +284,90 @@ it.effect(
             .retained({ itemId, projectId: project(8).id, cursor: null })
             .pipe(Effect.flip)).reason,
         ).toBe("unavailable");
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect(
+  "reports unattributed grants across the environment without counting valid later-page references",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.grants.push(
+        grant("1".repeat(32), "project", project(11).id),
+        grant("2".repeat(32), "project", "removed-project"),
+        grant("3".repeat(32), "thread", "missing-thread"),
+        grant("4".repeat(32), "thread", "deleted-thread"),
+        grant("5".repeat(32), "thread", "removed-project-thread"),
+        {
+          ...grant("6".repeat(32), "thread", "unrelated-thread"),
+          definition: {
+            ...grant("6".repeat(32), "thread", "unrelated-thread").definition,
+            itemIds: [otherId],
+          },
+        },
+      );
+      f.state.threads.set("deleted-thread", {
+        ...liveThreadShell(ThreadId.make("deleted-thread")),
+        projectId: project(3).id,
+        deletedAt: DateTime.makeUnsafe("2026-01-01T00:00:00Z"),
+      });
+      f.state.threads.set("removed-project-thread", {
+        ...liveThreadShell(ThreadId.make("removed-project-thread")),
+        projectId: ProjectId.make("removed-project"),
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* VaultHealthContext.VaultHealthContext;
+        const first = yield* service.inspect({ itemId, cursor: null });
+        expect(first.coverage).toEqual({
+          scope: "project-page",
+          externalConsumers: "not-discovered",
+          providerCopies: "unknown",
+          authorization: "not-evaluated",
+          unattributedGrants: 4,
+        });
+        expect(isContextPage(first)).toBe(true);
+        const last = yield* service.inspect({ itemId, cursor: first.nextCursor });
+        expect(last.coverage).toEqual(first.coverage);
+        expect(last.projects[0]?.grants[0]?.id).toBe("1".repeat(32));
+        const empty = yield* service.inspect({ itemId, cursor: project(11).id });
+        expect(empty.projects).toEqual([]);
+        expect(empty.nextCursor).toBeNull();
+        expect(empty.coverage).toEqual(first.coverage);
+        f.state.projects = [];
+        const removed = yield* service.inspect({ itemId, cursor: null });
+        expect(removed.inspectedProjects).toBe(0);
+        expect(removed.coverage?.unattributedGrants).toBe(7);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect(
+  "retains discovery limits on empty retained pages and accepts older response contracts",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultHealthContext.VaultHealthContext;
+        const retained = yield* service.retained({
+          itemId,
+          projectId: project(0).id,
+          cursor: null,
+        });
+        expect(retained.items).toEqual([]);
+        expect(retained.nextCursor).toBeNull();
+        expect(retained.coverage).toEqual({
+          scope: "retained-page",
+          externalConsumers: "not-discovered",
+          providerCopies: "unknown",
+          authorization: "not-evaluated",
+        });
+        expect(isRetainedPage(retained)).toBe(true);
+        const { coverage: _retainedCoverage, ...olderRetained } = retained;
+        expect(isRetainedPage(olderRetained)).toBe(true);
+        const context = yield* service.inspect({ itemId, cursor: null });
+        const { coverage: _contextCoverage, ...olderContext } = context;
+        expect(isContextPage(olderContext)).toBe(true);
       }).pipe(Effect.provide(f.layer));
     }),
 );

@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  LibraryError,
   LibraryIngestHistoryRequest,
   type LibraryPageReply,
   type LibraryProject,
@@ -23,6 +24,10 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ServerConfig from "../../config.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
+import {
+  PreviewAccessService,
+  type PreviewRegisterInput,
+} from "../preview-access/PreviewAccessService.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
@@ -71,6 +76,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const remoteInput = yield* Ref.make<LibraryIngestHistoryRequest | null>(null);
   const previewsSupported = yield* Ref.make(true);
   const previewBodies = yield* Ref.make<unknown[]>([]);
+  /** What a Library that is its own computer registers in-process. */
+  const localRegistrations = yield* Ref.make<PreviewRegisterInput[]>([]);
   /** Replaces every page route's answer while set. */
   const pageAnswer = yield* Ref.make<{ readonly status: number; readonly body: unknown } | null>(
     null,
@@ -208,9 +215,19 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     Effect.provide(
       Publisher.layer.pipe(
         Layer.provide(
-          Layer.merge(
+          Layer.mergeAll(
             Layer.mock(LibraryService.LibraryService)({}),
             Layer.mock(Assets.LibraryAssetService)({ mode: "local" }),
+            Layer.mock(PreviewAccessService)({
+              issuerOrigin: previewAccess.origin,
+              register: (input) =>
+                Effect.gen(function* () {
+                  yield* Ref.update(localRegistrations, (sent) => [...sent, input]);
+                  if (!(yield* Ref.get(previewsSupported)))
+                    return yield* new LibraryError({ reason: "not-authority" });
+                  return previewAccess;
+                }),
+            }),
           ),
         ),
       ),
@@ -227,6 +244,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     remoteInput,
     previewsSupported,
     previewBodies,
+    localRegistrations,
     pageAnswer,
     pageRequests,
     sql,
@@ -403,9 +421,10 @@ describe("authenticated Library publishing", () => {
             yield* f.publisher.registerPreviews({ machine: "dorothy", suffix: "bagels.top" }),
           ).toEqual(previewAccess);
           yield* f.publisher.registerPreviews(null);
+          // It names itself, so a token shared by several computers can register too.
           expect(yield* Ref.get(f.previewBodies)).toEqual([
-            { previews: { machine: "dorothy", suffix: "bagels.top" } },
-            { previews: null },
+            { environmentId: source, previews: { machine: "dorothy", suffix: "bagels.top" } },
+            { environmentId: source, previews: null },
           ]);
           yield* Ref.set(f.previewsSupported, false);
           expect((yield* f.publisher.registerPreviews(null).pipe(Effect.flip)).reason).toBe(
@@ -413,6 +432,23 @@ describe("authenticated Library publishing", () => {
           );
         }),
       ),
+  );
+  it.effect("registers its own preview hosts in-process when it is the Library", () =>
+    run({ LOOM_LIBRARY_AUTHORITY: "true" }, (f) =>
+      Effect.gen(function* () {
+        const previews = { machine: "dorothy", suffix: "bagels.top" };
+        expect(yield* f.publisher.registerPreviews(previews)).toEqual(previewAccess);
+        expect(yield* Ref.get(f.localRegistrations)).toEqual([
+          { environmentId: source, sessionId: null, previews },
+        ]);
+        // Without a public origin it answers like a remote Library without preview sign-in.
+        yield* Ref.set(f.previewsSupported, false);
+        expect((yield* f.publisher.registerPreviews(previews).pipe(Effect.flip)).reason).toBe(
+          "not-found",
+        );
+        expect(yield* Ref.get(f.requests)).toEqual([]);
+      }),
+    ),
   );
   it.effect("publishes, lists and updates pages and leases and acknowledges their replies", () =>
     run(configured, (f) =>
@@ -485,6 +521,20 @@ describe("authenticated Library publishing", () => {
           expect((yield* refusal(200, { pages: [{ id: "page-1" }] })).reason).toBe("io");
         }),
       ),
+  );
+  it.effect("signs pages browsers out, reading a Library without that route as unavailable", () =>
+    run(configured, (f) =>
+      Effect.gen(function* () {
+        yield* f.publisher.signOutPageReaders();
+        expect(yield* Ref.get(f.pageRequests)).toEqual([
+          { method: "POST", path: "/api/loom/library/pages/sign-out", body: {} },
+        ]);
+        yield* Ref.set(f.pageAnswer, { status: 404, body: { error: "Not found" } });
+        expect((yield* f.publisher.signOutPageReaders().pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+      }),
+    ),
   );
   it.effect("keeps pages unavailable without a Library and blocked without a token", () =>
     Effect.gen(function* () {

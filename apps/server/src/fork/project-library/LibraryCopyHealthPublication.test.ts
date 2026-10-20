@@ -101,6 +101,7 @@ const fixture = Effect.gen(function* () {
     updatePage: () => Effect.die("unused"),
     nextReplies: () => Effect.die("unused"),
     ackReply: () => Effect.die("unused"),
+    signOutPageReaders: () => Effect.die("unused"),
   });
   const publication = yield* Publication.makeCopyHealthPublication({
     environmentId: source,

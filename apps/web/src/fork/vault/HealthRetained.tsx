@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ProjectId, type EnvironmentId } from "@t3tools/contracts";
-import { createVaultHealthAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createVaultHealthAtoms,
+  supportsLoomFeature,
+  vaultHealthCoverageMessages,
+} from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
@@ -90,10 +94,13 @@ function SelectionPage({
             Inspected {page.inspectedSelections} selections on this page, at{" "}
             {new Date(page.checkedAt).toLocaleString()}.
           </p>
+          {vaultHealthCoverageMessages(page.coverage).map((message) => (
+            <p key={message}>{message}</p>
+          ))}
           {page.unattributableSelections > 0 ? (
             <p>
-              {page.unattributableSelections} retired selections have no binding snapshot and cannot
-              be attributed to an item.
+              Retired selections without binding snapshots: {page.unattributableSelections}. Their
+              item references are unknown.
             </p>
           ) : null}
           {page.items.length === 0 ? (
