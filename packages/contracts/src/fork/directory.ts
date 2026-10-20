@@ -219,22 +219,23 @@ export type DirectoryForgetRequest = typeof DirectoryForgetRequest.Type;
 
 /**
  * How this computer's reports to its Library's directory are going. `off` has no Library to
- * report to or is the directory itself, `unsupported` has a Library without the directory, and
- * `key-changed` has stopped until the computer is forgotten in the directory.
+ * report to or is the directory itself, `unsupported` has a Library without the directory,
+ * `key-changed` has stopped until the computer is forgotten in the directory, and `signed-out` has
+ * stopped because the computer's Library sign-in is missing, expired or refused.
  */
 export const DirectoryReporting = Schema.Struct({
-  state: Schema.Literals(["off", "unsupported", "reporting", "retrying", "key-changed"]),
+  state: Schema.Literals([
+    "off",
+    "unsupported",
+    "reporting",
+    "retrying",
+    "key-changed",
+    "signed-out",
+  ]),
   lastReportedAt: Schema.NullOr(IsoDateTime),
   /** Why the last report failed, while `retrying`. */
   reason: Schema.optional(
-    Schema.Literals([
-      "io",
-      "invalid",
-      "unverified",
-      "wrong-environment",
-      "stale-sequence",
-      "signed-out",
-    ]),
+    Schema.Literals(["io", "invalid", "unverified", "wrong-environment", "stale-sequence"]),
   ),
 });
 export type DirectoryReporting = typeof DirectoryReporting.Type;

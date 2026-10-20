@@ -23,7 +23,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
 import { DirectEndpoints } from "../../environment/DirectEndpoints.ts";
@@ -42,13 +42,19 @@ const CHECK_MS = 30_000;
 const PROVIDER_SETTLE = "5 seconds";
 /** A Library without the directory is asked again this often, so its deploy needs no restart. */
 const UNSUPPORTED_RECHECK_MS = 10 * 60_000;
-/** Forgetting the computer in the directory accepts its new key on the next try. */
-const KEY_CHANGED_RETRY_MS = 15 * 60_000;
+/**
+ * A stopped computer tries again this often, so forgetting it in the directory, or the Library
+ * accepting its sign-in again, takes effect without a restart.
+ */
+const STOPPED_RETRY_MS = 15 * 60_000;
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 10 * 60_000;
+/** The descriptor is small, so a Library that takes longer is down. */
+const DESCRIPTOR_TIMEOUT_MS = 20_000;
 const DESCRIPTOR_ROUTE = "/.well-known/t3/environment";
 
 type FailureReason = NonNullable<DirectoryReporting["reason"]>;
+type Stopped = Extract<DirectoryReporting["state"], "key-changed" | "signed-out">;
 
 const FAILURE_REASONS: ReadonlySet<string> = new Set<FailureReason>([
   "io",
@@ -56,9 +62,19 @@ const FAILURE_REASONS: ReadonlySet<string> = new Set<FailureReason>([
   "unverified",
   "wrong-environment",
   "stale-sequence",
-  "signed-out",
 ]);
 const isFailureReason = (value: string): value is FailureReason => FAILURE_REASONS.has(value);
+
+/** A sign-in is read once at start, so a new one needs a restart. */
+const SIGNED_OUT_WARNING =
+  "This computer's Library sign-in is missing, expired or refused, so it cannot report to the directory. Sign it in to its Library again, then restart Loom.";
+const STOPPED_WARNING: Record<Stopped, string> = {
+  "key-changed": new DirectoryError({ reason: "key-changed" }).message,
+  "signed-out": SIGNED_OUT_WARNING,
+};
+
+const isJson = (response: HttpClientResponse.HttpClientResponse) =>
+  /^application\/json\b/i.test(response.headers["content-type"] ?? "");
 
 export class DirectoryReporter extends Context.Service<
   DirectoryReporter,
@@ -125,25 +141,31 @@ const make = Effect.gen(function* () {
   });
 
   const run = Effect.gen(function* () {
+    if (connection.kind === "unavailable") {
+      yield* Ref.set(status, { state: "signed-out", lastReportedAt: null });
+      return yield* Effect.logWarning(SIGNED_OUT_WARNING);
+    }
     if (connection.kind !== "remote") return;
     const library = connection;
 
-    // Asked without the publisher token: the descriptor is public.
+    // Asked without the publisher token: the descriptor is public. Only a Library that answers
+    // lacks the directory; a proxy's error page or an unreadable answer is an outage to retry.
     const directorySupported = http
       .execute(HttpClientRequest.get(library.endpoint(DESCRIPTOR_ROUTE)))
       .pipe(
-        Effect.flatMap((response) =>
-          response.status === 200
-            ? response.json.pipe(Effect.flatMap(decodeFeatures), Effect.option)
-            : Effect.succeedNone,
-        ),
-        Effect.map((descriptor) =>
-          Option.isSome(descriptor) &&
-          (descriptor.value.capabilities.loomFeatures ?? []).includes(DIRECTORY_FEATURE)
-            ? ("supported" as const)
-            : ("unsupported" as const),
-        ),
-        Effect.timeout("30 seconds"),
+        Effect.flatMap((response) => {
+          if (response.status === 404) return Effect.succeed("unsupported" as const);
+          if (response.status !== 200) return Effect.succeed("io" as const);
+          return response.json.pipe(
+            Effect.flatMap(decodeFeatures),
+            Effect.map((descriptor) =>
+              (descriptor.capabilities.loomFeatures ?? []).includes(DIRECTORY_FEATURE)
+                ? ("supported" as const)
+                : ("unsupported" as const),
+            ),
+          );
+        }),
+        Effect.timeout(DESCRIPTOR_TIMEOUT_MS),
         Effect.orElseSucceed(() => "io" as const),
       );
 
@@ -172,13 +194,12 @@ const make = Effect.gen(function* () {
         if (sent._tag === "Failure")
           return sent.failure.reason === "blocked" ? ("signed-out" as const) : ("io" as const);
         const response = sent.success;
-        if (response.status >= 200 && response.status < 300) return "sent" as const;
-        // A Library older than the directory answers an unknown route 404 or with its web app.
-        if (
-          response.status === 404 ||
-          /^text\/html\b/i.test(response.headers["content-type"] ?? "")
-        )
-          return "unsupported" as const;
+        // The directory answers with the stored record. Any other success, such as a sign-in
+        // page a proxy redirected to, stored nothing.
+        if (response.status >= 200 && response.status < 300)
+          return isJson(response) ? ("sent" as const) : ("io" as const);
+        // A Library older than the directory has no such route.
+        if (response.status === 404) return "unsupported" as const;
         const refused = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option);
         const reason = Option.isSome(refused) ? refused.value.reason : null;
         if (reason === "key-changed") return "key-changed" as const;
@@ -198,7 +219,7 @@ const make = Effect.gen(function* () {
     );
 
     let supported = false;
-    let keyChanged = false;
+    let stopped: Stopped | null = null;
     let failures = 0;
     let sequence = 0;
     let lastSent: { readonly fingerprint: string; readonly at: number } | null = null;
@@ -207,7 +228,7 @@ const make = Effect.gen(function* () {
 
     const unsupported = Effect.gen(function* () {
       supported = false;
-      keyChanged = false;
+      stopped = null;
       failures = 0;
       lastSent = null;
       yield* update({ state: "unsupported" });
@@ -242,7 +263,7 @@ const make = Effect.gen(function* () {
       });
       const now = yield* Clock.currentTimeMillis;
       if (
-        !keyChanged &&
+        stopped === null &&
         failures === 0 &&
         lastSent !== null &&
         lastSent.fingerprint === fingerprint &&
@@ -253,9 +274,9 @@ const make = Effect.gen(function* () {
       const outcome = yield* post({ ...description, sequence, reportedAt: isoAt(now) });
       switch (outcome) {
         case "sent":
-          if (failures > 0 || keyChanged)
+          if (failures > 0 || stopped !== null)
             yield* Effect.logInfo("This computer is reporting to the directory again.");
-          keyChanged = false;
+          stopped = null;
           failures = 0;
           lastSent = { fingerprint, at: now };
           yield* Ref.set(status, { state: "reporting", lastReportedAt: isoAt(now) });
@@ -263,12 +284,12 @@ const make = Effect.gen(function* () {
         case "unsupported":
           return yield* unsupported;
         case "key-changed":
-          if (!keyChanged)
-            yield* Effect.logWarning(new DirectoryError({ reason: "key-changed" }).message);
-          keyChanged = true;
+        case "signed-out":
+          if (stopped !== outcome) yield* Effect.logWarning(STOPPED_WARNING[outcome]);
+          stopped = outcome;
           failures = 0;
-          yield* update({ state: "key-changed" });
-          return { delay: KEY_CHANGED_RETRY_MS, wakeable: false };
+          yield* update({ state: outcome });
+          return { delay: STOPPED_RETRY_MS, wakeable: false };
         default:
           return yield* retry(outcome);
       }
@@ -277,7 +298,11 @@ const make = Effect.gen(function* () {
     return yield* Effect.forever(
       step.pipe(
         Effect.flatMap(({ delay, wakeable }) =>
-          wakeable ? Effect.raceFirst(Effect.sleep(delay), Queue.take(wake)) : Effect.sleep(delay),
+          wakeable
+            ? Queue.take(wake).pipe(
+                Effect.timeoutOrElse({ duration: delay, orElse: () => Effect.void }),
+              )
+            : Effect.sleep(delay),
         ),
       ),
     );

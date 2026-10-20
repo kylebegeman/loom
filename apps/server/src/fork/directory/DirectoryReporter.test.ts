@@ -21,8 +21,10 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -44,6 +46,8 @@ const NOW = Date.parse("2026-10-20T12:00:00.000Z");
 const LIBRARY = "https://library.example.com";
 const REMOTE = { LOOM_LIBRARY_URL: LIBRARY, LOOM_LIBRARY_TOKEN: "computer-token" };
 const STUDIO = EnvironmentId.make("environment-studio");
+/** The reporter's descriptor request timeout, which races the request instead of pacing reports. */
+const DESCRIPTOR_TIMEOUT_MS = 20_000;
 const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /** Every kind of route DirectEndpoints can hand over. Only the MagicDNS HTTPS name may leave. */
@@ -78,6 +82,9 @@ const providerOf = (status: ServerProvider["status"]): ServerProvider => ({
 });
 
 const refusal = (status: number, reason: string) => Response.json({ reason }, { status });
+/** What a proxy in front of the Library answers while the Library is down or wants a sign-in. */
+const page = (status: number) =>
+  new Response("<html>Library</html>", { status, headers: { "content-type": "text/html" } });
 const decodePosted = Schema.decodeUnknownSync(Schema.fromJsonString(DirectoryReportRequest));
 
 /** What the fake directory saw and when the reporter went to sleep, in order. */
@@ -97,7 +104,34 @@ interface Options {
   readonly features?: ReadonlyArray<string>;
   /** A key the directory already pinned for this computer. */
   readonly pinnedKey?: string;
+  /** Signs the computer in to the Library with a sign-in that has already expired. */
+  readonly expiredSignIn?: true;
+  /** Answers for the first descriptor requests, given before the reporter starts. */
+  readonly descriptorAnswers?: ReadonlyArray<Response>;
+  /** Answers for the first reports, given before the reporter starts. */
+  readonly answers?: ReadonlyArray<Response>;
 }
+
+/** A sign-in written the way enrollment writes one, but already expired. Returns its path. */
+const writeExpiredSignIn = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const file = path.join((yield* ServerConfig.ServerConfig).baseDir, "publisher.json");
+  yield* fs.writeFileString(
+    file,
+    JSON.stringify({
+      version: 1,
+      sourceEnvironmentId: STUDIO,
+      libraryEnvironmentId: "environment-library",
+      libraryUrl: LIBRARY,
+      sessionId: "session-1",
+      accessToken: "expired-token",
+      expiresAt: iso(NOW - 1_000),
+    }),
+    { mode: 0o600 },
+  );
+  return file;
+});
 
 const withReporter = <A, E>(
   options: Options,
@@ -107,7 +141,10 @@ const withReporter = <A, E>(
     readonly library: {
       features: ReadonlyArray<string>;
       pinnedKey: string | null;
-      readonly refusals: Array<Response>;
+      /** Answers for the next descriptor requests, before the Library's own. */
+      readonly descriptorAnswers: Array<Response>;
+      /** Answers for the next reports, before the directory stores one. */
+      readonly answers: Array<Response>;
     };
     readonly endpoints: Ref.Ref<ReadonlyArray<ServerDirectEndpoint>>;
     readonly workers: Ref.Ref<ReadonlyArray<LoomOsSignedIdentity>>;
@@ -127,10 +164,17 @@ const withReporter = <A, E>(
     const library = {
       features: options.features ?? ["core", "directory"],
       pinnedKey: options.pinnedKey ?? null,
-      refusals: [] as Array<Response>,
+      descriptorAnswers: [...(options.descriptorAnswers ?? [])],
+      answers: [...(options.answers ?? [])],
     };
     const tokens: Array<string> = [];
     const logs: Array<string> = [];
+    const env = options.expiredSignIn
+      ? {
+          LOOM_LIBRARY_URL: LIBRARY,
+          LOOM_LIBRARY_CREDENTIAL_FILE: yield* writeExpiredSignIn,
+        }
+      : (options.env ?? REMOTE);
     const endpoints = yield* Ref.make(ROUTES);
     const workers = yield* Ref.make<ReadonlyArray<LoomOsSignedIdentity>>([]);
     const providers = yield* Ref.make<ReadonlyArray<ServerProvider>>([providerOf("ready")]);
@@ -143,7 +187,8 @@ const withReporter = <A, E>(
           yield* Queue.offer(events, { kind: "descriptor", authorization });
           return HttpClientResponse.fromWeb(
             request,
-            Response.json({ capabilities: { loomFeatures: library.features } }),
+            library.descriptorAnswers.shift() ??
+              Response.json({ capabilities: { loomFeatures: library.features } }),
           );
         }
         expect(request.url).toBe(`${LIBRARY}/api/loom/directory/report`);
@@ -158,11 +203,13 @@ const withReporter = <A, E>(
           nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
         });
         tokens.push(posted.token);
-        const answer =
+        const queued =
           library.pinnedKey !== null && library.pinnedKey !== posted.publicKey
             ? refusal(409, "key-changed")
-            : (library.refusals.shift() ?? new Response(null, { status: 204 }));
-        if (answer.ok) library.pinnedKey = posted.publicKey;
+            : library.answers.shift();
+        // Like the real directory, a stored report pins its key and answers with the record.
+        if (queued === undefined) library.pinnedKey = posted.publicKey;
+        const answer = queued ?? Response.json({ environmentId: STUDIO });
         yield* Queue.offer(events, { kind: "post", report, status: answer.status, authorization });
         return HttpClientResponse.fromWeb(request, answer);
       }).pipe(Effect.orDie),
@@ -206,7 +253,7 @@ const withReporter = <A, E>(
             }),
             Layer.mock(MiniOffloadService)({ identities: Ref.get(workers) }),
             Layer.succeed(HttpClient.HttpClient, http),
-            ConfigProvider.layer(ConfigProvider.fromEnv({ env: options.env ?? REMOTE })),
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
           ),
         ),
       ),
@@ -224,7 +271,9 @@ const withReporter = <A, E>(
     const nextSleep: Effect.Effect<number> = Queue.take(events).pipe(
       Effect.flatMap((event) => {
         expect(event.kind).not.toBe("post");
-        return event.kind === "sleep" ? Effect.succeed(event.millis) : nextSleep;
+        return event.kind === "sleep" && event.millis !== DESCRIPTOR_TIMEOUT_MS
+          ? Effect.succeed(event.millis)
+          : nextSleep;
       }),
     );
     const setProviders = (next: ReadonlyArray<ServerProvider>) =>
@@ -349,7 +398,7 @@ describe("DirectoryReporter", () => {
         // Forgetting the computer in the directory drops its pinned key.
         h.library.pinnedKey = null;
         yield* TestClock.adjust("15 minutes");
-        expect((yield* h.nextPost).status).toBe(204);
+        expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(30_000);
         expect(yield* h.reporter.status).toEqual({
           state: "reporting",
@@ -368,7 +417,7 @@ describe("DirectoryReporter", () => {
   it.effect("retries a failed report with backoff and warns once", () =>
     withReporter({}, (h) =>
       Effect.gen(function* () {
-        h.library.refusals.push(refusal(503, "io"), refusal(503, "io"));
+        h.library.answers.push(refusal(503, "io"), refusal(503, "io"));
         expect((yield* h.nextPost).status).toBe(503);
         expect(yield* h.nextSleep).toBe(30_000);
         expect(yield* h.reporter.status).toEqual({
@@ -382,7 +431,7 @@ describe("DirectoryReporter", () => {
         expect(yield* h.nextSleep).toBe(60_000);
 
         yield* TestClock.adjust("1 minute");
-        expect((yield* h.nextPost).status).toBe(204);
+        expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(30_000);
         expect((yield* h.reporter.status).state).toBe("reporting");
         expect(h.logs.join("\n").split("could not report to the directory")).toHaveLength(2);
@@ -396,15 +445,94 @@ describe("DirectoryReporter", () => {
         const descriptor = yield* Queue.take(h.events);
         // The descriptor is public, so the publisher token never goes with it.
         expect(descriptor).toEqual({ kind: "descriptor", authorization: undefined });
-        let sleep = yield* h.nextSleep;
-        // The first sleep may be the descriptor request's own timeout.
-        if (sleep === 30_000) sleep = yield* h.nextSleep;
-        expect(sleep).toBe(10 * 60_000);
+        expect(yield* h.nextSleep).toBe(10 * 60_000);
         expect(yield* h.reporter.status).toEqual({ state: "unsupported", lastReportedAt: null });
 
         h.library.features = ["core", "directory"];
         yield* TestClock.adjust("10 minutes");
         expect((yield* h.nextPost).report.reportedAt).toBe(iso(NOW + 10 * 60_000));
+      }),
+    ),
+  );
+
+  it.effect("retries a Library that is down behind its proxy instead of leaving it alone", () =>
+    withReporter({ descriptorAnswers: [page(502)] }, (h) =>
+      Effect.gen(function* () {
+        expect(yield* Queue.take(h.events)).toEqual({
+          kind: "descriptor",
+          authorization: undefined,
+        });
+        expect(yield* h.nextSleep).toBe(30_000);
+        expect(yield* h.reporter.status).toEqual({
+          state: "retrying",
+          reason: "io",
+          lastReportedAt: null,
+        });
+
+        // The proxy's error page for a report, and a sign-in page it redirects to, store nothing.
+        h.library.answers.push(page(502), page(200));
+        yield* TestClock.adjust("30 seconds");
+        expect((yield* h.nextPost).status).toBe(502);
+        expect(yield* h.nextSleep).toBe(60_000);
+        yield* TestClock.adjust("1 minute");
+        expect((yield* h.nextPost).status).toBe(200);
+        expect(yield* h.nextSleep).toBe(120_000);
+        expect(yield* h.reporter.status).toEqual({
+          state: "retrying",
+          reason: "io",
+          lastReportedAt: null,
+        });
+
+        yield* TestClock.adjust("2 minutes");
+        expect((yield* h.nextPost).status).toBe(200);
+        expect(yield* h.nextSleep).toBe(30_000);
+        expect(yield* h.reporter.status).toEqual({
+          state: "reporting",
+          lastReportedAt: iso(NOW + 210_000),
+        });
+        expect(h.logs.join("\n").split("could not report to the directory")).toHaveLength(2);
+      }),
+    ),
+  );
+
+  it.effect("stops while the Library refuses its sign-in and reports again once accepted", () =>
+    withReporter(
+      {
+        answers: [
+          new Response("Authentication required", { status: 401 }),
+          new Response("Authentication required", { status: 401 }),
+        ],
+      },
+      (h) =>
+        Effect.gen(function* () {
+          expect((yield* h.nextPost).status).toBe(401);
+          expect(yield* h.nextSleep).toBe(15 * 60_000);
+          expect(yield* h.reporter.status).toEqual({ state: "signed-out", lastReportedAt: null });
+
+          yield* TestClock.adjust("15 minutes");
+          expect((yield* h.nextPost).status).toBe(401);
+          expect(yield* h.nextSleep).toBe(15 * 60_000);
+
+          yield* TestClock.adjust("15 minutes");
+          expect((yield* h.nextPost).status).toBe(200);
+          expect(yield* h.nextSleep).toBe(30_000);
+          expect((yield* h.reporter.status).state).toBe("reporting");
+          const logged = h.logs.join("\n");
+          expect(logged.split("sign-in is missing, expired or refused")).toHaveLength(2);
+          expect(logged).toContain("reporting to the directory again");
+        }),
+    ),
+  );
+
+  it.effect("says it is signed out when its Library sign-in expired, and sends nothing", () =>
+    withReporter({ expiredSignIn: true }, (h) =>
+      Effect.gen(function* () {
+        yield* Fiber.join(h.fiber);
+        expect(yield* h.reporter.status).toEqual({ state: "signed-out", lastReportedAt: null });
+        expect(yield* Queue.size(h.events)).toBe(0);
+        const logged = h.logs.join("\n");
+        expect(logged.split("sign-in is missing, expired or refused")).toHaveLength(2);
+        expect(logged).not.toContain("expired-token");
       }),
     ),
   );
