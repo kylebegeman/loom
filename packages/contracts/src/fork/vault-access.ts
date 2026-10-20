@@ -316,6 +316,7 @@ export const VaultApprovalRetryInput = Schema.Struct({
 });
 export type VaultApprovalRetryInput = typeof VaultApprovalRetryInput.Type;
 export const VaultApprovalRetryReport = Schema.Struct({
+  recovery: Schema.optionalKey(VaultApprovalRecoveryStatus),
   status: VaultApprovalRequesterStatus,
   operationDigest: Schema.String,
   policyRevision: NonNegativeInt,

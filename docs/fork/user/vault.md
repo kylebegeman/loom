@@ -682,7 +682,9 @@ sending an alert. Status remains available only during the request's retention w
 For an operation with uncertain history, an agent can use `loom_vault_access_recovery_status`
 with its original request ID. It shows only that thread's retained journal summary alongside
 current request status. A reservation or unknown outcome means inspect what happened before
-proposing more work. Missing evidence does not prove nothing ran. This check never runs or
+proposing more work. Retry preparation includes this history check: a caller's “not started”
+claim cannot override a reservation or completed result, and a changed command cannot reuse a
+saved preparation digest. Cancelled preparation needs a new request and operation reference. Missing evidence does not prove nothing ran. This check never runs or
 resumes an operation, changes a reservation or grants access. Journal errors leave ordinary
 approval review available.
 

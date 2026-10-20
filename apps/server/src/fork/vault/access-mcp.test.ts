@@ -200,29 +200,33 @@ it.effect(
         cancelCalls = 0,
         prepareCalls = 0;
       const serviceContext = yield* Layer.build(
-        Layer.mock(VaultAccess)({
-          approvalPrepareRetry: (_input, requester) =>
-            Effect.gen(function* () {
-              prepareCalls++;
-              expect(requester).toBe(threadId);
-              return yield* new VaultError({ reason: "not-found" });
-            }),
-          approvalStatus: (id, requester) =>
-            Effect.gen(function* () {
-              statusCalls++;
-              expect(id).toBe("e".repeat(32));
-              expect(requester).toBe(threadId);
-              return yield* new VaultError({ reason: "not-found" });
-            }),
-          approvalCancel: (input, requester, authorize) =>
-            Effect.gen(function* () {
-              yield* authorize;
-              cancelCalls++;
-              expect(requester).toBe(threadId);
-              expect(input.id).toBe("e".repeat(32));
-              return yield* new VaultError({ reason: "not-found" });
-            }),
-        }),
+        Layer.merge(
+          Layer.mock(OperationJournal.OperationJournal)({
+            previewRetry: (_input, requester) =>
+              Effect.gen(function* () {
+                prepareCalls++;
+                expect(requester).toBe(threadId);
+                return yield* new VaultError({ reason: "not-found" });
+              }),
+          }),
+          Layer.mock(VaultAccess)({
+            approvalStatus: (id, requester) =>
+              Effect.gen(function* () {
+                statusCalls++;
+                expect(id).toBe("e".repeat(32));
+                expect(requester).toBe(threadId);
+                return yield* new VaultError({ reason: "not-found" });
+              }),
+            approvalCancel: (input, requester, authorize) =>
+              Effect.gen(function* () {
+                yield* authorize;
+                cancelCalls++;
+                expect(requester).toBe(threadId);
+                expect(input.id).toBe("e".repeat(32));
+                return yield* new VaultError({ reason: "not-found" });
+              }),
+          }),
+        ),
       );
       const toolkit = yield* VaultAccessToolkit.pipe(
         Effect.provide(

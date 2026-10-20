@@ -3,6 +3,7 @@ import {
   VAULT_APPROVAL_RETENTION_MS,
   VaultApprovalRetryInput,
   type VaultApprovalRecoveryStatus,
+  type VaultApprovalRetryReport,
   VaultError,
   VaultItemId,
 } from "@t3tools/contracts/fork";
@@ -98,6 +99,10 @@ export class OperationJournal extends Context.Service<
       id: string,
       requester: ThreadId,
     ) => Effect.Effect<VaultApprovalRecoveryStatus, VaultError>;
+    readonly previewRetry: (
+      input: VaultApprovalRetryInput,
+      requester: ThreadId,
+    ) => Effect.Effect<VaultApprovalRetryReport, VaultError>;
     readonly prepare: (
       input: VaultApprovalRetryInput,
       requester: ThreadId,
@@ -264,62 +269,115 @@ const make = Effect.gen(function* () {
     }
     return yield* new VaultError({ reason: "conflict" });
   });
-  return OperationJournal.of({
-    status: Effect.fn("OperationJournal.status")(function* (id, requester) {
-      // Authorize before touching the shared journal, even if it is corrupt or unavailable.
-      yield* access.approvalStatus(id, requester);
-      const { value } = yield* load();
-      const status = yield* access.approvalStatus(id, requester);
-      const entry = retained(value, status.checkedAt).find((e) => e.requestId === id);
-      if (
-        entry &&
-        (entry.threadId !== requester ||
-          entry.operationId !== status.request.waitingOperation?.operationId ||
-          entry.runId !== status.request.waitingOperation?.runId ||
-          entry.itemId !== status.request.itemId ||
-          entry.itemVersion !== status.request.itemVersion)
-      )
-        return yield* new VaultError({ reason: "invalid-response" });
-      const recoveryState = !entry
-        ? ("no-retained-evidence" as const)
-        : entry.state === "prepared"
-          ? ("prepared-only" as const)
-          : entry.state === "reserved" || entry.state === "unknown"
-            ? ("requires-outcome-review" as const)
-            : entry.state;
-      const nextStep =
+  const recoveryStatus = Effect.fn("OperationJournal.status")(function* (
+    id: string,
+    requester: ThreadId,
+  ): Effect.fn.Return<VaultApprovalRecoveryStatus, VaultError> {
+    // Authorize before touching the shared journal, even if it is corrupt or unavailable.
+    yield* access.approvalStatus(id, requester);
+    const { value } = yield* load();
+    const status = yield* access.approvalStatus(id, requester);
+    const entry = retained(value, status.checkedAt).find((e) => e.requestId === id);
+    if (
+      entry &&
+      (entry.threadId !== requester ||
+        entry.operationId !== status.request.waitingOperation?.operationId ||
+        entry.runId !== status.request.waitingOperation?.runId ||
+        entry.itemId !== status.request.itemId ||
+        entry.itemVersion !== status.request.itemVersion)
+    )
+      return yield* new VaultError({ reason: "invalid-response" });
+    const recoveryState = !entry
+      ? ("no-retained-evidence" as const)
+      : entry.state === "prepared"
+        ? ("prepared-only" as const)
+        : entry.state === "reserved" || entry.state === "unknown"
+          ? ("requires-outcome-review" as const)
+          : entry.state;
+    const nextStep =
+      recoveryState === "requires-outcome-review"
+        ? ("inspect-outcome" as const)
+        : recoveryState === "prepared-only" &&
+            status.operationState === "retry-requires-explicit-operation"
+          ? ("prepare-explicit-operation" as const)
+          : ("review-history" as const);
+    return {
+      status,
+      journal: entry
+        ? {
+            state: entry.state,
+            revision: entry.revision,
+            operationDigest: entry.digest,
+            updatedAt: entry.updatedAt,
+            retireAt: entry.retireAt,
+            outcome: entry.outcome,
+          }
+        : null,
+      recoveryState,
+      nextStep,
+      guidance:
         recoveryState === "requires-outcome-review"
-          ? ("inspect-outcome" as const)
-          : recoveryState === "prepared-only" &&
-              status.operationState === "retry-requires-explicit-operation"
-            ? ("prepare-explicit-operation" as const)
-            : ("review-history" as const);
-      return {
-        status,
-        journal: entry
-          ? {
-              state: entry.state,
-              revision: entry.revision,
-              operationDigest: entry.digest,
-              updatedAt: entry.updatedAt,
-              retireAt: entry.retireAt,
-              outcome: entry.outcome,
-            }
-          : null,
-        recoveryState,
-        nextStep,
-        guidance:
-          recoveryState === "requires-outcome-review"
-            ? "Inspect the external outcome before proposing another operation. A reservation can outlive a lost reply; do not replay it. This read does not reconcile or execute."
-            : recoveryState === "no-retained-evidence"
-              ? "No retained journal evidence is available. Missing or aged evidence does not prove that an external operation never ran. Review history before a new explicit proposal."
-              : recoveryState === "prepared-only"
-                ? "Preparation records intent only. Review current request status and prepare a separately explicit operation with fresh access and adapter checks. Execution remains disabled."
-                : "This is historical evidence, not current access or permission to retry. Review the outcome and current request before proposing new work.",
-        canExecute: false,
-        automaticResumption: false,
-        allowOnceConsumption: false,
-      };
+          ? "Inspect the external outcome before proposing another operation. A reservation can outlive a lost reply; do not replay it. This read does not reconcile or execute."
+          : recoveryState === "no-retained-evidence"
+            ? "No retained journal evidence is available. Missing or aged evidence does not prove that an external operation never ran. Review history before a new explicit proposal."
+            : recoveryState === "prepared-only"
+              ? "Preparation records intent only. Review current request status and prepare a separately explicit operation with fresh access and adapter checks. Execution remains disabled."
+              : "This is historical evidence, not current access or permission to retry. Review the outcome and current request before proposing new work.",
+      canExecute: false,
+      automaticResumption: false,
+      allowOnceConsumption: false,
+    };
+  });
+  return OperationJournal.of({
+    status: recoveryStatus,
+    previewRetry: Effect.fn("OperationJournal.previewRetry")(function* (input, requester) {
+      const report = yield* access.approvalPrepareRetry(input, requester);
+      const recovery = yield* recoveryStatus(input.id, requester);
+      const result = { ...report, status: recovery.status, recovery };
+      if (
+        report.status.request.revision !== recovery.status.request.revision ||
+        report.status.operationState !== recovery.status.operationState
+      )
+        return {
+          ...result,
+          retryState: "context-changed",
+          nextStep: "refresh-request",
+          repair:
+            "Request context changed while reading recovery evidence. Refresh the request and prepare again.",
+        };
+      // Preserve policy/operation denials; journal history can only narrow an otherwise valid proposal.
+      if (
+        report.retryState !== "policy-valid-recheck-adapter" &&
+        report.retryState !== "requires-outcome-review"
+      )
+        return result;
+      const entry = recovery.journal;
+      if (!entry) return result;
+      if (entry.state === "cancelled")
+        return {
+          ...result,
+          retryState: "blocked-request",
+          nextStep: "request-new-approval",
+          repair:
+            "This operation preparation was cancelled. Review its history and use a new request and operation reference; do not reopen it.",
+        };
+      if (entry.state !== "prepared")
+        return {
+          ...result,
+          retryState: "requires-outcome-review",
+          nextStep: "inspect-outcome",
+          repair:
+            "Durable history records a reservation or terminal outcome. Inspect the external result before proposing new work. A caller-reported not-started outcome cannot override this evidence.",
+        };
+      if (entry.operationDigest !== report.operationDigest)
+        return {
+          ...result,
+          retryState: "operation-changed",
+          nextStep: "review-operation",
+          repair:
+            "This proposal differs from the retained preparation. Review the change and request new approval; do not reuse the old operation reference.",
+        };
+      return result;
     }),
     prepare,
     reserve: (raw, input, requester) =>

@@ -4,6 +4,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { ThreadId } from "@t3tools/contracts";
 import {
   VaultApprovalRecoveryStatus,
+  VaultApprovalRetryReport,
   VaultError,
   type VaultApprovalRetryInput,
 } from "@t3tools/contracts/fork";
@@ -19,6 +20,7 @@ import * as SshTransport from "./SshTransport.ts";
 import { launchFixture } from "./VaultLaunch.testkit.ts";
 
 const isRecoveryStatus = Schema.is(VaultApprovalRecoveryStatus);
+const isRetryReport = Schema.is(VaultApprovalRetryReport);
 const withJournal = <A, E>(
   use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Crypto.Crypto>,
 ) => Effect.flatMap(fixture, use).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
@@ -29,6 +31,7 @@ const fixture = Effect.gen(function* () {
     conflict: false,
     reads: false,
     journalReads: 0,
+    onJournalRead: null as null | (() => void),
   };
   const store = Layer.succeed(OpenBaoStore.OpenBaoStore, {
     status: Effect.succeed({ backend: "openbao" as const, state: "ready" as const, origin: null }),
@@ -40,7 +43,10 @@ const fixture = Effect.gen(function* () {
       ),
     read: (path: string) =>
       Effect.suspend(() => {
-        if (path.endsWith("approval-journal-v1")) faults.journalReads++;
+        if (path.endsWith("approval-journal-v1")) {
+          faults.journalReads++;
+          faults.onJournalRead?.();
+        }
         return faults.reads && path.endsWith("approval-journal-v1")
           ? Effect.fail(new VaultError({ reason: "unavailable" }))
           : Effect.succeed(records.get(path) ?? null);
@@ -603,4 +609,180 @@ it.effect("rejects a journal entry that no longer matches the owned request corr
       expect((yield* f.access.approvalInbox).requests).toHaveLength(1);
     }),
   ),
+);
+
+it.effect(
+  "prepares an explicit proposal with recovery context without creating journal evidence",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        const before = [...f.records.entries()];
+        const report = yield* f.journal.previewRetry(f.input, f.threadId);
+        expect(isRetryReport(report)).toBe(true);
+        expect(report).toMatchObject({
+          retryState: "policy-valid-recheck-adapter",
+          recovery: { recoveryState: "no-retained-evidence", journal: null },
+          canExecute: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect([...f.records.entries()]).toEqual(before);
+        yield* f.journal.prepare(f.input, f.threadId);
+        const prepared = [...f.records.entries()];
+        expect(yield* f.journal.previewRetry(f.input, f.threadId)).toMatchObject({
+          retryState: "policy-valid-recheck-adapter",
+          recovery: { journal: { state: "prepared" } },
+        });
+        expect([...f.records.entries()]).toEqual(prepared);
+      }),
+    ),
+);
+
+it.effect(
+  "compares retained proposal digests even when the requester omits its previous digest",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        if (f.input.operation.kind !== "ssh") throw new Error("fixture");
+        const changed = {
+          ...f.input,
+          operation: {
+            ...f.input.operation,
+            input: {
+              ...f.input.operation.input,
+              command: { ...f.input.operation.input.command, argv: ["changed"] },
+            },
+          },
+        };
+        const before = [...f.records.entries()];
+        expect(yield* f.journal.previewRetry(changed, f.threadId)).toMatchObject({
+          retryState: "operation-changed",
+          nextStep: "review-operation",
+          canExecute: false,
+        });
+        expect([...f.records.entries()]).toEqual(before);
+      }),
+    ),
+);
+
+it.effect.each(["reserved", "unknown", "succeeded", "failed"] as const)(
+  "requires outcome review for retained %s despite caller-reported not-started",
+  (state) =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        const reservationId = yield* f.id;
+        yield* f.journal.reserve(
+          f.input,
+          { id: f.input.id, expectedRevision: 1, reservationId },
+          f.threadId,
+        );
+        if (state === "unknown") yield* f.journal.reconcile(f.input.id, f.threadId);
+        else if (state !== "reserved")
+          yield* f.journal.finish(
+            {
+              id: f.input.id,
+              expectedRevision: 2,
+              reservationId,
+              outcome: state,
+            },
+            f.threadId,
+          );
+        const restarted = yield* f.rebuild;
+        const before = [...f.records.entries()];
+        expect(yield* restarted.previewRetry(f.input, f.threadId)).toMatchObject({
+          retryState: "requires-outcome-review",
+          nextStep: "inspect-outcome",
+          canExecute: false,
+          automaticResumption: false,
+          allowOnceConsumption: false,
+        });
+        expect([...f.records.entries()]).toEqual(before);
+        // Current authority still takes precedence over a historical result.
+        yield* f.access.approvalChange(
+          {
+            ...f.decision,
+            expectedRevision: 2,
+            expectedPolicyRevision: 1,
+            operationId: yield* f.id,
+            decision: "revoke",
+          },
+          "human",
+          Effect.void,
+        );
+        expect(
+          yield* restarted.previewRetry({ ...f.input, expectedRevision: 3 }, f.threadId),
+        ).toMatchObject({
+          retryState: "blocked-request",
+          nextStep: "request-new-approval",
+          recovery: { status: { request: { state: "revoked" } } },
+        });
+      }),
+    ),
+);
+
+it.effect(
+  "refuses reuse of cancelled preparation and retains independent stale-request checks",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        yield* f.journal.prepare(f.input, f.threadId);
+        yield* f.journal.cancel(f.input.id, 1, f.threadId);
+        expect(yield* f.journal.previewRetry(f.input, f.threadId)).toMatchObject({
+          retryState: "blocked-request",
+          nextStep: "request-new-approval",
+          recovery: { journal: { state: "cancelled" } },
+        });
+        expect(
+          yield* f.journal.previewRetry({ ...f.input, expectedRevision: 1 }, f.threadId),
+        ).toMatchObject({
+          retryState: "stale-request",
+          nextStep: "refresh-request",
+        });
+      }),
+    ),
+);
+
+it.effect("fails retry preparation closed on unavailable evidence without blocking approvals", () =>
+  withJournal((f) =>
+    Effect.gen(function* () {
+      yield* f.journal.prepare(f.input, f.threadId);
+      f.faults.reads = true;
+      const reads = f.faults.journalReads;
+      expect(
+        (yield* f.journal.previewRetry(f.input, ThreadId.make("not-owner")).pipe(Effect.flip))
+          .reason,
+      ).toBe("denied");
+      expect(f.faults.journalReads).toBe(reads);
+      expect((yield* f.journal.previewRetry(f.input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "unavailable",
+      );
+      f.faults.reads = false;
+      f.records.set(f.path(), { value: Redacted.make({ schemaVersion: 99 }), version: 2 });
+      expect((yield* f.journal.previewRetry(f.input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "invalid-response",
+      );
+      expect((yield* f.access.approvalInbox).requests[0]?.state).toBe("approved");
+    }),
+  ),
+);
+
+it.effect(
+  "invalidates a policy-valid proposal when run context changes during recovery lookup",
+  () =>
+    withJournal((f) =>
+      Effect.gen(function* () {
+        f.faults.onJournalRead = () => {
+          f.state.thread = { ...f.state.thread, activeRunId: null };
+        };
+        expect(yield* f.journal.previewRetry(f.input, f.threadId)).toMatchObject({
+          retryState: "context-changed",
+          nextStep: "refresh-request",
+          status: { operationState: "stale-run" },
+          canExecute: false,
+        });
+        expect(f.path()).toBeUndefined();
+      }),
+    ),
 );

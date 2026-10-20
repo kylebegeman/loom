@@ -126,6 +126,12 @@ it.live.skipIf(!configured || restarted)(
       const path = `${root}/profiles/_operations/approval-journal-v1`;
       const policyBefore = yield* store.read(`${root}/access-policy`);
       expect(Redacted.value(policyBefore!.value)).toMatchObject({ schemaVersion: 3 });
+      expect(yield* journal.previewRetry(input, threadId)).toMatchObject({
+        retryState: "policy-valid-recheck-adapter",
+        recovery: { journal: null },
+        canExecute: false,
+      });
+      expect(yield* store.read(path)).toBeNull();
       expect((yield* journal.prepare(input, threadId)).entry.state).toBe("prepared");
       const saved = yield* store.read(path);
       expect(saved?.version).toBe(1);
@@ -135,6 +141,15 @@ it.live.skipIf(!configured || restarted)(
         { id: requestId, expectedRevision: 1, reservationId: "d".repeat(32) },
         threadId,
       );
+      const reservedRecord = yield* store.read(path);
+      expect(yield* journal.previewRetry(input, threadId)).toMatchObject({
+        retryState: "requires-outcome-review",
+        recovery: { journal: { state: "reserved" } },
+        canExecute: false,
+        automaticResumption: false,
+        allowOnceConsumption: false,
+      });
+      expect(yield* store.read(path)).toEqual(reservedRecord);
       const rebuilt = yield* OperationJournal.OperationJournal.pipe(
         Effect.provide(Layer.fresh(journalLayer)),
       );
@@ -186,6 +201,12 @@ it.live.skipIf(!configured || !restarted)(
         canExecute: false,
         automaticResumption: false,
         allowOnceConsumption: false,
+      });
+      expect(yield* journal.status(requestId, threadId)).toMatchObject({
+        recoveryState: "requires-outcome-review",
+        journal: { state: "unknown" },
+        status: { request: { state: "revoked" } },
+        canExecute: false,
       });
       expect((yield* access.approvalStatus(requestId, threadId)).request.state).toBe("revoked");
     }).pipe(Effect.provide(journalLayer)),

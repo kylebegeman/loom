@@ -48,7 +48,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_access_retry_prepare", {
     description:
-      "Read-only preparation/recovery validation for your own run-bound approved request and a typed SSH, Git-over-SSH or GitHub API proposal. Supply the waiting operation ID, current request revision and previous outcome. Retain the returned operationDigest to detect changed proposals on recovery; it is not an authenticated receipt or execution token. Unknown write outcomes require external review, never blind replay. The original request approved scope, not this command. No commands are stored or run. Normal adapter validation and fresh access checks remain required. No automatic resumption, allow-once consumption or self-approval.",
+      "Read-only preparation/recovery validation for your own run-bound approved request and a typed SSH, Git-over-SSH or GitHub API proposal. Supply the waiting operation ID, current request revision and previous outcome. Retain the returned operationDigest to detect changed proposals on recovery; it is not an authenticated receipt or execution token. Retained durable reservations and terminal outcomes require review even if you report not-started. Prepared digests must match. Journal outages or corruption fail closed. Unknown write outcomes require external review, never blind replay. The original request approved scope, not this command. No commands are stored or run. Normal adapter validation and fresh access checks remain required. No automatic resumption, allow-once consumption or self-approval.",
     parameters: VaultApprovalRetryInput,
     success: VaultApprovalRetryReport,
     failure,
@@ -158,8 +158,8 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
           const caller = yield* McpInvocationContext;
           if (!caller.thread) return yield* new VaultError({ reason: "denied" });
           return yield* onHost(
-            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
-              access.approvalPrepareRetry(input, caller.thread!.threadId),
+            Effect.flatMap(OperationJournal.OperationJournal, (journal) =>
+              journal.previewRetry(input, caller.thread!.threadId),
             ),
           );
         }),

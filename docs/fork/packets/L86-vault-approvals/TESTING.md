@@ -300,3 +300,25 @@ changed documentation links, 392 seam rows and whitespace. No client UI changed,
 or simulator pass was run for this slice. Policy format 3, journal version 1, existing paths and
 policy capabilities are unchanged. All execution/resumption/consumption gates remain false;
 L86 stays partial and no Library or production rollout is included.
+
+## Journal-aware explicit retry preparation
+
+Four focused suites pass **41 tests**: journal/recovery composition, requester MCP boundaries,
+real fork MCP registration and existing operation-specific retry integration. New cases prove
+missing/prepared observations create no journal data, retained digests detect changes without
+a client-supplied digest, and reservations/unknown/success/failure override a not-started claim
+after service reconstruction. Cancelled preparation cannot reopen, current revoked/stale request
+checks retain precedence, unavailable/corrupt evidence fails closed, and a run changing during
+recovery lookup yields context-changed. All returned gates remain false and no transport runs.
+
+The isolated real OpenBao proof passes both phases under the unchanged documented minimal
+service policy, one applicable test per phase. It now exercises public retry preparation with no
+journal, confirms a reserved-entry observation leaves the backend version unchanged, and reads
+unknown evidence alongside revoked format-3 authority after backend restart. Its temporary
+loopback fixture is stopped and removed by the harness; no existing QA or production backend
+is used. Older policy readers remain independent and no path or capability is added.
+
+All five affected package typechecks, focused lint/format, documentation links, 392 seam rows
+and whitespace pass. This is a service/MCP follow-up with no UI change or native pass. The only
+wire addition is optional recovery metadata in retry reports. Policy format stays 3, journal
+version stays 1, and L86 remains partial behind the same closed gates.

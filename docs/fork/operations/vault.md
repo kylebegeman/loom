@@ -657,7 +657,9 @@ The version-1 journal body is separate from access-policy format 3 and uses the 
 store envelope and CAS. It retains at most 128 entries for 24 hours from original request
 creation; current-value pruning does not erase KV version history or snapshots. Older runtimes
 continue reading format 3 and ignore the reserved journal path safely. They cannot resume a
-journal-bound operation. Re-upgrade must reconcile journal state with current access, item and
+journal-bound operation. Current MCP retry preparation includes an optional read-only recovery
+observation; older preparation tools omit it and do not inspect the journal. A downgrade must
+not be used to bypass durable outcome review. Re-upgrade must reconcile journal state with current access, item and
 run state; never remove journal evidence to make a request retryable. Restoring an old snapshot
 also needs revocation and outcome reconciliation. A reserved entry with uncertain dispatch becomes
 unknown and is not automatically repeated. Notification observations are still process memory.

@@ -53,6 +53,9 @@ or consumes an allow-once approval. See TECHNICAL.md for its reserved path and d
 Requester-scoped recovery observations expose only owned digest/state summaries without
 reconciling or writing them. Reserved or unknown outcomes need external review; missing evidence
 does not prove an operation never ran. Project retirement preserves the reserved journal.
+Explicit retry preparation includes recovery observations, checks retained digests and refuses
+blind replay of reservations or terminal outcomes. Current denials retain precedence and journal
+outages fail closed. Preparation itself creates or consumes no journal evidence.
 Policy format remains 3. The inbox shows current record/thread/project names with stable ID fallback and accessible
 decision context. Changed or unavailable pending context requires refreshed review; deny/cancel
 remain reachable. Names do not replace server-side decision checks.

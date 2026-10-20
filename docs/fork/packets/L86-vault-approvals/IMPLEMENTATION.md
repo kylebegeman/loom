@@ -71,9 +71,17 @@ non-execution, and current request authority is returned separately. Ownership p
 reads; corrupt or unavailable evidence does not block ordinary approvals. Project cleanup
 regression coverage protects the reserved journal and sibling registries.
 
-Next selected work: incorporate durable recovery observations into explicit retry preparation,
-so a caller cannot overlook a retained reservation or unknown outcome when preparing a proposal.
-Keep it observational, fail closed on unavailable evidence, and add no dispatcher or mutation tool.
+Public explicit retry preparation now composes the policy check with durable recovery
+observations. Retained reservations/terminal outcomes override a not-started claim, prepared
+digests detect changed proposals even without a client receipt, cancelled preparations cannot
+reopen, and current denials remain authoritative. Lookup failures fail closed; observation
+creates or consumes nothing. The isolated existing-policy OpenBao proof covers the public
+composition and read-only reservation observation across restart.
+
+Next selected work: design the gated dispatcher and one-time consumption boundary, with a
+synthetic race/crash proof before wiring any external effect. Resolve the ordering between
+request authority, journal reservation and consumption, and keep all public gates false. No
+Library, new path/capability or policy-format change is implied.
 The journal must
 remain behind closed execution/resumption/allow-once gates; enabling a gate still needs Kyle's
 approval. Journal-bound dispatch, durable allow-once grant consumption and external outcome

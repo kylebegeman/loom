@@ -393,7 +393,17 @@ three execution/resumption/consumption gates false. This additive MCP response c
 journal version 1 nor access-policy format 3 and needs no new path or policy capability.
 
 The transport is shared by provider adapters and remote authenticated thread sessions. This
-milestone adds no client UI or separate desktop/mobile entry point. Existing requester status
-and explicit retry preparation remain available; preparation does not consume journal evidence
-and cannot authorize execution. Future dispatch must consult durable recovery state as well as
-fresh access and adapter validation.
+milestone adds no client UI or separate desktop/mobile entry point. Existing requester status remains available. Public explicit retry preparation now includes an
+optional recovery observation, checks retained preparation digests, and narrows otherwise valid
+proposals using durable history. A reserved, unknown or completed entry requires outcome review
+even when the caller claims not-started. A cancelled preparation requires a new request and
+operation reference. Current policy/operation denials retain precedence; context changes during
+the recovery lookup require refresh. Corrupt/unavailable evidence fails closed. Missing evidence
+never proves non-execution, and preparation creates no entry or consumption receipt.
+
+The policy-only access-service check remains independent for internal reservation validation;
+public MCP preparation calls the journal service's read-only composition. This avoids a circular
+service dependency. The optional response field is absent on older runtimes, whose preparation
+does not inspect durable journal evidence. Downgrade never enables continuation of journal-bound
+work. Future dispatch must consult durable recovery state as well as fresh access and adapter
+validation; an observation cannot close an external effect race or authorize execution.
