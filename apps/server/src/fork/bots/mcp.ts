@@ -49,13 +49,14 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_run", {
     description:
-      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply; otherwise returns the queued run at once. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
+      "Run a bot with its inputs. The run is a hidden thread with the bot's own settings. With wait:true, returns once the run ends or after its timeout (at most 10 minutes), including the bot's final reply; otherwise returns the queued run at once. With notify:true, returns at once and posts the bot's result to this thread when the run ends, waking it. Do not combine wait and notify. A bot run cannot start another bot. Project workspaces default to this thread's project. A bot whose workspace checkout is `caller` runs in this thread's checkout, or in checkoutThreadId's.",
     parameters: Schema.Struct({
       botId: BotId,
       inputs: BotInputs,
       projectId: Schema.optionalKey(ProjectId),
       checkoutThreadId: Schema.optionalKey(ThreadId),
       wait: Schema.optionalKey(Schema.Boolean),
+      notify: Schema.optionalKey(Schema.Boolean),
     }),
     success: BotRun,
     failure,
@@ -131,6 +132,11 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_run: McpToolAccess.writes(({ wait, ...input }) =>
         Effect.gen(function* () {
+          if (wait === true && input.notify === true)
+            return yield* new BotsError({
+              reason: "invalid",
+              message: "Use wait or notify, not both.",
+            });
           const caller = yield* agentCaller;
           return yield* onHost(
             Effect.gen(function* () {

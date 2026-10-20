@@ -60,10 +60,24 @@ running runs can be cancelled.
 Bot runs stay out of the thread list and do not send completion notifications. **All runs** on
 the Bots page lists every bot's recent runs.
 
+## Run a bot from a thread
+
+Type `/bot:` in a thread's composer to list the bots you can run there, next to commands and
+skills. Picking one opens its form above the composer. The run uses the thread's project, and a
+bot that runs in the checkout it is run for uses the thread's checkout. Turn on **Post the result
+to this thread** to get the bot's reply as a message in the thread when the run ends; if an
+agent is working there, it reads the result on its next turn.
+
+While runs started from the thread are queued or running, a bot chip in the composer footer
+counts them. Open it to see each run, cancel one, or open it on the Bots page. Bots are not
+offered in a new thread until its first message is sent.
+
 ## Agents
 
 Agents can list, define and run bots with the `loom_bots_*` tools, and prefer a matching bot over
 briefing a new thread. An agent cannot give a bot broader permissions than its own thread has.
+An agent that starts a run without waiting for it can ask to be told when it ends; the result
+then arrives in its thread like a finished delegated task. A bot run cannot start another bot.
 
 ## Archiving and deleting
 

@@ -9,6 +9,7 @@ import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
 
 export const BOTS_FEATURE = "bots";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
+export const BOTS_INVOCATION_FEATURE = "bots-invocation";
 
 export const BOTS_WS_METHODS = {
   list: "loom.bots.list",
@@ -185,6 +186,8 @@ export const BotRun = Schema.Struct({
   result: Schema.NullOr(Schema.String),
   resultTruncated: Schema.Boolean,
   error: Schema.NullOr(Schema.String),
+  /** Whether the result is posted to the calling thread when the run ends. Absent means no. */
+  notify: Schema.optionalKey(Schema.Boolean),
 });
 export type BotRun = typeof BotRun.Type;
 
@@ -213,6 +216,10 @@ export const BotsRunInput = Schema.Struct({
   projectId: Schema.optionalKey(ProjectId),
   /** For a `caller` checkout bot: the thread whose checkout the run uses. */
   checkoutThreadId: Schema.optionalKey(ThreadId),
+  /** The thread the run is started from. Agents are always their own thread; this is for people. */
+  callerThreadId: Schema.optionalKey(ThreadId),
+  /** Post the result to the calling thread when the run ends. */
+  notify: Schema.optionalKey(Schema.Boolean),
 });
 export type BotsRunInput = typeof BotsRunInput.Type;
 

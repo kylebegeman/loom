@@ -57,7 +57,7 @@ report it rather than guessing.
 | [CLI commands](#cli-commands-ext-cli)                                      | `fork: ext-cli`             | 1                                                   | ext-core               |
 | [10. MCP tools](#10-agent-facing-mcp-tools-ext-mcp)                        | `fork: ext-mcp`             | 1                                                   | ext-core               |
 | [11. Composer](#11-composer-ext-composer)                                  | `fork: ext-composer`        | 1                                                   | none                   |
-| [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 3                                                   | ext-composer           |
+| [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 2 (3 once a fork trigger adds `composer-logic.ts`)  | ext-composer           |
 | [12. Orchestration](#12-orchestration-and-thread-behavior)                 | guidance only               | 0 by default                                        | ext-core               |
 | [13. Desktop IPC](#13-desktop-ipc-ext-desktop-optional)                    | `fork: ext-desktop`         | 3 (optional)                                        | ext-core               |
 | [14. Mobile settings](#14-mobile-ext-mobile-settings-optional)             | `fork: ext-mobile-settings` | 3 (optional)                                        | ext-core               |
@@ -1777,250 +1777,280 @@ listeners when the thread unmounts.
 
 ### Purpose
 
-Three hooks packets need: a key handler (no packet registers one yet; L01's `;alias` goes
-through [ext-composer-menu](#11b-composer-menu-trigger-ext-composer-menu)), footer
-controls, and a drawer anchored above the composer (clipboard history, per-turn tool
-overrides).
+Footer controls and a drawer anchored above the composer, for any fork feature that acts on the
+thread being written in. Created by L91 (bot runs: a footer chip and the bot run form). A key
+handler seam is not part of it yet: no packet needs one, and L01's `;alias` goes through
+[ext-composer-menu](#11b-composer-menu-trigger-ext-composer-menu). The first packet that needs
+one adds it to `onComposerCommandKey`, after the Shift+Tab block, and records it here.
 
 ### Current upstream mechanism (`apps/web/src/components/chat/ChatComposer.tsx`)
 
-- `onComposerCommandKey` (3921-3964) receives ArrowUp, ArrowDown, Enter and Tab from the
-  editor plugin (`ComposerPromptEditor.tsx:957-1017`). Shift+Tab toggles plan mode
-  (3925-3929); with a trigger menu open, Tab or Enter selects (3943-3945).
-- `applyPromptReplacement(rangeStart, rangeEnd, replacement, { expectedText })` (3410) edits
-  the prompt safely; `resolveActiveComposerTrigger()` (3501) returns
+- `applyPromptReplacement(rangeStart, rangeEnd, replacement, { expectedText,
+focusEditorAfterReplace })` edits the prompt safely; `resolveActiveComposerTrigger()` returns
   `{ snapshot: { value, cursor, expandedCursor }, trigger }`. Trigger ranges are in
-  expanded-cursor coordinates (`detectComposerTrigger(snapshot.value, snapshot.expandedCursor)`).
-- Footer controls are `restingBlockDefs`, an array of `{ id, content }` (4846-4874); blocks
-  are hidden from the end of the array when space runs out, and `CompactComposerControlsMenu`
-  re-exposes only `mode` and `traits` (4950-5001), so an appended fork block simply hides
-  on narrow layouts.
-- The stash drawer renders in `ComposerCommandMenuLayer` (a private component, 843) at
-  6235-6251: `{isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (...)}`.
-- The component has no early return before its JSX (5900), so hooks can be added anywhere
-  above it.
+  expanded-cursor coordinates.
+- Footer controls are `restingBlockDefs` (:5088), an array of `{ id, content }`. Blocks are
+  hidden from the end of the array, by position, when space runs out, and
+  `CompactComposerControlsMenu` re-exposes only `mode` and `traits`. Each block brings its own
+  leading `ComposerControlSeparator`.
+- The stash drawer renders in `ComposerCommandMenuLayer` (a private component, :985) at :6649:
+  `{isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (...)}`.
+- The component has no early return before its JSX, so hooks can be added anywhere above it.
 
 ### Seams (`ChatComposer.tsx`, all `fork: ext-composer`)
 
 ```diff
  import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 +// fork: ext-composer
-+import { forkComposerBlockDefs, handleForkComposerKey, useForkComposerDrawer } from "../../fork/composer/registry";
++import { useForkComposer } from "../../fork/composer/registry";
 ```
 
-(Place the import after whichever upstream import sits there; the leading marker line keeps
-the marker attached when the formatter wraps the import.)
-
-In `onComposerCommandKey`, directly after the Shift+Tab block (line 3929):
+Directly before `const composerMenuItems` (:2637), so the menu seams of
+[§11b](#11b-composer-menu-trigger-ext-composer-menu) can read its context:
 
 ```diff
-       toggleInteractionMode();
-       return true;
-     }
-+    // fork: ext-composer
-+    if (
-+      handleForkComposerKey({
-+        key,
-+        event,
-+        ...resolveActiveComposerTrigger(),
-+        replace: applyPromptReplacement,
-+        environmentId,
-+      })
-+    ) {
-+      return true;
-+    }
-     const { trigger } = resolveActiveComposerTrigger();
-```
-
-After `onComposerCommandKey` is declared (after line 3964):
-
-```diff
-     return false;
-   };
 +  // fork: ext-composer
-+  const forkDrawer = useForkComposerDrawer({
++  const forkComposer = useForkComposer({
 +    environmentId,
-+    threadRef: routeThreadRef,
-+    replace: applyPromptReplacement,
++    threadRef: routeKind === "server" ? routeThreadRef : null,
++    projectId: activeProjectId,
 +  });
+   const composerMenuItems = ((): ComposerCommandItem[] => {
 ```
 
-At the end of `restingBlockDefs` (line 4874):
+At the start of `restingBlockDefs`. Fork blocks go first: upstream hides blocks from the end, so
+an appended block would be the first to vanish and would push `mode` and `traits` into the
+compact menu sooner.
 
 ```diff
-       ),
-     },
+   const restingBlockDefs = [
 +    // fork: ext-composer
-+    ...forkComposerBlockDefs({
-+      environmentId,
-+      threadRef: routeThreadRef,
-+      size: composerControlsInStrip ? "xs" : "sm",
-+    }),
-   ];
++    ...forkComposer.blockDefs(composerControlsCollapsed ? "xs" : "sm"),
+     ...(providerTraitsPicker
 ```
 
-After the stash drawer block (line 6251):
+After the stash drawer block:
 
 ```diff
                  </ComposerCommandMenuLayer>
                )}
 +              {/* fork: ext-composer */}
-+              {forkDrawer !== null &&
++              {forkComposer.drawer !== null &&
 +                !isStashMenuOpen &&
 +                !composerMenuOpen &&
 +                !isComposerApprovalState && (
-+                  <ComposerCommandMenuLayer anchor={composerMenuAnchor}>{forkDrawer}</ComposerCommandMenuLayer>
++                  <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
++                    {forkComposer.drawer}
++                  </ComposerCommandMenuLayer>
 +                )}
 ```
 
 Run `vp fmt` on the file afterwards. Every multi-line seam starts with its own marker line,
 so wrapping by the formatter never separates a seam from its marker.
 
-### Fork-owned file: `apps/web/src/fork/composer/registry.ts(x)`
+### Fork-owned file: `apps/web/src/fork/composer/registry.tsx`
 
 ```tsx
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactNode } from "react";
+import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import type { ComposerControlSize } from "~/components/chat/ComposerControl";
+import { useAttachedBotRunsBlock } from "../bots/composer/AttachedRunsChip";
+import { useBotRunDrawer } from "../bots/composer/BotRunDrawer";
 
-import type { ComposerTrigger } from "~/composer-logic";
+/** What a fork composer feature knows about the composer it sits in. */
+export interface ForkComposerContext {
+  readonly environmentId: EnvironmentId;
+  /** Null for a draft, which has no thread on the server yet. */
+  readonly threadRef: ScopedThreadRef | null;
+  readonly projectId: ProjectId | null;
+}
 
 export type ForkPromptReplace = (
   rangeStart: number,
   rangeEnd: number,
   replacement: string,
-  options?: { expectedText?: string },
+  options?: { expectedText?: string; focusEditorAfterReplace?: boolean },
 ) => boolean;
 
-export interface ForkComposerKeyContext {
-  readonly key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab";
-  readonly event: KeyboardEvent;
-  readonly snapshot: {
-    readonly value: string;
-    readonly cursor: number;
-    readonly expandedCursor: number;
+/** A footer control. Null when it has nothing to show, so it takes no room in the footer. */
+export interface ForkComposerBlock {
+  readonly id: string;
+  readonly render: (size: ComposerControlSize) => ReactNode;
+}
+
+/**
+ * The fork's composer features, called in a fixed order so hook order never changes. A packet
+ * adds one hook call here. The first open drawer wins.
+ */
+export function useForkComposer(context: ForkComposerContext) {
+  const blocks = [useAttachedBotRunsBlock(context)].filter(
+    (block): block is ForkComposerBlock => block !== null,
+  );
+  const drawer = useBotRunDrawer(context);
+  return {
+    context,
+    drawer,
+    /** Prepended to the footer blocks: upstream hides blocks from the end, by position. */
+    blockDefs: (size: ComposerControlSize) =>
+      blocks.map((block) => ({ id: `loom:${block.id}`, content: block.render(size) })),
   };
-  readonly trigger: ComposerTrigger | null;
-  readonly replace: ForkPromptReplace;
-  readonly environmentId: EnvironmentId;
-}
-
-export interface ForkComposerKeyHandler {
-  readonly id: string;
-  /** Return true only when the key was consumed. Must be synchronous and cheap. */
-  readonly handle: (context: ForkComposerKeyContext) => boolean;
-}
-
-export interface ForkComposerBlockProps {
-  readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
-  readonly size: "xs" | "sm";
-}
-
-export interface ForkComposerDrawer {
-  readonly id: string;
-  /** A hook: returns the drawer content while open, otherwise null. */
-  readonly useDrawer: (props: {
-    readonly environmentId: EnvironmentId;
-    readonly threadRef: ScopedThreadRef;
-    readonly replace: ForkPromptReplace;
-  }) => ReactNode | null;
-}
-
-/** One line per packet each. */
-export const FORK_COMPOSER_KEY_HANDLERS: ReadonlyArray<ForkComposerKeyHandler> = [];
-export const FORK_COMPOSER_BLOCKS: ReadonlyArray<{
-  readonly id: string;
-  readonly Component: (props: ForkComposerBlockProps) => ReactElement | null;
-}> = [];
-export const FORK_COMPOSER_DRAWERS: ReadonlyArray<ForkComposerDrawer> = [];
-
-/** Never runs while an upstream trigger menu (`@`, `$`, `/`, `#`) is active. */
-export function handleForkComposerKey(context: ForkComposerKeyContext): boolean {
-  if (context.trigger !== null) return false;
-  return FORK_COMPOSER_KEY_HANDLERS.some((handler) => handler.handle(context));
-}
-
-export function forkComposerBlockDefs(props: ForkComposerBlockProps) {
-  return FORK_COMPOSER_BLOCKS.map(({ id, Component }) => ({
-    id: `loom:${id}`,
-    content: <Component {...props} />,
-  }));
-}
-
-/** Calls every drawer hook in a fixed order; the first open drawer wins. */
-export function useForkComposerDrawer(props: {
-  readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
-  readonly replace: ForkPromptReplace;
-}): ReactNode | null {
-  let open: ReactNode | null = null;
-  for (const drawer of FORK_COMPOSER_DRAWERS) {
-    const content = drawer.useDrawer(props);
-    if (open === null && content !== null) open = content;
-  }
-  return open;
 }
 ```
 
-The file is `.tsx` because `forkComposerBlockDefs` returns JSX. The drawer loop calls hooks
-over a static array, so hook order is stable; if the React lint rules object, replace the loop
-with a fixed composition written when the first drawer lands, and update this file.
+A second drawer joins as `const drawer = useBotRunDrawer(context) ?? useOtherDrawer(context);`
+written as two calls first and combined after, so both hooks always run.
 
 ### Registering, existence check, tests
 
-- Key handlers find the token before `snapshot.expandedCursor` the way
-  `detectComposerTrigger` does (`apps/web/src/composer-logic.ts:209-256`) and replace it with
-  `replace(start, end, text, { expectedText })`. Data they need is read synchronously from
-  an atom registry or store, never fetched on the keystroke.
-- Blocks render compact controls sized by `size`.
-- Drawers open from a fork command, a block button or a palette item, and close on Escape.
+- A block hook returns null when it has nothing to show and renders its own leading
+  `ComposerControlSeparator`, sized by `size`.
+- A drawer hook returns its content while open, otherwise null, and closes on Escape. Open state
+  lives in a store keyed by `scopedThreadKey`, so a drawer opened in one thread does not follow
+  the user to another.
+- Drafts get `threadRef: null`. Features that report back to a thread stay hidden there.
 - Check: `git grep -cE 'fork: ext-composer([^a-z0-9-]|$)' -- apps/web/src/components/chat/ChatComposer.tsx`
-  prints 5. The strict pattern keeps `fork: ext-composer-menu` markers out of the count.
-- Test the pure parts (token detection, expansion) in the packet; ids unique across the three
-  lists.
+  prints 4. The strict pattern keeps `fork: ext-composer-menu` markers out of the count.
+- Test the pure parts in the packet: item building, filtering, and the store a drawer opens.
 
 ## 11b. Composer menu trigger (`ext-composer-menu`)
 
 Prerequisite: [Composer](#11-composer-ext-composer).
 
-This section is not yet verbatim: it gives the seams in prose and the registry by shape. The
-first packet that creates it writes the full code and replaces this outline with it in the
-same commit (How to use this file, rule 3). Do not build two packets that would create it in
-parallel; land the extension point first.
-
-Optional; create only when a packet needs a new `@`-style menu (for example a snippet picker
-that opens on a prefix). Tab expansion alone does not need it. Fork trigger prefixes in
-use: `;` (L01 snippets), `%` (L18 project notes). A new packet picks an unused prefix and adds
-it here.
+Fork items in the composer's suggestion menu. Created by L91, which uses one part of it: fork
+items that join the upstream `/` list (`/bot:<id>`). A fork item does not detect `/`; upstream
+already does, and the fork list is appended to upstream's ranked result. A packet that needs its
+own prefix (for example `;` for L01 snippets or `%` for L18 project notes) adds the trigger
+seams below in the same commit as its first trigger. Fork trigger prefixes must not collide with
+upstream's (`/` at a word start, `#`, `$`, `@`).
 
 ### Current upstream mechanism
 
 `ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill"`
-(`apps/web/src/composer-logic.ts:11`) and `detectComposerTrigger` (209-256) decide the
-trigger; `ComposerCommandItem` (`apps/web/src/components/chat/ComposerCommandMenu.tsx:31-69`)
-is the item union; `composerMenuItems` (`ChatComposer.tsx:2281-2421`) and
-`onSelectComposerItem` (3513-3639) are if-chains with no exhaustiveness check. Mobile has its
-own trigger copy (`packages/shared/src/composerTrigger.ts`).
+(`apps/web/src/composer-logic.ts`) and `detectComposerTrigger` decide the trigger; any
+`/token` is a slash-command trigger, so `/bot:reviewer` needs no detection of its own.
+`ComposerCommandItem` (`apps/web/src/components/chat/ComposerCommandMenu.tsx`) is the item
+union and the menu renders `label` and `description` generically. `composerMenuItems`
+(`ChatComposer.tsx:2637`) and `onSelectComposerItem` (:3786) are if-chains with no
+exhaustiveness check. Mobile has its own trigger copy (`packages/shared/src/composerTrigger.ts`).
 
 ### Seams (all `fork: ext-composer-menu`)
 
-- `composer-logic.ts`: the kind union gains `` | `loom:${string}` `` and
-  `detectComposerTrigger` starts with
-  `const forkTrigger = detectForkComposerTrigger(text, cursor); if (forkTrigger) return forkTrigger;`
-  (import from `./fork/composer/menu`).
-- `ComposerCommandMenu.tsx`: the item union gains `| ForkComposerCommandItem`
-  (`{ id; type: "loom"; triggerId; label; description; value: unknown }`); generic rendering
-  already shows `label` and `description`.
-- `ChatComposer.tsx`: before `composerMenuItems`, a hook call
-  `const forkMenuItems = useForkComposerMenuItems(composerTrigger);`; the memo starts with
-  `if (composerTrigger?.kind.startsWith("loom:")) return [...forkMenuItems];` (and lists
-  `forkMenuItems` in its dependencies); `onSelectComposerItem` starts its item branches with
-  `if (item.type === "loom") { selectForkComposerItem(item, { snapshot, trigger, replace: applyPromptReplacement }); return; }`.
+`ComposerCommandMenu.tsx` (2 lines):
 
-Fork triggers must use prefixes no upstream trigger uses (`/` at line start, `#`, `$`, `@`).
-Registry: `apps/web/src/fork/composer/menu.ts` with `FORK_COMPOSER_TRIGGERS`
-(`{ id, detect(text, cursor), useItems(query), select(item, context) }`). Check:
-`test -f apps/web/src/fork/composer/menu.ts`.
+```diff
++import type { ForkComposerCommandItem } from "../../fork/composer/menu"; // fork: ext-composer-menu
+ ...
+-  | { id: string; type: "skill"; ... };
++  | { id: string; type: "skill"; ... }
++  | ForkComposerCommandItem; // fork: ext-composer-menu
+```
+
+`ChatComposer.tsx` (4 seams). The import, after the `ext-composer` import:
+
+```diff
++// fork: ext-composer-menu
++import {
++  searchForkSlashItems,
++  selectForkComposerItem,
++  useForkSlashMenuItems,
++} from "../../fork/composer/menu";
+```
+
+After the `useForkComposer` call, before `composerMenuItems`. Sources fetch only while a `/`
+menu is open:
+
+```diff
++  // fork: ext-composer-menu
++  const forkSlashItems = useForkSlashMenuItems(
++    forkComposer.context,
++    composerTrigger?.kind === "slash-command",
++  );
+```
+
+The return of the `slash-command` branch of `composerMenuItems`:
+
+```diff
+-      return searchSlashCommandItems(slashCommandItems, query);
++      // fork: ext-composer-menu
++      return [
++        ...searchSlashCommandItems(slashCommandItems, query),
++        ...searchForkSlashItems(forkSlashItems, query),
++      ];
+```
+
+In `onSelectComposerItem`, after `if (!trigger) return;`:
+
+```diff
++    // fork: ext-composer-menu
++    if (item.type === "loom") {
++      const context = forkComposer.context;
++      if (
++        selectForkComposerItem(item, {
++          snapshot,
++          trigger,
++          replace: applyPromptReplacement,
++          context,
++        })
++      )
++        setComposerHighlightedItemId(null);
++      return;
++    }
+```
+
+When a packet adds its own trigger, it also adds to `composer-logic.ts`: the kind union gains
+`` | `loom:${string}` ``, and `detectComposerTrigger` starts with
+`const forkTrigger = detectForkComposerTrigger(text, cursor); if (forkTrigger) return forkTrigger;`.
+`composerMenuItems` then starts with
+`if (composerTrigger.kind.startsWith("loom:")) return [...forkTriggerItems];`. Those seams carry
+the same marker and raise the counts below.
+
+### Fork-owned file: `apps/web/src/fork/composer/menu.ts`
+
+```ts
+/** A fork entry in the composer's suggestion menu. */
+export interface ForkComposerCommandItem {
+  readonly id: string;
+  readonly type: "loom";
+  /** The source that offered the item and handles choosing it. */
+  readonly source: string;
+  readonly label: string;
+  readonly description: string;
+  readonly value: string;
+}
+
+/** Acts on a chosen slash item. The `/` token has already been removed from the prompt. */
+export interface ForkSlashSource {
+  readonly id: string;
+  readonly select: (item: ForkComposerCommandItem, context: ForkComposerContext) => void;
+}
+
+const FORK_SLASH_SOURCES: ReadonlyArray<ForkSlashSource> = [BOT_SLASH_SOURCE];
+
+/** Items fork sources offer under `/`, in a fixed hook order. One call per source. */
+export function useForkSlashMenuItems(
+  context: ForkComposerContext,
+  active: boolean,
+): ReadonlyArray<ForkComposerCommandItem> {
+  const bots = useBotSlashItems(context, active);
+  return bots;
+}
+```
+
+`searchForkSlashItems(items, query)` ranks with `scoreQueryMatch` from
+`@t3tools/shared/searchRanking`: the label without its `/` (boundaries `:`, `-`, `_`, `/`), then
+the description at a lower rank. Fork items are listed after upstream's. An empty query lists
+every item. `selectForkComposerItem(item, { snapshot, trigger, replace, context })` removes the
+`/` token with `expectedText`, then calls the item's source, and returns false when the prompt
+changed under the menu.
+
+### Registering, existence check, tests
+
+- A slash source adds one hook call to `useForkSlashMenuItems` and one entry to
+  `FORK_SLASH_SOURCES`. Prefix labels with a namespace (`/bot:`) so they never shadow an
+  upstream command or skill.
+- Check: `git grep -c 'fork: ext-composer-menu' -- apps/web/src/components/chat/ChatComposer.tsx`
+  prints 4 and the same for `ComposerCommandMenu.tsx` prints 2.
+- Tests: `apps/web/src/fork/composer/menu.test.ts` covers ranking and selection.
 
 ---
 

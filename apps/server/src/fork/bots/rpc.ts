@@ -19,7 +19,17 @@ export const makeBotsRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(B.archive, service.archive(input.botId, input.archived)),
       [B.delete]: (input: { botId: string }) =>
         auth.effect(B.delete, service.delete(input.botId).pipe(Effect.as({}))),
-      [B.run]: (input: BotsRunInput) => auth.effect(B.run, service.run(input, USER_CALLER)),
+      [B.run]: (input: BotsRunInput) =>
+        auth.effect(
+          B.run,
+          Effect.gen(function* () {
+            const caller =
+              input.callerThreadId === undefined
+                ? USER_CALLER
+                : yield* service.threadCaller(input.callerThreadId);
+            return yield* service.run(input, caller);
+          }),
+        ),
       [B.cancel]: (input: { runId: string }) => auth.effect(B.cancel, service.cancel(input.runId)),
       [B.listRuns]: (input: BotsListRunsInput) => auth.effect(B.listRuns, service.listRuns(input)),
       [B.watch]: () => auth.stream(B.watch, service.changes),

@@ -42,6 +42,7 @@ interface RunRow {
   readonly result: string | null;
   readonly result_truncated: number;
   readonly error: string | null;
+  readonly notify: number;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -94,6 +95,7 @@ const toRun = (row: RunRow): BotRun | null => {
     result: row.result,
     resultTruncated: Number(row.result_truncated) === 1,
     error: row.error,
+    ...(Number(row.notify) === 1 ? { notify: true } : {}),
   };
 };
 
@@ -172,12 +174,28 @@ export const makeBotsStore = Effect.gen(function* () {
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (run: BotRun) {
-      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error})`;
+      yield* sql`INSERT INTO fork_bots_runs (id,bot_id,bot_version,bot_name,thread_id,project_id,inputs_json,status,started_by,caller_thread_id,created_at,started_at,finished_at,result,result_truncated,error,notify) VALUES (${run.id},${run.botId},${run.botVersion},${run.botName},${run.threadId},${run.projectId},${encodeInputs(run.inputs)},${run.status},${run.startedBy},${run.callerThreadId},${run.createdAt},${run.startedAt},${run.finishedAt},${run.result},${run.resultTruncated ? 1 : 0},${run.error},${run.notify === true ? 1 : 0})`;
     }),
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
     saveRun: Effect.fn("BotsStore.saveRun")(function* (run: BotRun) {
       yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error} WHERE id = ${run.id}`;
+    }),
+
+    /** Records that the result was posted, or why it was not, so it is attempted once. */
+    markNotified: Effect.fn("BotsStore.markNotified")(function* (
+      id: string,
+      at: string,
+      error: string | null,
+    ) {
+      yield* sql`UPDATE fork_bots_runs SET notified_at = ${at}, error = ${error} WHERE id = ${id}`;
+    }),
+
+    /** Finished runs that asked for their result to be posted and were never delivered. */
+    listUndeliveredRuns: Effect.fn("BotsStore.listUndeliveredRuns")(function* () {
+      const rows =
+        yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE notify = 1 AND notified_at IS NULL AND finished_at IS NOT NULL ORDER BY created_at`;
+      return rows.flatMap((row) => toRun(row) ?? []);
     }),
 
     getRun: Effect.fn("BotsStore.getRun")(function* (id: string) {

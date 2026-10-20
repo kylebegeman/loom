@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import type { BotRun, BotStarterId, BotsSaveInput } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
@@ -61,8 +62,11 @@ const makeHarness = Effect.gen(function* () {
   const interrupted: Array<string> = [];
   const outcomes = new Map<string, Deferred.Deferred<ThreadOutcome>>();
   const replies = new Map<string, string>();
+  const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
+  const receipts = new Set<string>();
   const state = {
     timeOut: false,
+    sendError: null as unknown,
     settings: { defaultModelSelection: model as ModelSelection | null, providerInstances: {} },
   };
   const shells = new Map<string, Partial<OrchestrationV2ThreadShell>>();
@@ -82,7 +86,7 @@ const makeHarness = Effect.gen(function* () {
     getThreadShell: (threadId: string) =>
       Effect.sync(() => {
         const shell = shells.get(threadId);
-        return shell === undefined ? null : { deletedAt: null, ...shell };
+        return shell === undefined ? null : { deletedAt: null, archivedAt: null, ...shell };
       }),
     waitForThread: (input: ThreadManagement.ThreadManagementWaitInput) =>
       Effect.gen(function* () {
@@ -106,6 +110,14 @@ const makeHarness = Effect.gen(function* () {
             ...(reply === undefined ? [] : [{ role: "assistant", text: reply }]),
           ],
         };
+      }),
+    hasReceipt: (commandId: string) => Effect.sync(() => receipts.has(commandId)),
+    sendToThread: (input: ThreadManagement.ThreadManagementSendInput) =>
+      Effect.gen(function* () {
+        if (state.sendError !== null) return yield* Effect.fail(state.sendError);
+        sent.push(input);
+        receipts.add(input.commandId);
+        return {};
       }),
   } as unknown as ThreadManagement.ThreadManagementService["Service"];
 
@@ -141,6 +153,8 @@ const makeHarness = Effect.gen(function* () {
 
   return {
     launches,
+    sent,
+    receipts,
     interrupted,
     state,
     shells,
@@ -623,6 +637,147 @@ describe("BotsService caller checkouts", () => {
           USER_CALLER,
         );
         expect(yield* harness.nextLaunch).toMatchObject({ workspaceStrategy: { type: "root" } });
+      }),
+    ),
+  );
+});
+
+describe("BotsService invocation", () => {
+  const callerId = ThreadId.make("chat");
+
+  it.effect("checks the thread a person runs a bot from", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+        harness.shells.set("old", { projectId, archivedAt: DateTime.makeUnsafe("2026-10-01") });
+        harness.shells.set("gone", { projectId, deletedAt: DateTime.makeUnsafe("2026-10-01") });
+        expect(yield* bots.threadCaller(callerId)).toEqual({
+          actor: "user",
+          threadId: callerId,
+          projectId,
+          runtimeMode: null,
+        });
+        for (const threadId of ["old", "gone", "missing", "bot-run-x"])
+          expect(yield* Effect.flip(bots.threadCaller(ThreadId.make(threadId)))).toMatchObject({
+            reason: "invalid",
+          });
+      }),
+    ),
+  );
+
+  it.effect("refuses a bot run starting a bot, and notify without a thread", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const input = { botId: "reviewer", inputs: { file: "a.ts" }, projectId };
+        expect(
+          yield* Effect.flip(
+            bots.run(input, {
+              actor: "agent",
+              threadId: ThreadId.make("bot-run-parent"),
+              projectId,
+              runtimeMode: "full-access",
+            }),
+          ),
+        ).toMatchObject({ reason: "permission" });
+        expect(yield* Effect.flip(bots.run({ ...input, notify: true }, USER_CALLER))).toMatchObject(
+          { reason: "invalid" },
+        );
+        expect(harness.launches).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("posts a finished run's result to the calling thread once", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ maxConcurrentRuns: 3 }), USER_CALLER);
+        harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+        const caller = yield* bots.threadCaller(callerId);
+        const input = { botId: "reviewer", inputs: { file: "a.ts" }, projectId };
+
+        const done = yield* bots.run({ ...input, notify: true }, caller);
+        expect(done).toMatchObject({ callerThreadId: callerId, notify: true });
+        yield* harness.end(done.threadId, { status: "completed", reply: "Looks fine." });
+        expect(yield* bots.awaitRun(done.id, 60_000)).toMatchObject({ status: "completed" });
+        expect(harness.sent).toHaveLength(1);
+        expect(harness.sent[0]).toMatchObject({
+          projectId,
+          threadId: callerId,
+          commandId: `bot-run-notify:${done.id}`,
+          senderThreadId: done.threadId,
+          mode: "auto",
+          createdBy: "system",
+          creationSource: "server",
+        });
+        expect(harness.sent[0]!.text).toMatch(/^Bot run finished: Reviewer \(completed, \d+s\)\n/);
+        expect(harness.sent[0]!.text).toContain(`Run id: ${done.id}\n\nLooks fine.`);
+
+        const failed = yield* bots.run({ ...input, notify: true }, caller);
+        yield* harness.end(failed.threadId, { status: "failed", reply: null });
+        yield* bots.awaitRun(failed.id, 60_000);
+        expect(harness.sent[1]!.text).toContain("The run ended as failed.");
+
+        const quiet = yield* bots.run(input, caller);
+        yield* harness.end(quiet.threadId, { status: "completed", reply: "Shh." });
+        yield* bots.awaitRun(quiet.id, 60_000);
+        expect(harness.sent).toHaveLength(2);
+      }),
+    ),
+  );
+
+  it.effect("notes a failed delivery on the run without changing its status", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+        const caller = yield* bots.threadCaller(callerId);
+        harness.state.sendError = new ThreadManagement.ThreadManagementThreadArchivedError({
+          threadId: callerId,
+        });
+        const run = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId, notify: true },
+          caller,
+        );
+        yield* harness.end(run.threadId, { status: "completed", reply: "Done." });
+        yield* bots.awaitRun(run.id, 60_000);
+        expect(yield* bots.getRun(run.id)).toMatchObject({
+          status: "completed",
+          result: "Done.",
+          error: "Result delivery failed: the calling thread is archived.",
+        });
+      }),
+    ),
+  );
+
+  it.effect("delivers a result a stopped server never posted, once", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+        const pending = {
+          ...storedRun("pending", "reviewer", 1),
+          callerThreadId: callerId,
+          notify: true,
+        };
+        const replayed = {
+          ...storedRun("replayed", "reviewer", 1),
+          callerThreadId: callerId,
+          notify: true,
+        };
+        yield* store.insertRun(pending);
+        yield* store.insertRun(replayed);
+        harness.receipts.add("bot-run-notify:replayed");
+
+        yield* bots.recover();
+        expect(harness.sent.map((input) => input.commandId)).toEqual(["bot-run-notify:pending"]);
+        yield* bots.recover();
+        expect(harness.sent).toHaveLength(1);
       }),
     ),
   );

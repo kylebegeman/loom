@@ -95,6 +95,8 @@ The shared plumbing packets register into, specified in
 | `apps/server/src/observability/RpcInstrumentation.ts`                                        | `ext-core`                  | Label fork RPC spans within the shared middleware.                                                          |
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`                | Persist and reopen fork documents; retire archived inspector history.                                       |
 | `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header`           | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
+| `apps/web/src/components/chat/ChatComposer.tsx`                                              | `ext-composer`              | Fork footer controls, prepended so upstream's from-the-end hiding keeps them; a drawer above the composer.  |
+| `apps/web/src/components/chat/ChatComposer.tsx`, `ComposerCommandMenu.tsx`                   | `ext-composer-menu`         | Fork items join the upstream `/` list, and choosing one hands it to its fork source.                        |
 
 ### Native Vault terminal connection seams
 
@@ -194,6 +196,11 @@ checks in `apps/web/src/components/Sidebar.logic.ts` (2 marker lines),
 `packages/client-runtime/src/state/threadShell.ts` and
 `apps/web/src/components/ThreadNotificationCoordinator.tsx` also skip ids from
 `isBotRunThreadId`. See the [L89 packet](docs/fork/packets/L89-bots-core/SEAMS.md).
+
+L91 lists `LOOM_BOTS_INSTRUCTIONS` with the orchestration sections in
+`packages/provider-core/src/server/orchestrationInstructions.ts` (`fork: bots`, 2 marker lines),
+following the `ext-vault` seam there. Its composer features use `ext-composer` and
+`ext-composer-menu`. See the [L91 packet](docs/fork/packets/L91-bots-invocation/SEAMS.md).
 
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.

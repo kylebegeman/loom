@@ -29,6 +29,7 @@ import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
+import type { ForkComposerCommandItem } from "../../fork/composer/menu"; // fork: ext-composer-menu
 
 export type ComposerCommandItem =
   | {
@@ -75,7 +76,8 @@ export type ComposerCommandItem =
       thread: ScopedThreadRef;
       label: string;
       description: string;
-    };
+    }
+  | ForkComposerCommandItem; // fork: ext-composer-menu
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;

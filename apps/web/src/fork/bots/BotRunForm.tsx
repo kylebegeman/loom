@@ -25,7 +25,7 @@ import {
 } from "./draft";
 import { bots } from "./state";
 
-function ParameterField({
+export function ParameterField({
   parameter,
   value,
   onChange,

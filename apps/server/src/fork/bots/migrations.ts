@@ -25,5 +25,15 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE IF NOT EXISTS fork_bots_starters (starter_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, seeded_at TEXT NOT NULL)`;
       }),
     ],
+    [
+      3,
+      "RunNotify",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`;
+        // Set once delivery was attempted, so a restart retries only runs it never reached.
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN notified_at TEXT`;
+      }),
+    ],
   ],
 };

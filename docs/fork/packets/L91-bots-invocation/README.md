@@ -1,6 +1,7 @@
 # L91: Run bots from the composer, and teach agents to use them
 
-Status: Selected; queued.
+Status: Implemented on `feat/loom-bots`. See [SEAMS.md](./SEAMS.md) for where the build
+differs from this plan.
 
 Kyle types `/` in any thread, sees his bots next to commands and skills, picks one, fills its
 inputs in a small form above the composer and presses Enter. The run starts attached to the
@@ -31,9 +32,8 @@ works. Gated on `bots-invocation`; an older server shows no bot items.
 
 ## Extension points used
 
-None new (L89's) for the server. Creates `ext-composer` (5 seams in `ChatComposer.tsx`) and
-`ext-composer-menu` (§11b seams plus one slash-source seam), each in its own commit before the
-feature commit, the way L31 builds on L23. Capability sub-feature `bots-invocation`.
+None new (L89's) for the server. Creates `ext-composer` (4 seams in `ChatComposer.tsx`) and
+`ext-composer-menu` (4 seams in `ChatComposer.tsx`, 2 in `ComposerCommandMenu.tsx`). Capability sub-feature `bots-invocation`.
 
 ## Packet seams
 

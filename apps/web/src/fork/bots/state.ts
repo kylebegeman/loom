@@ -8,7 +8,11 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { BOTS_FEATURE, BOTS_STARTERS_FEATURE } from "@t3tools/contracts/fork";
+import {
+  BOTS_FEATURE,
+  BOTS_INVOCATION_FEATURE,
+  BOTS_STARTERS_FEATURE,
+} from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
@@ -25,6 +29,7 @@ export function useBotsHost() {
     connected: environment?.connection.phase === "connected",
     supported: supportsLoomFeature(capabilities, BOTS_FEATURE),
     startersSupported: supportsLoomFeature(capabilities, BOTS_STARTERS_FEATURE),
+    invocationSupported: supportsLoomFeature(capabilities, BOTS_INVOCATION_FEATURE),
   };
 }
 

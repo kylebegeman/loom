@@ -1,5 +1,6 @@
 import {
   CommandId,
+  MessageId,
   resolveProviderInstanceEnabled,
   type ModelSelection,
   type ProjectId,
@@ -12,6 +13,7 @@ import {
   BOTS_RESULT_MAX_BYTES,
   BotsError,
   botRunThreadId,
+  isBotRunThreadId,
   isTerminalBotRunStatus,
   type BotCreator,
   type BotDefinition,
@@ -107,6 +109,41 @@ export const capReply = (text: string): { readonly text: string; readonly trunca
 
 const errorMessage = (error: unknown) =>
   error instanceof Error && error.message !== "" ? error.message : String(error);
+
+const formatDuration = (ms: number) => {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+
+/** What a finished run posts to the thread it was started from. */
+export const runResultMessage = (run: BotRun): string => {
+  const started = run.startedAt ?? run.createdAt;
+  const duration =
+    run.finishedAt === null
+      ? null
+      : formatDuration(Date.parse(run.finishedAt) - Date.parse(started));
+  const status = run.status.replaceAll("_", " ");
+  const header = `Bot run finished: ${run.botName} (${duration === null ? status : `${status}, ${duration}`})`;
+  const body =
+    run.status === "completed"
+      ? (run.result ?? "The bot gave no reply.")
+      : (run.error ?? `The run ended as ${status}.`);
+  const truncated =
+    run.status === "completed" && run.resultTruncated ? "\n\n(Reply cut short.)" : "";
+  return `${header}\nRun id: ${run.id}\n\n${body}${truncated}`;
+};
+
+const deliveryFailure = (error: unknown) =>
+  typeof error === "object" && error !== null && "_tag" in error
+    ? error._tag === "ThreadManagementThreadArchivedError"
+      ? "the calling thread is archived."
+      : error._tag === "ThreadManagementThreadNotFoundError"
+        ? "the calling thread no longer exists."
+        : errorMessage(error)
+    : errorMessage(error);
 
 export const make = Effect.gen(function* () {
   const store = yield* makeBotsStore;
@@ -350,6 +387,46 @@ export const make = Effect.gen(function* () {
     yield* publish({ _tag: "bot-deleted", botId });
   });
 
+  /**
+   * Posts a finished run's result to the thread it was started from, once. The command id makes a
+   * retry after a crash replay the recorded receipt instead of posting twice. A failed delivery is
+   * noted on the run and never changes its status. Returns the run with that note.
+   */
+  const deliver = Effect.fnUntraced(function* (run: BotRun) {
+    const callerThreadId = run.callerThreadId;
+    if (run.notify !== true || callerThreadId === null) return run;
+    const commandId = CommandId.make(`bot-run-notify:${run.id}`);
+    const failure = yield* Effect.gen(function* () {
+      if (yield* threads.hasReceipt(commandId)) return null;
+      const shell = yield* threads.getThreadShell(callerThreadId);
+      if (shell === null || shell.deletedAt !== null) return "the calling thread no longer exists.";
+      yield* threads.sendToThread({
+        projectId: shell.projectId,
+        threadId: callerThreadId,
+        commandId,
+        messageId: MessageId.make(`bot-run-notify-message:${run.id}`),
+        senderThreadId: run.threadId,
+        text: runResultMessage(run),
+        attachments: [],
+        mode: "auto",
+        createdBy: "system",
+        creationSource: "server",
+      });
+      return null;
+    }).pipe(
+      Effect.catch((error) => Effect.succeed(deliveryFailure(error))),
+      Effect.catchDefect((defect) => Effect.succeed(errorMessage(defect))),
+    );
+    const error =
+      failure === null
+        ? run.error
+        : [run.error, `Result delivery failed: ${failure}`].filter(Boolean).join("\n");
+    yield* store.markNotified(run.id, yield* nowIso, error).pipe(Effect.ignore({ log: true }));
+    if (failure !== null)
+      yield* Effect.logWarning("Bot run result delivery failed", { runId: run.id, failure });
+    return { ...run, error };
+  });
+
   /** Records a terminal state once, whichever path reaches it first. */
   const finish = Effect.fnUntraced(function* (
     entry: LiveRun,
@@ -372,6 +449,8 @@ export const make = Effect.gen(function* () {
     live.delete(entry.run.id);
     yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
     yield* store.pruneRuns(entry.run.botId, RUNS_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
+    // Delivered before the terminal event, so that event already says whether it reached the thread.
+    entry.run = yield* deliver(entry.run);
     yield* publish({ _tag: "run", run: entry.run });
   });
 
@@ -537,7 +616,30 @@ export const make = Effect.gen(function* () {
     return { projectId, strategy };
   });
 
+  /** A person running a bot from a thread: the thread must be live and not itself a bot run. */
+  const threadCaller = Effect.fn("BotsService.threadCaller")(function* (threadId: ThreadId) {
+    if (isBotRunThreadId(threadId))
+      return yield* fail("invalid", "A bot run cannot start another bot.");
+    const shell = yield* threads
+      .getThreadShell(threadId)
+      .pipe(Effect.mapError(() => fail("invalid", "Loom could not read the calling thread.")));
+    if (shell === null || shell.deletedAt !== null)
+      return yield* fail("invalid", "The calling thread no longer exists.");
+    if (shell.archivedAt !== null) return yield* fail("invalid", "The calling thread is archived.");
+    return {
+      actor: "user",
+      threadId,
+      projectId: shell.projectId,
+      runtimeMode: null,
+    } satisfies BotCaller;
+  });
+
   const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
+    // Until pipelines bring explicit limits, a bot run may not fan out into more bot runs.
+    if (caller.threadId !== null && isBotRunThreadId(caller.threadId))
+      return yield* fail("permission", "A bot run cannot start another bot.");
+    if (input.notify === true && caller.threadId === null)
+      return yield* fail("invalid", "Only a run started from a thread can post its result there.");
     const bot = yield* requireBot(input.botId);
     if (bot.archivedAt !== null)
       return yield* fail("archived", `${bot.name} is archived. Restore it to run it.`);
@@ -581,6 +683,7 @@ export const make = Effect.gen(function* () {
         result: null,
         resultTruncated: false,
         error: null,
+        ...(input.notify === true ? { notify: true } : {}),
       },
       fiber: null,
       started: false,
@@ -695,6 +798,12 @@ export const make = Effect.gen(function* () {
         Effect.forkIn(serviceScope),
       );
     }
+    // After the loop, whose own finishes already delivered, so nothing is posted twice.
+    const undelivered = yield* store.listUndeliveredRuns().pipe(Effect.catch(storageError));
+    for (const stored of undelivered) {
+      const delivered = yield* deliver(stored);
+      if (delivered.error !== stored.error) yield* publish({ _tag: "run", run: delivered });
+    }
   });
 
   return {
@@ -703,6 +812,7 @@ export const make = Effect.gen(function* () {
     archive,
     delete: remove,
     run,
+    threadCaller,
     cancel,
     getRun,
     listRuns,
