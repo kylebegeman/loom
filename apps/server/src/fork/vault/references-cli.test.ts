@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Disposable loopback MCP and real CLI child; no user state or credential manager is used.
 import * as NodeHttp from "node:http";
 import * as NodeChildProcess from "node:child_process";
-import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -193,7 +193,11 @@ it.effect(
               (resolve, reject) => {
                 const child = NodeChildProcess.spawn(
                   NodeProcess.execPath,
-                  [NodePath.resolve("apps/server/src/bin.ts"), "vault", ...args],
+                  [
+                    NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url)),
+                    "vault",
+                    ...args,
+                  ],
                   {
                     env: { PATH: "/usr/bin:/bin", NO_COLOR: "1", ...f.environment },
                     stdio: ["ignore", "pipe", "pipe"],

@@ -105,3 +105,9 @@ form, so that control must be placed in its moved prompt section during synchron
 `v0.1.1-nightly.20261017.3238` still previews cleanly. The existing upstream-sync limitation
 remains; no merge or deployment was attempted. The paused QA schedule was deleted after
 persistence checks. iOS also displayed the saved reviewed profile in its scheduled editor.
+
+CLI test children resolve bin.ts from import.meta.url. Package-directory verification runs from
+apps/server: references-cli and TerminalConnection pass nine tests; the two real SSH-agent
+integration cases remain deliberately skipped without their explicit disposable SSH configuration.
+That integration file uses the same file-relative entrypoint. No install, SSH probe or production
+state is needed by the applicable CLI tests.
