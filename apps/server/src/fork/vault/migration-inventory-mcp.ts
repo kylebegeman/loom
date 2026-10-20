@@ -8,6 +8,8 @@ import {
   VaultReplacementPage,
   VaultReplacementResult,
   VaultReplacementVerificationStatus,
+  VaultReplacementPreviewInput,
+  VaultReplacementPreview,
   VaultItemId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -21,6 +23,14 @@ import * as VaultMigrationInventory from "./VaultMigrationInventory.ts";
 const failure = Schema.Union([VaultError, VaultReplacementError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultMigrationInventoryToolkit = Toolkit.make(
+  Tool.make("loom_vault_migration_preview", {
+    description:
+      "Preview a per-repository read route or its hypothetical rollback, bound to a fresh matching SSH repository-read receipt. Administrator clients only. No provider contact, writes, grants or execution. GitHub API and push evidence are ineligible; original access is unverified and no restorable configuration snapshot is captured.",
+    parameters: VaultReplacementPreviewInput,
+    success: VaultReplacementPreview,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_migration_verification", {
     description:
       "Inspect a replacement verification receipt without contacting a provider. Administrator clients only. Freshness is bounded; provider revocations after a check and workload grants are unknown. No cutover is authorized.",
@@ -66,6 +76,20 @@ export const vaultMigrationInventoryHandlers = McpToolAccess.toLayer(
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
+      loom_vault_migration_preview: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          yield* admin;
+          const scope = yield* McpInvocationContext;
+          return yield* onHost(
+            Effect.flatMap(VaultMigrationInventory.VaultMigrationInventory, (service) =>
+              service.preview(
+                input,
+                admin.pipe(Effect.provideService(McpInvocationContext, scope)),
+              ),
+            ),
+          );
+        }),
+      ),
       loom_vault_migration_verification: McpToolAccess.reads((input) =>
         admin.pipe(
           Effect.andThen(

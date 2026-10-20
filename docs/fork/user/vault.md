@@ -84,6 +84,17 @@ use; an already started read may finish. **Cutover remains unavailable even afte
 and `migration-verification-status`
 return the same safe reports; lists do not recheck source freshness until a plan is opened.
 
+After a fresh successful SSH repository-read check, choose **Preview read cutover** or
+**Preview rollback**. Each view covers the selected remote's fetch entry and shows the proposed
+route through the dedicated Vault record. Refresh rechecks its evidence without contacting a
+provider. Expired, changed or failed evidence blocks the preview. Close it or cancel the plan
+to leave the review.
+
+These views cannot apply changes. Push access and GitHub API checks do not qualify. Rollback
+shows a hypothetical inverse, with original credential access unverified and no configuration
+backup captured. It is not a recovery bundle. Ordinary terminal Git, personal SSH configuration,
+workload grants and repository settings stay as they are.
+
 ## Grant recurring access
 
 Open **Vault access** in the selected computer's settings. Add a grant for one thread or all

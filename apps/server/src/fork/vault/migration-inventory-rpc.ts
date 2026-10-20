@@ -2,6 +2,7 @@ import {
   VAULT_MIGRATION_INVENTORY_WS_METHODS as V,
   VaultError,
   type VaultReplacementVerify,
+  type VaultReplacementPreviewInput,
   type VaultMigrationInventoryInput,
   type VaultReplacementPrepare,
   type VaultReplacementReview,
@@ -16,7 +17,12 @@ export const makeVaultMigrationInventoryRpcHandlers = (auth: ForkRpcAuth, actor:
     const authorize = Effect.suspend(() => auth.effect(V.verify, Effect.void)).pipe(
       Effect.mapError(() => new VaultError({ reason: "denied" })),
     );
+    const previewAuthorization = Effect.suspend(() => auth.effect(V.preview, Effect.void)).pipe(
+      Effect.mapError(() => new VaultError({ reason: "denied" })),
+    );
     return {
+      [V.preview]: (input: VaultReplacementPreviewInput) =>
+        auth.effect(V.preview, service.preview(input, previewAuthorization)),
       [V.verify]: (input: VaultReplacementVerify) =>
         auth.effect(V.verify, service.verify(input, actor, authorize)),
       [V.verification]: (input: { id: string }) =>

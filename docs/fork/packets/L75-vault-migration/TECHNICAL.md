@@ -1,7 +1,7 @@
 # L75 technical design
 
 The initial implementation uses the existing encrypted OpenBao boundary and destination-scoped
-RPC authorization. Local inventory and replacement intent are implemented; verification receipts are implemented; live verification acceptance and cutover remain pending.
+RPC authorization. Local inventory and replacement intent are implemented; verification receipts are implemented; read-route previews are implemented; live acceptance and configuration execution remain pending.
 
 ## Implemented reviewed import boundary
 
@@ -116,7 +116,7 @@ reconciliation is a fresh, explicitly confirmed read attempt. No success is infe
 missing receipt. Only the latest attempt is retained in the current record; backend KV history
 and backup retention remain operator-owned, not a complete immutable audit log.
 
-Administrator MCP/CLI expose receipt inspection only. Agents cannot approve or start these
+Administrator MCP/CLI expose receipt inspection and read-route previews. Agents cannot approve or start these
 human verification requests. The shared query invalidates after review, cancellation and every
 verification settlement, with no background probes or polling. There are no new storage paths,
 OpenBao rights, application dependencies, SQL migrations or Library changes beyond the previously
@@ -167,3 +167,30 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## Preview-only repository routing
+
+`replacement-preview` is a destination-read RPC, with administrator MCP/CLI access through
+`loom_vault_migration_preview` / `loom vault migration-preview`. Capability
+`vault-migration-previews` gates clients. Each request names the plan, forward/inverse view and
+exact expected receipt operation. Both views require a reviewed, unexpired plan and a current
+passed SSH repository-read receipt for the same item/version, destination and preserved Git path.
+Pinned host evidence is compared with current adapter metadata. Push entries and GitHub API scope
+are ineligible even after a passing check. Embedded authentication, omitted metadata and local
+URL rewrites block previews; original helper/SSH/global/included configuration remains unknown.
+
+The service rechecks local source/item metadata and permission, and rereads the ledger before
+returning a bounded preview. Its SHA-256 identifier binds environment, source fingerprint, plan,
+receipt and direction. The preview expires with its receipt or plan; it is not an execution token.
+Only the selected sanitized dependency and public replacement reference leave the service.
+Neither preview contacts providers or writes a ledger, file, profile, grant or account. No new
+OpenBao path or permission is needed; the replacement subtree remains a deferred host-owner
+step behind L79.
+
+Rollback is a hypothetical inverse of the proposed Vault-mediated read route. It declares that
+original access is unverified, no restorable configuration snapshot was captured, and a future
+writer must match the exact source and applied forward route. A fresh replacement read receipt
+binds the preview context only; it cannot prove the old identity works. Execution remains
+unavailable in contracts, service and clients (`canCutover`, `canRollback` and
+`configurationWrites` are literal false). This is not a Git configuration patch or a recovery
+bundle. Workload authorization and later provider revocation are explicitly unknown.

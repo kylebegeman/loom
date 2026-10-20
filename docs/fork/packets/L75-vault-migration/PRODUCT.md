@@ -1,5 +1,22 @@
 # L75 product
 
+## Delivered read-route previews
+
+After a fresh successful SSH repository-read verification, inspect cutover and rollback previews
+for the selected project, remote, fetch entry and exact Git path. Reopening or refreshing asks
+the server to recheck the source, receipt, item version, host trust and destination read access.
+Preview data disappears while refresh fails or its evidence expires. Close the preview or cancel
+the replacement plan to leave it. Web/desktop and mobile controls share the existing migration
+state per surface, so cancellation invalidates the receipt displayed by the other views.
+
+The proposed change routes repository reads through the selected Vault SSH reference. Ordinary
+terminal authentication and project configuration are not changed. Push operations, embedded
+authentication, omitted entries and local URL rewrites are outside eligible preview scope.
+GitHub API receipts never establish Git transport eligibility. The rollback view reverses the
+proposed route only; it is not an applied rollback, a restorable backup or proof the original
+credential still works. Future execution must independently verify original access and compare
+the exact applied forward state. Neither preview authorizes any write or creates a workload grant.
+
 ## Summary
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
@@ -39,7 +56,7 @@ plans cover API and `gh` operations; they do not replace SSH or HTTPS Git authen
 server checks source freshness, candidate type, endpoint/repository and active item version.
 This is metadata matching, not verification of provider access or development-only ownership.
 Every plan requires explicit verification and forbids cutover. Plans create no identity,
-grant, profile, provider session or configuration change. Source-specific verification is implemented below; guarded configuration cutover remains unfinished.
+grant, profile, provider session or configuration change. Source-specific verification is implemented below; preview-only read routing is implemented; configuration execution remains unfinished.
 
 ## Implemented verification receipts
 

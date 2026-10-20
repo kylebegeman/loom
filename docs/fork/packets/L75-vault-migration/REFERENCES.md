@@ -25,3 +25,6 @@ reviewed import was developed against fork main `f7cd2e14d1`.
 
 Kyle selected self-hosted OpenBao 2.7.1 (MPL 2.0). This slice adds no external code, application
 dependency, Library deployment or SQL migration. Personal password managers remain separate.
+
+- Read-route preview contracts and literal execution limits: [migration contracts](../../../../packages/contracts/src/fork/vault-migration-inventory.ts).
+- Preview guards and read-only evidence binding: [migration inventory service](../../../../apps/server/src/fork/vault/VaultMigrationInventory.ts).

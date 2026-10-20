@@ -1,3 +1,4 @@
+import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -9,11 +10,7 @@ import type {
   VaultReplacementResult,
   VaultItemSummary,
 } from "@t3tools/contracts/fork";
-import {
-  createVaultMigrationInventoryAtoms,
-  createVaultCoreAtoms,
-  supportsLoomFeature,
-} from "@t3tools/client-runtime/fork";
+import { createVaultCoreAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -28,8 +25,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { uuidv4 } from "../../lib/uuid";
 import { useVaultTime } from "./useVaultTime";
-const atoms = createVaultMigrationInventoryAtoms(connectionAtomRuntime),
-  vault = createVaultCoreAtoms(connectionAtomRuntime);
+const vault = createVaultCoreAtoms(connectionAtomRuntime);
 const newId = () => uuidv4().replaceAll("-", "");
 const unwrap = <A, E>(result: AtomCommandResult<A, E>) => {
   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -54,6 +50,10 @@ export function VaultMigrationInventorySettingsSection({
           key={`${environmentId}:${connected}`}
           environmentId={environmentId}
           connected={connected}
+          previewsSupported={supportsLoomFeature(
+            config?.environment.capabilities,
+            "vault-migration-previews",
+          )}
           verificationSupported={supportsLoomFeature(
             config?.environment.capabilities,
             "vault-migration-verification",
@@ -69,10 +69,12 @@ function Inventory({
   environmentId,
   connected,
   verificationSupported,
+  previewsSupported,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   verificationSupported: boolean;
+  previewsSupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -318,6 +320,7 @@ function Inventory({
           ) : null}
           {verificationSupported ? (
             <ReplacementVerification
+              previewsSupported={previewsSupported}
               key={result.plan.id}
               environmentId={environmentId}
               connected={connected}

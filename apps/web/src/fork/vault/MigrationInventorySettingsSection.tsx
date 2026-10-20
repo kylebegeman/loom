@@ -1,3 +1,4 @@
+import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -8,20 +9,15 @@ import type {
   VaultReplacementResult,
   VaultItemSummary,
 } from "@t3tools/contracts/fork";
-import {
-  createVaultMigrationInventoryAtoms,
-  supportsLoomFeature,
-} from "@t3tools/client-runtime/fork";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useEnvironmentScope } from "~/state/session";
 import { useServerConfigs } from "~/state/entities";
-import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { randomUUID } from "~/lib/utils";
 import { runVault, vault } from "./state";
 import { useVaultTime } from "./useVaultTime";
-const atoms = createVaultMigrationInventoryAtoms(connectionAtomRuntime);
 const newId = () => randomUUID().replaceAll("-", "");
 type Choice = { projectId: ProjectId; title: string; dependency: VaultMigrationDependency };
 export function VaultMigrationInventorySettingsSection() {
@@ -42,6 +38,10 @@ export function VaultMigrationInventorySettingsSection() {
       key={environment.environmentId}
       environmentId={environment.environmentId}
       computer={environment.label}
+      previewsSupported={supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-migration-previews",
+      )}
       verificationSupported={supportsLoomFeature(
         configs.get(environment.environmentId)?.environment.capabilities,
         "vault-migration-verification",
@@ -53,10 +53,12 @@ function Inventory({
   environmentId,
   computer,
   verificationSupported,
+  previewsSupported,
 }: {
   environmentId: EnvironmentId;
   computer: string;
   verificationSupported: boolean;
+  previewsSupported: boolean;
 }) {
   const [inventory, setInventory] = useState<VaultMigrationInventoryPage | null>(null),
     [choice, setChoice] = useState<Choice | null>(null),
@@ -318,6 +320,7 @@ function Inventory({
           ) : null}
           {verificationSupported ? (
             <ReplacementVerification
+              previewsSupported={previewsSupported}
               key={result.plan.id}
               environmentId={environmentId}
               plan={result.plan}

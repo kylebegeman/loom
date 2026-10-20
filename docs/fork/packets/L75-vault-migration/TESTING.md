@@ -143,6 +143,36 @@ checks passed **9 tests**; the web package typecheck passed again. No new backen
 policy stanza or Library deployment is introduced. Existing replacement-policy rollout remains
 deferred to the host owner behind L79.
 
+## Read-route and hypothetical rollback previews
+
+The seven-file focused suite passed **56 tests**, including real fork MCP startup registration.
+New cases cover both directions bound to the exact receipt and repository path, deterministic
+preview identities, rejection of missing/expired/replaced receipts, cancelled plans, source/item
+and pinned-host changes, and permission loss before returning. Fresh GitHub API receipts cannot
+produce Git transport previews. Pushes, embedded authentication and omitted metadata are refused.
+Preview calls do not repeat provider IO or change the ledger; an unrelated remote is omitted from
+the result. Contracts cannot represent execution, verified original access or an expired preview.
+All five affected consumer package typechecks, focused lint and mobile native static checks pass.
+
+```sh
+./node_modules/.bin/vp test run apps/server/src/fork/vault/VaultMigrationInventory.test.ts packages/contracts/src/fork/vault-migration-inventory.test.ts apps/server/src/fork/vault/migration-inventory-mcp.test.ts apps/server/src/fork/mcp/registration.test.ts apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts packages/client-runtime/src/fork/vault-migration-inventory.permissions.test.ts
+```
+
+Authorized isolated Browser-panel checks passed forward and inverse routing, receipt refresh,
+source-conflict rejection with cached preview hidden, restored-source recovery and cancellation
+that invalidates the shared receipt and removes the preview. The 390 CSS-pixel layout has no
+horizontal document overflow. Rollback limitations and the lack of execution controls were
+inspected visually. Receipt expiry removes eligibility and requires fresh evidence. The browser
+used explicitly injected synthetic local evidence and host metadata, not a live provider result;
+the synthetic payloads and Git metadata were restored and private fixture backups removed.
+Early source-watch restarts and stale/expired fixture receipts required reopening/refreshing the
+review; they do not establish provider behavior. Native, Electron shell, remote/relay/tunnel and
+live-provider acceptance remain pending. No install, SSH probe or production action ran.
+
+These are read-route plans and conditional inverses only, not Git configuration patches,
+restorable backups or evidence of original-account access. No rollback or cutover execution
+exists. L75 stays partial and L77 retains its restricted local acceptance.
+
 ## Full packet acceptance still required
 
 Live acceptance must confirm the implemented binding between reviewed source, replacement

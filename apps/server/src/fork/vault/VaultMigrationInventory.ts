@@ -9,6 +9,9 @@ import {
   VaultReplacementList,
   VaultReplacementPlan,
   VaultReplacementVerify,
+  VaultItemId,
+  VaultReplacementPreviewInput,
+  type VaultReplacementPreview,
   VaultReplacementVerificationReceipt,
   type VaultReplacementVerificationStatus,
   type VaultVerificationFailure,
@@ -40,6 +43,10 @@ type Failure = VaultError | VaultReplacementError;
 export class VaultMigrationInventory extends Context.Service<
   VaultMigrationInventory,
   {
+    readonly preview: (
+      input: VaultReplacementPreviewInput,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultReplacementPreview, Failure>;
     readonly verify: (
       input: VaultReplacementVerify,
       actor: string,
@@ -83,6 +90,7 @@ type Stored = typeof Stored.Type;
 const decode = Schema.decodeUnknownOption(Stored),
   encode = Schema.encodeEffect(Stored);
 const isVerify = Schema.is(VaultReplacementVerify);
+const isPreview = Schema.is(VaultReplacementPreviewInput);
 const isInventory = Schema.is(VaultMigrationInventoryInput),
   isPrepare = Schema.is(VaultReplacementPrepare),
   isReview = Schema.is(VaultReplacementReview),
@@ -114,6 +122,19 @@ const encodeRequest = Schema.encodeEffect(
       projectId: VaultReplacementPrepare.fields.projectId,
       dependency: VaultReplacementPrepare.fields.dependency,
       replacement: VaultReplacementPrepare.fields.replacement,
+    }),
+  ),
+);
+const encodePreviewBasis = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      environment: Schema.String,
+      source: Schema.String,
+      plan: VaultItemId,
+      receipt: VaultReplacementVerificationReceipt,
+      kind: VaultReplacementPreviewInput.fields.kind,
+      from: Schema.Literals(["existing-project-git", "vault-mediated-git-read"]),
+      to: Schema.Literals(["existing-project-git", "vault-mediated-git-read"]),
     }),
   ),
 );
@@ -502,6 +523,114 @@ const make = Effect.gen(function* () {
     );
   });
   return VaultMigrationInventory.of({
+    preview: (input, authorize) =>
+      lock.withPermit(
+        Effect.gen(function* () {
+          if (!isPreview(input)) return yield* invalid();
+          yield* authorize;
+          const { record } = yield* load(input.id);
+          const plan = record.plan;
+          if (plan.state === "cancelled") return yield* fail("cancelled");
+          if (plan.state !== "reviewed") return yield* fail("invalid-state");
+          if (plan.replacement.adapter !== "ssh" || plan.replacement.scope !== "ssh-git-transport")
+            return yield* fail("verification-scope");
+          if (plan.dependency.direction !== "fetch") return yield* fail("unsupported-operation");
+          const current = yield* source(plan.projectId);
+          if (current.fingerprint !== record.sourceFingerprint)
+            return yield* fail("source-changed");
+          if (
+            plan.dependency.embeddedAuthentication ||
+            current.metadata.localUrlRewrite ||
+            current.metadata.omittedDependencies > 0
+          )
+            return yield* fail("unsafe-source");
+          yield* check(record);
+          const receipt = record.verification?.receipt;
+          if (!receipt || receipt.state !== "passed") return yield* fail("verification-required");
+          if (receipt.operationId !== input.expectedOperationId)
+            return yield* fail("receipt-changed");
+          if (receipt.scope !== "ssh-git-transport") return yield* fail("verification-scope");
+          if (
+            receipt.planId !== plan.id ||
+            receipt.itemId !== plan.replacement.itemId ||
+            receipt.itemVersion !== plan.replacement.expectedVersion ||
+            receipt.destination !== plan.replacement.destination ||
+            receipt.gitPath !== plan.dependency.gitPath ||
+            !receipt.hostFingerprint
+          )
+            return yield* fail("receipt-changed");
+          const info = yield* ssh
+            .info(plan.replacement.itemId)
+            .pipe(Effect.mapError(() => fail("replacement-unavailable")));
+          if (
+            info.hostFingerprint !== receipt.hostFingerprint ||
+            info.destination !== receipt.destination
+          )
+            return yield* fail("item-changed");
+          // This is a routing inverse, not a captured configuration backup or proof of the old identity.
+          const from =
+            input.kind === "cutover"
+              ? ("existing-project-git" as const)
+              : ("vault-mediated-git-read" as const);
+          const to =
+            input.kind === "cutover"
+              ? ("vault-mediated-git-read" as const)
+              : ("existing-project-git" as const);
+          const previewId = yield* hash(
+            yield* encodePreviewBasis({
+              environment: prefix,
+              source: record.sourceFingerprint,
+              plan: plan.id,
+              receipt,
+              kind: input.kind,
+              from,
+              to,
+            }).pipe(Effect.mapError(invalid)),
+          );
+          yield* check(record);
+          const latest = yield* load(input.id);
+          if (latest.record.plan.state === "cancelled") return yield* fail("cancelled");
+          if (
+            latest.record.verification?.receipt.operationId !== receipt.operationId ||
+            latest.record.sourceFingerprint !== record.sourceFingerprint
+          )
+            return yield* fail("receipt-changed");
+          yield* authorize;
+          const checkedAt = yield* Clock.currentTimeMillis;
+          if (checkedAt >= plan.expiresAt) return yield* fail("expired");
+          if (receipt.validUntil === null || checkedAt >= receipt.validUntil)
+            return yield* fail("verification-required");
+          return {
+            kind: input.kind,
+            planId: plan.id,
+            projectId: plan.projectId,
+            previewId,
+            checkedAt,
+            validUntil: Math.min(plan.expiresAt, receipt.validUntil),
+            verificationOperationId: receipt.operationId,
+            verifiedOperation: "ssh-repository-read" as const,
+            hostFingerprint: receipt.hostFingerprint,
+            source: plan.dependency,
+            replacement: {
+              itemId: plan.replacement.itemId,
+              expectedVersion: plan.replacement.expectedVersion,
+              destination: receipt.destination,
+              repository: receipt.gitPath!,
+            },
+            from,
+            to,
+            rollbackBasis: "hypothetical-forward-route" as const,
+            originalAccess: "not-verified" as const,
+            conflictGuard: "exact-source-and-forward-route-required" as const,
+            configurationSnapshot: "not-captured" as const,
+            workloadAuthorization: "not-evaluated" as const,
+            providerRevocation: "unknown-after-verification" as const,
+            configurationWrites: false as const,
+            canCutover: false as const,
+            canRollback: false as const,
+          };
+        }),
+      ),
     verify,
     verification: (id) => Effect.flatMap(load(id), ({ record }) => verificationView(record)),
     inventory: Effect.fn("VaultMigrationInventory.inventory")(function* (input) {

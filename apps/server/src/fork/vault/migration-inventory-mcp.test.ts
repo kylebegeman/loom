@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import { VaultReplacementError } from "@t3tools/contracts/fork";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { McpInvocationContext, type McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
@@ -23,6 +24,7 @@ it.effect(
       let reads = 0,
         receiptReads = 0;
       const migration = Layer.mock(VaultMigrationInventory.VaultMigrationInventory)({
+        preview: () => Effect.fail(new VaultReplacementError({ reason: "verification-required" })),
         verification: (id) =>
           Effect.sync(() => {
             receiptReads++;
@@ -90,6 +92,21 @@ it.effect(
             Effect.provide(threads),
             Effect.provideService(McpInvocationContext, scope),
           );
+      const preview = (scope: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_migration_preview", {
+            id: "a".repeat(32),
+            kind: "rollback",
+            expectedOperationId: "b".repeat(32),
+          })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provide(threads),
+            Effect.provideService(McpInvocationContext, scope),
+          );
+      expect((yield* preview(agent).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* preview(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* preview(admin).pipe(Effect.flip))._tag).toBe("VaultReplacementError");
       expect((yield* receipt(agent).pipe(Effect.flip))._tag).toBe("VaultError");
       expect((yield* receipt(readonly).pipe(Effect.flip))._tag).toBe("VaultError");
       expect(receiptReads).toBe(0);
@@ -105,6 +122,7 @@ it.effect(
       expect(reads).toBe(1);
       expect(Object.keys(VaultMigrationInventoryToolkit.tools).sort()).toEqual([
         "loom_vault_migration_inventory",
+        "loom_vault_migration_preview",
         "loom_vault_migration_replacement_status",
         "loom_vault_migration_replacements",
         "loom_vault_migration_verification",

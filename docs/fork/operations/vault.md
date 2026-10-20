@@ -581,3 +581,14 @@ slice. Positive automated checks used injected synthetic transports. Cutover sta
 future configuration writers must revalidate fresh operation-specific evidence, source/item,
 trust and current permissions immediately before writing. An API receipt cannot verify Git
 transport, and a receipt cannot establish workload grants or current provider revocation state.
+
+## Replacement route preview limits
+
+Read-route and hypothetical rollback previews use only existing replacement/item metadata.
+They require a fresh, matching SSH repository-read receipt and perform no provider probe or
+backend write. They add no OpenBao path, policy permission, infrastructure or Library deployment.
+Keep replacement subtree rollout with the host owner behind L79. GitHub API evidence cannot
+establish Git transport eligibility; pushes remain unsupported. Both execution paths are
+unavailable. Original-route authentication and a restorable configuration snapshot must be
+verified/designed separately before any future writer. Do not treat a preview ID as an execution
+authorization or rollback artifact.

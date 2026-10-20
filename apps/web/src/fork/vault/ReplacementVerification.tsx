@@ -1,21 +1,22 @@
+import { migrationInventory as atoms } from "./migrationState";
+import { ReplacementPreview } from "./ReplacementPreview";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { VaultReplacementPlan, VaultReplacementVerify } from "@t3tools/contracts/fork";
-import { createVaultMigrationInventoryAtoms } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
-import { connectionAtomRuntime } from "~/connection/runtime";
 import { randomUUID } from "~/lib/utils";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { runVault } from "./state";
 import { useVaultTime } from "./useVaultTime";
-const atoms = createVaultMigrationInventoryAtoms(connectionAtomRuntime);
 export function ReplacementVerification({
   environmentId,
   plan,
+  previewsSupported,
 }: {
   environmentId: EnvironmentId;
   plan: VaultReplacementPlan;
+  previewsSupported: boolean;
 }) {
   const [pending, setPending] = useState<VaultReplacementVerify | null>(null),
     [confirmed, setConfirmed] = useState(false),
@@ -127,6 +128,20 @@ export function ReplacementVerification({
         A workload still needs its own current grant. Upstream access can be revoked after a
         successful check. This receipt cannot authorize a repository change.
       </p>
+      {previewsSupported ? (
+        status && freshness === "current" && plan.state === "reviewed" && status.receipt ? (
+          <ReplacementPreview
+            key={status.receipt.operationId}
+            environmentId={environmentId}
+            planId={plan.id}
+            operationId={status.receipt.operationId}
+          />
+        ) : (
+          <p>Route previews need fresh successful repository-read evidence.</p>
+        )
+      ) : (
+        <p>Route previews need a newer Vault server.</p>
+      )}
       <label>
         <input
           type="checkbox"

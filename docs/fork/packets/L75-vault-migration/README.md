@@ -1,6 +1,6 @@
 # L75: Guided migration from personal credential stores
 
-Status: **In progress; reviewed development imports, local inventory, replacement plans and verification receipts implemented; waiting on host policy.** Kyle selected the full packet. Typed imports and configuration cutover remain unfinished; live verification acceptance is pending.
+Status: **In progress; reviewed development imports, local inventory, replacement plans, verification receipts and read-route previews implemented; waiting on host policy.** Kyle selected the full packet. Typed imports and configuration cutover remain unfinished; live verification acceptance is pending.
 
 Replace selected interactive development dependencies with dedicated Vault credentials.
 
@@ -25,6 +25,12 @@ SSH repository-read or GitHub repository-API evidence with a short lifetime, whi
 source/item/permission checks, unknown outcomes and cancellation. Cutover remains explicitly
 unavailable even after a passing check. Native, remote and Electron
 shell interaction acceptance remain pending.
+
+Cutover and rollback previews now bind one selected fetch entry to a fresh exact SSH
+repository-read receipt, source fingerprint, item/version and pinned host. GitHub API evidence
+and push entries cannot produce these previews. The inverse is hypothetical: original access
+is unverified, no configuration backup is captured, and both execution paths remain unavailable.
+Previews perform no provider probes, ledger writes, grant changes or configuration writes.
 
 Dedicated replacement provisioning, typed SSH/GitHub imports, live verification acceptance,
 reviewed repository cutover and guarded configuration rollback remain selected work. Prefer

@@ -20,6 +20,10 @@ export function createVaultMigrationInventoryAtoms<R, E>(
   ) =>
     Effect.sync(() => registry.refresh(verification({ environmentId, input: { id: input.id } })));
   return {
+    preview: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:vault:replacement-preview",
+      tag: V.preview,
+    }),
     verify: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:replacement-verify",
       tag: V.verify,

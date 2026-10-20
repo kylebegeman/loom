@@ -1,6 +1,6 @@
 # L75 implementation plan
 
-Status: **In progress; reviewed imports, local inventory, replacement intent and verification receipts implemented locally.** The sequence below describes the full packet outcome;
+Status: **In progress; reviewed imports, local inventory, replacement intent, verification receipts and read-route previews implemented locally.** The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered slice and next work
@@ -20,11 +20,15 @@ with explicit contact confirmation, failure/revocation checks, cancellation and 
 recovery. Automated positive cases use synthetic adapters; no live SSH/provider acceptance is
 claimed. Receipts never enable cutover or establish workload grants.
 
-Next: per-repository cutover planning and guarded rollback, bound to fresh source-specific
-verification of the operation actually being changed. A GitHub API receipt cannot authorize
-Git transport changes. Recheck source, item, trust and permissions immediately before any
-future write. Typed imports, native/remote/live acceptance and host rollout remain open. Typed import adapters, native/remote acceptance, interrupted
-cutover, unrelated personal-repository preservation and source-specific cleanup remain open.
+Per-repository read-route and hypothetical rollback previews now require fresh matching SSH
+repository-read receipts. Source/item/trust/permission checks, scope rejection and explicit
+non-executable inverse limitations are implemented. There is no configuration writer, captured
+backup or original-credential verifier. The preview adds no backend namespace or policy rights.
+
+Next: original-route verification and recoverable configuration snapshot design before any
+future cutover writer. Keep execution disabled until that scope is separately selected. Typed
+imports, native/remote/live acceptance, dedicated replacement provisioning and host rollout
+remain open. Interrupted configuration-cutover recovery and source-specific cleanup remain open.
 Full scope is retained; the manual import slice does not complete L75.
 
 ## Before starting

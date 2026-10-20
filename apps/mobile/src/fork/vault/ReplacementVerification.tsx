@@ -1,21 +1,20 @@
+import { migrationInventory as atoms } from "./migrationState";
+import { ReplacementPreview } from "./ReplacementPreview";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Switch, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { VaultReplacementPlan, VaultReplacementVerify } from "@t3tools/contracts/fork";
-import { createVaultMigrationInventoryAtoms } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { uuidv4 } from "../../lib/uuid";
 import { useVaultTime } from "./useVaultTime";
-const atoms = createVaultMigrationInventoryAtoms(connectionAtomRuntime);
 const unwrap = <A, E>(result: AtomCommandResult<A, E>) => {
   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
   return result.value;
@@ -24,10 +23,12 @@ export function ReplacementVerification({
   environmentId,
   connected,
   plan,
+  previewsSupported,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   plan: VaultReplacementPlan;
+  previewsSupported: boolean;
 }) {
   const [pending, setPending] = useState<VaultReplacementVerify | null>(null),
     [confirmed, setConfirmed] = useState(false),
@@ -140,6 +141,21 @@ export function ReplacementVerification({
         A workload still needs its own current grant. Upstream access can be revoked after a
         successful check. This receipt cannot authorize a repository change.
       </Text>
+      {previewsSupported ? (
+        status && freshness === "current" && plan.state === "reviewed" && status.receipt ? (
+          <ReplacementPreview
+            key={status.receipt.operationId}
+            environmentId={environmentId}
+            connected={connected}
+            planId={plan.id}
+            operationId={status.receipt.operationId}
+          />
+        ) : (
+          <Text>Route previews need fresh successful repository-read evidence.</Text>
+        )
+      ) : (
+        <Text>Route previews need a newer Vault server.</Text>
+      )}
       <Text>
         Allow a verification attempt against the saved destination. Missing host trust will block
         it.

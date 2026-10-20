@@ -25,6 +25,11 @@ changes. SSH repository verification uses the existing transport with an isolate
 directory; ordinary workload execution behavior is preserved. There are no upstream seam
 entries, new backend paths or extra deployment permissions in this slice.
 
+Read-route previews reuse those fork-owned boundaries and the existing replacement ledger.
+There is no new storage path, policy permission or upstream seam. Capability
+`vault-migration-previews` gates both clients; their migration views share one state instance
+per surface so receipt invalidation reaches the displayed preview.
+
 ## Remaining integration review
 
 Verified cutover must inspect GitHubHostSetup and SSH configuration writers.

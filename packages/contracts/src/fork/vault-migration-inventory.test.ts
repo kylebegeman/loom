@@ -6,6 +6,8 @@ import {
   VaultReplacementReview,
   VaultReplacementResult,
   VaultReplacementVerify,
+  VaultReplacementPreviewInput,
+  VaultReplacementPreview,
   VaultReplacementVerificationReceipt,
 } from "./vault-migration-inventory.ts";
 const receipt = Schema.decodeUnknownOption(VaultReplacementVerificationReceipt);
@@ -105,4 +107,55 @@ it("rejects a completed success without completion, lifetime or pinned SSH host 
     { failure: "failed" },
   ])
     expect(Option.isNone(receipt({ ...value, ...patch }))).toBe(true);
+});
+
+it("requires an exact receipt and only represents a preview without execution or rollback proof", () => {
+  const input = Schema.decodeUnknownOption(VaultReplacementPreviewInput);
+  expect(Option.isNone(input({ id: request.id, kind: "cutover" }))).toBe(true);
+  expect(
+    Option.isSome(input({ id: request.id, kind: "rollback", expectedOperationId: request.id })),
+  ).toBe(true);
+  const preview = Schema.decodeUnknownOption(VaultReplacementPreview);
+  const value = {
+    kind: "cutover",
+    planId: request.id,
+    projectId: request.projectId,
+    previewId: "c".repeat(64),
+    checkedAt: 0,
+    validUntil: 60000,
+    verificationOperationId: request.id,
+    verifiedOperation: "ssh-repository-read",
+    hostFingerprint: "synthetic-host",
+    source: request.dependency,
+    replacement: {
+      itemId: request.replacement.itemId,
+      expectedVersion: 1,
+      destination: "ssh://git@github.com:22",
+      repository: "dev/repo.git",
+    },
+    from: "existing-project-git",
+    to: "vault-mediated-git-read",
+    rollbackBasis: "hypothetical-forward-route",
+    originalAccess: "not-verified",
+    conflictGuard: "exact-source-and-forward-route-required",
+    configurationSnapshot: "not-captured",
+    workloadAuthorization: "not-evaluated",
+    providerRevocation: "unknown-after-verification",
+    configurationWrites: false,
+    canCutover: false,
+    canRollback: false,
+  };
+  expect(Option.isSome(preview(value))).toBe(true);
+  for (const patch of [
+    { canCutover: true },
+    { canRollback: true },
+    { configurationWrites: true },
+    { originalAccess: "verified" },
+    { verifiedOperation: "github-api" },
+    { validUntil: 0 },
+    { kind: "rollback" },
+    { source: { ...request.dependency, direction: "push" } },
+    { replacement: { ...value.replacement, repository: "other/repo.git" } },
+  ])
+    expect(Option.isNone(preview({ ...value, ...patch }))).toBe(true);
 });

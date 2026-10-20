@@ -16,6 +16,10 @@ export class VaultReplacementError extends Schema.TaggedError<VaultReplacementEr
       "unsupported-source",
       "expired",
       "invalid-state",
+      "verification-required",
+      "verification-scope",
+      "unsupported-operation",
+      "unsafe-source",
       "verification-busy",
       "receipt-changed",
       "verification-timeout",
@@ -25,6 +29,14 @@ export class VaultReplacementError extends Schema.TaggedError<VaultReplacementEr
 ) {
   override get message() {
     switch (this.reason) {
+      case "verification-required":
+        return "A fresh successful verification receipt is required. Verify the replacement and refresh.";
+      case "verification-scope":
+        return "Git transport previews require SSH repository-read evidence. GitHub API evidence cannot authorize a Git transport change.";
+      case "unsupported-operation":
+        return "This preview supports repository reads only. Read evidence cannot establish push access.";
+      case "unsafe-source":
+        return "This source contains authentication or ambiguous local routing. Prepare a separate reviewed replacement without it.";
       case "verification-busy":
         return "A verification is already running. Refresh its receipt.";
       case "receipt-changed":
@@ -216,7 +228,56 @@ export const VaultReplacementVerify = Schema.Struct({
   contactDestination: Schema.Literal(true),
 });
 export type VaultReplacementVerify = typeof VaultReplacementVerify.Type;
+export const VaultReplacementPreviewInput = Schema.Struct({
+  id: VaultItemId,
+  kind: Schema.Literals(["cutover", "rollback"]),
+  expectedOperationId: VaultItemId,
+});
+export type VaultReplacementPreviewInput = typeof VaultReplacementPreviewInput.Type;
+export const VaultReplacementPreview = Schema.Struct({
+  kind: VaultReplacementPreviewInput.fields.kind,
+  planId: VaultItemId,
+  projectId: ProjectId,
+  previewId: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  checkedAt: Schema.Int,
+  validUntil: Schema.Int,
+  verificationOperationId: VaultItemId,
+  verifiedOperation: Schema.Literal("ssh-repository-read"),
+  hostFingerprint: text,
+  source: VaultMigrationDependency,
+  replacement: Schema.Struct({
+    itemId: VaultItemId,
+    expectedVersion: PositiveInt,
+    destination: text,
+    repository: text,
+  }),
+  from: Schema.Literals(["existing-project-git", "vault-mediated-git-read"]),
+  to: Schema.Literals(["existing-project-git", "vault-mediated-git-read"]),
+  rollbackBasis: Schema.Literal("hypothetical-forward-route"),
+  originalAccess: Schema.Literal("not-verified"),
+  conflictGuard: Schema.Literal("exact-source-and-forward-route-required"),
+  configurationSnapshot: Schema.Literal("not-captured"),
+  workloadAuthorization: Schema.Literal("not-evaluated"),
+  providerRevocation: Schema.Literal("unknown-after-verification"),
+  configurationWrites: Schema.Literal(false),
+  canCutover: Schema.Literal(false),
+  canRollback: Schema.Literal(false),
+}).check(
+  Schema.makeFilter(
+    (preview) =>
+      preview.validUntil > preview.checkedAt &&
+      preview.source.direction === "fetch" &&
+      preview.source.transport === "ssh" &&
+      !preview.source.embeddedAuthentication &&
+      preview.source.gitPath === preview.replacement.repository &&
+      (preview.kind === "cutover"
+        ? preview.from === "existing-project-git" && preview.to === "vault-mediated-git-read"
+        : preview.from === "vault-mediated-git-read" && preview.to === "existing-project-git"),
+  ),
+);
+export type VaultReplacementPreview = typeof VaultReplacementPreview.Type;
 export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
+  preview: "loom.vault-migration.replacement-preview",
   verify: "loom.vault-migration.replacement-verify",
   verification: "loom.vault-migration.replacement-verification",
   inventory: "loom.vault-migration.inventory",
@@ -229,6 +290,11 @@ export const VAULT_MIGRATION_INVENTORY_WS_METHODS = {
 const V = VAULT_MIGRATION_INVENTORY_WS_METHODS;
 const error = Schema.Union([VaultError, VaultReplacementError, EnvironmentAuthorizationError]);
 export const VaultMigrationInventoryRpcGroup = RpcGroup.make(
+  Rpc.make(V.preview, {
+    payload: VaultReplacementPreviewInput,
+    success: VaultReplacementPreview,
+    error,
+  }),
   Rpc.make(V.verify, {
     payload: VaultReplacementVerify,
     success: VaultReplacementVerificationStatus,

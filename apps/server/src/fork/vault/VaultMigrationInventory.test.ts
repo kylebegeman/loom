@@ -588,3 +588,196 @@ it.effect("times out an unfinished probe with a controlled clock and records no 
     }).pipe(Effect.provide(f.layer));
   }),
 );
+
+it.effect(
+  "previews only the verified repository read route and its conditional inverse without IO or ledger writes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      f.state.raw =
+        "remote.origin.url\ngit@github.com:/dev/repo.git\0remote.other.url\ngit@other.invalid:keep/me.git\0";
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        const request = {
+          id: input.id,
+          kind: "cutover" as const,
+          expectedOperationId: "c".repeat(32),
+        };
+        expect((yield* service.preview(request, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "verification-required",
+        );
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        const before = [...f.records.entries()];
+        const forward = yield* service.preview(request, Effect.void);
+        expect(forward).toMatchObject({
+          source: { remote: "origin", direction: "fetch", position: 0, gitPath: "/dev/repo.git" },
+          replacement: { itemId, expectedVersion: 1, repository: "/dev/repo.git" },
+          verificationOperationId: request.expectedOperationId,
+          verifiedOperation: "ssh-repository-read",
+          hostFingerprint: "synthetic-host",
+          from: "existing-project-git",
+          to: "vault-mediated-git-read",
+          workloadAuthorization: "not-evaluated",
+          configurationWrites: false,
+          canCutover: false,
+          canRollback: false,
+        });
+        expect(yield* service.preview(request, Effect.void)).toEqual(forward);
+        const reverse = yield* service.preview({ ...request, kind: "rollback" }, Effect.void);
+        expect(reverse).toMatchObject({
+          from: forward.to,
+          to: forward.from,
+          verificationOperationId: forward.verificationOperationId,
+          originalAccess: "not-verified",
+          rollbackBasis: "hypothetical-forward-route",
+          conflictGuard: "exact-source-and-forward-route-required",
+          configurationSnapshot: "not-captured",
+          canCutover: false,
+          canRollback: false,
+        });
+        expect(reverse.previewId).not.toBe(forward.previewId);
+        expect([...f.records.entries()]).toEqual(before);
+        expect(f.state.probeCalls).toBe(1);
+        expect(JSON.stringify(reverse)).not.toContain("other.invalid");
+        expect(JSON.stringify(reverse)).not.toContain("git@github.com:/dev/repo.git");
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect.each(["cutover", "rollback"] as const)(
+  "rejects stale, replaced and cancelled evidence for the %s preview",
+  (kind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        const request = { id: input.id, kind, expectedOperationId: "c".repeat(32) };
+        f.state.raw += "credential.helper\nnever-run\0";
+        expect((yield* service.preview(request, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "source-changed",
+        );
+        f.state.raw = "remote.origin.url\ngit@github.com:dev/repo.git\0";
+        f.state.version++;
+        expect((yield* service.preview(request, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "item-changed",
+        );
+        f.state.version = 1;
+        f.state.pinned = false;
+        expect((yield* service.preview(request, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "item-changed",
+        );
+        f.state.pinned = true;
+        yield* service.verify(
+          attempt(input.id, request.expectedOperationId, "d"),
+          "admin",
+          Effect.void,
+        );
+        expect((yield* service.preview(request, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "receipt-changed",
+        );
+        const latest = { ...request, expectedOperationId: "d".repeat(32) };
+        yield* TestClock.adjust("61 seconds");
+        expect((yield* service.preview(latest, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "verification-required",
+        );
+        yield* service.cancel(input.id);
+        expect((yield* service.preview(latest, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "cancelled",
+        );
+        expect(f.state.probeCalls).toBe(2);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect.each(["cutover", "rollback"] as const)(
+  "never treats GitHub API evidence as Git transport eligibility for %s",
+  (kind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.github = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = {
+          ...prepareInput(f.state.raw),
+          replacement: { adapter: "github" as const, itemId, expectedVersion: 1 },
+        };
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        expect(
+          (yield* service
+            .preview({ id: input.id, kind, expectedOperationId: "c".repeat(32) }, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("verification-scope");
+        expect(f.state.probeCalls).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect.each(["push", "authentication", "omitted"] as const)(
+  "rejects %s routing instead of extrapolating read evidence",
+  (source) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      f.state.raw =
+        source === "push"
+          ? "remote.origin.pushurl\ngit@github.com:dev/repo.git\0"
+          : source === "authentication"
+            ? "remote.origin.url\nssh://git:private@github.com/dev/repo.git\0"
+            : "remote.origin.url\ngit@github.com:dev/repo.git\0remote.invalid remote.url\ngit@host.invalid:ignored.git\0";
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        const result = yield* service
+          .preview(
+            { id: input.id, kind: "cutover", expectedOperationId: "c".repeat(32) },
+            Effect.void,
+          )
+          .pipe(Effect.flip);
+        expect(result.reason).toBe(source === "push" ? "unsupported-operation" : "unsafe-source");
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
+
+it.effect(
+  "rechecks preview authorization after source access without writing or contacting a provider",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.pinned = true;
+      yield* Effect.gen(function* () {
+        const service = yield* VaultMigrationInventory.VaultMigrationInventory;
+        const input = prepareInput(f.state.raw);
+        yield* service.prepare(input, "admin");
+        yield* service.review({ id: input.id, reviewed: true }, "admin");
+        yield* service.verify(attempt(input.id), "admin", Effect.void);
+        let checks = 0;
+        const authorize = Effect.suspend(() =>
+          ++checks > 1 ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+        );
+        expect(
+          (yield* service
+            .preview(
+              { id: input.id, kind: "cutover", expectedOperationId: "c".repeat(32) },
+              authorize,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(checks).toBe(2);
+        expect(f.state.probeCalls).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+);
