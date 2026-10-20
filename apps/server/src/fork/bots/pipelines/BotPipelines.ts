@@ -427,9 +427,10 @@ export const make = Effect.gen(function* () {
                     names: rendered.untrusted,
                     origin: stored.triggerId === null ? PIPELINE_ITEM_ORIGIN : TRIGGERED_ORIGIN,
                   },
+            // A run on another computer runs the bot as it stands, so record the run's version.
             onInserted: (inserted) =>
               store.startAttempt(run.id, attempt.seq, {
-                botVersion: bot.version,
+                botVersion: inserted.botVersion,
                 runId: inserted.id,
                 batchId: null,
                 notes: rendered.notes,

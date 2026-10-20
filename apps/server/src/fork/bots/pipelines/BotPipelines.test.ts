@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
+import { EnvironmentId } from "@t3tools/contracts";
 import type { BotPipelineInput, BotsSaveInput } from "@t3tools/contracts/fork";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -8,7 +10,7 @@ import { PullRequestService } from "../../../pullRequest/PullRequestService.ts";
 import { GitVcsDriver } from "../../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
-import { BotsService, USER_CALLER } from "../BotsService.ts";
+import { BotsService, USER_CALLER, versionInput } from "../BotsService.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotPipelines.ts";
 
@@ -179,6 +181,61 @@ describe("BotPipelines", () => {
           "verify@1",
           "verify@1",
         ]);
+      }),
+    ),
+  );
+
+  it.effect("records a pinned step run on another computer as the version that runs there", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, pipelines } = yield* makePipelines(harness);
+        const studio = EnvironmentId.make("env-studio");
+        const submitted = yield* Deferred.make<number>();
+        yield* bots.setAnywhereHooks({
+          publish: (_definition, link) => Effect.succeed({ ...link, revision: link.revision + 1 }),
+          resolveTarget: () => Effect.succeed({ environmentId: studio, label: "Studio" }),
+          submit: (run) => Deferred.succeed(submitted, run.botVersion).pipe(Effect.asVoid),
+          cancel: () => Effect.void,
+          vaultLines: () => Effect.succeed([]),
+        });
+        const pinned = yield* bots.setLibraryLink("reviewer", {
+          libraryBotId: "reviewer",
+          revision: 1,
+          libraryProjectId: null,
+          syncedAt: "2026-10-20T00:00:00.000Z",
+          modelOverride: null,
+        });
+        yield* bots.save({ ...versionInput(pinned), description: "Edited." }, USER_CALLER);
+        const current = yield* bots.get("reviewer");
+        yield* pipelines.save(
+          {
+            pipeline: {
+              id: "remote-review",
+              name: "Remote review",
+              description: "",
+              parameters: [{ name: "file", label: "File", type: "string", required: true }],
+              steps: [
+                {
+                  id: "review",
+                  botId: "reviewer",
+                  version: pinned.version,
+                  inputs: { file: "{{input.file}}" },
+                  target: { type: "environment", environmentId: studio },
+                },
+              ],
+            },
+          },
+          USER_CALLER,
+        );
+        const run = yield* pipelines.run(
+          { pipelineId: "remote-review", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+        );
+
+        expect(yield* Deferred.await(submitted)).toBe(current.version);
+        const [attempt] = (yield* pipelines.getRun(run.id)).attempts;
+        expect(attempt?.botVersion).toBe(current.version);
+        expect(attempt?.botVersion).not.toBe(pinned.version);
       }),
     ),
   );
