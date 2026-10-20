@@ -178,9 +178,9 @@ export const makeLibrarySearch = Effect.gen(function* () {
    * position; search cursors rely on that. `NOT IN` builds each lookup once, where a correlated
    * `NOT EXISTS` rescanned the conversation per item and took a second per save at 8,000 items.
    */
-  const index = (libraryId: string) => {
+  const index = Effect.fn("LibrarySearch.index")(function* (libraryId: string) {
     const saved = searchItemRows(sql, sql`t.library_id = ${libraryId}`);
-    return Effect.all(
+    yield* Effect.all(
       [
         sql`DELETE FROM fork_library_search_items AS i WHERE i.library_id = ${libraryId}
           AND (i.position, i.item_id) NOT IN (SELECT position, item_id FROM (${saved}))`,
@@ -194,7 +194,7 @@ export const makeLibrarySearch = Effect.gen(function* () {
       ],
       { discard: true },
     ).pipe(Effect.mapError(io));
-  };
+  });
   /**
    * One page of full-text matches blended with the items closest in meaning, by reciprocal rank
    * fusion. Both rankings are read whole for the snapshot `bound`, then paged by offset like a

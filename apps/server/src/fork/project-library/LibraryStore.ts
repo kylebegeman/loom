@@ -209,7 +209,8 @@ const make = Effect.gen(function* () {
   const first = <T>(rows: readonly T[]) => rows[0] ?? null;
   const payloads = (rows: readonly { payload_json: string }[]) =>
     rows.map((row) => row.payload_json);
-  const pack = Effect.fnUntraced(function* (payload: string) {
+  const pack = Effect.fn("LibraryStore.pack")(function* (payload: string) {
+    yield* Effect.annotateCurrentSpan({ "library.payloadChars": payload.length });
     const digest = yield* hash(payload);
     const existing =
       yield* sql`SELECT digest FROM fork_library_history_blobs WHERE digest=${digest}`;
@@ -225,23 +226,28 @@ const make = Effect.gen(function* () {
     payload.startsWith(BLOB_PREFIX)
       ? sql`DELETE FROM fork_library_history_blobs WHERE digest=${payload.slice(BLOB_PREFIX.length)} AND NOT EXISTS (SELECT 1 FROM fork_library_threads WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_thread_versions WHERE library_id=${libraryId} AND payload_json=${payload}) AND NOT EXISTS (SELECT 1 FROM fork_library_import_proofs WHERE payload_json=${payload})`.pipe(
           Effect.asVoid,
+          Effect.withSpan("LibraryStore.release"),
         )
       : Effect.void;
   // Saves free superseded blobs, so a row and its blob are read in one statement. Two reads could
   // straddle a save that commits in between and find the blob already gone.
   const packed = (table: string, where: Fragment) =>
     sql<PackedRow>`SELECT r.payload_json, b.bytes FROM ${sql(table)} r LEFT JOIN fork_library_history_blobs b ON b.digest = substr(r.payload_json, ${BLOB_PREFIX.length + 1}) WHERE ${where}`;
-  const unpack = Effect.fnUntraced(function* (row: PackedRow | null) {
+  const unpack = Effect.fn("LibraryStore.unpack")(function* (row: PackedRow | null) {
     if (row === null || !row.payload_json.startsWith(BLOB_PREFIX)) return row?.payload_json ?? null;
     const { bytes } = row;
     if (bytes === null)
       return yield* new LibraryStoreError({ operation: "missing-history-blob", cause: null });
+    yield* Effect.annotateCurrentSpan({ "library.blobBytes": bytes.byteLength });
     const text = (yield* Effect.tryPromise(() => decompress(bytes))).toString("utf8");
     if ((yield* hash(text)) !== row.payload_json.slice(BLOB_PREFIX.length))
       return yield* new LibraryStoreError({ operation: "corrupt-history-blob", cause: null });
     return text;
   });
-  const indexHistory = Effect.fnUntraced(function* (id: string, payload: string) {
+  const indexHistory = Effect.fn("LibraryStore.indexHistory")(function* (
+    id: string,
+    payload: string,
+  ) {
     // The full compressed archive is retained. The independent visible index keeps a page
     // read from decoding hundreds of megabytes of unrelated execution history.
     const archive = yield* decodeArchiveJson(payload);
@@ -249,6 +255,7 @@ const make = Effect.gen(function* () {
     const field = Array.isArray(visible) && visible.length > 0 ? "visibleTurnItems" : "messages";
     const candidate = archive.projection[field];
     const items: readonly unknown[] = Array.isArray(candidate) ? candidate : [];
+    yield* Effect.annotateCurrentSpan({ "library.items": items.length });
     const projection = Object.fromEntries(
       Object.entries(archive.projection).map(([key, value]) => [
         key,

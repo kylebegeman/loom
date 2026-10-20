@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
@@ -1587,6 +1588,63 @@ describe("Library history ingest", () => {
       }),
     ),
   );
+  it.effect("traces history writes with sizes and counts, never ids or conversation text", () => {
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    return run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        for (const sequence of [1, 2])
+          yield* service.ingestHistory({
+            requestId: `ingest-${sequence}`,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence: sequence - 1,
+            entries: [{ sequence, thread: yield* archiveFor(project, sequence) }],
+          });
+        const library = spans.filter((span) => span.name.startsWith("Library"));
+        const history = library.filter((span) =>
+          /^Library(Service|Store|Search|Timeline)\./.test(span.name),
+        );
+        expect(new Set(history.map((span) => span.name))).toEqual(
+          new Set([
+            "LibraryService.ingestHistory",
+            "LibraryService.mutation",
+            "LibraryService.transaction",
+            "LibraryService.readPreviousThread",
+            "LibraryStore.unpack",
+            "LibraryStore.pack",
+            "LibraryStore.indexHistory",
+            "LibraryStore.release",
+            "LibrarySearch.index",
+            "LibraryTimeline.recordTimeline",
+          ]),
+        );
+        const attributes = library.flatMap((span) => [...span.attributes]);
+        for (const [key, value] of attributes)
+          if (key !== "library.operation") expect(typeof value, key).toBe("number");
+        const recorded = JSON.stringify(attributes);
+        for (const secret of [
+          project.id,
+          project.title,
+          source,
+          threadId,
+          "archive-thread",
+          "journal",
+          "Preserve this complete conversation",
+        ])
+          expect(recorded).not.toContain(secret);
+        expect(attributes).toContainEqual(["library.entries", 1]);
+      }),
+    ).pipe(Effect.withTracer(tracer));
+  });
   it.effect("reports ingest failures in the order earlier releases reported them", () =>
     run((service) =>
       Effect.gen(function* () {

@@ -293,7 +293,9 @@ const make = Effect.gen(function* () {
     if (kept) yield* store.compactThreadVersion(id, sequence, kept);
   });
   const transact = <A>(effect: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>) =>
-    store.transaction(effect).pipe(Effect.mapError(io), lock.withPermit);
+    store
+      .transaction(effect)
+      .pipe(Effect.mapError(io), Effect.withSpan("LibraryService.transaction"), lock.withPermit);
   const getProject = Effect.fnUntraced(function* (projectId: string, revision?: number) {
     const saved = yield* revision === undefined
       ? store.project(projectId)
@@ -339,6 +341,10 @@ const make = Effect.gen(function* () {
         changed ? SubscriptionRef.update(refreshes, (revision) => revision + 1) : Effect.void,
       ),
       Effect.map(({ result }) => result),
+      // Spans carry the operation, sizes and counts, never ids or conversation text.
+      Effect.withSpan("LibraryService.mutation", {
+        attributes: { "library.operation": operation },
+      }),
     );
   const validateAuthority = Effect.fnUntraced(function* (input: {
     authorityId?: string | undefined;
@@ -453,8 +459,10 @@ const make = Effect.gen(function* () {
       )
         return yield* invalid();
     }
-    const previous = yield* store.thread(environmentId, summary.threadId);
-    const old = previous ? yield* decode(codecs.archive, previous) : null;
+    const old = yield* Effect.gen(function* () {
+      const previous = yield* store.thread(environmentId, summary.threadId);
+      return previous ? yield* decode(codecs.archive, previous) : null;
+    }).pipe(Effect.withSpan("LibraryService.readPreviousThread"));
     if (old) {
       if (
         old.summary.id !== summary.id ||
@@ -796,6 +804,10 @@ const make = Effect.gen(function* () {
           lastSequence: cursor,
           applied,
         };
+      }),
+    ).pipe(
+      Effect.withSpan("LibraryService.ingestHistory", {
+        attributes: { "library.entries": input.entries.length },
       }),
     );
   const verifyProof = Effect.fnUntraced(function* (
