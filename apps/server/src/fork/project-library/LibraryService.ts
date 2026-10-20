@@ -317,30 +317,43 @@ const make = Effect.gen(function* () {
     codec: ReturnType<typeof compileCodec<A>>,
     action: Effect.Effect<A, LibraryError | LibraryStore.LibraryStoreError>,
   ) =>
-    transact(
-      Effect.gen(function* () {
-        if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
-        const requestBody = yield* encoded;
-        yield* validateAuthority(
-          yield* decodeFence(decodeUnknownJson(requestBody)).pipe(Effect.mapError(() => invalid())),
-        );
-        const fingerprint = yield* digest(requestBody);
-        const receipt = yield* store.receipt(requestId);
-        if (receipt) {
-          if (receipt.operation !== operation || receipt.fingerprint !== fingerprint)
-            return yield* new LibraryError({ reason: "request-conflict" });
-          return { result: yield* decode(codec, receipt.result_json), changed: false };
-        }
-        const result = yield* action;
-        yield* store.putReceipt(requestId, operation, fingerprint, yield* encode(codec, result));
-        return { result, changed: true };
-      }),
-    ).pipe(
-      // Publish only after the transaction commits, once per new command rather than receipt replay.
-      Effect.tap(({ changed }) =>
-        changed ? SubscriptionRef.update(refreshes, (revision) => revision + 1) : Effect.void,
-      ),
-      Effect.map(({ result }) => result),
+    Effect.gen(function* () {
+      if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+      // Encoding and digesting a request reads nothing saved but takes seconds for a large history
+      // batch, so it runs before the lock. Its failures are raised where the transaction raised them.
+      const request = yield* Effect.exit(
+        Effect.gen(function* () {
+          const requestBody = yield* encoded;
+          const fence = yield* decodeFence(decodeUnknownJson(requestBody)).pipe(
+            Effect.mapError(() => invalid()),
+          );
+          return { fence, fingerprint: yield* Effect.exit(digest(requestBody)) };
+        }),
+      ).pipe(Effect.withSpan("LibraryService.prepareRequest"));
+      return yield* transact(
+        Effect.gen(function* () {
+          const prepared = yield* request;
+          yield* validateAuthority(prepared.fence);
+          const fingerprint = yield* prepared.fingerprint;
+          const receipt = yield* store.receipt(requestId);
+          if (receipt) {
+            if (receipt.operation !== operation || receipt.fingerprint !== fingerprint)
+              return yield* new LibraryError({ reason: "request-conflict" });
+            return { result: yield* decode(codec, receipt.result_json), changed: false };
+          }
+          const result = yield* action;
+          yield* store.putReceipt(requestId, operation, fingerprint, yield* encode(codec, result));
+          return { result, changed: true };
+        }),
+      ).pipe(
+        // Publish only after the transaction commits, once per new command rather than receipt
+        // replay.
+        Effect.tap(({ changed }) =>
+          changed ? SubscriptionRef.update(refreshes, (revision) => revision + 1) : Effect.void,
+        ),
+        Effect.map(({ result }) => result),
+      );
+    }).pipe(
       // Spans carry the operation, sizes and counts, never ids or conversation text.
       Effect.withSpan("LibraryService.mutation", {
         attributes: { "library.operation": operation },
@@ -420,10 +433,13 @@ const make = Effect.gen(function* () {
     yield* LibraryTimeline.recordTimeline(store, LibraryTimeline.copyTimeline(old, copy));
     return copy;
   });
+  /** `prepared` is the archive's version digest when the caller took it before the lock. */
   const saveThread = Effect.fnUntraced(function* (
     archive: LibraryThreadArchive,
     environmentId: string,
+    prepared?: Effect.Effect<string, LibraryError>,
   ) {
+    const archiveDigest = prepared ?? versionDigest(archive);
     if (archive.window !== undefined) return yield* invalid();
     const { summary, projection } = archive;
     if (
@@ -481,12 +497,12 @@ const make = Effect.gen(function* () {
       // Each sequence holds one archive. The saved conversation is compared rather than its
       // version's digest, which predates any field a later contract fills with a default.
       if (old.summary.sequence === summary.sequence) {
-        if ((yield* versionDigest(old)) !== (yield* versionDigest(archive)))
+        if ((yield* versionDigest(old)) !== (yield* archiveDigest))
           return yield* new LibraryError({ reason: "sequence-conflict" });
         return old;
       }
     }
-    const fingerprint = yield* versionDigest(archive);
+    const fingerprint = yield* archiveDigest;
     const version = yield* savedVersionDigest(summary.id, summary.sequence);
     if (version !== null && version !== fingerprint)
       return yield* new LibraryError({ reason: "sequence-conflict" });
@@ -754,58 +770,70 @@ const make = Effect.gen(function* () {
       ),
     );
   const ingestHistory = (input: LibraryIngestHistoryRequest) =>
-    mutation(
-      "ingest-history",
-      input.requestId,
-      encode(codecs.ingest, input),
-      codecs.ingestResult,
-      Effect.gen(function* () {
-        yield* validateAuthority(input);
-        let cursor = yield* store.cursor(input.sourceEnvironmentId, input.journalId);
-        if (input.fromSequence > cursor) return yield* new LibraryError({ reason: "sequence-gap" });
-        let applied = 0;
-        for (const [index, entry] of input.entries.entries()) {
-          if (entry.sequence !== input.fromSequence + index + 1)
+    Effect.gen(function* () {
+      // Entry digests read nothing saved either, so they are taken before the lock with the
+      // request's, and a failure is raised at the entry that raised it before.
+      const entries = yield* Effect.forEach(input.entries, (entry) =>
+        Effect.all({
+          entry: Effect.succeed(entry),
+          ingested: Effect.exit(Effect.flatMap(encode(codecs.archive, entry.thread), digest)),
+          version: Effect.exit(versionDigest(entry.thread)),
+        }),
+      ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
+      return yield* mutation(
+        "ingest-history",
+        input.requestId,
+        encode(codecs.ingest, input),
+        codecs.ingestResult,
+        Effect.gen(function* () {
+          yield* validateAuthority(input);
+          let cursor = yield* store.cursor(input.sourceEnvironmentId, input.journalId);
+          if (input.fromSequence > cursor)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          const fingerprint = yield* digest(yield* encode(codecs.archive, entry.thread));
-          if (entry.sequence <= cursor) {
-            if (
-              (yield* store.ingestedDigest(
-                input.sourceEnvironmentId,
-                input.journalId,
-                entry.sequence,
-              )) !== fingerprint
-            )
-              return yield* new LibraryError({ reason: "sequence-conflict" });
-            continue;
+          let applied = 0;
+          for (const [index, { entry, ingested, version }] of entries.entries()) {
+            if (entry.sequence !== input.fromSequence + index + 1)
+              return yield* new LibraryError({ reason: "sequence-gap" });
+            const fingerprint = yield* ingested;
+            if (entry.sequence <= cursor) {
+              if (
+                (yield* store.ingestedDigest(
+                  input.sourceEnvironmentId,
+                  input.journalId,
+                  entry.sequence,
+                )) !== fingerprint
+              )
+                return yield* new LibraryError({ reason: "sequence-conflict" });
+              continue;
+            }
+            if (entry.sequence !== cursor + 1)
+              return yield* new LibraryError({ reason: "sequence-gap" });
+            yield* saveThread(entry.thread, input.sourceEnvironmentId, version);
+            yield* store.putIngestedDigest(
+              input.sourceEnvironmentId,
+              input.journalId,
+              entry.sequence,
+              fingerprint,
+            );
+            cursor = entry.sequence;
+            applied++;
           }
-          if (entry.sequence !== cursor + 1)
-            return yield* new LibraryError({ reason: "sequence-gap" });
-          yield* saveThread(entry.thread, input.sourceEnvironmentId);
-          yield* store.putIngestedDigest(
+          yield* store.putCursor(input.sourceEnvironmentId, input.journalId, cursor);
+          yield* store.appendEvent(
             input.sourceEnvironmentId,
-            input.journalId,
-            entry.sequence,
-            fingerprint,
+            "history.ingested",
+            encodeUnknownJson({ journalId: input.journalId, lastSequence: cursor, applied }),
+            yield* now,
           );
-          cursor = entry.sequence;
-          applied++;
-        }
-        yield* store.putCursor(input.sourceEnvironmentId, input.journalId, cursor);
-        yield* store.appendEvent(
-          input.sourceEnvironmentId,
-          "history.ingested",
-          encodeUnknownJson({ journalId: input.journalId, lastSequence: cursor, applied }),
-          yield* now,
-        );
-        return {
-          sourceEnvironmentId: input.sourceEnvironmentId,
-          journalId: input.journalId,
-          lastSequence: cursor,
-          applied,
-        };
-      }),
-    ).pipe(
+          return {
+            sourceEnvironmentId: input.sourceEnvironmentId,
+            journalId: input.journalId,
+            lastSequence: cursor,
+            applied,
+          };
+        }),
+      );
+    }).pipe(
       Effect.withSpan("LibraryService.ingestHistory", {
         attributes: { "library.entries": input.entries.length },
       }),

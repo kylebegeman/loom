@@ -19,6 +19,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
+import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -1601,6 +1602,7 @@ describe("Library history ingest", () => {
       Effect.gen(function* () {
         const project = yield* create(service);
         yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        spans.length = 0;
         for (const sequence of [1, 2])
           yield* service.ingestHistory({
             requestId: `ingest-${sequence}`,
@@ -1616,6 +1618,8 @@ describe("Library history ingest", () => {
         expect(new Set(history.map((span) => span.name))).toEqual(
           new Set([
             "LibraryService.ingestHistory",
+            "LibraryService.prepareEntries",
+            "LibraryService.prepareRequest",
             "LibraryService.mutation",
             "LibraryService.transaction",
             "LibraryService.readPreviousThread",
@@ -1626,6 +1630,22 @@ describe("Library history ingest", () => {
             "LibrarySearch.index",
             "LibraryTimeline.recordTimeline",
           ]),
+        );
+        // Digests read nothing saved, so they are taken before the write lock, not under it.
+        const ancestors = (span: Tracer.Span): Array<string> =>
+          Option.match(span.parent, {
+            onNone: () => [],
+            onSome: (parent) => (parent._tag === "Span" ? [parent.name, ...ancestors(parent)] : []),
+          });
+        for (const name of ["LibraryService.prepareEntries", "LibraryService.prepareRequest"])
+          for (const span of history.filter((candidate) => candidate.name === name))
+            expect(ancestors(span)).not.toContain("LibraryService.transaction");
+        const timeline = history.map((span) => span.name);
+        expect(timeline.indexOf("LibraryService.prepareEntries")).toBeLessThan(
+          timeline.indexOf("LibraryService.prepareRequest"),
+        );
+        expect(timeline.indexOf("LibraryService.prepareRequest")).toBeLessThan(
+          timeline.indexOf("LibraryService.transaction"),
         );
         const attributes = library.flatMap((span) => [...span.attributes]);
         for (const [key, value] of attributes)
@@ -1645,6 +1665,35 @@ describe("Library history ingest", () => {
       }),
     ).pipe(Effect.withTracer(tracer));
   });
+  it.effect("commits concurrent ingests one at a time and publishes each", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+        const revision = service.subscribeRefreshes.pipe(Stream.runHead);
+        const before = Option.getOrThrow(yield* revision);
+        const results = yield* Effect.all(
+          [1, 2].map((sequence) =>
+            Effect.gen(function* () {
+              return yield* service.ingestHistory({
+                requestId: `concurrent-${sequence}`,
+                sourceEnvironmentId: source,
+                journalId: `journal-${sequence}`,
+                fromSequence: 0,
+                entries: [{ sequence: 1, thread: yield* archiveFor(project, sequence) }],
+              });
+            }),
+          ),
+          { concurrency: "unbounded" },
+        );
+        expect(results.map((result) => result.lastSequence)).toEqual([1, 1]);
+        expect(Option.getOrThrow(yield* revision)).toBe(before + 2);
+        const rows = yield* historyRows;
+        expect(rows.cursors).toHaveLength(2);
+        expect(rows.threads.map((row) => row.source_sequence)).toEqual([2]);
+      }),
+    ),
+  );
   it.effect("reports ingest failures in the order earlier releases reported them", () =>
     run((service) =>
       Effect.gen(function* () {
