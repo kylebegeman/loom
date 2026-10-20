@@ -383,6 +383,8 @@ apps/mobile/src/Stack.tsx	preview-links	2
 apps/mobile/src/features/settings/components/settings-sheet-targets.ts	preview-links	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	preview-links	1
 apps/mobile/src/lib/openExternalUrl.ts	preview-links	2
+apps/mobile/src/native/NativeHeaderToolbar.test.tsx	header-elements	1
+apps/mobile/src/native/StackHeader.tsx	header-elements	7
 apps/mobile/src/native/useOpenPullRequest.ts	preview-links	2
 apps/mobile/src/features/threads/HtmlRenderWebView.tsx	preview-links	4
 apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2

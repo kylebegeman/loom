@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
-import { act } from "react";
+import { act, createContext, use, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
@@ -97,5 +97,51 @@ it.each(["left", "right", "bottom"] as const)(
     expect(harness.setOptionsCalls).toBe(applied);
     openRenderedDocument();
     expect(harness.openedDocuments).toEqual(["first/guide.pdf"]);
+  },
+);
+
+// fork: header-elements
+// Like React Navigation's LinkingContext, whose default value throws when read
+// outside its provider. React restores that default after rendering, so walking
+// a development element's owner fiber reaches the throwing getter.
+const ProviderOnlyContext = createContext<{ readonly options: object }>({
+  get options(): object {
+    throw new Error("Read outside its provider");
+  },
+});
+
+const providedValue = { options: {} };
+
+function ProviderOnlyReader(props: { readonly children: ReactNode }) {
+  use(ProviderOnlyContext);
+  return props.children;
+}
+
+function LoadingToolbar(props: { readonly placement: Placement }) {
+  return (
+    <ProviderOnlyContext value={providedValue}>
+      <ProviderOnlyReader>
+        <NativeHeaderToolbar placement={props.placement}>
+          <NativeHeaderToolbar.Custom>
+            <span>Loading</span>
+          </NativeHeaderToolbar.Custom>
+        </NativeHeaderToolbar>
+      </ProviderOnlyReader>
+    </ProviderOnlyContext>
+  );
+}
+
+it.each(["left", "right", "bottom"] as const)(
+  "applies a custom %s header element once without walking its owner",
+  (placement) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    root ??= createRoot(document.createElement("div"));
+    act(() => root!.render(<LoadingToolbar placement={placement} />));
+    const applied = harness.setOptionsCalls;
+    act(() => root!.render(<LoadingToolbar placement={placement} />));
+
+    expect(applied).toBe(1);
+    expect(harness.setOptionsCalls).toBe(applied);
+    expect(harness.renderedItems).toMatchObject([{ type: "custom" }]);
   },
 );

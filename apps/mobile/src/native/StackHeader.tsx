@@ -3,7 +3,15 @@ import type {
   NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
-import { use, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  isValidElement, // fork: header-elements
+  use,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ReactElement, // fork: header-elements
+} from "react";
 import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
 import type { ColorValue } from "react-native";
 
@@ -73,6 +81,10 @@ function optionsSignature(value: unknown, seen = new WeakSet<object>()): string 
       return `bigint:${String(value)}`;
     case "object": {
       const object = value as object;
+      // fork: header-elements
+      // A development element carries its owner fiber, which reaches the whole
+      // tree, changes on every render and holds context defaults that throw.
+      if (isValidElement(value)) return elementSignature(value, seen); // fork: header-elements
       if (seen.has(object)) return "[circular]";
       seen.add(object);
       if (Array.isArray(value)) {
@@ -93,6 +105,26 @@ function optionsSignature(value: unknown, seen = new WeakSet<object>()): string 
   return String(value);
 }
 
+// fork: header-elements
+function elementSignature(element: ReactElement, seen: WeakSet<object>): string {
+  return `element:${elementTypeSignature(element.type)}:${String(element.key)}:${optionsSignature(element.props, seen)}`;
+}
+
+// fork: header-elements
+function elementTypeSignature(type: unknown): string {
+  if (typeof type === "string") return type;
+  if (typeof type === "function") return `function:${Function.prototype.toString.call(type)}`;
+  // memo and forwardRef identify the element by the component they wrap.
+  const wrapper = type as {
+    readonly type?: unknown;
+    readonly render?: unknown;
+    readonly displayName?: unknown;
+  } | null;
+  if (wrapper?.type !== undefined) return `memo:${elementTypeSignature(wrapper.type)}`;
+  if (wrapper?.render !== undefined) return `forwardRef:${elementTypeSignature(wrapper.render)}`;
+  return `type:${String(wrapper?.displayName)}`;
+}
+
 function stabilizeOptionFunctions(
   value: unknown,
   path: string,
@@ -111,6 +143,7 @@ function stabilizeOptionFunctions(
     }
     return wrapper;
   }
+  if (isValidElement(value)) return value; // fork: header-elements
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);
