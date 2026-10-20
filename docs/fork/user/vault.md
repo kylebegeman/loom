@@ -696,3 +696,18 @@ Approval cards show current record, thread and project names alongside the IDs a
 requested. Review those details and the destination before deciding. Changed or unavailable
 context requires refreshed review; you can still deny or cancel the request. On an older server,
 IDs remain available even when names are not. Names do not verify an external account's identity.
+
+## Keep dedicated test accounts ready for QA
+
+In Settings > Loom > Vault test accounts, create a collection for an app and its development,
+staging or test environment. Add a reference to a dedicated **Account** item already stored in
+Vault. Confirm it is separate from personal and production accounts, then review it clean before
+reserving it. The account picker searches names; passwords stay in the original Vault item.
+
+A reservation belongs to your current Loom connection. Release and expiry put the entry in
+quarantine until you reset or independently check it and mark it clean. You can renew a live
+reservation within its one-hour maximum, retire an entry, or restore it to quarantine. If your
+connection is replaced, an authorized manager can quarantine its abandoned reservation.
+
+This first version manages the account pool. It does not provision/reset accounts, log a test
+worker in, or revoke existing application sessions. Reserving grants no extra Vault access.

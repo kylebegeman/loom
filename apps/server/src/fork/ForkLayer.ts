@@ -1,3 +1,4 @@
+import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
 import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
@@ -91,6 +92,9 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
 const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 
+const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultCore, layerVaultStore)),
+);
 const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(ApprovalNotifications.stub),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
@@ -225,6 +229,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultSsh,
   layerVaultBrokers,
   layerVaultWorkloads,
+  layerVaultTestAccounts,
   layerVaultCore,
   layerVaultAccess,
   layerVaultJournal,

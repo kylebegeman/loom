@@ -1,3 +1,5 @@
+import { VAULT_TEST_ACCOUNT_WS_METHODS, VaultTestAccountRpcGroup } from "@t3tools/contracts/fork";
+import { makeVaultTestAccountRpcHandlers } from "./vault/test-accounts-rpc.ts";
 import {
   VAULT_MIGRATION_INVENTORY_WS_METHODS,
   VaultMigrationInventoryRpcGroup,
@@ -64,6 +66,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(VAULT_TEST_ACCOUNT_WS_METHODS),
   ...Object.values(VAULT_MIGRATION_INVENTORY_WS_METHODS),
   ...Object.values(VAULT_MIGRATION_WS_METHODS),
   ...Object.values(VAULT_HEALTH_WS_METHODS),
@@ -83,6 +86,7 @@ export const makeForkRpcLayer = (
 ): Layer.Layer<
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationInventoryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultTestAccountRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultCoreRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultAccessRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultHealthRpcGroup>>
@@ -95,6 +99,11 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
 > =>
   Layer.mergeAll(
+    VaultTestAccountRpcGroup.toLayer(
+      withForkRuntime(
+        makeVaultTestAccountRpcHandlers(makeForkRpcAuth(session), `client:${session.sessionId}`),
+      ),
+    ),
     VaultMigrationInventoryRpcGroup.toLayer(
       withForkRuntime(
         makeVaultMigrationInventoryRpcHandlers(makeForkRpcAuth(session), session.subject),

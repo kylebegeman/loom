@@ -1,3 +1,4 @@
+import { onOpenVaultTestAccounts } from "./test-accounts-navigation";
 import { onOpenVaultMigration } from "./migration-navigation";
 import { onOpenVaultHealth } from "./health-navigation";
 import { onOpenVaultProfiles } from "./profile-navigation";
@@ -58,6 +59,17 @@ export function VaultAccessHost() {
           to: "/settings/loom",
           search: { machine: environmentId, project: undefined, checkout: undefined },
           hash: section === "inventory" ? "loom-vault-migration-inventory" : "loom-vault-migration",
+        });
+      }),
+    [navigate],
+  );
+  useEffect(
+    () =>
+      onOpenVaultTestAccounts((environmentId) => {
+        void navigate({
+          to: "/settings/loom",
+          search: { machine: environmentId, project: undefined, checkout: undefined },
+          hash: "loom-vault-test-accounts",
         });
       }),
     [navigate],

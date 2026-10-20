@@ -664,3 +664,25 @@ run state; never remove journal evidence to make a request retryable. Restoring 
 also needs revocation and outcome reconciliation. A reserved entry with uncertain dispatch becomes
 unknown and is not automatically repeated. Notification observations are still process memory.
 Execution, resumption and allow-once gates remain closed; enabling them requires Kyle's approval.
+
+## Test account registry compatibility
+
+The first L84 milestone stores only account references, collection metadata and exclusive lease
+state under `environments/<environment-sha256>/profiles/_test_accounts/registry-v1`, through the
+existing json-v1 envelope and CAS adapter. Existing scoped profiles-subtree rights cover it; no
+new mount or policy right is needed. Keep `_test_accounts/` and `_operations/` out of any future
+profiles-root project enumeration. Project cleanup remains under its exact hashed project prefix.
+
+Older runtimes ignore this independent version-1 registry and retain their normal Vault item
+behavior. They cannot coordinate pool leases. Reservation/quarantine are pool-management state,
+not a restriction on all generic credential use, revocation of external logins or a replacement
+for item grants. Do not promote generic access to a protected worker-login claim. Access-policy
+format 3 and the operation journal version 1 are unchanged.
+
+Leases bind to authenticated client session IDs, not pairing subject labels. Re-pairing cannot
+renew/release a prior session's lease; an authorized manager must explicitly quarantine or retire
+it. Expired entries are quarantined on reads and persisted on the next successful mutation.
+Manual mark-clean is an operator attestation, not provider reset evidence. Capacity is 32
+collections and 128 references, including archived/retired entries; receipts retain at most 128
+and prune entries older than 24 hours on mutation. No production accounts are auto-discovered,
+provisioned or migrated. Use only separately approved dedicated test identities.
