@@ -553,7 +553,7 @@ export const make = Effect.gen(function* () {
             yield* store.requeueItem(batchId, item.index, [
               ...item.previousRunIds,
               ...(item.runId === null ? [] : [item.runId]),
-            ]);
+            ], item.runId);
           if (input.useLatest === true) yield* store.setDefinition(batchId, current);
           yield* store.setStatus(batchId, "running", null, null);
         }),
@@ -674,7 +674,7 @@ export const make = Effect.gen(function* () {
             .dismiss({ runIds: [item.run.id], dismissed: true })
             .pipe(Effect.ignore({ log: true }));
           yield* store
-            .requeueItem(stored.batch.id, item.index, item.previousRunIds)
+            .requeueItem(stored.batch.id, item.index, item.previousRunIds, item.run.id)
             .pipe(Effect.catch(storageError));
         }
       yield* startFeeder(stored.batch.id);

@@ -280,8 +280,10 @@ export const makeBotBatchesStore = Effect.gen(function* () {
       batchId: string,
       index: number,
       previousRunIds: ReadonlyArray<string>,
+      heldRunId: string | null,
     ) {
-      yield* sql`UPDATE fork_bots_batch_items SET state = 'pending', run_id = NULL, previous_run_ids_json = ${encodeRunIds(previousRunIds)} WHERE batch_id = ${batchId} AND item_index = ${index}`;
+      // Only while the item still holds `heldRunId`, so an inbox retry that moved it on is kept.
+      yield* sql`UPDATE fork_bots_batch_items SET state = 'pending', run_id = NULL, previous_run_ids_json = ${encodeRunIds(previousRunIds)} WHERE batch_id = ${batchId} AND item_index = ${index} AND run_id IS ${heldRunId}`;
     }),
 
     skipPending: Effect.fn("BotBatchesStore.skipPending")(function* (batchId: string) {

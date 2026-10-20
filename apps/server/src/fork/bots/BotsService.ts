@@ -190,6 +190,8 @@ const remoteProject = (bot: BotDefinition, input: BotsRunInput, caller: BotCalle
     ? null
     : (bot.workspace.projectId ?? input.projectId ?? caller.projectId ?? bot.scopeProjectId);
 
+const BATCH_RERUNS_ITEM = "Its batch already runs this item again.";
+
 const storageError = (cause: unknown) =>
   Effect.logWarning("Bots storage failed", { cause }).pipe(
     Effect.andThen(Effect.fail(fail("storage", "Loom could not read or write bots storage."))),
@@ -968,7 +970,7 @@ export const make = Effect.gen(function* () {
     /** Inputs framed as untrusted data in the prompt; a trigger's run frames them all. */
     readonly untrusted?: Omit<UntrustedInputs, "frameId"> | undefined;
     /** Written in the same transaction as the queued run row. */
-    readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError>) | undefined;
+    readonly onInserted?: ((run: BotRun) => Effect.Effect<void, SqlError | BotsError>) | undefined;
     /** A run another computer asked for keeps that computer's run id, and so its thread id. */
     readonly remote?: { readonly runId: string; readonly requestedBy: BotRunComputer } | undefined;
   }
@@ -1008,7 +1010,7 @@ export const make = Effect.gen(function* () {
             ),
           ),
       )
-      .pipe(Effect.catch(storageError));
+      .pipe(Effect.catchTag("SqlError", storageError));
 
   /** Settles a remote run that never reached its computer, or that its computer gave up on. */
   const settleRemote = Effect.fnUntraced(function* (run: BotRun, settled: Partial<BotRun>) {
@@ -1439,9 +1441,9 @@ export const make = Effect.gen(function* () {
       // A restart requeues an item whose run never started; its batch reruns it, not a retry.
       if (
         batchId != null &&
-        !(yield* store.batchItemHoldsRun(batchId, old.id).pipe(Effect.catch(storageError)))
+        (yield* store.batchRerunsWithout(batchId, old.id).pipe(Effect.catch(storageError)))
       )
-        return yield* fail("invalid", "Its batch already runs this item again.");
+        return yield* fail("invalid", BATCH_RERUNS_ITEM);
       return yield* start(
         bot,
         {
@@ -1468,7 +1470,13 @@ export const make = Effect.gen(function* () {
                 Effect.andThen(
                   batchId == null
                     ? Effect.void
-                    : store.replaceBatchItemRun(batchId, old.id, inserted.id),
+                    : store.replaceBatchItemRun(batchId, old.id, inserted.id).pipe(
+                        // The batch requeued the item since the check; rolls the retry back.
+                        Effect.andThen(store.batchRerunsWithout(batchId, inserted.id)),
+                        Effect.flatMap((reruns) =>
+                          reruns ? Effect.fail(fail("invalid", BATCH_RERUNS_ITEM)) : Effect.void,
+                        ),
+                      ),
                 ),
               ),
         },
