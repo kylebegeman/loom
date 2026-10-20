@@ -419,3 +419,25 @@ No Library deployment is required for the implemented environment-local Vault se
 
 Until these operator checks and custody decisions are complete, the tracker remains
 **waiting on deploy** and synthetic local acceptance must not be presented as production readiness.
+
+## Health inbox operating policy
+
+`vault-health` requires read/create/update on
+`<mount>/data/environments/<namespace>/health`, in addition to the existing item permissions.
+The host owner must add this exact path to the reviewed environment policy before enabling
+health in a production environment. No Library service or schema change is needed. The
+production policy was not changed by this branch.
+
+Rules and issues are encrypted in the same environment namespace. Automatic checks are opt-in,
+limited to the dedicated GitHub repository adapter and declared expiry. The worker checks at
+most 25 due items each minute, two concurrently, with a 15-minute item interval. Explicit
+rechecks enforce a burst limit. There are no emails, push messages, credential rotation or
+provider revocations. Remove a rule to stop future probes; in-flight requests may finish, but
+outdated results cannot overwrite a changed rule or newer item version.
+
+SSH health validation is an explicit rule option. It uses the saved key's destination and pinned
+host key with the existing eight-second fixed no-op probe; it never falls back to a personal
+agent. Automatic validation remains separately opt-in. Deploying this code does not enable it
+for existing rules. A timeout is an outage, and untrusted-host or other SSH failures require
+configuration review. These results do not establish credential revocation. No additional
+OpenBao paths or Library changes are needed beyond the health policy above.

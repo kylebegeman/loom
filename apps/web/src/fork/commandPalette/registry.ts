@@ -1,3 +1,4 @@
+import { vaultHealthPaletteSource } from "../vault/health-palette";
 import { vaultProfilePaletteSource } from "../vault/profile-palette";
 import { vaultSshPaletteSource } from "../vault/ssh-palette";
 import { vaultAccessPaletteSource } from "../vault/access-palette";
@@ -11,6 +12,7 @@ import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
 import { codeGraphPaletteSource } from "../code-graph/palette";
 import { previewLinksPaletteSource } from "../preview-links/palette";
+import { utilitiesPaletteSource } from "../utilities/palette";
 import {
   libraryPaletteSource,
   useLibraryPaletteContext,
@@ -63,6 +65,7 @@ export interface ForkCommandPaletteSource {
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
   vaultProfilePaletteSource,
   vaultSshPaletteSource,
+  vaultHealthPaletteSource,
   vaultAccessPaletteSource,
   miniOffloadPaletteSource,
   fileOutlinePaletteSource,
@@ -76,6 +79,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   panelPickerPaletteSource,
   codeGraphPaletteSource,
   previewLinksPaletteSource,
+  utilitiesPaletteSource,
   libraryPaletteSource,
 ];
 

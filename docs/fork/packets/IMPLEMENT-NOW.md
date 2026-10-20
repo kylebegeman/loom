@@ -74,8 +74,10 @@ No live backend conversion, credential registration, service installation or dep
 Kyle authorized completing all remaining Vault sections and landing the branch on 2026-10-20.
 No additional section approvals are required. Native Codex/Claude terminal setup is implemented
 with session-owned private connection files; focused native adapter/lifecycle checks cover
-rotation, cleanup and readiness. All complete packet scopes remain tracked below. Landing waits
-for published 0.0.83. Kyle alone owns nightly release cuts; this thread must not run `loom.sh land`.
+rotation, cleanup and readiness. All complete packet scopes remain tracked below. The runtime
+publication gate is cleared: 0.0.85-nightly.20261019.3348 ships the MCP startup correction from
+main `cc05b69aed`, with archive smoke passing on all three platforms. Kyle alone owns nightly
+release cuts; this thread must not run `loom.sh land`.
 
 Local implementation and synthetic testing are authorized. Deployment, changes to the live VPS,
 production dependencies beyond the selected OpenBao service, personal-vault migration and
@@ -90,7 +92,7 @@ the repository's explicit-authorization rule. This selection leaves non-Vault pr
 | 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Complete; Loom `0.0.46-nightly.20261008.2801` | Full packet plus eight editor features, 3D, library/reuse and MCP/CLI approved in this thread.  |
 | 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Complete; merged in PR #13                    | Kyle confirmed the full packet on 2026-09-27.                                                   |
 | 4     | [L09 Device QA](./L09-device-qa/)                     | Complete; merged in PR #14                    | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
-| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                 | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
+| 5     | [L27 Utilities](./L27-utilities/)                     | Complete; on main since 2026-10-20            | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
 | 6     | [L05 File outline](./L05-file-outline/)               | Complete; on main in `1daaebb2b9`             | Kyle included the complete selected language coverage on 2026-09-27.                            |
 
 Order reflects product priority, not dependencies. An agent asked to choose the next item
@@ -98,7 +100,7 @@ starts with the first incomplete, unclaimed packet. Closing L23 does not start a
 
 All candidate dispositions are settled for the 2026-09-27 review. The comparison below retains
 the reasons for selection or deferral; only the selected queue is available for implementation.
-L27 is the only original 2026-09-27 selection not yet implemented. Later selections appear below.
+Every original 2026-09-27 selection is now implemented; L27 was the last. Later selections appear below.
 
 Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 
@@ -136,24 +138,24 @@ Kyle selected hosted previews on 2026-10-18 and approved the later slices on 202
 
 Kyle selected all Vault packets; stable V identifiers map to these collision-free packet IDs:
 
-| Order | Packet                                                                                  | Status                             | Note                            |
-| ----- | --------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------- |
-| 12    | [L73 Headless readiness checks](./L73-vault-readiness/)                                 | In progress                        | Vault V01; full scope selected. |
-| 13    | [L74 Searchable credential references everywhere](./L74-vault-references/)              | In progress                        | Vault V02; full scope selected. |
-| 14    | [L75 Guided migration from personal credential stores](./L75-vault-migration/)          | Selected; remaining implementation | Vault V03; full scope selected. |
-| 15    | [L76 Project environment profiles](./L76-vault-profiles/)                               | In progress                        | Vault V04; full scope selected. |
-| 16    | [L77 Credential health and maintenance inbox](./L77-vault-health/)                      | Selected; remaining implementation | Vault V05; full scope selected. |
-| 17    | [L78 Explain access and preview changes](./L78-vault-access-inspector/)                 | In progress                        | Vault V06; full scope selected. |
-| 18    | [L79 Encrypted Vault and self-hosted control plane](./L79-vault-core/)                  | In progress; waiting on deploy     | Vault V07; full scope selected. |
-| 19    | [L80 Enrolled machines and headless brokers](./L80-vault-brokers/)                      | In progress                        | Vault V08; full scope selected. |
-| 20    | [L81 Agent identities and persistent access grants](./L81-vault-grants/)                | In progress                        | Vault V09; full scope selected. |
-| 21    | [L82 SSH key management and Loom SSH agent](./L82-vault-ssh/)                           | In progress                        | Vault V10; full scope selected. |
-| 22    | [L83 Developer service accounts and authentication connectors](./L83-vault-connectors/) | In progress                        | Vault V11; full scope selected. |
-| 23    | [L84 Test account collections and provisioning](./L84-vault-test-accounts/)             | Selected; remaining implementation | Vault V12; full scope selected. |
-| 24    | [L85 Credential delivery API, CLI, and runner integrations](./L85-vault-delivery/)      | In progress                        | Vault V13; full scope selected. |
-| 25    | [L86 Remote approvals and temporary access](./L86-vault-approvals/)                     | Selected; remaining implementation | Vault V14; full scope selected. |
-| 26    | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Selected; remaining implementation | Vault V15; full scope selected. |
-| 27    | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Selected; remaining implementation | Vault V16; full scope selected. |
+| Order | Packet                                                                                  | Status                             | Note                                                                                                       |
+| ----- | --------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 12    | [L73 Headless readiness checks](./L73-vault-readiness/)                                 | In progress                        | Vault V01; full scope selected.                                                                            |
+| 13    | [L74 Searchable credential references everywhere](./L74-vault-references/)              | In progress                        | Vault V02; full scope selected.                                                                            |
+| 14    | [L75 Guided migration from personal credential stores](./L75-vault-migration/)          | Selected; remaining implementation | Vault V03; full scope selected.                                                                            |
+| 15    | [L76 Project environment profiles](./L76-vault-profiles/)                               | In progress                        | Vault V04; full scope selected.                                                                            |
+| 16    | [L77 Credential health and maintenance inbox](./L77-vault-health/)                      | In progress; local inbox/checks    | V05; project/retained references and SSH/GitHub validation implemented; broader/native acceptance remains. |
+| 17    | [L78 Explain access and preview changes](./L78-vault-access-inspector/)                 | In progress                        | Vault V06; full scope selected.                                                                            |
+| 18    | [L79 Encrypted Vault and self-hosted control plane](./L79-vault-core/)                  | In progress; waiting on deploy     | Vault V07; full scope selected.                                                                            |
+| 19    | [L80 Enrolled machines and headless brokers](./L80-vault-brokers/)                      | In progress                        | Vault V08; full scope selected.                                                                            |
+| 20    | [L81 Agent identities and persistent access grants](./L81-vault-grants/)                | In progress                        | Vault V09; full scope selected.                                                                            |
+| 21    | [L82 SSH key management and Loom SSH agent](./L82-vault-ssh/)                           | In progress                        | Vault V10; full scope selected.                                                                            |
+| 22    | [L83 Developer service accounts and authentication connectors](./L83-vault-connectors/) | In progress                        | Vault V11; full scope selected.                                                                            |
+| 23    | [L84 Test account collections and provisioning](./L84-vault-test-accounts/)             | Selected; remaining implementation | Vault V12; full scope selected.                                                                            |
+| 24    | [L85 Credential delivery API, CLI, and runner integrations](./L85-vault-delivery/)      | In progress                        | Vault V13; full scope selected.                                                                            |
+| 25    | [L86 Remote approvals and temporary access](./L86-vault-approvals/)                     | Selected; remaining implementation | Vault V14; full scope selected.                                                                            |
+| 26    | [L87 Credential lifecycle automation and short-lived access](./L87-vault-lifecycle/)    | Selected; remaining implementation | Vault V15; full scope selected.                                                                            |
+| 27    | [L88 Backup, recovery, and portability](./L88-vault-recovery/)                          | Selected; remaining implementation | Vault V16; full scope selected.                                                                            |
 
 ## Candidates for the queue
 
@@ -162,7 +164,7 @@ This is a suitability review, not a claim that every implementation sketch has b
 
 | Packet                                                | Complete outcome                                                                          | Why consider it now                                                                | Readiness work before selection is final                                                                                                                           |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut          | Client-only; required dependencies and shared UI extension points already exist    | Selected; worker lifecycle requirements and focused test cases clarified in the packet                                                                             |
+| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut          | Client-only; required dependencies and shared UI extension points already exist    | Complete on main since 2026-10-20; the manual client pass in TESTING.md is not yet run                                                                             |
 | [L05 File outline](./L05-file-outline/)               | Search and navigate symbols in the open file across all selected languages                | Client-only; current file surface exposes loaded text and existing line navigation | Selected; current editor updates the file query on each edit, and existing openFile supports line navigation; language fixtures are required during implementation |
 | [L01 Snippets](./L01-snippets/)                       | Saved library, fill-in fields, aliases, revisions, import/export and terminal insertion   | Owns prompt preparation, not agent execution                                       | Parked by Kyle's conditional decision: existing composer skill invocation covers named predefined workflows; see the packet README                                 |
 | [L23 3D preview](./L23-model-preview-3d/)             | Mesh/OpenSCAD previews, live reload, parameters, captures and agent render tool           | Owns file rendering; does not replace orchestration or depend on Fabrication       | Complete, including settings/MCP integrations and real CLI/client verification; see L23 TESTING.md for limits                                                      |

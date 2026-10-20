@@ -502,3 +502,35 @@ Continue using explicit `loom vault github-exec` or `loom vault ssh-agent-exec` 
 a selected item, current version and destination. Readiness does not grant access or establish
 that GitHub/SSH authentication will succeed. Other shells do not automatically acquire the
 agent session's access. Pi and ACP use the connection attached to their own sessions.
+
+## Maintenance inbox
+
+Open **Settings → Loom → Vault maintenance**, or search for “Vault maintenance inbox” in
+the command palette. Review expiry warnings and failed development access, recheck a configured
+item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
+item's grant and destination. An outage warning does not mean the credential was revoked.
+
+Choose a Vault item and declare its expiry, optionally adding a dedicated GitHub repository
+for validation. Enable automatic checks explicitly; otherwise checks run only when requested.
+Warnings begin seven days before declared expiry. Recent checks can be rate limited, and an
+item without a rule must be configured before rechecking. Removing a rule stops future automatic
+checks. Health actions never sign into personal accounts, rotate credentials or retry writes.
+
+From a maintenance issue, choose **Show project references** to inspect current project profiles
+and grants that name the item. **More projects** checks the next ten projects; a page with no
+references does not establish that later projects have none. Review a project's profiles to
+change its bindings, or review grants before changing authority. Archived profiles and inactive
+grants keep their state labels. These references do not prove working access.
+
+Under **Retained run selections**, choose any project on the current page, including one with
+no current references. Matching selections show the earlier profile and item versions they
+pinned. Continue through pages even when a page has no matches. Retired selections whose
+binding snapshot was removed are counted as unattributable. Review the project's run selections
+to inspect or retire a stopped selection; current backend checks still decide whether retirement
+is allowed. Consumers outside Loom and provider-side credential copies are not discovered.
+
+For an SSH key, **Validate SSH connection** checks its saved destination with the pinned host key
+and a fixed no-op command. Saving this rule does not run the check unless automatic checks are
+also enabled. Use **Check selected item** for an explicit check. An untrusted host or failed SSH
+connection appears as a configuration issue; a timeout appears as an outage. Neither proves key
+revocation. Disable SSH validation and save the rule to keep expiry-only maintenance.

@@ -53,7 +53,10 @@ Confirmed: Kyle selected this complete idea for implementation. The personal/dev
 separation and self-hosting option are product requirements. Proposed behavior above remains
 subject to design review; the following choices are not resolved by selection:
 
-- Choose warning windows, history retention and notification destinations.
-- When may a connector check automatically, and which services require an explicit check?
+- Implemented defaults: seven-day expiry warning (typed rules allow one to ninety), 256 issues,
+  128 rules and 32 mutation receipts. Omission counts are visible; notifications stay in the inbox.
+- Automatic GitHub validation is explicit opt-in for a dedicated connection/repository. Snapshot
+  and project-context reads do not contact providers. Additional connector checks remain selected.
+- Retained run pins, external-consumer discovery and broader client acceptance remain incomplete.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

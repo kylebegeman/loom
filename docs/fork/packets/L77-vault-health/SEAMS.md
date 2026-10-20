@@ -16,6 +16,10 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+No new upstream seams. Contracts, the protected RPC group, server/client permission maps,
+services/reactor, CLI/MCP registrations and web/native settings all extend fork-owned files.
+Existing Vault access-review and palette hosts are reused. The service adds an encrypted
+OpenBao record, not an application SQL migration or a runtime dependency.
+
+The operating policy needs read/create/update on this environment namespace's `health` path.
+That production policy change is documented and waiting on the host owner; it was not applied.

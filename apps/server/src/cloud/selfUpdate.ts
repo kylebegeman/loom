@@ -193,7 +193,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const selfUpdateEnabled = yield* serverSelfUpdateEnabled; // fork: runtime-owner
 
   const capability = resolveServerSelfUpdateCapability({
-    desktopManaged: serverConfig.mode === "desktop",
+    desktopManaged: serverConfig.mode === "desktop" && selfUpdateEnabled, // fork: runtime-owner
     launcherManaged: launcher.managed && selfUpdateEnabled, // fork: runtime-owner
   });
   const failWith = (reason: string, cause?: unknown) =>
@@ -204,6 +204,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const update: ServerSelfUpdate["Service"]["update"] = Effect.fn(
     "cloud.server_self_update.update",
   )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
+    if (!selfUpdateEnabled) return yield* failWith(OS_MANAGED_RUNTIME_REASON); // fork: runtime-owner
     if (capability === "desktop-managed") {
       if (desktopAppUpdate.available) {
         return yield* desktopAppUpdate.run(reportProgress);
@@ -211,9 +212,6 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       return yield* failWith(
         "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
       );
-    }
-    if (capability === null && launcher.managed) {
-      return yield* failWith(OS_MANAGED_RUNTIME_REASON); // fork: runtime-owner
     }
     if (capability === null) {
       return yield* failWith(
@@ -345,7 +343,9 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   return ServerSelfUpdate.of({
     update,
     commitDesktopUpdate: (requestId, onHandoffAccepted) =>
-      desktopAppUpdate.commit(requestId, onHandoffAccepted),
+      selfUpdateEnabled // fork: runtime-owner
+        ? desktopAppUpdate.commit(requestId, onHandoffAccepted)
+        : Effect.fail(failWith(OS_MANAGED_RUNTIME_REASON)), // fork: runtime-owner
   });
 });
 

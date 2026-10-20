@@ -256,6 +256,10 @@ import { RightPanelTabs } from "./RightPanelTabs";
 import { ForkPanelHost } from "../fork/panels/ForkPanelHost"; // fork: ext-panels
 import { useForkPanelPresentation } from "../fork/panels/presentation"; // fork: ext-panels
 import { useForkPanelActions } from "../fork/panels/useForkPanelActions"; // fork: ext-panels
+import {
+  OS_MANAGED_RUNTIME_NOTE,
+  runtimeManagedByOperatingSystem,
+} from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
@@ -2224,6 +2228,9 @@ export default function ChatView(props: ChatViewProps) {
   const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
   const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
+  const versionMismatchOsManaged = runtimeManagedByOperatingSystem(
+    serverConfig?.environment.capabilities,
+  ); // fork: runtime-owner
   const serverUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(serverUpdateEnvironmentId),
   );
@@ -2332,9 +2339,13 @@ export default function ChatView(props: ChatViewProps) {
           (versionMismatchSelfUpdate !== "desktop-managed" || !versionMismatchDesktopAppUpdate)
             ? serverUpdateGuidance(versionMismatchSelfUpdate)
             : undefined,
+        ...(versionMismatchOsManaged && !updateInProgress && !updateFailed
+          ? { description: OS_MANAGED_RUNTIME_NOTE }
+          : {}), // fork: runtime-owner
         actions: updateInProgress ? (
           disconnectAction
         ) : !versionMismatch ||
+          versionMismatchOsManaged || // fork: runtime-owner
           (versionMismatchSelfUpdate === "desktop-managed" &&
             !versionMismatchDesktopAppUpdate) ? undefined : (
           <ServerUpdateAction

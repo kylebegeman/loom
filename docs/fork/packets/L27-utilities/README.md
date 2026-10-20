@@ -1,6 +1,13 @@
 # L27: Utilities catalog
 
-Status: Implement now. Kyle selected the full packet on 2026-09-27.
+Status: Complete; on `main` since 2026-10-20. Kyle selected the full packet on 2026-09-27
+and directed it finished end to end on 2026-10-20.
+
+All 29 tools, the panel, the palette entries, the no-thread dialog and the
+`loom.utilities.open` keybinding are implemented. Focused automated checks are recorded in
+[TESTING.md](./TESTING.md); the manual client pass there has not been run, because it needs
+a browser and Kyle's permission. Differences from the design are listed in
+[TECHNICAL.md](./TECHNICAL.md#as-built).
 
 Readiness reviewed against Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
 All 29 tools and the existing product scope are included. Required dependencies, panel,

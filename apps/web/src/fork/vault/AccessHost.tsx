@@ -1,3 +1,4 @@
+import { onOpenVaultHealth } from "./health-navigation";
 import { onOpenVaultProfiles } from "./profile-navigation";
 import { onOpenVaultSsh } from "./ssh-navigation";
 import { useEffect } from "react";
@@ -34,6 +35,17 @@ export function VaultAccessHost() {
           to: "/settings/loom",
           search: { machine: environmentId, project: undefined, checkout: undefined },
           hash: `loom-vault-${section}`,
+        });
+      }),
+    [navigate],
+  );
+  useEffect(
+    () =>
+      onOpenVaultHealth((environmentId) => {
+        void navigate({
+          to: "/settings/loom",
+          search: { machine: environmentId, project: undefined, checkout: undefined },
+          hash: "loom-vault-health",
         });
       }),
     [navigate],
