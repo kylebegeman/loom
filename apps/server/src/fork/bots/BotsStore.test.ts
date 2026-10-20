@@ -91,6 +91,19 @@ describe("BotsStore", () => {
       }),
     ),
   );
+
+  it.effect("deletes a bot's Vault bindings with the bot", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.putDefinition(testBot());
+        yield* store.bindVaultSlot("reviewer", "github-token", "item-a");
+        yield* store.deleteDefinition("reviewer");
+        yield* store.putDefinition(testBot({ createdAt: "2026-10-21T10:00:00.000Z" }));
+        expect(yield* store.vaultBindings("reviewer")).toEqual(new Map());
+      }),
+    ),
+  );
+
   it.effect("selects the inbox in SQL exactly as isBotInboxRun does", () =>
     withStore((store) =>
       Effect.gen(function* () {

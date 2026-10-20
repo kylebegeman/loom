@@ -420,8 +420,14 @@ export const makeBotsStore = Effect.gen(function* () {
 
     withTransaction: sql.withTransaction,
 
+    /** Bindings go with the bot, so a later bot reusing its id never inherits its Vault items. */
     deleteDefinition: Effect.fn("BotsStore.deleteDefinition")(function* (id: string) {
-      yield* sql`DELETE FROM fork_bots_definitions WHERE id = ${id}`;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`DELETE FROM fork_bots_vault_bindings WHERE bot_id = ${id}`;
+          yield* sql`DELETE FROM fork_bots_definitions WHERE id = ${id}`;
+        }),
+      );
     }),
 
     insertRun: Effect.fn("BotsStore.insertRun")(function* (
