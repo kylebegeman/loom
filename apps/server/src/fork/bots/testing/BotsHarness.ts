@@ -1,5 +1,6 @@
 import {
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
   type OrchestrationV2ServerCommand,
@@ -31,7 +32,7 @@ export const model: ModelSelection = {
 /** Settings where no provider a starter could fall back to is enabled. */
 export const NO_PROVIDERS = Object.fromEntries(
   ["codex", "claudeAgent", "cursor", "grok", "muse", "pi", "opencode", "antigravity"].map(
-    (driver) => [driver, { driver, enabled: false, config: {} }],
+    (driver) => [driver, { driver: ProviderDriverKind.make(driver), enabled: false, config: {} }],
   ),
 );
 

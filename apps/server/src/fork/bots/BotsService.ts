@@ -1,5 +1,11 @@
 import {
   CommandId,
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  ProviderInstanceId,
   MessageId,
   resolveProviderInstanceEnabled,
   ThreadId,
@@ -52,10 +58,7 @@ import {
   type BotVerdict,
   type BotVersionSavedBy,
 } from "@t3tools/contracts/fork";
-import {
-  fallbackTextGenerationModelSelection,
-  isModelSelectionProviderEnabled,
-} from "@t3tools/shared/serverSettings";
+import { isModelSelectionProviderEnabled } from "@t3tools/shared/serverSettings";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -96,6 +99,18 @@ export const USER_CALLER: BotCaller = {
   projectId: null,
   runtimeMode: null,
 };
+
+// Named accounts participate in driver priority instead of following every built-in provider.
+const STARTER_FALLBACK_DRIVERS = [
+  "codex",
+  "claudeAgent",
+  "cursor",
+  "grok",
+  "muse",
+  "pi",
+  "opencode",
+  "antigravity",
+].map((driver) => ProviderDriverKind.make(driver));
 
 const RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
   "approval-required": 0,
@@ -444,14 +459,26 @@ export const make = Effect.gen(function* () {
       const preferred = current.defaultModelSelection;
       if (preferred != null && isModelSelectionProviderEnabled(current, preferred))
         return preferred;
-      return fallbackTextGenerationModelSelection(
-        current.providerInstances,
-        (instanceId, driver) =>
-          resolveProviderInstanceEnabled(
-            current.providerInstances[instanceId] ?? { driver, config: {} },
+      const configured = Object.entries(current.providerInstances);
+      for (const driver of STARTER_FALLBACK_DRIVERS) {
+        const defaultId = defaultInstanceIdForDriver(driver);
+        const candidates = [
+          [defaultId, current.providerInstances[defaultId] ?? { driver, config: {} }] as const,
+          ...configured.filter(
+            ([instanceId, instance]) => instanceId !== defaultId && instance.driver === driver,
           ),
-        { defaultModelSelection: preferred ?? null },
-      );
+        ];
+        const match = candidates.find(([, instance]) => resolveProviderInstanceEnabled(instance));
+        if (match !== undefined)
+          return {
+            instanceId: ProviderInstanceId.make(match[0]),
+            model:
+              DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
+              DEFAULT_MODEL_BY_PROVIDER[driver] ??
+              DEFAULT_TEXT_GENERATION_MODEL,
+          };
+      }
+      return null;
     }),
     Effect.orElseSucceed(() => null),
   );
@@ -1470,21 +1497,19 @@ export const make = Effect.gen(function* () {
           modelSelection: input.modelSelection,
           retryOf: old.id,
           onInserted: (inserted) =>
-            store
-              .setRetriedBy(old.id, inserted.id)
-              .pipe(
-                Effect.andThen(
-                  batchId == null
-                    ? Effect.void
-                    : store.replaceBatchItemRun(batchId, old.id, inserted.id).pipe(
-                        // The batch requeued the item since the check; rolls the retry back.
-                        Effect.andThen(store.batchRerunsWithout(batchId, inserted.id)),
-                        Effect.flatMap((reruns) =>
-                          reruns ? Effect.fail(fail("invalid", BATCH_RERUNS_ITEM)) : Effect.void,
-                        ),
+            store.setRetriedBy(old.id, inserted.id).pipe(
+              Effect.andThen(
+                batchId == null
+                  ? Effect.void
+                  : store.replaceBatchItemRun(batchId, old.id, inserted.id).pipe(
+                      // The batch requeued the item since the check; rolls the retry back.
+                      Effect.andThen(store.batchRerunsWithout(batchId, inserted.id)),
+                      Effect.flatMap((reruns) =>
+                        reruns ? Effect.fail(fail("invalid", BATCH_RERUNS_ITEM)) : Effect.void,
                       ),
-                ),
+                    ),
               ),
+            ),
         },
       ).pipe(Effect.tap((next) => publish({ _tag: "run", run: { ...old, retriedBy: next.id } })));
     }).pipe(retryPermit.withPermits(1));

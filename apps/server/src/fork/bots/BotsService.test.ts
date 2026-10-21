@@ -1,5 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_TEXT_GENERATION_MODEL,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type ServerSettings,
+} from "@t3tools/contracts";
 import { BOTS_RESULT_MAX_BYTES, type BotRun, type BotStarterId } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -247,7 +254,124 @@ const storedRun = (id: string, botId: string, botVersion: number): BotRun => ({
   error: null,
 });
 
+const namedProviderInstances = {
+  ...NO_PROVIDERS,
+  [ProviderInstanceId.make("grok")]: {
+    driver: ProviderDriverKind.make("grok"),
+    enabled: true,
+    config: {},
+  },
+  [ProviderInstanceId.make("claude_1")]: {
+    driver: ProviderDriverKind.make("claudeAgent"),
+    enabled: true,
+    config: {},
+  },
+  [ProviderInstanceId.make("codex_disabled")]: {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: false,
+    config: {},
+  },
+  [ProviderInstanceId.make("codex_1")]: {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    config: {},
+  },
+  [ProviderInstanceId.make("codex_2")]: {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    config: {},
+  },
+} satisfies ServerSettings["providerInstances"];
+
 describe("BotsService starters", () => {
+  it.effect("seeds with an enabled named Codex account before another driver's built-in", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        harness.state.settings = {
+          defaultModelSelection: null,
+          providerInstances: namedProviderInstances,
+        };
+
+        yield* bots.seedStarters();
+
+        const seeded = yield* bots.list();
+        expect(seeded).toHaveLength(3);
+        for (const bot of seeded)
+          expect(bot.modelSelection).toEqual({
+            instanceId: "codex_1",
+            model: DEFAULT_TEXT_GENERATION_MODEL,
+          });
+      }),
+    ),
+  );
+
+  it.effect("keeps an explicitly preferred model and its options on a named account", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        const preferred = {
+          instanceId: ProviderInstanceId.make("claude_1"),
+          model: "claude-fable-5-1",
+          options: [{ id: "effort", value: "max" }],
+        };
+        harness.state.settings = {
+          defaultModelSelection: preferred,
+          providerInstances: namedProviderInstances,
+        };
+
+        yield* bots.seedStarters();
+
+        const seeded = yield* bots.list();
+        expect(seeded).toHaveLength(3);
+        for (const bot of seeded) expect(bot.modelSelection).toEqual(preferred);
+      }),
+    ),
+  );
+
+  it.effect("falls back to an enabled named account when the preferred account is disabled", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        harness.state.settings = {
+          defaultModelSelection: model,
+          providerInstances: namedProviderInstances,
+        };
+
+        const restored = yield* bots.restoreStarter("reviewer", USER_CALLER);
+
+        expect(restored.modelSelection).toEqual({
+          instanceId: "codex_1",
+          model: DEFAULT_TEXT_GENERATION_MODEL,
+        });
+      }),
+    ),
+  );
+
+  it.effect("keeps saved bot models when starter defaults change", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.seedStarters();
+        const current = (yield* bots.list()).find((bot) => bot.id === "reviewer")!;
+        const saved = yield* bots.save(
+          { ...current, modelSelection: { ...model, model: "chosen-model" } },
+          USER_CALLER,
+        );
+        harness.state.settings = {
+          defaultModelSelection: null,
+          providerInstances: namedProviderInstances,
+        };
+
+        yield* bots.seedStarters();
+        expect((yield* bots.list()).find((bot) => bot.id === "reviewer")).toEqual(saved);
+        expect((yield* bots.restoreStarter("reviewer", USER_CALLER)).modelSelection).toEqual(
+          saved.modelSelection,
+        );
+      }),
+    ),
+  );
+
   it.effect("offers each starter once and never brings back a deleted one", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
