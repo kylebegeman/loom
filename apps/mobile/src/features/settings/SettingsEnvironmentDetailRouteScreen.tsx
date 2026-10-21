@@ -72,7 +72,9 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
-  const [connectionExpanded, setConnectionExpanded] = useState(false);
+  const [connectionExpanded, setConnectionExpanded] = useState(
+    environment?.isEnabled !== true || environment.connectionState !== "connected",
+  );
   const [pending, setPending] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -192,18 +194,23 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         {!environment ? (
-          <Text className="text-base text-foreground-muted">
-            This computer is no longer saved on this device.
-          </Text>
+          <SettingsSection>
+            <Text className="p-4 text-base text-foreground-muted">
+              This computer is no longer saved on this device.
+            </Text>
+            <SettingsActionRow
+              icon="desktopcomputer"
+              label="Manage computers"
+              onPress={() =>
+                navigation.navigate("SettingsSheet", {
+                  screen: "SettingsContent",
+                  params: { screen: "SettingsEnvironments" },
+                })
+              }
+            />
+          </SettingsSection>
         ) : (
           <>
-            {/* fork: fleet-connections - Preserve work actions and access in the shared details. */}
-            <ComputerWorkSection environmentId={environmentId} connected={connected} />
-            {/* fork: computer-naming - One name follows the computer across clients. */}
-            <ComputerNameSection environmentId={environmentId} connected={connected} />
-            <ComputerConnectSection environmentId={environmentId} connected={connected} />
-            {/* fork: vault-core */}
-            <VaultSettingsSection environmentId={environmentId} connected={connected} />
             <SettingsSection title="Connection">
               <ConnectionEnvironmentRow
                 environment={environment}
@@ -215,6 +222,13 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 onUpdate={connections.onUpdateEnvironment}
               />
             </SettingsSection>
+            {/* fork: fleet-connections - Preserve work actions and access in the shared details. */}
+            <ComputerWorkSection environmentId={environmentId} connected={connected} />
+            {/* fork: computer-naming - One name follows the computer across clients. */}
+            <ComputerNameSection environmentId={environmentId} connected={connected} />
+            <ComputerConnectSection environmentId={environmentId} connected={connected} />
+            {/* fork: vault-core */}
+            <VaultSettingsSection environmentId={environmentId} connected={connected} />
             {/* fork: fleet-connections - Show authorized devices for the selected host. */}
             <DevicesWithAccessSection environmentId={environmentId} connected={connected} />
             <EnvironmentRoutesSection
@@ -319,10 +333,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   ) : null}
                 </SettingsSection>
-                <SettingsSection title="Providers">
+                <SettingsSection title="Agents">
                   <SettingsActionRow
                     icon="arrow.clockwise"
-                    label="Refresh providers"
+                    label="Refresh agents"
                     disabled={busy || !canRead}
                     loading={pending === "refresh"}
                     onPress={() => {
@@ -332,7 +346,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           return;
                         const result = await refreshProviders({ environmentId, input: {} });
                         if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-                        setNotice("Provider status refreshed.");
+                        setNotice("Agent status refreshed.");
                       });
                     }}
                   />
@@ -381,7 +395,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           {provider.versionAdvisory?.status === "behind_latest" &&
                           !provider.versionAdvisory.canUpdate ? (
                             <Text className="text-sm text-foreground-muted">
-                              Update this provider on the environment's machine.
+                              Update this agent on the computer.
                             </Text>
                           ) : null}
                         </View>

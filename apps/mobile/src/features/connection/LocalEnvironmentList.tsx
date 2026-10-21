@@ -2,6 +2,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { ComponentProps } from "react";
 import { View } from "react-native";
 
+import { Button } from "../../components/ui/Button";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
@@ -13,6 +14,7 @@ export function LocalEnvironmentList({
   environments,
   expandedId,
   onToggle,
+  onConnect,
   ...rowActions
 }: Pick<
   EnvironmentRowProps,
@@ -20,6 +22,7 @@ export function LocalEnvironmentList({
 > & {
   readonly environments: ReadonlyArray<EnvironmentRowProps["environment"]>;
   readonly expandedId: EnvironmentId | null;
+  readonly onConnect?: () => void;
   readonly onToggle: (environmentId: EnvironmentId) => void;
 }) {
   if (environments.length === 0) {
@@ -37,9 +40,9 @@ export function LocalEnvironmentList({
           />
         </View>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
-          No computers saved yet.{"\n"}Tap <Text className="font-t3-bold text-foreground">+</Text>{" "}
-          to add one.
+          No computers connected yet. Add the computer where your agents and project folders live.
         </Text>
+        {onConnect ? <Button label="Connect computer" tone="primary" onPress={onConnect} /> : null}
       </View>
     );
   }

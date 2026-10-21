@@ -144,14 +144,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Expand user input, ${questionCount} question${
+        accessibilityLabel={`Show questions, ${questionCount} question${
           questionCount === 1 ? "" : "s"
         }`}
         onPress={props.onToggleCollapsed}
         className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
       >
         <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-          User input needed
+          Reply needed
         </Text>
         <Text className="font-sans text-xs text-foreground-muted">
           {questionCount} question{questionCount === 1 ? "" : "s"}
@@ -166,7 +166,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       </Pressable>
       {props.onStopThread ? (
         <ControlPill
-          accessibilityLabel="Stop"
+          accessibilityLabel="Stop agent"
           icon="stop.fill"
           variant="danger"
           className="h-9 w-9"
@@ -202,15 +202,15 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Collapse user input"
+        accessibilityLabel="Hide questions"
         onPress={props.onToggleCollapsed}
         className="flex-row items-start gap-2"
       >
         <View className="flex-1 gap-2.5">
           <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-            User input needed
+            Reply needed
           </Text>
-          <Text className="font-t3-bold text-lg text-foreground">Fill in the pending answers</Text>
+          <Text className="font-t3-bold text-lg text-foreground">Reply to continue</Text>
         </View>
         <View className="h-8 w-8 items-center justify-center rounded-full bg-subtle-strong">
           <SymbolView

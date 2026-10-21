@@ -200,19 +200,19 @@ export function HomeHeader(props: HomeHeaderProps) {
             title={navigationView === "projects" ? "Project list options" : "Thread list options"} // fork: project-navigation
             separateBackground
           >
-            <Toolbar.Menu title="Environment">
-              <Toolbar.Label>Environment</Toolbar.Label>
+            <Toolbar.Menu title="Computer">
+              <Toolbar.Label>Computer</Toolbar.Label>
               <Toolbar.MenuAction
                 isOn={props.selectedEnvironmentId === null}
                 onPress={() => props.onEnvironmentChange(null)}
                 // fork: project-navigation
                 subtitle={
                   navigationView === "projects"
-                    ? "Show projects from every environment"
-                    : "Show threads from every environment"
+                    ? "Show projects from every computer"
+                    : "Show threads from every computer"
                 }
               >
-                <Toolbar.Label>All environments</Toolbar.Label>
+                <Toolbar.Label>All computers</Toolbar.Label>
               </Toolbar.MenuAction>
               {props.environments.map((environment) => (
                 <Toolbar.MenuAction

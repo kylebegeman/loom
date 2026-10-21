@@ -38,7 +38,7 @@ export function SettingsThreadsRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Thread behavior" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Conversation behavior" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -223,7 +223,7 @@ function AutoSettleSettingsRows() {
         ) : null}
       </SettingsSection>
       {pendingWrites === 0 && mismatches.length > 0 ? (
-        <SettingsSection title="Across environments">
+        <SettingsSection title="Across computers">
           <View className="gap-3 p-4">
             <Text className="text-base text-foreground">Auto-settle defaults differ</Text>
             <Text className="text-sm text-foreground-muted">

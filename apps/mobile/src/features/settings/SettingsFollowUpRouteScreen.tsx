@@ -20,13 +20,13 @@ const FOLLOW_UP_OPTIONS: ReadonlyArray<{
 }> = [
   {
     behavior: "queue",
-    label: "Queue",
-    description: "Your message waits and runs after the current turn finishes.",
+    label: "Send next",
+    description: "Run after the current turn finishes.",
   },
   {
     behavior: "steer",
-    label: "Steer",
-    description: "Your message reaches the agent right away, changing what it is working on.",
+    label: "Send now",
+    description: "Guide the agent during the current turn.",
   },
 ];
 
@@ -69,8 +69,8 @@ export function SettingsFollowUpRouteScreen() {
           ))}
         </SettingsSection>
         <Text className="px-2 text-sm text-foreground-muted">
-          Long-press the send button to use the other option for a single message. With a hardware
-          keyboard, hold Command while sending.
+          Long-press Send to choose an action for one message, including Restart turn. With a
+          hardware keyboard, hold Command while sending to switch between Send next and Send now.
         </Text>
       </ScrollView>
     </View>

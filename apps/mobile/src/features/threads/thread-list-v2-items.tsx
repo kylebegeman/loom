@@ -206,7 +206,7 @@ function ThreadListV2Section(props: {
       className={className}
       disabled={props.disclosure.disabled}
       onPress={props.disclosure.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ minHeight: 44, opacity: pressed ? 0.6 : 1 })}
     >
       {content}
     </Pressable>

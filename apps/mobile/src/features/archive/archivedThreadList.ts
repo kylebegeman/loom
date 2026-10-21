@@ -19,6 +19,13 @@ export interface ArchivedThreadGroup {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
 }
 
+export function archivedThreadQueryEnvironmentIds(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+  selectedEnvironmentId: EnvironmentId | null,
+): ReadonlyArray<EnvironmentId> {
+  return selectedEnvironmentId === null ? environmentIds : [selectedEnvironmentId];
+}
+
 function archiveTimestamp(thread: EnvironmentThreadShell): number {
   const timestamp = Date.parse(thread.archivedAt ?? thread.updatedAt);
   return Number.isNaN(timestamp) ? 0 : timestamp;

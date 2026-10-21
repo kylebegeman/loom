@@ -276,25 +276,31 @@ function FileContent(props: {
 
   if (props.activeMode === "preview" && isImageFile) {
     if (isSvgImagePreviewFile(props.relativePath)) {
-      return <WorkspaceFileWebPreview uri={props.previewUri} />;
+      return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />;
     }
     return (
       <WorkspaceFileImagePreview
         accessibilityLabel={basename(props.relativePath)}
         uri={props.previewUri}
         actionsSource={props.mediaSource}
+        onRetry={props.onRetryPreview}
       />
     );
   }
 
   if (props.activeMode === "preview" && isBrowserFile) {
-    return <WorkspaceFileWebPreview uri={props.previewUri} />;
+    return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />;
   }
 
   if (props.fileError && props.fileContents === null) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
-        <EmptyState title="File unavailable" detail={props.fileError} />
+        <EmptyState
+          title="File unavailable"
+          detail={props.fileError}
+          actionLabel={props.onRefresh ? "Try again" : undefined}
+          onAction={props.onRefresh ? () => void props.onRefresh?.() : undefined}
+        />
       </View>
     );
   }

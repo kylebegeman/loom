@@ -28,17 +28,15 @@ export function ThreadListFilters(
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10, gap: 8 }}
     >
       <ListFilterMenu
-        label={
-          selectedEnvironment?.label ?? (props.projectView ? "All computers" : "All environments")
-        }
+        label={selectedEnvironment?.label ?? "All computers"}
         accessibilityLabel={
-          props.projectView ? "Filter projects by computer" : "Filter threads by environment"
+          props.projectView ? "Filter projects by computer" : "Filter threads by computer"
         }
         active={selectedEnvironment !== undefined}
         actions={[
           {
             id: "all",
-            title: props.projectView ? "All computers" : "All environments",
+            title: "All computers",
             state: props.selectedEnvironmentId === null ? "on" : "off",
           },
           ...props.environments.map((environment) => ({
@@ -94,6 +92,7 @@ export function ThreadListFilters(
           accessibilityRole="button"
           accessibilityLabel={props.projectView ? "Reset project filters" : "Reset thread filters"}
           className="h-8 w-8 items-center justify-center"
+          hitSlop={6}
           onPress={() => {
             props.onEnvironmentChange(null);
             if (!props.projectView) props.onProjectChange(null);

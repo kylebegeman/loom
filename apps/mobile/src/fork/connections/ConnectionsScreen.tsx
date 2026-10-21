@@ -106,7 +106,7 @@ export function ConnectionsScreen() {
 
   return (
     <SettingsScreen
-      title="Connections"
+      title="Computers"
       trailing={
         Platform.OS === "android" && relaySession ? (
           <AndroidAnchoredMenu
@@ -165,8 +165,8 @@ export function ConnectionsScreen() {
         <View className="gap-2 px-1">
           <Text className="text-xl font-t3-bold text-foreground">Your computers</Text>
           <Text className="text-sm leading-normal text-foreground-muted">
-            Choose a computer to start or continue work. Each keeps its own projects and
-            conversations.
+            Connect to a computer to run agents and access its project folders. Saved conversations
+            remain available when it is offline.
           </Text>
         </View>
         <LocalEnvironmentList
@@ -174,6 +174,12 @@ export function ConnectionsScreen() {
           expandedId={null}
           onToggle={openEnvironment}
           opensDetails
+          onConnect={() =>
+            navigation.navigate("SettingsSheet", {
+              screen: "SettingsContent",
+              params: { screen: "SettingsEnvironmentNew" },
+            })
+          }
           onReconnect={onReconnectEnvironment}
           onRemove={onRemoveEnvironmentPress}
           onSetEnabled={onSetEnvironmentEnabled}
@@ -211,7 +217,7 @@ function ConfiguredAccountSettings() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   return (
     <SettingsSection
-      title="T3 Connect account"
+      title="Loom Connect account"
       footer="Sign in to the same account on your devices to find your linked computers. Direct pairing stays available."
     >
       <SettingsActionRow

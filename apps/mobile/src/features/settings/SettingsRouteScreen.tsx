@@ -11,6 +11,7 @@ import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -81,7 +82,7 @@ function ConfiguredSettingsRouteScreen() {
         <SettingsSection title="Connections">
           <SettingsRow
             icon="person.crop.circle"
-            label="T3 Account"
+            label="Loom account"
             value={accountLabel}
             disabled={!isLoaded}
             onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
@@ -154,7 +155,7 @@ function SettingsIndexSections() {
       : (selectedProject?.label ?? "Unavailable project");
   return (
     <>
-      <SettingsSection title="Interface">
+      <SettingsSection title="App preferences">
         <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
         {Platform.OS === "ios" ? (
           <>
@@ -168,7 +169,7 @@ function SettingsIndexSections() {
         <SettingsRow icon="clock" label="Scheduled tasks" target="SettingsScheduledTasks" />
       </SettingsSection>
 
-      <SettingsSection title="Projects & threads">
+      <SettingsSection title="Projects & conversations">
         <SettingsRow
           icon="folder"
           label="Projects"
@@ -182,7 +183,7 @@ function SettingsIndexSections() {
         {selectedProjectKey !== null ? (
           <SettingsRow
             icon="folder"
-            label="Overview"
+            label="Computer folders"
             value={projectLabel}
             target="SettingsProjectOverview"
           />
@@ -194,21 +195,29 @@ function SettingsIndexSections() {
           onPress={() => navigation.navigate("ProjectStorageInventory")}
         />
         <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />
-        <SettingsRow icon="text.bubble" label="Thread behavior" target="SettingsThreads" />
+        <SettingsRow icon="text.bubble" label="Conversation behavior" target="SettingsThreads" />
         <SettingsRow icon="arrow.turn.left.up" label="Follow-ups" target="SettingsFollowUp" />
-        <SettingsRow icon="archivebox" label="Archived Threads" target="SettingsArchive" />
+        <SettingsRow icon="archivebox" label="Archived conversations" target="SettingsArchive" />
       </SettingsSection>
 
-      <SettingsSection title="Server settings">
+      <SettingsSection
+        title="Computer settings"
+        footer={
+          noServerTargets
+            ? undefined
+            : "Applies to the selected computers. Use the filter above to choose computers or a project."
+        }
+      >
+        {noServerTargets ? <SettingsComputerNotice /> : null}
         <SettingsRow
           icon="person.crop.circle"
-          label="Provider accounts"
+          label="Agent accounts"
           target="SettingsProviderAccounts"
           disabled={noServerTargets}
         />
         <SettingsRow
           icon="text.bubble"
-          label="New threads"
+          label="New conversations"
           target="SettingsEnvironmentNewThreads"
           disabled={noServerTargets}
         />

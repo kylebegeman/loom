@@ -14,9 +14,9 @@ export interface ComposerSendPresentation {
 }
 
 const ACTION_LABEL: Record<ActiveTurnComposerAction, string> = {
-  queue: "Queue",
-  steer: "Steer",
-  restart: "Restart",
+  queue: "Send next",
+  steer: "Send now",
+  restart: "Restart turn",
 };
 
 export function resolveComposerSendPresentation(input: {
@@ -37,7 +37,7 @@ export function resolveComposerSendPresentation(input: {
   }
   if (!input.running) {
     return {
-      label: input.deliveryDeferred ? "Queue" : "Send",
+      label: input.deliveryDeferred ? "Send later" : "Send",
       icon: "arrow.up",
       action: null,
       alternate: null,

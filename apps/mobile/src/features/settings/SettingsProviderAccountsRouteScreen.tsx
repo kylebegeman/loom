@@ -16,6 +16,7 @@ import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
 import { SettingsActionRow } from "./components/SettingsActionRow";
 import {
   AndroidSettingsEnvironmentFilter,
@@ -32,7 +33,7 @@ export function SettingsProviderAccountsRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Provider accounts" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Agent accounts" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScreenScrollView
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
@@ -40,7 +41,7 @@ export function SettingsProviderAccountsRouteScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           {selectedTargets.length === 0 ? (
-            <Text className="text-foreground-muted">Select a connected environment.</Text>
+            <SettingsComputerNotice />
           ) : (
             selectedTargets.map((environment) => (
               <SettingsSection key={environment.environmentId} title={environment.label}>
@@ -63,7 +64,7 @@ export function SettingsProviderAccountsRouteScreen() {
                     (provider.driver === "acpRegistry" && provider.installed),
                 ) ? (
                   <Text className="p-4 text-foreground-muted">
-                    Configure a provider with in-app sign-in in web or desktop Settings.
+                    Add an agent in Loom Settings on your computer, then return here to sign in.
                   </Text>
                 ) : null}
               </SettingsSection>
@@ -185,8 +186,8 @@ function ProviderAccount({
               : isDiscovering
                 ? "Discovering sign-in methods…"
                 : needsExternalSetup
-                  ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
-                  : "Connect this provider."}
+                  ? "Sign in to this agent on your computer, or open its setup guide."
+                  : "Sign in to use this agent on this computer."}
         </Text>
         {signedIn && !active && provider.auth.email?.trim() ? (
           <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email} />
@@ -259,6 +260,15 @@ function ProviderAccount({
             {error ?? auth.error}
           </Text>
         ) : null}
+        {auth.error ? (
+          <SettingsActionRow
+            icon="arrow.clockwise"
+            label="Retry sign-in status"
+            disabled={pending || auth.isPending}
+            loading={auth.isPending}
+            onPress={auth.refresh}
+          />
+        ) : null}
       </View>
       {choosingMethod && !active ? (
         <View>
@@ -300,7 +310,7 @@ function ProviderAccount({
       {needsExternalSetup && provider.setup?.documentationUrl ? (
         <SettingsActionRow
           icon="globe"
-          label="Open docs"
+          label="Open setup guide"
           onPress={() => {
             void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
               setError("Could not open the provider docs."),
@@ -334,7 +344,7 @@ function ProviderAccount({
           onPress={() =>
             Dialog.alert(
               "Sign out?",
-              `Running threads sharing this sign-in on ${environment.label} will stop. Thread history is kept.`,
+              `Running conversations sharing this sign-in on ${environment.label} will stop. Conversation history is kept.`,
               [
                 { text: "Cancel", style: "cancel" },
                 {

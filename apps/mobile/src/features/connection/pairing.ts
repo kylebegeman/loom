@@ -1,4 +1,4 @@
-import { readHostedPairingRequest } from "@t3tools/shared/remote";
+import { readHostedPairingRequest, resolveRemotePairingTarget } from "@t3tools/shared/remote";
 import * as Schema from "effect/Schema";
 
 const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
@@ -24,6 +24,15 @@ export class PairingQrPayloadEmptyError extends Schema.TaggedError<PairingQrPayl
 ) {
   override get message(): string {
     return "Scanned QR code did not contain a pairing URL.";
+  }
+}
+
+export class PairingQrPayloadInvalidError extends Schema.TaggedError<PairingQrPayloadInvalidError>()(
+  "PairingQrPayloadInvalidError",
+  {},
+) {
+  override get message(): string {
+    return "Scan the pairing code from Connections settings on your computer.";
   }
 }
 
@@ -76,16 +85,19 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
     throw new PairingQrPayloadEmptyError({});
   }
 
+  let pairingUrl = trimmed;
   try {
     const url = new URL(trimmed);
     if (["loom:", "loom-dev:", "loom-preview:", "t3code:"].includes(url.protocol)) {
       // fork: mobile-identity
-      const pairingUrl = url.searchParams.get(MOBILE_PAIRING_URL_PARAM)?.trim() ?? "";
-      if (pairingUrl.length > 0) {
-        return pairingUrl;
-      }
+      pairingUrl = url.searchParams.get(MOBILE_PAIRING_URL_PARAM)?.trim() ?? "";
     }
   } catch {}
 
-  return trimmed;
+  try {
+    resolveRemotePairingTarget({ pairingUrl });
+  } catch {
+    throw new PairingQrPayloadInvalidError({});
+  }
+  return pairingUrl;
 }

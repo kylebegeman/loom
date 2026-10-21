@@ -55,23 +55,23 @@ export function SettingsEnvironmentFilterHeader(props: {
         unstable_headerRightItems: () => [
           withNativeGlassHeaderItem({
             axisBehavior: "horizontalOnly",
-            accessibilityLabel: "Filter settings environments and projects",
+            accessibilityLabel: "Choose computers and projects for settings",
             icon: { name: filterIcon, type: "sfSymbol" },
             label: "",
             type: "menu",
             menu: {
-              title: "Settings scope",
+              title: "Apply settings to",
               items: [
                 {
                   type: "submenu",
                   label:
                     selectedIds === null
-                      ? "All environments"
-                      : `${selectedTargets.length} ${selectedTargets.length === 1 ? "environment" : "environments"}`,
+                      ? "All computers"
+                      : `${selectedTargets.length} ${selectedTargets.length === 1 ? "computer" : "computers"}`,
                   items: [
                     {
                       type: "action",
-                      label: "All connected environments",
+                      label: "All connected computers",
                       state: selectedIds === null ? "on" : undefined,
                       onPress: selectAll,
                     },

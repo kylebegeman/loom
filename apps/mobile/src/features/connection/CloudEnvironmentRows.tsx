@@ -103,7 +103,7 @@ function CloudEnvironmentRowsContent(
       {showHeader ? (
         <View className="px-1">
           {/* fork: brand */}
-          <Text className="text-sm font-t3-bold uppercase text-foreground-muted">Loom Connect</Text>
+          <Text className="text-sm font-t3-medium text-foreground-muted">Loom Connect</Text>
         </View>
       ) : null}
 
@@ -142,13 +142,14 @@ function CloudEnvironmentRowsContent(
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
           <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
-            Loading linked cloud environments.
+            Finding your computers…
           </Text>
         </View>
       ) : controller.relayDiscovery.error ? null : (
         <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
           <Text className="text-sm leading-normal text-foreground-muted">
-            No additional linked cloud environments.
+            No additional computers found. Open Connections settings on your computer and sign in to
+            the same Loom Connect account.
           </Text>
         </View>
       )}
@@ -159,7 +160,7 @@ function CloudEnvironmentRowsContent(
         <View collapsable={false} className="gap-3 rounded-[24px] bg-grouped-card p-5">
           <Text className="text-base font-t3-bold text-foreground">
             {/* fork: brand */}
-            Could not load Loom Connect environments
+            Could not find Loom Connect computers
           </Text>
           <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
           {controller.relayDiscovery.errorTraceId ? (

@@ -15,12 +15,13 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
-import { Platform, RefreshControl, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, RefreshControl, useWindowDimensions, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { Menu } from "../../components/ui/Menu";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { relativeTime } from "../../lib/time";
@@ -71,11 +72,11 @@ function ArchivedThreadsHeader(props: {
           items: [
             {
               id: "environment",
-              title: "Environment",
+              title: "Computer",
               items: [
                 {
                   id: "environment:all",
-                  title: "All environments",
+                  title: "All computers",
                   selected: props.selectedEnvironmentId === null,
                   onPress: () => props.onEnvironmentChange(null),
                 },
@@ -193,9 +194,10 @@ function ArchivedThreadRow(props: {
     AuthOrchestrationOperateScope,
   );
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
-  const subtitle = [props.environmentLabel, props.thread.branch].filter((part): part is string =>
-    Boolean(part),
-  );
+  const subtitle = [
+    Platform.OS === "ios" ? null : props.environmentLabel,
+    props.thread.branch,
+  ].filter((part): part is string => Boolean(part));
   const rowContent = (
     <View
       className={`flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`}
@@ -238,6 +240,27 @@ function ArchivedThreadRow(props: {
           </View>
         ) : null}
       </View>
+      {Platform.OS === "ios" && canOperateThread ? (
+        <Menu
+          title={props.thread.title}
+          actions={[
+            { id: "restore", title: "Restore to threads", image: "arrow.uturn.backward" },
+            { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
+          ]}
+          onPressAction={({ nativeEvent }) => {
+            if (nativeEvent.event === "restore") props.onUnarchive();
+            if (nativeEvent.event === "delete") props.onDelete();
+          }}
+        >
+          <Pressable
+            accessibilityLabel={`Actions for ${props.thread.title}`}
+            accessibilityRole="button"
+            className="h-11 w-11 items-center justify-center"
+          >
+            <SymbolView name="ellipsis" size={18} tintColorClassName="accent-icon-muted" />
+          </Pressable>
+        </Menu>
+      ) : null}
     </View>
   );
   const containerStyle = {
@@ -256,13 +279,14 @@ function ArchivedThreadRow(props: {
       backgroundColor={cardColor}
       containerStyle={containerStyle}
       fullSwipeWidth={windowWidth - 32}
+      fullSwipeAction="primary"
       onDelete={props.onDelete}
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: `Unarchive ${props.thread.title}`,
+        accessibilityLabel: `Restore ${props.thread.title} to threads`,
         icon: "arrow.uturn.backward",
-        label: "Unarchive",
+        label: "Restore",
         onPress: props.onUnarchive,
       }}
       simultaneousWith={props.simultaneousSwipeGesture}
@@ -274,14 +298,23 @@ function ArchivedThreadRow(props: {
 }
 
 function ArchiveError(props: { readonly message: string; readonly onRetry: () => void }) {
+  const navigation = useNavigation();
   return (
     <View className="rounded-[20px] border border-danger-border bg-danger p-4">
-      <Text className="text-base font-t3-bold text-danger-foreground">
-        Could not load every archive
-      </Text>
+      <Text className="text-base font-t3-bold text-danger-foreground">Archive incomplete</Text>
       <Text className="mt-1 text-sm text-foreground-muted">{props.message}</Text>
-      <View className="mt-3">
+      <View className="mt-3 gap-2">
         <Button label="Try again" tone="secondary" onPress={props.onRetry} />
+        <Button
+          label="Manage computers"
+          tone="text"
+          onPress={() =>
+            navigation.navigate("SettingsSheet", {
+              screen: "SettingsContent",
+              params: { screen: "SettingsEnvironments" },
+            })
+          }
+        />
       </View>
     </View>
   );
@@ -302,7 +335,8 @@ export function ArchivedThreadsScreen(props: {
   readonly onSortOrderChange: (sortOrder: ArchivedThreadSortOrder) => void;
   readonly onUnarchiveThread: (thread: EnvironmentThreadShell) => void;
 }) {
-  const { onDeleteThread, onUnarchiveThread } = props;
+  const { onDeleteThread, onUnarchiveThread, onEnvironmentChange, onSearchQueryChange, error } =
+    props;
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const archiveScrollGesture = useNativeGesture();
   const environmentLabelsById = useMemo(
@@ -399,17 +433,28 @@ export function ArchivedThreadsScreen(props: {
       );
     }
 
+    if (error !== null) return null;
+
     return (
       <EmptyState
         detail={
           isFiltered
-            ? "Try another search or environment."
+            ? "Try another search or show all computers."
             : "Threads you archive will appear here."
         }
         title={isFiltered ? "No matching threads" : "No archived threads"}
+        actionLabel={isFiltered ? "Clear filters" : undefined}
+        onAction={
+          isFiltered
+            ? () => {
+                onSearchQueryChange("");
+                onEnvironmentChange(null);
+              }
+            : undefined
+        }
       />
     );
-  }, [isFiltered, isInitialLoad]);
+  }, [isFiltered, isInitialLoad, error, onEnvironmentChange, onSearchQueryChange]);
 
   return (
     // Keep the list inside this native container. Form-sheet resizing otherwise

@@ -244,10 +244,30 @@ export function PullRequestReviewSheet({
           You can no longer submit line comments on this pull request. Your drafts are kept here.
         </Text>
       ) : null}
+      {result.data &&
+      !result.isPending &&
+      !result.error &&
+      (reviewing ? offered.length === 0 : !permissions.canComment) ? (
+        <Text className="text-sm text-foreground-muted">
+          {reviewing
+            ? "This connection cannot submit a review on this pull request."
+            : "This connection cannot comment on this pull request."}
+        </Text>
+      ) : null}
       {submission.error || result.error || store.error ? (
-        <Text selectable className="text-sm text-danger-foreground">
+        <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">
           {submission.error ?? result.error ?? store.error}
         </Text>
+      ) : null}
+      {(!store.ready && store.error) || result.error ? (
+        <Button
+          label="Try again"
+          tone="secondary"
+          onPress={() => {
+            if (!store.ready) void store.retry();
+            if (result.error) refreshDetail();
+          }}
+        />
       ) : null}
     </SheetContent>
   );

@@ -14,6 +14,12 @@ const { Children, mocks } = vi.hoisted(() => ({
     alert: vi.fn(),
     targets: [] as ReturnType<typeof environment>[],
     projectSelected: false,
+    providerAuth: {
+      data: null as { phase: string; methods: never[] } | null,
+      error: null as string | null,
+      isPending: false,
+      refresh: vi.fn(),
+    },
   },
 }));
 
@@ -37,7 +43,24 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("@effect/atom-react", () => ({
-  useAtomValue: () => AsyncResult.success({}),
+  useAtomValue: (atom: unknown) =>
+    atom === "providers"
+      ? new Map([
+          [
+            "local",
+            [
+              {
+                instanceId: "codex",
+                driver: "codex",
+                enabled: true,
+                installed: true,
+                setup: { canAuthenticate: true },
+                auth: { status: "unauthenticated" },
+              },
+            ],
+          ],
+        ])
+      : AsyncResult.success({}),
   useAtomSet: () => () => {},
 }));
 vi.mock("../../state/preferences", () => ({
@@ -51,7 +74,13 @@ vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
   useEnvironmentsWithScope: () => new Set(mocks.targets.map((target) => target.environmentId)),
 }));
-vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
+vi.mock("../../state/server", () => ({
+  serverEnvironment: { updateSettings: {}, providerAuthState: () => "auth" },
+}));
+vi.mock("../../state/presentation", () => ({
+  environmentPresentations: { providersByEnvironmentAtom: "providers" },
+}));
+vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => mocks.providerAuth }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));
@@ -78,6 +107,7 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
   AndroidSettingsEnvironmentFilter: () => null,
   SettingsEnvironmentFilterHeader: () => null,
 }));
+vi.mock("./components/GitHubHostSetupSettings", () => ({ GitHubHostSetupSettings: () => null }));
 vi.mock("./components/DatabaseStorageNotice", () => ({ DatabaseStorageNotice: () => null }));
 vi.mock("./components/SettingsSection", () => ({ SettingsSection: Children }));
 vi.mock("./components/SettingsChoiceRow", () => ({ SettingsChoiceRow: () => null }));
@@ -104,6 +134,21 @@ vi.mock("./components/SettingsSwitchRow", () => ({
   ),
 }));
 vi.mock("./components/SettingsRow", () => ({ SettingsRow: () => null }));
+vi.mock("./components/SettingsActionRow", () => ({
+  SettingsActionRow: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("./components/BranchNamingSettings", () => ({
   BranchNamingSettings: (props: { onChange: (patch: ServerSettingsPatch) => void }) => {
     mocks.branchNaming.onChange = props.onChange;
@@ -128,6 +173,7 @@ vi.mock("./settings-environment-filter", () => ({
 
 import { SettingsEnvironmentSourceControlRouteScreen } from "./SettingsServerControlsRouteScreen";
 import { SettingsThreadsRouteScreen } from "./SettingsThreadsRouteScreen";
+import { SettingsProviderAccountsRouteScreen } from "./SettingsProviderAccountsRouteScreen";
 
 function environment(environmentId: string, label: string) {
   return {
@@ -188,6 +234,10 @@ beforeEach(() => {
   root = createRoot(container);
   mocks.targets = [environment("local", "Local")];
   mocks.projectSelected = false;
+  mocks.providerAuth.data = null;
+  mocks.providerAuth.error = null;
+  mocks.providerAuth.isPending = false;
+  mocks.providerAuth.refresh.mockReset();
   mocks.alert.mockReset();
   mocks.updateSettings.mockReset();
   mocks.updateSettings.mockResolvedValue(AsyncResult.success(undefined));
@@ -325,5 +375,26 @@ describe.each([
     await act(async () => button(label).click());
     expect(mocks.updateSettings).toHaveBeenCalledTimes(2);
     expect(mocks.alert).not.toHaveBeenCalled();
+  });
+});
+
+it("recovers a failed agent account-status request without leaving Settings", async () => {
+  mocks.providerAuth.error = "Could not read sign-in status.";
+  act(() => root.render(<SettingsProviderAccountsRouteScreen />));
+  expect(button("Sign in").disabled).toBe(true);
+  expect(container.textContent).toContain("Could not read sign-in status.");
+  mocks.providerAuth.refresh.mockImplementation(() => {
+    mocks.providerAuth.data = { phase: "idle", methods: [] };
+    mocks.providerAuth.error = null;
+    root.render(<SettingsProviderAccountsRouteScreen />);
+  });
+
+  act(() => button("Retry sign-in status").click());
+  expect(container.textContent).not.toContain("Could not read sign-in status.");
+  expect(button("Sign in").disabled).toBe(false);
+  await act(async () => button("Sign in").click());
+  expect(mocks.updateSettings).toHaveBeenCalledWith({
+    environmentId: "local",
+    input: { instanceId: "codex" },
   });
 });

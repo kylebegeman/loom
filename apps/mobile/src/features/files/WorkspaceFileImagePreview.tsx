@@ -13,6 +13,7 @@ function ResolvedWorkspaceFileImagePreview(props: {
   readonly accessibilityLabel: string;
   readonly uri: string;
   readonly actionsSource?: MediaActionsSource;
+  readonly onRetry: () => void;
 }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
@@ -59,11 +60,13 @@ function ResolvedWorkspaceFileImagePreview(props: {
         </Pressable>
       </MediaActionsMenu>
       {loadError !== null ? (
-        <View
-          pointerEvents="none"
-          className="absolute inset-0 items-center justify-center bg-card px-6"
-        >
-          <EmptyState title="Image unavailable" detail={loadError} />
+        <View className="absolute inset-0 items-center justify-center bg-card px-6">
+          <EmptyState
+            title="Image unavailable"
+            detail={loadError}
+            actionLabel="Try again"
+            onAction={props.onRetry}
+          />
         </View>
       ) : null}
       <FilePreviewModal source={preview} onRequestClose={() => setPreview(null)} />
@@ -75,6 +78,7 @@ export function WorkspaceFileImagePreview(props: {
   readonly accessibilityLabel: string;
   readonly uri: string | null;
   readonly actionsSource?: MediaActionsSource;
+  readonly onRetry: () => void;
 }) {
   if (props.uri === null) {
     return <FilePreviewLoading message="Preparing image preview..." background="card" />;
@@ -85,6 +89,7 @@ export function WorkspaceFileImagePreview(props: {
       accessibilityLabel={props.accessibilityLabel}
       uri={props.uri}
       actionsSource={props.actionsSource}
+      onRetry={props.onRetry}
     />
   );
 }

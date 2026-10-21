@@ -46,14 +46,14 @@ export function buildHomeListFilterMenu(props: {
 
   items.push({
     type: "submenu",
-    title: "Environment",
+    title: "Computer",
     items: [
       {
         type: "action",
-        title: "All environments",
+        title: "All computers",
         subtitle: projectsView
-          ? "Show projects from every environment"
-          : "Show threads from every environment",
+          ? "Show projects from every computer"
+          : "Show threads from every computer",
         state: props.selectedEnvironmentId === null ? "on" : "off",
         onPress: () => props.onEnvironmentChange(null),
       },

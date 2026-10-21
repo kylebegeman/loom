@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId } from "@t3tools/contracts";
 
-import type { WorkspaceState } from "../../state/workspaceModel";
+import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import { workspaceConnectionStatusPresentation } from "./workspace-connection-status";
 
 function workspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState {
@@ -17,6 +18,19 @@ function workspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState
     shellSnapshotError: null,
     networkStatus: "online",
     ...overrides,
+  };
+}
+
+function connectingComputer(label: string): WorkspaceEnvironment {
+  return {
+    environmentId: EnvironmentId.make(label),
+    environmentLabel: label,
+    displayUrl: "",
+    isRelayManaged: false,
+    isEnabled: true,
+    connectionState: "reconnecting",
+    connectionError: null,
+    connectionErrorTraceId: null,
   };
 }
 
@@ -89,6 +103,63 @@ describe("workspace connection status", () => {
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "Loading threads...",
       showsProgress: true,
+    });
+  });
+});
+
+describe("compact workspace connection status", () => {
+  it("keeps partial reconnects short while retaining the computer name for accessibility", () => {
+    const state = workspaceState({
+      hasConnectingEnvironment: true,
+      connectingEnvironments: [connectingComputer("Dorothy")],
+    });
+
+    expect(workspaceConnectionStatusPresentation(state, { compact: true })).toEqual({
+      label: "1 reconnecting",
+      accessibilityLabel: "Reconnecting to Dorothy",
+      showsProgress: true,
+    });
+  });
+
+  it("summarizes multiple reconnecting computers without replacing their error", () => {
+    const state = workspaceState({
+      hasConnectingEnvironment: true,
+      connectingEnvironments: [
+        connectingComputer("Dorothy"),
+        connectingComputer("Dorothy 2"),
+        connectingComputer("Dorothy 3"),
+      ],
+    });
+
+    expect(workspaceConnectionStatusPresentation(state, { compact: true })).toEqual({
+      label: "3 reconnecting",
+      accessibilityLabel: "Reconnecting to 3 computers",
+      showsProgress: true,
+    });
+    expect(
+      workspaceConnectionStatusPresentation(
+        { ...state, connectionError: "Dorothy 3 needs to be paired again." },
+        { compact: true },
+      ),
+    ).toEqual({
+      label: "Connection issue",
+      accessibilityLabel: "Dorothy 3 needs to be paired again.",
+      showsProgress: false,
+    });
+  });
+
+  it("prioritizes device offline status over reconnect progress", () => {
+    const state = workspaceState({
+      networkStatus: "offline",
+      hasReadyEnvironment: false,
+      hasConnectingEnvironment: true,
+      connectingEnvironments: [connectingComputer("Dorothy")],
+    });
+
+    expect(workspaceConnectionStatusPresentation(state, { compact: true })).toEqual({
+      label: "Offline",
+      accessibilityLabel: "You are offline",
+      showsProgress: false,
     });
   });
 });

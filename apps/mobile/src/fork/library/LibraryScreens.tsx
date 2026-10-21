@@ -184,11 +184,6 @@ export function LibraryRouteScreen() {
           : undefined
       }
     >
-      <Text className="text-sm text-foreground-muted">
-        Keep the context, repositories and conversations for each thing you’re building together.
-      </Text>
-      <Button label="Sites and activity" onPress={() => navigation.navigate("Sites")} />
-      <LibraryHistorySearchEntry />
       {!authority.environmentId ? (
         <View className="gap-3">
           <Text className="text-sm text-foreground">
@@ -272,7 +267,7 @@ export function LibraryRouteScreen() {
                   ? "Try another name or component."
                   : archived
                     ? "Archived projects keep their context and conversations."
-                    : "Create a project with its brief and separate component repositories. Choose a computer when you start work."}
+                    : "Add a project or an existing folder. Choose a computer when you start a conversation."}
               </Text>
               {!query && !archived ? (
                 <Button
@@ -286,6 +281,8 @@ export function LibraryRouteScreen() {
           ) : null}
         </>
       )}
+      <LibraryHistorySearchEntry />
+      <Button label="Sites and activity" tone="text" onPress={() => navigation.navigate("Sites")} />
     </LibraryPage>
   );
 }
@@ -301,7 +298,7 @@ function LibraryProjectRow(props: {
       .map((r) => r.title)
       .join(", ") ||
     props.project.brief ||
-    "No repositories added yet";
+    "Conversations, files and project context";
   return (
     <RowPressable
       accessibilityRole="button"
@@ -559,45 +556,6 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
       </View>
-      <View className="gap-3">
-        <Text className="text-base font-t3-medium text-foreground">Project files</Text>
-        {activeCopies.map((copy) => (
-          <LibraryCopySection
-            key={copy.id}
-            project={p}
-            copy={copy}
-            lastSeenAt={lastSeenAt(copy.environmentId)}
-            authorityEnvironmentId={target}
-            authorityReady={authority.ready && copiesReady}
-            computerLabel={hostLabel(copy.environmentId)}
-            onReuseFolder={() => reuseFolder(copy)}
-            onChanged={() => refreshLibraryWork(target, projectId)}
-          />
-        ))}
-        {copiesReady && activeCopies.length === 0 ? (
-          <Text className="text-sm text-foreground-muted">
-            Start work to prepare files on your chosen computer. Your project and conversations stay
-            saved when the files are removed.
-          </Text>
-        ) : null}
-        {copiesState === "loading" ? (
-          <LibraryNotice
-            detail={
-              !authority.connected
-                ? "Reconnect the selected library to check your computers."
-                : "Checking your computers…"
-            }
-          />
-        ) : null}
-        {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
-        <Button
-          label="Work on another computer"
-          tone="secondary"
-          disabled={!authority.ready || p.archived}
-          onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
-        />
-      </View>
-      <LibraryHistorySearchEntry projectId={p.id} />
       <SettingsSection
         title={
           showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS
@@ -638,7 +596,45 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           </View>
         ) : null}
       </SettingsSection>
-      <LibraryTimelinePreview projectId={p.id} />
+      <LibraryHistorySearchEntry projectId={p.id} />
+      <View className="gap-3">
+        <Text className="text-base font-t3-medium text-foreground">Project files</Text>
+        {activeCopies.map((copy) => (
+          <LibraryCopySection
+            key={copy.id}
+            project={p}
+            copy={copy}
+            lastSeenAt={lastSeenAt(copy.environmentId)}
+            authorityEnvironmentId={target}
+            authorityReady={authority.ready && copiesReady}
+            computerLabel={hostLabel(copy.environmentId)}
+            onReuseFolder={() => reuseFolder(copy)}
+            onChanged={() => refreshLibraryWork(target, projectId)}
+          />
+        ))}
+        {copiesReady && activeCopies.length === 0 ? (
+          <Text className="text-sm text-foreground-muted">
+            Start work to prepare files on your chosen computer. Your project and conversations stay
+            saved when the files are removed.
+          </Text>
+        ) : null}
+        {copiesState === "loading" ? (
+          <LibraryNotice
+            detail={
+              !authority.connected
+                ? "Reconnect the selected library to check your computers."
+                : "Checking your computers…"
+            }
+          />
+        ) : null}
+        {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
+        <Button
+          label="Work on another computer"
+          tone="secondary"
+          disabled={!authority.ready || p.archived}
+          onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
+        />
+      </View>
       {removedCopies.length ? (
         <View className="gap-3">
           <Button
@@ -670,6 +666,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           ) : null}
         </View>
       ) : null}
+      <LibraryTimelinePreview projectId={p.id} />
       <SettingsSection title="Brief">
         <View className="p-4">
           <Text selectable className="text-sm leading-normal text-foreground">
@@ -751,7 +748,14 @@ function LibraryThreadRow(props: {
         {libraryScopeLabel(props.project, props.thread.resourceIds)} · {props.computerLabel}
       </Text>
       <Text className="text-xs text-foreground-muted">
-        {props.thread.status} · Saved {new Date(props.thread.syncedAt).toLocaleString()}
+        {props.thread.archived
+          ? "Archived · "
+          : props.thread.settled
+            ? "Settled · "
+            : props.thread.status === "failed"
+              ? "Last run failed · "
+              : ""}
+        Saved {ago(props.thread.syncedAt)}
       </Text>
     </Pressable>
   );

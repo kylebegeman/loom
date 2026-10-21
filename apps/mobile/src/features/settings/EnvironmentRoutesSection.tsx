@@ -130,7 +130,8 @@ export function EnvironmentRoutesSection({
 
   return (
     <SettingsSection
-      title="Routes"
+      title="Connection addresses"
+      footer="Loom tries these addresses in order and uses the first one it can reach."
       trailing={
         routes.length > 1 ? (
           <Button
@@ -154,8 +155,8 @@ export function EnvironmentRoutesSection({
           session?.authenticated ? (
             <>
               <Text className="text-sm text-foreground-muted">
-                Applies to the route marked In use. Other routes may have different permissions and
-                have not been checked.
+                Applies to the address marked In use. Other addresses may have different permissions
+                and have not been checked.
               </Text>
               {AUTH_SCOPE_OPTIONS.map(({ scope, title }) => (
                 <Text key={scope} className="text-sm text-foreground">
@@ -165,8 +166,7 @@ export function EnvironmentRoutesSection({
             </>
           ) : (
             <Text className="text-sm text-foreground-muted">
-              Permissions not checked. Connect to this environment to view this session’s
-              permissions.
+              Permissions not checked. Connect this computer to view this connection’s permissions.
             </Text>
           )}
         </View>
@@ -212,7 +212,7 @@ export function EnvironmentRoutesSection({
           />
         );
       })}
-      <SettingsActionRow icon="plus" label="Add route" onPress={onAddRoute} />
+      <SettingsActionRow icon="plus" label="Add connection address" onPress={onAddRoute} />
     </SettingsSection>
   );
 }
@@ -254,7 +254,7 @@ function RouteRow(props: {
       {props.editing && props.onRemove ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${label} route`}
+          accessibilityLabel={`Remove ${label} connection address`}
           hitSlop={8}
           onPress={props.onRemove}
           className="active:opacity-70"
@@ -276,7 +276,7 @@ function RouteRow(props: {
           address,
           isLearned(route) ? "Found automatically" : null,
           props.inUse ? "In use" : null,
-          `Route ${props.position} of ${props.count}`,
+          `Connection address ${props.position} of ${props.count}`,
         ]
           .filter((part) => part !== null)
           .join(", ")}

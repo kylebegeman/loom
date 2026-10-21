@@ -9,7 +9,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -104,6 +104,7 @@ export function ConnectionEnvironmentRow(props: {
               ? `Manage ${props.environment.environmentLabel}`
               : `${props.expanded ? "Collapse" : "Expand"} details for ${props.environment.environmentLabel}`
           }
+          accessibilityState={props.opensDetails ? undefined : { expanded: props.expanded }}
           onPress={props.onToggle}
         >
           <View className="flex-row items-center gap-1.5">
@@ -214,7 +215,7 @@ export function ConnectionEnvironmentRow(props: {
           {props.environment.isRelayManaged ? (
             <Text className="text-sm text-foreground-muted">
               {/* fork: brand */}
-              Managed by Loom Connect. Tunnel details update automatically.
+              Loom Connect keeps this connection address up to date.
             </Text>
           ) : (
             <>
@@ -231,90 +232,44 @@ export function ConnectionEnvironmentRow(props: {
               ) : null}
 
               <ConnectionFormField
-                label="URL"
+                label="Connection address"
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
-                placeholder="192.168.1.100:8080"
+                placeholder="192.168.1.100:3773"
                 value={url}
                 onChangeText={setUrl}
               />
             </>
           )}
 
-          {Platform.OS === "android" ? (
-            <View className="flex-row items-center justify-end gap-2">
-              {props.environment.isRelayManaged ? null : (
-                <View className="flex-1">
-                  <Button
-                    label="Save"
-                    tone="primary"
-                    fullWidth
-                    onPress={() => {
-                      void handleSave();
-                    }}
-                  />
-                </View>
-              )}
-              <IconButton
-                accessibilityLabel="Reconnect computer" // fork: fleet-connections
-                icon="arrow.clockwise"
-                variant="tonal"
-                disabled={!enabled}
-                onPress={() => props.onReconnect(props.environment.environmentId)}
-              />
-              <IconButton
-                accessibilityLabel="Remove computer" // fork: fleet-connections
-                icon="trash"
-                variant="danger"
-                onPress={() => props.onRemove(props.environment.environmentId)}
-              />
-            </View>
-          ) : (
-            <View className="flex-row justify-end gap-2">
-              {props.environment.isRelayManaged ? null : (
-                <Pressable
-                  className="min-h-[42px] flex-1 flex-row items-center justify-center gap-1.5 rounded-[14px] bg-primary px-3.5 py-2.5 active:opacity-70"
-                  onPress={handleSave}
-                >
-                  <SymbolView
-                    name="checkmark"
-                    size={13}
-                    tintColorClassName="accent-primary-foreground"
-                    type="monochrome"
-                  />
-                  <Text className="text-xs font-t3-bold tracking-[0.8px] uppercase text-primary-foreground">
-                    Save
-                  </Text>
-                </Pressable>
-              )}
-
-              <Pressable
-                className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70 disabled:opacity-40"
-                disabled={!enabled}
-                onPress={() => props.onReconnect(props.environment.environmentId)}
-              >
-                <SymbolView
-                  name="arrow.clockwise"
-                  size={14}
-                  tintColorClassName="accent-icon-subtle"
-                  type="monochrome"
+          <View className="flex-row items-center justify-end gap-2">
+            {props.environment.isRelayManaged ? null : (
+              <View className="flex-1">
+                <Button
+                  label="Save connection"
+                  tone="primary"
+                  fullWidth
+                  onPress={() => {
+                    void handleSave();
+                  }}
                 />
-              </Pressable>
-
-              <Pressable
-                className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-danger-border bg-danger active:opacity-70"
-                onPress={() => props.onRemove(props.environment.environmentId)}
-              >
-                <SymbolView
-                  name="trash"
-                  size={14}
-                  tintColorClassName="accent-danger-foreground"
-                  type="monochrome"
-                />
-              </Pressable>
-            </View>
-          )}
+              </View>
+            )}
+            <IconButton
+              accessibilityLabel="Reconnect computer"
+              icon="arrow.clockwise"
+              variant="tonal"
+              disabled={!enabled || isRetrying}
+              onPress={() => props.onReconnect(props.environment.environmentId)}
+            />
+            <IconButton
+              accessibilityLabel="Remove computer"
+              icon="trash"
+              variant="danger"
+              onPress={() => props.onRemove(props.environment.environmentId)}
+            />
+          </View>
         </Animated.View>
       ) : null}
     </Animated.View>

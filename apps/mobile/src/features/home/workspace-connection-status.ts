@@ -2,6 +2,7 @@ import type { WorkspaceState } from "../../state/workspaceModel";
 
 export interface WorkspaceConnectionStatusPresentation {
   readonly label: string;
+  readonly accessibilityLabel?: string;
   readonly showsProgress: boolean;
 }
 
@@ -32,10 +33,36 @@ function workspaceConnectionStatusLabel(state: WorkspaceState): string {
 
 export function workspaceConnectionStatusPresentation(
   state: WorkspaceState,
+  options?: { readonly compact: boolean },
 ): WorkspaceConnectionStatusPresentation | null {
   if (!shouldShowWorkspaceConnectionStatus(state)) return null;
+  const label = workspaceConnectionStatusLabel(state);
+  const connectingCount = state.connectingEnvironments.length;
+  const compactLabel =
+    state.networkStatus === "offline"
+      ? "Offline"
+      : state.connectionError !== null
+        ? "Connection issue"
+        : connectingCount > 0
+          ? state.hasReadyEnvironment || connectingCount > 1
+            ? `${connectingCount} reconnecting`
+            : "Connecting"
+          : state.hasPendingShellSnapshot
+            ? state.hasLoadedShellSnapshot
+              ? "Syncing"
+              : "Loading"
+            : "Not connected";
   return {
-    label: workspaceConnectionStatusLabel(state),
+    label: options?.compact ? compactLabel : label,
+    ...(options?.compact
+      ? {
+          accessibilityLabel:
+            state.networkStatus === "offline"
+              ? "You are offline"
+              : (state.connectionError ??
+                (connectingCount > 1 ? `Reconnecting to ${connectingCount} computers` : label)),
+        }
+      : {}),
     showsProgress:
       state.networkStatus !== "offline" &&
       state.connectionError === null &&

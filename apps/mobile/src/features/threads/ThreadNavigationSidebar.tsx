@@ -38,6 +38,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SearchBarCommands } from "react-native-screens";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { ThreadSearchNotice } from "./ThreadSearchNotice";
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { Menu } from "../../components/ui/Menu";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -790,13 +791,18 @@ function ThreadNavigationSidebarPane(
     return sidebarItemsAreEqual(previous, item);
   };
   const navigationControl = (
-    <ProjectNavigationControl
-      view={navigationView}
-      onChange={(view) => {
-        openSwipeableRef.current?.close();
-        setNavigationView(view);
-      }}
-    />
+    <>
+      <ProjectNavigationControl
+        view={navigationView}
+        onChange={(view) => {
+          openSwipeableRef.current?.close();
+          setNavigationView(view);
+        }}
+      />
+      {navigationView === "threads" && threadSearch.failedEnvironmentIds.length > 0 ? (
+        <ThreadSearchNotice pending={threadSearch.isPending} onRetry={threadSearch.retry} />
+      ) : null}
+    </>
   );
   const filterCustomized =
     options.selectedEnvironmentId !== null ||
@@ -842,7 +848,9 @@ function ThreadNavigationSidebarPane(
             : props.searchQuery.trim().length > 0
               ? threadSearch.isPending
                 ? "Searching thread messages…"
-                : "No matching threads"
+                : threadSearch.failedEnvironmentIds.length > 0
+                  ? "Search incomplete"
+                  : "No matching threads"
               : selectedProjectScope !== null
                 ? `No threads in ${selectedProjectScope.title}`
                 : "No threads yet"}

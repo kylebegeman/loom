@@ -5,6 +5,7 @@ import { useMemo, useRef } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { useServerConfigs } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
@@ -30,7 +31,7 @@ export function ThreadCommandOutput(props: {
   readonly itemId: TurnItemId;
   readonly themeAppearance: "light" | "dark";
 }) {
-  const { data, error } = useEnvironmentQuery(
+  const { data, error, refresh } = useEnvironmentQuery(
     orchestrationEnvironment.v2.commandOutput({
       environmentId: props.environmentId,
       input: { threadId: props.threadId, itemId: props.itemId },
@@ -44,14 +45,17 @@ export function ThreadCommandOutput(props: {
     () => terminalOutputSpans(text, TERMINAL_PALETTES[props.themeAppearance]),
     [text, props.themeAppearance],
   );
+  const errorNotice = error ? (
+    <View className="gap-1 pt-1.5">
+      <Text accessibilityRole="alert" className="text-xs leading-normal text-foreground-muted">
+        {text.length > 0 ? "Output may be out of date." : "Could not load output."} {error}
+      </Text>
+      <Button label="Try again" tone="text" onPress={refresh} />
+    </View>
+  ) : null;
   if (text.length === 0) {
-    const message = error
-      ? `Couldn't load output: ${error}`
-      : data === null
-        ? "Loading output…"
-        : data.running
-          ? null
-          : "No output.";
+    if (errorNotice) return errorNotice;
+    const message = data === null ? "Loading output…" : data.running ? null : "No output.";
     return message === null ? null : (
       <Text className="pt-1.5 font-mono text-2xs leading-normal text-foreground-muted">
         {message}
@@ -60,6 +64,7 @@ export function ThreadCommandOutput(props: {
   }
   return (
     <View className="pt-1.5">
+      {errorNotice}
       {data?.output.truncated ? (
         <Text className="pb-0.5 text-3xs text-foreground-subtle">Earlier output not shown</Text>
       ) : null}

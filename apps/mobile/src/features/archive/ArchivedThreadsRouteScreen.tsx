@@ -10,7 +10,11 @@ import {
   ArchivedThreadsScreen,
   type ArchivedThreadsHeaderEnvironment,
 } from "./ArchivedThreadsScreen";
-import { buildArchivedThreadGroups, type ArchivedThreadSortOrder } from "./archivedThreadList";
+import {
+  archivedThreadQueryEnvironmentIds,
+  buildArchivedThreadGroups,
+  type ArchivedThreadSortOrder,
+} from "./archivedThreadList";
 import {
   refreshArchivedThreadsForEnvironment,
   useArchivedThreadSnapshots,
@@ -35,8 +39,12 @@ export function ArchivedThreadsRouteScreen() {
     [savedConnectionsById],
   );
   const environmentIds = useMemo(
-    () => environments.map((environment) => environment.environmentId),
-    [environments],
+    () =>
+      archivedThreadQueryEnvironmentIds(
+        environments.map((environment) => environment.environmentId),
+        selectedEnvironmentId,
+      ),
+    [environments, selectedEnvironmentId],
   );
   const environmentLabels = useMemo(
     () =>

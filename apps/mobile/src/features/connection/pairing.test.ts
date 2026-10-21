@@ -42,6 +42,25 @@ describe("extractPairingUrlFromQrPayload", () => {
     ).toBe("https://remote.example.com/pair#token=pairing-token");
   });
 
+  it.each([
+    "This is not a pairing link",
+    "https://example.com/",
+    "mailto:someone@example.com#token=pairing-token",
+    "loom://pair",
+    "loom://pair?pairingUrl=https%3A%2F%2Fexample.com",
+    "https://app.t3.codes/pair?host=javascript%3Aalert(1)#token=pairing-token",
+  ])("rejects QR codes that cannot pair a computer: %s", (payload) => {
+    expect(() => extractPairingUrlFromQrPayload(payload)).toThrowError(
+      "Scan the pairing code from Connections settings on your computer.",
+    );
+  });
+
+  it("accepts hosted pairing codes with a separate computer address", () => {
+    const pairingUrl =
+      "https://app.t3.codes/pair?host=https%3A%2F%2Fdesktop.example.com#token=pairing-token";
+    expect(extractPairingUrlFromQrPayload(pairingUrl)).toBe(pairingUrl);
+  });
+
   it("rejects empty qr payloads", () => {
     expect(() => extractPairingUrlFromQrPayload("   ")).toThrowError(PairingQrPayloadEmptyError);
     expect(() => extractPairingUrlFromQrPayload("   ")).toThrowError(

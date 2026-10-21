@@ -15,6 +15,7 @@ export interface EnvironmentThreadSearchMatch extends OrchestrationThreadSearchM
 export interface ThreadSearchResultsState {
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isLoading: boolean;
+  readonly failedEnvironmentIds: ReadonlyArray<EnvironmentId>;
 }
 
 const ThreadSearchKey = Schema.fromJsonString(
@@ -53,16 +54,18 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
     Atom.make((get): ThreadSearchResultsState => {
       const parsedKey = parseThreadSearchKey(key);
       if (Option.isNone(parsedKey)) {
-        return { matches: [], isLoading: false };
+        return { matches: [], isLoading: false, failedEnvironmentIds: [] };
       }
 
       const [environmentIds, query] = parsedKey.value;
       const matches: EnvironmentThreadSearchMatch[] = [];
       let isLoading = false;
+      const failedEnvironmentIds: EnvironmentId[] = [];
 
       for (const environmentId of environmentIds) {
         const result = get(options.getSearchAtom(environmentId, query));
         isLoading ||= result.waiting;
+        if (AsyncResult.isFailure(result)) failedEnvironmentIds.push(environmentId);
         const value = Option.getOrNull(AsyncResult.value(result));
         if (value !== null) {
           matches.push(
@@ -74,7 +77,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
         }
       }
 
-      return { matches, isLoading };
+      return { matches, isLoading, failedEnvironmentIds };
     }).pipe(Atom.withLabel(`${options.labelPrefix}:${key}`)),
   );
 }

@@ -2,6 +2,7 @@ import { Button } from "../../components/ui/Button";
 import type {
   ProviderApprovalDecision,
   ProviderApprovalOption,
+  ProviderRequestKind,
   RuntimeRequestId,
 } from "@t3tools/contracts";
 import { View } from "react-native";
@@ -21,9 +22,17 @@ export interface PendingApprovalCardProps {
 
 const DEFAULT_APPROVAL_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
   { decision: "accept", label: "Allow once" },
-  { decision: "acceptForSession", label: "Allow session" },
+  { decision: "acceptForSession", label: "Allow for this session" },
   { decision: "decline", label: "Decline" },
 ];
+
+const APPROVAL_TITLES: Record<ProviderRequestKind, string> = {
+  command: "Run a command",
+  "file-read": "Read a file",
+  "file-change": "Change files",
+  "mcp-elicitation": "App access",
+  permission: "App permissions",
+};
 
 export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const options: ReadonlyArray<ProviderApprovalOption> =
@@ -37,10 +46,10 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
         Approval needed
       </Text>
       <Text className="font-t3-bold text-lg text-foreground">
-        {props.approval.appName ?? props.approval.requestKind}
+        {props.approval.appName ?? APPROVAL_TITLES[props.approval.requestKind]}
       </Text>
       {props.approval.detail ? (
-        <Text className="font-sans text-sm leading-normal text-foreground-secondary">
+        <Text selectable className="font-sans text-sm leading-normal text-foreground-secondary">
           {props.approval.detail}
         </Text>
       ) : null}

@@ -48,6 +48,7 @@ const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> =
 const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
+  failedEnvironmentIds: [] as ReadonlyArray<EnvironmentId>,
 }).pipe(Atom.withLabel("mobile:thread-search:empty"));
 
 const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
@@ -165,6 +166,8 @@ export function useThreadSearch(
 ): {
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isPending: boolean;
+  readonly failedEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  readonly retry: () => void;
 } {
   const normalizedQuery = query.trim();
   const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
@@ -179,6 +182,15 @@ export function useThreadSearch(
   return {
     matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
     isPending: canSearch && (isDebouncing || result.isLoading),
+    failedEnvironmentIds: isDebouncing ? [] : result.failedEnvironmentIds,
+    retry: () => {
+      if (settledQuery === null) return;
+      for (const environmentId of result.failedEnvironmentIds) {
+        appAtomRegistry.refresh(
+          orchestrationEnvironment.threadSearch({ environmentId, input: { query: settledQuery } }),
+        );
+      }
+    },
   };
 }
 

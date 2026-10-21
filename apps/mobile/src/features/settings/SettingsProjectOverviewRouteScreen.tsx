@@ -88,7 +88,7 @@ export function SettingsProjectOverviewRouteScreen({
         >
           {members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
-              This project has no checkout on the selected connected environments. Change the filter
+              This project has no folder on the selected connected computers. Change the filter
               above.
             </Text>
           ) : (
@@ -227,7 +227,7 @@ function ProjectOverviewContent(props: {
                     : "text-lg text-foreground"
                 }
               >
-                {environment?.label ?? "Environment"}
+                {environment?.label ?? "Computer"}
               </Text>
               {environment?.displayUrl ? (
                 <Text className="text-sm leading-normal text-foreground-muted">

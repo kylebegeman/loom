@@ -96,7 +96,7 @@ export function LibraryRestingProjects() {
   return (
     <SettingsSection
       title="Resting"
-      footer="Quiet for two weeks. Tidy up removes the copies that hold nothing unsaved and can archive the project."
+      footer="Quiet for two weeks. Tidy up frees safely saved files and can archive the project."
     >
       {resting.map((entry, index) => (
         <RestingProjectRow
@@ -349,7 +349,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
           ? remaining.length || result.archive?.ok === false
             ? "Some of this needs another look. Everything listed below was left as it was."
             : "Done. The project and its saved conversations stay in your Library."
-          : "This project has been quiet for two weeks. Remove the copies that hold nothing unsaved, and archive the project if you are done with it for now."}
+          : "This project has been quiet for two weeks. Free safely saved files and archive the project if you are done with it for now."}
       </Text>
       {kept.length ? (
         <LibraryNotice
@@ -368,17 +368,17 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
       ) : null}
       {result?.archive?.ok === false ? <LibraryNotice error={result.archive.message} /> : null}
       {health === null && checkable.length ? (
-        <LibraryNotice detail="Checking each copy for uncommitted and unpushed work…" />
+        <LibraryNotice detail="Checking for unsaved changes and unpublished commits…" />
       ) : (
         <>
           <CopyGroup
             title={`Safe to remove (${suggestions.safe.length})`}
             footer={
               suggestions.safe.length
-                ? "Nothing uncommitted or unpushed. Each copy is checked again just before it is removed."
+                ? "All changes are saved and published. Files are checked again before removal."
                 : copies.length
-                  ? "No copy is safe to remove right now."
-                  : "No copies on your computers."
+                  ? "No files are ready for removal."
+                  : "No project files on your computers."
             }
             rows={suggestions.safe.map((copy) => {
               const outcome = settled.get(copy.id);

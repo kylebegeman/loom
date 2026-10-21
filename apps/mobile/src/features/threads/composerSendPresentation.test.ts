@@ -20,9 +20,9 @@ describe("resolveComposerSendPresentation", () => {
     expect(presentation.action).toBeNull();
   });
 
-  it("says Queue while the outbox is holding the message back", () => {
+  it("explains deferred delivery while the outbox is holding the message back", () => {
     expect(resolveComposerSendPresentation({ ...idle, deliveryDeferred: true }).label).toBe(
-      "Queue",
+      "Send later",
     );
   });
 
@@ -40,11 +40,11 @@ describe("resolveComposerSendPresentation", () => {
       followUpBehavior: "steer",
     });
 
-    expect(queueing.label).toBe("Queue");
+    expect(queueing.label).toBe("Send next");
     expect(queueing.icon).toBe("list.number");
     expect(queueing.action).toBe("queue");
     expect(queueing.alternate).toBe("steer");
-    expect(steering.label).toBe("Steer");
+    expect(steering.label).toBe("Send now");
     expect(steering.icon).toBe("arrow.turn.left.up");
     expect(steering.action).toBe("steer");
     expect(steering.alternate).toBe("queue");
@@ -59,7 +59,7 @@ describe("resolveComposerSendPresentation", () => {
       followUpBehavior: "steer",
     });
 
-    expect(presentation.label).toBe("Queue");
+    expect(presentation.label).toBe("Send next");
     expect(presentation.action).toBe("queue");
     expect(presentation.alternate).toBeNull();
     expect(presentation.offersFollowUpChoice).toBe(false);

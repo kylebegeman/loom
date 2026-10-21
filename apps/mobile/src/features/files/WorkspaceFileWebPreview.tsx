@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BackHandler, Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { FilePreviewLoading } from "./FilePreviewFeedback";
 import { LoadingStrip } from "../../components/ui/LoadingStrip";
 import { PdfPreview } from "../../components/PdfPreview";
@@ -12,14 +13,18 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { isPdfPreviewUri } from "../../lib/pdfPreview";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 
-export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
+export function WorkspaceFileWebPreview(props: {
+  readonly uri: string | null;
+  readonly onRetry?: () => void;
+}) {
   if (props.uri === null) {
     return <FilePreviewLoading message="Preparing preview..." background="card" />;
   }
-  return <DocumentWebPreview key={props.uri} uri={props.uri} />;
+  return <DocumentWebPreview key={props.uri} uri={props.uri} onRetry={props.onRetry} />;
 }
 
-function DocumentWebPreview(props: { readonly uri: string }) {
+function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: () => void }) {
+  const webViewRef = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
   const columnMetrics = useNativeColumnLayoutMetrics();
   const pdfTopInset = Platform.OS === "ios" ? (columnMetrics?.safeArea.top ?? insets.top) : 0;
@@ -63,10 +68,25 @@ function DocumentWebPreview(props: { readonly uri: string }) {
         {loadError ? (
           <View className="border-b border-border bg-card px-4 py-2">
             <Text className="text-xs font-t3-bold text-foreground">Preview failed</Text>
-            <Text className="mt-0.5 text-xs leading-snug text-foreground-muted">{loadError}</Text>
+            <Text
+              accessibilityRole="alert"
+              className="mt-0.5 text-xs leading-snug text-foreground-muted"
+            >
+              {loadError}
+            </Text>
+            <Button
+              label="Try again"
+              tone="text"
+              onPress={() => {
+                setLoadError(null);
+                if (props.onRetry) props.onRetry();
+                else webViewRef.current?.reload();
+              }}
+            />
           </View>
         ) : null}
         <WebView
+          ref={webViewRef}
           source={{ uri: props.uri }}
           originWhitelist={["*"]}
           allowsBackForwardNavigationGestures

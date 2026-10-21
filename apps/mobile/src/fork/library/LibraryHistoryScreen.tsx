@@ -244,7 +244,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
                 }
               />
               <Button
-                label="Linked continuation"
+                label="Continue on another computer"
                 tone="text"
                 disabled={!authority.ready}
                 onPress={() =>

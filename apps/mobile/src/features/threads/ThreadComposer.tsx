@@ -230,14 +230,14 @@ const COMPOSER_ATTACHMENT_ENTERING =
 const AnimatedGlassSurface = Animated.createAnimatedComponent(GlassSurface);
 
 const FOLLOW_UP_ACTION_LABEL = {
-  queue: "Queue",
-  steer: "Steer now",
+  queue: "Send next",
+  steer: "Send now",
   restart: "Restart turn",
 } as const;
 
 const FOLLOW_UP_ACTION_SUBTITLE = {
   queue: "Run after the current turn",
-  steer: "Interrupt what the agent is doing",
+  steer: "Guide the agent during the current turn",
   restart: "Start the turn over with this message",
 } as const;
 
@@ -702,9 +702,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         className="relative w-full self-center"
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {!voiceInput.isBusy &&
-        composerMenu.trigger &&
-        (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
+        {isFocused && !voiceInput.isBusy && composerMenu.trigger ? (
           <ComposerPopoverAnchor>
             <ComposerCommandPopover
               items={composerMenu.items}
@@ -1115,6 +1113,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           </Animated.View>
         </ComposerSurface>
 
+        {hasContent && sendBlockedReason !== null ? (
+          <Text accessibilityLiveRegion="polite" className="pt-2 text-xs text-foreground-muted">
+            {sendBlockedReason}
+          </Text>
+        ) : null}
         {props.connectionState === "connected" && !props.canOperateThread ? (
           <Text className="pt-2 text-xs text-foreground-muted">
             This connection cannot control this task. You can still edit your draft.

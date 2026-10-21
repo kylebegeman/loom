@@ -92,7 +92,7 @@ export function ComputerWorkSection({
         <Text className="text-sm text-foreground-muted">
           {connected
             ? ready === 0
-              ? "Agents need setup before starting work."
+              ? "Install and sign in to an agent in Loom on this computer to start work."
               : `${ready} ${ready === 1 ? "agent" : "agents"} ready`
             : "Reconnect to start work. Saved conversations remain available."}
         </Text>
@@ -111,9 +111,20 @@ export function ComputerWorkSection({
         icon="square.and.pencil"
         label="New conversation"
         disabled={!canStart}
+        loading={pending === "scratch"}
         onPress={() => {
-          if (machineProjects.length === 0 && canStartScratch) startScratch();
-          else setChoosing((value) => !value);
+          if (!canStart) return;
+          if (machineProjects.length === 0) {
+            if (canStartScratch) startScratch();
+            else {
+              navigation.navigate("NewTaskSheet", {
+                screen: "AddProject",
+                params: { environmentId },
+              });
+            }
+          } else if (machineProjects.length === 1 && !canStartScratch) {
+            startProject(machineProjects[0]!);
+          } else setChoosing((value) => !value);
         }}
       />
       {choosing ? (

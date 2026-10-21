@@ -43,12 +43,12 @@ function noticeDetail(
       return `Cached data remains available. The ${resourceName} will load when your connection returns.`;
     case "connecting":
     case "reconnecting":
-      return `The ${resourceName} will load as soon as the environment is ready.`;
+      return `The ${resourceName} will load as soon as the computer reconnects.`;
     case "unsupported":
       return "Use compatible versions of the app and server to connect.";
     case "available":
     case "error":
-      return `Reconnect the environment to load the ${resourceName}.`;
+      return `Reconnect the computer to load the ${resourceName}.`;
     case "connected":
       return "";
   }

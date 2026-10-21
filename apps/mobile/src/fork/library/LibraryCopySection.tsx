@@ -12,6 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { ListRowLayout } from "../../components/ui/ListRowLayout";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { LibraryManagedFileControls } from "./LibraryManagedFileControls";
 import { useEnvironmentPresentation } from "../../state/presentation";
@@ -69,6 +72,7 @@ export function LibraryCopySection(props: {
   useEffect(() => () => recoveryController.current?.abort(), []);
   const [retainedCopy, setRetainedCopy] = useState<LibraryWorkingCopy | null>(null);
   const [showSetup, setShowSetup] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [removedCopy, setRemovedCopy] = useState<LibraryWorkingCopy | null>(null),
     [removalRegistered, setRemovalRegistered] = useState(false);
   const released = useRef<LibraryWorkingCopy | null>(null),
@@ -80,6 +84,30 @@ export function LibraryCopySection(props: {
   const borrowed = copy.ownership === "borrowed";
   const removed = copy.registered === false || copy.state === "released";
   const keepOnComputer = borrowed || copy.keepOnComputer !== false;
+  const fileStatus = removed
+    ? borrowed
+      ? "Folder kept on computer"
+      : copy.recovery
+        ? "Files removed, restore available"
+        : "Files removed"
+    : copy.state === "ready"
+      ? borrowed
+        ? "Existing folder, storage settings"
+        : keepOnComputer
+          ? "Files kept on computer"
+          : "Temporary files, freed after work finishes"
+      : copy.state === "missing"
+        ? "Folder not found"
+        : copy.state === "preparing"
+          ? "Preparing files"
+          : "Files need attention";
+  const detailsVisible =
+    expanded ||
+    pending ||
+    folderPending ||
+    review !== null ||
+    error !== null ||
+    recoveryProgress !== null;
   const allowed =
     connected &&
     props.authorityReady &&
@@ -186,222 +214,246 @@ export function LibraryCopySection(props: {
     }
   }
   return (
-    <SettingsSection title={props.computerLabel}>
-      {borrowed && copy.registered !== false ? (
-        <LibraryFolderStorage
-          copy={copy}
-          canAct={props.authorityReady && !pending && recoveryProgress === null}
-          onChanged={props.onChanged}
-          onPending={onFolderPending}
+    <SettingsSection>
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel={`${props.computerLabel}, ${fileStatus}`}
+        accessibilityHint={
+          detailsVisible ? "Hide file settings" : "Show file settings and recovery"
+        }
+        accessibilityState={{ expanded: detailsVisible }}
+        onPress={() => setExpanded(!detailsVisible)}
+      >
+        <ListRowLayout
+          icon="desktopcomputer"
+          label={props.computerLabel}
+          description={connected ? fileStatus : `${fileStatus} · Computer offline`}
+          accessory={
+            <SymbolView
+              name={detailsVisible ? "chevron.up" : "chevron.down"}
+              size={16}
+              tintColorClassName="accent-chevron"
+            />
+          }
         />
-      ) : null}
-      {!borrowed ? (
-        <LibraryManagedFileControls
-          copy={copy}
-          connected={connected}
-          supported={supportsFileLifecycle}
-          canAct={props.authorityReady && !pending && recoveryProgress === null}
-          authorityEnvironmentId={props.authorityEnvironmentId}
-          onPending={onFolderPending}
-          onChanged={(updated) => {
-            setRemovedCopy(null);
-            setRetainedCopy(updated);
-            released.current = null;
-            setRemovalRegistered(false);
-            setReview(null);
-            setError(null);
-            setNotice(
-              removed || copy.state === "missing" || copy.state === "failed"
-                ? "Files restored and kept on this computer."
-                : updated.keepOnComputer !== false
-                  ? "Files will stay on this computer."
-                  : "Files can be cleaned up after all work is finished and safely saved.",
-            );
-            requestId.current = uuidv4();
-            props.onChanged();
-          }}
-        />
-      ) : null}
-      <View className="gap-3 p-4">
-        <Text selectable className="text-sm text-foreground">
-          {copy.rootPath}
-        </Text>
-        <Text className="text-xs text-foreground-muted">
-          {borrowed && !removed
-            ? ""
-            : removed
-              ? borrowed
-                ? "Folder kept on this computer"
-                : "Files removed"
-              : copy.state === "ready"
-                ? keepOnComputer
-                  ? "Kept on this computer"
-                  : "Temporary files"
-                : copy.state === "missing"
-                  ? "Folder not found"
-                  : copy.state === "preparing"
-                    ? "Preparing files"
-                    : "Files need attention"}
-          {borrowed && !removed ? "" : " · "}
-          {copy.repositories.length}{" "}
-          {copy.repositories.length === 1 ? "repository" : "repositories"}
-        </Text>
-        {!connected && !removed ? (
-          <Text className="text-sm text-foreground-muted">
-            Reconnect this computer to inspect its files.
-          </Text>
+      </RowPressable>
+      <View style={{ display: detailsVisible ? "flex" : "none" }}>
+        {borrowed && copy.registered !== false ? (
+          <LibraryFolderStorage
+            copy={copy}
+            canAct={props.authorityReady && !pending && recoveryProgress === null}
+            onChanged={props.onChanged}
+            onPending={onFolderPending}
+          />
         ) : null}
-        {!borrowed && !removed && copy.repositories.length > 0 ? (
-          <LibraryCopyHealth
-            project={props.project}
+        {!borrowed ? (
+          <LibraryManagedFileControls
             copy={copy}
             connected={connected}
-            computerLabel={props.computerLabel}
+            supported={supportsFileLifecycle}
+            canAct={props.authorityReady && !pending && recoveryProgress === null}
             authorityEnvironmentId={props.authorityEnvironmentId}
-            lastSeenAt={props.lastSeenAt}
-          />
-        ) : null}
-        <LibraryTemporaryResources copy={copy} connected={connected} />
-        {connected && !removed && copy.state === "ready" ? (
-          <View className="gap-2">
-            <Button
-              label={showSetup ? "Hide optional setup" : "Optional setup"}
-              tone="text"
-              disabled={pending || folderPending}
-              onPress={() => setShowSetup((value) => !value)}
-            />
-            {showSetup ? <LibraryCopyProfileSetup project={props.project} copy={copy} /> : null}
-          </View>
-        ) : null}
-        {!removed && (borrowed || !supportsFileLifecycle || !keepOnComputer) ? (
-          <Button
-            label={
-              pending
-                ? "Reviewing…"
-                : borrowed
-                  ? "Stop using this folder"
-                  : "Remove files from this computer"
-            }
-            tone="text"
-            disabled={!allowed || pending || folderPending || recoveryProgress !== null}
-            onPress={() => {
-              if (busy.current || folderBusy.current || recoveryController.current) return;
-              busy.current = true;
-              setPending(true);
+            onPending={onFolderPending}
+            onChanged={(updated) => {
+              setRemovedCopy(null);
+              setRetainedCopy(updated);
+              released.current = null;
+              setRemovalRegistered(false);
+              setReview(null);
               setError(null);
-              setNotice(null);
-              void inspect({
-                environmentId: props.copy.environmentId,
-                input: { workingCopyId: props.copy.id },
-              })
-                .then((result) => {
-                  if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-                  if (result.value.copy.id !== props.copy.id)
-                    throw new Error("The files changed. Review them again.");
-                  setReview(result.value);
-                })
-                .catch((cause) =>
-                  setError(
-                    cause instanceof Error ? cause.message : "The files could not be reviewed.",
-                  ),
-                )
-                .finally(() => {
-                  busy.current = false;
-                  setPending(false);
-                });
+              setNotice(
+                removed || copy.state === "missing" || copy.state === "failed"
+                  ? "Files restored and kept on this computer."
+                  : updated.keepOnComputer !== false
+                    ? "Files will stay on this computer."
+                    : "Files can be cleaned up after all work is finished and safely saved.",
+              );
+              requestId.current = uuidv4();
+              props.onChanged();
             }}
           />
         ) : null}
-        {review ? (
-          <View className="gap-3 rounded-xl bg-subtle p-3">
-            <Text className="text-sm text-foreground">
-              {borrowed
-                ? "Stop using this folder? Its files and conversations stay in place. You can use it again later."
-                : `Remove this folder and its contents from ${props.computerLabel}? Every repository must be safe and unused. Your project and conversations stay saved. ${supportsFileLifecycle ? "Saved files are restored when you reopen a conversation." : "You can download saved files from this project."}`}
+        <View className="gap-3 p-4">
+          <Text selectable className="text-sm text-foreground">
+            {copy.rootPath}
+          </Text>
+          <Text className="text-xs text-foreground-muted">
+            {borrowed && !removed
+              ? ""
+              : removed
+                ? borrowed
+                  ? "Folder kept on this computer"
+                  : "Files removed"
+                : copy.state === "ready"
+                  ? keepOnComputer
+                    ? "Kept on this computer"
+                    : "Temporary files"
+                  : copy.state === "missing"
+                    ? "Folder not found"
+                    : copy.state === "preparing"
+                      ? "Preparing files"
+                      : "Files need attention"}
+            {borrowed && !removed ? "" : " · "}
+            {copy.repositories.length}{" "}
+            {copy.repositories.length === 1 ? "repository" : "repositories"}
+          </Text>
+          {!connected && !removed ? (
+            <Text className="text-sm text-foreground-muted">
+              Reconnect this computer to inspect its files.
             </Text>
-            <Text selectable className="text-xs text-foreground">
-              {review.copy.rootPath}
-            </Text>
-            {review.blockers.map((blocker) => (
-              <Text key={blocker} className="text-sm text-warning-foreground">
-                {blocker}
-              </Text>
-            ))}
-            <View className="flex-row flex-wrap gap-2">
+          ) : null}
+          {!borrowed && !removed && copy.repositories.length > 0 ? (
+            <LibraryCopyHealth
+              project={props.project}
+              copy={copy}
+              connected={connected}
+              computerLabel={props.computerLabel}
+              authorityEnvironmentId={props.authorityEnvironmentId}
+              lastSeenAt={props.lastSeenAt}
+            />
+          ) : null}
+          <LibraryTemporaryResources copy={copy} connected={connected} />
+          {connected && !removed && copy.state === "ready" ? (
+            <View className="gap-2">
               <Button
-                label={borrowed ? "Stop using folder" : "Remove files"}
-                tone="danger"
-                disabled={
-                  !allowed ||
-                  pending ||
-                  folderPending ||
-                  recoveryProgress !== null ||
-                  review.blockers.length > 0 ||
-                  !review.reviewToken
-                }
-                onPress={() => {
-                  void remove();
-                }}
-              />
-              <Button
-                label="Cancel"
+                label={showSetup ? "Hide optional setup" : "Optional setup"}
                 tone="text"
                 disabled={pending || folderPending}
-                onPress={() => setReview(null)}
+                onPress={() => setShowSetup((value) => !value)}
               />
+              {showSetup ? <LibraryCopyProfileSetup project={props.project} copy={copy} /> : null}
             </View>
-          </View>
-        ) : null}
-        {removedCopy && !removalRegistered && error ? (
-          <Button
-            label="Save file status"
-            disabled={pending || !props.authorityReady || !canRegister}
-            onPress={() => {
-              void remove();
-            }}
-          />
-        ) : null}
-        {borrowed && removed ? (
-          <Button
-            label="Use folder again"
-            tone="text"
-            disabled={!connected || !props.authorityReady || recoveryProgress !== null || pending}
-            onPress={props.onReuseFolder}
-          />
-        ) : null}
-        {copy.recovery ? (
-          <View className="gap-2">
-            <Text className="text-sm text-foreground-muted">
-              Saved files · {Math.ceil(copy.recovery.byteLength / 1024 ** 2).toLocaleString()} MiB
-            </Text>
+          ) : null}
+          {!removed && (borrowed || !supportsFileLifecycle || !keepOnComputer) ? (
             <Button
-              label={recoveryProgress ?? "Download saved files"}
-              disabled={
-                !props.authorityReady || pending || folderPending || recoveryProgress !== null
+              label={
+                pending
+                  ? "Reviewing…"
+                  : borrowed
+                    ? "Stop using this folder"
+                    : "Remove files from this computer"
               }
+              tone="text"
+              disabled={!allowed || pending || folderPending || recoveryProgress !== null}
               onPress={() => {
-                void saveRecovery();
+                if (busy.current || folderBusy.current || recoveryController.current) return;
+                busy.current = true;
+                setPending(true);
+                setError(null);
+                setNotice(null);
+                void inspect({
+                  environmentId: props.copy.environmentId,
+                  input: { workingCopyId: props.copy.id },
+                })
+                  .then((result) => {
+                    if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+                    if (result.value.copy.id !== props.copy.id)
+                      throw new Error("The files changed. Review them again.");
+                    setReview(result.value);
+                  })
+                  .catch((cause) =>
+                    setError(
+                      cause instanceof Error ? cause.message : "The files could not be reviewed.",
+                    ),
+                  )
+                  .finally(() => {
+                    busy.current = false;
+                    setPending(false);
+                  });
               }}
             />
-            {recoveryProgress ? (
+          ) : null}
+          {review ? (
+            <View className="gap-3 rounded-xl bg-subtle p-3">
+              <Text className="text-sm text-foreground">
+                {borrowed
+                  ? "Stop using this folder? Its files and conversations stay in place. You can use it again later."
+                  : `Remove this folder and its contents from ${props.computerLabel}? Every repository must be safe and unused. Your project and conversations stay saved. ${supportsFileLifecycle ? "Saved files are restored when you reopen a conversation." : "You can download saved files from this project."}`}
+              </Text>
+              <Text selectable className="text-xs text-foreground">
+                {review.copy.rootPath}
+              </Text>
+              {review.blockers.map((blocker) => (
+                <Text key={blocker} className="text-sm text-warning-foreground">
+                  {blocker}
+                </Text>
+              ))}
+              <View className="flex-row flex-wrap gap-2">
+                <Button
+                  label={borrowed ? "Stop using folder" : "Remove files"}
+                  tone="danger"
+                  disabled={
+                    !allowed ||
+                    pending ||
+                    folderPending ||
+                    recoveryProgress !== null ||
+                    review.blockers.length > 0 ||
+                    !review.reviewToken
+                  }
+                  onPress={() => {
+                    void remove();
+                  }}
+                />
+                <Button
+                  label="Cancel"
+                  tone="text"
+                  disabled={pending || folderPending}
+                  onPress={() => setReview(null)}
+                />
+              </View>
+            </View>
+          ) : null}
+          {removedCopy && !removalRegistered && error ? (
+            <Button
+              label="Save file status"
+              disabled={pending || !props.authorityReady || !canRegister}
+              onPress={() => {
+                void remove();
+              }}
+            />
+          ) : null}
+          {borrowed && removed ? (
+            <Button
+              label="Use folder again"
+              tone="text"
+              disabled={!connected || !props.authorityReady || recoveryProgress !== null || pending}
+              onPress={props.onReuseFolder}
+            />
+          ) : null}
+          {copy.recovery ? (
+            <View className="gap-2">
+              <Text className="text-sm text-foreground-muted">
+                Saved files · {Math.ceil(copy.recovery.byteLength / 1024 ** 2).toLocaleString()} MiB
+              </Text>
               <Button
-                label="Cancel download"
-                tone="text"
-                onPress={() => recoveryController.current?.abort()}
+                label={recoveryProgress ?? "Download saved files"}
+                disabled={
+                  !props.authorityReady || pending || folderPending || recoveryProgress !== null
+                }
+                onPress={() => {
+                  void saveRecovery();
+                }}
               />
-            ) : null}
-          </View>
-        ) : null}
-        {error ? (
-          <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
-            {error}
-          </Text>
-        ) : null}
-        {notice ? (
-          <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
-            {notice}
-          </Text>
-        ) : null}
+              {recoveryProgress ? (
+                <Button
+                  label="Cancel download"
+                  tone="text"
+                  onPress={() => recoveryController.current?.abort()}
+                />
+              ) : null}
+            </View>
+          ) : null}
+          {error ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
+              {error}
+            </Text>
+          ) : null}
+          {notice ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
+              {notice}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </SettingsSection>
   );

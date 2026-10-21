@@ -31,6 +31,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
+import { ThreadSearchNotice } from "../threads/ThreadSearchNotice";
 import {
   filterCommandPaletteItems,
   nextPaletteIndex,
@@ -485,9 +486,18 @@ export function CommandPalette(props: {
                   index,
                 })}
                 contentContainerClassName="pb-2"
+                ListHeaderComponent={
+                  search.failedEnvironmentIds.length > 0 ? (
+                    <ThreadSearchNotice pending={search.isPending} onRetry={search.retry} />
+                  ) : undefined
+                }
                 ListEmptyComponent={
                   <Text className="p-5 text-center text-foreground-muted">
-                    {search.isPending ? "Searching…" : "No results"}
+                    {search.isPending
+                      ? "Searching…"
+                      : search.failedEnvironmentIds.length > 0
+                        ? "Search incomplete"
+                        : "No results"}
                   </Text>
                 }
                 renderItem={({ item, index }) => (

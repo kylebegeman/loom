@@ -158,7 +158,7 @@ const CommandRow = memo(function CommandRow(props: {
     <Pressable
       accessibilityRole="button"
       onPress={props.onPress}
-      className="flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60"
+      className="min-h-11 flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60"
       style={{ borderBottomWidth: props.isLast ? 0 : StyleSheet.hairlineWidth }}
     >
       {props.item.type === "path" ? (
@@ -175,21 +175,23 @@ const CommandRow = memo(function CommandRow(props: {
           type="monochrome"
         />
       ) : null}
-      <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
-        {props.isSlashSkill && props.item.type === "skill" ? (
-          <>
-            <Text className="text-foreground-muted">skill:</Text>
-            {props.item.skill.name}
-          </>
-        ) : (
-          props.item.label
-        )}
-      </Text>
-      {props.item.description ? (
-        <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
-          {props.item.description}
+      <View className="min-w-0 flex-1 gap-0.5">
+        <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
+          {props.isSlashSkill && props.item.type === "skill" ? (
+            <>
+              <Text className="text-foreground-muted">skill:</Text>
+              {props.item.skill.name}
+            </>
+          ) : (
+            props.item.label
+          )}
         </Text>
-      ) : null}
+        {props.item.description ? (
+          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+            {props.item.description}
+          </Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 });

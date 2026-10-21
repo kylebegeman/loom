@@ -55,6 +55,7 @@ import {
   deriveCenteredContentHorizontalPadding,
 } from "../../lib/layout";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { ThreadSearchNotice } from "../threads/ThreadSearchNotice";
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import type { SavedRemoteConnection } from "../../lib/connection";
@@ -879,7 +880,16 @@ export function HomeScreen(props: HomeScreenProps) {
     props.selectedEnvironmentId === null
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
-        "this environment");
+        "this computer");
+  const clearListFilters = () => {
+    props.onSearchQueryChange("");
+    props.onEnvironmentChange(null);
+    if (navigationView === "threads") props.onProjectChange(null);
+  };
+  const hasListFilters =
+    hasSearchQuery ||
+    props.selectedEnvironmentId !== null ||
+    (navigationView === "threads" && props.selectedProjectKey !== null);
   const emptyState = deriveEmptyState({
     catalogState: props.catalogState,
     projectCount: props.projects.length,
@@ -923,6 +933,9 @@ export function HomeScreen(props: HomeScreenProps) {
           onProjectChange={props.onProjectChange}
         />
       ) : null}
+      {hasSearchQuery && threadSearch.failedEnvironmentIds.length > 0 ? (
+        <ThreadSearchNotice pending={threadSearch.isPending} onRetry={threadSearch.retry} />
+      ) : null}
     </>
   );
 
@@ -947,8 +960,8 @@ export function HomeScreen(props: HomeScreenProps) {
               ? emptyState.detail
               : "Create a task in a project. Its conversations stay available when its files are released."
         }
-        actionLabel={hasSearchQuery ? undefined : emptyActionLabel}
-        onAction={hasSearchQuery || !emptyActionLabel ? undefined : emptyAction}
+        actionLabel={hasListFilters ? "Clear filters" : emptyActionLabel}
+        onAction={hasListFilters ? clearListFilters : emptyActionLabel ? emptyAction : undefined}
         variant="plain"
       />
     ) : !hasAnyThreads ? (
@@ -978,20 +991,30 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     ) : hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
-        title="No results"
-        detail={`No threads matching "${props.searchQuery}".`}
+        title={threadSearch.failedEnvironmentIds.length ? "Search incomplete" : "No results"}
+        detail={
+          threadSearch.failedEnvironmentIds.length
+            ? "Some computers could not be searched. Retry or change your search."
+            : `No threads matching "${props.searchQuery}".`
+        }
+        actionLabel="Clear filters"
+        onAction={clearListFilters}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
         title={`No threads in ${v2ScopedProjectGroup.title}`}
         detail="Choose another project or create a new task."
+        actionLabel="Show all threads"
+        onAction={clearListFilters}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
       <EmptyState
         title={`No threads in ${selectedEnvironmentLabel}`}
-        detail="Choose another environment or create a new task."
+        detail="Choose another computer or create a new task."
+        actionLabel="Show all threads"
+        onAction={clearListFilters}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : (

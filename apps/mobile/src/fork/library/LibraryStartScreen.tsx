@@ -13,10 +13,7 @@ import {
   libraryLaunchWarning,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
-import {
-  libraryLaunchCandidateSummary,
-  type LibraryLaunchCandidate,
-} from "@t3tools/shared/fork/library-launch";
+import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -41,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { ListRow } from "../../components/ui/ListRow";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
@@ -221,7 +219,9 @@ function LibraryStartContent(props: {
     [typedPath, setRootPath] = useState<string | null>(
       saved?.review.rootPath ?? props.reuseRootPath ?? null,
     ),
-    [copyId, setCopyId] = useState<string | null>(props.initialCopyId ?? null),
+    [copyId, setCopyId] = useState<string | null>(
+      saved?.review.copy?.id ?? props.initialCopyId ?? null,
+    ),
     [title, setTitle] = useState(
       saved?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
     ),
@@ -233,6 +233,8 @@ function LibraryStartContent(props: {
     ),
     [showModels, setShowModels] = useState(false);
   const [showFolderOptions, setShowFolderOptions] = useState(Boolean(props.reuseRootPath)),
+    [showComputers, setShowComputers] = useState(false),
+    [showOptions, setShowOptions] = useState(false),
     [showSetup, setShowSetup] = useState(false),
     [keepFiles, setKeepFiles] = useState<boolean | null>(saved?.review.keepOnComputer ?? null);
   const [folderPending, setFolderPending] = useState(false);
@@ -775,12 +777,30 @@ function LibraryStartContent(props: {
     }
     if (pulled) await start();
   }
+  const computerLabel =
+    selectedHost?.label ??
+    authority.computers.find((computer) => computer.environmentId === execution)?.label ??
+    "Choose a computer";
+  const displayedCopy =
+    progress.copy ?? (progress.intent ? saved?.review.copy : null) ?? selectedCopy;
+  const filesStatus =
+    !copiesKnown && progress.intent === null
+      ? "Checking project files"
+      : mode === "reuse"
+        ? displayedCopy?.state === "released"
+          ? "Restore saved files when starting"
+          : "Use files already on this computer"
+        : mode === "folder"
+          ? "Use an existing folder"
+          : rootPath.trim()
+            ? "Prepare project files when starting"
+            : "Choose a folder before starting";
+  const retentionStatus = keepOnComputer
+    ? "Files stay kept."
+    : "Temporary files, saved work stays.";
   return (
-    <LibraryPage title={props.sourceArchiveId ? "Linked continuation" : "New conversation"} back>
-      <Text className="text-sm text-foreground-muted">
-        Start work on {launchProject.title}. Loom prepares the files on your chosen computer. Your
-        project and conversations stay saved when those files are removed.
-      </Text>
+    <LibraryPage title={props.sourceArchiveId ? "Continue conversation" : "New conversation"} back>
+      <Text className="text-xl font-t3-semibold text-foreground">{launchProject.title}</Text>
       {saved ? (
         <LibraryNotice detail="An unfinished preparation is saved on this device. Resume it with the original computer, files and context." />
       ) : null}
@@ -791,16 +811,12 @@ function LibraryStartContent(props: {
           onRetry={props.onRefreshProject}
         />
       ) : null}
-      {props.reuseRootPath ? (
-        <LibraryNotice detail="Use this existing folder for the conversation. Its files stay on the computer until you change their setting in the project." />
-      ) : null}
       {source.data ? (
         <SettingsSection title="Continuation source">
-          <View className="p-4">
+          <View className="gap-1 p-4">
             <Text className="text-sm text-foreground">{source.data.summary.title}</Text>
             <Text className="text-xs text-foreground-muted">
-              The saved source stays bound to its original computer. This continuation records an
-              explicit link.
+              The original stays saved. This conversation links back to it.
             </Text>
           </View>
         </SettingsSection>
@@ -818,306 +834,135 @@ function LibraryStartContent(props: {
           onRetry={source.error ? source.refresh : undefined}
         />
       ) : null}
-      <TextInput
-        accessibilityLabel="Conversation title"
-        value={title}
-        onChangeText={setTitle}
-        editable={!locked}
-        placeholder="Project discussion"
-        maxLength={160}
-        className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
-      />
-      {props.sourceArchiveId ? (
-        <SettingsSection title="Context to carry forward">
-          <TextInput
-            accessibilityLabel="Context to carry forward"
-            value={carryContext}
-            onChangeText={(text) => {
-              setCarryContext(text);
-            }}
-            multiline
-            textAlignVertical="top"
-            editable={!locked}
-            className="min-h-32 rounded-xl border border-input-border bg-input p-3 text-base text-foreground"
-          />
-        </SettingsSection>
-      ) : null}
-      <SettingsSection title="Conversation context">
-        <ListChoiceRow
-          label="Whole project"
+      <SettingsSection>
+        <ListRow
+          label="Computer"
           description={
-            repositories.length > 0
-              ? "Discuss and work across every repository."
-              : "Use the shared brief and links in a dedicated discussion workspace."
+            execution && !hostReady ? `${computerLabel}. Unavailable for new work.` : computerLabel
           }
-          selected={scope === "all"}
+          detail={showComputers && hostReady ? "Done" : "Change"}
           disabled={locked}
           onPress={() => {
-            setScope("all");
-            setCopyId(null);
+            pin();
+            setShowComputers((value) => !value);
           }}
         />
-        {repositories.map((resource) => (
-          <ListChoiceRow
-            key={resource.id}
-            label={resource.title}
-            selected={scope === resource.id}
-            disabled={locked}
-            separated
-            onPress={() => {
-              setScope(resource.id);
-              setCopyId(null);
-            }}
-          />
-        ))}
-      </SettingsSection>
-      <SettingsSection title="Computer for this conversation">
-        {environments
-          .filter((env) => env.serverConfig?.environment.capabilities.supportsExecution !== false)
-          .sort((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId))
-          .map((env, index) => {
-            const connected = env.entry.enabled && env.connection.phase === "connected",
-              supported = supportsLoomFeature(
-                env.serverConfig?.environment.capabilities,
-                "project-library",
-              ),
-              candidate = candidateFor(env.environmentId);
-            return (
-              <ListChoiceRow
-                key={env.environmentId}
-                label={env.label}
-                selected={execution === env.environmentId}
-                separated={index > 0}
-                disabled={locked || !connected || !supported || !operable.has(env.environmentId)}
+        {execution ? (
+          <>
+            <View className="border-t border-border-subtle">
+              <ListRow
+                label="Agent model"
                 description={
-                  !connected
-                    ? "Offline"
-                    : !supported
-                      ? "Update Loom to run library conversations"
-                      : !operable.has(env.environmentId)
-                        ? "Conversation access required"
-                        : candidate
-                          ? computerReasons(candidate)
-                          : "Connected"
+                  chosenModel
+                    ? `${chosenModel.providerLabel}: ${chosenModel.label}`
+                    : "No available agent model"
                 }
+                detail={showModels ? "Done" : "Change"}
+                disabled={locked}
                 onPress={() => {
-                  // Choices made for this computer, including a folder handed in, outlive a tap on it.
-                  if (env.environmentId !== execution) {
-                    setCopyId(null);
-                    setModelKey(null);
-                    setMode(null);
-                    setRootPath(null);
-                    setKeepFiles(null);
-                    setShowFolderOptions(false);
-                  }
-                  setExecution(env.environmentId);
+                  pin();
+                  setShowModels((value) => !value);
                 }}
               />
-            );
-          })}
-        {authority.computers
-          .filter(
-            (computer) =>
-              computer.supportsExecution &&
-              !environments.some((entry) => entry.environmentId === computer.environmentId),
-          )
-          .map((computer) => (
-            <ListChoiceRow
-              key={computer.environmentId}
-              label={computer.label}
-              description="Connect this computer to run work here. Its saved history is available in Projects."
-              selected={false}
-              disabled={locked}
-              onPress={() => navigation.navigate("Connections")}
-              separated
-            />
-          ))}
-        {authority.computers.some(
-          (computer) =>
-            computer.supportsExecution &&
-            !environments.some((entry) => entry.environmentId === computer.environmentId),
-        ) ? (
-          <Button
-            label="Connect a computer"
-            tone="text"
-            onPress={() => navigation.navigate("Connections")}
-          />
-        ) : null}
-      </SettingsSection>
-      {chosen && selectedExecution === null ? (
-        <Text className="text-xs text-foreground-muted">
-          Suggested: {libraryLaunchCandidateSummary(chosen)}
-        </Text>
-      ) : null}
-      {execution ? (
-        <>
-          <SettingsSection title={`Files on ${selectedHost?.label ?? "this computer"}`}>
-            <View className="gap-2 p-4">
-              <Text selectable className="text-sm text-foreground">
-                {mode === "reuse" ? selectedCopy?.rootPath : rootPath || "Choose a folder"}
-              </Text>
-              <Text className="text-sm text-foreground-muted">
-                {mode === "reuse"
-                  ? selectedCopy?.state === "released"
-                    ? "Loom restores the saved files here when you start work."
-                    : "Start with the files already here."
-                  : mode === "folder"
-                    ? "Files stay here until you change their setting in the project."
-                    : "Loom prepares the files here when you start work."}
-              </Text>
-              <Button
-                label={showFolderOptions ? "Done choosing folder" : "Change folder"}
-                tone="text"
-                disabled={locked || !copiesReady}
+            </View>
+            <View className="border-t border-border-subtle">
+              <ListRow
+                label="Files"
+                description={
+                  !copiesKnown || !supportsFileLifecycle
+                    ? filesStatus
+                    : `${filesStatus}. ${retentionStatus}`
+                }
+                detail={showFolderOptions ? "Done" : "Options"}
+                disabled={folderPending || (progress.intent === null && !copiesReady)}
                 onPress={() => {
                   pin();
                   setShowFolderOptions((value) => !value);
                 }}
               />
             </View>
-            {showFolderOptions ? (
-              <>
-                {eligible.map((copy) => (
-                  <ListChoiceRow
-                    key={copy.id}
-                    label={copy.rootPath}
-                    description={
-                      copy.state === "released"
-                        ? "Restore saved files when starting work."
-                        : copyReasons(copy)
-                    }
-                    selected={mode === "reuse" && selectedCopy?.id === copy.id}
-                    disabled={locked || !copiesReady}
-                    onPress={() => {
-                      pin();
-                      setMode("reuse");
-                      setCopyId(copy.id);
+          </>
+        ) : null}
+      </SettingsSection>
+      {showComputers || !hostReady ? (
+        <SettingsSection title="Choose a computer">
+          {environments
+            .filter((env) => env.serverConfig?.environment.capabilities.supportsExecution !== false)
+            .sort((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId))
+            .map((env, index) => {
+              const connected = env.entry.enabled && env.connection.phase === "connected",
+                supported = supportsLoomFeature(
+                  env.serverConfig?.environment.capabilities,
+                  "project-library",
+                ),
+                candidate = candidateFor(env.environmentId);
+              return (
+                <ListChoiceRow
+                  key={env.environmentId}
+                  label={env.label}
+                  selected={execution === env.environmentId}
+                  separated={index > 0}
+                  disabled={locked || !connected || !supported || !operable.has(env.environmentId)}
+                  description={
+                    !connected
+                      ? "Offline"
+                      : !supported
+                        ? "Update Loom to run library conversations"
+                        : !operable.has(env.environmentId)
+                          ? "Conversation access required"
+                          : candidate
+                            ? computerReasons(candidate)
+                            : "Connected"
+                  }
+                  onPress={() => {
+                    // Choices made for this computer, including a folder handed in, outlive a tap on it.
+                    if (env.environmentId !== execution) {
+                      setCopyId(null);
+                      setModelKey(null);
+                      setMode(null);
+                      setRootPath(null);
                       setKeepFiles(null);
-                    }}
-                  />
-                ))}
-                <ListChoiceRow
-                  label="Use an existing folder"
-                  description="Files you already have on this computer stay kept."
-                  selected={mode === "folder"}
-                  disabled={locked || !copiesReady || !canPrepare}
-                  onPress={() => {
-                    pin();
-                    setMode("folder");
-                    setRootPath(null);
-                    setKeepFiles(null);
+                      setShowFolderOptions(false);
+                    }
+                    setExecution(env.environmentId);
+                    setShowComputers(false);
                   }}
                 />
-                <ListChoiceRow
-                  label="Prepare files in a new folder"
-                  description="Loom brings the project files to this computer."
-                  selected={mode === "clone"}
-                  disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
-                  onPress={() => {
-                    pin();
-                    setMode("clone");
-                    setRootPath(null);
-                    setKeepFiles(null);
-                  }}
-                />
-                {mode !== "reuse" ? (
-                  <View className="gap-2 p-4">
-                    <TextInput
-                      accessibilityLabel="Project folder on selected computer"
-                      placeholder="Absolute project folder on this computer"
-                      value={rootPath}
-                      onChangeText={(text) => {
-                        pin();
-                        setRootPath(text);
-                      }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!locked}
-                      className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-                    />
-                    {mode === "folder" && repositories.length > 0 ? (
-                      <Text className="text-xs text-foreground-muted">
-                        Choose the folder containing{" "}
-                        {repositories.map((entry) => entry.relativePath).join(", ")}.
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-              </>
-            ) : null}
-            {mode === "reuse" && selectedCopy?.ownership === "borrowed" ? (
-              <LibraryFolderStorage
-                copy={selectedCopy}
-                canAct={authority.ready && pending === null && progress.intent === null}
-                onPending={onFolderPending}
-                onChanged={() => refreshLibraryWork(authority.environmentId!, launchProject.id)}
-              />
-            ) : supportsFileLifecycle && mode !== "folder" ? (
-              <SettingsSwitchRow
-                label="Keep files on this computer"
-                subtitle="Keep for later work. Loom frees space once all work is finished and safely saved. Your conversations stay available."
-                value={keepOnComputer}
-                disabled={locked || !canSetRetention}
-                onValueChange={(value) => {
-                  pin();
-                  setKeepFiles(value);
-                }}
-              />
-            ) : null}
-          </SettingsSection>
-          {overlappingRoot ? (
-            <LibraryNotice detail="Choose a separate folder for this project layout, or select saved files to restore them." />
-          ) : null}
-          {mode === "reuse" && selectedCopy?.state === "released" && !canReopen ? (
-            <LibraryNotice detail="Restoring saved files needs file access on this computer." />
-          ) : null}
-          {mode === "clone" && !writable.has(execution) ? (
-            <LibraryNotice detail="File preparation needs source control access on this computer. Choose an existing folder or another computer." />
-          ) : null}
-          {mode !== "reuse" && progress.intent === null ? (
-            <View className="gap-2">
-              <Button
-                label={showSetup ? "Hide optional setup" : "Optional setup"}
-                tone="text"
+              );
+            })}
+          {authority.computers
+            .filter(
+              (computer) =>
+                computer.supportsExecution &&
+                !environments.some((entry) => entry.environmentId === computer.environmentId),
+            )
+            .map((computer) => (
+              <ListChoiceRow
+                key={computer.environmentId}
+                label={computer.label}
+                description="Connect this computer to run work here. Its saved history is available in Projects."
+                selected={false}
                 disabled={locked}
-                onPress={() => setShowSetup((value) => !value)}
+                onPress={() => navigation.navigate("Connections")}
+                separated
               />
-              {showSetup ? (
-                <>
-                  <Text className="text-xs text-foreground-muted">
-                    You can start work without completing these checks.
-                  </Text>
-                  <LibraryProfileReadiness environmentId={execution} project={launchProject} />
-                </>
-              ) : null}
-            </View>
+            ))}
+          {!hostReady ||
+          authority.computers.some(
+            (computer) =>
+              computer.supportsExecution &&
+              !environments.some((entry) => entry.environmentId === computer.environmentId),
+          ) ? (
+            <Button
+              label="Connect a computer"
+              tone="text"
+              onPress={() => navigation.navigate("Connections")}
+            />
           ) : null}
-          {warning ? (
-            <View className="gap-2">
-              <Text className="text-sm text-warning-foreground">{warning.message}</Text>
-              {warning.pullPaths && canPull ? (
-                <Button
-                  label="Pull first"
-                  disabled={pending !== null || !canStart}
-                  onPress={() => {
-                    void pullThenStart(warning.pullPaths ?? []);
-                  }}
-                />
-              ) : null}
-            </View>
-          ) : null}
-          <Button
-            label={
-              chosenModel
-                ? `${chosenModel.providerLabel}: ${chosenModel.label}`
-                : "No available agent model"
-            }
-            disabled={locked}
-            onPress={() => {
-              pin();
-              setShowModels((value) => !value);
-            }}
-          />
+        </SettingsSection>
+      ) : null}
+      {execution ? (
+        <>
           {showModels ? (
             <SettingsSection title="Agent model">
               {models.map((model) => (
@@ -1135,7 +980,160 @@ function LibraryStartContent(props: {
               ))}
             </SettingsSection>
           ) : null}
+          {showFolderOptions ? (
+            <SettingsSection title="Working files">
+              <View className="gap-2 p-4">
+                <Text selectable className="text-sm text-foreground">
+                  {mode === "reuse" ? displayedCopy?.rootPath : rootPath || "Choose a folder"}
+                </Text>
+                <Text className="text-sm text-foreground-muted">
+                  {mode === "reuse"
+                    ? selectedCopy?.state === "released"
+                      ? "Loom restores the saved files here when you start work."
+                      : "Start with the files already here."
+                    : mode === "folder"
+                      ? "Files stay here until you change their setting in the project."
+                      : "Loom prepares the files here when you start work."}
+                </Text>
+              </View>
+              {eligible.map((copy) => (
+                <ListChoiceRow
+                  key={copy.id}
+                  label={copy.rootPath}
+                  description={
+                    copy.state === "released"
+                      ? "Restore saved files when starting work."
+                      : copyReasons(copy)
+                  }
+                  selected={mode === "reuse" && selectedCopy?.id === copy.id}
+                  disabled={locked || !copiesReady}
+                  onPress={() => {
+                    pin();
+                    setMode("reuse");
+                    setCopyId(copy.id);
+                    setKeepFiles(null);
+                  }}
+                />
+              ))}
+              <ListChoiceRow
+                label="Use an existing folder"
+                description="Files you already have on this computer stay kept."
+                selected={mode === "folder"}
+                disabled={locked || !copiesReady || !canPrepare}
+                onPress={() => {
+                  pin();
+                  setMode("folder");
+                  setRootPath(null);
+                  setKeepFiles(null);
+                }}
+              />
+              <ListChoiceRow
+                label="Prepare files in a new folder"
+                description="Loom brings the project files to this computer."
+                selected={mode === "clone"}
+                disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
+                onPress={() => {
+                  pin();
+                  setMode("clone");
+                  setRootPath(null);
+                  setKeepFiles(null);
+                }}
+              />
+              {mode !== "reuse" ? (
+                <View className="gap-2 p-4">
+                  <TextInput
+                    accessibilityLabel="Project folder on selected computer"
+                    placeholder="Absolute project folder on this computer"
+                    value={rootPath}
+                    onChangeText={(text) => {
+                      pin();
+                      setRootPath(text);
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!locked}
+                    className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+                  />
+                  {mode === "folder" && repositories.length > 0 ? (
+                    <Text className="text-xs text-foreground-muted">
+                      Choose the folder containing{" "}
+                      {repositories.map((entry) => entry.relativePath).join(", ")}.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+              {mode === "reuse" && selectedCopy?.ownership === "borrowed" ? (
+                <LibraryFolderStorage
+                  copy={selectedCopy}
+                  canAct={authority.ready && pending === null && progress.intent === null}
+                  onPending={onFolderPending}
+                  onChanged={() => refreshLibraryWork(authority.environmentId!, launchProject.id)}
+                />
+              ) : supportsFileLifecycle && mode !== "folder" ? (
+                <SettingsSwitchRow
+                  label="Keep files on this computer"
+                  subtitle="Keep for later work. Loom frees space once all work is finished and safely saved. Your conversations stay available."
+                  value={keepOnComputer}
+                  disabled={locked || !canSetRetention}
+                  onValueChange={(value) => {
+                    pin();
+                    setKeepFiles(value);
+                  }}
+                />
+              ) : null}
+            </SettingsSection>
+          ) : null}
+          {overlappingRoot ? (
+            <LibraryNotice detail="Choose a separate folder for this project layout, or select saved files to restore them." />
+          ) : null}
+          {mode === "reuse" && selectedCopy?.state === "released" && !canReopen ? (
+            <LibraryNotice detail="Restoring saved files needs file access on this computer." />
+          ) : null}
+          {mode === "clone" && !writable.has(execution) ? (
+            <LibraryNotice detail="File preparation needs source control access on this computer. Choose an existing folder or another computer." />
+          ) : null}
         </>
+      ) : null}
+      {repositories.length > 1 ? (
+        <SettingsSection title="Conversation context">
+          <ListChoiceRow
+            label="Whole project"
+            description="Discuss and work across every repository."
+            selected={scope === "all"}
+            disabled={locked}
+            onPress={() => {
+              setScope("all");
+              setCopyId(null);
+            }}
+          />
+          {repositories.map((resource) => (
+            <ListChoiceRow
+              key={resource.id}
+              label={resource.title}
+              selected={scope === resource.id}
+              disabled={locked}
+              separated
+              onPress={() => {
+                setScope(resource.id);
+                setCopyId(null);
+              }}
+            />
+          ))}
+        </SettingsSection>
+      ) : null}
+      {warning ? (
+        <View className="gap-2">
+          <Text className="text-sm text-warning-foreground">{warning.message}</Text>
+          {warning.pullPaths && canPull ? (
+            <Button
+              label="Pull first"
+              disabled={pending !== null || !canStart}
+              onPress={() => {
+                void pullThenStart(warning.pullPaths ?? []);
+              }}
+            />
+          ) : null}
+        </View>
       ) : null}
       {!authority.ready ? (
         <LibraryNotice detail="Reconnect your library to save this conversation. Your chosen computer stays selected." />
@@ -1162,11 +1160,67 @@ function LibraryStartContent(props: {
           (progress.intent ? "Resume starting work" : warning ? "Continue anyway" : "Start work")
         }
         tone="primary"
+        fullWidth
         disabled={pending !== null || !canStart}
         onPress={() => {
           void start();
         }}
       />
+      <SettingsSection>
+        <ListRow
+          label="Conversation options"
+          description={title || "Title, context and setup"}
+          detail={showOptions ? "Done" : "Edit"}
+          onPress={() => setShowOptions((value) => !value)}
+        />
+      </SettingsSection>
+      {showOptions ? (
+        <View className="gap-3">
+          <Text className="text-sm text-foreground-muted">Conversation title</Text>
+          <TextInput
+            accessibilityLabel="Conversation title"
+            value={title}
+            onChangeText={setTitle}
+            editable={!locked}
+            placeholder="Project discussion"
+            maxLength={160}
+            className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
+          />
+          {props.sourceArchiveId ? (
+            <SettingsSection title="Context to carry forward">
+              <TextInput
+                accessibilityLabel="Context to carry forward"
+                value={carryContext}
+                onChangeText={(text) => {
+                  setCarryContext(text);
+                }}
+                multiline
+                textAlignVertical="top"
+                editable={!locked}
+                className="min-h-32 rounded-xl border border-input-border bg-input p-3 text-base text-foreground"
+              />
+            </SettingsSection>
+          ) : null}
+          {execution && mode !== "reuse" && progress.intent === null ? (
+            <View className="gap-2">
+              <Button
+                label={showSetup ? "Hide optional setup" : "Optional setup"}
+                tone="text"
+                disabled={locked}
+                onPress={() => setShowSetup((value) => !value)}
+              />
+              {showSetup ? (
+                <>
+                  <Text className="text-xs text-foreground-muted">
+                    You can start work without completing these checks.
+                  </Text>
+                  <LibraryProfileReadiness environmentId={execution} project={launchProject} />
+                </>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </LibraryPage>
   );
 }

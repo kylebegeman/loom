@@ -11,15 +11,15 @@ describe("user message intent badge", () => {
 
   it("explains the intent to steer without claiming delivery", () => {
     expect(resolveUserMessageIntentBadge("steer")).toEqual({
-      label: "Steer",
-      accessibilityLabel: "Steered the active turn",
+      label: "Send now",
+      accessibilityLabel: "Requested delivery during the active turn",
     });
   });
 
   it("preserves the queued origin after promotion to steer", () => {
     expect(resolveUserMessageIntentBadge("promoted_queued_to_steer")).toEqual({
-      label: "Steer",
-      accessibilityLabel: "Originally queued, then promoted to steer the active turn",
+      label: "Send now",
+      accessibilityLabel: "Originally queued, then requested delivery during the active turn",
     });
   });
 });

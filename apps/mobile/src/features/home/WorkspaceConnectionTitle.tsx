@@ -35,7 +35,9 @@ const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
  */
 export function WorkspaceConnectionStatusProvider(props: { readonly children: ReactNode }) {
   const { state } = useWorkspaceState();
-  const presentation = workspaceConnectionStatusPresentation(state);
+  const presentation = workspaceConnectionStatusPresentation(state, {
+    compact: Platform.OS === "ios",
+  });
   const hasStatus = presentation !== null;
   const [phase, setPhase] = useState<"waiting" | "fading" | "shown">("waiting");
 
@@ -52,13 +54,14 @@ export function WorkspaceConnectionStatusProvider(props: { readonly children: Re
   }, [hasStatus]);
 
   const label = presentation?.label;
+  const accessibilityLabel = presentation?.accessibilityLabel;
   const showsProgress = presentation?.showsProgress ?? false;
   const status = useMemo(
     () =>
       label === undefined || phase === "waiting"
         ? null
-        : { label, showsProgress, fadeIn: phase === "fading" },
-    [label, showsProgress, phase],
+        : { label, accessibilityLabel, showsProgress, fadeIn: phase === "fading" },
+    [label, accessibilityLabel, showsProgress, phase],
   );
   return <ConnectionStatusContext value={status}>{props.children}</ConnectionStatusContext>;
 }
@@ -95,6 +98,7 @@ function StatusFadeIn(props: {
         {
           alignItems: "center",
           flexDirection: "row",
+          flexShrink: 1,
           maxWidth: props.maxWidth,
           // A hidden tab never runs the fade, so its value would still be 0 when the tab returns.
           opacity: animate ? opacity : 1,
@@ -129,42 +133,73 @@ export function WorkspaceConnectionTitle(props: {
     );
   }
 
-  return (
-    <StatusFadeIn animate={status.fadeIn} grow={props.grow} maxWidth={props.maxWidth}>
-      <Pressable
-        accessibilityHint="Opens environment settings"
-        accessibilityLabel={status.label}
-        accessibilityRole="button"
-        disabled={props.onPress === undefined}
-        hitSlop={8}
-        onPress={props.onPress}
-        className="flex-row items-center gap-2"
+  const statusButton = (
+    <Pressable
+      accessibilityHint={
+        props.onPress ? "Opens computer settings and connection details" : undefined
+      }
+      accessibilityLabel={status.accessibilityLabel ?? status.label}
+      accessibilityRole="button"
+      disabled={props.onPress === undefined}
+      hitSlop={8}
+      onPress={props.onPress}
+      className="flex-row items-center gap-2"
+      style={[
+        {
+          flexShrink: 1,
+          marginLeft: Platform.OS === "ios" ? 0 : (props.statusOffset ?? 0),
+          minHeight: Platform.OS === "ios" ? 28 : undefined,
+        },
+        Platform.OS === "android" && { gap: 7 * scale },
+      ]}
+    >
+      {status.showsProgress ? (
+        <AppActivityIndicator
+          colorClassName={"accent-icon-muted"}
+          size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
+        />
+      ) : (
+        <SymbolView
+          name="wifi.slash"
+          size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
+          tintColorClassName={"accent-icon-muted"}
+          type="monochrome"
+        />
+      )}
+      <Text
+        className={
+          Platform.OS === "ios"
+            ? "font-t3-medium text-foreground-muted"
+            : "font-t3-bold text-foreground-muted"
+        }
+        numberOfLines={1}
+        style={{
+          flexShrink: 1,
+          fontSize: (Platform.OS === "ios" ? 12 : size === "pageTitle" ? 20 : 16) * scale,
+        }}
+      >
+        {status.label}
+      </Text>
+    </Pressable>
+  );
+
+  if (Platform.OS === "ios") {
+    return (
+      <View
         style={[
-          { flexShrink: 1, marginLeft: props.statusOffset ?? 0 },
-          Platform.OS === "android" && { gap: 7 * scale },
+          { alignItems: "center", flexDirection: "row", gap: 10, maxWidth: props.maxWidth },
+          props.grow ? { flex: 1, minWidth: 0 } : null,
         ]}
       >
-        {status.showsProgress ? (
-          <AppActivityIndicator
-            colorClassName={"accent-icon-muted"}
-            size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
-          />
-        ) : (
-          <SymbolView
-            name="wifi.slash"
-            size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
-            tintColorClassName={"accent-icon-muted"}
-            type="monochrome"
-          />
-        )}
-        <Text
-          className="font-t3-bold text-foreground-muted"
-          numberOfLines={1}
-          style={{ flexShrink: 1, fontSize: (size === "pageTitle" ? 20 : 16) * scale }}
-        >
-          {status.label}
-        </Text>
-      </Pressable>
+        {props.brand}
+        <StatusFadeIn animate={status.fadeIn}>{statusButton}</StatusFadeIn>
+      </View>
+    );
+  }
+
+  return (
+    <StatusFadeIn animate={status.fadeIn} grow={props.grow} maxWidth={props.maxWidth}>
+      {statusButton}
     </StatusFadeIn>
   );
 }

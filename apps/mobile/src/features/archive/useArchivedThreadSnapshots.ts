@@ -5,10 +5,12 @@ import {
   makeArchivedThreadsEnvironmentKey,
 } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { orchestrationEnvironment } from "../../state/orchestration";
+import { environmentPresentations } from "../../state/presentation";
 
 function archivedSnapshotAtom(environmentId: EnvironmentId) {
   return orchestrationEnvironment.archivedShellSnapshot({
@@ -17,8 +19,15 @@ function archivedSnapshotAtom(environmentId: EnvironmentId) {
   });
 }
 
+const archivedEnvironmentConnectedAtom = Atom.family((environmentId: EnvironmentId) =>
+  environmentPresentations
+    .presentationAtom(environmentId)
+    .pipe(Atom.map((presentation) => presentation?.connection.phase === "connected")),
+);
+
 const archivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
   getSnapshotAtom: archivedSnapshotAtom,
+  getIsConnectedAtom: archivedEnvironmentConnectedAtom,
   labelPrefix: "mobile:archived-thread-snapshots",
 });
 

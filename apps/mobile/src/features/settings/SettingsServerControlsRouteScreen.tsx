@@ -1,5 +1,6 @@
 import { GitHubHostSetupSettings } from "./components/GitHubHostSetupSettings";
 import { useNavigation } from "@react-navigation/native";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
@@ -44,7 +45,7 @@ import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 type SettingsPage = "new-threads" | "source-control" | "agent-behavior" | "maintenance";
 
 const PAGE_TITLES: Record<SettingsPage, string> = {
-  "new-threads": "New threads",
+  "new-threads": "New conversations",
   "source-control": "Source control",
   "agent-behavior": "Agent behavior",
   maintenance: "Maintenance",
@@ -261,11 +262,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           {!hasConnectedSelection || reference === null ? (
-            <Text className="px-2 text-base text-foreground-muted">
-              {projectSelected
-                ? "Select a project with a checkout on a connected environment."
-                : "Use the filter above to select a connected environment."}
-            </Text>
+            <SettingsComputerNotice />
           ) : (
             <>
               {projectSelected ? (
@@ -454,13 +451,13 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                         <DatabaseStorageNotice key={target.environmentId} target={target} />
                       ))}
                   {!projectSelected ? (
-                    <SettingsSection title="Manage environments">
+                    <SettingsSection title="Manage computers">
                       {selectedTargets.map((target) => (
                         <SettingsRow
                           key={target.environmentId}
                           icon="server.rack"
                           label={target.label}
-                          value="Server and provider updates"
+                          value="Loom and agent updates"
                           onPress={() =>
                             navigation.navigate("SettingsSheet", {
                               screen: "SettingsContent",
@@ -480,7 +477,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       label="Check provider updates"
                       subtitle={
                         projectSelected
-                          ? "Environment-wide setting. Select All projects to change it."
+                          ? "Applies to the whole computer. Select All projects to change it."
                           : "Check installed provider CLIs for newer versions and fetch model catalog updates. When off, new models may not appear."
                       }
                       value={uniform("enableProviderUpdateChecks")}

@@ -330,7 +330,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       ? [
                           {
                             id: "steer",
-                            title: "Steer now",
+                            title: "Send now",
                             attributes: { disabled: !controls.canSteer },
                             image: Platform.OS === "ios" ? "arrow.turn.left.up" : "arrow_upward",
                           },
@@ -388,13 +388,13 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     {workflow?.canPromoteToSteer ? (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Steer with message ${index + 1} now`}
+                        accessibilityLabel={`Send queued message ${index + 1} now`}
                         disabled={!controls.canSteer}
                         onPress={() => void act(run.id, "steer")}
-                        className="h-8 shrink-0 justify-center rounded-full bg-primary px-3 active:opacity-70 disabled:opacity-40"
+                        className="min-h-11 shrink-0 justify-center rounded-full bg-primary px-3 active:opacity-70 disabled:opacity-40"
                       >
                         <Text className="font-t3-medium text-xs text-primary-foreground">
-                          Steer
+                          Send now
                         </Text>
                       </Pressable>
                     ) : null}

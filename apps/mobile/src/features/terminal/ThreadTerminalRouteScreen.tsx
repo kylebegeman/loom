@@ -41,6 +41,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { terminalEnvironment } from "../../state/terminal";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentSession, readEnvironmentScope } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1096,6 +1097,30 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     }
   }, [retryEnvironment, routeEnvironmentId]);
 
+  const handleRetryTerminal = () => {
+    terminalSession.refresh();
+    if (routeEnvironmentId === null) return;
+    appAtomRegistry.refresh(
+      terminalEnvironment.metadata({ environmentId: routeEnvironmentId, input: null }),
+    );
+    if (terminalAttachInput === null) return;
+    if (canOperateTerminal) {
+      appAtomRegistry.refresh(
+        terminalEnvironment.attach({
+          environmentId: routeEnvironmentId,
+          input: terminalAttachInput,
+        }),
+      );
+    } else if (canReadTerminal) {
+      appAtomRegistry.refresh(
+        terminalEnvironment.observe({
+          environmentId: routeEnvironmentId,
+          input: { threadId: terminalAttachInput.threadId, terminalId },
+        }),
+      );
+    }
+  };
+
   if (!selectedThread) {
     if (!connectionsReady) {
       return <LoadingScreen message="Opening terminal…" />;
@@ -1103,10 +1128,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
 
     return (
       <View className="flex-1 bg-screen">
-        <EmptyState
-          title="Thread unavailable"
-          detail="This terminal route needs an active thread and workspace."
-        />
+        <EmptyState title="Thread unavailable" detail="Open a conversation to use its terminal." />
       </View>
     );
   }
@@ -1116,7 +1138,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       <View className="flex-1 bg-screen">
         <EmptyState
           title="Terminal unavailable"
-          detail="This thread does not have a workspace root yet, so there is nowhere to open a shell."
+          detail="This conversation needs a project folder before it can open a terminal."
         />
       </View>
     );
@@ -1210,26 +1232,51 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                 terminalSession.error ??
                 "This connection does not have permission to view terminals."
               }
+              actionLabel={terminalSession.error ? "Try again" : undefined}
+              onAction={terminalSession.error ? terminalSession.refresh : undefined}
             />
           ) : canOperateTerminal && launchLocation === null ? (
             sessionsError !== null ? (
-              <EmptyState title="Could not load terminals" detail={sessionsError} />
+              <EmptyState
+                title="Could not load terminals"
+                detail={sessionsError}
+                actionLabel="Try again"
+                onAction={handleRetryTerminal}
+              />
             ) : (
               <EmptyState title="Loading terminals" detail="Reading existing terminal sessions." />
             )
           ) : !canOperateTerminal && !hasTerminalTarget && sessionsPending ? (
             <EmptyState title="Loading terminals" detail="Reading existing terminal sessions." />
           ) : !canOperateTerminal && !hasTerminalTarget && sessionsError !== null ? (
-            <EmptyState title="Could not load terminals" detail={sessionsError} />
+            <EmptyState
+              title="Could not load terminals"
+              detail={sessionsError}
+              actionLabel="Try again"
+              onAction={handleRetryTerminal}
+            />
           ) : !canOperateTerminal && !hasTerminalTarget ? (
             <EmptyState
               title="No terminal sessions"
               detail="Existing terminals will appear here when another client opens one."
             />
-          ) : !canOperateTerminal && terminal.error !== null ? (
-            <EmptyState title="Terminal unavailable" detail={terminal.error} />
+          ) : terminal.error !== null && terminal.buffer.length === 0 ? (
+            <EmptyState
+              title="Terminal unavailable"
+              detail={terminal.error}
+              actionLabel="Try again"
+              onAction={handleRetryTerminal}
+            />
           ) : (
             <>
+              {terminal.error !== null ? (
+                <View className="gap-1 bg-card px-4 py-2">
+                  <Text accessibilityRole="alert" className="text-xs text-foreground-muted">
+                    Terminal output may be out of date. {terminal.error}
+                  </Text>
+                  <Button label="Try again" tone="text" onPress={handleRetryTerminal} />
+                </View>
+              ) : null}
               <View
                 style={{
                   flex: 1,

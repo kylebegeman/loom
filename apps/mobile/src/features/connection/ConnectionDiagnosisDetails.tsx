@@ -12,6 +12,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import Constants from "expo-constants";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
+import { useState } from "react";
 import { Linking, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -53,21 +54,9 @@ export function ConnectionDiagnosisDetails(props: {
 }) {
   const { diagnosis } = props;
   const { moreInfoUrl } = diagnosis;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   return (
     <View className="gap-3">
-      <View className="gap-0.5">
-        {diagnosis.hops.map((hop) => (
-          <Text
-            key={hop.hop}
-            className={cn(
-              "text-sm",
-              hop.result === "failed" ? "text-danger-foreground" : "text-foreground-muted",
-            )}
-          >
-            {`${HOP_MARK[hop.result]}  ${hop.label}${HOP_NOTE[hop.result]}`}
-          </Text>
-        ))}
-      </View>
       <View className="gap-0.5">
         <Text className="text-sm font-t3-bold text-foreground">What to try</Text>
         {diagnosis.steps.map((step, index) => (
@@ -76,9 +65,31 @@ export function ConnectionDiagnosisDetails(props: {
           </Text>
         ))}
       </View>
-      <Text selectable className="font-mono text-xs text-foreground-muted">
-        {diagnosis.facts.map(([label, value]) => `${label}: ${value}`).join("\n")}
-      </Text>
+      <Button
+        label={detailsOpen ? "Hide technical details" : "Show technical details"}
+        tone="text"
+        onPress={() => setDetailsOpen((open) => !open)}
+      />
+      {detailsOpen ? (
+        <View className="gap-3">
+          <View className="gap-0.5">
+            {diagnosis.hops.map((hop) => (
+              <Text
+                key={hop.hop}
+                className={cn(
+                  "text-sm",
+                  hop.result === "failed" ? "text-danger-foreground" : "text-foreground-muted",
+                )}
+              >
+                {`${HOP_MARK[hop.result]}  ${hop.label}${HOP_NOTE[hop.result]}`}
+              </Text>
+            ))}
+          </View>
+          <Text selectable className="font-mono text-xs text-foreground-muted">
+            {diagnosis.facts.map(([label, value]) => `${label}: ${value}`).join("\n")}
+          </Text>
+        </View>
+      ) : null}
       <Button
         label="Copy diagnostics"
         icon="doc.on.doc"

@@ -1,3 +1,4 @@
+import { Button } from "../../components/ui/Button";
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -18,7 +19,6 @@ import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
@@ -65,14 +65,14 @@ export function ConnectionsNewRouteScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
-  const [scannerLocked, setScannerLocked] = useState(false);
+  const scannerLockedRef = useRef(false);
+  const [scannerRequested, setScannerRequested] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
   const attemptedAutoConnectRef = useRef<string | null>(null);
 
-  const headerIconColor = useUniwindTheme()["--color-icon"];
-
-  const connectDisabled = isSubmitting || hostInput.trim().length === 0;
+  const connectDisabled =
+    isSubmitting || hostInput.trim().length === 0 || codeInput.trim().length === 0;
 
   useEffect(() => {
     const { host, code } = parsePairingUrl(connectionPairingUrl);
@@ -97,20 +97,30 @@ export function ConnectionsNewRouteScreen({
   }, [pairingConnectionError]);
 
   const handleHostChange = (value: string) => {
-    setHostInput(value);
+    const parsed = parsePairingUrl(value);
+    setHostInput(parsed.code ? parsed.host : value);
+    if (parsed.code) {
+      setCodeInput(parsed.code);
+      setScanComplete(true);
+    }
+    setScannerRequested(false);
     setPendingConnectionError(null);
   };
 
   const handleCodeChange = (value: string) => {
     setCodeInput(value);
+    setScannerRequested(false);
     setPendingConnectionError(null);
   };
 
   useEffect(() => () => setPendingConnectionError(null), []);
 
   const handleScanPress = async () => {
+    if (isSubmitting) return;
     const permission = await requestCameraPermission();
     if (permission.granted) {
+      scannerLockedRef.current = false;
+      setScannerRequested(true);
       setScanComplete(false);
       return;
     }
@@ -126,11 +136,11 @@ export function ConnectionsNewRouteScreen({
   };
 
   const handleQrScan = ({ data }: { readonly data: string }) => {
-    if (scannerLocked) {
+    if (scannerLockedRef.current || isSubmitting) {
       return;
     }
 
-    setScannerLocked(true);
+    scannerLockedRef.current = true;
 
     try {
       const pairingUrl = extractPairingUrlFromQrPayload(data);
@@ -139,16 +149,14 @@ export function ConnectionsNewRouteScreen({
       setCodeInput(code);
       onChangeConnectionPairingUrl(pairingUrl);
       setScanComplete(true);
-      setScannerLocked(false);
+      setPendingConnectionError(null);
     } catch (error) {
+      setScannerRequested(false);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Dialog.alert(
         "Invalid QR code",
         error instanceof Error ? error.message : "Scanned QR code was not recognized.",
       );
-      setTimeout(() => {
-        setScannerLocked(false);
-      }, 600);
     }
   };
 
@@ -186,26 +194,22 @@ export function ConnectionsNewRouteScreen({
     void connectAndClose(routePairingUrl);
   }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
 
+  const cameraActive =
+    scannerRequested &&
+    cameraPermission?.granted === true &&
+    screenFocused &&
+    !scanComplete &&
+    !isSubmitting;
+
   return (
     <SettingsScreen
       formSheet={routeName === "ConnectionsNew"}
-      title={params.routeFor ? "Add route" : "Connect computer"} // fork: fleet-connections
-      actions={[
-        {
-          accessibilityLabel: isSubmitting ? "Connecting" : "Connect computer", // fork: fleet-connections
-          loading: isSubmitting,
-          icon: "checkmark",
-          tintColor: headerIconColor,
-          disabled: connectDisabled,
-          onPress: () => {
-            void handleSubmit();
-          },
-        },
-      ]}
+      title={params.routeFor ? "Add connection address" : "Connect computer"}
     >
       <ScrollView
         nestedScrollEnabled
         contentInsetAdjustmentBehavior="automatic"
+        automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className="flex-1"
@@ -216,16 +220,37 @@ export function ConnectionsNewRouteScreen({
         }}
       >
         <View collapsable={false} className="gap-6.5">
-          <PairingScanCard
-            cameraActive={cameraPermission?.granted === true && screenFocused && !scanComplete}
-            onScan={handleQrScan}
-            onScanPress={() => {
-              void handleScanPress();
-            }}
-          />
+          <Text className="px-4 text-sm leading-normal text-foreground-muted">
+            {params.routeFor
+              ? "Open Connections settings on this same computer to add another way to reach it."
+              : "Open Connections settings in Loom on your computer to get a pairing code."}
+          </Text>
+          {scanComplete ? (
+            <Button
+              label="Scan another code"
+              icon="qrcode.viewfinder"
+              tone="text"
+              disabled={isSubmitting}
+              onPress={() => void handleScanPress()}
+            />
+          ) : (
+            <PairingScanCard
+              cameraActive={cameraActive}
+              onScan={handleQrScan}
+              onScanPress={() => {
+                void handleScanPress();
+              }}
+            />
+          )}
+
+          {cameraActive ? (
+            <Button label="Stop scanning" tone="text" onPress={() => setScannerRequested(false)} />
+          ) : null}
 
           <View collapsable={false} className="gap-2">
-            <Text className="px-4 text-sm font-t3-medium text-foreground-muted">Or enter it</Text>
+            <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
+              Or enter the address and pairing code
+            </Text>
             <View
               collapsable={false}
               className={cn(
@@ -238,6 +263,7 @@ export function ConnectionsNewRouteScreen({
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
                 value={hostInput}
+                editable={!isSubmitting}
                 onChangeText={handleHostChange}
               />
               <View className="ml-4 border-t border-border-subtle" />
@@ -246,6 +272,7 @@ export function ConnectionsNewRouteScreen({
                 placeholder="Pairing code"
                 returnKeyType="go"
                 value={codeInput}
+                editable={!isSubmitting}
                 onChangeText={handleCodeChange}
                 onSubmitEditing={() => {
                   if (!connectDisabled) void handleSubmit();
@@ -260,11 +287,20 @@ export function ConnectionsNewRouteScreen({
               )}
             >
               {pairingConnectionError ??
-                "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
+                "Use the address and code shown on your computer. You can also paste its full pairing link into Address."}
             </Text>
           </View>
 
-          {hasCloudPublicConfig() ? <T3ConnectSection /> : null}
+          <Button
+            label={params.routeFor ? "Add connection address" : "Connect computer"}
+            tone="primary"
+            fullWidth
+            loading={isSubmitting}
+            disabled={connectDisabled}
+            onPress={() => void handleSubmit()}
+          />
+
+          {hasCloudPublicConfig() && !params.routeFor ? <T3ConnectSection /> : null}
         </View>
       </ScrollView>
     </SettingsScreen>
@@ -357,7 +393,7 @@ function PairingScanCard(props: {
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
           {/* fork: brand */}
-          Scan a pairing code from the Loom CLI or desktop Connections settings
+          Scan the QR code shown on your computer
         </Text>
       </View>
     </Pressable>
@@ -377,7 +413,7 @@ function T3ConnectSection() {
   return (
     <View collapsable={false} className="gap-2">
       <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
-        Or use the managed relay
+        Or find computers with Loom Connect
       </Text>
       {isSignedIn ? (
         <CloudEnvironmentRows
@@ -389,7 +425,7 @@ function T3ConnectSection() {
       ) : (
         <ListRow
           label="Sign in to Loom Connect" // fork: brand
-          description="Reach your machines from anywhere, no network setup."
+          description="Sign in with the account you use on your computer."
           disabled={!isLoaded}
           onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
         />
@@ -405,7 +441,7 @@ function PairingInputRow({
   readonly label: string;
 }) {
   return (
-    <View collapsable={false} className="h-13 flex-row items-center gap-3 px-4">
+    <View collapsable={false} className="min-h-13 flex-row items-center gap-3 px-4 py-3">
       <Text
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"

@@ -28,7 +28,8 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   const params = route.params;
   const navigation = useNavigation();
   const store = usePullRequestReviewDraft(params);
-  const saved = store.draft.comments.find((draft) => draft.id === params.draftId);
+  const [draftId] = useState(() => params.draftId ?? uuidv4());
+  const saved = store.draft.comments.find((draft) => draft.id === draftId);
   const [editedBody, setBody] = useState<string | null>(null);
   const body = editedBody ?? saved?.body ?? "";
   const detail = useEnvironmentQuery(composerPullRequests.detail(pullRequestTarget(params)));
@@ -38,7 +39,27 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   const stale = detail.data && detail.data.headSha !== params.headSha;
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
-  const save = async () => {
+  const persistDraft = async (
+    update: Parameters<typeof store.update>[0],
+    onFailure?: () => void,
+  ) => {
+    if (pending.current || !store.ready) return;
+    pending.current = true;
+    setBusy(true);
+    const result = await settlePromise(async () => {
+      store.update(update);
+      return store.flush();
+    });
+    pending.current = false;
+    setBusy(false);
+    if (AsyncResult.isSuccess(result) && result.value) navigation.goBack();
+    else {
+      onFailure?.();
+      if (AsyncResult.isFailure(result))
+        Dialog.alert("Could not save draft", "Your comment is still here. Try again.");
+    }
+  };
+  const save = () => {
     if (
       pending.current ||
       !store.ready ||
@@ -49,14 +70,12 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
       !permissions.canInlineComment
     )
       return;
-    pending.current = true;
-    setBusy(true);
-    store.update((draft) => ({
+    return persistDraft((draft) => ({
       ...draft,
       comments: [
-        ...draft.comments.filter((comment) => comment.id !== params.draftId),
+        ...draft.comments.filter((comment) => comment.id !== draftId),
         {
-          id: params.draftId ?? uuidv4(),
+          id: draftId,
           path: params.path,
           ...(params.oldPath ? { oldPath: params.oldPath } : {}),
           position: params.position,
@@ -66,11 +85,6 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
         },
       ],
     }));
-    // flush reports write failures through the draft store's error field.
-    const result = await settlePromise(() => store.flush());
-    pending.current = false;
-    setBusy(false);
-    if (AsyncResult.isSuccess(result)) navigation.goBack();
   };
   return (
     <PullRequestSheetContent
@@ -122,8 +136,25 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
           The branch changed. Return to the current diff and select the line again.
         </Text>
       ) : null}
+      {detail.data && !detail.isPending && !detail.error && !permissions.canInlineComment ? (
+        <Text className="text-sm text-foreground-muted">
+          This connection cannot add line comments to this pull request.
+        </Text>
+      ) : null}
       {store.error || detail.error ? (
-        <Text className="text-sm text-danger-foreground">{store.error ?? detail.error}</Text>
+        <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
+          {store.error ?? detail.error}
+        </Text>
+      ) : null}
+      {(!store.ready && store.error) || detail.error ? (
+        <Button
+          label="Try again"
+          tone="secondary"
+          onPress={() => {
+            if (!store.ready) void store.retry();
+            if (detail.error) refreshDetail();
+          }}
+        />
       ) : null}
       {saved ? (
         <Button
@@ -135,11 +166,19 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
                 text: "Delete",
                 style: "destructive",
                 onPress: () => {
-                  store.update((draft) => ({
-                    ...draft,
-                    comments: draft.comments.filter((comment) => comment.id !== saved.id),
-                  }));
-                  navigation.goBack();
+                  void persistDraft(
+                    (draft) => ({
+                      ...draft,
+                      comments: draft.comments.filter((comment) => comment.id !== saved.id),
+                    }),
+                    () =>
+                      store.update((draft) => ({
+                        ...draft,
+                        comments: draft.comments.some((comment) => comment.id === saved.id)
+                          ? draft.comments
+                          : [...draft.comments, saved],
+                      })),
+                  );
                 },
               },
             ])
