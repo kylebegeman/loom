@@ -17,37 +17,52 @@ afterEach(async () => {
   );
 });
 const io = Effect.promise;
-const cli = (root: string, args: string[], timeout = 30000) =>
+const cli = (
+  root: string,
+  args: string[],
+  timeout = 30000,
+  instrumentation?: { preload: string; interruptAfterStaging?: boolean },
+) =>
   io(
     () =>
-      new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-        const child = NodeChildProcess.spawn(
-          process.execPath,
-          [
-            NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url)),
-            "vault",
-            "recovery",
-            ...args,
-          ],
-          {
-            cwd: root,
-            env: { PATH: "/usr/bin:/bin", NO_COLOR: "1", HOME: root },
-            stdio: ["ignore", "pipe", "pipe"],
-            timeout,
-            killSignal: "SIGKILL",
-          },
-        );
-        let stdout = "",
-          stderr = "";
-        child.stdout.on("data", (part) => {
-          stdout += part;
-        });
-        child.stderr.on("data", (part) => {
-          stderr += part;
-        });
-        child.once("error", reject);
-        child.once("close", (code) => resolve({ code, stdout, stderr }));
-      }),
+      new Promise<{ code: number | null; stdout: string; stderr: string; staged: boolean }>(
+        (resolve, reject) => {
+          const child = NodeChildProcess.spawn(
+            process.execPath,
+            [
+              ...(instrumentation ? ["--import", instrumentation.preload] : []),
+              NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url)),
+              "vault",
+              "recovery",
+              ...args,
+            ],
+            {
+              cwd: root,
+              env: { PATH: "/usr/bin:/bin", NO_COLOR: "1", HOME: root },
+              stdio: ["ignore", "pipe", "pipe", "ipc"],
+              timeout,
+              killSignal: "SIGKILL",
+            },
+          );
+          let stdout = "",
+            stderr = "",
+            staged = false;
+          child.on("message", (message) => {
+            if (message === "staged") {
+              staged = true;
+              if (instrumentation?.interruptAfterStaging) child.kill("SIGINT");
+            }
+          });
+          child.stdout?.on("data", (part) => {
+            stdout += part;
+          });
+          child.stderr?.on("data", (part) => {
+            stderr += part;
+          });
+          child.once("error", reject);
+          child.once("close", (code) => resolve({ code, stdout, stderr, staged }));
+        },
+      ),
   );
 
 const run = <A>(
@@ -179,6 +194,13 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX archive 
       ]) {
         yield* io(() => NodeFSP.writeFile(f.archiveFile, changed));
         yield* refused(run((service) => service.verify(f.input)));
+        const output = NodePath.join(f.root, "truncated.snapshot");
+        yield* refused(run((service) => service.unseal({ ...f.input, snapshotFile: output })));
+        expect(
+          (yield* io(() => NodeFSP.readdir(f.root))).some(
+            (name) => name === "truncated.snapshot" || name.endsWith(".tmp"),
+          ),
+        ).toBe(false);
       }
     }),
   );
@@ -348,6 +370,94 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX archive 
       expect(
         (yield* io(() => NodeFSP.readdir(f.root))).some(
           (name) => name === "refused.snapshot" || name.endsWith(".tmp"),
+        ),
+      ).toBe(false);
+    }),
+  );
+
+  it.live.each(["unseal", "seal", "key-create"] as const)(
+    "awaits staging cleanup before exiting on SIGINT during %s",
+    (operation) =>
+      Effect.gen(function* () {
+        const f = yield* setup;
+        if (operation === "unseal")
+          yield* run((service) => service.seal({ ...f.input, snapshotFile: f.snapshotFile }));
+        const preload = NodePath.join(f.root, "hold-write.mjs");
+        yield* io(() =>
+          NodeFSP.writeFile(
+            preload,
+            `
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+const open = fs.open;
+let held = false;
+fs.open = async (...args) => {
+  const handle = await open(...args);
+  if (String(args[0]).includes(".loom-vault-")) {
+    for (const name of ["write", "writeFile"]) {
+      const write = handle[name].bind(handle);
+      handle[name] = async (...args) => {
+        const result = await write(...args);
+        if (!held) {
+          held = true;
+          await new Promise(resolve => {
+            // Keep an actual write in flight until the runtime handles SIGINT.
+            process.once("SIGINT", () => setImmediate(resolve));
+            process.send("staged");
+          });
+        }
+        return result;
+      };
+    }
+  }
+  return handle;
+};
+syncBuiltinESMExports();
+`,
+          ),
+        );
+        const output = NodePath.join(f.root, "interrupted-output");
+        const flags = ["--key-file", f.keyFile, "--environment-id", f.input.environmentId];
+        const args =
+          operation === "key-create"
+            ? [operation, output]
+            : operation === "seal"
+              ? [operation, f.snapshotFile, output, ...flags]
+              : [operation, f.archiveFile, output, ...flags];
+        const result = yield* cli(f.root, args, 30000, { preload, interruptAfterStaging: true });
+        expect(result.staged).toBe(true);
+        expect(result.code).toBe(130);
+        expect(
+          (yield* io(() => NodeFSP.readdir(f.root))).some(
+            (name) => name === "interrupted-output" || name.endsWith(".tmp"),
+          ),
+        ).toBe(false);
+      }),
+  );
+
+  it.live("explains unsupported exclusive publication and removes staging without a fallback", () =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      const preload = NodePath.join(f.root, "unsupported-link.mjs");
+      yield* io(() =>
+        NodeFSP.writeFile(
+          preload,
+          `
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+fs.link = async () => { throw Object.assign(new Error("private-device-detail"), { code: "EOPNOTSUPP" }); };
+syncBuiltinESMExports();
+`,
+        ),
+      );
+      const output = NodePath.join(f.root, "unsupported-output");
+      const result = yield* cli(f.root, ["key-create", output], 30000, { preload });
+      expect(result.code).toBe(1);
+      expect(result.stdout + result.stderr).toContain("local filesystem with hard-link support");
+      expect(result.stdout + result.stderr).not.toContain("private-device-detail");
+      expect(
+        (yield* io(() => NodeFSP.readdir(f.root))).some(
+          (name) => name === "unsupported-output" || name.endsWith(".tmp"),
         ),
       ).toBe(false);
     }),

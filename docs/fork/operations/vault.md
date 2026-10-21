@@ -85,7 +85,11 @@ loom vault recovery verify /private/exports/vault.archive --key-file /private/ke
 loom vault recovery unseal /private/exports/vault.archive /private/staging/recovered.snapshot --key-file /private/key-custody/vault-recovery.key --environment-id YOUR_ENVIRONMENT_ID
 ```
 
-Use existing parent directories and new output filenames. Keys are random private binary files,
+Create outputs in existing directories on local encrypted storage supporting hard links and
+directory fsync (for example APFS or ext4), using new filenames. Direct output to exFAT/FAT,
+SMB or FUSE is unsupported; exclusive publication refuses without a fallback when hard links
+are unavailable. Copy the completed encrypted archive to offline media afterwards and verify
+that copy before deleting the local archive. Keep plaintext and keys on private storage. Keys are random private binary files,
 never passwords or command-line values. Keep the recovery key and backend unseal material
 separate from exported archives and from the original host. Ownership, destination and retention
 still need an operator decision; no off-host copy or deletion is automatic. Sources and keys
@@ -93,7 +97,8 @@ must be regular owner-only files. Existing files and symlinks are refused rather
 Windows is not supported by this local filesystem boundary yet.
 
 Verification authenticates every encrypted byte and the expected environment without writing
-plaintext. Unseal publishes a new private file only after authentication. Abrupt process or host
+plaintext. Unseal publishes a new private file only after authentication. Ctrl-C waits for the
+in-flight operation to finish its staging cleanup before the CLI exits. Abrupt process or host
 loss may leave private `.loom-vault-*.tmp` staging files; inspect interrupted work and the final
 path before retrying. Filesystem errors can follow publication, so a failed command is not
 permission to overwrite or assume the destination is absent. Retire plaintext snapshots and

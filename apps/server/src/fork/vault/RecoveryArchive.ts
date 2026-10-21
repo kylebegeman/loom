@@ -14,9 +14,11 @@ import * as Schema from "effect/Schema";
 
 export class RecoveryArchiveError extends Schema.TaggedError<RecoveryArchiveError>()(
   "RecoveryArchiveError",
-  {},
+  { outputFilesystem: Schema.optional(Schema.Literal(true)) },
 ) {
   override get message() {
+    if (this.outputFilesystem)
+      return "Vault archive operation refused. Output requires a local filesystem with hard-link support and directory fsync. Create the output on supported local storage, then copy the encrypted archive to offline media. No fallback publication was attempted.";
     return "Vault archive operation refused. Check the private key, archive integrity, environment and unused destination path. No existing file was overwritten. Inspect the destination before retrying a failed write.";
   }
 }
@@ -163,7 +165,17 @@ const withOutput = async <A>(
     await handle.sync();
     await handle.close();
     signal.throwIfAborted();
-    await NodeFSP.link(temporary, destination);
+    try {
+      await NodeFSP.link(temporary, destination);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        ["EOPNOTSUPP", "ENOTSUP", "ENOSYS", "EXDEV", "EPERM"].includes(String(error.code))
+      )
+        throw new RecoveryArchiveError({ outputFilesystem: true });
+      throw error;
+    }
     const parent = await NodeFSP.open(
       directory,
       NodeFS.constants.O_RDONLY | NodeFS.constants.O_DIRECTORY,
@@ -182,7 +194,17 @@ const withOutput = async <A>(
 // Each caller already supplies the operation span.
 const run = Effect.fnUntraced(function* <A>(work: (signal: AbortSignal) => Promise<A>) {
   if ((yield* HostProcess.Platform) === "win32") return yield* failure();
-  return yield* Effect.tryPromise({ try: work, catch: failure });
+  return yield* Effect.callback<A, RecoveryArchiveError>((resume, signal) => {
+    const settled = Promise.resolve()
+      .then(() => work(signal))
+      .then(
+        (value) => resume(Effect.succeed(value)),
+        (error: unknown) =>
+          resume(Effect.fail(Schema.is(RecoveryArchiveError)(error) ? error : failure())),
+      );
+    // Abort alone returns before async finally blocks. Runtime shutdown must await their cleanup.
+    return Effect.promise(() => settled);
+  });
 });
 
 const seal = Effect.fn("RecoveryArchive.seal")(function* (

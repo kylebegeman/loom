@@ -26,7 +26,10 @@ Encryption hashes it before and during streaming and refuses changed content. Ve
 streams authentication without publishing plaintext. Recovery streams into an owner-only
 staging file, fsyncs it and publishes using an exclusive hard link only after full authentication.
 The parent directory is fsynced. Existing paths, including symlinks, cannot be overwritten.
-Ordinary cancellation removes staging files; abrupt process/host loss can leave private staging
+Interruption aborts streaming and waits for the operation promise, including its async cleanup,
+before the CLI exits. Output requires local hard-link and directory-fsync support; unsupported
+exclusive-link publication returns a specific refusal with no fallback. Copy completed encrypted
+archives to removable/network media separately. Abrupt process/host loss can leave private staging
 files, so use encrypted local storage and inspect interrupted work before retrying. A late I/O
 failure can follow publication; callers must inspect the destination rather than assume retry
 is safe. Inputs use nonblocking no-follow opens followed by regular-file checks; a FIFO cannot hold

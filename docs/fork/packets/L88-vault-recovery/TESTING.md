@@ -6,14 +6,20 @@ production trust promotion are not established.
 ## Verified evidence
 
 From `apps/server`, `../../node_modules/.bin/vp test run src/fork/vault/RecoveryArchive.test.ts`
-passes **16 tests** (15 POSIX cases and an explicit unsupported-platform refusal). Evidence covers a streamed binary round trip, private file modes,
+passes **20 tests** (19 POSIX cases and an explicit unsupported-platform refusal). Evidence covers a streamed binary round trip, private file modes,
 wrong key/environment, header/ciphertext/tag tampering, truncation and trailing bytes,
 pre-existing files, input/output symlinks, FIFO refusal without waiting for a writer, empty inputs and malformed independently encrypted
 manifests, including unsupported version, invalid time, unsafe byte count, size and digest
 mismatches, oversized and empty metadata. Actual CLI children run offline from a disposable
 working directory through key creation, seal, verify, unseal and tampered refusal. Archive
 bytes contain neither the synthetic secret canary nor environment/digest metadata in plaintext.
-Failed authentication publishes no recovered file and leaves no ordinary-operation staging file.
+Failed authentication, including truncated unseal, publishes no recovered file and leaves no
+ordinary-operation staging file. IPC-coordinated child tests hold a real staging write, send
+SIGINT and verify exit 130 with no staging or output for unseal, seal and key-create. All three
+fail against the previous tryPromise adapter. A child with unsupported hard-link publication
+verifies the specific local-filesystem refusal, absence of private device error details and
+staging cleanup; it fails against the previous generic refusal. No sleeps or large fixtures
+are needed for these interruption tests.
 
 The server scoped typecheck and changed-file lint pass. No client or wire contract changed.
 
