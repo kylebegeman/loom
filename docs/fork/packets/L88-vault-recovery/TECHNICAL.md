@@ -29,7 +29,9 @@ The parent directory is fsynced. Existing paths, including symlinks, cannot be o
 Ordinary cancellation removes staging files; abrupt process/host loss can leave private staging
 files, so use encrypted local storage and inspect interrupted work before retrying. A late I/O
 failure can follow publication; callers must inspect the destination rather than assume retry
-is safe. Inputs use no-follow regular-file opens; keys and plaintext sources must be owner-only.
+is safe. Inputs use nonblocking no-follow opens followed by regular-file checks; a FIFO cannot hold
+the process waiting for a writer. Key reads are bounded to 33 bytes even if the file grows
+after stat. Keys and plaintext sources must be owner-only.
 
 Successful receipts explicitly retain `backendRestoreVerified: false` and `canPromote: false`.
 An isolated restore exercise, not this receipt, proves a backend can read a particular snapshot.

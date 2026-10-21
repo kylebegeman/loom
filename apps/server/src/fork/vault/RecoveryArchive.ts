@@ -71,7 +71,11 @@ const requireEnvironment = (id: string) => {
     throw failure();
 };
 const openInput = async (path: string, privateFile: boolean) => {
-  const handle = await NodeFSP.open(path, NodeFS.constants.O_RDONLY | NodeFS.constants.O_NOFOLLOW);
+  // Opening a FIFO must not wait for a writer before the regular-file check can reject it.
+  const handle = await NodeFSP.open(
+    path,
+    NodeFS.constants.O_RDONLY | NodeFS.constants.O_NOFOLLOW | NodeFS.constants.O_NONBLOCK,
+  );
   try {
     const stat = await handle.stat();
     if (
@@ -87,12 +91,19 @@ const openInput = async (path: string, privateFile: boolean) => {
 };
 const readKey = async (path: string) => {
   const handle = await openInput(path, true);
+  const bytes = Buffer.alloc(33);
   try {
     if ((await handle.stat()).size !== 32) throw failure();
-    const key = await handle.readFile();
-    if (key.length !== 32) throw failure();
-    return key;
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset !== 32) throw failure();
+    return Buffer.from(bytes.subarray(0, 32));
   } finally {
+    bytes.fill(0);
     await handle.close();
   }
 };

@@ -6,9 +6,9 @@ production trust promotion are not established.
 ## Verified evidence
 
 From `apps/server`, `../../node_modules/.bin/vp test run src/fork/vault/RecoveryArchive.test.ts`
-passes **14 tests**. Evidence covers a streamed binary round trip, private file modes,
+passes **16 tests** (15 POSIX cases and an explicit unsupported-platform refusal). Evidence covers a streamed binary round trip, private file modes,
 wrong key/environment, header/ciphertext/tag tampering, truncation and trailing bytes,
-pre-existing files, input/output symlinks, empty inputs and malformed independently encrypted
+pre-existing files, input/output symlinks, FIFO refusal without waiting for a writer, empty inputs and malformed independently encrypted
 manifests, including unsupported version, invalid time, unsafe byte count, size and digest
 mismatches, oversized and empty metadata. Actual CLI children run offline from a disposable
 working directory through key creation, seal, verify, unseal and tampered refusal. Archive
