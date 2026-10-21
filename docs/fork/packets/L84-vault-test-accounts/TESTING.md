@@ -257,7 +257,8 @@ against a fresh revision; forgotten operation ID; forgotten lease ID; provider-g
 comparison omitted; capacity guard omitted; and reset ID rebound to a later generation. Each
 mutant runs the matching behavioral regression and is restored before final verification.
 The rollback case uses a fresh operation ID so an old operation's terminal fence cannot mask a
-missing provider-generation check. No serialized fixture, persistent backend or format is added.
+missing provider-generation check. The original in-memory proof adds no serialized fixture or persistent backend. The later
+durable adapter is verified separately below.
 
 Final package-CWD verification passes **158 tests** across the 51 barrier and 107 workload cases.
 Server typecheck, changed-file lint, 398 seam entries/unlisted-marker scan, local doc references
@@ -510,3 +511,31 @@ and reset replay from fenced/resetting snapshots after a new start or generation
 mail regression passes admission B to a delivery captured under A and requires refusal before
 session start or mailbox read. All six new cases fail against the previous implementation and
 pass with provider spent-generation/reset-currentness checks and delivery-admission correlation.
+
+## Durable maintenance ledger evidence
+
+The focused package-CWD suite now includes `CleanupLedger.test.ts` (17 cases),
+`CredentialLifecycleLedger.test.ts` (15), the 51 cleanup-controller cases, 107 workload cases
+and 8 intent-boundary cases: **198 tests**. Ledger tests cover acknowledged and lost CAS,
+reconstruction after committed/unknown start, corrupt/foreign/unsupported records, duplicate
+or orphaned history, replay-set preservation after two days, capacity refusal, immutable scope,
+forged phase skips, stale revisions and backward clocks before dispatch. Lifecycle tests also
+cover immutable issuer/consumer/reference binding, terminal generation advance and maintenance
+after expiry. All execution gates remain closed.
+
+`journal_proof.py` now also runs `MaintenanceLedgers.integration.test.ts` from `apps/server`
+before and after a real disposable OpenBao 2.7.1 restart. It uses the existing documented
+profiles/* capability without adding policy rights, verifies both json-v1 envelopes, reloads
+uncertain cleanup and issuing evidence, refuses a second start and sibling-environment writes,
+and decodes format-3 approval state alongside both records. Across journal and maintenance
+suites, four real-backend cases pass (plus two phase-specific skips). Provider behavior stays
+synthetic; this is storage restart and compatibility evidence, not live issuer/fence acceptance.
+
+```sh
+# From apps/server, with Python 3.13+ selected as python3:
+../../node_modules/.bin/vp test run src/fork/vault/CleanupLedger.test.ts src/fork/vault/CredentialLifecycleLedger.test.ts src/fork/vault/SyntheticCleanupBarrier.test.ts src/fork/vault/VaultTestAccountWorkloads.test.ts src/fork/vault/OperationIntentBoundary.proof.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 src/fork/vault/testkit/journal_proof.py --bao /verified/path/to/bao
+```
+
+Scoped server typecheck, changed-file lint, Python syntax, seam/link and whitespace checks pass.
+No client, MCP/RPC, Library, production policy, installed service or live gate changed.

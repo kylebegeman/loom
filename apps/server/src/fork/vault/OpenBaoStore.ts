@@ -61,6 +61,10 @@ const ListResponse = Schema.Struct({
 const HealthResponse = Schema.Struct({ initialized: Schema.Boolean, sealed: Schema.Boolean });
 const ConfigResponse = Schema.Struct({ data: Schema.Struct({ cas_required: Schema.Boolean }) });
 const ErrorResponse = Schema.Struct({ errors: Schema.Array(Schema.String) });
+const decodeMissing = Schema.decodeUnknownOption(
+  Schema.Struct({ errors: Schema.optionalKey(Schema.Array(Schema.Never)) }),
+  { onExcessProperty: "error" },
+);
 const decodeRead = Schema.decodeUnknownOption(ReadResponse);
 const decodeWrite = Schema.decodeUnknownOption(WriteResponse);
 const decodeKeys = Schema.decodeUnknownOption(ListResponse);
@@ -186,7 +190,12 @@ const make = Effect.gen(function* () {
     read: Effect.fn("OpenBaoStore.read")(function* (key) {
       if (!validKey(key)) return yield* new VaultError({ reason: "invalid-input" });
       const response = yield* execute(HttpClientRequest.get(`${origin}/v1/${mount}/data/${key}`));
-      if (response.status === 404) return null;
+      if (response.status === 404) {
+        // KV v2 returns 404 with metadata for deleted versions; absence must not reset a ledger.
+        if (Option.isNone(decodeMissing(yield* json(response))))
+          return yield* new VaultError({ reason: "invalid-response" });
+        return null;
+      }
       yield* check(response);
       const decoded = decodeRead(yield* json(response));
       if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-response" });

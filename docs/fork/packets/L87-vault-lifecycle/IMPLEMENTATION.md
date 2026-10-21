@@ -1,7 +1,8 @@
 # L87 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
-see README for delivered progress and remaining work.
+Status: In progress. Internal CAS issuance/validation/revocation evidence is implemented behind
+closed gates. Real issuers, consumer cutover and review/repair clients remain. The sequence below
+describes the full packet outcome; this ledger does not complete it.
 
 ## Before starting
 

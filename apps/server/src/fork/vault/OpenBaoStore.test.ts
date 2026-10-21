@@ -322,3 +322,51 @@ it.effect("writes a full audit registry within OpenBao's JSON complexity bound",
     { reply: () => [200, { data: { version: 2 } }] },
   ),
 );
+
+it.effect.each([
+  { version: 2, deletion_time: "2026-10-21T00:00:00Z", destroyed: false },
+  { version: 3, deletion_time: "", destroyed: true },
+  { version: 4 },
+])("refuses a 404 with retained record metadata %j", (metadata) =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        const failure = yield* store
+          .read("profiles/_operations/credential-lifecycle-v1")
+          .pipe(Effect.flip);
+        expect(failure.reason).toBe("invalid-response");
+        expect(requests).toHaveLength(1);
+        expect(requests[0]!.url).toContain("/data/");
+      }),
+    { reply: () => [404, { data: { data: null, metadata } }] },
+  ),
+);
+
+it.effect.each([{}, { errors: [] }])("treats only an absent-record 404 as missing %j", (body) =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect(yield* store.read("items/never-created")).toBeNull();
+        expect(requests).toHaveLength(1);
+      }),
+    { reply: () => [404, body] },
+  ),
+);
+
+it.effect.each([
+  null,
+  [],
+  { errors: ["backend failure"] },
+  { data: {} },
+  { metadata: { version: 2 } },
+])("does not interpret an ambiguous 404 as a fresh record %j", (body) =>
+  withStore(
+    ({ store }) =>
+      Effect.gen(function* () {
+        expect((yield* store.read("items/example").pipe(Effect.flip)).reason).toBe(
+          "invalid-response",
+        );
+      }),
+    { reply: () => [404, body] },
+  ),
+);

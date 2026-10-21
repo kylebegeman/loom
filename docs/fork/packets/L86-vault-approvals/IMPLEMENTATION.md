@@ -126,8 +126,9 @@ timeout. This is test/design only; no permit, persisted intent or dispatcher is 
 Mandatory intent boundary design now covers caller omissions, trusted destination classification,
 child/grandchild delegation and alternate service/transport entry points. A test-local model
 refuses fallback and unsupported reusable sessions/raw release; the real evaluator counterexample
-shows timed attenuation does not bind an intent budget. Environment/item-wide classification is
-a conservative future recommendation, not a selected persisted schema or changed product policy.
+shows timed attenuation does not bind an intent budget. Kyle selected environment/item-wide protection for every Loom-mediated use on 2026-10-20;
+ordinary grants cannot bypass it. This does not select a persisted schema or change today's
+timed approvals.
 The current services do not implement mandatory intent enforcement.
 
 The temporal design proof now covers classification/coverage/binding/authority changes during

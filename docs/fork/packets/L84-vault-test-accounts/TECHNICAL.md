@@ -197,10 +197,11 @@ registry1 and existing runtime behavior are unchanged by this test/docs slice. L
 ## Cleanup and reset-before-reuse barrier design
 
 This is a selected design with an executable synthetic proof, not an enabled cleanup system.
-`testkit/SyntheticCleanupBarrier.ts` has no runtime import, codec, serialized record, filesystem
-path or OpenBao integration. Its store interface is an opaque retained compare-and-set contract.
-The proof reconstructs controllers while retaining separate in-memory controller and provider
-ledgers; it does not demonstrate disk durability, provider-process restart or power-loss recovery.
+`testkit/SyntheticCleanupBarrier.ts` is still a test-only controller with no live provider or
+runtime registration. Its typed state now also has an internal durable adapter, `CleanupLedger.ts`.
+The original proof retains separate in-memory controller/provider ledgers. The OpenBao proof
+separately restarts the real disposable backend and reloads controller evidence; no proof claims
+provider-process restart, power-loss safety or production rollout.
 
 The proposed barrier belongs to the canonical account resource, conservatively keyed by
 environment and Vault item identity, not a transient lease or a collection label. Item version,
@@ -266,14 +267,13 @@ provider evidence remain blocked. Losing or rolling back both ledgers, restoring
 identity, or silently bootstrapping an existing provider account requires owner recovery and an
 independent rollback barrier. The synthetic ledger cannot establish those host guarantees.
 
-Before live implementation the owner must select the durable backend/CAS and ownership rules,
-validated record/readers and downgrade enforcement, independent provider fence/generation
-custody, provider-specific reset/revocation evidence, scope-rebind/recovery, retention and rollout.
-These are explicit design gates, not approved paths/formats/policy capabilities. A runtime that
-does not enforce a future barrier must not be allowed to resume old starts or reuse accounts;
-its reader/capability cutover and host rollback policy need review before writing persistent
-state. This slice writes none, so policy3, journal1 and registry1 remain unchanged with no new
-downgrade caveat. L79 host policy and L75's existing park remain separate gates.
+Kyle has approved separate durable CAS records under the existing environment profiles prefix;
+the implemented contract is below. Live operation still requires ownership, compatible readers,
+independent provider fence/generation custody, provider-specific reset/revocation evidence,
+scope-rebind/recovery, reclamation and host rollout. Runtimes that ignore the ledger must not
+resume old starts or reuse accounts under an enabled barrier. Policy3, journal1 and registry1
+remain unchanged; older runtimes ignore the independent records while live gates stay false.
+L79 host policy and L75's existing park remain separate gates.
 
 ## Synthetic broker/mail composition
 
@@ -473,3 +473,34 @@ another packet's UI/service internals.
 The broker/mail composition compares its admission with the immutable admission scope captured
 by the delivery controller. A separately valid admission for another lease cannot supply mail
 context for that session, even when operation, environment and machine match.
+
+## Approved durable cleanup/reset storage
+
+Kyle approved separate versioned maintenance ledgers on 2026-10-20, using current capabilities
+under `environments/<sha256(environmentId)>/profiles/_operations/`. Cleanup and reset share
+`cleanup-reset-v1`: they must advance together in one CAS domain, rather than permit a fence
+and reset to disagree across documents. This is separate from policy format 3 and journal 1;
+it uses the existing OpenBao `json-v1` envelope and read/create/update rights on profiles/*.
+No mounts, permissions, service credentials or production configuration are added.
+
+The version-1 document contains environment identity, revision, update time, bounded resource
+entries and operation/lease/reset replay sets. Each resource retains the exact account/item
+version/broker/application/target/origin binding, phase, generation and original operation/reset
+identity. Corrupt, future-version, foreign-environment, duplicate or orphaned evidence refuses;
+missing storage creates no clean state. Enrollment always begins quarantined. CAS protects each
+transition and preserves replay sets and resource bindings. No authority or provider receipt is
+inferred from the storage layer; a future runtime caller must still authorize and verify the
+actual provider evidence. A real provider must itself enforce the one-start-per-generation
+and reset-generation rules proved by the synthetic provider. A deleted-version 404 refuses;
+fully purged metadata remains indistinguishable from never-created storage and requires the
+host-owner deletion/rollback barrier and independent provider evidence. There is no public
+surface or live controller worker.
+
+The bounds remain 32 resources, 128 start/lease identities and 160 reset identities. No unresolved
+state or replay history ages out. This intentionally differs from the approval inbox's 24-hour
+queue retention: expiry cannot prove a provider fence or erase a spent generation. At capacity,
+new writes refuse. Reclamation needs an independently verified provider watermark and replay
+horizon; deleting a record or restoring an earlier backend is not reclamation. Older Loom
+runtimes ignore these independent records and must not run enabled maintenance; their policy
+reader remains at format 3. Any future live rollout still needs a compatible-runtime/host
+rollback barrier, custody and L79 policy approval.
