@@ -95,6 +95,10 @@ const fixture = Effect.gen(function* () {
         const admitted = yield* Ref.modify(providerState, (current) => {
           if (
             current.generation !== ticket.generation ||
+            [...current.starts.values()].some(
+              (start) =>
+                start.generation === ticket.generation && start.operationId !== ticket.operationId,
+            ) ||
             current.fences.has(ticket.operationId) ||
             cleanupScopeKey(ticket.scope) !== cleanupScopeKey(scope)
           )
@@ -142,9 +146,16 @@ const fixture = Effect.gen(function* () {
         if (!faults.providerAvailable) return yield* unavailable();
         const committed = yield* Ref.modify(providerState, (current) => {
           const previous = current.resets.get(intent.resetId);
-          if (previous) return [JSON.stringify(previous) === JSON.stringify(intent), current];
+          if (previous)
+            return [
+              JSON.stringify(previous) === JSON.stringify(intent) &&
+                current.generation === intent.to &&
+                ![...current.starts.values()].some((start) => start.generation === intent.to),
+              current,
+            ];
           if (
             current.generation !== intent.from ||
+            current.active.size !== 0 ||
             intent.to !== intent.from + 1 ||
             cleanupScopeKey(intent.scope) !== cleanupScopeKey(scope)
           )
@@ -432,6 +443,50 @@ it.effect("stale cleanup acknowledgement cannot overwrite a newer reset or activ
     expect((yield* f.restart().snapshot).ticket?.operationId).toBe("operation-2");
     expect((yield* Ref.get(f.providerState)).active).toEqual(new Set(["operation-2"]));
   }),
+);
+
+it.effect.each([false, true])("provider refuses a forgotten generation start, fenced=%s", (fence) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.ready;
+    const ready = yield* Ref.get(f.retained);
+    yield* f.model.start(request());
+    if (fence) yield* f.model.cleanup;
+    yield* Ref.set(f.retained, ready);
+    expect((yield* f.restart().start(request(2)).pipe(Effect.flip)).reason).toBe("denied");
+    expect((yield* Ref.get(f.providerState)).active).toEqual(new Set(fence ? [] : ["operation-1"]));
+  }),
+);
+
+it.effect.each(["fenced", "resetting", "newer-generation"] as const)(
+  "refuses replaying a spent reset receipt from a %s controller snapshot",
+  (phase) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.ready;
+      yield* f.model.start(request());
+      yield* f.model.cleanup;
+      const fenced = yield* Ref.get(f.retained);
+      let resetting = fenced;
+      f.faults.beforeReset = Ref.get(f.retained).pipe(
+        Effect.map((value) => {
+          resetting = value;
+        }),
+      );
+      yield* f.model.reset("reset-one");
+      f.faults.beforeReset = Effect.void;
+      yield* f.model.start(request(2));
+      if (phase === "newer-generation") {
+        yield* f.model.cleanup;
+        yield* f.model.reset("reset-two");
+      }
+      yield* Ref.set(f.retained, phase === "resetting" ? resetting : fenced);
+      expect((yield* f.restart().reset("reset-one").pipe(Effect.flip)).reason).toBe("denied");
+      expect((yield* f.restart().snapshot).phase).toBe("resetting");
+      expect((yield* Ref.get(f.providerState)).active).toEqual(
+        new Set(phase === "newer-generation" ? [] : ["operation-2"]),
+      );
+    }),
 );
 
 it.effect("independent provider generations refuse a rolled-back controller snapshot", () =>

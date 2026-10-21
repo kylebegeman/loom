@@ -45,6 +45,7 @@ export type CleanupStore = {
   readonly cas: (revision: number, next: CleanupState) => Effect.Effect<void, VaultError>;
 };
 export type CleanupProvider = {
+  // The provider admits at most one operation per generation, even after fencing that operation.
   readonly start: (ticket: CleanupTicket) => Effect.Effect<void, VaultError>;
   // A matching echo is correlation only. The trusted adapter must prove terminal fencing, not absence.
   readonly fence: (
@@ -53,7 +54,8 @@ export type CleanupProvider = {
     { readonly ticket: CleanupTicket; readonly outcome: "fenced" | "unknown" },
     VaultError
   >;
-  // Reset atomically advances the provider generation and deduplicates the same reset ID.
+  // Reset requires no active operation and advances generation atomically. A same-ID replay
+  // is valid only while its target generation is current and has never admitted a start.
   readonly reset: (intent: ResetIntent) => Effect.Effect<ResetIntent, VaultError>;
 };
 export const cleanupResourceKey = (scope: CleanupScope) =>
