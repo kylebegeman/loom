@@ -6,6 +6,7 @@ import { ChevronDownIcon, FolderIcon, MonitorIcon, SlidersHorizontalIcon } from 
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { SettingsPageContainer } from "~/components/settings/settingsLayout";
 import { SettingsGroup } from "~/components/settings/SettingsGroup";
+import { ProjectFolderLocation } from "~/components/settings/ProjectFolderLocation";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -270,6 +271,9 @@ export function ProjectStoragePage() {
                                     </TooltipPopup>
                                   </Tooltip>
                                 </div>
+                                <ProjectFolderLocation
+                                  project={{ ...project, environmentLabel: computerLabel }}
+                                />
                                 {recordLabel ? (
                                   <p className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
                                     Saved project: {recordLabel}

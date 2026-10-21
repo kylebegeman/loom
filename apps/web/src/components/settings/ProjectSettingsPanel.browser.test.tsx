@@ -107,6 +107,7 @@ vi.mock(import("~/lib/composerDraftUploads"), async (original) => ({
   releaseProjectDraftUploads: state.releaseUploads,
 }));
 // These sections have separate data sources and their own tests.
+vi.mock(import("./ProjectFolderLocation"), () => ({ ProjectFolderLocation: () => <></> }));
 vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
   ...(await original()),
   ProjectDefaultsSettings: (() => null) as never,

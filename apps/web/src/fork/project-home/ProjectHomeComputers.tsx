@@ -3,6 +3,7 @@ import { ChevronRightIcon, FolderPlusIcon, MonitorIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { SidebarProjectGroupMember } from "~/sidebarProjectGrouping";
+import { ProjectFolderLocation } from "~/components/settings/ProjectFolderLocation";
 import { ProjectCheckoutSettings } from "~/fork/project-checkout/ProjectCheckoutSettings";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
@@ -99,6 +100,7 @@ function ComputerFolder({
             <p className="mt-1 wrap-anywhere text-xs text-muted-foreground">
               Location: {project.workspaceRoot}
             </p>
+            <ProjectFolderLocation project={project} />
           </div>
         </div>
         <Button

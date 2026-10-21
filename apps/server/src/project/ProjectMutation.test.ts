@@ -3,8 +3,12 @@ import { CommandId, ProjectId, type Project } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
-import { projectMutationOperation } from "./ProjectMutation.ts";
-import { type ProjectService } from "./ProjectService.ts";
+import { projectMutationFailureMessage, projectMutationOperation } from "./ProjectMutation.ts";
+import { ProjectOperationError, type ProjectService } from "./ProjectService.ts";
+import {
+  WorkspaceRootNotDirectoryError,
+  WorkspaceRootNotExistsError,
+} from "../workspace/WorkspacePaths.ts";
 
 const projectId = ProjectId.make("project:mutation-mapping");
 const project = {
@@ -91,3 +95,33 @@ it.effect("preserves every project mutation field", () =>
     ]);
   }),
 );
+
+it("explains invalid folder locations when a project is moved", () => {
+  const workspaceRoot = "/work/renamed";
+  const failure = (cause: unknown) =>
+    new ProjectOperationError({
+      operation: "normalize-workspace",
+      projectId,
+      workspaceRoot,
+      cause,
+    });
+  assert.equal(
+    projectMutationFailureMessage(
+      failure(
+        new WorkspaceRootNotExistsError({ workspaceRoot, normalizedWorkspaceRoot: workspaceRoot }),
+      ),
+    ),
+    "Folder does not exist: /work/renamed. Choose an existing folder on this computer.",
+  );
+  assert.equal(
+    projectMutationFailureMessage(
+      failure(
+        new WorkspaceRootNotDirectoryError({
+          workspaceRoot,
+          normalizedWorkspaceRoot: workspaceRoot,
+        }),
+      ),
+    ),
+    "This location is a file, not a folder: /work/renamed.",
+  );
+});

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthFilesystemWriteScope,
+  AuthOrchestrationOperateScope,
   EnvironmentId,
   ProjectId,
   ProjectReadFileInput,
@@ -142,6 +143,33 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
     commands.openScratch.run(registry, { environmentId: ENVIRONMENT_ID, input: {} }),
   );
   return { registry, storedProject, openScratch, commands, metadataRequests, readResponse };
+});
+
+describe("project update permission", () => {
+  it.effect("follows the destination computer's current operate grant", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const other = EnvironmentId.make("other-computer");
+      const permission = h.commands.update.permissionAtom(ENVIRONMENT_ID);
+      h.registry.mount(permission);
+      expect(h.registry.get(permission)).toBe(false);
+      const session = Option.getOrThrow(
+        AsyncResult.value(h.registry.get(sessions(ENVIRONMENT_ID))),
+      );
+      const allowed = {
+        ...session,
+        scopes: [AuthOrchestrationOperateScope],
+        permissions: [AuthOrchestrationOperateScope],
+      };
+      h.registry.set(sessions(other), AsyncResult.success(allowed));
+      expect(h.registry.get(permission)).toBe(false);
+      h.registry.set(sessions(ENVIRONMENT_ID), AsyncResult.success(allowed));
+      expect(h.registry.get(permission)).toBe(true);
+      h.registry.set(sessions(ENVIRONMENT_ID), AsyncResult.success(session));
+      expect(h.registry.get(permission)).toBe(false);
+      expect(h.registry.get(h.commands.update.permissionAtom(null))).toBe(false);
+    }).pipe(Effect.scoped),
+  );
 });
 
 describe("writeFile metadata", () => {

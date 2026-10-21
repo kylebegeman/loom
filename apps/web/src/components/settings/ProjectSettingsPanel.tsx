@@ -46,7 +46,11 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { ProjectFolderLocation } from "./ProjectFolderLocation";
+import {
+  projectGroupTitleNeedsUpdate,
+  projectSettingsLocationSuccessor,
+} from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
@@ -87,8 +91,7 @@ export function ProjectSettingsPanel({
         (checkoutKey === null || member.physicalProjectKey === checkoutKey),
     ) ?? [];
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
+  // Project IDs survive folder moves and grouping changes; path-based keys do not.
   const lastSelectionRef = useRef<{
     key: string;
     environmentId: EnvironmentId | null;
@@ -101,7 +104,7 @@ export function ProjectSettingsPanel({
       key: selected.projectKey,
       environmentId,
       checkoutKey,
-      memberKeys: members.map((member) => member.physicalProjectKey),
+      memberKeys: members.map(memberKey),
     };
   }, [selected, members, environmentId, checkoutKey]);
 
@@ -114,16 +117,13 @@ export function ProjectSettingsPanel({
       last.checkoutKey !== checkoutKey
     )
       return;
-    const successor = groups.find((group) =>
-      group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
-    );
+    const successor = projectSettingsLocationSuccessor(groups, last.memberKeys, checkoutKey);
     if (successor) {
       void navigate({
         to: pathname,
         search: () => ({
-          project: successor.projectKey,
+          ...successor,
           machine: environmentId ?? undefined,
-          checkout: checkoutKey ?? undefined,
         }),
         replace: true,
         hashScrollIntoView: false,
@@ -578,6 +578,16 @@ function ProjectDetail({
               </div>
             }
           />
+        </SettingsSection>
+        <SettingsSection title="Folder locations">
+          {group.memberProjects.map((member) => (
+            <SettingsRow
+              key={`${member.environmentId}:${member.id}`}
+              title={member.environmentLabel ?? "Computer"}
+              description={member.workspaceRoot}
+              control={<ProjectFolderLocation project={member} />}
+            />
+          ))}
         </SettingsSection>
         {/* fork: project-checkout-management */}
         {showFileControls ? <ProjectCheckoutSettings projects={group.memberProjects} /> : null}

@@ -73,6 +73,12 @@ that shared project's preferences. Use **Files → Computer details → Computer
 for local actions and overrides. Folders not yet added offer **Add folder to Projects** in their
 settings, with the existing location filled in.
 
+If you rename or move a folder yourself, choose **Update folder location** from
+its working files or computer folder settings and enter its current path on that
+computer. Loom keeps the same project and conversations. This updates the saved
+location without moving files. Folders managed by Loom use their existing file
+recovery controls instead.
+
 Use **Files** in the project to manage its repositories, links and files on computers.
 **Keep files on this computer** leaves files available. With Keep off, Loom can free space
 after all related conversations are finished and saved. Active work, unpublished commits

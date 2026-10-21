@@ -1,4 +1,6 @@
 import {
+  AuthOrchestrationOperateScope,
+  sessionGrantsScope,
   type EnvironmentId,
   ProjectId,
   type ProjectReadFileResult,
@@ -11,7 +13,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   type EnvironmentRpcInput,
@@ -20,6 +22,7 @@ import {
   requestGuarded,
 } from "../rpc/client.ts";
 import type { EnvironmentProject } from "./models.ts";
+import { createEnvironmentSessionAtoms } from "./session.ts";
 import {
   createAtomCommandScheduler,
   createEnvironmentCommand,
@@ -86,6 +89,19 @@ export function createProjectEnvironmentAtoms<R, E>(
   },
 ) {
   const fileMetadata = createFileMetadataAtoms(runtime);
+  const sessions = createEnvironmentSessionAtoms(runtime);
+  const updatePermissionAtom = Atom.family((environmentId: EnvironmentId | null) =>
+    Atom.make((get) => {
+      if (environmentId === null) return false;
+      const result = get(sessions.sessionStateAtom(environmentId));
+      const session = Option.getOrNull(AsyncResult.value(result));
+      return (
+        result._tag !== "Failure" &&
+        session !== null &&
+        sessionGrantsScope(session, AuthOrchestrationOperateScope)
+      );
+    }),
+  );
   const projectScheduler = createAtomCommandScheduler();
   const fileScheduler = createAtomCommandScheduler();
   const optimisticFileFamily = Atom.family((key: string) =>
@@ -162,12 +178,15 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
-    update: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:project:update",
-      execute: (input: UpdateProjectInput) => updateProject(input),
-      scheduler: projectScheduler,
-      concurrency: projectConcurrency,
-    }),
+    update: {
+      ...createEnvironmentCommand(runtime, {
+        label: "environment-data:commands:project:update",
+        execute: (input: UpdateProjectInput) => updateProject(input),
+        scheduler: projectScheduler,
+        concurrency: projectConcurrency,
+      }),
+      permissionAtom: updatePermissionAtom,
+    },
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:delete",
       execute: (input: DeleteProjectInput) => deleteProject(input),

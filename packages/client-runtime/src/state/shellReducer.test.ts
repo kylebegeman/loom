@@ -134,6 +134,29 @@ describe("applyShellStreamEvent", () => {
     expect(moved.projects[0]?.repositoryIdentity).toBeNull();
   });
 
+  it("keeps project and conversation identities when a folder location changes", () => {
+    const threads = [
+      v2ThreadShell,
+      {
+        ...v2ThreadShell,
+        id: ThreadId.make("separate-worktree"),
+        worktreePath: "/work/checkouts/task",
+      },
+    ];
+    const snapshot = { ...v2ShellSnapshot, projects: [v2Project], threads };
+    const moved = applyShellStreamEvent(snapshot, {
+      kind: "project.updated",
+      sequence: snapshot.snapshotSequence + 1,
+      project: { ...v2Project, workspaceRoot: "/work/renamed-folder" },
+    });
+    expect(moved.projects).toHaveLength(1);
+    expect(moved.projects[0]?.id).toBe(v2Project.id);
+    expect(moved.projects[0]?.workspaceRoot).toBe("/work/renamed-folder");
+    expect(moved.threads).toBe(threads);
+    expect(moved.threads[0]?.worktreePath).toBeNull();
+    expect(moved.threads[1]?.worktreePath).toBe("/work/checkouts/task");
+  });
+
   it("merges full snapshot projects without dropping known repositoryIdentity", () => {
     const previous = {
       ...v2ShellSnapshot,
