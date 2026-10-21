@@ -45,6 +45,7 @@ def main() -> None:
                                PYTHONDONTWRITEBYTECODE="1")
             environment.pop("LOOM_VAULT_TEST_JOURNAL_RESTART", None)
             environment.pop("LOOM_VAULT_TEST_MAINTENANCE_DELETED", None)
+            environment.pop("LOOM_VAULT_TEST_PROTECTION_RESTART", None)
             command = [str(REPOSITORY / "node_modules/.bin/vp"), "test", "run",
                        "src/fork/vault/OperationJournal.integration.test.ts"]
             subprocess.run(command, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
@@ -70,6 +71,18 @@ def main() -> None:
                 fixture.request(f"loom/delete/{path}", {"versions": [record["data"]["metadata"]["version"]]}, admin)
             environment["LOOM_VAULT_TEST_MAINTENANCE_DELETED"] = "1"
             subprocess.run(maintenance, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            protection = [str(REPOSITORY / "node_modules/.bin/vp"), "test", "run",
+                          "src/fork/vault/MandatoryProtection.integration.test.ts"]
+            subprocess.run(protection, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            fixture.stop()
+            fixture = None
+            fixture = Fixture(binary, root, root / "data")
+            fixture.wait_started()
+            fixture.unseal(initial["keys"][0])
+            environment.update(LOOM_VAULT_TEST_JOURNAL_URL=fixture.origin,
+                               LOOM_VAULT_TEST_PROTECTION_RESTART="1")
+            subprocess.run(protection, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            print("PASS: format-4 CAS, old-reader refusal and retained unknown reservation after backend restart with unchanged service rights")
             print("PASS: soft-deleted maintenance records refuse with unchanged data-only service rights")
             print("PASS: maintenance ledgers and minimal scoped policy, CAS, denied sibling, format-3 compatibility and durable unknown/revocation after backend restart")
         finally:

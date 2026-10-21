@@ -1,9 +1,16 @@
 # L86 implementation plan
 
-Status: In progress; timed approvals, requester lifecycle and bounded queue retention implemented. The sequence below describes the full packet outcome;
+Status: In progress; timed approvals, requester lifecycle, bounded queue retention and gated format-4 preparation implemented. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered milestone and next work
+
+The approved format-4 reader/writer contract adds mandatory credential classification and
+bounded exact-intent evidence in the existing policy CAS. Existing policies remain format 3;
+migration is preview-only. Protected/unclassified use refuses at evaluator and raw reveal
+boundaries. Internal review, reservation, status and close are gated preparation with no public
+surface or execution authority. Exact-operation review UI, live dispatcher and host rollout
+remain open. See TECHNICAL for the reader and downgrade contract.
 
 The existing access service now atomically stores bounded durable requests, reviewed timed
 decisions and grants in its existing policy. Web/desktop and mobile inboxes expose approve,

@@ -78,6 +78,8 @@ export const VaultDecisionReason = Schema.Literals([
   "item-unavailable",
   "workload-inactive",
   "caller-permission",
+  "classification-required",
+  "approval-required",
 ]);
 export const VaultAccessDecision = Schema.Struct({
   allowed: Schema.Boolean,

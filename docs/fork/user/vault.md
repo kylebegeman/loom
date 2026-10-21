@@ -165,6 +165,11 @@ Suspend a grant to pause it and resume it later. Revocation is permanent; restor
 requires a new grant. Changes affect new online authorization. They do not erase values already
 copied elsewhere or revoke provider credentials.
 
+In an environment migrated to mandatory credential protection, ordinary grants cannot bypass
+one-time protection. Protected or unclassified credentials currently refuse use, including
+manual reveal and probes, while exact-operation review and execution remain unavailable.
+Existing environments keep their current timed-access behavior until a reviewed migration.
+
 Choose **Why this access?** from an item, or **Vault grants and readiness** in a thread's command
 palette. Select the thread, item, action and optional exact destination, then run the check.
 The result explains the matching rule or denial and identifies unknown external consumers.

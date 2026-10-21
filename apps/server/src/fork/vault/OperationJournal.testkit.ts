@@ -20,6 +20,8 @@ export const makeJournalFixture = (githubAdapters?: Parameters<typeof launchFixt
       onJournalRead: null as null | (() => void),
       beforeJournalRead: null as null | (() => Effect.Effect<void, VaultError>),
       beforePolicyRead: null as null | (() => Effect.Effect<void, VaultError>),
+      beforePolicyWrite: null as null | (() => Effect.Effect<void, VaultError>),
+      afterPolicyWrite: null as null | (() => Effect.Effect<void, VaultError>),
       beforeJournalWrite: null as null | ((value: unknown) => Effect.Effect<void, VaultError>),
       afterJournalWrite: null as null | ((value: unknown) => Effect.Effect<void, VaultError>),
     };
@@ -51,6 +53,8 @@ export const makeJournalFixture = (githubAdapters?: Parameters<typeof launchFixt
       write: (path: string, value: Redacted.Redacted<unknown>, expected: number) =>
         Effect.gen(function* () {
           const journal = path.endsWith("approval-journal-v1");
+          if (path.endsWith("/access-policy") && faults.beforePolicyWrite)
+            yield* faults.beforePolicyWrite();
           if (journal && faults.beforeJournalWrite)
             yield* faults.beforeJournalWrite(Redacted.value(value));
           if (journal && faults.write === "before")
@@ -59,6 +63,8 @@ export const makeJournalFixture = (githubAdapters?: Parameters<typeof launchFixt
           if (version !== expected || (journal && faults.conflict))
             return yield* new VaultError({ reason: "conflict" });
           records.set(path, { value, version: version + 1 });
+          if (path.endsWith("/access-policy") && faults.afterPolicyWrite)
+            yield* faults.afterPolicyWrite();
           if (journal && faults.afterJournalWrite)
             yield* faults.afterJournalWrite(Redacted.value(value));
           if (journal && faults.write === "after") {

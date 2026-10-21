@@ -540,16 +540,16 @@ minimum compatible server/broker set, and verify that stale runtimes cannot use 
 grant copy. Client capability advertisement alone cannot enforce that boundary. These are
 future host-owner/Kyle dependencies, not production actions in this slice.
 
-#### Proposed mandatory-protection storage contract, awaiting Kyle
+#### Approved mandatory-protection storage contract
 
-Kyle selected credential-wide protection, but has not authorized access-policy format 4.
-This proposal is the concrete compatibility decision needed to implement that choice. It
-changes no current reader, writer or stored document. Journal format 1 and the approved
-maintenance ledgers remain separate and unchanged. All execution, automatic-resumption and
-allow-once gates remain false, including after a compatible reader is implemented.
+Kyle approved access-policy format 4 behind closed gates on 2026-10-20, with credential-wide
+protection. The reader/writer contract is implemented internally; existing policies stay at
+format 3 until a reviewed migration. Journal format 1 and the approved maintenance ledgers
+remain separate and unchanged. All execution, automatic-resumption and allow-once gates
+remain literal false. No public migration or intent API is exposed.
 
 Use the existing environment-specific `access-policy` record and existing OpenBao permissions.
-Format 4 would require two new bounded arrays in that same CAS document:
+Format 4 requires two bounded arrays in that same CAS document:
 
 - `credentialModes`: at most 128 entries, keyed by stable item ID, with explicit `ordinary` or
   `one-time` mode and a monotonic mode revision. Classification belongs to the destination
@@ -607,12 +607,28 @@ Rollout and downgrade are operator-reviewed operations, not an automatic format 
    and provider revocations under the host owner's reviewed recovery procedure. The host owner
    must retain independent post-snapshot authority evidence before any live rollout.
 
-The approval requested is implementation of this new policy format and required reader/writer
-contract behind closed gates, with a reviewed development-only migration preview. It does not
-authorize production migration, new backend paths/permissions, a Library change or live execution.
-The existing real-reader counterexamples in `OperationIntent.proof.test.ts` establish why optional
-format-3 metadata is insufficient; actual format-4 implementation and migration will need their
-own service, race, downgrade and entry-point tests before this proposal can become a contract.
+The internal migration preview verifies the complete bounded inventory twice, compares policy
+storage versions, and returns a proposed document with `canMigrate: false`. It writes nothing.
+Only an already-format-4 policy can enroll a mode or tighten ordinary access to one-time;
+protection cannot be removed. All policy writers preserve format-4 fields. The evaluator and
+raw credential reveal refuse unclassified or protected credential-bearing actions, including
+administrator probes, signing/reusable sessions, typed adapters and delegation. Metadata
+inspection remains governed by its existing grants.
+
+Internal intent preview/review/reservation bind server-computed canonical digests to current
+request, grant revision, item, classification and run. Review requires an authenticated
+administrator authorization callback; `thread:` actors cannot review. Reservation performs
+one CAS and returns no execution opportunity on duplicate, conflict or lost acknowledgement.
+Closing an unused review revokes it; closing a reservation records unknown and never refunds
+it. No method marks an operation completed because no dispatcher runs. The timed inbox cannot
+approve a protected item and does not yet provide an exact-operation review UI. These methods
+have no MCP/RPC/CLI or worker callers. Real dispatcher integration, temporal fencing and the
+review UI remain required before any live one-time workflow.
+
+`MandatoryProtection.test.ts` covers actual service writers, classification, alternate grants,
+entry-point refusal, review/reservation races, lost replies, retention and old-reader rejection.
+The disposable OpenBao proof checks the same existing data permissions and CAS. None of this
+authorizes production migration, new paths/permissions, a Library change or live execution.
 
 #### Enforcement across entry points
 
