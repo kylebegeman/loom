@@ -1653,6 +1653,29 @@ const syntheticMailDelivery = Effect.fnUntraced(function* (
   return { ...broker, binding, mail, mailGrant, prepared, adapter, read, readerItemId };
 });
 
+it.effect("refuses mail for admission B before starting a delivery bound to admission A", () =>
+  withFixture((f) =>
+    Effect.gen(function* () {
+      const m = yield* syntheticMailDelivery(f);
+      const otherLease = f.id();
+      const other = {
+        ...m.prepared,
+        report: { ...m.prepared.report, leaseId: otherLease },
+        revalidate: Effect.void,
+      };
+      const binding = { ...m.binding, leaseId: otherLease };
+      m.mail.binding = binding;
+      const result = yield* syntheticBrokerMail(m.delivery, other, binding, m.adapter).pipe(
+        Effect.result,
+      );
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(result.failure.reason).toBe("denied");
+      expect(m.mail.reads).toBe(0);
+      expect(yield* m.delivery.snapshot).toBe("pending");
+    }),
+  ),
+);
+
 it.effect(
   "joins the real synthetic inbox selector to broker admission with metadata-only output",
   () =>

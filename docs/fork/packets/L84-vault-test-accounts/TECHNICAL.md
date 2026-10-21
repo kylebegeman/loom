@@ -216,7 +216,10 @@ Two pieces of evidence are necessary before reuse:
    lookup, lease/run expiry, disconnect, quarantine or an unavailable provider proves neither.
 2. An explicit reset operation returns matching account/scope and from/to generation evidence.
    The provider must atomically advance its account generation, clear prior effects and retain
-   the reset ID's idempotent result. Every future start must check that provider generation.
+   the reset ID's idempotent result. Each generation admits at most one operation, including
+   after that operation is fenced. Every future start checks that generation and its spent state.
+   A replayed reset receipt is valid only while its target generation is current and unused;
+   reset refuses while any operation remains active.
    The local readiness write uses the captured CAS revision, so delayed evidence cannot clear
    another controller's newer operation.
 
@@ -256,8 +259,9 @@ history. Capacity exhaustion refuses new work, rather than forgetting a delayed 
 Production retention/reclamation requires a provider fence watermark and a proven maximum replay
 horizon; it is not selected here. Compaction cannot be justified by a queue's ordinary age cap.
 
-Independent provider generations reject a rolled-back controller snapshot, including a fresh
-operation ID under the stale generation. Missing/unavailable controller state and unavailable
+Independent provider generations and spent-generation records reject a rolled-back controller
+snapshot, including a fresh operation ID in the same used generation or an older generation.
+Reset-receipt replay refuses after a start in its target generation or a later reset. Missing/unavailable controller state and unavailable
 provider evidence remain blocked. Losing or rolling back both ledgers, restoring old signing
 identity, or silently bootstrapping an existing provider account requires owner recovery and an
 independent rollback barrier. The synthetic ledger cannot establish those host guarantees.
@@ -465,3 +469,7 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+The broker/mail composition compares its admission with the immutable admission scope captured
+by the delivery controller. A separately valid admission for another lease cannot supply mail
+context for that session, even when operation, environment and machine match.

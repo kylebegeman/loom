@@ -2,7 +2,10 @@ import { VaultError, type VaultTestAccountLoginAdmission } from "@t3tools/contra
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { syntheticLoginDelivery } from "./SyntheticLoginDelivery.ts";
+import {
+  syntheticLoginAdmissionScope,
+  type syntheticLoginDelivery,
+} from "./SyntheticLoginDelivery.ts";
 
 // Test-only composition. Registration and reference authority must come from the owning broker.
 export type SyntheticMailBinding = {
@@ -112,6 +115,7 @@ export const syntheticBrokerMail = Effect.fn("SyntheticBrokerMail.read")(functio
   const admission = prepared.report;
   const denied = () => new VaultError({ reason: "denied" });
   if (
+    syntheticLoginAdmissionScope(admission) !== delivery.binding.admissionScope ||
     binding.operationId !== delivery.binding.operationId ||
     binding.environmentId !== delivery.binding.environmentId ||
     binding.machineId !== delivery.binding.machineId ||

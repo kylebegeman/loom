@@ -235,7 +235,7 @@ false; L84 remains partial.
 
 ## Retained cleanup/reset design proof
 
-The new `SyntheticCleanupBarrier.test.ts` has **46 passing cases** against an opaque in-memory
+The new `SyntheticCleanupBarrier.test.ts` has **51 passing cases** against an opaque in-memory
 CAS store and a separately retained synthetic provider ledger. Controllers are reconstructed
 at intent, external-effect and receipt/write boundaries. This is simulated crash/restart evidence,
 not an OS-process, durable storage, real provider or production deployment exercise.
@@ -259,7 +259,7 @@ mutant runs the matching behavioral regression and is restored before final veri
 The rollback case uses a fresh operation ID so an old operation's terminal fence cannot mask a
 missing provider-generation check. No serialized fixture, persistent backend or format is added.
 
-Final package-CWD verification passes **152 tests** across the 46 barrier and 106 workload cases.
+Final package-CWD verification passes **158 tests** across the 51 barrier and 107 workload cases.
 Server typecheck, changed-file lint, 398 seam entries/unlisted-marker scan, local doc references
 and whitespace pass. No Python, client, native or provider code changes in this slice, so the
 earlier Python and app-interaction checks are not claimed as new runs.
@@ -504,3 +504,9 @@ A Deferred-interleaved start now waits after minting while reconciliation closes
 operation. Releasing that delayed response must return denied, keep the operation closed, skip
 the callback and perform cleanup only once. The regression fails with the previous unconditional
 activation; starting-to-active now requires an atomic state claim.
+
+The barrier review regressions add same-generation controller rollback before and after fencing,
+and reset replay from fenced/resetting snapshots after a new start or generation advance. The
+mail regression passes admission B to a delivery captured under A and requires refusal before
+session start or mailbox read. All six new cases fail against the previous implementation and
+pass with provider spent-generation/reset-currentness checks and delivery-admission correlation.
