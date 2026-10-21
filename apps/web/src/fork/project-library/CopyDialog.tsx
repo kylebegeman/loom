@@ -116,11 +116,12 @@ export function CopyDialog({
     "project-library",
   );
   const submit = async () => {
-    if (!authority.authorityId || !hostId || !rootPath.trim() || busy) return;
+    const authorityId = authority.authorityId;
+    if (!authorityId || !hostId || !rootPath.trim() || busy) return;
     setBusy(true);
     setError(null);
     let submitted = attempt;
-    try {
+    const prepareCopy = async () => {
       let next = attempt ?? {
         environmentId: hostId,
         input: {
@@ -142,41 +143,47 @@ export function CopyDialog({
         saveAttempt(next);
       }
       const result = await register({
-        environmentId: authority.authorityId,
+        environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       saveAttempt(null);
       onSaved(result.value);
+    };
+    try {
+      await prepareCopy();
     } catch (cause) {
-      if (submitted) {
-        const receipt = await recover({
-          environmentId: submitted.environmentId,
-          input: { requestId: submitted.input.requestId },
-        });
-        if (receipt._tag === "Success") {
-          if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
-          else if (
-            isLibraryError(cause) &&
-            ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-          )
-            saveAttempt(null);
+      const handleFailure = async () => {
+        if (submitted) {
+          const receipt = await recover({
+            environmentId: submitted.environmentId,
+            input: { requestId: submitted.input.requestId },
+          });
+          if (receipt._tag === "Success") {
+            if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
+            else if (
+              isLibraryError(cause) &&
+              ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
+            )
+              saveAttempt(null);
+          }
         }
-      }
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not prepare the working copy. Retry the same request.",
-      );
-    } finally {
-      setBusy(false);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not prepare the working copy. Retry the same request.",
+        );
+      };
+      await handleFailure().finally(() => setBusy(false));
+      return;
     }
+    setBusy(false);
   };
   const inspectFolder = async () => {
     if (!hostId || !rootPath.trim()) return;
     setBusy(true);
     setError(null);
-    try {
+    const loadInspection = async () => {
       const result = await inspect({ environmentId: hostId, input: { rootPath: rootPath.trim() } });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       setInspection(
@@ -191,11 +198,17 @@ export function CopyDialog({
             : "Folder exists. No repositories were found at its root or directly inside it."
           : "This folder does not exist.",
       );
+    };
+    try {
+      await loadInspection();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not inspect the folder.");
-    } finally {
-      setBusy(false);
+      const handleFailure = async () => {
+        setError(cause instanceof Error ? cause.message : "Could not inspect the folder.");
+      };
+      await handleFailure().finally(() => setBusy(false));
+      return;
     }
+    setBusy(false);
   };
   const reviewCleanup = async () => {
     if (!attempt?.copy || !authority.authorityId) return;
@@ -237,14 +250,14 @@ export function CopyDialog({
       title={
         actualStrategy === "clone"
           ? resourceId
-            ? "Get a copy of this repository"
-            : "Get a copy"
-          : "Use a folder you already have"
+            ? "Prepare repository files"
+            : "Prepare files"
+          : "Use existing folder"
       }
       description={
         actualStrategy === "clone"
-          ? "Clone the project's repositories into one folder on a computer. Remove the copy whenever you're done; conversations stay in the project."
-          : "Point the project at a folder that already holds its repositories. Removing it later leaves your files where they are."
+          ? "Prepare files on a computer. Temporary files can be removed after work finishes. Turn on Keep files to leave them available."
+          : "Choose the folder that already contains your project. Its files stay on this computer."
       }
       actions={
         <>
@@ -279,7 +292,7 @@ export function CopyDialog({
               : attempt
                 ? "Retry preparation"
                 : actualStrategy === "clone"
-                  ? "Clone"
+                  ? "Prepare files"
                   : "Use folder"}
           </Button>
         </>
@@ -309,7 +322,7 @@ export function CopyDialog({
             </SelectPopup>
           </Select>
         </LibraryField>
-        <LibraryField label={actualStrategy === "clone" ? "Clone into" : "Folder"}>
+        <LibraryField label="Folder">
           <Input
             font="mono"
             placeholder={suggestedPath || "/path/to/project"}
@@ -349,8 +362,7 @@ export function CopyDialog({
         </div>
         {attempt ? (
           <p className="text-xs text-muted-foreground">
-            A previous preparation is waiting for confirmation. Retry it to recover the same working
-            copy.
+            A previous preparation is waiting for confirmation. Retry to continue.
           </p>
         ) : null}
         {hostId && !connected ? (
@@ -360,7 +372,7 @@ export function CopyDialog({
         ) : null}
         {hostId && connected && !supported ? (
           <p className="text-xs text-muted-foreground">
-            Update Loom on this computer to prepare a Library working copy.
+            Update Loom on this computer to prepare project files.
           </p>
         ) : null}
         <LibraryErrorNotice error={error} />

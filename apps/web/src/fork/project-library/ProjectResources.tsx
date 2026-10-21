@@ -354,7 +354,7 @@ export function ResourceAdder({
         <p className="text-xs text-muted-foreground">
           {parsed.kind === "link"
             ? `Adds a link to ${parsed.title}.`
-            : `Adds the ${parsed.title} repository. Copies clone it into ${parsed.relativePath}/.`}
+            : `Adds the ${parsed.title} repository. Loom prepares it in ${parsed.relativePath}/.`}
         </p>
       ) : null}
     </div>
@@ -406,7 +406,7 @@ function ResourceEditor({
         />
       </LibraryField>
       {repository ? (
-        <LibraryField label="Folder inside each copy">
+        <LibraryField label="Folder in the project">
           <Input
             font="mono"
             value={draft.relativePath}

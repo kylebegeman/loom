@@ -34,10 +34,17 @@ const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(LibraryRecovery
 const readReceipt = HttpClientResponse.schemaBodyJson(LibraryRecoveryReceipt);
 const readInfo = HttpClientResponse.schemaBodyJson(LibraryInfo);
 const isLibraryError = Schema.is(LibraryError);
+type ArchiveIdentity = Pick<
+  LibraryRecoveryReceipt,
+  "sourceEnvironmentId" | "copyId" | "sha256" | "byteLength"
+>;
 export class LibraryRecoveryPublisher extends Context.Service<
   LibraryRecoveryPublisher,
   {
     readonly configured: boolean;
+    readonly retrieve: (
+      input: ArchiveIdentity & { readonly archivePath: string },
+    ) => Effect.Effect<void, LibraryError>;
     readonly publish: (input: {
       readonly archivePath: string;
       readonly sha256: string;
@@ -71,7 +78,12 @@ const make = Effect.gen(function* () {
   const configured = localAuthority
     ? Option.isSome(localStore)
     : credentialPath !== undefined && credentialPath !== "";
-  const verify = (body: Stream.Stream<Uint8Array, unknown>, sha256: string, byteLength: number) =>
+  const verify = (
+    body: Stream.Stream<Uint8Array, unknown>,
+    sha256: string,
+    byteLength: number,
+    destination?: FileSystem.File,
+  ) =>
     Effect.suspend(() => {
       const hash = NodeCrypto.createHash("sha256");
       let size = 0;
@@ -81,6 +93,7 @@ const make = Effect.gen(function* () {
             size += chunk.length;
             if (size > byteLength) return yield* new LibraryError({ reason: "archive-unverified" });
             hash.update(chunk);
+            if (destination !== undefined) yield* destination.writeAll(chunk);
           }),
         ),
         Effect.andThen(
@@ -93,7 +106,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
       );
     });
-  const readback = Effect.fnUntraced(function* (url: string) {
+  const readback = Effect.fn("LibraryRecoveryPublisher.readback")(function* (url: string) {
     const response = yield* http.get(url).pipe(
       Effect.timeout("15 minutes"),
       Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
@@ -101,8 +114,141 @@ const make = Effect.gen(function* () {
     if (response.status !== 200) return yield* new LibraryError({ reason: "archive-unverified" });
     return response.stream;
   });
+  const remoteEndpoint = Effect.fn("LibraryRecoveryPublisher.remoteEndpoint")(function* (
+    sourceEnvironmentId: LibraryRecoveryReceipt["sourceEnvironmentId"],
+    copyId: string,
+    sha256: string,
+  ) {
+    if (credentialPath === undefined)
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const credentialFile = path.resolve(credentialPath);
+    const info = yield* fs.stat(credentialFile).pipe(
+      Effect.timeout("30 seconds"),
+      Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
+    );
+    if ((info.mode & 0o077) !== 0 || info.type !== "File" || info.size > 16n * 1024n)
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const credential = yield* fs.readFileString(credentialFile).pipe(
+      Effect.flatMap(decodeCredential),
+      Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
+    );
+    if (credential.sourceEnvironmentId !== sourceEnvironmentId)
+      return yield* new LibraryError({ reason: "invalid" });
+    const expiresAt = Date.parse(credential.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= (yield* Clock.currentTimeMillis))
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const base = yield* Effect.try({
+      try: () => {
+        const parsed = new URL(credential.libraryUrl);
+        if (
+          parsed.protocol !== "https:" ||
+          parsed.username ||
+          parsed.password ||
+          parsed.search ||
+          parsed.hash
+        )
+          throw new Error("Invalid Library URL");
+        return parsed;
+      },
+      catch: () => new LibraryError({ reason: "invalid" }),
+    });
+    const library = yield* http
+      .execute(
+        HttpClientRequest.get(new URL("/api/loom/library/info", base)).pipe(
+          HttpClientRequest.bearerToken(credential.accessToken),
+        ),
+      )
+      .pipe(Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })));
+    if (library.status !== 200) return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const libraryInfo = yield* readInfo(library).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
+    );
+    if (libraryInfo.environmentId !== credential.libraryEnvironmentId)
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const endpoint = new URL(
+      `/api/loom/library/recovery/${encodeURIComponent(sourceEnvironmentId)}/${encodeURIComponent(copyId)}/${sha256}`,
+      base,
+    ).toString();
+    return { endpoint, accessToken: credential.accessToken };
+  });
+  const remoteArchive = Effect.fn("LibraryRecoveryPublisher.remoteArchive")(function* (
+    endpoint: string,
+    accessToken: string,
+  ) {
+    const downloaded = yield* http
+      .execute(HttpClientRequest.get(endpoint).pipe(HttpClientRequest.bearerToken(accessToken)))
+      .pipe(
+        Effect.timeout("15 minutes"),
+        Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
+      );
+    if (downloaded.status === 302) {
+      const location = downloaded.headers.location;
+      if (location === undefined || !location.startsWith("https://"))
+        return yield* new LibraryError({ reason: "archive-unverified" });
+      return yield* readback(location);
+    }
+    if (downloaded.status !== 200) return yield* new LibraryError({ reason: "archive-unverified" });
+    return downloaded.stream;
+  });
+  const localArchive = Effect.fn("LibraryRecoveryPublisher.localArchive")(function* (
+    input: ArchiveIdentity,
+  ) {
+    if (Option.isNone(localStore))
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const archived = yield* localStore.value.get(
+      input.sourceEnvironmentId,
+      input.copyId,
+      input.sha256,
+    );
+    if (
+      archived.receipt.sourceEnvironmentId !== input.sourceEnvironmentId ||
+      archived.receipt.copyId !== input.copyId ||
+      archived.receipt.sha256 !== input.sha256 ||
+      archived.receipt.byteLength !== input.byteLength
+    )
+      return yield* new LibraryError({ reason: "archive-unverified" });
+    return archived.url === null ? archived.body : yield* readback(archived.url);
+  });
   return LibraryRecoveryPublisher.of({
     configured,
+    retrieve: Effect.fn("LibraryRecoveryPublisher.retrieve")(
+      function* (input) {
+        if (!configured) return yield* new LibraryError({ reason: "publisher-unavailable" });
+        if (
+          !Number.isSafeInteger(input.byteLength) ||
+          input.byteLength <= 0 ||
+          input.byteLength > LibraryRecoveryStore.LIBRARY_RECOVERY_MAX_BYTES
+        )
+          return yield* new LibraryError({ reason: "archive-unverified" });
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const body = localAuthority
+              ? yield* localArchive(input)
+              : yield* remoteEndpoint(input.sourceEnvironmentId, input.copyId, input.sha256).pipe(
+                  Effect.flatMap(({ endpoint, accessToken }) =>
+                    remoteArchive(endpoint, accessToken),
+                  ),
+                );
+            const directory = path.dirname(input.archivePath);
+            yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
+            const temporary = yield* fs.makeTempFileScoped({ directory, prefix: "recovery-" });
+            yield* fs.chmod(temporary, 0o600);
+            const file = yield* fs.open(temporary, { flag: "w", mode: 0o600 });
+            yield* verify(body, input.sha256, input.byteLength, file).pipe(
+              Effect.timeout("15 minutes"),
+            );
+            yield* file.sync;
+            yield* fs.rename(temporary, input.archivePath);
+            yield* Effect.scoped(
+              fs.open(directory).pipe(Effect.flatMap((directoryFile) => directoryFile.sync)),
+            );
+          }),
+        );
+      },
+      Effect.mapError((cause) =>
+        isLibraryError(cause) ? cause : new LibraryError({ reason: "archive-unverified" }),
+      ),
+    ),
     publish: Effect.fn("LibraryRecoveryPublisher.publish")(
       function* (input) {
         if (!configured) return yield* new LibraryError({ reason: "publisher-unavailable" });
@@ -125,75 +271,20 @@ const make = Effect.gen(function* () {
             manifest: input.manifest,
             body: fs.stream(input.archivePath),
           });
-          const archived = yield* localStore.value.get(
-            receipt.sourceEnvironmentId,
-            receipt.copyId,
-            receipt.sha256,
-          );
-          yield* verify(
-            archived.url === null ? archived.body : yield* readback(archived.url),
-            input.sha256,
-            byteLength,
-          ).pipe(
+          yield* verify(yield* localArchive(receipt), input.sha256, byteLength).pipe(
             Effect.timeout("15 minutes"),
             Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
           );
         } else {
-          if (credentialPath === undefined)
-            return yield* new LibraryError({ reason: "publisher-unavailable" });
-          const credentialFile = path.resolve(credentialPath);
-          const info = yield* fs.stat(credentialFile).pipe(
-            Effect.timeout("30 seconds"),
-            Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
+          const { endpoint, accessToken } = yield* remoteEndpoint(
+            input.manifest.environmentId,
+            input.manifest.copyId,
+            input.sha256,
           );
-          if ((info.mode & 0o077) !== 0 || info.type !== "File" || info.size > 16n * 1024n)
-            return yield* new LibraryError({ reason: "publisher-unavailable" });
-          const credential = yield* fs.readFileString(credentialFile).pipe(
-            Effect.flatMap(decodeCredential),
-            Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
-          );
-          if (credential.sourceEnvironmentId !== input.manifest.environmentId)
-            return yield* new LibraryError({ reason: "invalid" });
-          const expiresAt = Date.parse(credential.expiresAt);
-          if (!Number.isFinite(expiresAt) || expiresAt <= (yield* Clock.currentTimeMillis))
-            return yield* new LibraryError({ reason: "publisher-unavailable" });
-          const base = yield* Effect.try({
-            try: () => {
-              const parsed = new URL(credential.libraryUrl);
-              if (
-                parsed.protocol !== "https:" ||
-                parsed.username ||
-                parsed.password ||
-                parsed.search ||
-                parsed.hash
-              )
-                throw new Error("Invalid Library URL");
-              return parsed;
-            },
-            catch: () => new LibraryError({ reason: "invalid" }),
-          });
-          const library = yield* http
-            .execute(
-              HttpClientRequest.get(new URL("/api/loom/library/info", base)).pipe(
-                HttpClientRequest.bearerToken(credential.accessToken),
-              ),
-            )
-            .pipe(Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })));
-          if (library.status !== 200)
-            return yield* new LibraryError({ reason: "publisher-unavailable" });
-          const libraryInfo = yield* readInfo(library).pipe(
-            Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
-          );
-          if (libraryInfo.environmentId !== credential.libraryEnvironmentId)
-            return yield* new LibraryError({ reason: "publisher-unavailable" });
-          const endpoint = new URL(
-            `/api/loom/library/recovery/${encodeURIComponent(input.manifest.environmentId)}/${encodeURIComponent(input.manifest.copyId)}/${input.sha256}`,
-            base,
-          ).toString();
           const response = yield* http
             .execute(
               HttpClientRequest.put(endpoint).pipe(
-                HttpClientRequest.bearerToken(credential.accessToken),
+                HttpClientRequest.bearerToken(accessToken),
                 HttpClientRequest.setHeader(
                   "x-loom-recovery-manifest",
                   Base64Url.encode(yield* encodeManifest(input.manifest)),
@@ -215,32 +306,10 @@ const make = Effect.gen(function* () {
           receipt = yield* readReceipt(response).pipe(
             Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
           );
-          const downloaded = yield* http
-            .execute(
-              HttpClientRequest.get(endpoint).pipe(
-                HttpClientRequest.bearerToken(credential.accessToken),
-              ),
-            )
-            .pipe(
-              Effect.timeout("15 minutes"),
-              Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
-            );
-          if (downloaded.status === 302) {
-            const location = downloaded.headers.location;
-            if (location === undefined || !location.startsWith("https://"))
-              return yield* new LibraryError({ reason: "archive-unverified" });
-            yield* verify(yield* readback(location), input.sha256, byteLength).pipe(
-              Effect.timeout("15 minutes"),
-              Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
-            );
-          } else {
-            if (downloaded.status !== 200)
-              return yield* new LibraryError({ reason: "archive-unverified" });
-            yield* verify(downloaded.stream, input.sha256, byteLength).pipe(
-              Effect.timeout("15 minutes"),
-              Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
-            );
-          }
+          yield* verify(yield* remoteArchive(endpoint, accessToken), input.sha256, byteLength).pipe(
+            Effect.timeout("15 minutes"),
+            Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
+          );
         }
         if (
           receipt.sourceEnvironmentId !== input.manifest.environmentId ||

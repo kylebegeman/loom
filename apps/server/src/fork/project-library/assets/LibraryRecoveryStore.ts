@@ -222,6 +222,7 @@ const make = Effect.gen(function* () {
               yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
               const target = path.join(directory, input.sha256);
               const temporary = yield* fs.makeTempFileScoped({ directory, prefix: "recovery-" });
+              yield* fs.chmod(temporary, 0o600);
               const file = yield* fs.open(temporary, { flag: "w", mode: 0o600 });
               let size = 0;
               yield* input.body.pipe(

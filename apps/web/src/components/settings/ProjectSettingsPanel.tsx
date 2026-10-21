@@ -67,8 +67,10 @@ export function ProjectSettingsPanel({
   environmentId = null,
   checkoutKey = null,
   unavailable,
+  showFileControls = true,
 }: {
   projectKey: string;
+  showFileControls?: boolean;
   environmentId?: EnvironmentId | null;
   checkoutKey?: string | null;
   unavailable?: ReactNode;
@@ -157,6 +159,7 @@ export function ProjectSettingsPanel({
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
       hasOtherMembers={members.length < selected.memberProjects.length}
+      showFileControls={showFileControls}
     />
   );
 }
@@ -164,8 +167,10 @@ export function ProjectSettingsPanel({
 function ProjectDetail({
   group,
   hasOtherMembers,
+  showFileControls,
 }: {
   group: SidebarProjectSnapshot;
+  showFileControls: boolean;
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
@@ -490,7 +495,7 @@ function ProjectDetail({
       <SettingsPageContainer className="gap-6">
         <SettingsSection
           id="project-overview"
-          title="Project"
+          title="Computer folder"
           headerAction={<BrowseProjectsButton size="xs" /> /* fork: project-home */}
         >
           {!canEditGroup ? (
@@ -501,8 +506,8 @@ function ProjectDetail({
             </p>
           ) : null}
           <SettingsRow
-            title="Name"
-            description="The shared name for this project group in the sidebar and thread lists."
+            title="Folder label"
+            description="The label for these computer folders in the sidebar. Edit the shared project name from Projects."
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
@@ -575,7 +580,7 @@ function ProjectDetail({
           />
         </SettingsSection>
         {/* fork: project-checkout-management */}
-        <ProjectCheckoutSettings projects={group.memberProjects} />
+        {showFileControls ? <ProjectCheckoutSettings projects={group.memberProjects} /> : null}
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}
@@ -585,15 +590,15 @@ function ProjectDetail({
               hasOtherMembers
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
-                  ? "Remove this project everywhere"
-                  : "Remove project"
+                  ? "Delete folder entries and conversations"
+                  : "Delete folder entry and conversations"
             }
             description={
               hasOtherMembers
                 ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
                 : group.memberProjects.length > 1
                   ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Deletes the project entry and its threads. Files on disk are not touched."
+                  : "Deletes this computer folder entry and its conversations. To free space while keeping conversations, use Files in the project instead. Files on disk are not touched."
             }
             control={
               <Button
@@ -607,7 +612,7 @@ function ProjectDetail({
                   ? "Remove checkout"
                   : group.memberProjects.length > 1
                     ? "Remove all entries"
-                    : "Remove project"}
+                    : "Delete folder entry and conversations"}
               </Button>
             }
           />

@@ -8,7 +8,6 @@ import {
 } from "@react-navigation/native";
 import {
   libraryContinuationContext,
-  libraryCopiesForScope,
   libraryLaunchChoice,
   libraryLaunchWarning,
   supportsLoomFeature,
@@ -30,7 +29,11 @@ import {
   EnvironmentId,
   ThreadId,
 } from "@t3tools/contracts";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_FILE_LIFECYCLE_FEATURE,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
@@ -38,10 +41,11 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { buildModelOptions, resolveNewTaskModelSelection } from "../../lib/modelOptions";
+import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
+import { buildModelOptions } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { useServerConfigs } from "../../state/entities";
+import { useProject, useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
@@ -49,7 +53,6 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
 import { threadEnvironment } from "../../state/threads";
 import { vcsEnvironment } from "../../state/vcs";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -59,12 +62,22 @@ import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState
 import { libraryListState, libraryRepositories } from "./libraryLogic";
 import {
   emptyLibraryLaunchReceipt,
+  bindLibraryLaunchConversation,
   launchLibraryConversation,
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
 } from "./libraryLaunch";
 import { LibraryProfileReadiness } from "./LibraryProfileReadiness";
 import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
+import { libraryConversationModels } from "./libraryModels";
+import { LibraryFolderStorage } from "./LibraryFolderStorage";
+import {
+  libraryFreshRootPath,
+  libraryLaunchCopyMatchesScope,
+  libraryLaunchCopiesForScope,
+  libraryLaunchPathOverlaps,
+  restoreLibraryLaunchCopy,
+} from "./libraryLaunchFiles";
 
 const sentence = (parts: readonly string[]) => {
   const text = parts.join(", ");
@@ -199,12 +212,21 @@ function LibraryStartContent(props: {
     ),
     [modelKey, setModelKey] = useState<string | null>(saved?.review.model.key ?? null),
     [showModels, setShowModels] = useState(false);
+  const [showFolderOptions, setShowFolderOptions] = useState(Boolean(props.reuseRootPath)),
+    [showSetup, setShowSetup] = useState(false),
+    [keepFiles, setKeepFiles] = useState<boolean | null>(saved?.review.keepOnComputer ?? null);
+  const [folderPending, setFolderPending] = useState(false);
+  const folderBusy = useRef(false);
+  const onFolderPending = useCallback((value: boolean) => {
+    folderBusy.current = value;
+    setFolderPending(value);
+  }, []);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
   const [launchedThread, setLaunchedThread] = useState<Awaited<
     ReturnType<typeof launchLibraryConversation>
   > | null>(null);
-  usePreventRemove(pending !== null && launchedThread === null, () => undefined);
+  usePreventRemove((pending !== null || folderPending) && launchedThread === null, () => undefined);
   useEffect(() => {
     if (launchedThread && pending === null)
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
@@ -222,6 +244,7 @@ function LibraryStartContent(props: {
     rootPath: string;
     copy: LibraryWorkingCopy | null;
     carryContext: string;
+    keepOnComputer?: boolean;
   } | null>(saved?.review ?? null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
@@ -232,8 +255,15 @@ function LibraryStartContent(props: {
       : null,
   );
   const sourceScope = source.data?.summary.resourceIds;
+  const selectedResource =
+    selectedScope === "all" ||
+    libraryRepositories(progress.intent?.project ?? props.project).some(
+      (resource) => resource.id === selectedScope,
+    )
+      ? selectedScope
+      : null;
   const scope =
-    selectedScope ??
+    selectedResource ??
     (sourceScope?.length === 1 &&
     libraryRepositories(props.project).some((resource) => resource.id === sourceScope[0])
       ? sourceScope[0]!
@@ -247,7 +277,7 @@ function LibraryStartContent(props: {
     authority.environmentId
       ? library.copies({
           environmentId: authority.environmentId,
-          input: { projectId: props.project.id },
+          input: { projectId: props.project.id, includeReleased: true },
         })
       : null,
   );
@@ -264,7 +294,9 @@ function LibraryStartContent(props: {
   const copiesKnown = knownCopies !== null;
   const ranking = useLibraryLaunchRanking({
     project: launchProject,
-    copies: knownCopies ?? [],
+    copies: (knownCopies ?? []).filter((copy) =>
+      libraryLaunchCopyMatchesScope(launchProject, copy, scope === "all" ? null : scope),
+    ),
     resourceId: scope === "all" ? null : scope,
   });
   // Nothing is preselected until copies are known, so the choice never jumps away from a copy.
@@ -302,9 +334,18 @@ function LibraryStartContent(props: {
         candidate.kind !== "mini" &&
         (id === undefined || (candidate.kind === "copy" && candidate.copyId === id)),
     ) ?? null;
-  const eligible = [
-    ...libraryCopiesForScope(launchProject, copies.data ?? [], execution, resourceIds),
-  ].sort(
+  const config = execution ? (configs.get(execution) ?? null) : null;
+  const supportsFileLifecycle = supportsLoomFeature(
+    config?.environment.capabilities,
+    LIBRARY_FILE_LIFECYCLE_FEATURE,
+  );
+  const eligible = libraryLaunchCopiesForScope(
+    launchProject,
+    knownCopies ?? [],
+    execution,
+    scope === "all" ? null : scope,
+    supportsFileLifecycle,
+  ).sort(
     (left, right) => rankOf(left.environmentId, left.id) - rankOf(right.environmentId, right.id),
   );
   // Until copies are known every computer ranks as having none, so leave out the copy's reason.
@@ -320,50 +361,62 @@ function LibraryStartContent(props: {
     (chosen?.kind === "copy" ? eligible.find((copy) => copy.id === chosen.copyId) : undefined) ??
     eligible[0] ??
     null;
-  const config = execution ? (configs.get(execution) ?? null) : null;
-  const models = useMemo(
-    () =>
-      buildModelOptions(config, null, undefined, null).filter(
-        (model) => !model.isHidden && !model.isUnavailable,
-      ),
-    [config],
+  const localProjectId =
+    modeChoice === "folder" || modeChoice === "clone"
+      ? null
+      : resourceIds.length === 1
+        ? (selectedCopy?.repositories.find((entry) => entry.resourceId === resourceIds[0])
+            ?.localProjectId ?? null)
+        : (selectedCopy?.rootLocalProjectId ?? null);
+  const localProject = useProject(
+    execution && localProjectId ? { environmentId: execution, projectId: localProjectId } : null,
   );
-  const defaultModel = resolveNewTaskModelSelection({
-    modelOptions: models,
-    draftSelection: null,
-    projectDefaultSelection: null,
-    stickySelection: null,
+  const projectDefaultSelection = launchProject.profile?.defaultModelSelection ?? null;
+  const savedModelSelection = saved?.review.model.selection ?? null;
+  const { models, defaultModel } = libraryConversationModels({
+    config,
+    projectDefaultSelection,
+    localProjectId,
+    localProject,
+    savedSelection: savedModelSelection,
   });
   const chosenModel =
-    modelKey !== null
-      ? (models.find((model) => model.key === modelKey) ?? null)
-      : (models.find(
-          (model) =>
-            model.selection.instanceId === defaultModel?.instanceId &&
-            model.selection.model === defaultModel?.model,
-        ) ?? null);
+    modelKey !== null ? (models.find((model) => model.key === modelKey) ?? null) : defaultModel;
   const canPrepare = useAtomValue(library.prepareCopy.permissionAtom(execution)),
     canBind = useAtomValue(library.bindThread.permissionAtom(execution)),
     canRegisterCopy = useAtomValue(library.registerCopy.permissionAtom(authority.environmentId)),
     canRegisterThread = useAtomValue(
       library.registerThread.permissionAtom(authority.environmentId),
     );
-  // A computer without a copy gets one inline: clone when allowed, otherwise review a folder.
+  const canReopen = useAtomValue(library.reopenCopy.permissionAtom(execution));
+  const reopen = useAtomCommand(library.reopenCopy, { reportFailure: false });
+  const canSetRetention = useAtomValue(library.setCopyRetention.permissionAtom(execution));
+  const setRetention = useAtomCommand(library.setCopyRetention, { reportFailure: false });
+  // New work prepares files automatically; using an existing folder is an explicit choice.
   const needsCopy = copiesKnown && execution !== null && eligible.length === 0;
   const mode =
-    modeChoice ??
-    (needsCopy
-      ? canPrepare && execution !== null && writable.has(execution)
-        ? "clone"
-        : "folder"
-      : "reuse");
+    modeChoice === "reuse" && copiesKnown && selectedCopy === null
+      ? "clone"
+      : (modeChoice ?? (needsCopy ? "clone" : "reuse"));
+  const keepOnComputer =
+    mode === "folder" || (mode === "reuse" && selectedCopy?.ownership === "borrowed")
+      ? true
+      : (keepFiles ?? (mode === "reuse" ? selectedCopy?.keepOnComputer !== false : false));
   const rootPath =
     typedPath ??
-    (mode === "clone" && config?.newProjectsRoot
-      ? getNewProjectPathPreview(config.newProjectsRoot, launchProject.title)
+    (mode === "clone"
+      ? libraryFreshRootPath(launchProject, knownCopies ?? [], execution, config?.newProjectsRoot)
       : "");
+  const overlappingRoot =
+    mode !== "reuse" &&
+    (knownCopies ?? []).some(
+      (copy) =>
+        copy.environmentId === execution &&
+        copy.ownership === "managed" &&
+        libraryLaunchPathOverlaps(copy.rootPath, rootPath.trim()),
+    );
   const warning =
-    progress.intent === null && mode === "reuse"
+    progress.intent === null && mode === "reuse" && selectedCopy?.state !== "released"
       ? libraryLaunchWarning(
           selectedCopy ? candidateFor(selectedCopy.environmentId, selectedCopy.id) : null,
           selectedCopy,
@@ -382,7 +435,7 @@ function LibraryStartContent(props: {
       reportFailure: false,
     }),
     snapshot = useAtomQueryRunner(library.snapshotThread, { refresh: true, reportFailure: false });
-  const locked = pending !== null || progress.intent !== null;
+  const locked = pending !== null || progress.intent !== null || folderPending;
   const selectedHost = environments.find((env) => env.environmentId === execution);
   const hostReady =
     selectedHost?.entry.enabled === true &&
@@ -392,14 +445,21 @@ function LibraryStartContent(props: {
     operable.has(execution);
   const canStart =
     authority.ready &&
+    !folderPending &&
     hostReady &&
     canBind &&
     canRegisterCopy &&
     canRegisterThread &&
+    (!supportsFileLifecycle || keepFiles === null || canSetRetention) &&
     (progress.intent !== null || copiesReady) &&
     (progress.intent !== null || props.projectReady) &&
     (resourceIds.length > 0 || repositories.length === 0) &&
     (progress.threadCreated || chosenModel !== null) &&
+    (progress.copy !== null ||
+      mode !== "reuse" ||
+      selectedCopy?.state !== "released" ||
+      canReopen) &&
+    (progress.intent !== null || !overlappingRoot) &&
     !launchProject.archived &&
     (progress.copy !== null || mode === "reuse"
       ? progress.copy !== null || selectedCopy !== null
@@ -411,7 +471,8 @@ function LibraryStartContent(props: {
       (source.data !== null && source.isSuccess && !source.isPending && source.error === null));
   if (!authority.environmentId) return <LibraryAuthorityScreen />;
   async function start() {
-    if (busy.current || !canStart || !execution || !authority.environmentId) return;
+    if (busy.current || folderBusy.current || !canStart || !execution || !authority.environmentId)
+      return;
     const current = appAtomRegistry.get(environmentPresentations.presentationAtom(execution));
     if (
       current?.entry.enabled !== true ||
@@ -421,6 +482,25 @@ function LibraryStartContent(props: {
       return;
     if (!reviewed.current) {
       if (!chosenModel) return;
+      const catalog = appAtomRegistry.get(
+        library.copies({
+          environmentId: authority.environmentId,
+          input: { projectId: props.project.id, includeReleased: true },
+        }),
+      );
+      if (catalog._tag !== "Success" || catalog.waiting) return;
+      if (
+        mode !== "reuse" &&
+        catalog.value.some(
+          (copy) =>
+            copy.environmentId === execution &&
+            copy.ownership === "managed" &&
+            libraryLaunchPathOverlaps(copy.rootPath, rootPath.trim()),
+        )
+      ) {
+        setError("Choose a separate folder for this project layout, or restore its saved files.");
+        return;
+      }
       // Pin what was reviewed, so the screen keeps showing it if the ranking moves mid-launch.
       setExecution(execution);
       setMode(mode);
@@ -433,6 +513,7 @@ function LibraryStartContent(props: {
         rootPath: rootPath.trim(),
         copy: selectedCopy,
         carryContext,
+        ...(supportsFileLifecycle ? { keepOnComputer } : {}),
       };
       setModelKey(chosenModel.key);
     }
@@ -454,6 +535,22 @@ function LibraryStartContent(props: {
               sequence: source.data.summary.sequence,
             }
           : undefined);
+      const persist = async () => {
+        const serialized = encodeLibraryLaunchAttempt({
+          version: 1,
+          requestId: requestId.current,
+          threadId: threadId.current,
+          receipt: receipt.current,
+          review,
+        });
+        if (serialized.length > 256 * 1024)
+          throw new Error("This preparation is too large to save safely on this device.");
+        await savePreferences({
+          transform: (current) => ({
+            loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
+          }),
+        });
+      };
       const target = await launchLibraryConversation(
         {
           project: launchProject,
@@ -464,39 +561,43 @@ function LibraryStartContent(props: {
         },
         receipt.current,
         {
-          persist: async () => {
-            const serialized = encodeLibraryLaunchAttempt({
-              version: 1,
-              requestId: requestId.current,
-              threadId: threadId.current,
-              receipt: receipt.current,
-              review,
-            });
-            if (serialized.length > 256 * 1024)
-              throw new Error("This preparation is too large to save safely on this device.");
-            await savePreferences({
-              transform: (current) => ({
-                loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
-              }),
-            });
-          },
+          persist,
           prepare: async (intent) => {
-            if (review.mode === "reuse" && review.copy?.ownership === "managed") return review.copy;
-            const copy = unwrap(
-              await prepare({
-                environmentId: execution,
-                input: {
-                  requestId: `${requestId.current}:prepare`,
-                  project: intent.project,
-                  rootPath:
-                    review.mode === "reuse" && review.copy ? review.copy.rootPath : review.rootPath,
-                  strategy: review.mode === "clone" ? "clone" : "reuse",
-                  resourceIds: intent.resourceIds,
-                },
-              }),
-            );
+            const copy =
+              review.mode === "reuse" && review.copy?.ownership === "managed"
+                ? review.copy.state === "released"
+                  ? await restoreLibraryLaunchCopy(
+                      review.copy,
+                      `${requestId.current}:reopen`,
+                      async (input) => {
+                        if (
+                          !supportsFileLifecycle ||
+                          !appAtomRegistry.get(library.reopenCopy.permissionAtom(execution))
+                        )
+                          throw new Error(
+                            "This computer needs permission to restore saved project files.",
+                          );
+                        return unwrap(await reopen(input));
+                      },
+                    )
+                  : review.copy
+                : unwrap(
+                    await prepare({
+                      environmentId: execution,
+                      input: {
+                        requestId: `${requestId.current}:prepare`,
+                        project: intent.project,
+                        rootPath:
+                          review.mode === "reuse" && review.copy
+                            ? review.copy.rootPath
+                            : review.rootPath,
+                        strategy: review.mode === "clone" ? "clone" : "reuse",
+                        resourceIds: intent.resourceIds,
+                      },
+                    }),
+                  );
             if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
-              throw new Error("The prepared folder does not match the selected working copy.");
+              throw new Error("The prepared folder does not match the selected files.");
             return copy;
           },
           registerCopy: async (copy) => {
@@ -544,14 +645,27 @@ function LibraryStartContent(props: {
               }),
             );
           },
-          bind: async (input) => {
-            unwrap(
-              await bind({
-                environmentId: execution,
-                input,
-              }),
-            );
-          },
+          bind: (input) =>
+            bindLibraryLaunchConversation(
+              input,
+              receipt.current,
+              review.keepOnComputer,
+              requestId.current,
+              {
+                bind: async (input) => {
+                  unwrap(await bind({ environmentId: execution, input }));
+                },
+                setRetention: async (input) => {
+                  if (!supportsFileLifecycle)
+                    throw new Error("Update this computer to save the Keep files setting.");
+                  return unwrap(await setRetention({ environmentId: execution, input }));
+                },
+                registerCopy: async (input) => {
+                  unwrap(await registerCopy({ environmentId: authority.environmentId!, input }));
+                },
+                persist,
+              },
+            ),
           snapshot: async () =>
             unwrap(
               await snapshot({ environmentId: execution, input: { threadId: threadId.current } }),
@@ -630,8 +744,8 @@ function LibraryStartContent(props: {
   return (
     <LibraryPage title={props.sourceArchiveId ? "Linked continuation" : "New conversation"} back>
       <Text className="text-sm text-foreground-muted">
-        {launchProject.title} supplies shared context. This conversation runs on one chosen
-        computer. Its binding stays fixed.
+        Start work on {launchProject.title}. Loom prepares the files on your chosen computer. Your
+        project and conversations stay saved when those files are removed.
       </Text>
       {saved ? (
         <LibraryNotice detail="An unfinished preparation is saved on this device. Resume it with the original computer, files and context." />
@@ -644,7 +758,7 @@ function LibraryStartContent(props: {
         />
       ) : null}
       {props.reuseRootPath ? (
-        <LibraryNotice detail="Review this folder for a new registration. Existing conversations keep their original working-copy association." />
+        <LibraryNotice detail="Use this existing folder for the conversation. Its files stay on the computer until you change their setting in the project." />
       ) : null}
       {source.data ? (
         <SettingsSection title="Continuation source">
@@ -759,6 +873,8 @@ function LibraryStartContent(props: {
                     setModelKey(null);
                     setMode(null);
                     setRootPath(null);
+                    setKeepFiles(null);
+                    setShowFolderOptions(false);
                   }
                   setExecution(env.environmentId);
                 }}
@@ -801,81 +917,146 @@ function LibraryStartContent(props: {
       ) : null}
       {execution ? (
         <>
-          <SettingsSection title="Working files">
-            <ListChoiceRow
-              label="Use existing working copy"
-              description={
-                !copiesReady
-                  ? "Checking registered working copies before preparing this conversation."
-                  : eligible.length
-                    ? "Reuse a registered copy before cloning another."
-                    : "No compatible registered copy contains this scope on the selected computer."
-              }
-              selected={mode === "reuse"}
-              disabled={locked || !copiesReady}
-              onPress={() => {
-                pin();
-                setMode("reuse");
-              }}
-            />
-            {mode === "reuse"
-              ? eligible.map((copy, index) => (
+          <SettingsSection title={`Files on ${selectedHost?.label ?? "this computer"}`}>
+            <View className="gap-2 p-4">
+              <Text selectable className="text-sm text-foreground">
+                {mode === "reuse" ? selectedCopy?.rootPath : rootPath || "Choose a folder"}
+              </Text>
+              <Text className="text-sm text-foreground-muted">
+                {mode === "reuse"
+                  ? selectedCopy?.state === "released"
+                    ? "Loom restores the saved files here when you start work."
+                    : "Start with the files already here."
+                  : mode === "folder"
+                    ? "Files stay here until you change their setting in the project."
+                    : "Loom prepares the files here when you start work."}
+              </Text>
+              <Button
+                label={showFolderOptions ? "Done choosing folder" : "Change folder"}
+                tone="text"
+                disabled={locked || !copiesReady}
+                onPress={() => {
+                  pin();
+                  setShowFolderOptions((value) => !value);
+                }}
+              />
+            </View>
+            {showFolderOptions ? (
+              <>
+                {eligible.map((copy) => (
                   <ListChoiceRow
                     key={copy.id}
                     label={copy.rootPath}
-                    description={copyReasons(copy)}
-                    selected={selectedCopy?.id === copy.id}
-                    separated={index > 0}
+                    description={
+                      copy.state === "released"
+                        ? "Restore saved files when starting work."
+                        : copyReasons(copy)
+                    }
+                    selected={mode === "reuse" && selectedCopy?.id === copy.id}
                     disabled={locked || !copiesReady}
                     onPress={() => {
                       pin();
+                      setMode("reuse");
                       setCopyId(copy.id);
+                      setKeepFiles(null);
                     }}
                   />
-                ))
-              : null}
-            <ListChoiceRow
-              label="Use an existing folder"
-              description={
-                repositories.length > 0
-                  ? "Review matching repositories already on this computer. Existing files stay user-owned."
-                  : "Use an existing Git workspace on this computer. Existing files stay user-owned."
-              }
-              selected={mode === "folder"}
-              disabled={locked || !copiesReady || !canPrepare}
-              separated
-              onPress={() => {
-                pin();
-                setMode("folder");
-              }}
-            />
-            <ListChoiceRow
-              label={repositories.length > 0 ? "Clone project" : "Create discussion workspace"}
-              description={
-                repositories.length === 1
-                  ? "Prepare the repository in a new folder."
-                  : repositories.length > 0
-                    ? `Prepare all ${repositories.length} repositories together under one parent folder.`
-                    : "Create a managed folder for the conversation and its saved checkpoints."
-              }
-              selected={mode === "clone"}
-              disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
-              separated
-              onPress={() => {
-                pin();
-                setMode("clone");
-              }}
-            />
+                ))}
+                <ListChoiceRow
+                  label="Use an existing folder"
+                  description="Files you already have on this computer stay kept."
+                  selected={mode === "folder"}
+                  disabled={locked || !copiesReady || !canPrepare}
+                  onPress={() => {
+                    pin();
+                    setMode("folder");
+                    setRootPath(null);
+                    setKeepFiles(null);
+                  }}
+                />
+                <ListChoiceRow
+                  label="Prepare files in a new folder"
+                  description="Loom brings the project files to this computer."
+                  selected={mode === "clone"}
+                  disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
+                  onPress={() => {
+                    pin();
+                    setMode("clone");
+                    setRootPath(null);
+                    setKeepFiles(null);
+                  }}
+                />
+                {mode !== "reuse" ? (
+                  <View className="gap-2 p-4">
+                    <TextInput
+                      accessibilityLabel="Project folder on selected computer"
+                      placeholder="Absolute project folder on this computer"
+                      value={rootPath}
+                      onChangeText={(text) => {
+                        pin();
+                        setRootPath(text);
+                      }}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!locked}
+                      className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+                    />
+                    {mode === "folder" && repositories.length > 0 ? (
+                      <Text className="text-xs text-foreground-muted">
+                        Choose the folder containing{" "}
+                        {repositories.map((entry) => entry.relativePath).join(", ")}.
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            {mode === "reuse" && selectedCopy?.ownership === "borrowed" ? (
+              <LibraryFolderStorage
+                copy={selectedCopy}
+                canAct={authority.ready && pending === null && progress.intent === null}
+                onPending={onFolderPending}
+                onChanged={() => refreshLibraryWork(authority.environmentId!, launchProject.id)}
+              />
+            ) : supportsFileLifecycle && mode !== "folder" ? (
+              <SettingsSwitchRow
+                label="Keep files on this computer"
+                subtitle="Keep for later work. Loom frees space once all work is finished and safely saved. Your conversations stay available."
+                value={keepOnComputer}
+                disabled={locked || !canSetRetention}
+                onValueChange={(value) => {
+                  pin();
+                  setKeepFiles(value);
+                }}
+              />
+            ) : null}
           </SettingsSection>
-          {needsCopy && progress.intent === null ? (
-            <Text className="text-sm text-foreground-muted">
-              {ranking.candidates.some((candidate) => candidate.kind === "copy")
-                ? `${selectedHost?.label ?? "This computer"} has no copy of this project yet. The conversation starts when the copy is ready.`
-                : `This project has no copy yet. Get one on ${selectedHost?.label ?? "this computer"} and the conversation starts when it is ready.`}
-            </Text>
+          {overlappingRoot ? (
+            <LibraryNotice detail="Choose a separate folder for this project layout, or select saved files to restore them." />
+          ) : null}
+          {mode === "reuse" && selectedCopy?.state === "released" && !canReopen ? (
+            <LibraryNotice detail="Restoring saved files needs file access on this computer." />
+          ) : null}
+          {mode === "clone" && !writable.has(execution) ? (
+            <LibraryNotice detail="File preparation needs source control access on this computer. Choose an existing folder or another computer." />
           ) : null}
           {mode !== "reuse" && progress.intent === null ? (
-            <LibraryProfileReadiness environmentId={execution} project={launchProject} />
+            <View className="gap-2">
+              <Button
+                label={showSetup ? "Hide optional setup" : "Optional setup"}
+                tone="text"
+                disabled={locked}
+                onPress={() => setShowSetup((value) => !value)}
+              />
+              {showSetup ? (
+                <>
+                  <Text className="text-xs text-foreground-muted">
+                    You can start work without completing these checks.
+                  </Text>
+                  <LibraryProfileReadiness environmentId={execution} project={launchProject} />
+                </>
+              ) : null}
+            </View>
           ) : null}
           {warning ? (
             <View className="gap-2">
@@ -890,21 +1071,6 @@ function LibraryStartContent(props: {
                 />
               ) : null}
             </View>
-          ) : null}
-          {mode !== "reuse" ? (
-            <TextInput
-              accessibilityLabel="Parent folder on selected computer"
-              placeholder="Absolute parent folder on this computer"
-              value={rootPath}
-              onChangeText={(text) => {
-                pin();
-                setRootPath(text);
-              }}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!locked}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-            />
           ) : null}
           <Button
             label={
@@ -938,17 +1104,17 @@ function LibraryStartContent(props: {
         </>
       ) : null}
       {!authority.ready ? (
-        <LibraryNotice detail="Reconnect the selected library server to register this conversation. Another computer will not replace that library." />
+        <LibraryNotice detail="Reconnect your library to save this conversation. Your chosen computer stays selected." />
       ) : null}
       {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
       {copiesState === "loading" && progress.intent === null ? (
         <LibraryNotice
           detail={
             !authority.connected
-              ? "Reconnect the library to check working copies before preparing a conversation."
+              ? "Reconnect your library to check project files before starting work."
               : copies.data === null
-                ? "Loading registered working copies…"
-                : "Refreshing registered working copies…"
+                ? "Finding project files…"
+                : "Checking project files…"
           }
         />
       ) : null}
@@ -959,11 +1125,7 @@ function LibraryStartContent(props: {
       <Button
         label={
           pending ??
-          (progress.intent
-            ? "Resume preparation"
-            : warning
-              ? "Continue anyway"
-              : "Open conversation")
+          (progress.intent ? "Resume starting work" : warning ? "Continue anyway" : "Start work")
         }
         tone="primary"
         disabled={pending !== null || !canStart}

@@ -4,6 +4,8 @@ import {
   libraryRouteParams,
 } from "@t3tools/client-runtime/fork";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import { readThreadShell } from "~/state/entities";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useParams } from "@tanstack/react-router";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
@@ -13,6 +15,40 @@ import { projectLibrary, useLibraryAuthority } from "./state";
 import { openLibraryAction } from "./actions";
 import { useUiStateStore } from "~/uiStateStore";
 
+/** Recover only explicit registered identities, never a coincidentally matching folder or name. */
+export function libraryContextForLocalProject(
+  ref: { readonly environmentId: string; readonly projectId: string },
+  copies: readonly LibraryWorkingCopy[],
+) {
+  const matches = copies.flatMap((copy) => {
+    if (
+      copy.environmentId !== ref.environmentId ||
+      copy.registered === false ||
+      copy.state === "released"
+    )
+      return [];
+    const root = copy.rootLocalProjectId === ref.projectId;
+    const resources = copy.repositories.filter(
+      (repository) => repository.localProjectId === ref.projectId,
+    );
+    if (!root && resources.length !== 1) return [];
+    return [
+      {
+        projectId: copy.projectId,
+        workingCopyId: copy.id,
+        ...(!root ? { resourceId: resources[0]!.resourceId } : {}),
+      },
+    ];
+  });
+  if (
+    !matches.length ||
+    new Set(matches.map((entry) => entry.projectId)).size !== 1 ||
+    new Set(matches.map((entry) => entry.resourceId ?? null)).size !== 1
+  )
+    return null;
+  return matches[0]!;
+}
+
 /** Resolve context on the source before choosing a new execution binding. No full history read. */
 export function useLibraryNewConversation() {
   const params = useParams({ strict: false });
@@ -21,22 +57,31 @@ export function useLibraryNewConversation() {
   const filterKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const lookup = useAtomQueryRunner(projectLibrary.lookupThread, { reportFailure: false });
   const authority = useLibraryAuthority();
+  const loadCopies = useAtomQueryRunner(projectLibrary.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
   const binding = useAtomQueryRunner(projectLibrary.threadBinding, {
     refresh: true,
     reportFailure: false,
   });
-  return useStableCallback(async (thread?: ScopedThreadRef): Promise<boolean> => {
+  return useStableCallback(async (source?: ScopedThreadRef): Promise<boolean> => {
     if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
       openLibraryAction("new-conversation", context.projectId);
       return true;
     }
-    thread ??=
-      context.environmentId && context.threadId
+    const thread =
+      source ??
+      (context.environmentId && context.threadId
         ? scopeThreadRef(EnvironmentId.make(context.environmentId), ThreadId.make(context.threadId))
-        : undefined;
+        : undefined);
     if (!thread) {
       const scope = parseLibraryProjectScope(filterKey);
-      if (!scope) return false;
+      if (!scope) {
+        if (!authority.authorityId) return false;
+        openLibraryAction("new-conversation");
+        return true;
+      }
       openLibraryAction(
         "new-conversation",
         scope.projectId,
@@ -46,32 +91,63 @@ export function useLibraryNewConversation() {
     }
     if (!authority.authorityId) return false;
     const host = environments.find((entry) => entry.environmentId === thread.environmentId);
-    if (
-      host?.connection.phase !== "connected" ||
-      !supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library")
-    ) {
+    const connected =
+      host?.connection.phase === "connected" &&
+      supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library");
+    const result = connected
+      ? await binding({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.threadId },
+        })
+      : null;
+    if (result?._tag === "Failure") {
+      openLibraryAction("new-conversation");
+      return true;
+    }
+    if (!result || !result.value) {
       const saved = await lookup({
         environmentId: authority.authorityId,
         input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
       });
-      if (saved._tag !== "Success" || !saved.value) return false;
-      openLibraryAction("new-conversation", saved.value.projectId, {
+      if (saved._tag === "Success" && saved.value) {
+        openLibraryAction("new-conversation", saved.value.projectId, {
+          environmentId: thread.environmentId,
+          ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
+          ...(saved.value.resourceIds.length === 1
+            ? { resourceId: saved.value.resourceIds[0] }
+            : {}),
+        });
+        return true;
+      }
+      if (saved._tag === "Failure") {
+        openLibraryAction("new-conversation");
+        return true;
+      }
+      const shell = readThreadShell(thread);
+      if (!shell) {
+        openLibraryAction("new-conversation");
+        return true;
+      }
+      const copies = await loadCopies({ environmentId: authority.authorityId, input: {} });
+      if (copies._tag === "Failure") {
+        openLibraryAction("new-conversation");
+        return true;
+      }
+      const recovered = libraryContextForLocalProject(
+        { environmentId: thread.environmentId, projectId: shell.projectId },
+        copies.value,
+      );
+      if (!recovered) {
+        openLibraryAction("new-conversation");
+        return true;
+      }
+      openLibraryAction("new-conversation", recovered.projectId, {
         environmentId: thread.environmentId,
-        ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
-        ...(saved.value.resourceIds.length === 1 ? { resourceId: saved.value.resourceIds[0] } : {}),
+        workingCopyId: recovered.workingCopyId,
+        ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
       });
       return true;
     }
-    const result = await binding({
-      environmentId: thread.environmentId,
-      input: { threadId: thread.threadId },
-    });
-    if (result._tag === "Failure") {
-      // A failed context lookup opens an explicit project choice instead of silently losing context.
-      openLibraryAction("new-conversation");
-      return true;
-    }
-    if (!result.value) return false;
     openLibraryAction("new-conversation", result.value.projectId, {
       environmentId: result.value.environmentId,
       workingCopyId: result.value.workingCopyId,

@@ -90,7 +90,8 @@ export function libraryResourceDraft(input: {
     relativePath.startsWith("~") ||
     relativePath.includes("\\") ||
     /^[a-z]:/i.test(relativePath) ||
-    relativePath.split("/").some((part) => part === ".." || part === "." || !part)
+    (relativePath !== "." &&
+      relativePath.split("/").some((part) => part === ".." || part === "." || !part))
   )
     throw new Error("Component folders must stay inside the project's parent folder.");
   if (remoteUrl && !/^https:\/\/|^ssh:\/\/|^git@[^:]+:/i.test(remoteUrl))

@@ -126,6 +126,14 @@ describe("durable library execution selection", () => {
       ).toThrow("parent folder");
     expect(
       libraryResourceDraft({
+        id: "root",
+        title: "Existing repository",
+        relativePath: ".",
+        remoteUrl: "",
+      }),
+    ).toMatchObject({ relativePath: "." });
+    expect(
+      libraryResourceDraft({
         id: "r",
         title: " iOS ",
         relativePath: "apps/ios",

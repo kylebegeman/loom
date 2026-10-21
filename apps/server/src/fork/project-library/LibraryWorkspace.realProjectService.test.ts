@@ -90,6 +90,49 @@ const git = Effect.fnUntraced(function* (cwd: string, args: ReadonlyArray<string
 });
 
 it.layer(layer)("Library workspace with real project services", (it) => {
+  it.effect(
+    "prepares and reuses a plain folder through a symlink alias without reacquiring the root lease",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const parent = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "library-folder-alias-" }),
+        );
+        const rootPath = path.join(parent, "notes");
+        const alias = path.join(parent, "alias");
+        yield* fs.makeDirectory(rootPath);
+        yield* fs.writeFileString(path.join(rootPath, "notes.txt"), "local notes");
+        yield* fs.symlink(rootPath, alias);
+        const workspace = yield* Workspace.LibraryWorkspace;
+        const folderProject = { ...project, resources: [] };
+        const copy = yield* workspace.prepareCopy({
+          requestId: "alias-folder-first",
+          project: folderProject,
+          rootPath: alias,
+          strategy: "reuse",
+        });
+        const again = yield* workspace.prepareCopy({
+          requestId: "alias-folder-next",
+          project: folderProject,
+          rootPath,
+          strategy: "reuse",
+        });
+        expect(again.id).toBe(copy.id);
+        const resolved = yield* workspace.resolveBinding({
+          binding: {
+            projectId: folderProject.id,
+            projectRevision: folderProject.revision,
+            workingCopyId: copy.id,
+            environmentId: copy.environmentId,
+            resourceIds: [],
+          },
+        });
+        expect(resolved.cwd).toBe(rootPath);
+        expect(yield* fs.readFileString(path.join(rootPath, "notes.txt"))).toBe("local notes");
+        yield* git(rootPath, ["rev-parse", "--verify", "HEAD"]);
+      }),
+  );
   it.effect("fills empty settings from the setup and replaces local ones only with consent", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem,

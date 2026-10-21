@@ -201,6 +201,19 @@ const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(layerLibraryAssets),
   Layer.provide(PreviewAccess.layer),
 );
+export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
+  Layer.provide(
+    LibraryRecoveryPublisher.layer.pipe(
+      Layer.provide(NodeHttpClient.layerNodeHttp),
+      Layer.provide(layerLibraryRecovery),
+    ),
+  ),
+  Layer.provide(LibraryWorkspaceStore.layer),
+  Layer.provide(RuntimeLayer.layerProjectService),
+  Layer.provide(ProjectionStore.layer),
+  Layer.provide(ProcessRunner.layer),
+  Layer.provide(layerLibraryPublisher),
+);
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
     Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
@@ -285,6 +298,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
   ),
   LibraryReplication.layer.pipe(
+    Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
     Layer.provide(
       LibraryHistorySource.layer.pipe(
@@ -303,18 +317,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(ProjectionStore.layer),
   ),
-  LibraryWorkspace.layer.pipe(
-    Layer.provide(
-      LibraryRecoveryPublisher.layer.pipe(
-        Layer.provide(NodeHttpClient.layerNodeHttp),
-        Layer.provide(layerLibraryRecovery),
-      ),
-    ),
-    Layer.provide(LibraryWorkspaceStore.layer),
-    Layer.provide(RuntimeLayer.layerProjectService),
-    Layer.provide(ProjectionStore.layer),
-    Layer.provide(ProcessRunner.layer),
-  ),
+  layerLibraryWorkspace,
   ProjectCheckoutManagement.layer.pipe(
     Layer.provide(ProcessRunner.layer),
     Layer.provide(StorageCleanup.layer),

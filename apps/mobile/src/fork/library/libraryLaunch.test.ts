@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { makeRawThreadShell } from "../../test-fixtures";
 import {
   emptyLibraryLaunchReceipt,
+  bindLibraryLaunchConversation,
   launchLibraryConversation,
   encodeLibraryLaunchAttempt,
   readLibraryLaunchAttempt,
@@ -256,6 +257,119 @@ describe("library conversation launch", () => {
     expect(h.ports.bind).toHaveBeenCalledTimes(2);
     expect(h.ports.registerHistory).toHaveBeenCalledTimes(1);
   });
+  it("protects restored files with a binding before applying temporary retention", async () => {
+    const h = harness(),
+      receipt = emptyLibraryLaunchReceipt();
+    const restored = { ...copy, keepOnComputer: true };
+    const retained = { ...restored, keepOnComputer: false };
+    h.ports.prepare.mockImplementationOnce(async () => {
+      h.order.push("prepare");
+      return restored;
+    });
+    const setRetention = vi.fn(async () => {
+      h.order.push("retention");
+      return retained;
+    });
+    const registerRetention = vi.fn(async () => {
+      h.order.push("register-retention");
+    });
+    const ports = {
+      ...h.ports,
+      bind: (input: Parameters<typeof bindLibraryLaunchConversation>[0]) =>
+        bindLibraryLaunchConversation(input, receipt, false, "stable-request", {
+          bind: h.ports.bind,
+          setRetention,
+          registerCopy: registerRetention,
+          persist: async () => undefined,
+        }),
+    };
+    h.ports.bind.mockRejectedValueOnce(new Error("bind reply lost"));
+    await expect(launchLibraryConversation(input, receipt, ports)).rejects.toThrow(
+      "bind reply lost",
+    );
+    expect(setRetention).not.toHaveBeenCalled();
+    expect(registerRetention).not.toHaveBeenCalled();
+    expect(h.ports.snapshot).not.toHaveBeenCalled();
+    await launchLibraryConversation(input, receipt, ports);
+    expect(h.order).toEqual([
+      "prepare",
+      "register-copy",
+      "resolve",
+      "create",
+      "bind",
+      "retention",
+      "register-retention",
+      "snapshot",
+      "register-history",
+    ]);
+    expect(h.ports.prepare).toHaveBeenCalledOnce();
+    expect(h.ports.create).toHaveBeenCalledOnce();
+    expect(setRetention).toHaveBeenCalledWith({ workingCopyId: copy.id, keepOnComputer: false });
+    expect(registerRetention).toHaveBeenCalledWith({
+      requestId: "stable-request:retention",
+      copy: retained,
+    });
+  });
+
+  it("resumes a failed retention publication after restart with the same copy and request", async () => {
+    const h = harness();
+    let receipt = emptyLibraryLaunchReceipt();
+    const retained = { ...copy, keepOnComputer: false };
+    const setRetention = vi.fn(async () => retained);
+    const registerRetention = vi.fn(async () => undefined);
+    registerRetention.mockRejectedValueOnce(new Error("library reply lost"));
+    let serialized = "";
+    const persist = async () => {
+      serialized = encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "stable-request",
+        threadId,
+        receipt,
+        review: {
+          authorityEnvironmentId: EnvironmentId.make("authority"),
+          model: {
+            key: "codex",
+            selection: { instanceId: ProviderInstanceId.make("codex"), model: "model" },
+          },
+          title: "Project discussion",
+          mode: "reuse",
+          rootPath: copy.rootPath,
+          copy,
+          carryContext: "",
+          keepOnComputer: false,
+        },
+      });
+    };
+    const ports = {
+      ...h.ports,
+      persist,
+      bind: (input: Parameters<typeof bindLibraryLaunchConversation>[0]) =>
+        bindLibraryLaunchConversation(input, receipt, false, "stable-request", {
+          bind: h.ports.bind,
+          setRetention,
+          registerCopy: registerRetention,
+          persist,
+        }),
+    };
+    await expect(launchLibraryConversation(input, receipt, ports)).rejects.toThrow(
+      "library reply lost",
+    );
+    expect(h.ports.snapshot).not.toHaveBeenCalled();
+    const restored = readLibraryLaunchAttempt(serialized)!;
+    expect(restored.receipt.retentionCopy).toEqual(retained);
+    expect(restored.receipt.threadBound).toBe(false);
+    receipt = restored.receipt;
+    await launchLibraryConversation(input, receipt, ports);
+    expect(setRetention).toHaveBeenCalledOnce();
+    expect(registerRetention.mock.calls).toEqual([
+      [{ requestId: "stable-request:retention", copy: retained }],
+      [{ requestId: "stable-request:retention", copy: retained }],
+    ]);
+    expect(h.ports.prepare).toHaveBeenCalledOnce();
+    expect(h.ports.create).toHaveBeenCalledOnce();
+    expect(receipt.threadBound && receipt.historyRegistered).toBe(true);
+  });
+
   it("resumes the same component thread with its reviewed context when reusing an earlier copy after a brief edit", async () => {
     const h = harness(),
       receipt = emptyLibraryLaunchReceipt();

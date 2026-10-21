@@ -1,6 +1,6 @@
 import { SitesSummary } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -15,7 +15,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   ArchiveIcon,
   CalendarIcon,
-  CheckIcon,
   ClockIcon,
   EllipsisIcon,
   MoonIcon,
@@ -53,15 +52,9 @@ import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
-import { ProjectResources, ResourcesSummary } from "./ProjectResources";
+import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
-import {
-  CopiesSummary,
-  GetCopyMenu,
-  ProjectCopies,
-  ProjectHistory,
-  type CopyRequest,
-} from "./ProjectCopies";
+import { CopiesSummary, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectGlow, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
@@ -219,9 +212,11 @@ function ProjectView({
       ? threads[0].updatedAt
       : project.updatedAt;
   const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
-  const views = PROJECT_VIEWS.filter((entry) => entry !== "setup" || keepsProfile);
+  const views = PROJECT_VIEWS.filter(
+    (entry) => entry !== "repositories" && (entry !== "setup" || keepsProfile),
+  );
   // A link to the setup view still lands somewhere on a Library that keeps no setup.
-  const shown = views.includes(view) ? view : "overview";
+  const shown = view === "repositories" ? "computers" : views.includes(view) ? view : "overview";
   const show = (next: ProjectViewName) =>
     void navigate({
       to: "/library/$projectId",
@@ -252,7 +247,7 @@ function ProjectView({
         update={update}
         editingBrief={editingBrief}
         onEditingBriefChange={setEditingBrief}
-        showEmptyBrief={!settingUp}
+        showEmptyBrief={false}
         proposesBrief={proposesBrief}
         hostLabel={hostLabel}
         onSaved={library.refresh}
@@ -273,7 +268,7 @@ function ProjectView({
                   onWriteBrief={() => setEditingBrief(true)}
                   onAddResource={() => {
                     setAddingResource(true);
-                    show("repositories");
+                    show("computers");
                   }}
                   onGetCopy={setCopyRequest}
                   onStart={() => setConversation({})}
@@ -300,10 +295,6 @@ function ProjectView({
                 hostConnected={hostConnected}
                 onGetCopy={setCopyRequest}
                 onShowAll={() => show("computers")}
-              />
-              <ResourcesSummary
-                resources={project.resources}
-                onShowAll={() => show("repositories")}
               />
               <SitesSummary environmentId={authorityId} projectId={project.id} />
             </aside>
@@ -360,42 +351,43 @@ function ProjectView({
             }
           />
         ) : shown === "computers" ? (
-          <ProjectCopies
-            project={project}
-            copies={copies}
-            loading={copiesLoading}
-            error={library.copies.error}
-            onRetry={library.copies.refresh}
-            canAct={canWork}
-            canStart={canStart}
-            hostLabel={hostLabel}
-            hostConnected={hostConnected}
-            lastSeenAt={(id) =>
-              copiesLive
-                ? library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
-                : undefined
-            }
-            publishedHealth={supportsLoomFeature(
-              capabilities,
-              LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
-            )}
-            onGetCopy={setCopyRequest}
-            onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
-            onRemove={setReleasing}
-          />
-        ) : shown === "repositories" ? (
-          <ProjectResources
-            resources={project.resources}
-            copies={copies}
-            hostLabel={hostLabel}
-            canEdit={update.canEdit}
-            busy={update.busy}
-            adding={addingResource}
-            canStart={canStart}
-            onAddingChange={setAddingResource}
-            onChange={(resources) => update.save({ resources })}
-            onStart={(resource) => setConversation({ resourceId: resource.id })}
-          />
+          <div className="flex min-w-0 flex-col gap-10">
+            <ProjectResources
+              resources={project.resources}
+              copies={copies}
+              hostLabel={hostLabel}
+              canEdit={update.canEdit}
+              busy={update.busy}
+              adding={addingResource}
+              canStart={canStart}
+              onAddingChange={setAddingResource}
+              onChange={(resources) => update.save({ resources })}
+              onStart={(resource) => setConversation({ resourceId: resource.id })}
+            />
+            <ProjectCopies
+              project={project}
+              copies={copies}
+              loading={copiesLoading}
+              error={library.copies.error}
+              onRetry={library.copies.refresh}
+              canAct={canWork}
+              canStart={canStart}
+              hostLabel={hostLabel}
+              hostConnected={hostConnected}
+              lastSeenAt={(id) =>
+                copiesLive
+                  ? library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+                  : undefined
+              }
+              publishedHealth={supportsLoomFeature(
+                capabilities,
+                LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
+              )}
+              onGetCopy={setCopyRequest}
+              onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+              onRemove={setReleasing}
+            />
+          </div>
         ) : (
           <ProjectProfile
             project={project}
@@ -848,19 +840,8 @@ function ProjectBrief({
   );
 }
 
-type SetupStep = {
-  readonly title: string;
-  readonly detail: string;
-  readonly done: boolean;
-  readonly action: ReactNode;
-};
-
-/**
- * Four steps from a name to a first conversation. Each one gives agents more to work with, and
- * the card steps aside for the conversation list once the first one exists.
- */
+/** Starting work is the only required step; project details can grow with the work. */
 function ProjectSetup({
-  project,
   hasCopy,
   canEdit,
   canWork,
@@ -880,129 +861,46 @@ function ProjectSetup({
   readonly onGetCopy: (request: CopyRequest) => void;
   readonly onStart: () => void;
 }) {
-  const done = [Boolean(project.brief.trim()), project.resources.length > 0, hasCopy, false];
-  const next = done.indexOf(false);
-  // The next step to take gets the filled button; the rest wait as outlines.
-  const variant = (index: number) => (index === next ? "default" : "outline");
-  const steps: SetupStep[] = [
-    {
-      title: "Write a brief",
-      detail: "Say what you're building and what matters. Every conversation starts with it.",
-      done: done[0]!,
-      action: (
-        <Button
-          shape="pill"
-          size="xs"
-          variant={variant(0)}
-          disabled={!canEdit}
-          onClick={onWriteBrief}
-        >
-          Write brief
-        </Button>
-      ),
-    },
-    {
-      title: "Add its repositories",
-      detail: "Paste a GitHub URL. Copies clone every repository into one folder.",
-      done: done[1]!,
-      action: (
-        <Button
-          shape="pill"
-          size="xs"
-          variant={variant(1)}
-          disabled={!canEdit}
-          onClick={onAddResource}
-        >
-          Add repository
-        </Button>
-      ),
-    },
-    {
-      title: "Put it on a computer",
-      detail: "Clone it fresh, or point at a folder you already have.",
-      done: done[2]!,
-      action: <GetCopyMenu disabled={!canWork} variant={variant(2)} onGetCopy={onGetCopy} />,
-    },
-    {
-      title: "Start the first conversation",
-      detail: "About the whole project, or just one of its repositories.",
-      done: done[3]!,
-      action: (
-        <Button shape="pill" size="xs" variant={variant(3)} disabled={!canStart} onClick={onStart}>
+  return (
+    <section aria-label="Start work" className="space-y-5">
+      <div className="max-w-xl space-y-2">
+        <h2 className="text-lg font-semibold tracking-tight">Ready when you are</h2>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {hasCopy
+            ? "Your files are ready. Start a conversation to work on this project."
+            : "Start a conversation and Loom prepares the files you need. Your project and conversations stay available when files are removed."}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button shape="pill" disabled={!canStart} onClick={onStart}>
           Start conversation
         </Button>
-      ),
-    },
-  ];
-  return (
-    <section aria-label="Get started" className="flex flex-col gap-6">
-      <div className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">Get {project.title} going</h2>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {done.filter(Boolean).length} of {steps.length}
-          </span>
-        </div>
-        <div aria-hidden className="flex gap-1">
-          {steps.map((step) => (
-            <span
-              key={step.title}
-              className={cn(
-                "h-1 flex-1 rounded-full transition-colors duration-300",
-                step.done ? "bg-(--project-color)" : "bg-muted dark:bg-accent",
-              )}
-            />
-          ))}
-        </div>
+        {!hasCopy ? (
+          <Button
+            shape="pill"
+            variant="outline"
+            disabled={!canWork}
+            onClick={() => onGetCopy({ strategy: "reuse" })}
+          >
+            Use existing folder
+          </Button>
+        ) : null}
       </div>
-      <ol>
-        {steps.map((step, index) => (
-          <li key={step.title} className="relative flex gap-4 pb-7 last:pb-0">
-            {index < steps.length - 1 ? (
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute start-3 top-8 bottom-1 w-px -translate-x-1/2",
-                  step.done ? "bg-(--project-color)/40" : "bg-border",
-                )}
-              />
-            ) : null}
-            <span
-              className={cn(
-                "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
-                step.done
-                  ? "bg-(--project-color) text-background"
-                  : index === next
-                    ? "bg-(--project-color)/14 text-(--project-color) ring-4 ring-(--project-color)/6"
-                    : "bg-muted text-muted-foreground dark:bg-accent",
-              )}
-            >
-              {step.done ? (
-                <CheckIcon aria-hidden className="size-3.5" strokeWidth={3} />
-              ) : (
-                index + 1
-              )}
-              <span className="sr-only">{step.done ? "Done" : "To do"}</span>
-            </span>
-            <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-x-4 gap-y-2 pt-0.5">
-              <div className="min-w-0 flex-1 basis-56 space-y-0.5">
-                <p
-                  className={cn(
-                    "text-sm font-medium",
-                    step.done
-                      ? "text-muted-foreground line-through decoration-muted-foreground/40"
-                      : index !== next && "text-foreground/80",
-                  )}
-                >
-                  {step.title}
-                </p>
-                {step.done ? null : <p className="text-xs text-muted-foreground">{step.detail}</p>}
-              </div>
-              {step.done ? null : <span className="shrink-0">{step.action}</span>}
-            </div>
-          </li>
-        ))}
-      </ol>
+      {canEdit ? (
+        <details className="space-y-3">
+          <summary className="w-fit cursor-pointer text-xs text-muted-foreground">
+            Optional project details
+          </summary>
+          <div className="flex flex-wrap gap-2">
+            <Button shape="pill" size="xs" variant="outline" onClick={onWriteBrief}>
+              Write a brief
+            </Button>
+            <Button shape="pill" size="xs" variant="outline" onClick={onAddResource}>
+              Add repository or link
+            </Button>
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }

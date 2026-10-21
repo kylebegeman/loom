@@ -13,9 +13,9 @@ export const PROJECT_VIEW_LABELS: Record<ProjectViewName, string> = {
   overview: "Overview",
   conversations: "Conversations",
   timeline: "Timeline",
-  computers: "Computers",
-  repositories: "Repositories",
-  setup: "Setup",
+  computers: "Files",
+  repositories: "Files",
+  setup: "Preferences",
 };
 
 export type ProjectViewSearch = { readonly view?: ProjectViewName };

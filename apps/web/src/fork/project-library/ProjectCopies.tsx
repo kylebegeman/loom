@@ -1,9 +1,12 @@
-import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { Link } from "@tanstack/react-router";
+import { useSettingsProjectGroups } from "~/components/settings/useSettingsProjectGroups";
+import { AuthOrchestrationReadScope, EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
+  LIBRARY_FILE_LIFECYCLE_FEATURE,
   type LibraryProject,
   type LibraryRepositoryHealth,
-  type LibraryWorkingCopy,
+  LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
   effectiveLibraryCopyHealth,
@@ -15,7 +18,8 @@ import {
   type LibraryProjectEvent,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useState, type ReactNode } from "react";
+import * as Schema from "effect/Schema";
+import { useRef, useState, type ReactNode } from "react";
 import {
   ArrowRightIcon,
   ChevronDownIcon,
@@ -23,9 +27,10 @@ import {
   MessageSquarePlusIcon,
   MonitorIcon,
 } from "lucide-react";
+import { Switch } from "~/components/ui/switch";
 import { Button } from "~/components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import { cn } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
@@ -34,9 +39,11 @@ import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
+import { useLibraryAttempt } from "./attempts";
+import { ExistingFolderStorage } from "./ExistingFolderStorage";
 import { CopyProfileSetup } from "./ProfileReadiness";
 import { ComputerIcon, ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
-import { projectLibrary, useLibraryPermission } from "./state";
+import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 
 export type CopyRequest = {
   readonly strategy: "clone" | "reuse";
@@ -56,7 +63,7 @@ function copyStatus(copy: LibraryWorkingCopy, online: boolean): CopyStatus {
     case "missing":
       return { label: "Folder missing", tone: "warning" };
     case "failed":
-      return { label: "Copy failed", tone: "warning" };
+      return { label: "Could not prepare files", tone: "warning" };
     case "released":
       return { label: "Removed", tone: "quiet" };
   }
@@ -244,7 +251,7 @@ function CopyHealth({
     );
   if (data === null)
     return health.error ? (
-      <p className="text-xs text-muted-foreground">Could not check this copy.</p>
+      <p className="text-xs text-muted-foreground">Could not check these files.</p>
     ) : health.isPending ? (
       <p role="status" className="text-xs text-muted-foreground">
         Checking repositories...
@@ -294,7 +301,7 @@ function CopyHealth({
 /** The two ways to put a project on a computer, shared by the copies view and the setup steps. */
 export function GetCopyMenu({
   disabled,
-  label = "Get a copy",
+  label = "Add files",
   variant = "ghost",
   onGetCopy,
 }: {
@@ -310,10 +317,8 @@ export function GetCopyMenu({
         <ChevronDownIcon />
       </MenuTrigger>
       <MenuPopup side="bottom" align="end">
-        <MenuItem onClick={() => onGetCopy({ strategy: "clone" })}>Clone to a computer</MenuItem>
-        <MenuItem onClick={() => onGetCopy({ strategy: "reuse" })}>
-          Use a folder I already have
-        </MenuItem>
+        <MenuItem onClick={() => onGetCopy({ strategy: "clone" })}>Prepare on a computer</MenuItem>
+        <MenuItem onClick={() => onGetCopy({ strategy: "reuse" })}>Use existing folder</MenuItem>
       </MenuPopup>
     </Menu>
   );
@@ -333,8 +338,8 @@ function NoCopies({
           <MonitorIcon aria-hidden className="size-4" />
         </span>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Not on a computer right now. Get a copy when you want to work and remove it when you're
-          done. Conversations stay either way.
+          Files are prepared when you start a conversation. Your project and conversations stay
+          available when files are removed.
         </p>
       </div>
       {canAct ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null}
@@ -380,7 +385,16 @@ export function ProjectCopies({
   readonly onRemove: (copy: LibraryWorkingCopy) => void;
 }) {
   const active = libraryActiveCopies(copies);
+  const removed = copies.filter(
+    (copy) =>
+      (copy.state === "released" || copy.registered === false) &&
+      !active.some(
+        (current) =>
+          current.environmentId === copy.environmentId && current.rootPath === copy.rootPath,
+      ),
+  );
   const { environments } = useEnvironments();
+  const authority = useLibraryAuthority();
   const supportsHealth = (id: EnvironmentId) =>
     supportsLoomFeature(
       environments.find((entry) => entry.environmentId === id)?.serverConfig?.environment
@@ -389,7 +403,7 @@ export function ProjectCopies({
     );
   return (
     <LibrarySection
-      title="On your computers"
+      title="Files on computers"
       icon={MonitorIcon}
       count={active.length}
       action={
@@ -405,7 +419,7 @@ export function ProjectCopies({
             return (
               <li
                 key={copy.id}
-                aria-label={`Copy on ${label}`}
+                aria-label={`Files on ${label}`}
                 className="relative isolate space-y-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5"
               >
                 <ProjectGlow />
@@ -417,7 +431,9 @@ export function ProjectCopies({
                         <span className="truncate text-base font-semibold tracking-tight">
                           {label}
                         </span>
-                        <CopyStatusLabel status={copyStatus(copy, online)} />
+                        {copy.ownership !== "borrowed" || copy.state !== "ready" || !online ? (
+                          <CopyStatusLabel status={copyStatus(copy, online)} />
+                        ) : null}
                       </div>
                       <PathLabel path={copy.rootPath} className="-ms-1.5" />
                     </div>
@@ -432,7 +448,7 @@ export function ProjectCopies({
                         onClick={() => onStart(copy)}
                       >
                         <MessageSquarePlusIcon />
-                        Start a conversation here
+                        Start conversation
                       </Button>
                     ) : null}
                     <Button
@@ -442,28 +458,49 @@ export function ProjectCopies({
                       disabled={!canAct}
                       onClick={() => onRemove(copy)}
                     >
-                      {copy.ownership === "borrowed" ? "Stop using this folder" : "Remove copy"}
+                      {copy.ownership === "borrowed" ? "Stop using this folder" : "Remove files"}
                     </Button>
                   </div>
                 </div>
-                {copy.state !== "ready" ? null : online && supportsHealth(copy.environmentId) ? (
-                  <CopyHealth
-                    project={project}
+                {copy.state === "ready" ? (
+                  <CopyFileControls
                     copy={copy}
-                    published={publishedHealth}
-                    lastSeenAt={lastSeenAt(copy.environmentId)}
-                  />
-                ) : publishedHealth ? (
-                  <PublishedCopyHealth
-                    project={project}
-                    copy={copy}
-                    lastSeenAt={lastSeenAt(copy.environmentId)}
-                    offlineLabel={online ? null : label}
+                    online={online}
+                    canAct={canAct}
+                    onChanged={onRetry}
                   />
                 ) : null}
-                {online && copy.state === "ready" ? (
-                  <CopyProfileSetup project={project} copy={copy} />
+                {copy.state !== "ready" && copy.recovery && authority.authorityId ? (
+                  <LibraryRecoveryDownload
+                    authorityId={authority.authorityId}
+                    connected={authority.connected}
+                    copy={copy}
+                  />
                 ) : null}
+                <details className="space-y-3">
+                  <summary className="w-fit cursor-pointer text-xs text-muted-foreground">
+                    Computer details
+                  </summary>
+                  {copy.state !== "ready" ? null : online && supportsHealth(copy.environmentId) ? (
+                    <CopyHealth
+                      project={project}
+                      copy={copy}
+                      published={publishedHealth}
+                      lastSeenAt={lastSeenAt(copy.environmentId)}
+                    />
+                  ) : publishedHealth ? (
+                    <PublishedCopyHealth
+                      project={project}
+                      copy={copy}
+                      lastSeenAt={lastSeenAt(copy.environmentId)}
+                      offlineLabel={online ? null : label}
+                    />
+                  ) : null}
+                  <ComputerFolderSettingsLink copy={copy} />
+                  {online && copy.state === "ready" ? (
+                    <CopyProfileSetup project={project} copy={copy} />
+                  ) : null}
+                </details>
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">
                     From an earlier version of the project
@@ -480,7 +517,263 @@ export function ProjectCopies({
       ) : error ? null : (
         <NoCopies canAct={canAct} onGetCopy={onGetCopy} />
       )}
+      {removed.length ? (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">Previously used on these computers</p>
+          {removed.map((copy) => (
+            <div
+              key={copy.id}
+              className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-3"
+            >
+              <ComputerIcon environmentId={copy.environmentId} />
+              <span className="min-w-0 flex-1 text-sm">{hostLabel(copy.environmentId)}</span>
+              <CopyFileControls
+                copy={copy}
+                online={hostConnected(copy.environmentId)}
+                canAct={canAct}
+                onChanged={onRetry}
+              />
+              {copy.ownership === "borrowed" ? (
+                <Button
+                  shape="pill"
+                  size="xs"
+                  variant="outline"
+                  disabled={!canAct || !hostConnected(copy.environmentId)}
+                  onClick={() =>
+                    onGetCopy({
+                      strategy: "reuse",
+                      hostId: copy.environmentId,
+                      rootPath: copy.rootPath,
+                    })
+                  }
+                >
+                  Use folder again
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </LibrarySection>
+  );
+}
+
+function ComputerFolderSettingsLink({ copy }: { readonly copy: LibraryWorkingCopy }) {
+  const groups = useSettingsProjectGroups();
+  const rootId =
+    copy.rootLocalProjectId ??
+    copy.repositories.find((repo) => repo.path === copy.rootPath)?.localProjectId;
+  const group = groups.find((group) =>
+    group.memberProjects.some(
+      (member) => member.environmentId === copy.environmentId && member.id === rootId,
+    ),
+  );
+  const member = group?.memberProjects.find(
+    (member) => member.environmentId === copy.environmentId && member.id === rootId,
+  );
+  if (!group || !member) return null;
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      render={
+        <Link
+          to="/settings/projects"
+          search={{
+            project: group.projectKey,
+            machine: copy.environmentId,
+            checkout: member.physicalProjectKey,
+          }}
+        />
+      }
+    >
+      Computer folder settings
+    </Button>
+  );
+}
+
+const FileChangeAttempt = Schema.NullOr(
+  Schema.Struct({
+    authorityId: EnvironmentId,
+    requestId: Schema.String,
+    keepOnComputer: Schema.NullOr(Schema.Boolean),
+    copy: Schema.NullOr(LibraryWorkingCopy),
+  }),
+);
+
+function CopyFileControls({
+  copy,
+  online,
+  canAct,
+  onChanged,
+}: {
+  readonly copy: LibraryWorkingCopy;
+  readonly online: boolean;
+  readonly canAct: boolean;
+  readonly onChanged: () => void;
+}) {
+  const authority = useLibraryAuthority();
+  const host = authority.environments.find((entry) => entry.environmentId === copy.environmentId);
+  const supported = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    LIBRARY_FILE_LIFECYCLE_FEATURE,
+  );
+  const setRetention = useAtomCommand(projectLibrary.setCopyRetention, { reportFailure: false });
+  const reopen = useAtomCommand(projectLibrary.reopenCopy, { reportFailure: false });
+  const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
+  const canRetain = useLibraryPermission(projectLibrary.setCopyRetention, copy.environmentId);
+  const canReopen = useLibraryPermission(projectLibrary.reopenCopy, copy.environmentId);
+  const canRegister = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, saveAttempt] = useLibraryAttempt(
+    `loom:library:file-change:${copy.environmentId}:${copy.id}`,
+    FileChangeAttempt,
+  );
+  const changing = useRef(false);
+  const current = attempt?.copy && attempt.copy.updatedAt >= copy.updatedAt ? attempt.copy : copy;
+  const removed = current.state === "released" || current.registered === false;
+  const kept = current.keepOnComputer !== false;
+  const change = async (keepOnComputer?: boolean) => {
+    if (
+      !authority.authorityId ||
+      changing.current ||
+      !online ||
+      !supported ||
+      !canAct ||
+      !canRegister ||
+      !authority.connected ||
+      (attempt && attempt.authorityId !== authority.authorityId) ||
+      (!attempt?.copy && (keepOnComputer === undefined ? !canReopen : !canRetain))
+    )
+      return;
+    changing.current = true;
+    setBusy(true);
+    setError(null);
+    let pending = attempt ?? {
+      authorityId: authority.authorityId,
+      requestId: randomUUID(),
+      keepOnComputer: keepOnComputer ?? null,
+      copy: null,
+    };
+    saveAttempt(pending);
+    const applyChange = async () => {
+      if (!pending.copy) {
+        const result =
+          pending.keepOnComputer === null
+            ? await reopen({
+                environmentId: copy.environmentId,
+                input: { requestId: pending.requestId, workingCopyId: copy.id },
+              })
+            : await setRetention({
+                environmentId: copy.environmentId,
+                input: { workingCopyId: copy.id, keepOnComputer: pending.keepOnComputer },
+              });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        pending = { ...pending, copy: result.value };
+        saveAttempt(pending);
+      }
+      const published = await register({
+        environmentId: pending.authorityId,
+        input: { requestId: `${pending.requestId}:publish`, copy: pending.copy! },
+      });
+      if (published._tag === "Failure") throw squashAtomCommandFailure(published);
+      saveAttempt(null);
+      onChanged();
+    };
+    try {
+      await applyChange();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not update project files. Try again.",
+      );
+    }
+    changing.current = false;
+    setBusy(false);
+  };
+  if (copy.ownership === "borrowed")
+    return removed ? null : (
+      <ExistingFolderStorage copy={copy} online={online} canAct={canAct} onChanged={onChanged} />
+    );
+  return (
+    <div className="space-y-2">
+      {removed ? (
+        <Button
+          shape="pill"
+          size="xs"
+          variant="outline"
+          disabled={
+            busy ||
+            attempt !== null ||
+            !supported ||
+            !online ||
+            !canAct ||
+            !canReopen ||
+            !canRegister ||
+            !authority.connected
+          }
+          onClick={() => void change()}
+        >
+          {busy ? "Restoring..." : "Restore files"}
+        </Button>
+      ) : (
+        <label className="flex cursor-pointer items-start gap-3">
+          <Switch
+            checked={kept}
+            disabled={
+              busy ||
+              attempt !== null ||
+              !supported ||
+              !online ||
+              !canAct ||
+              !canRetain ||
+              !canRegister ||
+              !authority.connected
+            }
+            onCheckedChange={(value) => void change(value)}
+          />
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium">Keep files on this computer</span>
+            <span className="block max-w-lg text-xs leading-relaxed text-muted-foreground">
+              {kept
+                ? "Files stay available until you remove them."
+                : "Loom frees space after all conversations are finished, once your work is safely saved."}
+            </span>
+          </span>
+        </label>
+      )}
+      {!supported && online ? (
+        <p className="text-xs text-muted-foreground">
+          Update Loom on this computer to manage automatic cleanup and restore files.
+        </p>
+      ) : null}
+      {attempt ? (
+        <Button
+          shape="pill"
+          size="xs"
+          variant="outline"
+          disabled={busy || !online || !canRegister || !authority.connected}
+          onClick={() => void change(attempt.keepOnComputer ?? undefined)}
+        >
+          {busy ? "Saving..." : "Retry file update"}
+        </Button>
+      ) : null}
+      {attempt && !attempt.copy ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          disabled={busy}
+          onClick={() => {
+            saveAttempt(null);
+            setError(null);
+            onChanged();
+          }}
+        >
+          Cancel update
+        </Button>
+      ) : null}
+      <LibraryErrorNotice error={error} />
+    </div>
   );
 }
 
@@ -505,7 +798,7 @@ export function CopiesSummary({
   const active = libraryActiveCopies(copies);
   return (
     <LibraryPanel
-      title="On your computers"
+      title="Files on computers"
       icon={MonitorIcon}
       count={active.length}
       action={
@@ -635,7 +928,7 @@ export function ProjectHistory({
       </ol>
       {anyRemoved ? (
         <p className="px-3.5 pb-3 text-xs text-muted-foreground">
-          Removing a copy never touches conversations. Folders you brought stay on disk.
+          Removing files keeps your project and conversations. Existing folders stay on disk.
         </p>
       ) : null}
     </details>
@@ -649,12 +942,12 @@ function describe(event: LibraryProjectEvent, hostLabel: (id: EnvironmentId) => 
     case "copy-added":
       return event.copy.ownership === "borrowed"
         ? `Started using a folder on ${hostLabel(event.environmentId)}`
-        : `Cloned to ${hostLabel(event.environmentId)}`;
+        : `Prepared files on ${hostLabel(event.environmentId)}`;
     case "copy-removed":
       return event.copy.ownership === "borrowed"
         ? `Stopped using the folder on ${hostLabel(event.environmentId)}`
-        : `Removed the copy from ${hostLabel(event.environmentId)}`;
+        : `Removed files from ${hostLabel(event.environmentId)}`;
     case "copy-failed":
-      return `Copy failed on ${hostLabel(event.environmentId)}`;
+      return `Could not prepare files on ${hostLabel(event.environmentId)}`;
   }
 }

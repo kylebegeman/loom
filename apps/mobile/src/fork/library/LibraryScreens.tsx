@@ -591,7 +591,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         />
       </SettingsSection>
       <View className="gap-3">
-        <Text className="text-base font-t3-medium text-foreground">On your computers</Text>
+        <Text className="text-base font-t3-medium text-foreground">Project files</Text>
         {activeCopies.map((copy) => (
           <LibraryCopySection
             key={copy.id}
@@ -607,8 +607,8 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         ))}
         {copiesReady && activeCopies.length === 0 ? (
           <Text className="text-sm text-foreground-muted">
-            No copies right now. Get one on any computer when you want to work, and remove it when
-            you're done. Conversations stay here either way.
+            Start work to prepare files on your chosen computer. Your project and conversations stay
+            saved when the files are removed.
           </Text>
         ) : null}
         {copiesState === "loading" ? (
@@ -622,7 +622,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         ) : null}
         {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
         <Button
-          label="Get a copy"
+          label="Work on another computer"
           tone="secondary"
           disabled={!authority.ready || p.archived}
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
@@ -673,15 +673,15 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       {removedCopies.length ? (
         <View className="gap-3">
           <Button
-            label={showHistory ? "Hide history" : "History"}
+            label={showHistory ? "Hide removed file locations" : "Removed file locations"}
             tone="text"
             onPress={() => setShowHistory((current) => !current)}
           />
           {showHistory ? (
             <>
               <Text className="text-sm text-foreground-muted">
-                Copies that were removed. Removing a copy never touches conversations, and folders
-                you brought stay on disk.
+                Your project and conversations stay saved. Reopen a conversation to restore its
+                saved files. Existing folders stay on disk until you remove them yourself.
               </Text>
               {removedCopies.map((copy) => (
                 <LibraryCopySection

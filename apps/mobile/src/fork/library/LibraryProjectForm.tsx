@@ -24,6 +24,8 @@ import { LibraryBriefSuggestionsSetting } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
+import { LibraryExistingFolder, type ExistingLibraryFolder } from "./LibraryExistingFolder";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import {
   libraryActiveCopies,
@@ -118,6 +120,10 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
   const request = useRef(uuidv4()),
     submittedAuthority = useRef<string | null>(null),
     busy = useRef(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [existingFolder, setExistingFolder] = useState<ExistingLibraryFolder | null>(null),
+    [inspectingFolder, setInspectingFolder] = useState(false);
+  const folderDraftIds = useRef<ReadonlySet<string>>(new Set());
   const [pasted, setPasted] = useState(""),
     [pasteProblem, setPasteProblem] = useState<string | null>(null);
   // Pasting a URL is the whole add flow; the drafts below stay editable for names and folders.
@@ -159,7 +165,14 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       current.map((resource) => (resource.id === id ? { ...resource, ...value } : resource)),
     );
   async function save() {
-    if (busy.current || !authority.environmentId || !authority.ready || !canSave || !title.trim())
+    if (
+      busy.current ||
+      inspectingFolder ||
+      !authority.environmentId ||
+      !authority.ready ||
+      !canSave ||
+      !title.trim()
+    )
       return;
     let parsed: LibraryResource[];
     try {
@@ -237,7 +250,15 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       refreshLibraryProject(authority.environmentId, result.value.id);
       setAwaitingResult(false);
-      navigation.dispatch(StackActions.replace("LibraryProject", { projectId: result.value.id }));
+      navigation.dispatch(
+        existingFolder && !initial
+          ? StackActions.replace("LibraryStart", {
+              projectId: result.value.id,
+              reuseEnvironmentId: existingFolder.environmentId,
+              reuseRootPath: existingFolder.rootPath,
+            })
+          : StackActions.replace("LibraryProject", { projectId: result.value.id }),
+      );
     } catch (cause) {
       if (cause instanceof LibraryError && cause.reason !== "io") {
         setAwaitingResult(false);
@@ -257,8 +278,8 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       ) : null}
       <Text className="text-sm text-foreground-muted">
         {initial
-          ? "Update shared context and resources. Existing conversations keep their reviewed execution bindings."
-          : "Start with a name. Add a brief and the repositories or links it's made of now or later."}
+          ? "Update the brief, repositories and links together. Your conversations stay saved."
+          : "Start with a name. Add a brief, repositories or links now or later. Files are prepared when you start work."}
       </Text>
       <SettingsSection title="Project">
         <View className="gap-3 p-4">
@@ -294,7 +315,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       {resources.map((resource) => (
         <SettingsSection
           key={resource.id}
-          title={resource.kind === "repository" ? "Repository component" : "Reference link"}
+          title={resource.kind === "repository" ? "Repository" : "Reference link"}
         >
           <View className="gap-3 p-4">
             <TextInput
@@ -346,7 +367,11 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
               </>
             ) : null}
             <Button
-              label="Remove resource"
+              label={
+                resource.kind === "repository"
+                  ? "Remove repository from project"
+                  : "Remove link from project"
+              }
               tone="text"
               disabled={pending || awaitingResult}
               onPress={() =>
@@ -386,7 +411,74 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           </View>
         </SettingsSection>
       ) : null}
+      {!initial ? (
+        <LibraryExistingFolder
+          disabled={pending || awaitingResult || !authority.ready || !canSave}
+          folder={existingFolder}
+          onPending={setInspectingFolder}
+          onClear={() => setExistingFolder(null)}
+          onChoose={(folder) => {
+            const previousIds = folderDraftIds.current;
+            const drafts: ResourceDraft[] = folder.resources.map((entry) => ({
+              id: uuidv4(),
+              title: entry.title,
+              kind: "repository",
+              url: entry.remoteUrl ?? "",
+              relativePath: entry.relativePath,
+              defaultBranch: "",
+            }));
+            folderDraftIds.current = new Set(drafts.map((draft) => draft.id));
+            setTitle((current) =>
+              !current.trim() || current === existingFolder?.title ? folder.title : current,
+            );
+            setExistingFolder(folder);
+            setResources((current) => {
+              const retained = current
+                .filter((entry) => !previousIds.has(entry.id))
+                .map((entry) => {
+                  const detected = drafts.find(
+                    (draft) =>
+                      entry.kind === "repository" &&
+                      entry.url &&
+                      normalizeGitRemoteUrl(entry.url) === normalizeGitRemoteUrl(draft.url),
+                  );
+                  return detected ? { ...entry, relativePath: detected.relativePath } : entry;
+                });
+              const known = new Set(
+                retained
+                  .filter((entry) => entry.kind === "repository")
+                  .map((entry) =>
+                    entry.url ? normalizeGitRemoteUrl(entry.url) : `local:${entry.relativePath}`,
+                  ),
+              );
+              return [
+                ...retained,
+                ...drafts.filter(
+                  (draft) =>
+                    !known.has(
+                      draft.url ? normalizeGitRemoteUrl(draft.url) : `local:${draft.relativePath}`,
+                    ),
+                ),
+              ];
+            });
+          }}
+        />
+      ) : null}
       {editsProfile ? (
+        <View className="gap-2">
+          <Button
+            label={showSetup ? "Hide optional setup" : "Optional setup"}
+            tone="text"
+            disabled={pending || awaitingResult}
+            onPress={() => setShowSetup((value) => !value)}
+          />
+          <Text className="text-xs text-foreground-muted">
+            Save defaults, tools and scripts when they are useful. They are not required to start
+            work.
+          </Text>
+        </View>
+      ) : null}
+      {editsProfile && showSetup ? (
         <LibraryProfileSection
           draft={profile}
           onChange={(change) => {
@@ -399,7 +491,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           disabled={pending || awaitingResult}
         />
       ) : null}
-      {editsProfile ? (
+      {editsProfile && showSetup ? (
         <LibraryBriefSuggestionsSetting
           authorityId={authority.environmentId}
           mode={profile.briefSuggestions}
@@ -424,7 +516,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       <Button
         label={pending ? "Saving…" : initial ? "Save project" : "Create project"}
         tone="primary"
-        disabled={pending || !authority.ready || !canSave || !title.trim()}
+        disabled={pending || inspectingFolder || !authority.ready || !canSave || !title.trim()}
         onPress={() => {
           void save();
         }}

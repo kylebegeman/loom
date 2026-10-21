@@ -2,6 +2,8 @@ import { EnvironmentId, ModelSelection, ThreadId, type ProjectId } from "@t3tool
 import {
   LibraryProject,
   type LibraryResolveBindingRequest,
+  type LibraryRegisterCopyRequest,
+  type LibrarySetCopyRetentionRequest,
   LibraryResolvedBinding,
   type LibraryThreadArchive,
   LibraryThreadBinding,
@@ -21,6 +23,7 @@ export interface LibraryLaunchReceipt {
   intent: LibraryLaunchIntent | null;
   copy: LibraryWorkingCopy | null;
   copyRegistered: boolean;
+  retentionCopy?: LibraryWorkingCopy;
   resolved: LibraryResolvedBinding | null;
   threadCreated: boolean;
   threadBound: boolean;
@@ -38,6 +41,7 @@ const Receipt = Schema.Struct({
   ),
   copy: Schema.NullOr(LibraryWorkingCopy),
   copyRegistered: Schema.Boolean,
+  retentionCopy: Schema.optional(LibraryWorkingCopy),
   resolved: Schema.NullOr(LibraryResolvedBinding),
   threadCreated: Schema.Boolean,
   threadBound: Schema.Boolean,
@@ -56,6 +60,7 @@ export const LibraryLaunchAttempt = Schema.Struct({
     rootPath: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
     carryContext: Schema.String,
+    keepOnComputer: Schema.optional(Schema.Boolean),
   }),
 });
 const decodeLibraryLaunchAttempt = Schema.decodeSync(Schema.fromJsonString(LibraryLaunchAttempt));
@@ -85,6 +90,40 @@ export function emptyLibraryLaunchReceipt(): LibraryLaunchReceipt {
   };
 }
 
+type LibraryLaunchBindingInput = {
+  readonly threadId: ThreadId;
+  readonly binding: LibraryThreadBinding;
+  readonly project: LibraryProject;
+};
+
+export async function bindLibraryLaunchConversation(
+  input: LibraryLaunchBindingInput,
+  receipt: LibraryLaunchReceipt,
+  keepOnComputer: boolean | undefined,
+  requestId: string,
+  ports: {
+    bind: (input: LibraryLaunchBindingInput) => Promise<void>;
+    setRetention: (input: LibrarySetCopyRetentionRequest) => Promise<LibraryWorkingCopy>;
+    registerCopy: (input: LibraryRegisterCopyRequest) => Promise<void>;
+    persist: () => Promise<void>;
+  },
+) {
+  // Binding protects restored temporary files before cleanup becomes eligible again.
+  await ports.bind(input);
+  const copy = receipt.copy;
+  if (
+    copy?.ownership === "managed" &&
+    keepOnComputer !== undefined &&
+    (receipt.retentionCopy || (copy.keepOnComputer !== false) !== keepOnComputer)
+  ) {
+    if (!receipt.retentionCopy) {
+      receipt.retentionCopy = await ports.setRetention({ workingCopyId: copy.id, keepOnComputer });
+      await ports.persist();
+    }
+    await ports.registerCopy({ requestId: `${requestId}:retention`, copy: receipt.retentionCopy });
+  }
+}
+
 /** A retry resumes accepted milestones; the composer opens only after binding and registration. */
 export async function launchLibraryConversation(
   input: LibraryLaunchIntent,
@@ -96,11 +135,7 @@ export async function launchLibraryConversation(
       input: LibraryResolveBindingRequest & { readonly project: LibraryProject },
     ) => Promise<LibraryResolvedBinding>;
     create: (localProjectId: ProjectId) => Promise<void>;
-    bind: (input: {
-      readonly threadId: ThreadId;
-      readonly binding: LibraryThreadBinding;
-      readonly project: LibraryProject;
-    }) => Promise<void>;
+    bind: (input: LibraryLaunchBindingInput) => Promise<void>;
     snapshot: () => Promise<LibraryThreadArchive>;
     registerHistory: (archive: LibraryThreadArchive) => Promise<void>;
     progress: (label: string) => void;
@@ -145,13 +180,13 @@ export async function launchLibraryConversation(
     ...(intent.continuationOf ? { continuationOf: intent.continuationOf } : {}),
   };
   if (!receipt.copyRegistered) {
-    ports.progress("Saving working copy…");
+    ports.progress("Saving file location…");
     await ports.registerCopy(receipt.copy);
     receipt.copyRegistered = true;
     await ports.persist?.();
   }
   if (!receipt.resolved) {
-    ports.progress("Resolving conversation workspace…");
+    ports.progress("Opening project files…");
     receipt.resolved = await ports.resolve({ binding, project: intent.project });
     await ports.persist?.();
   }
@@ -172,7 +207,7 @@ export async function launchLibraryConversation(
     await ports.persist?.();
   }
   if (!receipt.threadBound) {
-    ports.progress("Binding conversation…");
+    ports.progress("Preparing conversation…");
     await ports.bind({ threadId: intent.threadId, binding, project: intent.project });
     receipt.threadBound = true;
     await ports.persist?.();

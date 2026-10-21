@@ -177,6 +177,36 @@ export const ProjectLibraryToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_retention", {
+    description:
+      "Keep managed project files on this computer, or allow automatic cleanup after all work finishes. Existing folders are always preserved.",
+    parameters: Library.LibrarySetCopyRetentionRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_reopen", {
+    description:
+      "Restore removed managed project files from their verified recovery archive on this computer, preserving local files, Git objects and conversation bindings. Keeps the restored files on this computer.",
+    parameters: Library.LibraryReopenCopyRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_release", {
+    description:
+      "Remove managed project files only after saving and verifying their full recovery archive. Review with loom_library_copy_status first and pass its current reviewToken. For an existing external folder, only removes its Library registration and preserves all files. Projects and saved conversation history persist.",
+    parameters: Library.LibraryReleaseCopyRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
   Tool.make("loom_library_copy_status", {
     description:
       "Review working-copy ownership, active bindings, cleanup blockers and each repository's branch, ahead/behind counts and uncommitted files. A current reviewToken is needed to release.",
@@ -334,6 +364,17 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_copy_prepare: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.prepareCopy(input))),
+      ),
+      loom_library_copy_retention: McpToolAccess.writesEnvironment((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.setCopyRetention(input)),
+        ),
+      ),
+      loom_library_copy_reopen: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.reopenCopy(input))),
+      ),
+      loom_library_copy_release: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.release(input))),
       ),
       loom_library_copy_status: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),

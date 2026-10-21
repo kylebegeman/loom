@@ -91,6 +91,10 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
       auth.effect(LR.applyProfile, workspace.applyProfile(input)),
     [L.unregisterCopy]: (input: Parameters<typeof workspace.unregister>[0]) =>
       auth.effect(L.unregisterCopy, workspace.unregister(input)),
+    [L.setCopyRetention]: (input: Parameters<typeof workspace.setCopyRetention>[0]) =>
+      auth.effect(L.setCopyRetention, workspace.setCopyRetention(input)),
+    [L.reopenCopy]: (input: Parameters<typeof workspace.reopenCopy>[0]) =>
+      auth.effect(L.reopenCopy, workspace.reopenCopy(input)),
     [L.releaseCopy]: (input: Parameters<typeof workspace.release>[0]) =>
       auth.effect(L.releaseCopy, workspace.release(input)),
     [L.resolveBinding]: (input: Parameters<typeof workspace.resolveBinding>[0]) =>

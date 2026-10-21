@@ -1,4 +1,5 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { FolderProjectSettings } from "../../fork/project-library/FolderProjectSettings";
 import { LayersIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -9,7 +10,7 @@ import { SettingsPageContainer } from "./settingsLayout";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
 
 export function ProjectsSettings() {
-  const { search: value, scope, selectScope } = useSettingsScope();
+  const { search: value, scope, groups, selectScope } = useSettingsScope();
   const unavailable =
     scope.kind === "unavailable" ? (
       <SettingsPageContainer>
@@ -37,12 +38,28 @@ export function ProjectsSettings() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {value.project && projectScope ? (
-        <ProjectSettingsPanel
-          projectKey={value.project}
-          environmentId={value.machine ? EnvironmentId.make(value.machine) : null}
-          checkoutKey={value.checkout ?? null}
-          unavailable={unavailable}
-        />
+        <FolderProjectSettings
+          members={
+            groups
+              .find((group) => group.projectKey === value.project)
+              ?.memberProjects.filter(
+                (member) =>
+                  (!value.machine || member.environmentId === value.machine) &&
+                  (!value.checkout || member.physicalProjectKey === value.checkout),
+              ) ?? []
+          }
+          explicitFolder={!!value.checkout}
+        >
+          {(projectId) => (
+            <ProjectSettingsPanel
+              showFileControls={projectId === null}
+              projectKey={value.project!}
+              environmentId={value.machine ? EnvironmentId.make(value.machine) : null}
+              checkoutKey={value.checkout ?? null}
+              unavailable={unavailable}
+            />
+          )}
+        </FolderProjectSettings>
       ) : unavailable ? (
         unavailable
       ) : (

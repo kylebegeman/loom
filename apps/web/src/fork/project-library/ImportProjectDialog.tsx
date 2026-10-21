@@ -1,5 +1,5 @@
 import { randomUUID } from "~/lib/utils";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryError,
@@ -25,6 +25,8 @@ import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+import { usePrimaryEnvironmentId } from "~/state/environments";
+import { folderProjectMatches } from "./folderProjectMatches";
 import { projectLibrary, useLibraryProjects, useLibraryPermission } from "./state";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -59,13 +61,24 @@ export function ImportProjectDialog({
     `loom:library:import:${library.authorityId}`,
     ImportAttempt,
   );
+  const primaryId = usePrimaryEnvironmentId();
+  const executionHosts = library.environments.filter(
+    (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+  );
+  const connectedHosts = executionHosts.filter(
+    (entry) => entry.entry.enabled && entry.connection.phase === "connected",
+  );
+  const defaultHostId =
+    connectedHosts.length === 1
+      ? connectedHosts[0]!.environmentId
+      : (connectedHosts.find((entry) => entry.environmentId === primaryId)?.environmentId ?? null);
   const [hostId, setHostId] = useState<EnvironmentId | null>(
-    attempt?.environmentId ?? initialHostId ?? null,
+    attempt?.environmentId ?? initialHostId ?? defaultHostId,
   );
   const [rootPath, setRootPath] = useState(attempt?.rootPath ?? initialRootPath ?? "");
   const [title, setTitle] = useState(attempt?.createInput?.title ?? initialTitle ?? "");
   const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
-  const [projectId, setProjectId] = useState(attempt?.project?.id ?? "new");
+  const [projectId, setProjectId] = useState(attempt?.project?.id ?? "choose");
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -87,26 +100,64 @@ export function ImportProjectDialog({
     if (!hostId || !rootPath.trim()) return;
     setBusy(true);
     setError(null);
-    try {
+    const loadInspection = async () => {
       const result = await inspect({ environmentId: hostId, input: { rootPath: rootPath.trim() } });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       setInspection(result.value);
+      const matches = folderProjectMatches(library.query.data ?? [], result.value);
+      setProjectId(matches.length === 1 ? matches[0]!.id : matches.length > 1 ? "choose" : "new");
       if (!title)
         setTitle(result.value.rootPath.replace(/\/+$/, "").split("/").at(-1) ?? "Project");
+    };
+    try {
+      await loadInspection();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not inspect this folder.");
-    } finally {
-      setBusy(false);
+      const handleFailure = async () => {
+        setError(cause instanceof Error ? cause.message : "Could not inspect this folder.");
+      };
+      await handleFailure().finally(() => setBusy(false));
+      return;
     }
+    setBusy(false);
   };
+  const inspectedInitial = useRef(false);
+  const inspectInitial = useEffectEvent(() => {
+    void inspectFolder();
+  });
+  useEffect(() => {
+    if (
+      !inspectedInitial.current &&
+      initialRootPath &&
+      hostId &&
+      canInspect &&
+      host?.connection.phase === "connected" &&
+      !library.query.isPending &&
+      !attempt
+    ) {
+      inspectedInitial.current = true;
+      inspectInitial();
+    }
+  }, [
+    initialRootPath,
+    hostId,
+    canInspect,
+    host?.connection.phase,
+    library.query.isPending,
+    attempt,
+  ]);
+  const matches = inspection ? folderProjectMatches(library.query.data ?? [], inspection) : [];
+  const sameName = (library.query.data ?? []).filter(
+    (project) => project.title.trim().toLowerCase() === title.trim().toLowerCase(),
+  );
   const submit = async () => {
-    if (!hostId || !library.authorityId || busy || (!attempt && !inspection?.exists)) return;
+    const authorityId = library.authorityId;
+    if (!hostId || !authorityId || busy || (!attempt && !inspection?.exists)) return;
     const existing = library.query.data?.find((project) => project.id === projectId);
     if (!attempt && projectId !== "new" && !existing) return;
     setBusy(true);
     setError(null);
     let submitted = attempt;
-    try {
+    const importFolder = async () => {
       let next = attempt ?? {
         environmentId: hostId,
         rootPath: inspection!.rootPath,
@@ -138,7 +189,7 @@ export function ImportProjectDialog({
       if (!next.project) {
         if (!next.createInput) throw new Error("Choose a project before importing.");
         const result = await create({
-          environmentId: library.authorityId,
+          environmentId: authorityId,
           input: next.createInput,
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -161,35 +212,41 @@ export function ImportProjectDialog({
         saveAttempt(next);
       }
       const result = await register({
-        environmentId: library.authorityId,
+        environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       saveAttempt(null);
       onSaved(next.project!);
+    };
+    try {
+      await importFolder();
     } catch (cause) {
-      if (submitted?.project) {
-        const receipt = await recover({
-          environmentId: submitted.environmentId,
-          input: { requestId: submitted.prepareRequestId },
-        });
-        if (receipt._tag === "Success") {
-          if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
-          else if (
-            isLibraryError(cause) &&
-            ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-          )
-            saveAttempt(null);
-        }
-      } else if (isLibraryError(cause) && cause.reason === "invalid") saveAttempt(null);
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not register this folder. Retry the same import.",
-      );
-    } finally {
-      setBusy(false);
+      const handleFailure = async () => {
+        if (submitted?.project) {
+          const receipt = await recover({
+            environmentId: submitted.environmentId,
+            input: { requestId: submitted.prepareRequestId },
+          });
+          if (receipt._tag === "Success") {
+            if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
+            else if (
+              isLibraryError(cause) &&
+              ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
+            )
+              saveAttempt(null);
+          }
+        } else if (isLibraryError(cause) && cause.reason === "invalid") saveAttempt(null);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not register this folder. Retry the same import.",
+        );
+      };
+      await handleFailure().finally(() => setBusy(false));
+      return;
     }
+    setBusy(false);
   };
   const reviewCleanup = async () => {
     if (!attempt?.copy || !library.authorityId) return;
@@ -229,7 +286,7 @@ export function ImportProjectDialog({
         if (!open && !busy) onClose();
       }}
       title="Add existing folder"
-      description="Inspect the folder, then use an existing Library project or create a new one. Your files remain borrowed."
+      description="Choose an existing folder. Loom finds its repositories and suggests the matching project. Your files stay where they are."
       actions={
         <>
           <Button variant="outline" disabled={busy} onClick={onClose}>
@@ -249,10 +306,13 @@ export function ImportProjectDialog({
               busy ||
               !canPrepare ||
               !canRegister ||
-              !canCreate ||
+              (projectId === "new" && !canCreate) ||
               !library.connected ||
               host?.connection.phase !== "connected" ||
-              (!attempt && (!inspection?.exists || (projectId === "new" && !title.trim())))
+              (!attempt &&
+                (!inspection?.exists ||
+                  projectId === "choose" ||
+                  (projectId === "new" && !title.trim())))
             }
             onClick={() => void submit()}
           >
@@ -266,7 +326,7 @@ export function ImportProjectDialog({
           <Select
             disabled={busy || attempt !== null}
             value={hostId}
-            items={library.environments.map((entry) => ({
+            items={executionHosts.map((entry) => ({
               value: entry.environmentId,
               label: entry.label,
             }))}
@@ -279,7 +339,7 @@ export function ImportProjectDialog({
               <SelectValue placeholder="Choose a computer" />
             </SelectTrigger>
             <SelectPopup>
-              {library.environments.map((entry) => (
+              {executionHosts.map((entry) => (
                 <SelectItem key={entry.environmentId} value={entry.environmentId}>
                   {entry.label}
                 </SelectItem>
@@ -327,12 +387,20 @@ export function ImportProjectDialog({
             )}
           </div>
         ) : null}
-        <LibraryField label="Library project">
+        {matches.length ? (
+          <p className="text-xs text-muted-foreground">
+            {matches.length === 1
+              ? `Matches ${matches[0]!.title}: same repositories and folder layout.`
+              : "Several projects have these repositories. Choose which project this folder belongs to."}
+          </p>
+        ) : null}
+        <LibraryField label="Project">
           <Select
             disabled={busy || attempt !== null}
             value={projectId}
             onValueChange={(value) => setProjectId(value ?? "new")}
             items={[
+              { value: "choose", label: "Choose a project" },
               { value: "new", label: "Create a new project" },
               ...(library.query.data ?? []).map((project) => ({
                 value: project.id,
@@ -344,6 +412,7 @@ export function ImportProjectDialog({
               <SelectValue />
             </SelectTrigger>
             <SelectPopup>
+              <SelectItem value="choose">Choose a project</SelectItem>
               <SelectItem value="new">Create a new project</SelectItem>
               {library.query.data?.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
@@ -363,7 +432,13 @@ export function ImportProjectDialog({
                 onChange={(event) => setTitle(event.target.value)}
               />
             </LibraryField>
-            <LibraryField label="Shared brief">
+            {sameName.length ? (
+              <p className="text-xs text-warning-foreground">
+                A project with this name already exists. Choose it above to keep your work together,
+                or use a different name.
+              </p>
+            ) : null}
+            <LibraryField label="Brief (optional)">
               <Textarea
                 value={brief}
                 disabled={busy || attempt !== null}

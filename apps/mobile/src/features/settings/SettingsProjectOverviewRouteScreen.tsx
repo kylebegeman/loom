@@ -1,3 +1,6 @@
+import { libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
+import { useEnvironmentQuery } from "../../state/query";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts"; // fork: project-navigation
 import { resolveProjectSettingsScope } from "../../fork/project-navigation/projectNavigation.logic"; // fork: project-navigation
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -7,7 +10,7 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useEffect, useRef, useState } from "react";
-import type { StaticScreenProps } from "@react-navigation/native";
+import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -59,7 +62,7 @@ export function SettingsProjectOverviewRouteScreen({
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Project overview" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Computer folders" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -89,6 +92,22 @@ function ProjectOverviewContent(props: {
   readonly members: readonly EnvironmentProject[];
   readonly environments: readonly SettingsTarget[];
 }) {
+  const navigation = useNavigation();
+  const authority = useLibraryAuthority();
+  const copies = useEnvironmentQuery(
+    authority.environmentId
+      ? library.copies({ environmentId: authority.environmentId, input: { includeReleased: true } })
+      : null,
+  );
+  const sharedProjectId = libraryProjectForLocalRefs(
+    [],
+    props.members.map((member) => ({
+      environmentId: member.environmentId,
+      projectId: member.id,
+    })),
+    copies.data ?? [],
+    { includeInactiveCopies: true },
+  );
   const representative = props.members[0]!;
   const displayName = deriveProjectGroupLabel({ representative, members: props.members });
   const [draftName, setDraftName] = useState<string | null>(null);
@@ -119,6 +138,18 @@ function ProjectOverviewContent(props: {
 
   return (
     <>
+      {sharedProjectId ? (
+        <View className="gap-3 rounded-2xl bg-grouped-card p-4">
+          <Text className="text-sm text-foreground-muted">
+            These are computer folder settings. Shared preferences and files belong to the same
+            project in Projects.
+          </Text>
+          <Button
+            label="Open project"
+            onPress={() => navigation.navigate("LibraryProject", { projectId: sharedProjectId })}
+          />
+        </View>
+      ) : null}
       <View className="flex-row items-center gap-4 px-2">
         <ProjectFavicon
           environmentId={representative.environmentId}
@@ -163,7 +194,7 @@ function ProjectOverviewContent(props: {
         </View>
       </SettingsSection>
 
-      <SettingsSection title="Checkouts">
+      <SettingsSection title="Computer folders">
         {props.members.map((member, index) => {
           const environment = props.environments.find(
             (entry) => entry.environmentId === member.environmentId,
@@ -195,18 +226,20 @@ function ProjectOverviewContent(props: {
         })}
       </SettingsSection>
       {/* fork: project-checkout-management - Each review stays bound to one computer's folder. */}
-      {props.members.map((member) => (
-        <ProjectCheckoutSection
-          key={`${member.environmentId}:${member.id}`}
-          environmentId={member.environmentId}
-          projectId={member.id}
-          workspaceRoot={member.workspaceRoot}
-          computerLabel={
-            props.environments.find((entry) => entry.environmentId === member.environmentId)
-              ?.label ?? "Computer"
-          }
-        />
-      ))}
+      {!sharedProjectId
+        ? props.members.map((member) => (
+            <ProjectCheckoutSection
+              key={`${member.environmentId}:${member.id}`}
+              environmentId={member.environmentId}
+              projectId={member.id}
+              workspaceRoot={member.workspaceRoot}
+              computerLabel={
+                props.environments.find((entry) => entry.environmentId === member.environmentId)
+                  ?.label ?? "Computer"
+              }
+            />
+          ))
+        : null}
     </>
   );
 }

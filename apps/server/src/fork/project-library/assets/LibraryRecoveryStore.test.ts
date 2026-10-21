@@ -60,6 +60,14 @@ describe("verified recovery archives", () => {
       Effect.gen(function* () {
         const saved = yield* store.put(input(sha256));
         expect(saved.sha256).toBe(sha256);
+        const config = yield* ServerConfig.ServerConfig;
+        const canonical = (yield* Path.Path).join(
+          config.stateDir,
+          "project-library",
+          "recovery",
+          sha256,
+        );
+        expect((yield* (yield* FileSystem.FileSystem).stat(canonical)).mode & 0o777).toBe(0o600);
         expect((yield* store.get(source, manifest.copyId, sha256)).manifest).toEqual(manifest);
         expect((yield* store.verify(source, manifest.copyId, sha256)).byteLength).toBe(
           bytes.length,

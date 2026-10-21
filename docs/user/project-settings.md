@@ -46,7 +46,7 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
-## Library projects and working copies
+## Projects and files
 
 Shared projects keep their brief, components and saved conversation history independently
 of their execution computers. Configure the Library connection in **Settings → Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
@@ -55,26 +55,40 @@ computer connection. Desktop sign-in opens your browser and returns to Loom afte
 Existing computer pairing and T3 Connect remain available. Changing your
 Library selection does not move records from the previous Library.
 
-**New project** saves a name, shared brief and resources without choosing a computer or
-cloning files. Add repositories or reference links as needed. **Add existing folder** lets
-you inspect a folder, then add it to an existing project or create a new project. Imported
-folders are borrowed: removing their registration preserves your files.
+**New project** needs only a name. Add repositories, reference links or a brief whenever
+useful. **Add existing folder** finds repositories in a folder and suggests an existing
+project when the repository origins and layout match. This leaves your files in place.
+The Projects page lists each computer folder still waiting to be added, so you can work
+through existing projects without losing your place.
 
-Open a project to see its resources, conversations and known working copies. **New
-conversation** works on either the whole project or one repository, and chooses a connected
-computer for you with the reason under it, for example "Mac Mini · online, up to date". It
-prefers a copy that covers the scope, then one that is up to date, then the computer you used
-last for the project, then the one running the fewest threads. It never chooses an offline
-computer; pick another computer from the list to change it. When no computer has a copy,
-**Get a copy on** that computer prepares one and the conversation starts once it is ready. When
-the chosen copy is behind or has uncommitted files, **Pull first** updates it and starts, and
-**Continue anyway** starts without changing it. **Clone project**
-prepares the project repositories together under one parent folder. Editing the shared brief
-applies to new conversations; existing conversations keep the context they started with.
-Each copy on a connected computer shows its branch, how far it is ahead of or behind its
-upstream as of the last fetch, and how many files are uncommitted; **Pull** appears when a
-copy is behind and has no local changes. When a computer is offline, its copies show the last
-state it reported and how old that report is.
+Start a conversation from a project and Loom chooses an available computer and prepares
+its files automatically. You can choose another computer or work on one repository.
+The conversation uses the project's model preference, with the computer's defaults as a
+fallback. Editing the brief applies to new conversations; earlier conversations keep their
+original context.
+
+T3's folder records are the computer locations of these projects. Adding an existing folder
+reuses its folder record and settings. Once added, **Project settings** from a thread opens
+that shared project's preferences. Use **Files → Computer details → Computer folder settings**
+for local actions and overrides. Folders not yet added offer **Add folder to Projects** in their
+settings, with the existing location filled in.
+
+Use **Files** in the project to manage its repositories, links and files on computers.
+**Keep files on this computer** leaves files available. With Keep off, Loom can free space
+after all related conversations are finished and saved. Active work, unpublished commits
+and unsaved changes prevent automatic cleanup. Existing folders stay kept until you
+explicitly allow Loom to manage them.
+
+**Remove files** saves and verifies a recovery archive before freeing space. Your project
+and conversations stay available. **Restore files** brings the saved contents back to the
+same computer and keeps them there. Starting another conversation or resuming work also restores
+files automatically and preserves your Keep choice. Reading saved history does not download files.
+Recovery uses a verified archive, downloading it from the Library when needed. A computer must
+be connected to prepare, remove or restore its files.
+
+Computer details show repository changes and optional tools. When a repository is behind
+and has no local changes, **Pull** updates it. Offline computers show their last reported
+state and when it was checked.
 
 The command palette reaches projects from anywhere. Type part of a project's name to open it,
 or use **Go to project...**, **New conversation in...** and **Open project brief...** to pick
@@ -83,7 +97,7 @@ project** opens it, even when that thread's computer is offline. To give **Go to
 **New conversation in** a shortcut, bind `loom.library.goToProject` or
 `loom.library.newConversationIn` in **Settings → Keybindings**.
 
-**Setup** on the project page records how work gets going on any computer, and it is saved
+**Preferences** on the project page records how work gets going on any computer, and it is saved
 with the brief. **Use this copy's scripts** brings in the scripts a working copy's local
 project already has. Required tools are picked from a fixed list, with an optional minimum
 version, so a setup never asks a computer to run an arbitrary command. Secret names list the
@@ -164,8 +178,8 @@ same update to run suggestions.
 
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.
-Removing a managed working copy preserves the Library project and saved conversations;
-active work or local changes can prevent removal. A project can have zero working copies.
+Removing project files preserves the project and saved conversations. Active work prevents
+removal. A project does not need to stay on any computer.
 
 A project rests on its own after two weeks without a conversation or an edit, and its next
 conversation brings it back. Resting projects show a **Tidy** chip on the Projects page. Tidy

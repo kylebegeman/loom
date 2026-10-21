@@ -16,6 +16,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -26,6 +27,7 @@ import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
+import * as Workspace from "./LibraryWorkspace.ts";
 
 export class LibraryReplication extends Context.Service<
   LibraryReplication,
@@ -114,6 +116,7 @@ const make = Effect.gen(function* () {
   const source = yield* HistorySource.LibraryHistorySource;
   const crypto = yield* Crypto.Crypto;
   const workspaces = yield* WorkspaceStore.LibraryWorkspaceStore;
+  const workspace = yield* Effect.serviceOption(Workspace.LibraryWorkspace);
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const lock = yield* Semaphore.make(1);
@@ -407,6 +410,31 @@ const make = Effect.gen(function* () {
       return true;
     }),
   );
+  const publishedCopies = new Map<string, string>();
+  const publishCopyChanges = Effect.fn("LibraryReplication.publishCopyChanges")(function* () {
+    if (Option.isNone(workspace)) return;
+    const current = yield* state;
+    for (const { copy } of yield* workspaces.receipts) {
+      if (
+        copy.environmentId !== environmentId ||
+        copy.state === "preparing" ||
+        copy.state === "failed"
+      )
+        continue;
+      const fingerprint = Hex.encode(
+        yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
+      );
+      if (publishedCopies.get(copy.id) === fingerprint) continue;
+      yield* publisher.registerCopy({
+        requestId: `${current.journal_id}:copy:${fingerprint}`,
+        authorityId: current.authority_id,
+        authorityEpoch: current.authority_epoch,
+        copy,
+      });
+      publishedCopies.set(copy.id, fingerprint);
+    }
+  }, mapIo);
+
   const pass = Effect.fnUntraced(function* (flushed: Set<ThreadId> | undefined) {
     const initialized = (yield* readState)[0] !== undefined;
     if (!initialized) yield* ensureAuthority(yield* publisher.info);
@@ -414,6 +442,14 @@ const make = Effect.gen(function* () {
     // Keep capturing committed milestones during an outage once this journal is established.
     if (initialized) yield* ensureAuthority(yield* publisher.info);
     const published = yield* publish;
+    yield* publishCopyChanges();
+    if (Option.isSome(workspace) && !captured.waiting) {
+      const history = yield* status;
+      if (history.pendingEntries === 0 && history.threads.every((thread) => !thread.pending)) {
+        yield* workspace.value.cleanupTemporaryCopies;
+        yield* publishCopyChanges();
+      }
+    }
     return { progressed: captured.queued || published, waiting: captured.waiting };
   }, mapIo);
   const settle = (waiting: boolean) =>

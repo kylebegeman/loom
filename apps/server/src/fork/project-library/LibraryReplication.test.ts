@@ -26,6 +26,7 @@ import * as HistorySource from "./LibraryHistorySource.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Replication from "./LibraryReplication.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
+import * as Workspace from "./LibraryWorkspace.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
   source,
@@ -312,6 +313,66 @@ describe("durable Library history replication", () => {
           yield* service.drain;
           expect(yield* Ref.get(f.snapshots)).toBe(1);
           expect((yield* service.status).threads[0]?.acknowledgedSequence).toBe(121);
+        }),
+      ),
+  );
+
+  it.effect(
+    "publishes file changes without history events and only cleans up after history is saved",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const current = yield* Ref.make({
+            ...receipt,
+            copy: { ...receipt.copy, keepOnComputer: false },
+          });
+          const cleanups = yield* Ref.make(0);
+          const service = yield* Replication.LibraryReplication.pipe(
+            Effect.provide(Replication.layer),
+            Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+            Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+              ...workspace,
+              receipts: Ref.get(current).pipe(Effect.map((value) => [value])),
+              get: () => Ref.get(current),
+            }),
+            Effect.provideService(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(source),
+            }),
+            Effect.provideService(HistorySource.LibraryHistorySource, {
+              snapshotThread: () => Ref.get(f.archive),
+            }),
+            Effect.provide(
+              Layer.mock(Workspace.LibraryWorkspace)({
+                cleanupTemporaryCopies: Ref.update(cleanups, (count) => count + 1).pipe(
+                  Effect.andThen(
+                    Ref.update(current, (value) => ({
+                      ...value,
+                      copy: { ...value.copy, state: "released" as const },
+                    })),
+                  ),
+                ),
+              }),
+            ),
+          );
+          yield* f.event(1, "thread.created", "{}");
+          yield* Ref.set(f.failAck, true);
+          expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("io");
+          expect(yield* Ref.get(cleanups)).toBe(0);
+          yield* Ref.set(f.failAck, false);
+          yield* service.drain;
+          expect(yield* Ref.get(cleanups)).toBe(1);
+          expect((yield* Ref.get(f.registered)).at(-1)?.copy).toMatchObject({
+            state: "released",
+            keepOnComputer: false,
+          });
+          const snapshots = (yield* Ref.get(f.requests)).length;
+          yield* Ref.update(current, (value) => ({
+            ...value,
+            copy: { ...value.copy, keepOnComputer: true },
+          }));
+          yield* service.drain;
+          expect((yield* Ref.get(f.registered)).at(-1)?.copy.keepOnComputer).toBe(true);
+          expect((yield* Ref.get(f.requests)).length).toBe(snapshots);
         }),
       ),
   );

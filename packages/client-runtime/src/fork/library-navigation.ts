@@ -50,6 +50,7 @@ function libraryProjectIdsForLocalRefs(
   threads: readonly LibraryThreadSummary[],
   refs: readonly { environmentId: string; projectId: string }[],
   copies: readonly LibraryWorkingCopy[],
+  includeInactiveCopies = false,
 ) {
   return refs.map(
     (ref) =>
@@ -57,8 +58,7 @@ function libraryProjectIdsForLocalRefs(
         ...copies
           .filter(
             (copy) =>
-              copy.registered !== false &&
-              copy.state !== "released" &&
+              (includeInactiveCopies || (copy.registered !== false && copy.state !== "released")) &&
               copy.environmentId === ref.environmentId &&
               (copy.rootLocalProjectId === ref.projectId ||
                 copy.repositories.some((repo) => repo.localProjectId === ref.projectId)),
@@ -89,9 +89,15 @@ export function libraryProjectForLocalRefs(
   threads: readonly LibraryThreadSummary[],
   refs: readonly { environmentId: string; projectId: string }[],
   copies: readonly LibraryWorkingCopy[] = [],
+  options?: { readonly includeInactiveCopies?: boolean },
 ) {
   if (!refs.length) return null;
-  const projects = libraryProjectIdsForLocalRefs(threads, refs, copies);
+  const projects = libraryProjectIdsForLocalRefs(
+    threads,
+    refs,
+    copies,
+    options?.includeInactiveCopies,
+  );
   if (projects.some((ids) => ids.size !== 1)) return null;
   const ids = new Set(projects.flatMap((ids) => [...ids]));
   return ids.size === 1 ? [...ids][0]! : null;

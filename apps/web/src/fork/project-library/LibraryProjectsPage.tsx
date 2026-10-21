@@ -142,8 +142,25 @@ export function LibraryProjectsPage() {
     catalog.computers.find((entry) => entry.environmentId === id)?.label ??
     "Saved computer";
   // Folders already behind a project copy are part of that project, not loose folders.
-  const looseFolders = localProjects.filter(
-    (group) => !libraryHoldsLocalRefs([], group.memberProjectRefs, activeCopies),
+  const looseFolders = localProjects.flatMap((group) =>
+    group.memberProjectRefs.flatMap((ref) => {
+      if (libraryHoldsLocalRefs([], [ref], activeCopies)) return [];
+      const member = group.memberProjects.find(
+        (entry) => entry.environmentId === ref.environmentId && entry.id === ref.projectId,
+      );
+      if (!member) return [];
+      if (computer && ref.environmentId !== computer) return [];
+      if (
+        query.trim() &&
+        !`${group.displayName} ${member.workspaceRoot} ${hostLabel(ref.environmentId)}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
+      )
+        return [];
+      return [
+        { key: `${ref.environmentId}:${ref.projectId}`, title: group.displayName, ref, member },
+      ];
+    }),
   );
   const entries = projectEntries(
     catalog.query.data ?? [],
@@ -228,7 +245,7 @@ export function LibraryProjectsPage() {
                 ]
                   .filter(Boolean)
                   .join(" · ")
-              : "Keep the context, repositories and conversations for each thing you’re building together."}
+              : "Your projects and conversations stay here. Files are ready when you need them."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -487,20 +504,18 @@ export function LibraryProjectsPage() {
           )}
         </>
       )}
-      {catalog.authorityId && looseFolders.length && !narrowed && !showArchived ? (
+      {catalog.authorityId && looseFolders.length && !colors.size && !showArchived ? (
         <FoldedSection
-          title="Folders not in a project"
+          title="Add your existing work"
           count={looseFolders.length}
           hint="Folders you’ve worked in on your computers. Add one to a project without moving or deleting its files."
         >
           <ul>
-            {looseFolders.map((group) => {
-              const ref = group.memberProjectRefs[0];
-              const member = group.memberProjects[0];
-              const root = member?.workspaceRoot;
+            {looseFolders.map(({ key, title, ref, member }) => {
+              const root = member.workspaceRoot;
               return (
                 <li
-                  key={group.projectKey}
+                  key={key}
                   className={cn(LIBRARY_ROW, "flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2")}
                 >
                   <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground dark:bg-accent">
@@ -514,9 +529,7 @@ export function LibraryProjectsPage() {
                       <FolderIcon aria-hidden className="size-3.5" />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {group.displayName}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
                   <span className="flex min-w-0 items-center gap-1.5">
                     {ref ? (
                       <ComputerLabel
@@ -535,7 +548,7 @@ export function LibraryProjectsPage() {
                     onClick={() =>
                       setImporting({
                         ...(ref ? { hostId: ref.environmentId } : {}),
-                        title: group.displayName,
+                        title,
                         rootPath: root,
                       })
                     }
@@ -569,7 +582,10 @@ export function LibraryProjectsPage() {
           initialRootPath={importing.rootPath}
           initialTitle={importing.title}
           onClose={() => setImporting(null)}
-          onSaved={saved}
+          onSaved={() => {
+            setImporting(null);
+            refresh();
+          }}
         />
       ) : null}
     </LibraryPageFrame>
@@ -626,7 +642,7 @@ function FoldedSection({
   readonly children: ReactNode;
 }) {
   return (
-    <details className="group/fold space-y-2.5">
+    <details open className="group/fold space-y-2.5">
       <summary className="-mx-2 flex w-fit max-w-full cursor-pointer list-none items-baseline gap-2 rounded-full px-2 py-1 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon
           aria-hidden

@@ -35,40 +35,48 @@ export function ReleaseCopyDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
-    if (!authority.authorityId || !status.data || busy) return;
+    const authorityId = authority.authorityId;
+    const data = status.data;
+    if (!authorityId || !data || busy) return;
     setBusy(true);
     setError(null);
-    try {
-      let released = status.data.copy;
+    const releaseCopy = async () => {
+      let released = data.copy;
       if (released.state !== "released" && released.registered !== false) {
-        if (!status.data.reviewToken) return;
+        if (!data.reviewToken) return;
         const result = await remove({
           environmentId: copy.environmentId,
           input: {
             requestId: requestIds.current.release,
             workingCopyId: copy.id,
-            reviewToken: status.data.reviewToken,
+            reviewToken: data.reviewToken,
           },
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         released = result.value;
       }
       const result = await register({
-        environmentId: authority.authorityId,
+        environmentId: authorityId,
         input: { requestId: requestIds.current.register, copy: released },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onReleased();
+    };
+    try {
+      await releaseCopy();
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not remove this working copy. Refresh its status and try again.",
-      );
-      status.refresh();
-    } finally {
-      setBusy(false);
+      const handleFailure = async () => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not remove these files. Refresh their status and try again.",
+        );
+        status.refresh();
+      };
+      await handleFailure().finally(() => setBusy(false));
+      return;
     }
+    setBusy(false);
   };
   return (
     <LibraryDialog
@@ -76,11 +84,11 @@ export function ReleaseCopyDialog({
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
-      title={copy.ownership === "borrowed" ? "Remove folder registration" : "Remove working copy"}
+      title={copy.ownership === "borrowed" ? "Stop using this folder?" : "Remove files"}
       description={
         copy.ownership === "borrowed"
-          ? "Remove this folder from choices for new work. Files and existing conversations keep working on this computer. The project and saved history stay in your Library."
-          : "Remove the managed files on this computer. The project, resources and saved conversations stay in your Library."
+          ? "This existing folder stays on disk. It will no longer be offered for new work in this project. Your project and conversations stay available."
+          : "Save a recovery archive, then remove these files from this computer. Your project and conversations stay available. Starting work again restores its files."
       }
       actions={
         <>
@@ -105,8 +113,8 @@ export function ReleaseCopyDialog({
             {busy
               ? "Removing..."
               : copy.ownership === "borrowed"
-                ? "Remove registration"
-                : "Remove working copy"}
+                ? "Stop using folder"
+                : "Remove files"}
           </Button>
         </>
       }
@@ -118,7 +126,7 @@ export function ReleaseCopyDialog({
         {status.isPending ? (
           <p className="text-sm text-muted-foreground">
             {borrowed
-              ? "Checking the folder registration..."
+              ? "Checking this folder..."
               : "Checking for active conversations and local changes..."}
           </p>
         ) : null}

@@ -16,6 +16,7 @@ import { LibraryCopyHealth } from "./project-library-health-schema.ts";
 import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-library-profile.ts";
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
+export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -90,6 +91,8 @@ export const LibraryRecoveryReceipt = Schema.Struct({
 });
 export type LibraryRecoveryReceipt = typeof LibraryRecoveryReceipt.Type;
 export const LibraryWorkingCopy = Schema.Struct({
+  /** Omitted on existing copies means keep. Only explicit false opts managed files into cleanup. */
+  keepOnComputer: Schema.optional(Schema.Boolean),
   registered: Schema.optional(Schema.Boolean),
   recovery: Schema.optional(LibraryRecoveryMetadata),
   id: LibraryId,
@@ -370,6 +373,16 @@ export const LibraryCopyStatus = Schema.Struct({
   health: Schema.optional(LibraryCopyHealth),
 });
 export type LibraryCopyStatus = typeof LibraryCopyStatus.Type;
+export const LibrarySetCopyRetentionRequest = Schema.Struct({
+  workingCopyId: LibraryId,
+  keepOnComputer: Schema.Boolean,
+});
+export type LibrarySetCopyRetentionRequest = typeof LibrarySetCopyRetentionRequest.Type;
+export const LibraryReopenCopyRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  workingCopyId: LibraryId,
+});
+export type LibraryReopenCopyRequest = typeof LibraryReopenCopyRequest.Type;
 export const LibraryReleaseCopyRequest = Schema.Struct({
   requestId: LibraryRequestId,
   workingCopyId: LibraryId,
@@ -438,6 +451,8 @@ export const LIBRARY_WS_METHODS = {
   copyStatus: "loom.library.copy-status",
   unregisterCopy: "loom.library.unregister-copy",
   releaseCopy: "loom.library.release-copy",
+  setCopyRetention: "loom.library.set-copy-retention",
+  reopenCopy: "loom.library.reopen-copy",
   resolveBinding: "loom.library.resolve-binding",
   bindThread: "loom.library.bind-thread",
 } as const;
@@ -577,6 +592,16 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
   }),
   Rpc.make(LIBRARY_WS_METHODS.unregisterCopy, {
     payload: LibraryReleaseCopyRequest,
+    success: LibraryWorkingCopy,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.setCopyRetention, {
+    payload: LibrarySetCopyRetentionRequest,
+    success: LibraryWorkingCopy,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.reopenCopy, {
+    payload: LibraryReopenCopyRequest,
     success: LibraryWorkingCopy,
     error,
   }),

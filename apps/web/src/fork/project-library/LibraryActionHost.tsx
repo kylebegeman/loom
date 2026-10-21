@@ -35,11 +35,15 @@ export function LibraryActionHost() {
       (thread) =>
         thread.threadId === params.threadId && thread.environmentId === params.environmentId,
     );
+  const [choosingProject, setChoosingProject] = useState(false);
+  const [createForConversation, setCreateForConversation] = useState(false);
   const [action, setAction] = useState<LibraryAction | null>(null);
   useEffect(
     () =>
       onLibraryAction((next, requestedProjectId, contextDefaults) => {
         setDefaults(contextDefaults);
+        setCreateForConversation(false);
+        setChoosingProject(next === "new-conversation" && !requestedProjectId);
         setRequestedProject(requestedProjectId ?? null);
         if (requestedProjectId) selectProject(requestedProjectId);
         else if (next === "new-conversation" && unrelatedLiveThread) selectProject(null);
@@ -49,8 +53,15 @@ export function LibraryActionHost() {
   );
   if (!action) return null;
   const saved = (project: { id: string }) => {
-    setAction(null);
     selectProject(project.id);
+    if (createForConversation) {
+      setRequestedProject(project.id);
+      setChoosingProject(false);
+      setCreateForConversation(false);
+      setAction("new-conversation");
+      return;
+    }
+    setAction(null);
     void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
   };
   if (action === "create-project")
@@ -81,7 +92,7 @@ export function LibraryActionHost() {
     );
   if (action === "import-folder")
     return <ImportProjectDialog onClose={() => setAction(null)} onSaved={saved} />;
-  if (!library.project.data || library.project.data.archived)
+  if (choosingProject || !library.project.data || library.project.data.archived)
     return (
       <LibraryDialog
         open
@@ -89,25 +100,37 @@ export function LibraryActionHost() {
           if (!open) setAction(null);
         }}
         title="Choose a project"
-        description="Start a conversation in an existing Library project, or create a new project first."
+        description="Choose the project you want to work on."
         actions={
           <>
             <Button variant="outline" onClick={() => setAction(null)}>
               Close
             </Button>
-            <Button onClick={() => setAction("create-project")}>New project</Button>
+            <Button
+              onClick={() => {
+                setCreateForConversation(true);
+                setAction("create-project");
+              }}
+            >
+              New project
+            </Button>
           </>
         }
       >
         <div className="space-y-4">
           <LibraryField label="Project">
             <Select
-              value={projectId}
+              value={null}
               items={(catalog.query.data ?? []).map((project) => ({
                 value: project.id,
                 label: project.title,
               }))}
-              onValueChange={(value) => selectProject(value)}
+              onValueChange={(value) => {
+                selectProject(value);
+                setRequestedProject(value);
+                setDefaults(undefined);
+                setChoosingProject(false);
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a project" />
@@ -145,6 +168,7 @@ export function LibraryActionHost() {
       initialResourceId={defaults?.resourceId}
       copies={library.copies.data ?? []}
       copiesQuery={library.copies}
+      onChooseProject={() => setChoosingProject(true)}
       onChanged={library.refresh}
       onClose={() => setAction(null)}
     />

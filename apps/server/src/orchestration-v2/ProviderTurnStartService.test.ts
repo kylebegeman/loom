@@ -1,4 +1,5 @@
-import type { LibraryProject } from "@t3tools/contracts/fork";
+import { LibraryError, type LibraryProject } from "@t3tools/contracts/fork";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -468,6 +469,7 @@ it.each(["projection", "checkout", "setup"] as const)(
 
 function makeLocalCommandHarness(input: {
   readonly libraryProject?: LibraryProject;
+  readonly prepareLibraryFiles?: LibraryWorkspace.LibraryWorkspace["Service"]["prepareThreadFiles"];
   readonly text: string;
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
@@ -881,6 +883,11 @@ function makeLocalCommandHarness(input: {
     Layer.provide(
       Layer.mergeAll(
         ProviderTurnStartTestkit.layer,
+        input.prepareLibraryFiles
+          ? Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+              prepareThreadFiles: input.prepareLibraryFiles,
+            })
+          : Layer.empty,
         input.libraryProject
           ? Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
               getBinding: () =>
@@ -997,6 +1004,75 @@ function makeLocalCommandHarness(input: {
     }).pipe(Effect.provide(layer)),
   };
 }
+
+effectIt.effect(
+  "restores Library files before acquiring the startup lease and opening a native session",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+      const cwd = `${parent}/copy`;
+      let restored = false;
+      const harness = makeLocalCommandHarness({
+        text: "Resume prior work",
+        previousNativeSession: true,
+        failReadsAfterRunning: true,
+        worktreePath: cwd,
+        fileSystem: fs,
+        prepareLibraryFiles: () =>
+          withWorkspaceLease(
+            cwd,
+            Effect.gen(function* () {
+              yield* fs.makeDirectory(cwd);
+              yield* fs.writeFileString(`${cwd}/local.txt`, "retained local files");
+              restored = true;
+            }).pipe(Effect.orDie),
+          ),
+      });
+      const open = harness.open.getMockImplementation()!;
+      harness.open.mockImplementation(() =>
+        Effect.gen(function* () {
+          expect(restored).toBe(true);
+          expect(yield* fs.readFileString(`${cwd}/local.txt`).pipe(Effect.orDie)).toBe(
+            "retained local files",
+          );
+          return yield* open();
+        }),
+      );
+      yield* harness.start;
+      expect(harness.open).toHaveBeenCalledOnce();
+      expect(harness.createWorktree).not.toHaveBeenCalled();
+      expect(harness.startRootRun).toHaveBeenCalledOnce();
+      expect(harness.resolveRuntimePolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ libraryFilesPrepared: true }),
+      );
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+effectIt.effect.each([false, true])(
+  "blocks provider startup when Library recovery fails (retry: %s)",
+  (retry) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Resume prior work",
+        prepareLibraryFiles: () => Effect.fail(new LibraryError({ reason: "archive-unverified" })),
+      });
+      if (retry) yield* harness.startWithRetry.pipe(Effect.flip);
+      else yield* harness.start;
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe(retry ? "starting" : "failed");
+      if (!retry)
+        expect(
+          harness.events.some(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.type === "error" &&
+              event.payload.title === "Workspace preparation failed",
+          ),
+        ).toBe(true);
+    }),
+);
 
 effectIt.effect.each(["cleanup-first", "startup-first"])(
   "coordinates provider startup with %s",

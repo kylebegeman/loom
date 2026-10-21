@@ -1,5 +1,7 @@
 // fork: ext-vault-preflight
 import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
+import type { LibraryError } from "@t3tools/contracts/fork";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
@@ -25,7 +27,6 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -145,13 +146,12 @@ export const layer: Layer.Layer<
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const path = yield* Path.Path;
-    const serverConfig = yield* ServerConfig.ServerConfig;
-    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace);
     const libraryWorkspaces = yield* Effect.serviceOption(
       LibraryWorkspaceStore.LibraryWorkspaceStore,
     );
@@ -254,11 +254,10 @@ export const layer: Layer.Layer<
       };
     };
 
-    const start = Effect.fn("orchestrationV2.providerTurnStart.start")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly runId: RunId;
-      readonly willRetry?: boolean;
-    }) {
+    const start = Effect.fn("orchestrationV2.providerTurnStart.start")(function* (
+      input: { readonly threadId: ThreadId; readonly runId: RunId; readonly willRetry?: boolean },
+      libraryPreparation: Effect.Effect<void, LibraryError> = Effect.void,
+    ) {
       const { runId } = input;
       const projection = yield* projectionStore.getTurnStartContext(input.threadId, runId);
       const run = projection.runs.find((candidate) => candidate.id === runId);
@@ -530,6 +529,7 @@ export const layer: Layer.Layer<
         const holdsWorkspaceLease = (cwd: string) =>
           worktreePath !== null && path.resolve(cwd) === path.resolve(worktreePath);
         const preparation = yield* Effect.gen(function* () {
+          yield* libraryPreparation;
           const project = yield* projects.getById(projection.thread.projectId);
           if (Option.isSome(project)) {
             yield* restoreManagedProjectCheckout(
@@ -670,6 +670,7 @@ export const layer: Layer.Layer<
       const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,
+        libraryFilesPrepared: true,
       });
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
@@ -1449,9 +1450,17 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          // Library operations take their preparation lock before the copy's root lease.
+          // Restore before taking a worktree lease, including when it equals that root.
+          const preparation = yield* (
+            Option.isSome(libraryWorkspace)
+              ? libraryWorkspace.value.prepareThreadFiles({ threadId: input.threadId })
+              : Effect.void
+          ).pipe(Effect.result);
+          const startup = start(input, Effect.fromResult(preparation));
           const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+            ? startup
+            : withWorkspaceLease(path.resolve(thread.worktreePath), startup);
           if (providerTurn !== undefined) yield* providerTurn;
         },
         (effect, input) =>

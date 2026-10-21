@@ -194,6 +194,14 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:unregister-copy",
       tag: L.unregisterCopy,
     }),
+    setCopyRetention: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:set-copy-retention",
+      tag: L.setCopyRetention,
+    }),
+    reopenCopy: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:reopen-copy",
+      tag: L.reopenCopy,
+    }),
     releaseCopy: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:release-copy",
       tag: L.releaseCopy,

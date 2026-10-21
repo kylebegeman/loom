@@ -14,6 +14,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { LibraryError } from "@t3tools/contracts/fork";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -151,3 +154,65 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
     }),
   );
 });
+
+it.effect.each([false, true])(
+  "restores Library files before validating cwd unless provider startup already prepared them (%s)",
+  (prepared) =>
+    Effect.gen(function* () {
+      const order: string[] = [];
+      const policy = yield* RuntimePolicy.RuntimePolicyV2.pipe(
+        Effect.provide(
+          Layer.fresh(layerTest).pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+                  prepareThreadFiles: () =>
+                    Effect.sync(() => {
+                      order.push("restore");
+                    }),
+                }),
+                Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+                  validateThreadCwd: (input) =>
+                    Effect.sync(() => {
+                      order.push("validate");
+                      return input.cwd;
+                    }),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      const now = yield* DateTime.now;
+      const resolved = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: null }),
+        modelSelection,
+        libraryFilesPrepared: prepared,
+      });
+      assert.equal(resolved.cwd, "/project-root");
+      assert.deepEqual(order, prepared ? ["validate"] : ["restore", "validate"]);
+    }),
+);
+
+it.effect("rejects a send before checkpoint preparation when Library recovery is unavailable", () =>
+  Effect.gen(function* () {
+    const policy = yield* RuntimePolicy.RuntimePolicyV2.pipe(
+      Effect.provide(
+        Layer.fresh(layerTest).pipe(
+          Layer.provide(
+            Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+              prepareThreadFiles: () =>
+                Effect.fail(new LibraryError({ reason: "archive-unverified" })),
+            }),
+          ),
+        ),
+      ),
+    );
+    const now = yield* DateTime.now;
+    const error = yield* policy
+      .resolve({ thread: makeThread({ now, worktreePath: null }), modelSelection })
+      .pipe(Effect.flip);
+    assert.equal(error._tag, "RuntimePolicyResolveError");
+    assert.equal((error.cause as LibraryError).reason, "archive-unverified");
+  }),
+);

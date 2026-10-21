@@ -38,6 +38,7 @@ export const WorkspaceReceipt = Schema.Struct({
   rootCheckpointRepository: Schema.Boolean,
   legacyThreadIds: Schema.Array(ThreadId),
   rootIdentity: Schema.NullOr(FilesystemIdentity),
+  reopenRequestId: Schema.optional(Schema.String),
   releaseRequestId: Schema.NullOr(Schema.String),
   releaseReviewToken: Schema.NullOr(Schema.String),
   removalPath: Schema.NullOr(Schema.String),

@@ -231,6 +231,8 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
   const [checkable] = useState(() =>
     copies.filter(
       (copy) =>
+        copy.ownership === "managed" &&
+        copy.keepOnComputer === false &&
         copy.state === "ready" &&
         connected(copy.environmentId) &&
         supportsLoomFeature(
@@ -256,8 +258,11 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
     };
   }, [checkable, readHealth]);
 
+  const kept = copies.filter(
+    (copy) => copy.ownership === "borrowed" || copy.keepOnComputer !== false,
+  );
   const suggestions = libraryTidySuggestions({
-    entry,
+    entry: { ...entry, copies: copies.filter((copy) => !kept.includes(copy)) },
     health: health ?? [],
     connected,
     canRemove,
@@ -346,6 +351,11 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
             : "Done. The project and its saved conversations stay in your Library."
           : "This project has been quiet for two weeks. Remove the copies that hold nothing unsaved, and archive the project if you are done with it for now."}
       </Text>
+      {kept.length ? (
+        <LibraryNotice
+          detail={`${kept.length} ${kept.length === 1 ? "folder stays" : "folders stay"} kept on your computers. Change Keep files in the project to allow removal of temporary files.`}
+        />
+      ) : null}
       {suggestions.suggestArchive || result?.archive ? (
         <SettingsSection footer="It leaves the project pickers and the current list. Its conversations stay readable, and you can reopen it any time from Archived.">
           <SettingsSwitchRow

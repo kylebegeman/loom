@@ -112,7 +112,17 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
               status: 302,
               headers: { location: "https://objects.example.test/archive" },
             })
-          : new Response(mode === "corrupt" ? bytes.slice(0, bytes.length - 1) : bytes),
+          : mode === "unavailable"
+            ? new Response(null, { status: 503 })
+            : new Response(
+                mode === "corrupt"
+                  ? bytes.slice(0, bytes.length - 1)
+                  : mode === "oversized"
+                    ? new Uint8Array([...bytes, 1])
+                    : mode === "wrong-digest"
+                      ? bytes.map((byte) => byte ^ 1)
+                      : bytes,
+              ),
       );
     }),
   );
@@ -187,6 +197,69 @@ describe("recovery archive publishing", () => {
       }),
     ),
   );
+  it.effect.each(["valid", "redirect"])(
+    "retrieves a verified cache through the existing authenticated %s readback",
+    (mode) =>
+      run(mode, (test) =>
+        Effect.gen(function* () {
+          const restored = `${test.archivePath}.restored`;
+          yield* test.publisher.retrieve({ ...test.receipt, archivePath: restored });
+          expect([...(yield* test.fs.readFile(restored))]).toEqual([...bytes]);
+          expect((yield* test.fs.stat(restored)).mode & 0o777).toBe(0o600);
+          expect(test.requests.map((request) => request.split(" ")[0])).toEqual(
+            mode === "redirect" ? ["GET", "GET", "GET"] : ["GET", "GET"],
+          );
+          expect(
+            (yield* test.fs.readDirectory((yield* Path.Path).dirname(restored))).filter((name) =>
+              name.startsWith("recovery-"),
+            ),
+          ).toEqual([]);
+        }),
+      ),
+  );
+  it.effect.each(["corrupt", "wrong-digest", "oversized", "unavailable"])(
+    "preserves the destination and removes partial downloads for %s recovery",
+    (mode) =>
+      run(mode, (test) =>
+        Effect.gen(function* () {
+          const restored = `${test.archivePath}.restored`;
+          yield* test.fs.writeFileString(restored, "existing cache");
+          expect(
+            (yield* test.publisher
+              .retrieve({
+                ...test.receipt,
+                archivePath: restored,
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("archive-unverified");
+          expect(yield* test.fs.readFileString(restored)).toBe("existing cache");
+          expect(
+            (yield* test.fs.readDirectory((yield* Path.Path).dirname(restored))).filter((name) =>
+              name.startsWith("recovery-"),
+            ),
+          ).toEqual([]);
+        }),
+      ),
+  );
+  it.effect("rejects unbounded recovery sizes before requesting bytes", () =>
+    run("valid", (test) =>
+      Effect.gen(function* () {
+        for (const byteLength of [0, -1, 0.5, Recovery.LIBRARY_RECOVERY_MAX_BYTES + 1]) {
+          expect(
+            (yield* test.publisher
+              .retrieve({
+                ...test.receipt,
+                archivePath: `${test.archivePath}.restored`,
+                byteLength,
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("archive-unverified");
+        }
+        expect(test.requests).toEqual([]);
+        expect(yield* test.fs.exists(`${test.archivePath}.restored`)).toBe(false);
+      }),
+    ),
+  );
   it.effect("refuses corrupt archives and inconsistent receipts while preserving local bytes", () =>
     Effect.gen(function* () {
       for (const mode of ["corrupt", "wrong-receipt", "refused"])
@@ -256,6 +329,9 @@ describe("recovery archive publishing", () => {
       expect(
         yield* publisher.publish({ archivePath: test.archivePath, sha256: test.sha256, manifest }),
       ).toEqual(test.receipt);
+      const restored = `${test.archivePath}.restored`;
+      yield* publisher.retrieve({ ...test.receipt, archivePath: restored });
+      expect([...(yield* test.fs.readFile(restored))]).toEqual([...bytes]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

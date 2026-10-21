@@ -4,7 +4,6 @@ import {
   HistoryIcon,
   LayoutDashboardIcon,
   MessagesSquareIcon,
-  MonitorIcon,
   SlidersHorizontalIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -15,7 +14,7 @@ const VIEW_ICONS: Record<ProjectViewName, LucideIcon> = {
   overview: LayoutDashboardIcon,
   conversations: MessagesSquareIcon,
   timeline: HistoryIcon,
-  computers: MonitorIcon,
+  computers: FolderGit2Icon,
   repositories: FolderGit2Icon,
   setup: SlidersHorizontalIcon,
 };
