@@ -1,7 +1,8 @@
 # L87 technical design
 
 Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
+OpenBao for encrypted storage. The internal durable evidence ledger is implemented behind closed gates; live issuer and
+rotation contracts still need implementation review.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
 
@@ -50,3 +51,33 @@ Prefer existing registries over new upstream seams. A direct provider-specific s
 would duplicate policy and is not the recommended design. Where the shared interface is absent,
 report unavailable or implement the approved minimal extension independently; do not import
 another packet's UI/service internals.
+
+## Approved durable lifecycle evidence
+
+Kyle approved a separate versioned CAS ledger under the existing environment-specific profiles
+prefix. `CredentialLifecycleLedger.ts` writes `profiles/_operations/credential-lifecycle-v1`
+inside that prefix, using the existing `json-v1` envelope and capabilities. Policy format 3 and
+approval journal 1 are unchanged. There is no public transport, scheduler or live issuer worker.
+
+Version 1 retains bounded operation records: immutable item/version and issuer references,
+per-item generation, reviewed binding/consumer digests, expiry, revision, phase, a reference to
+an already encrypted credential item where known, and a receipt digest. It never stores token
+values or arbitrary provider response bodies. Phases are prepared, issuing, issued, validated,
+revoking, revoked, cancelled and unknown. CAS makes the transition authoritative only as stored
+evidence, never as permission to dispatch. Current grants, provider receipts, consumer checks
+and eventual mandatory one-time enforcement remain independent requirements.
+
+Issuing intent precedes any possible external mint. Lost acknowledgement leaves the durable
+phase visible after restart; it cannot be reset to prepared. Issued references cannot redirect
+later cleanup, and validation cannot replace the reviewed consumer digest. Expiry blocks new
+issuance/validation but permits revocation maintenance. An unresolved issuing/revoking/unknown
+record blocks overlapping generations for that item. Unknown stays blocked until a separately
+verified recovery procedure exists; absence, timeout or restart never remints. Cancellation is
+available only before issuing, and cannot resurrect revoked material.
+
+All 128 records, including terminal receipts and per-item generation history, are retained;
+capacity refuses rather than evicts spent issuance IDs. A future reclamation scheme requires
+provider fencing/replay guarantees and a host rollback barrier. This initial ledger deliberately
+does not infer safety from queue age. Older runtimes ignore the separate record; no live workflow
+may be enabled under a reader that ignores it. Real issuer integration, overlapping credentials,
+consumer validation and cutover, review/repair UI, complete audit and production rollout remain.

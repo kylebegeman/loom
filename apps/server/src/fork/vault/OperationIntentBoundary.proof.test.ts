@@ -326,3 +326,23 @@ it("models ordinary access retaining timed semantics and refusing a silent downg
   expect(boundary(trusted, { ...input, requestedMode: "once" }).result).toBe("denied");
   expect(boundary(trusted, invocation()).result).toBe("denied");
 });
+
+it("applies Kyle's selected protection across mediated callers despite ordinary grants", () => {
+  for (const surface of surfaces) {
+    for (const path of [...operationPaths, ...unsupportedPaths, "delegate"] as const) {
+      for (const requestedMode of [null, "timed", "once"] as const) {
+        const trusted = authority();
+        trusted.ordinaryGrant = true;
+        trusted.intent = null;
+        const result = boundary(trusted, { path, surface, reference: null, requestedMode });
+        expect(result.result).toBe("denied");
+        expectClosed(result);
+      }
+    }
+    const trusted = authority();
+    trusted.intent = null;
+    expect(boundary(trusted, { ...invocation(), path: "metadata", surface }).result).toBe(
+      "metadata-only",
+    );
+  }
+});

@@ -555,10 +555,10 @@ GitHub API/token minting, direct credential delivery and workload sessions, CLI/
 provider continuations and scheduled work. Thin transports cannot mint a permit or choose a
 weaker fallback. If an entry point cannot carry and revalidate the bound intent, one-time use
 must be unsupported there. A future generic credential-use call lacking an intent reference
-cannot be marketed as one-time just because a matching request exists. Stronger restrictions
-on all use by a principal/item require mandatory enforcement even on calls that omit the
-reference, plus resolution of overlapping ordinary grants. Otherwise the claim remains limited
-to the explicitly bound operation. Full-access host processes and external credential copies
+cannot be marketed as one-time just because a matching request exists. Kyle selected protection for every Loom-mediated use of an explicitly protected credential,
+including calls that omit a reference. Ordinary grants never bypass it. Mandatory destination
+classification must precede grant evaluation across all credential-bearing entry points; this
+selection does not change today's timed approvals or authorize a persisted policy-format change. Full-access host processes and external credential copies
 remain outside that claim.
 
 Normal authorization must continue at the adapter's final handoff and at subsequent credential
@@ -602,7 +602,9 @@ This is a future enforcement design with a test-local trust model, not a policy 
 intent or runtime authorization change. Existing format-3 grants and all current timed workflows
 retain their semantics. No record becomes protected automatically because it has a pending
 request, journal entry, matching label or preparation digest. A future protected-mode choice must
-be explicitly reviewed before any storage contract or migration is proposed.
+be explicitly reviewed before any storage contract or migration is proposed. Kyle selected
+credential-wide scope on 2026-10-20; enabling protection still requires compatible storage/readers
+and complete mandatory enforcement.
 
 The server must classify the destination environment's item **before** selecting an authorization
 path. A caller's absent reference, `timed` hint, transport name, thread label or project grant cannot
@@ -615,13 +617,13 @@ unresolved and are not implemented in this slice.
 
 #### Scope and trusted inputs
 
-| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                             |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                         |
-| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                     |
-| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Conservative design recommendation for the first protected workflow; requires Kyle's product/schema review before persistence. |
+| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                                  |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                              |
+| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                          |
+| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Selected by Kyle on 2026-10-20. Scope applies across mediated use; persisted policy/readers and live activation are separate gates. |
 
-Item-wide classification is a proposed policy tradeoff, not a claim of global isolation. Different
+Item-wide classification is the selected policy scope, not a claim of global isolation. Different
 items retain their ordinary policies; using an external copy of the same credential remains
 outside Loom's control. An administrator's reveal/export is also credential-bearing use, not
 metadata. In protected mode it cannot be a hidden bypass. Any emergency declassification or
@@ -692,7 +694,7 @@ mutates all 14 reviewed binding dimensions at each supported typed boundary, and
 review, unknown classification, incomplete coverage and metadata separation. Every observation
 retains three literal-false gates, including `intent-eligible`. The model does not persist or
 parse a new record, prove real endpoint coverage, grant a capability, execute an adapter or
-instantiate a production classifier. Actual coverage, protected-item semantics, compatible
+instantiate a production classifier. Actual coverage, exact review semantics, compatible
 storage/readers, restart-safe cleanup and host rollback protection require later review and
 implementation. No runtime eligibility or one-time claim follows from this proof.
 

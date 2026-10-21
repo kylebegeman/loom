@@ -1,49 +1,27 @@
 import { VaultError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
-// Executable design only: opaque retained test state, with no codec, storage path or runtime registration.
-export type CleanupScope = {
-  readonly environmentId: string;
-  readonly itemId: string;
-  readonly itemVersion: number;
-  readonly accountId: string;
-  readonly collectionId: string;
-  readonly machineId: string;
-  readonly application: string;
-  readonly target: string;
-  readonly origin: string;
-};
-export type CleanupTicket = {
-  readonly scope: CleanupScope;
-  readonly operationId: string;
-  readonly leaseId: string;
-  readonly runId: string;
-  readonly generation: number;
-};
-export type ResetIntent = {
-  readonly scope: CleanupScope;
-  readonly resetId: string;
-  readonly from: number;
-  readonly to: number;
-};
-export type CleanupEntry = {
-  readonly scope: CleanupScope;
-  readonly phase: "quarantined" | "uncertain" | "fenced" | "resetting" | "ready";
-  readonly generation: number;
-  readonly ticket: CleanupTicket | null;
-  readonly reset: ResetIntent | null;
-};
-export type CleanupState = {
-  readonly revision: number;
-  readonly entries: ReadonlyMap<string, CleanupEntry>;
-  readonly operationIds: ReadonlySet<string>;
-  readonly leaseIds: ReadonlySet<string>;
-  readonly resetIds: ReadonlySet<string>;
-};
-export type CleanupStore = {
-  readonly read: Effect.Effect<CleanupState, VaultError>;
-  readonly cas: (revision: number, next: CleanupState) => Effect.Effect<void, VaultError>;
-};
+// Test-only controller; its store can be in memory or the gated durable ledger. No live provider is registered.
+import {
+  cleanupResourceKey,
+  cleanupScopeKey,
+  type CleanupScope,
+  type CleanupTicket,
+  type ResetIntent,
+  type CleanupEntry,
+  type CleanupState,
+  type CleanupStore,
+} from "../CleanupLedger.ts";
+export { cleanupResourceKey, cleanupScopeKey } from "../CleanupLedger.ts";
+export type {
+  CleanupScope,
+  CleanupTicket,
+  ResetIntent,
+  CleanupEntry,
+  CleanupState,
+  CleanupStore,
+} from "../CleanupLedger.ts";
+
 export type CleanupProvider = {
   // The provider admits at most one operation per generation, even after fencing that operation.
   readonly start: (ticket: CleanupTicket) => Effect.Effect<void, VaultError>;
@@ -58,20 +36,6 @@ export type CleanupProvider = {
   // is valid only while its target generation is current and has never admitted a start.
   readonly reset: (intent: ResetIntent) => Effect.Effect<ResetIntent, VaultError>;
 };
-export const cleanupResourceKey = (scope: CleanupScope) =>
-  JSON.stringify([scope.environmentId, scope.itemId]);
-export const cleanupScopeKey = (scope: CleanupScope) =>
-  JSON.stringify([
-    scope.environmentId,
-    scope.itemId,
-    scope.itemVersion,
-    scope.accountId,
-    scope.collectionId,
-    scope.machineId,
-    scope.application,
-    scope.target,
-    scope.origin,
-  ]);
 const MAX_RESOURCES = 32;
 const MAX_OPERATIONS = 128;
 const MAX_RESET_IDS = MAX_RESOURCES + MAX_OPERATIONS;

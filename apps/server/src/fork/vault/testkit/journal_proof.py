@@ -45,8 +45,14 @@ def main() -> None:
                                PYTHONDONTWRITEBYTECODE="1")
             environment.pop("LOOM_VAULT_TEST_JOURNAL_RESTART", None)
             command = [str(REPOSITORY / "node_modules/.bin/vp"), "test", "run",
-                       "apps/server/src/fork/vault/OperationJournal.integration.test.ts"]
-            subprocess.run(command, cwd=REPOSITORY, env=environment, check=True)
+                       "src/fork/vault/OperationJournal.integration.test.ts"]
+            subprocess.run(command, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            maintenance = [str(REPOSITORY / "node_modules/.bin/vp"), "test", "run",
+                           "src/fork/vault/MaintenanceLedgers.integration.test.ts"]
+            subprocess.run(maintenance, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            for name in ("cleanup-reset-v1", "credential-lifecycle-v1"):
+                record = fixture.request(f"loom/data/environments/{namespace}/profiles/_operations/{name}", token=service["auth"]["client_token"])
+                assert record["data"]["data"]["loomVaultEncoding"] == "json-v1"
             fixture.stop()
             fixture = None
             fixture = Fixture(binary, root, root / "data")
@@ -54,8 +60,9 @@ def main() -> None:
             fixture.unseal(initial["keys"][0])
             environment.update(LOOM_VAULT_TEST_JOURNAL_URL=fixture.origin,
                                LOOM_VAULT_TEST_JOURNAL_RESTART="1")
-            subprocess.run(command, cwd=REPOSITORY, env=environment, check=True)
-            print("PASS: minimal scoped policy, CAS, denied sibling, format-3 compatibility and durable unknown/revocation after backend restart")
+            subprocess.run(command, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            subprocess.run(maintenance, cwd=REPOSITORY / "apps/server", env=environment, check=True, timeout=90)
+            print("PASS: maintenance ledgers and minimal scoped policy, CAS, denied sibling, format-3 compatibility and durable unknown/revocation after backend restart")
         finally:
             if fixture is not None:
                 fixture.stop()
