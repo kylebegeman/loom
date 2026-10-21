@@ -159,8 +159,7 @@ const make = Effect.gen(function* () {
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       (requireRun &&
-        (thread.status !== "running" ||
-          !thread.activeRunId ||
+        (!thread.activeRunId ||
           thread.runtimeMode !== "full-access" ||
           thread.interactionMode !== "default"))
     )

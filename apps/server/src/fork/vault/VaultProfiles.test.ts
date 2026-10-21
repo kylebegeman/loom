@@ -430,3 +430,18 @@ it.effect(
       ).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
+
+it.effect(
+  "retains the same profile pin while a follow-up is queued and denies a finished root run",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.apply({ type: "save", profile: f.definition });
+      yield* f.grant(f.key.destination);
+      const pinned = yield* f.profiles.resolve(f.threadId, f.definition.id);
+      f.state.thread = { ...f.state.thread, status: "queued" };
+      expect(yield* f.profiles.resolve(f.threadId, null)).toEqual(pinned);
+      f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
+      expect((yield* f.profiles.resolve(f.threadId, null).pipe(Effect.flip)).reason).toBe("denied");
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);

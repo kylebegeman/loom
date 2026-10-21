@@ -102,7 +102,6 @@ const make = Effect.gen(function* () {
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       thread.activeRunId === null ||
-      thread.status !== "running" ||
       thread.runtimeMode !== "full-access" ||
       thread.interactionMode !== "default"
     )
@@ -237,7 +236,6 @@ const make = Effect.gen(function* () {
           expiresAt: checkedAt + 60_000,
           activeRun:
             thread.activeRunId !== null &&
-            thread.status === "running" &&
             thread.runtimeMode === "full-access" &&
             thread.interactionMode === "default",
           brokerOnline:

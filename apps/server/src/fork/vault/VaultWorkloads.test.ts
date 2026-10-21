@@ -226,3 +226,27 @@ it.effect(
       }),
     ),
 );
+
+it.effect("keeps a queued root run's workload live and refuses it when root ownership ends", () =>
+  test((f, service) =>
+    Effect.gen(function* () {
+      const session = yield* service.open(f.input, f.threadId);
+      f.state.thread = { ...f.state.thread, status: "queued" };
+      expect(
+        (yield* service.terminalReadiness(f.threadId, f.state.thread.providerInstanceId!))
+          .activeRun,
+      ).toBe(true);
+      expect((yield* service.check(yield* prove(f, service, session))).session.runId).toBe(
+        session.runId,
+      );
+      const queuedSession = yield* service.open(f.input, f.threadId);
+      expect(queuedSession.runId).toBe(session.runId);
+      f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
+      expect(
+        (yield* service.terminalReadiness(f.threadId, f.state.thread.providerInstanceId!))
+          .activeRun,
+      ).toBe(false);
+      expect((yield* service.open(f.input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+    }),
+  ),
+);
