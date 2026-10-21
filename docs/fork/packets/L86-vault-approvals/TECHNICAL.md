@@ -540,6 +540,80 @@ minimum compatible server/broker set, and verify that stale runtimes cannot use 
 grant copy. Client capability advertisement alone cannot enforce that boundary. These are
 future host-owner/Kyle dependencies, not production actions in this slice.
 
+#### Proposed mandatory-protection storage contract, awaiting Kyle
+
+Kyle selected credential-wide protection, but has not authorized access-policy format 4.
+This proposal is the concrete compatibility decision needed to implement that choice. It
+changes no current reader, writer or stored document. Journal format 1 and the approved
+maintenance ledgers remain separate and unchanged. All execution, automatic-resumption and
+allow-once gates remain false, including after a compatible reader is implemented.
+
+Use the existing environment-specific `access-policy` record and existing OpenBao permissions.
+Format 4 would require two new bounded arrays in that same CAS document:
+
+- `credentialModes`: at most 128 entries, keyed by stable item ID, with explicit `ordinary` or
+  `one-time` mode and a monotonic mode revision. Classification belongs to the destination
+  environment and applies to all versions of that item. Missing, duplicate, unsupported or
+  corrupt classification refuses credential-bearing use. Rotation, request retention and item
+  version changes cannot remove protection. Item creation can precede classification, but the
+  item remains unusable until an administrator explicitly classifies it. Capacity exhaustion
+  refuses enrollment; there is no eviction that could make a protected item ordinary. Removing
+  protection remains unavailable until a reviewed procedure can fence outstanding sessions and
+  reconcile all reservations; changing the mode is not a cleanup shortcut.
+- `intents`: at most 128 retained, non-authorizing operation records. Each binds an intent ID,
+  request ID/revision, waiting-operation ID, environment, item/version/mode revision,
+  thread/project/run, action/destination, adapter and proposal digest to an authenticated
+  administrator's explicit review, bounded expiry and monotonic revision. Records begin
+  `reviewed`; their only forward transitions are `reserved`, `revoked` or `expired`, followed
+  by terminal `completed` or `unknown` for a reserved attempt. Reservation fixes a unique
+  reservation ID. Terminal and spent IDs remain retained; missing or aged evidence never
+  recreates an unused intent. Exhaustion refuses new review until a separately reviewed
+  reclamation protocol exists. No command output, token or credential bytes belong here.
+
+A protected item requires both normal current authorization and its exact reviewed intent.
+A broad thread/project/delegated or temporary grant alone cannot authorize it. Ordinary timed
+approval continues to mean timed access for ordinary items; it never creates a one-time review.
+The administrator must see and approve the exact operation rather than a requester-selected
+label or an unreviewed retry digest. Delegation transfers no review or consumption budget.
+Metadata inspection still follows its own grant and does not consume an operation intent.
+
+The same policy CAS must compare the current classification, request, grants and intent and
+reserve at most one adapter-start attempt. A concurrent grant change or revoke invalidates the
+CAS; no stale successful observation authorizes a retry. The journal supplies recovery evidence,
+never a second opportunity. A crash after reservation burns the attempt even if no provider
+started; ambiguous acknowledgement requires reconciliation and cannot be retried as new work.
+Unsupported reusable sessions, raw export/reveal and adapters without a complete trusted
+classification/intent boundary refuse protected use. No fallback to ordinary authorization.
+
+This atomic policy reservation does not by itself make a remote effect atomic with policy
+revocation, item changes or host rollback. Real dispatch still requires verified provider
+fencing, temporal revalidation, restart cleanup and the independent host rollback barrier.
+A reviewed intent cannot open those gates or attest that those prerequisites exist.
+
+Rollout and downgrade are operator-reviewed operations, not an automatic format conversion:
+
+1. Deploy and verify compatible readers/writers at every server/broker that can mediate this
+   environment. Stop incompatible processes and quiesce or fence existing credential sessions;
+   an old process with cached authority cannot be repaired by changing a file. Capture the
+   pre-change policy and journal evidence before the existing-policy CAS publishes format 4.
+2. Inventory and explicitly classify existing items in a reviewable migration. Recheck inventory
+   at commit; any concurrently created or unclassified item remains denied. Verify old readers
+   refuse authorization and writes against format 4, new readers preserve all required fields,
+   and rollback/unknown evidence cannot produce unused authority. Only then may an administrator
+   enroll protected items. Live execution remains separately disabled.
+3. Older format-3 runtimes reject format 4 and cannot operate this environment's Vault. Do not
+   lower `schemaVersion`, erase classifications or restore a legacy policy to make a downgrade
+   run. Use a compatible reader, or stop/fence work and reconcile all consumed/unknown operations
+   and provider revocations under the host owner's reviewed recovery procedure. The host owner
+   must retain independent post-snapshot authority evidence before any live rollout.
+
+The approval requested is implementation of this new policy format and required reader/writer
+contract behind closed gates, with a reviewed development-only migration preview. It does not
+authorize production migration, new backend paths/permissions, a Library change or live execution.
+The existing real-reader counterexamples in `OperationIntent.proof.test.ts` establish why optional
+format-3 metadata is insufficient; actual format-4 implementation and migration will need their
+own service, race, downgrade and entry-point tests before this proposal can become a contract.
+
 #### Enforcement across entry points
 
 A future one-time operation must choose that intent explicitly through a trusted service,
