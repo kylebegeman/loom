@@ -25,8 +25,9 @@ setup/release. Git supports ref listing and fetch into the thread checkout using
 repository grant. Explicit `loom vault ssh-agent-exec` activation now runs ordinary terminal SSH/Git, including
 clone/fetch/push, through a temporary POSIX agent and the authenticated current run. A host SSH
 use grant is required; repository-only grants continue using the narrower hosted Git tool.
-The private key remains on the control plane. Pi and ACP terminal connections are recognized;
-other native harnesses need explicit terminal MCP configuration. Imports, additional key formats,
+The private key remains on the control plane. Codex and Claude terminal connections are
+prepared automatically per native session; Pi and ACP use their existing connection variables.
+Other native harnesses use hosted tools or need explicit terminal MCP configuration. Imports, additional key formats,
 Windows, persistent shell activation and stronger OS isolation remain open.
 See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and [TESTING.md](./TESTING.md).
 

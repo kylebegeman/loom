@@ -21,9 +21,11 @@ metadata; full-access administrator clients may specify a thread.
 
 ## Remaining selected scope
 
-Join profile bindings, enrolled broker leases, pending approvals, provider identity and
-rotation impact when their owning packets provide authoritative contracts. Add complete audit
-retention and platform member visibility. Remote relay/tunnel, Electron shell and Android
+Matching project profiles, current provider/run identity, live item workload sessions,
+administrator broker presence and retained thread/item approvals are joined through bounded
+read-only sources. Restricted agents see only their own requester metadata and no broker labels.
+Context has a deadline and expires; partial/unavailable/drifted joins cannot change a decision.
+Rotation impact, complete audit retention and platform member visibility remain. Remote relay/tunnel, Electron shell and Android
 interaction checks remain separate coverage. A preview cannot inventory external copies.
 
 ## Scope

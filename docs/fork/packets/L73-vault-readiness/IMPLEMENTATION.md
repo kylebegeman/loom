@@ -7,7 +7,8 @@ server-context readiness; it does not deploy a service or migrate personal crede
 
 The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
 16 explicit item/action/destination requirements through the execution evaluator. Empty
-requirements now discover the active project profile without writing a retained run selection. Results name
+requirements discover the current run's retained profile and pinned item versions, falling back
+to the project default only when no pin exists. No retained run selection is written. Results name
 the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
 mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
 

@@ -60,4 +60,4 @@ Native acceptance evidence is indexed in [TESTING.md](./TESTING.md).
 - [Workload sessions](../../../../apps/server/src/fork/vault/VaultWorkloads.ts), [SSH agent frames](../../../../apps/server/src/fork/vault/VaultSsh.ts) and [human credential reveal RPC](../../../../apps/server/src/fork/vault/rpc.ts): alternate credential-bearing boundaries requiring future coverage.
 
 - [Temporal revalidation proof](../../../../apps/server/src/fork/vault/OperationIntentTemporal.proof.test.ts): async reads, handoff/callback races, restored-value changes and explicit coherent-commit assumptions; test-local only.
-- [Next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff): decisions, ownership and the evidence required to reopen implementation.
+- [Next-owner handoff](../IMPLEMENT-NOW.md#vault-completion-dependencies): decisions, ownership and the evidence required to reopen implementation.

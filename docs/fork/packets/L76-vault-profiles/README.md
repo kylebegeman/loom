@@ -20,7 +20,8 @@ preview, choose/clear a default, archive, restore and repair bindings. MCP/CLI r
 execute named bindings. The first resolution durably pins the profile revision and key
 versions for the authenticated run; current grants, keys and archive state remain authoritative.
 
-Interactive/scheduled launch selectors and server preflight are implemented for SSH/Git/GitHub.
+Interactive/scheduled standalone profile links and server preflight are implemented for
+SSH/Git/GitHub. Attachment selectors were removed at Kyle's request.
 Portable declarations import/export without local bindings. GitHub declarations use version 2;
 SSH/Git-only declarations retain version 1. GitHub execution uses the dedicated connection
 without requiring an SSH broker. Scheduled task status follows its

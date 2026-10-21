@@ -20,8 +20,10 @@ mobile computer settings, palette navigation, MCP and CLI. The project profile e
 the picker to bind, replace and unbind SSH keys. Agent search/describe requires inspect grants;
 forbidden and unknown IDs both describe as null. No credential values are returned.
 
-Composer and scheduled-prompt attachments now use safe standalone links. CLI completion,
-role/account search, cross-environment discovery and other consumers remain selected.
+Composer and scheduled prompts accept safe standalone links. Kyle removed the attachment
+buttons and selectors without a replacement. Bounded CLI completion and account-kind discovery
+are implemented through authenticated inspect-granted metadata. Explicit multi-environment
+discovery and additional connector consumers remain selected.
 
 ## Surfaces
 

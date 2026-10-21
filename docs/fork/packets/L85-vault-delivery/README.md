@@ -22,8 +22,9 @@ The operator must configure an enrolled broker for the server first. No workload
 file transfer is required for these operations. Git uses the current thread checkout and an
 exact repository grant. See [use from an agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run).
 Explicit terminal SSH-agent routing now runs a single local SSH/Git child with host SSH grants
-and server-side signing, including clone/fetch/push. Pi/ACP terminal connections are recognized;
-other native harnesses need explicit connection setup. Persistent shell activation, general shell
+and server-side signing, including clone/fetch/push. Codex/Claude receive automatic per-session
+connection descriptors; Pi/ACP retain their existing connection variables. Other native
+harnesses use hosted tools or explicit connection setup. Persistent shell activation, general shell
 exec, SDK delivery modes and per-workload OS isolation remain pending.
 
 ## Scope
