@@ -19,6 +19,7 @@ import {
 
 export function LibraryActionHost() {
   const [projectId, selectProject] = useSelectedLibraryProject();
+  const [launchId, setLaunchId] = useState(0);
   const [defaults, setDefaults] = useState<LibraryConversationDefaults | undefined>();
   const [requestedProject, setRequestedProject] = useState<string | null>(null);
   const library = useLibraryProject(requestedProject ?? projectId ?? "");
@@ -41,6 +42,7 @@ export function LibraryActionHost() {
   useEffect(
     () =>
       onLibraryAction((next, requestedProjectId, contextDefaults) => {
+        setLaunchId((current) => current + 1);
         setDefaults(contextDefaults);
         setCreateForConversation(false);
         setChoosingProject(next === "new-conversation" && !requestedProjectId);
@@ -161,11 +163,14 @@ export function LibraryActionHost() {
     );
   return (
     <NewConversationDialog
-      key={library.project.data.id}
+      key={`${library.project.data.id}:${launchId}`}
       project={library.project.data}
       initialHostId={defaults?.environmentId}
       initialCopyId={defaults?.workingCopyId}
       initialResourceId={defaults?.resourceId}
+      initialModelSelection={defaults?.modelSelection}
+      initialRuntimeMode={defaults?.runtimeMode}
+      initialInteractionMode={defaults?.interactionMode}
       copies={library.copies.data ?? []}
       copiesQuery={library.copies}
       onChooseProject={() => setChoosingProject(true)}

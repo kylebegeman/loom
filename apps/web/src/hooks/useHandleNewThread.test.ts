@@ -35,6 +35,8 @@ const testState = vi.hoisted(() => {
     setDraftThreadContext: vi.fn(),
     setLogicalProjectDraftThreadId: vi.fn(),
     setModelSelection: vi.fn(),
+    setRuntimeMode: vi.fn(),
+    setInteractionMode: vi.fn(),
   };
 
   return {
@@ -233,6 +235,47 @@ describe.each([
       );
     },
   );
+
+  it("applies the hovered thread's settings before opening the local draft", async () => {
+    testState.reset(draft);
+    const sourceSettings = {
+      modelSelection: {
+        instanceId: "source-provider",
+        model: "source-model",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+      runtimeMode: "auto-accept-edits",
+      interactionMode: "plan",
+    } as const;
+    testState.router.navigate.mockImplementationOnce(async () => {
+      expect(testState.draftStore.setModelSelection).toHaveBeenLastCalledWith(
+        expect.any(String),
+        sourceSettings.modelSelection,
+        { replaceOptions: true },
+      );
+      expect(testState.draftStore.setRuntimeMode).toHaveBeenLastCalledWith(
+        expect.any(String),
+        sourceSettings.runtimeMode,
+      );
+      expect(testState.draftStore.setInteractionMode).toHaveBeenLastCalledWith(
+        expect.any(String),
+        sourceSettings.interactionMode,
+      );
+    });
+    const opening = useNewThreadHandler()(
+      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+      { sourceSettings: sourceSettings as never },
+    );
+    testState.completeProjectFileRead(null);
+    const opened = await opening;
+    expect(testState.draftStore.setDraftThreadContext).toHaveBeenCalledWith(
+      opened!.draftId,
+      expect.objectContaining({
+        runtimeMode: sourceSettings.runtimeMode,
+        interactionMode: sourceSettings.interactionMode,
+      }),
+    );
+  });
 
   it("abandons a delayed draft open when the user navigates elsewhere", async () => {
     testState.reset(draft);

@@ -1581,6 +1581,7 @@ type SidebarThreadRowProps = {
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
+  onNewThread: (threadRef: ScopedThreadRef) => void;
   onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
   onRenameTitleChange: (title: string) => void;
   onCommitRename: (threadRef: ScopedThreadRef, title: string, originalTitle: string) => void;
@@ -1617,6 +1618,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onStartRename,
     onThreadActivate,
     onThreadClick,
+    onNewThread,
     onUnsettle,
     onUnsnooze,
     onUnpin,
@@ -1856,6 +1858,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     if (!renameCommittedRef.current) {
       onCommitRename(threadRef, renamingTitle, thread.title);
     }
+  };
+  const handleNewThreadClick = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onNewThread(threadRef);
   };
   const handleSettleClick = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -2114,6 +2121,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     )
   ) : null;
 
+  const newThreadButton =
+    canOperateThread && !isRenaming ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label={`New thread with settings from ${thread.title}`}
+              onClick={handleNewThreadClick}
+              onPointerDown={(event) => event.stopPropagation()}
+              className="inline-flex cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            />
+          }
+        >
+          <PlusIcon aria-hidden className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">New thread with these settings</TooltipPopup>
+      </Tooltip>
+    ) : null;
+
   if (variant === "slim") {
     return (
       <li
@@ -2164,6 +2191,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               </span>
             ) : null}
             {prBadge}
+            {!sortable?.isDragging && props.sweepAction === null ? (
+              <span className="pointer-events-none inline-flex h-6 shrink-0 items-stretch opacity-0 transition-opacity group-focus-within/sidebar-row:pointer-events-auto group-focus-within/sidebar-row:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100">
+                {newThreadButton}
+              </span>
+            ) : null}
             {sortable?.isDragging ? (
               dragDestination
             ) : (
@@ -2336,7 +2368,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     className={cn(
                       isWokeStatus
                         ? "pointer-events-auto"
-                        : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
+                        : "pointer-events-none group-focus-visible/sidebar-row:absolute group-focus-visible/sidebar-row:right-0 group-focus-visible/sidebar-row:opacity-0 group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity",
                       snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
@@ -2401,7 +2433,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
                     )}
                   </span>
-                  {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
+                  {newThreadButton ||
+                  props.settlementSupported ||
+                  showSnoozeButton ||
+                  hasUnsentDraft ? (
                     <span
                       className={cn(
                         // focus-visible, not focus-within: a mouse click leaves
@@ -2409,10 +2444,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         // would keep the controls pinned over the status label
                         // once the pointer moves away (e.g. after a failed
                         // settle) instead of cross-fading back.
-                        "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
+                        "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity group-focus-visible/sidebar-row:pointer-events-auto group-focus-visible/sidebar-row:static group-focus-visible/sidebar-row:opacity-100 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
                         snoozeMenuOpen && "pointer-events-auto static opacity-100",
                       )}
                     >
+                      {newThreadButton}
                       {hasUnsentDraft ? (
                         <Tooltip>
                           <TooltipTrigger
@@ -4590,6 +4626,21 @@ export default function Sidebar() {
   }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
   const tryLibraryConversation = useLibraryNewConversation(); // fork: library-projects
+  const handleNewThreadFromThread = useStableCallback(async (threadRef: ScopedThreadRef) => {
+    if (!(await tryLibraryConversation(threadRef, { inheritSettings: true }))) {
+      const source = readThreadShell(threadRef);
+      if (!source) return;
+      await handleNewThreadRef.current(scopeProjectRef(source.environmentId, source.projectId), {
+        branch: source.branch,
+        worktreePath: source.worktreePath,
+        envMode: source.worktreePath ? "worktree" : "local",
+        startFromOrigin: false,
+        environmentSelection: "manual",
+        sourceSettings: source,
+      });
+    }
+    if (isMobile) setOpenMobile(false);
+  });
   const handleNewThreadClick = async (event?: ReactMouseEvent) => {
     // fork: library-projects - Library projects start through the new conversation dialog.
     if (await tryLibraryConversation(routeThreadRef ?? undefined)) {
@@ -4965,6 +5016,7 @@ export default function Sidebar() {
                             timestampFormat={timestampFormat}
                             onThreadClick={handleThreadClick}
                             onThreadActivate={navigateToThread}
+                            onNewThread={handleNewThreadFromThread}
                             onStartRename={startThreadRename}
                             onRenameTitleChange={setRenamingTitle}
                             onCommitRename={commitThreadRename}

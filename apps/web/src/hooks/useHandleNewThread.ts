@@ -3,7 +3,12 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type ScopedProjectRef,
+  type ThreadId,
+  type OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
@@ -76,6 +81,10 @@ export function useNewThreadHandler() {
       // fork: project-home keeps explicit computer choices out of automatic routing.
       environmentSelection?: "auto" | "manual";
       replace?: boolean;
+      sourceSettings?: Pick<
+        OrchestrationV2ThreadShell,
+        "modelSelection" | "runtimeMode" | "interactionMode"
+      >;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     // fork: project-home routing intent is independent of workspace-default resolution.
@@ -97,7 +106,20 @@ export function useNewThreadHandler() {
       setDraftThreadContext,
       setLogicalProjectDraftThreadId,
       setModelSelection,
+      setRuntimeMode,
+      setInteractionMode,
     } = useComposerDraftStore.getState();
+    const applySourceSettings = (draftId: DraftId) => {
+      const source = options?.sourceSettings;
+      if (!source) return;
+      setDraftThreadContext(draftId, {
+        runtimeMode: source.runtimeMode,
+        interactionMode: source.interactionMode,
+      });
+      setModelSelection(draftId, source.modelSelection, { replaceOptions: true });
+      setRuntimeMode(draftId, source.runtimeMode);
+      setInteractionMode(draftId, source.interactionMode);
+    };
     const requestingRouteHref = router.state.location.href;
     const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
     const currentRouteTarget = getCurrentRouteTarget();
@@ -280,6 +302,7 @@ export function useNewThreadHandler() {
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           },
         );
+        applySourceSettings(emptyStoredDraftThread.draftId);
         const opened = {
           draftId: emptyStoredDraftThread.draftId,
           threadId: emptyStoredDraftThread.threadId,
@@ -323,6 +346,7 @@ export function useNewThreadHandler() {
         interactionMode: latestActiveDraftThread.interactionMode,
         ...pickExplicitWorkspaceOptions(options),
       });
+      applySourceSettings(currentRouteTarget.draftId);
       return Promise.resolve({
         draftId: currentRouteTarget.draftId,
         threadId: latestActiveDraftThread.threadId,
@@ -355,6 +379,7 @@ export function useNewThreadHandler() {
           interactionMode: racedDraft.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        applySourceSettings(racedDraft.draftId);
         await router.navigate({
           to: "/draft/$draftId",
           params: { draftId: racedDraft.draftId },
@@ -383,6 +408,7 @@ export function useNewThreadHandler() {
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
+      applySourceSettings(draftId);
       await router.navigate({
         to: "/draft/$draftId",
         params: { draftId },

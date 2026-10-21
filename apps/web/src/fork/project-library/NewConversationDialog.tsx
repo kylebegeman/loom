@@ -15,6 +15,7 @@ import {
   EnvironmentId,
   ModelSelection,
   RuntimeMode,
+  ProviderInteractionMode,
   ThreadId,
   type ProjectId,
   type ServerSettings,
@@ -61,6 +62,8 @@ import {
 import { useProjects, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
+import { TraitsPicker } from "~/components/chat/TraitsPicker";
+import { runtimeModeConfig, runtimeModeOptions } from "~/components/chat/runtimeModeConfig";
 import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
 import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
@@ -91,6 +94,8 @@ const ConversationAttempt = Schema.NullOr(
     context: Schema.String,
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,
+    requestedRuntimeMode: Schema.optional(RuntimeMode),
+    interactionMode: Schema.optional(ProviderInteractionMode),
     createdAt: Schema.String,
     created: Schema.Boolean,
     registerRequestId: Schema.String,
@@ -200,6 +205,9 @@ export function NewConversationDialog({
   initialHostId,
   initialCopyId,
   initialResourceId,
+  initialModelSelection,
+  initialRuntimeMode,
+  initialInteractionMode,
   continuation,
   onChooseProject,
   onChanged,
@@ -214,6 +222,9 @@ export function NewConversationDialog({
   readonly initialHostId?: EnvironmentId | undefined;
   readonly initialCopyId?: string | undefined;
   readonly initialResourceId?: string | undefined;
+  readonly initialModelSelection?: ModelSelection | undefined;
+  readonly initialRuntimeMode?: RuntimeMode | undefined;
+  readonly initialInteractionMode?: ProviderInteractionMode | undefined;
   readonly continuation?: LibraryThreadSummary;
   readonly onChooseProject?: (() => void) | undefined;
   readonly onChanged: () => void;
@@ -280,7 +291,15 @@ export function NewConversationDialog({
   );
   const [keepChoice, setKeepChoice] = useState<boolean | null>(null);
   const [typedPath, setRootPath] = useState<string | null>(null);
-  const [modelChoice, setModelChoice] = useState<ModelSelection | null>(null);
+  const [modelChoice, setModelChoice] = useState<ModelSelection | null>(
+    initialModelSelection ?? null,
+  );
+  const [runtimeChoice, setRuntimeChoice] = useState<RuntimeMode | null>(
+    initialRuntimeMode ?? null,
+  );
+  const [interactionChoice, setInteractionChoice] = useState<ProviderInteractionMode>(
+    initialInteractionMode ?? "default",
+  );
   const [busy, setBusy] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [reviewingFiles, setReviewingFiles] = useState(false);
@@ -390,6 +409,12 @@ export function NewConversationDialog({
       })
     : null;
   const modelSelection = attempt?.modelSelection ?? defaults?.modelSelection ?? null;
+  const runtimeMode =
+    attempt?.runtimeMode ?? runtimeChoice ?? defaults?.runtimeMode ?? "approval-required";
+  const interactionMode = attempt?.interactionMode ?? interactionChoice;
+  const providerEntry = defaults?.entries.find(
+    (entry) => entry.instanceId === modelSelection?.instanceId,
+  );
   const copyHealth = useEnvironmentQuery(
     copy &&
       supportsLoomFeature(host?.serverConfig?.environment.capabilities, LIBRARY_COPY_HEALTH_FEATURE)
@@ -577,7 +602,9 @@ export function NewConversationDialog({
         defaultsResolved: false,
         keepOnComputer: reopening?.keepOnComputer ?? preparation?.keepOnComputer ?? keepOnComputer,
         ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
-        runtimeMode: defaults?.runtimeMode ?? "approval-required",
+        ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
+        runtimeMode,
+        interactionMode,
         createdAt: new Date().toISOString(),
         created: false,
         registerRequestId: randomUUID(),
@@ -637,7 +664,7 @@ export function NewConversationDialog({
         next = {
           ...next,
           modelSelection: resolvedDefaults.modelSelection,
-          runtimeMode: resolvedDefaults.runtimeMode,
+          runtimeMode: next.requestedRuntimeMode ?? resolvedDefaults.runtimeMode,
           defaultsResolved: true,
         };
         saveAttempt(next);
@@ -651,7 +678,7 @@ export function NewConversationDialog({
             title: next.title,
             modelSelection: next.modelSelection,
             runtimeMode: next.runtimeMode,
-            interactionMode: "default",
+            interactionMode: next.interactionMode ?? "default",
             branch: null,
             worktreePath: resolved.value.cwd,
             createdAt: next.createdAt,
@@ -942,6 +969,8 @@ export function NewConversationDialog({
                     setCopyId(null);
                     setRootPath(null);
                     setModelChoice(null);
+                    setRuntimeChoice(null);
+                    setInteractionChoice("default");
                     setKeepChoice(null);
                   }}
                   items={executionHosts.map((entry) => ({
@@ -1013,23 +1042,90 @@ export function NewConversationDialog({
         </details>
         {hostId && host?.serverConfig && modelSelection && defaults ? (
           <LibraryField label="Model">
-            <ProviderModelPicker
-              environmentId={hostId}
-              activeInstanceId={modelSelection.instanceId}
-              model={modelSelection.model}
-              lockedProvider={null}
-              instanceEntries={defaults.entries}
-              modelOptionsByInstance={getCustomModelOptionsByInstance(
-                mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
-                defaults.providers,
-                modelSelection.instanceId,
-                modelSelection.model,
-              )}
-              disabled={busy || locked}
-              onInstanceModelChange={(instanceId, model) => setModelChoice({ instanceId, model })}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <ProviderModelPicker
+                environmentId={hostId}
+                activeInstanceId={modelSelection.instanceId}
+                model={modelSelection.model}
+                lockedProvider={null}
+                instanceEntries={defaults.entries}
+                modelOptionsByInstance={getCustomModelOptionsByInstance(
+                  mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
+                  defaults.providers,
+                  modelSelection.instanceId,
+                  modelSelection.model,
+                )}
+                disabled={busy || locked}
+                onInstanceModelChange={(instanceId, model) => setModelChoice({ instanceId, model })}
+              />
+              {providerEntry ? (
+                <TraitsPicker
+                  provider={providerEntry.driverKind}
+                  instanceId={modelSelection.instanceId}
+                  models={providerEntry.models}
+                  model={modelSelection.model}
+                  modelOptions={modelSelection.options}
+                  prompt=""
+                  onPromptChange={() => {}}
+                  allowPromptInjectedEffort={false}
+                  planModeEnabled={interactionMode === "plan"}
+                  isComposerOwned={false}
+                  disabled={busy || locked}
+                  onModelOptionsChange={(options) =>
+                    setModelChoice({ ...modelSelection, options: options ?? [] })
+                  }
+                />
+              ) : null}
+            </div>
           </LibraryField>
         ) : null}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <LibraryField label="Permissions">
+            <Select
+              value={runtimeMode}
+              disabled={busy || locked}
+              onValueChange={(value) => {
+                if (value) setRuntimeChoice(value);
+              }}
+              items={runtimeModeOptions.map((mode) => ({
+                value: mode,
+                label: runtimeModeConfig[mode].label,
+              }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                {runtimeModeOptions.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {runtimeModeConfig[mode].label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+          <LibraryField label="Mode">
+            <Select
+              value={interactionMode}
+              disabled={busy || locked}
+              onValueChange={(value) => {
+                if (value) setInteractionChoice(value);
+              }}
+              items={[
+                { value: "default", label: "Do the work" },
+                { value: "plan", label: "Plan only" },
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="default">Do the work</SelectItem>
+                <SelectItem value="plan">Plan only</SelectItem>
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+        </div>
         {authority.computers.some(
           (computer) =>
             computer.supportsExecution &&

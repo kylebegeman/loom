@@ -15,6 +15,11 @@ settings. Returning from either restores the conversation you left.
 
 ## Start a thread
 
+On web and desktop, hover a thread or focus it with the keyboard and choose **+**
+to start a fresh conversation with that thread's project, computer and settings.
+Review or change the selections before starting. The main **New thread** action
+remains available when you want to choose a different setup.
+
 For local projects on web and desktop, a new thread keeps the current project and carries your model
 and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in

@@ -24,6 +24,7 @@ vi.mock("~/rpc/atomRegistry", () => ({}));
 vi.mock("~/hooks/useSettings", () => ({}));
 vi.mock("~/composerDraftStore", () => ({}));
 vi.mock("~/components/chat/ProviderModelPicker", () => ({}));
+vi.mock("~/components/chat/TraitsPicker", () => ({}));
 vi.mock("~/modelSelection", () => ({}));
 vi.mock("./ProfileReadiness", () => ({}));
 vi.mock("./ReleaseCopyDialog", () => ({}));

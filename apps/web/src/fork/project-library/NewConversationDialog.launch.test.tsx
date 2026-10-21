@@ -11,7 +11,7 @@ import {
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { act, type ReactNode } from "react";
+import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -96,6 +96,7 @@ vi.mock("~/components/ui/select", () => ({
   SelectItem: "option",
 }));
 vi.mock("~/components/chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
+vi.mock("~/components/chat/TraitsPicker", () => ({ TraitsPicker: () => null }));
 vi.mock("./ProfileReadiness", () => ({ ProfileReadiness: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
@@ -116,6 +117,8 @@ vi.mock("./LibraryControls", () => ({
     error ? <p role="alert">{error}</p> : null,
 }));
 
+import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
+import { TraitsPicker } from "~/components/chat/TraitsPicker";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
@@ -187,12 +190,16 @@ const bindingReceipt = AsyncResult.success(null);
 let renderer: ReactTestRenderer | undefined;
 let storage: Storage;
 
-async function mount(copies: readonly LibraryWorkingCopy[] = []) {
+async function mount(
+  copies: readonly LibraryWorkingCopy[] = [],
+  defaults: Partial<ComponentProps<typeof NewConversationDialog>> = {},
+) {
   await act(() => {
     renderer = create(
       <NewConversationDialog
         project={project}
         copies={copies}
+        {...defaults}
         copiesQuery={{ isPending: false, isSuccess: true, error: null, refresh: vi.fn() }}
         onChanged={onChanged}
         onClose={onClose}
@@ -452,6 +459,207 @@ describe("Library conversation retention", () => {
     expect(commands.setCopyRetention.run).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { workingCopyId: restoredCopy.id, keepOnComputer: false },
+    });
+    expectOpened();
+  });
+});
+
+describe("new conversations with source settings", () => {
+  const sourceSelection = {
+    instanceId,
+    model: "source-model",
+    options: [{ id: "reasoningEffort", value: "high" }],
+  };
+  const sourceDefaults = {
+    initialHostId: environmentId,
+    initialCopyId: releasedCopy.id,
+    initialModelSelection: sourceSelection,
+    initialRuntimeMode: "auto" as const,
+    initialInteractionMode: "plan" as const,
+  };
+
+  it("restores files automatically and creates a fresh empty conversation with the source launch settings", async () => {
+    await mount([], sourceDefaults);
+    expect(renderer!.root.findAllByType("textarea")).toHaveLength(0);
+    expect(commands.create.run).not.toHaveBeenCalled();
+    await click("Start conversation");
+    expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
+    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        threadId,
+        projectId: localProjectId,
+        title: "New project conversation",
+        modelSelection: sourceSelection,
+        runtimeMode: "auto",
+        interactionMode: "plan",
+        branch: null,
+        worktreePath: restoredCopy.rootPath,
+        createdAt: expect.any(String),
+      },
+    });
+    expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { threadId, binding, project },
+    });
+    expectOpened();
+  });
+
+  it("uses edits to the source model, options, permissions and mode before starting", async () => {
+    await mount([], sourceDefaults);
+    await act(() =>
+      renderer!.root
+        .findByType(ProviderModelPicker)
+        .props.onInstanceModelChange(instanceId, "edited-model"),
+    );
+    const options = [{ id: "reasoningEffort", value: "low" }];
+    await act(() => renderer!.root.findByType(TraitsPicker).props.onModelOptionsChange(options));
+    await act(() => {
+      renderer!.root
+        .findAllByType("select")
+        .find((node) => node.props.value === "auto")!
+        .props.onValueChange("approval-required");
+      renderer!.root
+        .findAllByType("select")
+        .find((node) => node.props.value === "plan")!
+        .props.onValueChange("default");
+    });
+    await click("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledWith({
+      environmentId,
+      input: expect.objectContaining({
+        modelSelection: { instanceId, model: "edited-model", options },
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+      }),
+    });
+    expectOpened();
+  });
+
+  it("drops source machine defaults when a different computer is selected", async () => {
+    const otherId = EnvironmentId.make("other-computer");
+    const authority = state.authority();
+    const otherSelection = { instanceId, model: "other-model" };
+    const serverConfig = {
+      ...authority.environments[0].serverConfig,
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        defaultModelSelection: otherSelection,
+        defaultRuntimeMode: "approval-required",
+      },
+    };
+    state.authority.mockReturnValue({
+      ...authority,
+      environments: [
+        ...authority.environments,
+        {
+          ...authority.environments[0],
+          environmentId: otherId,
+          label: "Other computer",
+          serverConfig,
+        },
+      ],
+    });
+    state.providers.mockReturnValue(
+      new Map([
+        [environmentId, [provider]],
+        [otherId, [provider]],
+      ]),
+    );
+    state.registryGet.mockImplementation((atom: unknown) =>
+      atom === state.configsAtom
+        ? new Map([
+            [environmentId, authority.environments[0].serverConfig],
+            [otherId, serverConfig],
+          ])
+        : [provider],
+    );
+    state.ranking.mockImplementation(
+      (input: {
+        project: LibraryProject;
+        copies: readonly LibraryWorkingCopy[];
+        resourceId: string | null;
+      }) =>
+        libraryLaunchRanking({
+          ...input,
+          computers: [environmentId, otherId].map((id) => ({
+            environmentId: id,
+            label: id,
+            online: true,
+            supportsExecution: true,
+            workingThreads: 0,
+          })),
+          threads: [],
+        }),
+    );
+    const otherCopy = { ...restoredCopy, id: "other-files", environmentId: otherId };
+    await mount([restoredCopy, otherCopy], sourceDefaults);
+    await act(() =>
+      renderer!.root
+        .findAllByType("select")
+        .find((node) => node.props.value === environmentId)!
+        .props.onValueChange(otherId),
+    );
+    await click("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledWith({
+      environmentId: otherId,
+      input: expect.objectContaining({
+        modelSelection: otherSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+      }),
+    });
+    expect(commands.bindThread.run).toHaveBeenCalledWith({
+      environmentId: otherId,
+      input: {
+        threadId,
+        project,
+        binding: { ...binding, environmentId: otherId, workingCopyId: otherCopy.id },
+      },
+    });
+    expect(commands.reopenCopy.run).not.toHaveBeenCalled();
+  });
+
+  it("recovers the selected launch settings after a failure and remount", async () => {
+    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    await mount([], sourceDefaults);
+    await click("Start conversation");
+    expect(savedAttempt()).toMatchObject({
+      modelSelection: sourceSelection,
+      requestedModelSelection: sourceSelection,
+      runtimeMode: "auto",
+      requestedRuntimeMode: "auto",
+      interactionMode: "plan",
+      created: false,
+    });
+    expect(commands.create.run).not.toHaveBeenCalled();
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([restoredCopy]);
+    await click("Retry conversation");
+    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        modelSelection: sourceSelection,
+        runtimeMode: "auto",
+        interactionMode: "plan",
+      }),
+    });
+    expectOpened();
+  });
+
+  it("leaves the regular form blank and resolves its project defaults", async () => {
+    await mount();
+    const title = renderer!.root.findAllByType("input").find((node) => "value" in node.props);
+    expect(title?.props.value).toBe("");
+    await click("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledWith({
+      environmentId,
+      input: expect.objectContaining({
+        modelSelection: { instanceId, model: "test-model" },
+        runtimeMode: DEFAULT_SERVER_SETTINGS.defaultRuntimeMode,
+        interactionMode: "default",
+      }),
     });
     expectOpened();
   });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { onLibraryAction, openLibraryAction } from "./actions";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -19,6 +20,29 @@ describe("project actions before Library connection", () => {
     unsubscribe();
     openLibraryAction("import-folder");
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries source defaults for one launch and keeps the next regular form blank", () => {
+    vi.stubGlobal("window", new EventTarget());
+    const listener = vi.fn();
+    const unsubscribe = onLibraryAction(listener);
+    const defaults = {
+      environmentId: EnvironmentId.make("computer"),
+      workingCopyId: "files",
+      resourceId: "web",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "source-model",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+      runtimeMode: "auto" as const,
+      interactionMode: "plan" as const,
+    };
+    openLibraryAction("new-conversation", "project", defaults);
+    expect(listener).toHaveBeenLastCalledWith("new-conversation", "project", defaults);
+    openLibraryAction("new-conversation");
+    expect(listener).toHaveBeenLastCalledWith("new-conversation");
+    unsubscribe();
   });
 
   it("routes project, import and conversation intents through one host", () => {

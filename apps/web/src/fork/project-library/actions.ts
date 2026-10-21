@@ -1,9 +1,17 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  RuntimeMode,
+  ProviderInteractionMode,
+} from "@t3tools/contracts";
 export type LibraryAction = "create-project" | "import-folder" | "new-conversation";
 export interface LibraryConversationDefaults {
   readonly environmentId?: EnvironmentId;
   readonly workingCopyId?: string;
   readonly resourceId?: string;
+  readonly modelSelection?: ModelSelection;
+  readonly runtimeMode?: RuntimeMode;
+  readonly interactionMode?: ProviderInteractionMode;
 }
 const EVENT = "loom:library:action";
 

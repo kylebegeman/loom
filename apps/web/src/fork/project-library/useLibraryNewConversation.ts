@@ -65,8 +65,11 @@ export function useLibraryNewConversation() {
     refresh: true,
     reportFailure: false,
   });
-  return useStableCallback(async (source?: ScopedThreadRef): Promise<boolean> => {
-    if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
+  const openConversation = async (
+    source?: ScopedThreadRef,
+    options?: { inheritSettings?: boolean },
+  ) => {
+    if (!source && /^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
       openLibraryAction("new-conversation", context.projectId);
       return true;
     }
@@ -90,6 +93,14 @@ export function useLibraryNewConversation() {
       return true;
     }
     if (!authority.authorityId) return false;
+    const sourceShell = options?.inheritSettings ? readThreadShell(thread) : null;
+    const launchDefaults = sourceShell
+      ? {
+          modelSelection: sourceShell.modelSelection,
+          runtimeMode: sourceShell.runtimeMode,
+          interactionMode: sourceShell.interactionMode,
+        }
+      : {};
     const host = environments.find((entry) => entry.environmentId === thread.environmentId);
     const connected =
       host?.connection.phase === "connected" &&
@@ -111,6 +122,7 @@ export function useLibraryNewConversation() {
       });
       if (saved._tag === "Success" && saved.value) {
         openLibraryAction("new-conversation", saved.value.projectId, {
+          ...launchDefaults,
           environmentId: thread.environmentId,
           ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
           ...(saved.value.resourceIds.length === 1
@@ -123,7 +135,7 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      const shell = readThreadShell(thread);
+      const shell = sourceShell ?? readThreadShell(thread);
       if (!shell) {
         openLibraryAction("new-conversation");
         return true;
@@ -138,10 +150,12 @@ export function useLibraryNewConversation() {
         copies.value,
       );
       if (!recovered) {
+        if (options?.inheritSettings) return false;
         openLibraryAction("new-conversation");
         return true;
       }
       openLibraryAction("new-conversation", recovered.projectId, {
+        ...launchDefaults,
         environmentId: thread.environmentId,
         workingCopyId: recovered.workingCopyId,
         ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
@@ -149,10 +163,12 @@ export function useLibraryNewConversation() {
       return true;
     }
     openLibraryAction("new-conversation", result.value.projectId, {
+      ...launchDefaults,
       environmentId: result.value.environmentId,
       workingCopyId: result.value.workingCopyId,
       ...(result.value.resourceIds.length === 1 ? { resourceId: result.value.resourceIds[0] } : {}),
     });
     return true;
-  });
+  };
+  return useStableCallback(openConversation);
 }
