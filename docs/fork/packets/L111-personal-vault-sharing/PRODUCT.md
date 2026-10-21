@@ -22,7 +22,7 @@ A ciphertext already wrapped directly to the recipient can be decrypted immediat
 
 ## Surfaces and authority
 
-Mac+iPhone are provisional acceptance candidates, with Safari/Chromium tested independently only where a trusted web/companion flow exists. Android/Windows/Linux/web remain explicit unsupported recipient/custody tracks. Do not unlock in code served by the development host merely because its TLS/login works. Full-access same-user agents require an actual independent device or proven OS/process boundary; profiles, UI permissions and safeStorage are not sufficient.
+Mac+iPhone and Safari/Chromium are the confirmed daily-use targets (Kyle, 2026-10-21), not a selection or priority for sharing/emergency access. If this optional scope is later selected, test these platforms independently only where a trusted client/companion flow exists. Android/Windows/Linux/web remain explicit unsupported recipient/custody tracks. Do not unlock in code served by the development host merely because its TLS/login works. Full-access same-user agents require an actual independent device or proven OS/process boundary; profiles, UI permissions and safeStorage are not sufficient.
 
 Agents for every provider and scheduled agent run may use the same explicitly granted request-status/cancel service, never select recipients, verify keys, approve/release shares or retrieve raw values. No personal material enters RPC/MCP/prompt, shell snapshots or Library. Command jobs remain unsupported until an explicit broker. Local/direct/relay/tunnel transport cannot mint recipient or release authority; older/upstream servers show unavailable.
 

@@ -2,7 +2,7 @@
 
 Status: Designing.
 
-Proposed scope pending Kyle's priority answers in the [personal Vault umbrella](../LOOM-PERSONAL-VAULT.md). This packet has not been individually selected for implementation. Keep a personal Vault available on trusted devices without giving the development host its keys, and reconcile changes safely when devices reconnect. Sync/cache design is engine-dependent: whole-database/KDBX conflict-copy and engine merge behavior versus a maintained client-encrypted record engine.
+Proposed scope supporting Kyle's priorities confirmed on 2026-10-21 in the [personal Vault umbrella](../LOOM-PERSONAL-VAULT.md). This packet has not been individually selected for implementation. Keep a personal Vault available on trusted devices without giving the development host its keys, and reconcile changes safely when devices reconnect. Sync/cache design is engine-dependent: whole-database/KDBX conflict-copy and engine merge behavior versus a maintained client-encrypted record engine.
 
 ## Scope
 
@@ -12,7 +12,7 @@ Proposed scope pending Kyle's priority answers in the [personal Vault umbrella](
 
 ## Surfaces
 
-Mac plus iPhone, Safari and Chromium are the provisional first acceptance set, pending Kyle's priorities and a native capability inventory. Personal custody must run in independently trusted clients; a host-served web view or existing Electron wrapper is insufficient. Android, Windows, Linux and standalone web remain tracked targets with explicit unsupported states, not assumed support. Remote relay traffic is ciphertext only; offline use cannot require the development server.
+Mac plus iPhone, Safari and Chromium are Kyle's confirmed first platform targets as of 2026-10-21; native capability and custody acceptance still require inventory and proof. Personal custody must run in independently trusted clients; a host-served web view or existing Electron wrapper is insufficient. Android, Windows, Linux and standalone web remain tracked targets with explicit unsupported states, not assumed support. Remote relay traffic is ciphertext only; offline use cannot require the development server.
 
 ## Extension points used
 
@@ -36,6 +36,6 @@ None added. Native signing, entitlements, extension packaging and lifecycle seam
 - [PRODUCT.md](./PRODUCT.md): behavior, states and open decisions.
 - [TECHNICAL.md](./TECHNICAL.md): proposed protocol and trust limits.
 - [SEAMS.md](./SEAMS.md): verified registrations and unknown native seams.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): implementation sequence after prioritization.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): proposed implementation sequence and open decisions.
 - [TESTING.md](./TESTING.md): concrete acceptance cases and future commands.
 - [REFERENCES.md](./REFERENCES.md): current source and official references.

@@ -1,6 +1,6 @@
 # L107: Personal credentials in native daily use
 
-Status: Designing. Proposed scope pending Kyle's priority answers. [L101](../L101-personal-vault-passwords/)'s first build is In progress elsewhere.
+Status: Designing. Proposed scope supporting Kyle's priorities confirmed on 2026-10-21. [L101](../L101-personal-vault-passwords/)'s first build is In progress elsewhere.
 
 Make personal credentials available through the OS credential picker, a trusted desktop quick-access window and local TOTP presentation. Include passkey creation/assertion with explicit custody, synchronization and export decisions rather than treating existing browser WebAuthn support as a Vault passkey store.
 
@@ -12,7 +12,7 @@ Make personal credentials available through the OS credential picker, a trusted 
 
 ## Surfaces
 
-Provisional first acceptance is a trusted Mac and iPhone with Safari and Chromium tested separately. Android, Windows, Linux and ordinary web remain explicit target tracks, not inferred support. Each unavailable OS provider/entitlement shows setup required or unsupported; the server's development Vault remains usable separately.
+Kyle confirmed Mac and iPhone as the first usable platforms on 2026-10-21, with Safari and Chromium tested separately. Native custody and provider acceptance still need proof. Android, Windows, Linux and ordinary web remain explicit target tracks, not inferred support. Each unavailable OS provider/entitlement shows setup required or unsupported; the server's development Vault remains usable separately.
 
 ## Extension points and seams
 

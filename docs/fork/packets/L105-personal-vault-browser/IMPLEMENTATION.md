@@ -26,10 +26,13 @@ custody/delivery adapter leaves autofill unavailable. Do not start from a T3 pre
 6. Add trusted local save/update review with explicit item/origin choice, expected revisions,
    encrypted receipts and history restoration. Submission detection is a suggestion only.
    Resume/inspect lost outcomes before retry; avoid duplicate items after worker restarts.
-7. Integrate iPhone Safari via an actual reviewed signed browser-extension target or a
-   shared native provider adapter when available, and test app-independent entry. Native
-   OS credential-provider ceremonies belong to [L107](../L107-personal-vault-native/); do
-   not create a duplicate implementation or depend on its private modules. Keep Android, Windows/Linux and unsupported frame cases
+7. Inventory actual iOS engine, extension and credential-provider capabilities for iPhone
+   Safari, Chrome and other branded browser apps; exact apps/versions remain open. Integrate
+   supported autofill through shared native provider adapters under
+   [L107](../L107-personal-vault-native/), with reviewed signed extension targets where supported,
+   and test app-independent entry. Do not assume desktop Chromium extensions work on iOS.
+   Native OS provider ceremonies remain in L107; do not duplicate them or depend on its
+   private modules. Keep Android, Windows/Linux and unsupported frame cases
    tracked with clear states; card/identity/TOTP/passkey adapters remain unavailable until
    their exact shared/platform policy is implemented and reviewed.
 8. Wire safe setup/status/lock-launch entry points into ordinary Loom UI. Personal values,

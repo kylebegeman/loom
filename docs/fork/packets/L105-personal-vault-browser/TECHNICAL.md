@@ -25,8 +25,11 @@ messaging host or equivalent reviewed custodian link. Safari uses its reviewed w
 containing-app communication or Apple credential-provider adapter as appropriate. [L107](../L107-personal-vault-native/) covers native OS provider ceremonies; this packet
 owns browser matching, extension interaction and save/update policy. iPhone must
 have an actual signed installed target and supported entitlement; sharing/widget/keychain
-configuration alone does not supply it. No production dependency or entitlement is selected
-by these documents.
+configuration alone does not supply it. Track credential-provider autofill for supported
+iPhone Safari, Chrome and other branded browser apps through L107. Inventory actual iOS
+engines, extension availability and app/version capabilities rather than assuming desktop
+Chromium extension support on iOS. No production dependency or entitlement is selected by
+these documents.
 
 The companion works independently of Electron/T3 server lifetime. It authenticates browser
 extension identity, local device pairing, owner custody state and current purpose. Extension

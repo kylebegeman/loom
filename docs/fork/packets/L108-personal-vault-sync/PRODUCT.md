@@ -1,6 +1,6 @@
 # L108 product
 
-Status: Designing. Proposed scope; Kyle's priority answers are pending. No individual implementation selection is claimed. Parent: [Personal Vault](../LOOM-PERSONAL-VAULT.md).
+Status: Designing. Proposed scope supporting Kyle's priorities confirmed on 2026-10-21. No individual implementation selection is claimed. Parent: [Personal Vault](../LOOM-PERSONAL-VAULT.md).
 
 ## Problem
 
@@ -29,16 +29,16 @@ Offline revocation has limits: a disconnected device may still read a complete d
 
 ## Surfaces and connection modes
 
-| Surface                                        | Proposed acceptance and unsupported behavior                                                                                                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mac personal client plus iPhone                | Provisional first pair; offline unlock/cache/sync/device lifecycle require independently trusted custody. Unsupported custody disables personal unlock, not ordinary development Vault. |
-| Safari and Chromium                            | Provisional browser integrations, only in separately installed trusted extensions/companions. Host web content never holds the root key; missing integration shows unavailable.         |
-| Android, Windows and Linux                     | Full follow-on targets; capability inventory and tests required before claiming support. Show unavailable with a supported-device route.                                                |
-| Standalone web/upstream T3 client              | Safe status/launch when available; no personal unlock in host-served JavaScript. No capability means unavailable, with ordinary T3 workflows intact.                                    |
-| Local, direct remote, Tailscale, relay, tunnel | Same encrypted relay semantics. Switching environments never switches or enrolls the personal Vault silently.                                                                           |
+| Surface                                        | Proposed acceptance and unsupported behavior                                                                                                                                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mac personal client plus iPhone                | Confirmed initial platform targets, Kyle 2026-10-21; offline unlock/cache/sync/device lifecycle require independently trusted custody. Unsupported custody disables personal unlock, not ordinary development Vault. |
+| Safari and Chromium                            | Confirmed initial browsers, Kyle 2026-10-21; proposed integrations require separately installed trusted extensions/companions. Host web content never holds the root key; missing integration shows unavailable.     |
+| Android, Windows and Linux                     | Full follow-on targets; capability inventory and tests required before claiming support. Show unavailable with a supported-device route.                                                                             |
+| Standalone web/upstream T3 client              | Safe status/launch when available; no personal unlock in host-served JavaScript. No capability means unavailable, with ordinary T3 workflows intact.                                                                 |
+| Local, direct remote, Tailscale, relay, tunnel | Same encrypted relay semantics. Switching environments never switches or enrolls the personal Vault silently.                                                                                                        |
 
 ## Decisions and open questions
 
 [L102](../L102-personal-vault-custody/) evaluates maintained engines/formats, KDBX 4 first candidate. The design must choose between whole-database sync with engine conflict-copy/merge rules and a maintained client-encrypted record engine, using its actual key hierarchy, integrity, deletion and revocation capabilities. Missing primitives mean unsupported, not a custom replacement. The server is an untrusted ciphertext relay for personal data. Existing OpenBao records are a separate development Vault. Library, prompts, shell snapshots, RPC/MCP and provider tools never receive raw personal secrets. Agents and scheduled agents get authorized metadata/outcomes only through the same service gates; command-only jobs are unsupported until a suitable broker exists.
 
-Kyle still needs to prioritize platforms, offline duration/read-write policy, conflict history/deleted-item retention, supported cache sizes, and who may administer device membership. Selected-engine integration and custody require independent security review before critical personal custody. That review is not a gate for harmless local design or synthetic tests.
+Open choices include later-platform order, offline duration/read-write policy, conflict history/deleted-item retention, supported cache sizes, and who may administer device membership. Selected-engine integration and custody require independent security review before critical personal custody. That review is not a gate for harmless local design or synthetic tests.

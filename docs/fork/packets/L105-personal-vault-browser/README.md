@@ -1,7 +1,7 @@
 # L105: Trusted browser autofill and save
 
-Status: **Designing**. Agent-proposed scope pending Kyle's priorities, not an individually
-selected packet. Starting local personal-Vault work is authorized; the L101 first build is
+Status: **Designing**. Agent-proposed scope supporting Kyle's priorities confirmed on
+2026-10-21, not an individually selected packet. Starting local personal-Vault work is authorized; the L101 first build is
 **In progress** elsewhere. See [Personal Loom Vault](../LOOM-PERSONAL-VAULT.md).
 
 Use personal logins in independently trusted Chromium/Safari clients with deliberate autofill,
@@ -23,8 +23,11 @@ for later reviewed fill support. TOTP, passkeys and native OS credential-provide
 
 ## Surfaces
 
-Provisional acceptance: independent Chromium and Safari on a trusted Mac, plus iPhone Safari
-through an actually installed, reviewed Apple extension/provider integration. A shared-principal
+Confirmed first platform targets (Kyle, 2026-10-21): Mac and iPhone, Safari and Chromium.
+Proposed acceptance uses independent Chromium and Safari on a trusted Mac, plus supported
+iPhone Safari, Chrome and other branded browser apps through reviewed credential-provider
+integration in [L107](../L107-personal-vault-native/). Inventory actual iOS engine/extension
+capabilities and installed targets; desktop Chromium extension support is not assumed on iOS. A shared-principal
 agent host is not automatically trusted. Android browser/platform delivery, Windows/Linux native
 companions and other browser-only combinations remain explicit targets and unavailable until
 implemented. Generic Loom web/desktop/mobile UI shows safe status/launch guidance only.

@@ -2,7 +2,7 @@
 
 ## Starting point
 
-This proposed scope is pending the owning task's priority answers. Read [Personal Vault](../LOOM-PERSONAL-VAULT.md), current health/rotation design and native custody boundaries. Use fixture credentials only; no live account change or migration is authorized here.
+This proposed scope supports Kyle's daily-use, autofill and scoped-agent priorities confirmed on 2026-10-21; maintenance details remain open. Read [Personal Vault](../LOOM-PERSONAL-VAULT.md), current health/rotation design and native custody boundaries. Use fixture credentials only; no live account change or migration is authorized here.
 
 ## Steps
 

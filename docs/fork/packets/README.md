@@ -32,8 +32,12 @@ Read these before touching a packet:
 
 [Loom Personal Vault](./LOOM-PERSONAL-VAULT.md) records the personal password-manager
 brainstorm and L101 to L111 packet proposals. Kyle authorized brainstorming, packets and a local
-build on 2026-10-21; L101 local password tools is In progress. The remaining detailed scopes are
-Designing, with sharing/emergency access optional. No personal data migration or deployment is implied.
+build on 2026-10-21; L101 local password tools is In progress. Kyle also confirmed daily
+password-manager use, browser/phone autofill and carefully scoped agent access, with Mac and
+iPhone first, Safari and Chromium. The remaining detailed scopes are Designing and not
+individually selected; engine, topology and recovery details remain open. Sharing/emergency
+access stays optional and is not prioritized by those platforms. No personal data migration
+or deployment is implied.
 
 ## Planning policy after the upstream review
 

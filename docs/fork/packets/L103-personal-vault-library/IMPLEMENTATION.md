@@ -5,7 +5,7 @@
 Read the [umbrella](../LOOM-PERSONAL-VAULT.md), conventions and existing development reference
 and core services. Inspect actual shared personal primitives. An absent primitive is a clear
 unsupported state, not a reason to invent a server reveal path. Synthetic library fixtures
-allow harmless local work while custody and priorities are settled.
+allow harmless local work while custody and detailed library policies are settled.
 
 ## Build sequence
 

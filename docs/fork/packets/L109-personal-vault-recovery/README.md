@@ -2,7 +2,7 @@
 
 Status: Designing.
 
-Proposed scope pending Kyle's priority answers in the [personal Vault umbrella](../LOOM-PERSONAL-VAULT.md). This packet has not been individually selected for implementation. Recover personal data on a clean trusted device when the server or trusted devices are lost, without restoring obsolete access or sending recovery secrets through the development host.
+Proposed scope supporting Kyle's priorities confirmed on 2026-10-21 in the [personal Vault umbrella](../LOOM-PERSONAL-VAULT.md). This packet has not been individually selected for implementation. Recover personal data on a clean trusted device when the server or trusted devices are lost, without restoring obsolete access or sending recovery secrets through the development host.
 
 ## Scope
 
@@ -12,7 +12,7 @@ Proposed scope pending Kyle's priority answers in the [personal Vault umbrella](
 
 ## Surfaces
 
-Mac plus iPhone, Safari and Chromium are provisional first acceptance, subject to Kyle's priorities and trusted native/extension inventory. Kit creation, recovery input and decryption belong to an independently trusted personal client. Browser integrations may launch it; a development-host-served page never receives the kit secret. Android, Windows, Linux and standalone web remain explicit tracked targets with unavailable states until supported custody exists.
+Mac plus iPhone, Safari and Chromium are Kyle's confirmed first platform targets as of 2026-10-21; trusted native/extension inventory and recovery acceptance remain open. Kit creation, recovery input and decryption belong to an independently trusted personal client. Browser integrations may launch it; a development-host-served page never receives the kit secret. Android, Windows, Linux and standalone web remain explicit tracked targets with unavailable states until supported custody exists.
 
 ## Extension points used
 
@@ -38,6 +38,6 @@ None added. Native file access, protected key storage, print/share/export, exten
 - [PRODUCT.md](./PRODUCT.md): recovery choices, states and acceptance surfaces.
 - [TECHNICAL.md](./TECHNICAL.md): custody, format and authority design.
 - [SEAMS.md](./SEAMS.md): actual changes and unknown native integration.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): implementation sequence after prioritization.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): proposed implementation sequence and open decisions.
 - [TESTING.md](./TESTING.md): recovery scenarios and future commands.
 - [REFERENCES.md](./REFERENCES.md): verified code and official sources.

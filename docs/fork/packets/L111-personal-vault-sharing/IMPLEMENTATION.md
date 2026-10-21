@@ -13,7 +13,7 @@ Optional scope beyond first personal daily use. Read [Personal Vault](../LOOM-PE
 5. Add bounded ciphertext relay/status contracts and optional common MCP status/cancel tools. Server permission is a separate ceiling; no provider or scheduled agent may verify recipients, release, decrypt or widen sharing. Command-only jobs remain unsupported.
 6. Add restart/recovery reconciliation against the engine's actual current identity, deletion and recipient-revocation state before any new envelope can be issued. Demonstrate that expiry stops future delivery but does not falsely claim to erase a previously decrypted copy.
 7. Prototype owner-device-mediated emergency waiting with synthetic clocks and identities. Race cancel against release at the trusted authority. Missing trusted release device/state shows unavailable. Leave unattended lost-owner release proposed unless a maintained engine/service provides independently reviewed custodian/quorum and recovery/cancellation semantics.
-8. Test provisional Mac+iPhone flow and Safari/Chromium compatibility only through authorized primary-agent verification. Track Android/Windows/Linux/web independently. Add actual seam inventory and concise user guidance; independent security review precedes critical sharing/emergency custody.
+8. If this optional scope is selected, test Mac+iPhone flow and Safari/Chromium compatibility on the daily-use targets confirmed on 2026-10-21, only through authorized primary-agent verification. These platform priorities do not prioritize sharing/emergency access. Track Android/Windows/Linux/web independently. Add actual seam inventory and concise user guidance; independent security review precedes critical sharing/emergency custody.
 
 ## Done when
 

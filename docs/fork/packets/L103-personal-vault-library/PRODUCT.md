@@ -52,8 +52,9 @@ current custody authority. No default search index persists in plaintext.
 
 ## Surface policy and open priorities
 
-Trusted Mac plus iPhone is the provisional first acceptance. Independently trusted browser
-extensions may follow; agent-controlled T3 preview never hosts the library. Android,
+Mac plus iPhone, Safari and Chromium are Kyle's confirmed first platform targets as of
+2026-10-21. Library access requires trusted clients and, where offered, independently trusted
+browser integrations; agent-controlled T3 preview never hosts the library. Android,
 Windows/Linux and general web remain explicitly tracked and unavailable for private data
 until their trusted storage/custody integration exists. Remote/tunnel use may carry opaque
 ciphertext under a future shared primitive; the development host never resolves a title.

@@ -25,7 +25,7 @@ When native targets exist, add their real crypto/lifecycle unit-test/build comma
 
 ## Integrated acceptance, when authorized
 
-Two independent synthetic personal clients on provisional Mac+iPhone: verify keys out of band, share one version, decline another invitation, revoke future updates, change recipient key and inspect an expired share. Safari/Chromium paths are separate acceptance rows; Android/Windows/Linux/web and upstream servers stay honestly unsupported until tested. Local/direct/relay/tunnel ciphertext delivery must address the intended recipient without trusting relay identity as personal authority.
+If this optional scope is selected, use two independent synthetic personal clients on Mac+iPhone, the daily-use platforms confirmed on 2026-10-21; that confirmation does not prioritize sharing. Proposed exercise: verify keys out of band, share one version, decline another invitation, revoke future updates, change recipient key and inspect an expired share. Safari/Chromium paths are separate acceptance rows; Android/Windows/Linux/web and upstream servers stay honestly unsupported until tested. Local/direct/relay/tunnel ciphertext delivery must address the intended recipient without trusting relay identity as personal authority.
 
 Try same-user agent file/process/IPC access, directory-key replacement, server DB rollback and prompted self approval. Inspect tool results, diagnostics, shell snapshots and Library for canaries. Emergency fixture shows visible wait/cancel/review, then release-unavailable when the trusted owner device is absent. No external message or live recipient operation is needed.
 

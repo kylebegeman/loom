@@ -1,6 +1,6 @@
 # L108 technical design
 
-Status: Designing. All personal paths and APIs below are **proposed**. Scope is pending [Kyle's priorities](../LOOM-PERSONAL-VAULT.md).
+Status: Designing. All personal paths and APIs below are **proposed**. [Kyle's high-level priorities](../LOOM-PERSONAL-VAULT.md) were confirmed on 2026-10-21; detailed scope and engine decisions remain open.
 
 ## Existing boundary and engine decision
 

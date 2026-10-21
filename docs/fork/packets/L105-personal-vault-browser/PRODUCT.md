@@ -47,15 +47,20 @@ incompatible, pairing pending/cancelled/revoked, isolation unproven, locked, awa
 no matches, origin/frame mismatch, document changed, save review, update conflict, disconnected
 custodian and recovery required. A lost fill response is inspected and never blindly replayed.
 
-Mac Chromium/Safari plus iPhone Safari is provisional first acceptance. iPhone support must
-name its actual installed extension/provider target; the React Native app's ordinary webview
-is not equivalent. Android, Windows, Linux and browser-only clients remain tracked with
+Mac and iPhone, Safari and Chromium are Kyle's confirmed first platform targets as of
+2026-10-21. Proposed acceptance covers Mac Chromium/Safari and credential-provider autofill
+for supported iPhone Safari, Chrome and other branded browser apps through
+[L107](../L107-personal-vault-native/). Inventory each iOS app's actual engine, extension and
+credential-provider capabilities; desktop Chromium extension support is not assumed on iOS.
+Exact apps/versions and extension versus provider entry remain open. iPhone support must name
+its actual installed extension/provider target; the React Native app's ordinary webview is
+not equivalent. Android, Windows, Linux and browser-only clients remain tracked with
 clear unavailable states. Desktop app-independent means the reviewed companion/custodian can
 work with Electron/server stopped, not that keys are copied into a general background daemon.
 
 ## Open priorities and review
 
-Kyle still needs to prioritize browser variants, iPhone extension versus platform-provider
+Open choices include specific browser variants/versions, iPhone extension versus platform-provider
 entry, supported frame cases, offline operation and card/identity filling. TOTP/passkey use
 belongs to reviewed native/shared platform delivery, [proposed under L107](../L107-personal-vault-native/). Login prototype work
 with synthetic sites can proceed now. Independent security review of custody, extension

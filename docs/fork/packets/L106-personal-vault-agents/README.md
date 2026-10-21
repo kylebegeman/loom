@@ -1,6 +1,6 @@
 # L106: Approve an outcome or lend a session
 
-Status: Designing. Proposed scope pending Kyle's priority answers, not an individually selected packet. [L101](../L101-personal-vault-passwords/)'s first build is In progress elsewhere.
+Status: Designing. Proposed scope supporting Kyle's priorities confirmed on 2026-10-21, not an individually selected packet. [L101](../L101-personal-vault-passwords/)'s first build is In progress elsewhere.
 
 Let Kyle approve a particular account operation from a trusted personal client, or deliberately lend a temporary session whose actual powers are visible. The development host receives bounded operation results and opaque references, never personal master keys or password values.
 
@@ -12,7 +12,7 @@ Let Kyle approve a particular account operation from a trusted personal client, 
 
 ## Surfaces
 
-Provisional acceptance: an independently trusted Mac or iPhone approves an operation requested by a local or remote agent; Safari and Chromium are evaluated separately. Android, Windows, Linux and standalone web require their own custody/control proofs and stay visibly unsupported until tested. A development-host web page is not a trusted approval surface by virtue of login.
+Kyle confirmed Mac and iPhone, Safari and Chromium as the first platform targets on 2026-10-21. Proposed acceptance uses an independently trusted Mac or iPhone to approve an operation requested by a local or remote agent; Safari and Chromium are evaluated separately. Android, Windows, Linux and standalone web require their own custody/control proofs and stay visibly unsupported until tested. A development-host web page is not a trusted approval surface by virtue of login.
 
 ## Extension points used
 

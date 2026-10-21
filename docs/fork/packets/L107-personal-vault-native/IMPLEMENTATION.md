@@ -2,7 +2,7 @@
 
 ## Before native work
 
-Read [Personal Vault](../LOOM-PERSONAL-VAULT.md), the actual app/build config and current browser passkey code. Confirm the provisional first platform set with the owning task's priority answers. Keep Android/Windows/Linux/web tracked if first acceptance remains Mac+iPhone.
+Read [Personal Vault](../LOOM-PERSONAL-VAULT.md), the actual app/build config and current browser passkey code. Use Kyle's first platform targets confirmed on 2026-10-21: Mac+iPhone, Safari+Chromium. Keep Android/Windows/Linux/web tracked; native targets, minimum versions and custody still require decisions and evidence.
 
 ## Ordered steps
 

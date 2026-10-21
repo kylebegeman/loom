@@ -40,7 +40,8 @@ may imply an unlock happened merely because a request was accepted.
 
 ## Surfaces and connections
 
-Mac plus iPhone is a provisional acceptance direction. A Mac running unrestricted agents as
+Mac plus iPhone is the first usable platform set confirmed by Kyle on 2026-10-21, with Safari
+and Chromium browser support. A Mac running unrestricted agents as
 the same principal is not automatically a trusted client: use a separate protected principal
 or device unless a reviewed OS isolation proof supports the exact topology. Android,
 Windows, Linux and browser-only custody remain tracked as unsupported until implemented.

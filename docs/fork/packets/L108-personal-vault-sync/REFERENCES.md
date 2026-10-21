@@ -4,7 +4,7 @@ Status: Designing. Source inspected on 2026-10-21 at HEAD `36de6bbd1d3bb6fb5ad9b
 
 ## Product and overlap
 
-[Personal Vault umbrella](../LOOM-PERSONAL-VAULT.md) tracks shared scope; priorities remain unanswered. This is new proposed scope, not an inherited Old Loom P/F selection or an individually selected packet. No old personal sync implementation was verified.
+[Personal Vault umbrella](../LOOM-PERSONAL-VAULT.md) tracks shared proposed scope and Kyle's daily-use, autofill, scoped-agent and initial-platform priorities confirmed on 2026-10-21. This is new proposed scope, not an inherited Old Loom P/F selection or an individually selected packet. No old personal sync implementation was verified.
 
 [L79](../L79-vault-core/) owns server records; [L81](../L81-vault-grants/) owns development grants; [L85](../L85-vault-delivery/) owns workload delivery; [L87](../L87-vault-lifecycle/) owns credential lifecycle; [L88](../L88-vault-recovery/) owns server recovery; [L109](../L109-personal-vault-recovery/) owns personal kits/restore. [L103 library](../L103-personal-vault-library/), [L104 imports/exports](../L104-personal-vault-imports/), [L105 browser](../L105-personal-vault-browser/), [L106 agents](../L106-personal-vault-agents/) and [L107 native](../L107-personal-vault-native/) own adjacent content/use flows. Overlap is coordination, not completed personal APIs or mandatory packet dependencies.
 

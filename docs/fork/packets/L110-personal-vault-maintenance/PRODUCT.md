@@ -19,7 +19,7 @@ Unsupported sites retain manual review and secure draft handling. A provider tha
 
 ## Custody and surfaces
 
-Personal checks and drafts live on independently trusted clients, separate from the unattended development host and unrestricted same-user agents. A browser profile, UI permission or safeStorage setting does not establish that isolation. Provisional acceptance is Mac+iPhone; Safari/Chromium handoff must each preserve the verified origin and stay outside agent-controllable preview. Android/Windows/Linux/web show unavailable until their local custody and reminder behavior are verified. Older/upstream servers hide remote status affordances without blocking trusted local use where implemented.
+Personal checks and drafts live on independently trusted clients, separate from the unattended development host and unrestricted same-user agents. A browser profile, UI permission or safeStorage setting does not establish that isolation. Kyle confirmed Mac+iPhone and Safari/Chromium as the first platform targets on 2026-10-21; proposed Safari and Chromium handoffs must each preserve the verified origin and stay outside agent-controllable preview. Android/Windows/Linux/web show unavailable until their local custody and reminder behavior are verified. Older/upstream servers hide remote status affordances without blocking trusted local use where implemented.
 
 All providers and scheduled agents use only the same explicitly granted metadata/outcome service if any is offered. They cannot scan personal values, read replacement drafts, approve rotation or obtain raw credentials through MCP/RPC/prompts. Command-only jobs remain unsupported absent an explicit broker. Local/direct remote/relay/tunnel connections never change this boundary.
 

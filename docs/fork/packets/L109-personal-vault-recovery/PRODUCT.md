@@ -1,6 +1,6 @@
 # L109 product
 
-Status: Designing. Proposed scope; Kyle's priority answers are pending. No individual implementation selection is claimed. Parent: [Personal Vault](../LOOM-PERSONAL-VAULT.md).
+Status: Designing. Proposed scope supporting Kyle's priorities confirmed on 2026-10-21. No individual implementation selection is claimed. Parent: [Personal Vault](../LOOM-PERSONAL-VAULT.md).
 
 ## Problem
 
@@ -29,16 +29,16 @@ A kit recovers only engine backups its actual factors can open. It cannot recrea
 
 ## Surfaces and connection modes
 
-| Surface                                        | Proposed acceptance and unsupported behavior                                                                                                                            |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mac and iPhone personal clients                | Provisional first set; independently trusted kit creation, file custody, offline read-back and clean-device restore. Native lifecycle/secure file paths need inventory. |
-| Safari and Chromium integrations               | Provisional launch/status routes into trusted personal custody; no code or archive decryption in host web content. Missing trusted integration shows unavailable.       |
-| Android, Windows and Linux                     | Explicit follow-on recovery/portability targets. Import/export and key-store guarantees must be tested before support is claimed.                                       |
-| Standalone web/upstream clients                | Metadata/launch if available; otherwise explain recovery needs a supported personal client. No recovery secret entry on a development-host-served page.                 |
-| Local, direct remote, Tailscale, relay, tunnel | Same metadata gates; server unavailability does not prevent local kit/archive verification and data recovery. Reconnection is optional until authority reconciliation.  |
+| Surface                                        | Proposed acceptance and unsupported behavior                                                                                                                                                                                       |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mac and iPhone personal clients                | Confirmed initial platform targets, Kyle 2026-10-21; proposed acceptance requires independently trusted kit creation, file custody, offline read-back and clean-device restore. Native lifecycle/secure file paths need inventory. |
+| Safari and Chromium integrations               | Confirmed initial browsers, Kyle 2026-10-21; proposed launch/status routes into trusted personal custody; no code or archive decryption in host web content. Missing trusted integration shows unavailable.                        |
+| Android, Windows and Linux                     | Explicit follow-on recovery/portability targets. Import/export and key-store guarantees must be tested before support is claimed.                                                                                                  |
+| Standalone web/upstream clients                | Metadata/launch if available; otherwise explain recovery needs a supported personal client. No recovery secret entry on a development-host-served page.                                                                            |
+| Local, direct remote, Tailscale, relay, tunnel | Same metadata gates; server unavailability does not prevent local kit/archive verification and data recovery. Reconnection is optional until authority reconciliation.                                                             |
 
 ## Decisions and open questions
 
 Encryption keys and recovery codes stay independent of the development host and its full-access same-user agents. Every provider and scheduled agent uses the same service gates for metadata/outcomes only; command-only jobs remain unsupported until a suitable broker exists. Existing server Vault access never authorizes personal recovery.
 
-[L102](../L102-personal-vault-custody/) evaluates maintained engines, KDBX 4 first candidate. Recovery uses the selected engine's native hierarchy, encrypted format and documented recovery/authority facilities; missing support means unsupported, not a custom archive/key protocol. Kyle's priorities still need to settle recovery owner(s), single-kit versus split custody, backup destinations/retention, recovery-point and recovery-time targets, acceptable fresh-identity cutover, and platform order. Do not assume a universal recovery code: the kit must match actual engine factors and nonportable-key limits. Social recovery or escrow require separate decisions and maintained-engine support. Independent security review precedes critical personal custody, not harmless local packet work.
+[L102](../L102-personal-vault-custody/) evaluates maintained engines, KDBX 4 first candidate. Recovery uses the selected engine's native hierarchy, encrypted format and documented recovery/authority facilities; missing support means unsupported, not a custom archive/key protocol. Kyle's priorities still need to settle recovery owner(s), single-kit versus split custody, backup destinations/retention, recovery-point and recovery-time targets, acceptable fresh-identity cutover, and later-platform order. Do not assume a universal recovery code: the kit must match actual engine factors and nonportable-key limits. Social recovery or escrow require separate decisions and maintained-engine support. Independent security review precedes critical personal custody, not harmless local packet work.

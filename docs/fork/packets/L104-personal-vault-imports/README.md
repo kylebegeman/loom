@@ -1,7 +1,7 @@
 # L104: Personal Vault imports and portable export
 
-Status: **Designing**. Agent-proposed detailed scope pending Kyle's priorities. Local personal
-Vault implementation is authorized; this is not a selected personal migration. L101's first
+Status: **Designing**. Agent-proposed detailed scope supporting Kyle's priorities confirmed on
+2026-10-21. Local personal Vault implementation is authorized; this is not a selected personal migration. L101's first
 build is **In progress** elsewhere. See [Personal Loom Vault](../LOOM-PERSONAL-VAULT.md).
 
 Bring reviewed 1Password exports into a trusted personal client, account for every item and
@@ -24,8 +24,9 @@ requires a reviewed future shared/native adapter.
 
 ## Surfaces and extension points
 
-Provisional first import acceptance: trusted Mac client, with iPhone encrypted-result/recovery
-acceptance and local iPhone import when the platform adapter supports it. Safari/Chromium may
+Kyle confirmed Mac and iPhone as the first usable platforms on 2026-10-21. Proposed import
+acceptance starts with a trusted Mac client, iPhone encrypted-result/recovery acceptance and
+local iPhone import when the platform adapter supports it. Safari/Chromium may
 launch trusted local management but are not file-upload paths to Loom. Android, Windows, Linux
 and general web stay tracked as unavailable until their trusted local parser/storage exists.
 Remote connection mode never changes where parsing occurs.

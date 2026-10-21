@@ -1,8 +1,8 @@
 # L102: Personal Vault custody and trusted unlock
 
-Status: **Designing**. Agent-proposed scope, pending Kyle's priority answers. Kyle authorized
-starting local personal-Vault implementation; these detailed choices are not individual
-selections. The L101 first build is **In progress** elsewhere.
+Status: **Designing**. Agent-proposed scope supporting Kyle's priorities confirmed on
+2026-10-21. Kyle authorized starting local personal-Vault implementation; these detailed choices
+are not individual selections. The L101 first build is **In progress** elsewhere.
 
 Give a person custody of a private Vault that an unattended Loom development server and its
 full-access agents cannot unlock. Establish the owner, reviewed storage engine, trusted
@@ -22,7 +22,8 @@ See [Personal Loom Vault](../LOOM-PERSONAL-VAULT.md).
 
 ## Surfaces
 
-Provisional acceptance: independently trusted Mac client/session and iPhone. The current Loom
+Confirmed first platform targets (Kyle, 2026-10-21): Mac and iPhone, requiring independently
+trusted clients/sessions. The current Loom
 renderer and development server are untrusted for custody. Safari/Chromium use requires an
 independently trusted client integration. Android, Windows and Linux remain explicit targets
 with no protection claim until their isolation and recovery evidence exists. General web

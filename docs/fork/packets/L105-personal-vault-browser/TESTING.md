@@ -31,7 +31,10 @@ extension build command or repo-wide verification is claimed.
 
 ## Authorized integrated scenarios
 
-On independently trusted Mac Chromium/Safari and iPhone Safari, use synthetic HTTPS sites.
+Use synthetic HTTPS sites on independently trusted Mac Chromium/Safari and supported iPhone
+Safari, Chrome and other branded browser apps. Inventory actual iOS engine/extension support
+and verify credential-provider autofill through [L107](../L107-personal-vault-native/); exact
+apps/versions remain open, and desktop Chromium extension support is not assumed on iOS.
 Test explicit fill/save/update, cancelled presence, no matches, archive exclusion, exact
 origin/port, unrelated subdomain, deceptive suffix, IDN, redirect after approval, frame swap,
 cross-origin/opaque/sandboxed frames, hidden decoys, detached inputs and navigation while the

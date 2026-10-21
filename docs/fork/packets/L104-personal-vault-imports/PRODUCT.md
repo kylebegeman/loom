@@ -53,8 +53,9 @@ items is never silently called success.
 
 ## Surfaces and unresolved priorities
 
-Trusted Mac is the provisional first local parser; iPhone must be able to consume/recover the
-encrypted result, with full local import only after its parser adapter passes. Android,
+Mac and iPhone are Kyle's confirmed first platform targets as of 2026-10-21. The proposed
+first local parser runs on a trusted Mac; iPhone must be able to consume/recover the encrypted
+result, with full local import only after its parser adapter passes. Android,
 Windows/Linux and browser-only flows remain tracked and unsupported for raw personal input.
 No LAN, tailnet, relay, tunnel, selected environment or upstream server is an import target.
 

@@ -19,10 +19,10 @@ Revocation stops future adapter operations. A completed site action cannot be un
 
 ## Surfaces, providers and connections
 
-Mac and iPhone approvals with Safari/Chromium checks are provisional first acceptance, not a confirmed platform choice. Native custody must be isolated from full-access agents: a separate trusted device or demonstrated OS account/process boundary, not a UI role, browser profile or safeStorage label. A Mac running same-user unrestricted agents is not automatically trusted.
+Mac and iPhone, Safari and Chromium are Kyle's confirmed first platform targets as of 2026-10-21. Approval flows and browser checks remain proposed acceptance work. Native custody must be isolated from full-access agents: a separate trusted device or demonstrated OS account/process boundary, not a UI role, browser profile or safeStorage label. A Mac running same-user unrestricted agents is not automatically trusted.
 
 Codex, Claude, Cursor, Grok, OpenCode, Antigravity and other provider instances use the common service/MCP path where supported; none gets a secret-shaped fallback. Scheduled agent runs use the same gates and require a live valid authorization or return blocked. Command-only jobs remain unsupported until an explicit broker exists. Local, direct remote, relay and tunnel requests bind the destination environment and authenticated run; they do not move custody there. Android/Windows/Linux/web show request status only where safe, otherwise unavailable. Upstream/older servers hide the action or explain the missing capability.
 
 ## Decisions still open
 
-Kyle has authorized local personal-Vault work, not selected these detailed scopes. Choose the first useful personal site/task, approval duration ceilings, result data policy and whether any session-lending case is acceptable. Retain broad site support as future adapter work. Independent security review is required before critical personal custody; synthetic local prototyping can proceed now.
+Kyle confirmed carefully scoped agent access as a priority on 2026-10-21 and authorized local personal-Vault work; these detailed scopes are not individually selected. Choose the first useful personal site/task, approval duration ceilings, result data policy and whether any session-lending case is acceptable. Retain broad site support as future adapter work. Independent security review is required before critical personal custody; synthetic local prototyping can proceed now.

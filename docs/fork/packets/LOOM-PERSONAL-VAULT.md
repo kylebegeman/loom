@@ -15,9 +15,12 @@ experience can hold both personal accounts and development identities while keep
 key custody and execution authority independent. Saving the annual subscription is not the
 success criterion. Reliable daily access, deliberate delegation and recoverability are.
 
-Provisionally prioritize Mac and iPhone, Chromium and Safari, with Android, Windows, Linux and
-web behavior tracked explicitly. These are reversible planning assumptions, not confirmed
-platform selections. Optional priority questions remain open; a later answer can reorder the work.
+Kyle confirmed on 2026-10-21 that the priorities are daily password-manager use, browser and
+phone autofill, and carefully scoped agent access. The first usable platforms are Mac and
+iPhone, with Safari and Chromium. Android, Windows, Linux and web behavior remain tracked
+explicitly. These confirmations guide the broader proposed scope; they do not select individual
+L102 to L111 packets, an engine or a trusted-client topology. Recovery details remain open.
+Sharing and emergency access remain optional and are not prioritized by the platform choices.
 
 ## Features worth exploring
 

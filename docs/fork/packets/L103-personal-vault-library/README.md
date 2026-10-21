@@ -1,7 +1,7 @@
 # L103: Personal Vault library
 
-Status: **Designing**. Agent-proposed scope pending Kyle's priorities, not an individually
-selected packet. Local personal-Vault work is authorized; L101's first build is **In progress**
+Status: **Designing**. Agent-proposed scope supporting Kyle's priorities confirmed on
+2026-10-21, not an individually selected packet. Local personal-Vault work is authorized; L101's first build is **In progress**
 elsewhere. See [Personal Loom Vault](../LOOM-PERSONAL-VAULT.md).
 
 Make Loom useful as a personal library for logins, notes, recovery material, payment cards,
@@ -23,7 +23,8 @@ working TOTP API is asserted.
 
 ## Surfaces
 
-Provisional acceptance: trusted Mac and iPhone library clients. Safari/Chromium library access
+Confirmed first platform targets (Kyle, 2026-10-21): Mac and iPhone, requiring trusted library
+clients. Safari/Chromium library access
 requires a trusted extension/client, not ordinary T3 preview. Android, Windows, Linux and
 browser-only management remain explicit targets with honest unsupported states. Server-hosted
 web/desktop UI can show non-secret availability and open the trusted client, never serve a
