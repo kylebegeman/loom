@@ -158,7 +158,6 @@ const make = Effect.gen(function* () {
         const live =
           initial.providerInstanceId !== null &&
           initial.activeRunId !== null &&
-          initial.status === "running" &&
           initial.runtimeMode === "full-access" &&
           initial.interactionMode === "default";
         checks.push({

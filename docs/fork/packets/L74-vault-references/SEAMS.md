@@ -26,10 +26,6 @@ available upstream nightly before handoff. The result and tag are recorded in TE
 - `apps/server/src/orchestration-v2/ProviderTurnStartService.ts`: `ext-vault-preflight`, import and guard/failure settlement before session open.
 - `apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts`: `ext-vault-preflight`, regression tests for blocked starts.
 - `apps/server/src/orchestration-v2/ProviderTurnControlService.ts`: `ext-vault-preflight`, guard before steering delivery.
-- `apps/web/src/components/chat/ChatComposer.tsx`: `vault-launch-ui`, import and attachment control.
-- `apps/web/src/components/settings/ScheduledTasksSettings.tsx`: `vault-launch-ui`, import and scheduled-prompt control.
-- `apps/mobile/src/features/threads/ThreadComposer.tsx`: `vault-launch-ui`, native composer control.
-- `apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx`: `vault-launch-ui`, native scheduled-prompt control.
 
 FORK.md and seams.tsv enumerate these markers. The blocking guard is independent of the
 optional `ext-turn-input` contributor proposal because a required check cannot be skipped.

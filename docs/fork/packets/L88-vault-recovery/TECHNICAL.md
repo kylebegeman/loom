@@ -1,9 +1,48 @@
 # L88 technical design
 
-Target design drafted against `2f385ee835`. Kyle authorized implementation and selected
-OpenBao for encrypted storage. Packet-specific contracts still need implementation review.
+The offline archive boundary below is implemented. Backend automation, production custody
+and trust promotion remain target contracts requiring the recorded owner decisions.
 Read the [foundation proposal](../LOOM-VAULT-FOUNDATION.md) for identity, storage, delivery,
 permission ceilings and retry semantics; these constraints are not reimplemented per packet.
+
+## Implemented offline archive boundary
+
+`RecoveryArchive.ts` owns the local POSIX adapter; `recovery-cli.ts` is a thin caller through
+the existing fork CLI registry. There is no RPC, MCP, browser download or backend token use.
+Windows returns an explicit refusal until an equivalent owner-restricted filesystem boundary
+is implemented. These commands require no OpenBao path, policy or record-format change.
+
+Archive version 1 is `LOOMVAULT1\n`, a random 32-byte salt and a random 12-byte nonce,
+followed by AES-256-GCM ciphertext and a 16-byte authentication tag. The random 32-byte key is
+stored separately; HKDF-SHA256 with context `Loom Vault recovery archive v1` derives each
+archive key. The complete header is authenticated associated data. Encrypted content starts
+with a four-byte big-endian JSON-manifest length (1 to 4096 bytes), then that manifest and the
+snapshot bytes. The manifest records version, environment identity, creation time, safe-integer
+positive snapshot size and SHA-256. Unknown versions, wrong environments, malformed manifests,
+truncation, extra bytes, digest mismatches and authentication failures refuse.
+
+The source is an opaque operator-supplied file, not an asserted valid OpenBao snapshot.
+Encryption hashes it before and during streaming and refuses changed content. Verification
+streams authentication without publishing plaintext. Recovery streams into an owner-only
+staging file, fsyncs it and publishes using an exclusive hard link only after full authentication.
+The parent directory is fsynced. Existing paths, including symlinks, cannot be overwritten.
+Interruption aborts streaming and waits for the operation promise, including its async cleanup,
+before the CLI exits. Output requires local hard-link and directory-fsync support; unsupported
+exclusive-link publication returns a specific refusal with no fallback. Copy completed encrypted
+archives to removable/network media separately. Abrupt process/host loss can leave private staging
+files, so use encrypted local storage and inspect interrupted work before retrying. A late I/O
+failure can follow publication; callers must inspect the destination rather than assume retry
+is safe. Inputs use nonblocking no-follow opens followed by regular-file checks; a FIFO cannot hold
+the process waiting for a writer. Key reads are bounded to 33 bytes even if the file grows
+after stat. Keys and plaintext sources must be owner-only.
+
+Successful receipts explicitly retain `backendRestoreVerified: false` and `canPromote: false`.
+An isolated restore exercise, not this receipt, proves a backend can read a particular snapshot.
+The exercise also demonstrates that a token revoked after capture reappears on restore, then
+explicitly revokes it. It never connects a restored backend to workloads. No claim is made that
+archives solve missing post-snapshot revocation history. Old runtimes ignore the standalone
+archive files, but cannot read them; keep a compatible CLI and backend binary with the recovery
+procedure. Access-policy format 3, operation journal 1 and all execution gates are unchanged.
 
 ## Overview
 

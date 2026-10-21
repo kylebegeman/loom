@@ -7,7 +7,11 @@ separate Loom test instance and Migadu; the [local operator proof](../../operati
 now issues, revokes and replaces real scoped sessions against stopped synthetic data. This does
 not enable the pool's broker login path or configure live email. A test-only Migadu inbox
 contract now proves bounded read-only selection over synthetic messages and loopback IMAP/TLS.
-Its default live connection remains unavailable pending custody, reader setup and L79 approval.
+A synthetic broker/mail composition also checks login admission, a separate reader reference/grant,
+and cancellation before releasing metadata-only observations. Its default live connection remains
+unavailable pending custody, reader setup and L79 approval. A retained in-memory restart proof
+also covers cleanup/reset barriers and fresh-lease reuse, with all live gates closed and no
+persistent storage or format selected.
 
 Manage application test identities as reusable, isolated QA resources.
 

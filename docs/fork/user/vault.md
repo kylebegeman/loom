@@ -433,8 +433,10 @@ personal SSH configuration is changed, and private keys stay in Vault's control 
 
 In web or desktop **Settings → Loom**, use **Vault references** to search names or item IDs
 and copy a stable reference. On mobile, open **Settings → Computers → Manage computer** and
-use **Vault references**. References contain no credential values and grant no access. Use
-**More references** when a sparse search page has no matches but more records remain.
+use **Vault references**. Choose **Search on computer** to inspect another connected computer's
+records. Each computer requires its own inspection permission and reference-search support;
+switching computers clears the current search. This does not move credentials or project bindings.
+References contain no credential values and grant no access. Use **More references** when a sparse search page has no matches but more records remain.
 
 Open **Vault project profiles**, choose the destination computer and project, and create a
 profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for
@@ -463,11 +465,9 @@ with existing output and time limits. GitHub uses the dedicated connection witho
 
 ## Attach Vault requirements before an agent run
 
-Use **Vault attachments** above the web/desktop composer or in the mobile composer. The same
-control is available in the scheduled-task prompt editor. Review a profile and attach its
-current version, or choose a Vault reference. The prompt contains readable links with no
-credential values. Remove/replace them through the control, or delete their lines in the
-prompt. Keep attachment links on their own lines; inline or quoted examples are not requirements.
+Existing prompts and scheduled tasks can contain readable Vault reference or versioned profile
+links with no credential values. Edit or delete their lines directly in the prompt. Keep
+attachment links on their own lines; inline or quoted examples are not requirements.
 
 A profile requires a full-access/default agent run. Every required SSH/Git binding must have
 an active key, verified host trust and a matching use grant. GitHub bindings need an active connection and exact repository use
@@ -758,3 +758,13 @@ present, otherwise the active project default. Missing bindings, stale broker
 presence and a permission-limited or changed provider run include repair guidance. Supplying
 explicit requirements checks those instead. Profile configuration and broker presence do not
 prove an upstream login; use a supported explicit connection check for that destination.
+
+## Back up and recover Vault
+
+An operator can encrypt, verify and recover an existing consistent snapshot with
+`loom vault recovery`. Keep the recovery key separately from the archive and retain the
+backend's unseal material. See the [offline archive procedure](../operations/vault.md#offline-encrypted-snapshot-archives).
+These local commands do not capture or restore a server. Authentication does not prove that an
+older backup is safe to use: restore in isolation and reconcile later revocations before
+reconnecting workloads. Scheduled backups, in-app recovery and automatic promotion are not
+available yet.

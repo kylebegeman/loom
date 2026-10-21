@@ -139,7 +139,7 @@ services still do not enforce persisted one-time intent or its mandatory/tempora
 The selected bounded synthetic review is complete. No further independent synthetic L86 slice
 is selected: persistence/readers, protected-item semantics, an implementable consistency boundary,
 restart-safe cleanup and rollback protection require the named owners' decisions and real proofs.
-See [the next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff) for each owner and the
+See [the next-owner handoff](../IMPLEMENT-NOW.md#vault-completion-dependencies) for each owner and the
 check that permits the next step. Stop this lane after landing this test/docs slice; retain its
 worktree and unrelated result.json. Do not infer approval to persist new fields, change formats
 or enable execution/resumption/allow-once from these model results.

@@ -463,3 +463,21 @@ it.effect("does not disclose discovered destinations to a thread without item in
     }),
   ),
 );
+
+it.effect(
+  "reports a queued active root run as live, without treating background drain as root ownership",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        f.state.thread = { ...f.state.thread, status: "queued" };
+        expect(
+          (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,
+        ).toContainEqual(expect.objectContaining({ id: "provider-runtime", state: "passed" }));
+        f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
+        expect(
+          (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,
+        ).toContainEqual(expect.objectContaining({ id: "provider-runtime", state: "blocked" }));
+      }),
+    ),
+);

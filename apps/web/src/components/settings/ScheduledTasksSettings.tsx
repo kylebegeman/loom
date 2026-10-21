@@ -1,5 +1,4 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
-import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
@@ -1333,15 +1332,6 @@ function ScheduledTaskEditorForm({
             />
           </Field>
 
-          {/* fork: vault-launch-ui */}
-          <VaultPromptAttachments
-            environmentId={environmentId}
-            projectId={draft.projectId || null}
-            threadId={draft.threadId || null}
-            prompt={draft.prompt}
-            onChange={(prompt) => setDraft((current) => ({ ...current, prompt }))}
-            disabled={saving || !connected}
-          />
           <Field label="Model">
             <div>
               <ProviderModelPicker

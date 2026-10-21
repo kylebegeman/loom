@@ -79,7 +79,7 @@ its eligibility model is synthetic only. The mandatory boundary design covers om
 its protected-item classification and coverage checks exist only in a synthetic model. No
 persisted intent or gate change is selected. Temporal synthetic proof now covers handoff and
 callback races, with a coherent commit explicitly assumed rather than implemented. The bounded
-synthetic review is complete; [next-owner checks](../IMPLEMENT-NOW.md#l86-next-owner-handoff)
+synthetic review is complete; [next-owner checks](../IMPLEMENT-NOW.md#vault-completion-dependencies)
 identify the remaining decisions and real verification. The packet remains partial.
 
 ## Scope

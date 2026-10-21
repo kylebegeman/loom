@@ -1,6 +1,7 @@
 # L88 implementation plan
 
-Status: Selected for implementation. The sequence below describes the full packet outcome;
+Status: In progress. Offline key/seal/verify/unseal and the disposable real-backend restore
+exercise are implemented. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Before starting

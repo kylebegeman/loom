@@ -194,6 +194,113 @@ adapter decisions, not a new OpenBao permission/path/schema proposal.
 All delivery, automatic-resumption and allow-once gates remain literal false. Policy3, journal1,
 registry1 and existing runtime behavior are unchanged by this test/docs slice. L75 stays parked.
 
+## Cleanup and reset-before-reuse barrier design
+
+This is a selected design with an executable synthetic proof, not an enabled cleanup system.
+`testkit/SyntheticCleanupBarrier.ts` has no runtime import, codec, serialized record, filesystem
+path or OpenBao integration. Its store interface is an opaque retained compare-and-set contract.
+The proof reconstructs controllers while retaining separate in-memory controller and provider
+ledgers; it does not demonstrate disk durability, provider-process restart or power-loss recovery.
+
+The proposed barrier belongs to the canonical account resource, conservatively keyed by
+environment and Vault item identity, not a transient lease or a collection label. Item version,
+account/collection, machine, application/test target and exact origin remain pinned. Changing one
+of those fields refuses rather than creating a clean alternative for the same resource. Rotation,
+provider-account aliases and intentional reassignment need a reviewed rebind/recovery procedure;
+a new item or environment identifier is not proof of a new physical account.
+
+Two pieces of evidence are necessary before reuse:
+
+1. A trusted adapter acknowledges a **terminal fence** for the original operation and generation.
+   It must prevent late/queued minting as well as revoke any existing session. A successful empty
+   lookup, lease/run expiry, disconnect, quarantine or an unavailable provider proves neither.
+2. An explicit reset operation returns matching account/scope and from/to generation evidence.
+   The provider must atomically advance its account generation, clear prior effects and retain
+   the reset ID's idempotent result. Every future start must check that provider generation.
+   The local readiness write uses the captured CAS revision, so delayed evidence cannot clear
+   another controller's newer operation.
+
+The design separates authority: a start revalidates its proposed operation, run and lease;
+host/broker maintenance has its own authorization. Revoking the workload must prevent another
+start without preventing separately authorized cleanup. A new actor can retry maintenance only
+with current rights. The proof's authority effects simulate these roles; live binding must use
+the existing grant/lease services and reviewed broker identity, not a caller-supplied boolean.
+
+| Retained phase | Safe action and restart behavior                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| quarantined    | Newly enrolled but unproven. An explicit generation-bound reset is required; absence is never clean.             |
+| uncertain      | Start intent was acknowledged before dispatch; an effect may exist. Retry cleanup only, never start or reset.    |
+| fenced         | Exact terminal fence is retained. Still unavailable for reuse until explicit reset succeeds.                     |
+| resetting      | Reset intent is retained before dispatch. Explicit retry must use the same reset ID and generation transition.   |
+| ready          | Matching reset evidence was CAS-committed. A fresh operation and fresh lease may enter the synthetic start path. |
+
+`ready` is an internal model phase; `canExecute`, `canDeliver`, `canReset`, `canReuse`, automatic
+resumption and allow-once gates remain literal false. This slice does not make a pool account
+available, consume an approval, reset app data or change the manual clean-review semantics.
+When integrated, the barrier must guard every login, reset, mark-clean, reserve/reassign and reuse
+entry point, including agent/scheduled paths. An available registry row or manual clean review
+must not bypass unresolved external effects. Until that integration is reviewed, live delivery
+remains unavailable and existing pool cleanup is not external-session revocation.
+
+A start intent is committed before external dispatch. Failure before commit admits no effect;
+an ambiguous commit acknowledgement admits no dispatch and is reconciled as uncertain. A lost
+start reply or interrupted wait does not authorize retry. Fence receipts may be retried against
+the original operation, while a stale receipt cannot overwrite a later reset/reservation. Reset
+intent is also committed first. A lost reset reply or final readiness-write acknowledgement is
+recovered by inspecting retained state and explicitly retrying the same reset ID. Reconstructing
+a controller performs no external mutation on its own. Cancellation retains the relevant intent.
+
+The model bounds retained resources at 32, start/lease replay evidence at 128 and reset IDs at
+160 (initial resource resets plus start cycles). It never ages out unresolved barriers or replay
+history. Capacity exhaustion refuses new work, rather than forgetting a delayed operation.
+Production retention/reclamation requires a provider fence watermark and a proven maximum replay
+horizon; it is not selected here. Compaction cannot be justified by a queue's ordinary age cap.
+
+Independent provider generations reject a rolled-back controller snapshot, including a fresh
+operation ID under the stale generation. Missing/unavailable controller state and unavailable
+provider evidence remain blocked. Losing or rolling back both ledgers, restoring old signing
+identity, or silently bootstrapping an existing provider account requires owner recovery and an
+independent rollback barrier. The synthetic ledger cannot establish those host guarantees.
+
+Before live implementation the owner must select the durable backend/CAS and ownership rules,
+validated record/readers and downgrade enforcement, independent provider fence/generation
+custody, provider-specific reset/revocation evidence, scope-rebind/recovery, retention and rollout.
+These are explicit design gates, not approved paths/formats/policy capabilities. A runtime that
+does not enforce a future barrier must not be allowed to resume old starts or reuse accounts;
+its reader/capability cutover and host rollback policy need review before writing persistent
+state. This slice writes none, so policy3, journal1 and registry1 remain unchanged with no new
+downgrade caveat. L79 host policy and L75's existing park remain separate gates.
+
+## Synthetic broker/mail composition
+
+`testkit/SyntheticBrokerMail.ts` composes the existing broker contract with an explicitly supplied
+mail adapter. Only the workload test suite imports it. It pins the broker operation/environment/
+machine, captured root thread/run, account/collection/item versions, exact lease and origin,
+reader reference/version, separate mail correlation ID, expected sender and bounded request time.
+The registration must agree with the login admission and owning adapter's reader reference.
+A scope echo correlates a result to this tuple; it is not sender authentication or an access token.
+
+The proof uses real VaultCore/VaultAccess services and an additional synthetic reader record/use
+grant, independently of pool and login grants. Its `test-only:mail:` destination is an arbitrary
+fixture evaluator input, not a registered product scope or a proposed storage/policy change.
+The owning adapter must check authorization/reference versions and registration at its read
+boundary. The composition revalidates before/after the awaited observation and after cleanup;
+these separate service reads do not form an atomic distributed authorization snapshot.
+
+The bounded child process imports the Python inbox's synthetic client and the real selector,
+with no live connector, credential-file input or inherited credential environment. Raw text stays
+inside that child. Only scoped message UIDs, candidate outcomes and fixed gate flags cross back.
+The receiving schema rejects excess properties, enabled gates, foreign scope/recipient/folder,
+inconsistent status, duplicates and out-of-window UIDs. A nonmatching run is never body-fetched;
+an unusable matched message does not hide the valid UID's metadata.
+
+The existing broker cleanup finalizer fences cancellation and delayed observations. Metadata is
+withheld if cleanup remains unknown, and cleanup reconciliation cannot repeat the read or resume
+a verification step. The account stays reserved rather than being marked clean. No OTP/link is
+consumed, no actual mail credential is delivered from Vault, no mail is mutated, and no public
+transport, runtime worker, persistent schema or backend path is added. Durable provider cleanup,
+restart/reuse barriers, sender authentication and all live acceptance remain unfinished.
+
 ## Selected Loom test target and email boundary
 
 The operator-only [local harness](../../../../apps/server/src/fork/vault/testkit/loom_test_instance.py)
@@ -212,8 +319,11 @@ the exact workspace toplevel and its own absolute Git and common directories at 
 and proof. An explicit scandir walk refuses symlinked metadata, object alternates and any
 unlistable metadata directory; silently skipped glob results are not sufficient. Start/proof refuse incomplete Git
 metadata; preparation may re-run init for an empty or HEAD-less directory only with a prior
-harness ownership stamp and no redirected/shared layout. Existing valid fixtures need no new
-stamp until creation/repair is needed. Global/system config is disabled during the probe.
+harness ownership stamp and no redirected/shared layout. A stopped, stamped, HEAD-less fixture
+may remove only `config.lock`, `HEAD.lock` and Git's top-level `tXXXXXX -> testing` symlink probe
+before retrying init. The full metadata scan must succeed before cleanup or Git runs; other
+symlinks, shared layouts and live runtime records refuse. Existing valid fixtures need no new
+stamp until creation/repair is needed. Do not run concurrent preparation of the same test home. Global/system config is disabled during the probe.
 Private JSON is published by owner-only temporary file and rename. Initial home-marker staging
 stays outside the new home so an interrupted publication leaves an empty, retryable home.
 Malformed/wrong seed markers count as incomplete. Unmarked published databases are preserved
@@ -266,9 +376,14 @@ possible UIDs below the observed UIDNEXT. Header PEEK filters sender, recipient 
 INTERNALDATE before fetching a bounded body. Conflicting run aliases refuse selection; sender
 Date headers do not set freshness. INTERNALDATE has second precision, so arrival filtering
 floors the request start to its second; no wider clock-skew allowance is implied. Malformed
-address-header objects refuse correlation, including semicolon-separated or trailing-dot aliases.
+address parsing failures refuse correlation as non-matches, including stdlib index/recursion
+errors. Benign display-name punctuation and UTF-8 are accepted only through strict address
+parsing and exact sender/recipient checks. Semicolon-separated or noncanonical run aliases,
+including trailing-dot aliases in unstructured routing fields, refuse correlation.
 A final STATUS observes UIDVALIDITY independently of the cached EXAMINE response. Changed epoch,
-routing headers, body metadata or expiry across reads and logout withdraw the result. This is an observation, not an atomic verification transaction.
+routing headers, body metadata or expiry across reads and logout withdraw the result.
+A structurally malformed body that truncates Python's header parse reports an unusable candidate,
+not drift; malformed MIME parameters are also isolated to that candidate. This is an observation, not an atomic verification transaction.
 
 The result distinguishes usable messages from per-candidate outcomes. An unusable matched MIME
 body, part/encoding/text limit or oversized message is visible as `unusable`, while another UID's
@@ -281,8 +396,11 @@ codes, with no provider error or unusable body content. Candidate outcomes are b
 64-UID scan; at most three usable messages are returned.
 
 Other bounds are 256 KiB per body, 16 KiB per header, 32 visited MIME parts and 64 KiB decoded
-plain text per message. The transport caps literals and aggregate logical bytes, plus stdlib
-socket read-ahead, and verifies the certificate and hostname for `imap.migadu.com:993`. It uses
+plain text per message. The transport checks a 2,000,000-byte aggregate logical-read budget.
+Because a line is counted after reading it, socket delivery can exceed that budget by up to one
+stdlib maximum line (1,000,000 bytes), plus stdlib socket read-ahead. Literal reads have their own
+pre-read cap. This is a finite transfer bound, not an exact 2 MB wire cap. The transport verifies
+the certificate and hostname for `imap.migadu.com:993`. It uses
 a ten-second socket inactivity timeout and checks a thirty-second elapsed budget at logical
 read boundaries. This is not a hard wall-clock bound: one imaplib read with continuous slow
 progress can outlast it. A custom deadline-aware receive layer is not implemented; this remains
@@ -300,8 +418,8 @@ issued. Provider failures disclose only fixed errors. The transcript and message
 synthetic credentials and message content.
 
 Kyle confirmed that the dedicated mailbox exists; live reader identity, custody/audit controls,
-authenticated-sender handling, mailbox routing/header acceptance and broker/Vault-reference/grant
-integration remain unfinished. Custody stays Kyle-only in 1Password until L79 approval, as the
+authenticated-sender handling, mailbox routing/header acceptance and shipping broker/Vault-reference/
+grant integration remain unfinished. The test-only composition above does not clear those gates. Custody stays Kyle-only in 1Password until L79 approval, as the
 [operator handoff](../../operations/vault.md#dedicated-migadu-test-mailbox-handoff) requires. The
 prototype adds no live credential export and does not clear the pool cleanup/reuse barrier.
 Policy3, journal1, registry1, existing gates and Library behavior are unchanged.

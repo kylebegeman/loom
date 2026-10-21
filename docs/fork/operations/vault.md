@@ -70,6 +70,58 @@ A service token without policy-path access receives a denial, with no privilege 
 There is no offline decrypted cache, forwarding agent, general workload lease or platform-account
 administration. The signed mediated SSH operation is described below.
 
+## Offline encrypted snapshot archives
+
+On a POSIX operator computer, use `loom vault recovery` without connecting Loom to a backend.
+Start with a consistent snapshot captured through the backend owner's approved procedure.
+Keep it and any recovered plaintext on private encrypted storage. These commands accept files;
+they do not capture or restore the backend, configure a schedule or add backend permissions.
+
+```sh
+umask 077
+loom vault recovery key-create /private/key-custody/vault-recovery.key
+loom vault recovery seal /private/staging/approved.snapshot /private/exports/vault.archive --key-file /private/key-custody/vault-recovery.key --environment-id YOUR_ENVIRONMENT_ID
+loom vault recovery verify /private/exports/vault.archive --key-file /private/key-custody/vault-recovery.key --environment-id YOUR_ENVIRONMENT_ID
+loom vault recovery unseal /private/exports/vault.archive /private/staging/recovered.snapshot --key-file /private/key-custody/vault-recovery.key --environment-id YOUR_ENVIRONMENT_ID
+```
+
+Create outputs in existing directories on local encrypted storage supporting hard links and
+directory fsync (for example APFS or ext4), using new filenames. Direct output to exFAT/FAT,
+SMB or FUSE is unsupported; exclusive publication refuses without a fallback when hard links
+are unavailable. Copy the completed encrypted archive to offline media afterwards and verify
+that copy before deleting the local archive. Keep plaintext and keys on private storage. Keys are random private binary files,
+never passwords or command-line values. Keep the recovery key and backend unseal material
+separate from exported archives and from the original host. Ownership, destination and retention
+still need an operator decision; no off-host copy or deletion is automatic. Sources and keys
+must be regular owner-only files. Existing files and symlinks are refused rather than replaced.
+Windows is not supported by this local filesystem boundary yet.
+
+Verification authenticates every encrypted byte and the expected environment without writing
+plaintext. Unseal publishes a new private file only after authentication. Ctrl-C waits for the
+in-flight operation to finish its staging cleanup before the CLI exits. Abrupt process or host
+loss may leave private `.loom-vault-*.tmp` staging files; inspect interrupted work and the final
+path before retrying. Filesystem errors can follow publication, so a failed command is not
+permission to overwrite or assume the destination is absent. Retire plaintext snapshots and
+staging files using the storage owner's approved procedure.
+
+`authenticated: true` verifies the archive, not OpenBao consistency or authorization freshness.
+Receipts always say `backendRestoreVerified: false` and `canPromote: false`. Restore only into
+an isolated backend with compatible OpenBao/Loom readers, then reconcile post-snapshot revoked
+machines, grants, sessions and upstream credentials before any workloads can reconnect. An
+archive can correctly contain identities that were revoked later. Do not promote an older
+snapshot when independent revocation evidence is unavailable. Production restoration and trust
+promotion remain a host-owner action behind the L79 gates.
+
+With installed dependencies and a verified OpenBao 2.7.1 binary, reproduce the isolated drill:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 apps/server/src/fork/vault/testkit/recovery_proof.py --bao /verified/path/to/bao
+```
+
+It owns temporary loopback backends and synthetic data only. It proves real snapshot decryption
+and policy preservation, deliberately demonstrates a post-snapshot token returning, and revokes
+it before cleanup. It never promotes a restored service or touches existing backend state.
+
 ## Reproduce the disposable backend proof
 
 Obtain the official OpenBao 2.7.1 binary and verify its published checksum. With repository

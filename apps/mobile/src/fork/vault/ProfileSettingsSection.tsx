@@ -1,8 +1,10 @@
+import { VaultReferenceSearch } from "./ReferenceSearch";
+import { VaultReferenceSettings } from "./ReferenceSettingsSection";
 import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   AuthAccessReadScope,
@@ -15,8 +17,6 @@ import {
   VaultProfileDefinition,
   type VaultProfileMutation,
   type VaultProfilePreview,
-  type VaultReference,
-  type VaultItemKind,
 } from "@t3tools/contracts/fork";
 import {
   createVaultProfileAtoms,
@@ -24,12 +24,10 @@ import {
   createVaultAccessAtoms,
   supportsLoomFeature,
   vaultProfileBindingMessage,
-  VAULT_KIND_LABELS,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Clipboard from "expo-clipboard";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
@@ -50,112 +48,6 @@ type ProfileEditor = Omit<VaultProfileDefinition, "bindings"> & {
 const decode = Schema.decodeUnknownOption(VaultProfileDefinition);
 const message = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The Vault operation failed. Refresh and try again.";
-export function VaultReferenceSearch({
-  environmentId,
-  connected,
-  onSelect,
-  kind = null,
-}: {
-  environmentId: EnvironmentId;
-  connected: boolean;
-  onSelect?: (r: VaultReference) => void;
-  kind?: VaultItemKind | null;
-}) {
-  const [query, setQuery] = useState(""),
-    [search, setSearch] = useState(""),
-    [archived, setArchived] = useState(false),
-    [cursor, setCursor] = useState<string | null>(null),
-    [notice, setNotice] = useState<string | null>(null);
-  const page = useEnvironmentQuery(
-    connected
-      ? references.search({
-          environmentId,
-          input: { query: search, kind, includeArchived: archived, cursor },
-        })
-      : null,
-  );
-  const disabled = !connected || page.isPending || !!page.error;
-  return (
-    <View className="gap-3">
-      <Text>Search Vault references</Text>
-      <TextInput
-        accessibilityLabel="Search Vault references"
-        value={query}
-        maxLength={100}
-        placeholder="Name or item ID"
-        editable={connected}
-        onChangeText={setQuery}
-        autoCapitalize="none"
-      />
-      <Button
-        label="Search references"
-        disabled={!connected || page.isPending}
-        onPress={() => {
-          setSearch(query.trim());
-          setCursor(null);
-          setNotice(null);
-          page.refresh();
-        }}
-      />
-      <View className="flex-row items-center gap-2">
-        <Switch
-          accessibilityLabel="Include archived references"
-          value={archived}
-          disabled={!connected}
-          onValueChange={(v) => {
-            setArchived(v);
-            setCursor(null);
-          }}
-        />
-        <Text>Include archived references</Text>
-      </View>
-      {page.isPending ? <Text accessibilityRole="summary">Searching references…</Text> : null}
-      {page.error ? <Text accessibilityRole="alert">{message(page.error)}</Text> : null}
-      {page.error ? <Button label="Retry reference search" onPress={page.refresh} /> : null}
-      {page.data?.items.length === 0 ? (
-        <Text>
-          {page.data.nextCursor
-            ? "No matches in this page. Continue searching."
-            : "No matching Vault references."}
-        </Text>
-      ) : null}
-      {page.data?.items.map((r) => (
-        <View key={r.item.id} className="gap-2 rounded-lg bg-subtle p-3">
-          <Text>{r.item.label}</Text>
-          <Text>
-            {VAULT_KIND_LABELS[r.item.kind]} · Version {r.item.version}
-            {r.item.state === "archived" ? " · Archived" : ""}
-          </Text>
-          <Button
-            label={onSelect ? `Use ${r.item.label}` : `Copy reference for ${r.item.label}`}
-            disabled={disabled || (!!onSelect && r.item.state !== "active")}
-            onPress={() => {
-              if (onSelect) {
-                onSelect(r);
-                return;
-              }
-              void Clipboard.setStringAsync(r.reference).then(
-                () => setNotice("Reference copied. It contains no credential value."),
-                () => setNotice("The reference could not be copied. Try again."),
-              );
-            }}
-          />
-        </View>
-      ))}
-      {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
-      <Button
-        label="First references"
-        disabled={disabled || cursor === null}
-        onPress={() => setCursor(null)}
-      />
-      <Button
-        label="More references"
-        disabled={disabled || !page.data?.nextCursor}
-        onPress={() => setCursor(page.data?.nextCursor ?? null)}
-      />
-    </View>
-  );
-}
 export function VaultProfileSettingsSection({
   environmentId,
   connected,
@@ -166,32 +58,26 @@ export function VaultProfileSettingsSection({
   const config = useEnvironmentServerConfig(environmentId),
     canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
     canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
-  if (!supportsLoomFeature(config?.environment.capabilities, "vault-profiles")) return null;
+  const supportsProfiles = supportsLoomFeature(config?.environment.capabilities, "vault-profiles");
   return (
     <>
       <SettingsSection title="Vault references">
-        {canRead ? (
-          <VaultReferenceSearch
-            key={`${environmentId}:${connected}`}
-            environmentId={environmentId}
-            connected={connected}
-          />
-        ) : (
-          <Text>Your connection does not include Vault inspection.</Text>
-        )}
+        <VaultReferenceSettings key={environmentId} environmentId={environmentId} />
       </SettingsSection>
-      <SettingsSection title="Vault project profiles">
-        {canRead ? (
-          <VaultProjectProfiles
-            key={`${environmentId}:${connected}:${canWrite}`}
-            environmentId={environmentId}
-            connected={connected}
-            canWrite={canWrite}
-          />
-        ) : (
-          <Text>Your connection does not include Vault inspection.</Text>
-        )}
-      </SettingsSection>
+      {supportsProfiles ? (
+        <SettingsSection title="Vault project profiles">
+          {canRead ? (
+            <VaultProjectProfiles
+              key={`${environmentId}:${connected}:${canWrite}`}
+              environmentId={environmentId}
+              connected={connected}
+              canWrite={canWrite}
+            />
+          ) : (
+            <Text>Your connection does not include Vault inspection.</Text>
+          )}
+        </SettingsSection>
+      ) : null}
     </>
   );
 }

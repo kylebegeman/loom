@@ -131,11 +131,12 @@ can leave a server session until expiry; it cannot grant offline signing. Abrupt
 leave public temporary files. Revocation blocks future signatures, but cannot recall a signature,
 terminate an already authenticated remote connection or undo remote effects.
 
-This is explicit per-command activation; it does not alter the enclosing provider shell. Pi and
-ACP already expose usable terminal connection variables. Native Codex, Claude, Cursor, Grok,
-OpenCode and Muse still use their MCP tools directly or need explicitly configured terminal
-connection variables. Their automatic terminal environment propagation remains a separate
-follow-up. Antigravity follows ACP. Web/desktop/mobile retain the existing key, host-trust and
+This is explicit per-command activation; it does not alter the enclosing provider shell.
+Codex and Claude receive private per-session connection descriptors automatically through the
+[L85 native session boundary](../L85-vault-delivery/TECHNICAL.md#native-terminal-session-connection).
+Pi and ACP expose their existing connection variables. Cursor, Grok, OpenCode and Muse use
+hosted MCP tools or explicit terminal connection configuration; their automatic propagation
+remains open. Antigravity follows ACP. Web/desktop/mobile retain the existing key, host-trust and
 grant management entry points; no new client UI or upstream provider seam is introduced.
 
 ## Overview

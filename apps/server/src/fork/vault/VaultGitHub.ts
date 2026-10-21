@@ -175,7 +175,6 @@ const make = Effect.gen(function* () {
         thread.projectId !== initial.projectId ||
         thread.worktreePath !== initial.worktreePath ||
         thread.providerInstanceId !== initial.providerInstanceId ||
-        thread.status !== "running" ||
         thread.runtimeMode !== "full-access" ||
         thread.interactionMode !== "default" ||
         thread.archivedAt ||
