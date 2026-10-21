@@ -30,6 +30,11 @@ Read these before touching a packet:
   every later packet only registers into it.
 - [\_template/](./_template/): the files every packet folder contains.
 
+[Loom Personal Vault](./LOOM-PERSONAL-VAULT.md) records the personal password-manager
+brainstorm and L101 to L111 packet proposals. Kyle authorized brainstorming, packets and a local
+build on 2026-10-21; L101 local password tools is In progress. The remaining detailed scopes are
+Designing, with sharing/emergency access optional. No personal data migration or deployment is implied.
+
 ## Planning policy after the upstream review
 
 Kyle confirmed on 2026-09-27 that Loom is an additive extension of T3 Code. These
@@ -280,3 +285,19 @@ packets:
   key listeners with an off switch, never entries in `keybindings.json`
   ([EXTENSION-POINTS.md, section 9](./EXTENSION-POINTS.md#9-keybindings-ext-keybindings)).
 - **Turn input order.** L20 private mode (5), L22 instruction modes (10).
+
+## Personal Vault packet proposals
+
+| ID   | Packet                                                                   | Proposed outcome                                                                      | State         |
+| ---- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ------------- |
+| L101 | [Local password tools](./L101-personal-vault-passwords/)                 | Local, cryptographic generation with explicit copy and clear.                         | In progress   |
+| L102 | [Personal custody and unlock](./L102-personal-vault-custody/)            | Independent personal keys, trusted clients, device unlock and real process isolation. | Designing     |
+| L103 | [Personal credential library](./L103-personal-vault-library/)            | Logins, notes, recovery codes, cards and identities with private search and history.  | Designing     |
+| L104 | [Reviewed personal migration](./L104-personal-vault-imports/)            | Local 1Password import review, duplicate handling, attachments and portable exports.  | Designing     |
+| L105 | [Trusted browser autofill](./L105-personal-vault-browser/)               | Origin-bound Chromium and Safari filling, account choice, and save/update.            | Designing     |
+| L106 | [Agent session delegation](./L106-personal-vault-agents/)                | Approve an account, destination, task and duration; inspect and end its session.      | Designing     |
+| L107 | [Native autofill and passkeys](./L107-personal-vault-native/)            | Phone credential providers, desktop quick access, TOTP and reviewed passkey custody.  | Designing     |
+| L108 | [Encrypted sync and offline use](./L108-personal-vault-sync/)            | Trusted-device caches, encrypted synchronization and visible conflict handling.       | Designing     |
+| L109 | [Recovery and device loss](./L109-personal-vault-recovery/)              | Independent recovery material, clean-device restoration and lost-device handling.     | Designing     |
+| L110 | [Account maintenance](./L110-personal-vault-maintenance/)                | Local weakness and reuse checks, reminders and reviewed account changes.              | Designing     |
+| L111 | [Selective sharing and emergency access](./L111-personal-vault-sharing/) | Optional item-specific sharing, recipient keys and a cancellable emergency process.   | Optional idea |

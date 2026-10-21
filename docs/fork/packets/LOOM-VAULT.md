@@ -12,6 +12,10 @@ computers, remote workers and CI should use explicitly granted development ident
 repeated personal key approvals. Kyle's VPS, begam.in services and Loom platform are available
 hosting/integration options, not infrastructure to replace or deploy without review.
 
+The [personal Vault expansion](./LOOM-PERSONAL-VAULT.md) adds a separate proposed personal
+password-manager track. The sixteen development packets retain their scope; their server-readable
+OpenBao boundary is not promoted to personal key custody.
+
 ## Product scope and confirmed intent
 
 - All sixteen outcomes below are retained, including the core storage, broker and policy systems.
