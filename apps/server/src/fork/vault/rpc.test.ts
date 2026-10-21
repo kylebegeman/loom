@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import { VaultCore } from "./VaultCore.ts";
+import { VaultAccess } from "./VaultAccess.ts";
 import { makeVaultCoreRpcHandlers } from "./rpc.ts";
 
 it.effect("keeps metadata readable while denying reveal and mutations before backend work", () =>
@@ -20,17 +21,20 @@ it.effect("keeps metadata readable while denying reveal and mutations before bac
     const work = Effect.sync(() => {
       invoked++;
     }).pipe(Effect.andThen(Effect.fail(new VaultError({ reason: "unavailable" }))));
-    const service = Layer.mock(VaultCore)({
-      status: Effect.succeed({
-        backend: "openbao",
-        state: "ready",
-        origin: "https://vault.example.test",
+    const service = Layer.merge(
+      Layer.mock(VaultCore)({
+        status: Effect.succeed({
+          backend: "openbao",
+          state: "ready",
+          origin: "https://vault.example.test",
+        }),
+        list: () => work,
+        save: () => work,
+        change: () => work,
+        reveal: () => work,
       }),
-      list: () => work,
-      save: () => work,
-      change: () => work,
-      reveal: () => work,
-    });
+      Layer.mock(VaultAccess)({ reveal: () => work }),
+    );
     const handlers = (scopes: readonly AuthEnvironmentScope[]) =>
       makeVaultCoreRpcHandlers(
         makeForkRpcAuth({

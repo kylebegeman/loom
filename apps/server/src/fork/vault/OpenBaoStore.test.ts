@@ -118,6 +118,26 @@ it.effect("checks engine seal state and the KV v2 mount", () =>
   ),
 );
 
+it.effect.each([
+  { data: { cas_required: false } },
+  { data: {} },
+  { data: { cas_required: "true" } },
+  {},
+])("requires mount-wide CAS before reporting ready: %j", (configuration) =>
+  withStore(
+    ({ store }) =>
+      Effect.gen(function* () {
+        expect((yield* store.status).state).toBe("misconfigured");
+      }),
+    {
+      reply: (request) => [
+        200,
+        request.url.endsWith("/health") ? { initialized: true, sealed: false } : configuration,
+      ],
+    },
+  ),
+);
+
 it.effect("reports sealed and denied backends distinctly", () =>
   Effect.gen(function* () {
     yield* withStore(

@@ -30,6 +30,8 @@ import {
   type VaultReadinessReport,
   type VaultDelegateInput,
   type VaultItemList,
+  type VaultItemReveal,
+  type VaultItemValue,
   type VaultItemPage,
   type VaultAccessCatalog,
 } from "@t3tools/contracts/fork";
@@ -103,6 +105,7 @@ const decodeBatchMutation = Schema.decodeUnknownOption(VaultGrantBatchMutation);
 const encodeBatchMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ mutation: VaultGrantBatchMutation, actor: Schema.String })),
 );
+const isAuditActor = Schema.is(VaultAuditEvent.fields.actor);
 const encodeMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ mutation: VaultGrantMutation, actor: Schema.String })),
 );
@@ -231,6 +234,10 @@ export class VaultAccess extends Context.Service<
     ) => Effect.Effect<VaultApprovalRequest, VaultError>;
     readonly catalog: Effect.Effect<VaultAccessCatalog, VaultError>;
     readonly snapshot: Effect.Effect<VaultPolicySnapshot, VaultError>;
+    readonly reveal: (
+      input: VaultItemReveal,
+      actor: string,
+    ) => Effect.Effect<VaultItemValue, VaultError>;
     readonly apply: (
       input: VaultGrantMutation,
       actor: string,
@@ -1534,6 +1541,29 @@ const make = Effect.gen(function* () {
         },
         actor,
       );
+    }),
+    reveal: Effect.fn("VaultAccess.reveal")(function* (input, actor) {
+      if (!isAuditActor(actor)) return yield* new VaultError({ reason: "invalid-input" });
+      // Human disclosure requires a durable audit; broker reads use their own audited authority.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { policy, version } = yield* load();
+        const value = yield* core.reveal(input);
+        const next = withAudit(policy, {
+          id: yield* eventId,
+          at: yield* Clock.currentTimeMillis,
+          actor,
+          type: "decision",
+          itemId: value.item.id,
+          grantId: null,
+          action: "reveal",
+          reason: "allowed",
+          policyRevision: policy.revision,
+        });
+        const persisted = yield* persist(next, version).pipe(Effect.result);
+        if (persisted._tag === "Success") return value;
+        if (persisted.failure.reason !== "conflict") return yield* persisted.failure;
+      }
+      return yield* new VaultError({ reason: "conflict" });
     }),
     approvalPrepareRetry,
     approvalRetain,
