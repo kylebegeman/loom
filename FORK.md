@@ -682,3 +682,10 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep the footer local to the desktop computer.       |
 | `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.       |
 | `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views. |
+
+### Secure native randomness
+
+| File                                          | Marker                 | Why                                                                                                                                |
+| --------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/mobile/src/features/cloud/dpop.ts`      | `secure-native-random` | Fail closed when native secure randomness is unavailable; Expo's convenience byte API can fall back to Math.random in development. |
+| `apps/mobile/src/features/cloud/dpop.test.ts` | `secure-native-random` | Cover unavailable secure randomness without using the available insecure fallback.                                                 |

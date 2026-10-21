@@ -68,7 +68,8 @@ function toExpoDigestAlgorithm(
 export const layer = Layer.succeed(
   Crypto.Crypto,
   Crypto.make({
-    randomBytes: ExpoCrypto.getRandomBytes,
+    // fork: secure-native-random -- getRandomBytes can use Math.random in development/debuggers.
+    randomBytes: (count) => ExpoCrypto.getRandomValues(new Uint8Array(count)),
     digest: (algorithm, data) =>
       Effect.promise(async () => {
         const input = new Uint8Array(data.length);
