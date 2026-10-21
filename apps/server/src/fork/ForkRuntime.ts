@@ -40,6 +40,15 @@ import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecyc
 import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.ts";
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
+import type { BotBatches } from "./bots/BotBatches.ts";
+import type { BotsService } from "./bots/BotsService.ts";
+import type { BotLibraryClient } from "./bots/BotLibraryClient.ts";
+import type { BotLibraryService } from "./bots/BotLibraryService.ts";
+import type { BotSharing } from "./bots/BotSharing.ts";
+import type { BotDrafts } from "./bots/fromThread/BotDrafts.ts";
+import type { BotTriggers } from "./bots/triggers/BotTriggers.ts";
+import type { BotPipelines } from "./bots/pipelines/BotPipelines.ts";
+import type { BotVersions } from "./bots/versions/BotVersions.ts";
 import type { SwitchboardStatus } from "./switchboard/SwitchboardStatus.ts";
 import type { PreviewLinksService } from "./preview-links/PreviewLinksService.ts";
 import type { PreviewAccessService } from "./preview-access/PreviewAccessService.ts";
@@ -92,6 +101,15 @@ export type ForkServices =
   | AppleBuildService
   | DeviceQaService
   | CodeGraphService
+  | BotsService
+  | BotBatches
+  | BotDrafts
+  | BotTriggers
+  | BotVersions
+  | BotPipelines
+  | BotLibraryService
+  | BotLibraryClient
+  | BotSharing
   | WorkspaceHandoffService
   | SwitchboardStatus
   | LibraryBriefSuggestions

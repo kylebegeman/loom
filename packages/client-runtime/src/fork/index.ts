@@ -80,3 +80,5 @@ export * from "./sites-check-clock.ts";
 export * from "./preview-links.ts";
 
 export * from "./preview-link-navigation.ts";
+
+export * from "./bots.ts";

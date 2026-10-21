@@ -1,0 +1,479 @@
+import { useState } from "react";
+import type { EnvironmentId, ProjectId, RuntimeMode } from "@t3tools/contracts";
+import type {
+  BotDefinition,
+  BotId,
+  BotLibraryAvailability,
+  BotTarget,
+  BotTargetReadiness,
+  BotVaultSlot,
+} from "@t3tools/contracts/fork";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { Switch } from "~/components/ui/switch";
+import { useEnvironmentQuery } from "~/state/query";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import { VaultReferencePicker } from "../vault/ReferencePicker";
+import { Choice, RUNTIME_MODE_LABELS } from "./BotEditor";
+import { bots } from "./state";
+
+const LIBRARY_NOTICE: Record<Exclude<BotLibraryAvailability, "available">, string> = {
+  none: "Connect this computer to a Library to share bots with your other computers.",
+  unsupported: "Your Library does not support shared bots yet.",
+};
+
+export function FromLibraryBadge({ bot }: { readonly bot: BotDefinition }) {
+  return bot.library == null ? null : <Badge variant="outline">From the Library</Badge>;
+}
+
+const HERE = "here";
+const BEST = "best";
+const ENVIRONMENT_PREFIX = "environment:";
+
+const targetValue = (target: BotTarget) =>
+  target.type === "environment" ? `${ENVIRONMENT_PREFIX}${target.environmentId}` : target.type;
+
+const targetFromValue = (value: string): BotTarget =>
+  value.startsWith(ENVIRONMENT_PREFIX)
+    ? {
+        type: "environment",
+        environmentId: value.slice(ENVIRONMENT_PREFIX.length) as EnvironmentId,
+      }
+    : value === BEST
+      ? { type: "best" }
+      : { type: "here" };
+
+const readinessText = (target: BotTargetReadiness) =>
+  target.ready
+    ? `Ready, ${target.freeSlots} free ${target.freeSlots === 1 ? "slot" : "slots"}`
+    : target.reasons.join(" ");
+
+/**
+ * Where a run goes. Shows nothing until the Library records shared bots and another computer has
+ * reported in, so a single computer keeps the plain Run form.
+ */
+export function BotTargetField({
+  environmentId,
+  botId,
+  projectId,
+  value,
+  onChange,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly botId: BotId;
+  readonly projectId: ProjectId | null;
+  readonly value: BotTarget;
+  readonly onChange: (target: BotTarget) => void;
+}) {
+  const query = useEnvironmentQuery(
+    bots.targets({
+      environmentId,
+      input: { botId, ...(projectId === null ? {} : { projectId }) },
+    }),
+  );
+  const data = query.data;
+  if (data === null || data.library !== "available" || data.targets.length < 2) return null;
+  const others = data.targets.filter((target) => !target.isThisComputer);
+  const here = data.targets.find((target) => target.isThisComputer);
+  const chosen =
+    value.type === "environment"
+      ? data.targets.find((target) => target.environmentId === value.environmentId)
+      : value.type === "here"
+        ? here
+        : undefined;
+  return (
+    <LibraryField label="Run on">
+      <Select
+        value={targetValue(value)}
+        onValueChange={(next) => onChange(targetFromValue(next ?? HERE))}
+      >
+        <SelectTrigger size="sm">
+          <SelectValue>
+            {value.type === "best"
+              ? "Best available"
+              : value.type === "here"
+                ? "This computer"
+                : (chosen?.label ?? "Another computer")}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectItem value={HERE} label="This computer">
+            This computer
+          </SelectItem>
+          <SelectItem value={BEST} label="Best available">
+            Best available
+          </SelectItem>
+          {others.map((target) => (
+            <SelectItem
+              key={target.environmentId}
+              value={`${ENVIRONMENT_PREFIX}${target.environmentId}`}
+              label={target.label}
+              disabled={!target.ready}
+            >
+              <span className="grid">
+                <span className="truncate">{target.label}</span>
+                <span className="text-xs text-muted-foreground">{readinessText(target)}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+      {chosen ? (
+        <span className="text-xs font-normal text-muted-foreground">{readinessText(chosen)}</span>
+      ) : value.type === "best" ? (
+        <span className="text-xs font-normal text-muted-foreground">
+          The ready computer with the most free slots. This computer wins a tie.
+        </span>
+      ) : null}
+    </LibraryField>
+  );
+}
+
+function VaultSlotBinding({
+  environmentId,
+  bot,
+  slot,
+  itemLabel,
+  bound,
+  canChange,
+  onChanged,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly bot: BotDefinition;
+  readonly slot: BotVaultSlot;
+  readonly itemLabel: string | null;
+  readonly bound: boolean;
+  readonly canChange: boolean;
+  readonly onChanged: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bind = useAtomCommand(bots.bindVaultSlot, { reportFailure: false });
+
+  const setItem = async (itemId: string | null) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await bind({
+        environmentId,
+        input: { botId: bot.id, slot: slot.name, itemId },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      setPicking(false);
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not bind the Vault slot.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="grid gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate">{slot.label}</p>
+          <p className="text-xs text-muted-foreground">
+            {bound
+              ? (itemLabel ?? "Bound to an item this computer can no longer read")
+              : "Not bound on this computer"}
+          </p>
+        </div>
+        <div className="flex gap-1">
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={!canChange || busy}
+            onClick={() => setPicking(true)}
+          >
+            {bound ? "Change" : "Bind"}
+          </Button>
+          {bound ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!canChange || busy}
+              onClick={() => void setItem(null)}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive-foreground">
+          {error}
+        </p>
+      ) : null}
+      {picking ? (
+        <LibraryDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPicking(false);
+          }}
+          title={`Bind ${slot.label}`}
+          description={`Choose the Vault item ${bot.name} uses on this computer. It never leaves this computer.`}
+          actions={
+            <Button variant="ghost" onClick={() => setPicking(false)}>
+              Cancel
+            </Button>
+          }
+        >
+          <VaultReferencePicker
+            environmentId={environmentId}
+            disabled={busy}
+            onSelect={(reference) => void setItem(reference.item.id)}
+          />
+        </LibraryDialog>
+      ) : null}
+    </li>
+  );
+}
+
+/** Sharing, where the bot can run, and this computer's Vault bindings for it. */
+export function BotSharingPanel({
+  environmentId,
+  bot,
+  canChange,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly bot: BotDefinition;
+  readonly canChange: boolean;
+}) {
+  const targetsQuery = useEnvironmentQuery(
+    bots.targets({ environmentId, input: { botId: bot.id } }),
+  );
+  const slots = bot.vaultSlots ?? [];
+  const bindingsQuery = useEnvironmentQuery(
+    slots.length === 0 ? null : bots.vaultBindings({ environmentId, input: { botId: bot.id } }),
+  );
+  const share = useAtomCommand(bots.share, { reportFailure: false });
+  const unshare = useAtomCommand(bots.unshare, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const library = targetsQuery.data?.library ?? null;
+  const others = (targetsQuery.data?.targets ?? []).filter((target) => !target.isThisComputer);
+  const refreshTargets = targetsQuery.refresh;
+
+  const toggleShared = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const command = bot.library == null ? share : unshare;
+      const result = await command({ environmentId, input: { botId: bot.id } });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      refreshTargets();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change sharing.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Most people have one computer and no Library; the panel would only be noise for them.
+  if ((library === null || library === "none") && slots.length === 0) return null;
+  return (
+    <section
+      className="grid gap-3 rounded-lg border border-border p-3 text-sm"
+      aria-label="Library"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="font-medium">Library</h3>
+          <p className="text-muted-foreground">
+            {library === null
+              ? "Checking the Library…"
+              : library !== "available"
+                ? LIBRARY_NOTICE[library]
+                : bot.library != null
+                  ? `Shared with your other computers, revision ${bot.library.revision}.`
+                  : "Only on this computer. Share it to run it on your other computers."}
+          </p>
+        </div>
+        {library === "available" ? (
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={!canChange || busy}
+            onClick={() => void toggleShared()}
+          >
+            {bot.library == null ? "Share to Library" : "Stop sharing"}
+          </Button>
+        ) : null}
+      </div>
+      {bot.library?.modelOverride ? (
+        <p className="text-xs text-muted-foreground">
+          This computer runs it on {bot.library.modelOverride.model}; the Library keeps the shared
+          model for the others.
+        </p>
+      ) : null}
+      {library === "available" && others.length > 0 ? (
+        <ul className="grid gap-1" aria-label="Computers">
+          {others.map((target) => (
+            <li key={target.environmentId} className="flex flex-wrap justify-between gap-2">
+              <span className="truncate">{target.label}</span>
+              <span className="text-xs text-muted-foreground">{readinessText(target)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {slots.length > 0 ? (
+        <div className="grid gap-2">
+          <h4 className="text-xs font-medium text-muted-foreground">
+            Vault slots on this computer
+          </h4>
+          <ul className="grid gap-2">
+            {slots.map((slot) => {
+              const binding = bindingsQuery.data?.bindings.find(
+                (entry) => entry.slot === slot.name,
+              );
+              return (
+                <VaultSlotBinding
+                  key={slot.name}
+                  environmentId={environmentId}
+                  bot={bot}
+                  slot={slot}
+                  itemLabel={binding?.itemLabel ?? null}
+                  bound={binding?.itemId != null}
+                  canChange={canChange}
+                  onChanged={() => {
+                    bindingsQuery.refresh();
+                    refreshTargets();
+                  }}
+                />
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-destructive-foreground">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+const CEILING_MODES: ReadonlyArray<RuntimeMode> = [
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+];
+
+/** Whether this computer runs bots for the others, and how far their runs may reach. */
+export function BotRemoteRunsSettings({
+  environmentId,
+  canChange,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly canChange: boolean;
+}) {
+  const settingsQuery = useEnvironmentQuery(bots.remoteSettings({ environmentId, input: {} }));
+  const save = useAtomCommand(bots.setRemoteSettings, { reportFailure: false });
+  const sync = useAtomCommand(bots.syncLibrary, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const settings = settingsQuery.data;
+
+  const act = async (work: () => Promise<string | null>) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      setNotice(await work());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const change = (patch: Partial<NonNullable<typeof settings>>) =>
+    act(async () => {
+      if (settings === null) return null;
+      const result = await save({ environmentId, input: { ...settings, ...patch } });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      settingsQuery.refresh();
+      return null;
+    });
+
+  const syncNow = () =>
+    act(async () => {
+      const result = await sync({ environmentId, input: {} });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      const { pulled, refused } = result.value;
+      const summary =
+        pulled === 0
+          ? "Every shared bot is up to date."
+          : `Brought in ${pulled} shared ${pulled === 1 ? "bot" : "bots"}.`;
+      return [summary, ...refused.map((entry) => entry.message)].join(" ");
+    });
+
+  return (
+    <section className="grid gap-4 text-sm" aria-label="Remote runs">
+      <div className="grid gap-1">
+        <h3 className="font-medium">Remote runs</h3>
+        <p className="text-muted-foreground">
+          Let your other computers run shared bots here. Their runs show on this computer as
+          requested by the computer that sent them.
+        </p>
+      </div>
+      {settingsQuery.error ? (
+        <p role="alert" className="text-destructive-foreground">
+          {settingsQuery.error}
+        </p>
+      ) : null}
+      {settings ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex items-center gap-2">
+            <Switch
+              checked={settings.acceptRemote}
+              disabled={!canChange || busy}
+              onCheckedChange={(acceptRemote) => void change({ acceptRemote })}
+            />
+            Run bots for other computers
+          </label>
+          <LibraryField label="Highest permissions for their runs">
+            <Choice
+              id="bots-remote-ceiling"
+              value={settings.runtimeModeCeiling}
+              labels={RUNTIME_MODE_LABELS}
+              options={CEILING_MODES}
+              disabled={!canChange || busy}
+              onChange={(runtimeModeCeiling) => void change({ runtimeModeCeiling })}
+            />
+          </LibraryField>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={!canChange || busy}
+          onClick={() => void syncNow()}
+        >
+          Sync shared bots
+        </Button>
+        {notice ? <span className="text-muted-foreground">{notice}</span> : null}
+      </div>
+      {error ? (
+        <p role="alert" className="text-destructive-foreground">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}

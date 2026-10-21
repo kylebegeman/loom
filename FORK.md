@@ -70,7 +70,7 @@ The shared plumbing packets register into, specified in
 | `apps/server/src/orchestration-v2/ProviderTurnControlService.ts`                             | `fork: ext-vault-preflight` | Recheck explicit Vault requirements before steering an active provider.                                     |
 | `apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts`                          | `fork: ext-vault-preflight` | Prove explicit unavailable or invalid attachments never open a provider.                                    |
 | `apps/server/src/ws.ts`                                                                      | `ext-core`                  | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                                              |
-| `apps/server/src/server.ts`                                                                  | `ext-core`                  | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes.                             |
+| `apps/server/src/server.ts`                                                                  | `ext-core`                  | `ForkLayer`, given pull requests, heads the core runtime; `ForkRoutesLayer` with the routes.                |
 | `apps/server/src/environment/ServerEnvironment.ts`                                           | `ext-core`                  | Advertises `capabilities.loomFeatures`.                                                                     |
 | `packages/contracts/src/environment.ts`                                                      | `ext-core`                  | Optional `loomFeatures` capability key.                                                                     |
 | `packages/client-runtime/src/rpc/protocol.ts`                                                | `ext-core`                  | Clients speak `LoomWsRpcGroup`.                                                                             |
@@ -95,6 +95,8 @@ The shared plumbing packets register into, specified in
 | `apps/server/src/observability/RpcInstrumentation.ts`                                        | `ext-core`                  | Label fork RPC spans within the shared middleware.                                                          |
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`                | Persist and reopen fork documents; retire archived inspector history.                                       |
 | `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header`           | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
+| `apps/web/src/components/chat/ChatComposer.tsx`                                              | `ext-composer`              | Fork footer controls, prepended so upstream's from-the-end hiding keeps them; a drawer above the composer.  |
+| `apps/web/src/components/chat/ChatComposer.tsx`, `ComposerCommandMenu.tsx`                   | `ext-composer-menu`         | Fork items join the upstream `/` list, and choosing one hands it to its fork source.                        |
 
 ### Native Vault terminal connection seams
 
@@ -182,6 +184,37 @@ upstream's open state and trigger, so `rightPanel.new` still opens it. With the 
 turned off in Settings the upstream list and menu render unchanged. See the
 [L12 packet](docs/fork/packets/L12-panel-picker/SEAMS.md) and
 [user help](docs/fork/user/panel-picker.md).
+
+L89 adds the Bots footer entry after Sites in `apps/web/src/components/sidebar/SidebarChrome.tsx`
+(`fork: bots`, 4 marker lines since L94 added its attention count) and lists `/loom/bots` as a
+utility page in `apps/web/src/components/sidebar/mainAppLocation.ts`. Bot runs are hidden threads: the subagent
+checks in `apps/web/src/components/Sidebar.logic.ts` (2 marker lines),
+`packages/client-runtime/src/state/threadShell.ts` and
+`apps/web/src/components/ThreadNotificationCoordinator.tsx` also skip ids from
+`isBotRunThreadId`. See the [L89 packet](docs/fork/packets/L89-bots-core/SEAMS.md).
+
+L91 lists `LOOM_BOTS_INSTRUCTIONS` with the orchestration sections in
+`packages/provider-core/src/server/orchestrationInstructions.ts` (`fork: bots`, 2 marker lines),
+following the `ext-vault` seam there. Its composer features use `ext-composer` and
+`ext-composer-menu`. See the [L91 packet](docs/fork/packets/L91-bots-invocation/SEAMS.md).
+
+L95 renders a Bots section after the Totals section of `apps/web/src/components/usage/UsagePage.tsx`
+(`fork: bots`, 2 marker lines). `BotsUsageSection` fetches its own numbers and renders nothing
+unless the primary environment supports `bots-budgets` and is selected. See the
+[L95 packet](docs/fork/packets/L95-bots-budgets/SEAMS.md).
+
+L96 adds "Save as bot…" to the thread action menu in `apps/web/src/components/threadActionMenu.logic.ts`,
+`apps/web/src/hooks/useThreadActionMenu.ts` and `apps/web/src/components/Sidebar.tsx` (`fork: bots`,
+3 marker lines each). The item, its flag and its handler call one-line helpers in
+`apps/web/src/fork/bots/fromThread/state.ts`. See the
+[L96 packet](docs/fork/packets/L96-bots-from-thread/SEAMS.md).
+
+L97 hands `bot-trigger-` webhook deliveries to the bot trigger service in
+`apps/server/src/scheduledTasks/webhookRoute.ts` (`fork: bots`, 2 marker lines). The route takes
+its scheduled task service from `BotTriggers.webhookTarget`, which routes bot hooks and returns the
+service unchanged on a server without the fork layer.
+The `ext-core` comment in `apps/server/src/server.ts` also gives `ForkLayer` the webhook origin.
+See the [L97 packet](docs/fork/packets/L97-bots-triggers/SEAMS.md).
 
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.

@@ -294,6 +294,14 @@ import {
   ComposerCommandMenu,
   composerSuggestionOptionId,
 } from "./ComposerCommandMenu";
+// fork: ext-composer
+import { useForkComposer } from "../../fork/composer/registry";
+// fork: ext-composer-menu
+import {
+  searchForkSlashItems,
+  selectForkComposerItem,
+  useForkSlashMenuItems,
+} from "../../fork/composer/menu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
@@ -2650,6 +2658,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? []
       : composerPullRequestsFromLinks(threadPullRequests ?? [], pullRequestProjectId);
 
+  // fork: ext-composer
+  const forkComposer = useForkComposer({
+    environmentId,
+    threadRef: routeKind === "server" ? routeThreadRef : null,
+    projectId: activeProjectId,
+  });
+  // fork: ext-composer-menu
+  const forkSlashItems = useForkSlashMenuItems(
+    forkComposer.context,
+    composerTrigger?.kind === "slash-command",
+  );
   const composerMenuItems = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -2733,7 +2752,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
         composerTrigger.rangeStart === 0,
       );
-      return searchSlashCommandItems(slashCommandItems, query);
+      // fork: ext-composer-menu
+      return [
+        ...searchSlashCommandItems(slashCommandItems, query),
+        ...searchForkSlashItems(forkSlashItems, query),
+      ];
     }
     if (composerTrigger.kind === "skill") {
       return searchProviderSkills(selectedProviderSkills, composerTrigger.query).map((skill) => ({
@@ -3830,6 +3853,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
     const { snapshot, trigger } = resolveActiveComposerTrigger();
     if (!trigger) return;
+    // fork: ext-composer-menu
+    if (item.type === "loom") {
+      const context = forkComposer.context;
+      if (
+        selectForkComposerItem(item, {
+          snapshot,
+          trigger,
+          replace: applyPromptReplacement,
+          context,
+        })
+      )
+        setComposerHighlightedItemId(null);
+      return;
+    }
     if (item.type === "path") {
       if (!isPathSuggestionCurrent(item.searchTarget, trigger, environmentId, gitCwd)) return;
       const replacement = `${serializeComposerFileLink(item.path)} `;
@@ -5109,6 +5146,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     hidden: composerControlsHidden || restingHiddenBlockCount > 1,
   });
   const restingBlockDefs = [
+    // fork: ext-composer
+    ...forkComposer.blockDefs(composerControlsCollapsed ? "xs" : "sm"),
     ...(providerTraitsPicker
       ? [
           {
@@ -6693,6 +6732,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 </ComposerCommandMenuLayer>
               )}
+              {/* fork: ext-composer */}
+              {forkComposer.drawer !== null &&
+                !isStashMenuOpen &&
+                !composerMenuOpen &&
+                !isComposerApprovalState && (
+                  <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
+                    {forkComposer.drawer}
+                  </ComposerCommandMenuLayer>
+                )}
 
               <div role="status" aria-atomic="true" className="sr-only">
                 {composerSuggestionsVisible && composerMenuItems.length === 0

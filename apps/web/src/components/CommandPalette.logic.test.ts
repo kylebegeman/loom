@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { botRunThreadId } from "@t3tools/contracts/fork";
 import type { Project, Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
@@ -418,6 +419,21 @@ describe("buildThreadActionItems", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("leaves out bot run threads, which the Bots page lists", () => {
+    const items = buildThreadActionItems({
+      threads: [
+        makeThread({ id: ThreadId.make("thread-person"), title: "Fix navbar" }),
+        makeThread({ id: botRunThreadId("run-1"), title: "Nightly triage" }),
+      ],
+      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+      sortOrder: "updated_at",
+      icon: null,
+      runThread: async (_thread) => undefined,
+    });
+
+    expect(items.map((item) => item.value)).toEqual(["thread:thread-person"]);
   });
 
   it("ranks thread title matches ahead of contextual project-name matches", () => {

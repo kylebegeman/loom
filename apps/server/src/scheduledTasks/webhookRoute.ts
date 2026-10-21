@@ -10,6 +10,7 @@ import * as HttpTraceContext from "effect/http/HttpTraceContext";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
+import * as BotTriggers from "../fork/bots/triggers/BotTriggers.ts"; // fork: bots
 import * as Metrics from "../observability/Metrics.ts";
 import * as RelayDeliveryProof from "./RelayDeliveryProof.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
@@ -27,7 +28,7 @@ export const layer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "webhooks",
   Effect.fnUntraced(function* (handlers) {
-    const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
+    const scheduledTasks = yield* BotTriggers.webhookTarget; // fork: bots
     const relayDeliveryProof = yield* RelayDeliveryProof.RelayDeliveryProof;
     /**
      * The endpoint is raw so the signature is checked over the exact body

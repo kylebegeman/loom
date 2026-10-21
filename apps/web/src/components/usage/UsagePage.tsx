@@ -60,6 +60,7 @@ import {
 } from "@t3tools/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { BotsUsageSection } from "../../fork/bots/BotsUsageSection"; // fork: bots
 import {
   Menu,
   MenuCheckboxItem,
@@ -867,6 +868,12 @@ function UsageOverview({
           />
         </div>
       </section>
+      {/* fork: bots */}
+      <BotsUsageSection
+        window={shownWindow}
+        environmentIds={selectedEnvironments.map((environment) => environment.environmentId)}
+        totalTokens={merged.totalTokens}
+      />
 
       {merged.totalTokens > 0 ? (
         <section

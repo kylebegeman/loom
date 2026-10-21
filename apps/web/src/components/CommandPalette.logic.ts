@@ -7,6 +7,7 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
@@ -412,7 +413,9 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   limit?: number;
 }): CommandPaletteActionItem[] {
   const sortedThreads = sortThreads(
-    input.threads.filter((thread) => thread.archivedAt === null),
+    input.threads.filter(
+      (thread) => thread.archivedAt === null && !isBotRunThreadId(thread.id), // fork: bots - runs are listed on the Bots page
+    ),
     input.sortOrder,
   );
   const visibleThreads =

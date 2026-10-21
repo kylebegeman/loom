@@ -13,6 +13,7 @@ import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { LoomWordmark } from "../LoomWordmark"; // fork: brand
+import { useBotsFooterEntry } from "../../fork/bots/BotsFooterEntry"; // fork: bots
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -171,9 +172,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const isOnUtilityPage = useLocation({
     select: (location) =>
       isSidebarUtilityPage(location.pathname) &&
-      !/^\/(?:sites|projects|library)(?:\/|$)/.test(location.pathname),
+      !/^\/(?:sites|projects|library|loom\/bots)(?:\/|$)/.test(location.pathname), // fork: bots
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const botsEntry = useBotsFooterEntry(); // fork: bots
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -249,6 +251,16 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/sites" });
+            }}
+          />
+          {/* fork: bots */}
+          <SidebarUtilityItem
+            icon={botsEntry.icon}
+            label={botsEntry.label}
+            active={pathname === "/loom/bots"}
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/loom/bots" });
             }}
           />
         </>

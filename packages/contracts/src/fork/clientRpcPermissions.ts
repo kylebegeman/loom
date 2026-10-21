@@ -31,6 +31,15 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
 import { AuthPreviewOperateScope } from "../auth.ts";
 import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
+import {
+  BOTS_BATCH_WS_METHODS as BATCH,
+  BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
+  BOTS_PIPELINE_WS_METHODS as PIPELINE,
+  BOTS_ANYWHERE_WS_METHODS as ANYWHERE,
+  BOTS_TRIGGER_WS_METHODS as TRIGGER,
+  BOTS_VERSION_WS_METHODS as BOT_VERSION,
+  BOTS_WS_METHODS as BOT,
+} from "./bots.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -203,4 +212,43 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PL.pagesUpdate]: AuthPreviewOperateScope,
   // The directory list stays unguarded for the same reason.
   [DIR.forget]: AuthSettingsWriteScope,
+  // Bot list and run history stay unguarded: clients read them with query atoms.
+  [BOT.save]: AuthOrchestrationOperateScope,
+  [BOT.archive]: AuthOrchestrationOperateScope,
+  [BOT.delete]: AuthOrchestrationOperateScope,
+  [BOT.run]: AuthOrchestrationOperateScope,
+  [BOT.cancel]: AuthOrchestrationOperateScope,
+  [BOT.restoreStarter]: AuthOrchestrationOperateScope,
+  [BOT.retry]: AuthOrchestrationOperateScope,
+  [BOT.dismiss]: AuthOrchestrationOperateScope,
+  [BOT.promote]: AuthOrchestrationOperateScope,
+  // Batch reads stay unguarded for the same reason; preview is read on every edit of the form.
+  [BATCH.runBatch]: AuthOrchestrationOperateScope,
+  [BATCH.cancelBatch]: AuthOrchestrationOperateScope,
+  [BATCH.retryBatch]: AuthOrchestrationOperateScope,
+  [BOT_DRAFT.refineDraft]: AuthOrchestrationOperateScope,
+  [BOT_DRAFT.dismissSuggestion]: AuthOrchestrationOperateScope,
+  // Trigger lists and firing logs stay unguarded for the same reason.
+  [TRIGGER.saveTrigger]: AuthOrchestrationOperateScope,
+  [TRIGGER.deleteTrigger]: AuthOrchestrationOperateScope,
+  [TRIGGER.setTriggerEnabled]: AuthOrchestrationOperateScope,
+  [TRIGGER.repinTrigger]: AuthOrchestrationOperateScope,
+  [TRIGGER.testTrigger]: AuthOrchestrationOperateScope,
+  [TRIGGER.rotateTriggerToken]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.setStable]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.restoreVersion]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.replay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.cancelReplay]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.rateRun]: AuthOrchestrationOperateScope,
+  [BOT_VERSION.suggestEdit]: AuthOrchestrationOperateScope,
+  [PIPELINE.savePipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.deletePipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.runPipeline]: AuthOrchestrationOperateScope,
+  [PIPELINE.cancelPipelineRun]: AuthOrchestrationOperateScope,
+  [PIPELINE.resumePipelineRun]: AuthOrchestrationOperateScope,
+  [ANYWHERE.share]: AuthOrchestrationOperateScope,
+  [ANYWHERE.unshare]: AuthOrchestrationOperateScope,
+  [ANYWHERE.syncLibrary]: AuthOrchestrationOperateScope,
+  [ANYWHERE.bindVaultSlot]: AuthOrchestrationOperateScope,
+  [ANYWHERE.setRemoteSettings]: AuthOrchestrationOperateScope,
 } as const;

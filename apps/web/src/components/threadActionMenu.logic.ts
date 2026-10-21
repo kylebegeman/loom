@@ -3,6 +3,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 
 export type ThreadActionMenuId =
   | "workspace-handoff"
+  | "save-as-bot" // fork: bots
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
@@ -81,6 +82,7 @@ export interface ThreadActionMenuState {
   readonly isRunning: boolean;
   readonly supports: {
     readonly workspaceHandoff?: boolean;
+    readonly saveAsBot?: boolean; // fork: bots
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
@@ -116,6 +118,9 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
+    ...(state.supports.saveAsBot
+      ? [{ id: "save-as-bot" as const, label: "Save as bot…", icon: "bot" }]
+      : []), // fork: bots
     ...(state.branch
       ? [
           {

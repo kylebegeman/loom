@@ -15,6 +15,7 @@ import { panelPickerPaletteSource } from "../panel-picker/palette";
 import { codeGraphPaletteSource } from "../code-graph/palette";
 import { previewLinksPaletteSource } from "../preview-links/palette";
 import { utilitiesPaletteSource } from "../utilities/palette";
+import { botsPaletteSource, useBotsPaletteContext, type BotsPaletteContext } from "../bots/palette";
 import {
   libraryPaletteSource,
   useLibraryPaletteContext,
@@ -49,6 +50,7 @@ export interface ForkCommandPaletteContext {
   readonly modelFiles?: ReadonlyArray<string>;
   readonly loomFeatures: ReadonlyArray<string>;
   readonly library?: LibraryPaletteContext | null;
+  readonly bots?: BotsPaletteContext | null;
 }
 
 export interface ForkCommandPaletteSource {
@@ -85,6 +87,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   previewLinksPaletteSource,
   utilitiesPaletteSource,
   libraryPaletteSource,
+  botsPaletteSource,
 ];
 
 /** Every source's items. The palette matches search terms only, so a string title joins them. */
@@ -130,7 +133,8 @@ export function useForkCommandPaletteItems(): {
   const modelFiles =
     Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
   const library = useLibraryPaletteContext(activeThreadRef);
-  const context = { activeThreadRef, loomFeatures, modelFiles, library };
+  const bots = useBotsPaletteContext();
+  const context = { activeThreadRef, loomFeatures, modelFiles, library, bots };
   return {
     items: forkCommandPaletteItems(context),
     searchItems: forkCommandPaletteSearchItems(context),

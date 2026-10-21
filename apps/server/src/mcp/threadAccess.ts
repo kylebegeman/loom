@@ -8,6 +8,7 @@ import {
   type ThreadId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 
@@ -15,6 +16,20 @@ import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as OrchestrationMcp from "./OrchestratorMcpService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+
+/**
+ * A bot run works within its bot's limits, and a thread it started or scheduled would outlive
+ * them and could start bots or arm triggers the run itself may not.
+ */
+export const refuseBotRunSpawn = (scope: McpInvocationContext.McpInvocationScope) =>
+  scope.thread !== undefined && isBotRunThreadId(scope.thread.threadId)
+    ? Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "capability_denied",
+          message: "A bot run cannot start other threads or schedule work.",
+        }),
+      )
+    : Effect.void;
 
 export const unavailable = () =>
   new OrchestratorMcpFailure({

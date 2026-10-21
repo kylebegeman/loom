@@ -34,6 +34,31 @@ import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
 import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
 import { makeAppleBuildToolingRpcHandlers } from "./apple-build-tooling/rpc.ts";
 import { makeDeviceQaRpcHandlers } from "./device-qa/rpc.ts";
+import {
+  makeBotBatchesRpcHandlers,
+  makeBotsAnywhereRpcHandlers,
+  makeBotDraftsRpcHandlers,
+  makeBotPipelinesRpcHandlers,
+  makeBotsRpcHandlers,
+  makeBotTriggersRpcHandlers,
+  makeBotVersionsRpcHandlers,
+} from "./bots/rpc.ts";
+import {
+  BOTS_BATCH_WS_METHODS,
+  BOTS_ANYWHERE_WS_METHODS,
+  BOTS_DRAFT_WS_METHODS,
+  BOTS_PIPELINE_WS_METHODS,
+  BOTS_TRIGGER_WS_METHODS,
+  BOTS_VERSION_WS_METHODS,
+  BOTS_WS_METHODS,
+  BotBatchesRpcGroup,
+  BotsAnywhereRpcGroup,
+  BotDraftsRpcGroup,
+  BotPipelinesRpcGroup,
+  BotsRpcGroup,
+  BotTriggersRpcGroup,
+  BotVersionsRpcGroup,
+} from "@t3tools/contracts/fork";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
@@ -78,6 +103,13 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(VAULT_SSH_WS_METHODS),
   ...Object.values(VAULT_PROFILE_WS_METHODS),
   ...Object.values(VAULT_REFERENCE_WS_METHODS),
+  ...Object.values(BOTS_WS_METHODS),
+  ...Object.values(BOTS_BATCH_WS_METHODS),
+  ...Object.values(BOTS_DRAFT_WS_METHODS),
+  ...Object.values(BOTS_TRIGGER_WS_METHODS),
+  ...Object.values(BOTS_VERSION_WS_METHODS),
+  ...Object.values(BOTS_PIPELINE_WS_METHODS),
+  ...Object.values(BOTS_ANYWHERE_WS_METHODS),
 );
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
@@ -97,6 +129,13 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultSshRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultProfileRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultReferenceRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotBatchesRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotDraftsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotTriggersRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotVersionsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotPipelinesRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsAnywhereRpcGroup>>
 > =>
   Layer.mergeAll(
     VaultTestAccountRpcGroup.toLayer(
@@ -135,6 +174,23 @@ export const makeForkRpcLayer = (
     ),
     VaultReferenceRpcGroup.toLayer(
       withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session)))),
+    BotBatchesRpcGroup.toLayer(
+      withForkRuntime(makeBotBatchesRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    BotDraftsRpcGroup.toLayer(withForkRuntime(makeBotDraftsRpcHandlers(makeForkRpcAuth(session)))),
+    BotTriggersRpcGroup.toLayer(
+      withForkRuntime(makeBotTriggersRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    BotVersionsRpcGroup.toLayer(
+      withForkRuntime(makeBotVersionsRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    BotPipelinesRpcGroup.toLayer(
+      withForkRuntime(makeBotPipelinesRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    BotsAnywhereRpcGroup.toLayer(
+      withForkRuntime(makeBotsAnywhereRpcHandlers(makeForkRpcAuth(session))),
     ),
     VaultSshRpcGroup.toLayer(
       withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),

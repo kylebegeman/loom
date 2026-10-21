@@ -7,6 +7,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
@@ -394,7 +395,11 @@ export function createEnvironmentThreadShellAtoms(input: {
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
-        if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
+        if (
+          thread.archivedAt !== null ||
+          thread.lineage.relationshipToParent === "subagent" ||
+          isBotRunThreadId(thread.id) // fork: bots - runs are listed on the Bots page
+        )
           continue;
         next.push(scopedThread(environmentId, thread, subagentRequests));
       }

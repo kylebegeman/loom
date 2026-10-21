@@ -2,7 +2,7 @@ import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { OrchestratorToolkit } from "./tools.ts";
 import * as Effect from "effect/Effect";
 
-import { readCaller } from "../../threadAccess.ts";
+import { readCaller, refuseBotRunSpawn } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -19,6 +19,7 @@ const handlers = {
   delegate_task: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
+      yield* refuseBotRunSpawn(scope);
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       return yield* service.delegateTask(scope, input);
     }),
@@ -97,6 +98,7 @@ const handlers = {
   create_threads: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
+      yield* refuseBotRunSpawn(scope);
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       return yield* service.createThreads(scope, input);
     }),

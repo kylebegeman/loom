@@ -3078,6 +3078,34 @@ function claudeUsageLimitResetAt(resetsAt: unknown): string | null {
     : null;
 }
 
+// fork: switchboard. Claude Code flattens the proxy's error envelope to this text.
+function switchboardCooldownResetAt(
+  message: SDKResultMessage,
+  model: string,
+  completedAt: DateTime.Utc,
+): string | null {
+  if (
+    message.subtype !== "success" ||
+    !message.is_error ||
+    message.terminal_reason !== "api_error" ||
+    message.api_error_status !== 429 ||
+    message.result.length > 4096 ||
+    !model.startsWith("claude-")
+  )
+    return null;
+  const prefix = `API Error: Request rejected (429) · All credentials for model ${model} are cooling down`;
+  if (!message.result.startsWith(prefix)) return null;
+  const hint =
+    /^(?: via provider claude)?(?: \(last error: [^\r\n]*\))? \(reset after ([1-9]\d{0,6})s\)$/.exec(
+      message.result.slice(prefix.length),
+    );
+  if (!hint) return null;
+  const waitMs = Number(hint[1]) * 1000;
+  if (waitMs > CLAUDE_USAGE_LIMIT_MAX_WAIT_MS) return null;
+  const resetMs = DateTime.toEpochMillis(completedAt) + waitMs;
+  return resetMs < 8.64e15 ? DateTime.formatIso(DateTime.makeUnsafe(resetMs)) : null;
+}
+
 function providerFailureFromResult(
   message: SDKResultMessage,
   completedAt: DateTime.Utc,
@@ -8471,7 +8499,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
             const terminalFailure =
               resultFailure?.class === "usage_limit"
-                ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
+                ? {
+                    ...resultFailure,
+                    // The pool can recover on another account before this session's window resets.
+                    resetAt:
+                      switchboardCooldownResetAt(
+                        message,
+                        context.input.modelSelection.model,
+                        completedAt,
+                      ) ??
+                      resetAt ??
+                      resultFailure.resetAt ??
+                      null,
+                  }
                 : resultFailure;
             yield* finalizeActiveTurn({
               context,
@@ -10387,39 +10427,3 @@ export const ClaudeAdapterV2Driver: ProviderAdapterDriver<
   defaultConfig: (): ClaudeSettings => DEFAULT_CLAUDE_SETTINGS,
   create: (input) => createClaudeAdapterV2(input, {}),
 };
-
-const makeDefaultClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2.layer")(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
-  const hostEnvironment = yield* HostProcess.Environment;
-  const idAllocator = yield* IdAllocator.IdAllocatorV2;
-  const queryRunner = yield* ClaudeAgentSdkQueryRunner;
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-
-  return yield* makeClaudeAdapterV2({
-    instanceId: CLAUDE_DEFAULT_INSTANCE_ID,
-    settings: DEFAULT_CLAUDE_SETTINGS,
-    environment: hostEnvironment,
-    attachmentsDir: serverConfig.attachmentsDir,
-    fileSystem,
-    path,
-    crypto,
-    idAllocator,
-    queryRunner,
-    continuationRequests,
-  });
-});
-
-const layer: Layer.Layer<
-  ProviderAdapter.ProviderAdapterV2,
-  never,
-  | ClaudeAgentSdkQueryRunner
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | IdAllocator.IdAllocatorV2
-  | McpProviderSessions.McpProviderSessions
-  | Path.Path
-  | ServerConfig.ServerConfig
-> = Layer.effect(ProviderAdapter.ProviderAdapterV2, makeDefaultClaudeAdapterV2());

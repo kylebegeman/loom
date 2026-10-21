@@ -3,6 +3,19 @@
 Status: **Local pool and authenticated run reservation milestones verified within the limits below.** Full
 packet acceptance remains unfinished. Implementation base is current fork main `4070ef99a2`.
 
+## Python requirement for mail proofs
+
+The Migadu Python suites and the broker/mail cases in `VaultTestAccountWorkloads.test.ts`
+require **Python 3.13 or newer**, with that interpreter available as `python3` on `PATH`.
+The TypeScript suite launches `python3` directly; macOS `/usr/bin/python3` 3.9 is insufficient
+and produces the adapter's deliberate unavailable result. Select an installed 3.13+ Python
+in the shell before running either suite. Check from `apps/server`:
+
+```sh
+python3 -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ must be python3 on PATH"'
+../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts src/fork/vault/SyntheticCleanupBarrier.test.ts
+```
+
 ## Selected Loom target evidence
 
 On 2026-10-20 the operator-only `loom_test_instance.py prepare/start/prove` workflow ran against
