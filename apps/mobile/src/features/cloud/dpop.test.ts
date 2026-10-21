@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import * as NodeCrypto from "node:crypto";
+import * as ExpoCrypto from "expo-crypto";
 
 import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
@@ -18,6 +19,8 @@ vi.mock("expo-crypto", () => ({
     SHA384: "SHA-384",
     SHA512: "SHA-512",
   },
+  // fork: secure-native-random -- Exercise the secure native interface, not the dev fallback.
+  getRandomValues: (bytes: Uint8Array) => NodeCrypto.randomFillSync(bytes),
   getRandomBytes: (byteCount: number) => new Uint8Array(NodeCrypto.randomBytes(byteCount)),
   getRandomBytesAsync: (byteCount: number) =>
     Promise.resolve(new Uint8Array(NodeCrypto.randomBytes(byteCount))),
@@ -63,6 +66,22 @@ function proofHtu(proof: string): string {
 }
 
 describe("mobile DPoP", () => {
+  // fork: secure-native-random -- Development debugger fallback must not create proof keys.
+  it.effect("fails closed when native secure randomness is unavailable", () =>
+    Effect.gen(function* () {
+      const random = vi.spyOn(ExpoCrypto, "getRandomValues").mockImplementationOnce(() => {
+        throw new Error("Native secure randomness unavailable");
+      });
+      try {
+        const crypto = yield* Crypto.Crypto;
+        const result = yield* Effect.exit(crypto.randomBytes(16));
+        expect(result._tag).toBe("Failure");
+      } finally {
+        random.mockRestore();
+      }
+    }).pipe(Effect.provide(Dpop.layer)),
+  );
+
   it.effect("passes typed-array digest input through the Expo Crypto adapter", () =>
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;

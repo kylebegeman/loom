@@ -417,3 +417,5 @@ apps/web/src/components/chat/ChatComposer.tsx	ext-composer	4
 apps/web/src/components/chat/ChatComposer.tsx	ext-composer-menu	4
 apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	2
 apps/web/src/components/CommandPalette.logic.ts	bots	1
+apps/mobile/src/features/cloud/dpop.ts	secure-native-random	1
+apps/mobile/src/features/cloud/dpop.test.ts	secure-native-random	2
