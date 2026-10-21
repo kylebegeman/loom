@@ -1,3 +1,4 @@
+import { VaultPasswordSettingsSection } from "../vault/PasswordGenerator";
 import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import { VaultMigrationInventorySettingsSection } from "../vault/MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
@@ -24,6 +25,7 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "vault-passwords", title: "Vault password tools", Component: VaultPasswordSettingsSection },
   {
     id: "vault-test-accounts",
     title: "Vault test accounts",

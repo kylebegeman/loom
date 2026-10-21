@@ -1,3 +1,4 @@
+import { vaultPasswordPaletteSource } from "../vault/password-palette";
 import { vaultTestAccountsPaletteSource } from "../vault/test-accounts-palette";
 import { vaultMigrationPaletteSource } from "../vault/migration-palette";
 import { vaultHealthPaletteSource } from "../vault/health-palette";
@@ -67,6 +68,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  vaultPasswordPaletteSource,
   vaultProfilePaletteSource,
   vaultSshPaletteSource,
   vaultMigrationPaletteSource,

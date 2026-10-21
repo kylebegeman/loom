@@ -758,3 +758,14 @@ present, otherwise the active project default. Missing bindings, stale broker
 presence and a permission-limited or changed provider run include repair guidance. Supplying
 explicit requirements checks those instead. Profile configuration and broker presence do not
 prove an upstream login; use a supported explicit connection check for that destination.
+
+## Generate a password locally
+
+Open **Settings > Loom > Vault password tools**, or choose **Generate a Vault password** in
+the command palette. On mobile, open a computer's settings and find **Vault password tools**.
+Generation works on the current device without a Vault backend or an active connection once
+settings is accessible. Choose the length and characters, generate, and copy when ready.
+
+Passwords start hidden and are not saved automatically. Changing the options, closing the tool
+or leaving the window/app clears the result from the view. Copy uses the system clipboard;
+clearing the view does not erase that clipboard or copies saved by another app.

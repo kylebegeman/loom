@@ -1,3 +1,4 @@
+import { VaultPasswordGeneratorSection } from "./PasswordGeneratorSection";
 import { VaultTestAccountSettingsSection } from "./TestAccountSettingsSection";
 import { VaultMigrationInventorySettingsSection } from "./MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "./MigrationSettingsSection";
@@ -55,9 +56,11 @@ export function VaultSettingsSection({
   const config = useEnvironmentServerConfig(environmentId);
   const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
-  if (!supportsLoomFeature(config?.environment.capabilities, "vault-core")) return null;
+  if (!supportsLoomFeature(config?.environment.capabilities, "vault-core"))
+    return <VaultPasswordGeneratorSection />;
   return (
     <>
+      <VaultPasswordGeneratorSection />
       <SettingsSection title="Vault">
         {canRead ? (
           <VaultItems

@@ -286,13 +286,24 @@ describe("password", () => {
         /[0Oo1lI|]/,
       );
     }
-    expect(generate({ excludeLookAlikes: true }).Entropy).toBe("128 bits");
+    expect(generate({ excludeLookAlikes: true }).Entropy).toBe("127 bits");
   });
 
   it("uses only the chosen sets", () => {
     const result = generate({ lowercase: false, uppercase: false, symbols: false });
     expect(result.Password).toMatch(/^[0-9]{20}$/);
     expect(result.Entropy).toBe("66 bits");
+  });
+
+  it("returns an error instead of a password if randomness fails", () => {
+    const result = password.generate(
+      runInput(password, {
+        random: () => {
+          throw new Error("Randomness unavailable");
+        },
+      }),
+    );
+    expect(errorMessage(result)).toBe("Unable to obtain random bytes.");
   });
 
   it("asks for a character set when none is chosen", () => {

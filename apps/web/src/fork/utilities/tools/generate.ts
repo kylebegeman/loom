@@ -1,4 +1,11 @@
 import {
+  generateVaultPassword,
+  VAULT_PASSWORD_CHARACTER_SETS,
+  VAULT_PASSWORD_DEFAULTS,
+  VAULT_PASSWORD_MAX_LENGTH,
+  VAULT_PASSWORD_MIN_LENGTH,
+} from "@t3tools/client-runtime/fork";
+import {
   booleanOption,
   error,
   numberOption,
@@ -56,16 +63,6 @@ export const pick = (alphabet: string, count: number, random: Random) =>
   randomIndices(alphabet.length, count, random)
     .map((index) => alphabet.charAt(index))
     .join("");
-
-/** Fisher-Yates, with the same unbiased indices. */
-function shuffle(items: string[], random: Random): void {
-  for (let index = items.length - 1; index > 0; index--) {
-    const other = randomIndex(index + 1, random);
-    const current = items[index] ?? "";
-    items[index] = items[other] ?? "";
-    items[other] = current;
-  }
-}
 
 const ID_COUNT: NumberOption = {
   kind: "number",
@@ -198,42 +195,35 @@ const PASSWORD_LENGTH: NumberOption = {
   kind: "number",
   id: "length",
   label: "Length",
-  min: 8,
-  max: 128,
-  defaultValue: 20,
+  min: VAULT_PASSWORD_MIN_LENGTH,
+  max: VAULT_PASSWORD_MAX_LENGTH,
+  defaultValue: VAULT_PASSWORD_DEFAULTS.length,
 };
 
-const PASSWORD_SETS = [
-  { id: "lowercase", label: "Lowercase letters", characters: "abcdefghijklmnopqrstuvwxyz" },
-  { id: "uppercase", label: "Uppercase letters", characters: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" },
-  { id: "digits", label: "Digits", characters: "0123456789" },
-  // ASCII punctuation without quotes, backslash and backtick, which break pasting into shells,
-  // JSON and config files.
-  { id: "symbols", label: "Symbols", characters: "!#$%&()*+,-./:;<=>?@[]^_{|}~" },
-];
-
-const LOOK_ALIKES = /[0Oo1lI|]/g;
-
 function generatePassword(input: UtilityRunInput): UtilityResult {
-  const length = clampedNumber(input.options, PASSWORD_LENGTH);
-  const exclude = booleanOption(input.options, "excludeLookAlikes", false);
-  const sets = PASSWORD_SETS.filter((set) => booleanOption(input.options, set.id, true)).map(
-    (set) => (exclude ? set.characters.replace(LOOK_ALIKES, "") : set.characters),
-  );
-  if (sets.length === 0) return error("Choose at least one character set.");
-  const alphabet = sets.join("");
-  // One from each chosen set guarantees it appears; the shuffle stops those characters sitting
-  // at predictable positions.
-  const characters = [
-    ...sets.map((set) => pick(set, 1, input.random)),
-    ...pick(alphabet, length - sets.length, input.random),
-  ];
-  shuffle(characters, input.random);
-  const bits = Math.round(length * Math.log2(alphabet.length));
-  return ok([
-    { label: "Password", value: characters.join(""), monospace: true },
-    { label: "Entropy", value: `${bits} bits` },
-  ]);
+  try {
+    const { value, entropyBits } = generateVaultPassword(
+      {
+        length: clampedNumber(input.options, PASSWORD_LENGTH),
+        lowercase: booleanOption(input.options, "lowercase", VAULT_PASSWORD_DEFAULTS.lowercase),
+        uppercase: booleanOption(input.options, "uppercase", VAULT_PASSWORD_DEFAULTS.uppercase),
+        digits: booleanOption(input.options, "digits", VAULT_PASSWORD_DEFAULTS.digits),
+        symbols: booleanOption(input.options, "symbols", VAULT_PASSWORD_DEFAULTS.symbols),
+        excludeLookAlikes: booleanOption(
+          input.options,
+          "excludeLookAlikes",
+          VAULT_PASSWORD_DEFAULTS.excludeLookAlikes,
+        ),
+      },
+      input.random,
+    );
+    return ok([
+      { label: "Password", value, monospace: true },
+      { label: "Entropy", value: `${Math.round(entropyBits)} bits` },
+    ]);
+  } catch (cause) {
+    return error(cause instanceof Error ? cause.message : "Unable to generate a password.");
+  }
 }
 
 const TOKEN_BYTES: NumberOption = {
@@ -455,17 +445,17 @@ export const GENERATE_TOOLS = {
     input: "none",
     options: [
       PASSWORD_LENGTH,
-      ...PASSWORD_SETS.map(({ id, label }): UtilityOption => ({
+      ...VAULT_PASSWORD_CHARACTER_SETS.map(({ id, label }): UtilityOption => ({
         kind: "toggle",
         id,
         label,
-        defaultValue: true,
+        defaultValue: VAULT_PASSWORD_DEFAULTS[id],
       })),
       {
         kind: "toggle",
         id: "excludeLookAlikes",
         label: "Exclude look-alikes (0 O o 1 l I |)",
-        defaultValue: false,
+        defaultValue: VAULT_PASSWORD_DEFAULTS.excludeLookAlikes,
       },
     ],
     example: { text: "" },

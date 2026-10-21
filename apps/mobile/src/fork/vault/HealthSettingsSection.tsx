@@ -343,7 +343,10 @@ function Inbox({
       ) : null}
       {picking ? (
         <Sheet title="Choose a Vault item" onClose={() => setPicking(false)}>
-          <ScrollView contentContainerClassName="gap-3 p-4">
+          <ScrollView
+            contentInsetAdjustmentBehavior="automatic"
+            contentContainerClassName="gap-3 p-4"
+          >
             {page.isPending ? <Text>Loading items…</Text> : null}
             {page.error ? <Text accessibilityRole="alert">Could not load Vault items.</Text> : null}
             {page.data?.items.length === 0 ? <Text>No active items in this page.</Text> : null}
