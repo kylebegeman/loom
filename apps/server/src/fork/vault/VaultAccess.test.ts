@@ -2,9 +2,17 @@ import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as ApprovalNotificationTransport from "./ApprovalNotificationTransport.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthAccessWriteScope,
+  AuthSessionId,
+  EnvironmentId,
+  ProjectId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   VaultError,
+  VAULT_CORE_WS_METHODS as V,
   type VaultApprovalRetryInput,
   type VaultItemKind,
   type VaultGrantDefinition,
@@ -24,6 +32,8 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+import { makeForkRpcAuth } from "../rpcAuthorization.ts";
+import { makeVaultCoreRpcHandlers } from "./rpc.ts";
 
 const threadId = ThreadId.make("grant-thread");
 const childId = ThreadId.make("child-thread");
@@ -57,6 +67,8 @@ const fixture = () => {
       release: Deferred.Deferred<"delivered">;
     } | null,
     failWrites: false,
+    auditConflicts: 0,
+    auditWriteAttempts: 0,
     failReads: false,
     readBarrier: null as {
       observed: Deferred.Deferred<void>;
@@ -95,6 +107,13 @@ const fixture = () => {
       ),
     write: (path, value, expected) =>
       Effect.suspend(() => {
+        if (path.endsWith("/access-policy")) {
+          state.auditWriteAttempts++;
+          if (state.auditConflicts > 0) {
+            state.auditConflicts--;
+            return Effect.fail(new VaultError({ reason: "conflict" }));
+          }
+        }
         if (state.failWrites) return Effect.fail(new VaultError({ reason: "unavailable" }));
         const current = records.get(path)?.version ?? 0;
         if (current !== expected) return Effect.fail(new VaultError({ reason: "conflict" }));
@@ -202,6 +221,171 @@ function withAccess<A, E>(
     return yield* use({ access, core, fixture: f });
   }).pipe(Effect.provide(f.layer));
 }
+it.effect("audits human RPC reveal with its authenticated actor before returning the value", () =>
+  withAccess(({ access, core, fixture }) =>
+    Effect.gen(function* () {
+      const actor = "human:authenticated-owner";
+      const handlers = yield* makeVaultCoreRpcHandlers(
+        makeForkRpcAuth({
+          sessionId: AuthSessionId.make("human-reveal"),
+          subject: actor,
+          method: "bearer-access-token",
+          scopes: [AuthAccessWriteScope],
+        }),
+        actor,
+      ).pipe(
+        Effect.provideService(VaultCore.VaultCore, core),
+        Effect.provideService(VaultAccess.VaultAccess, access),
+      );
+      const result = yield* handlers[V.reveal]({ id: itemId, expectedVersion: 1 });
+      expect(Redacted.value(result.value)).toBe("synthetic-never-in-audit");
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.revision).toBe(0);
+      expect(snapshot.grants).toEqual([]);
+      expect(snapshot.audit).toHaveLength(1);
+      expect(snapshot.audit[0]).toMatchObject({
+        actor,
+        type: "decision",
+        itemId,
+        action: "reveal",
+        grantId: null,
+        reason: "allowed",
+        policyRevision: 0,
+      });
+      const policy = [...fixture.records.entries()].find(([key]) => key.endsWith("/access-policy"));
+      expect(policy).toBeDefined();
+      expect(Redacted.value(policy![1].value)).toMatchObject({ audit: snapshot.audit });
+      expect(JSON.stringify(Redacted.value(policy![1].value))).not.toContain(
+        "synthetic-never-in-audit",
+      );
+    }),
+  ),
+);
+
+it.effect("returns no human reveal value when audit reads or writes fail", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      fixture.state.failReads = true;
+      expect(
+        (yield* access.reveal({ id: itemId, expectedVersion: 1 }, "human").pipe(Effect.flip))
+          .reason,
+      ).toBe("unavailable");
+      fixture.state.failReads = false;
+      fixture.state.failWrites = true;
+      const failure = yield* access
+        .reveal({ id: itemId, expectedVersion: 1 }, "human")
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("unavailable");
+      expect(JSON.stringify(failure)).not.toContain("synthetic-never-in-audit");
+      fixture.state.failWrites = false;
+      expect((yield* access.snapshot).audit).toEqual([]);
+    }),
+  ),
+);
+
+it.effect("rejects invalid human reveal actors before backend work", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      fixture.state.failReads = true;
+      for (const actor of ["", " ", "x".repeat(257)]) {
+        expect(
+          (yield* access.reveal({ id: itemId, expectedVersion: 1 }, actor).pipe(Effect.flip))
+            .reason,
+        ).toBe("invalid-input");
+      }
+      expect(fixture.state.auditWriteAttempts).toBe(0);
+    }),
+  ),
+);
+
+it.effect("does not audit successful human reveal for stale or missing records", () =>
+  withAccess(({ access, core }) =>
+    Effect.gen(function* () {
+      expect(
+        (yield* access.reveal({ id: itemId, expectedVersion: 2 }, "human").pipe(Effect.flip))
+          .reason,
+      ).toBe("conflict");
+      expect(
+        (yield* access
+          .reveal({ id: "f".repeat(32), expectedVersion: 1 }, "human")
+          .pipe(Effect.flip)).reason,
+      ).toBe("not-found");
+      yield* core.change(
+        { id: itemId, operationId: "d".repeat(32), expectedVersion: 1, action: "delete" },
+        "human",
+      );
+      expect(
+        (yield* access.reveal({ id: itemId, expectedVersion: 2 }, "human").pipe(Effect.flip))
+          .reason,
+      ).toBe("not-found");
+      expect((yield* access.snapshot).audit).toEqual([]);
+    }),
+  ),
+);
+
+it.effect(
+  "retries human reveal audit CAS conflicts without losing a concurrent policy change",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const observed = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        fixture.state.readBarrier = { observed, release };
+        const revealing = yield* access
+          .reveal({ id: itemId, expectedVersion: 1 }, "human:revealer")
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(observed);
+        yield* access.apply(save, "human:grant-editor");
+        yield* Deferred.succeed(release, undefined);
+        expect(Redacted.value((yield* Fiber.join(revealing)).value)).toBe(
+          "synthetic-never-in-audit",
+        );
+        const snapshot = yield* access.snapshot;
+        expect(snapshot.revision).toBe(1);
+        expect(snapshot.grants).toHaveLength(1);
+        expect(snapshot.audit).toHaveLength(2);
+        expect(snapshot.audit[0]).toMatchObject({
+          actor: "human:revealer",
+          action: "reveal",
+          policyRevision: 1,
+        });
+        expect(snapshot.audit[1]).toMatchObject({
+          actor: "human:grant-editor",
+          type: "grant-change",
+        });
+        expect(fixture.state.auditWriteAttempts).toBe(3);
+      }),
+    ),
+);
+
+it.effect("bounds human reveal audit CAS retries and fails closed on persistent contention", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      fixture.state.auditConflicts = 4;
+      expect(
+        (yield* access.reveal({ id: itemId, expectedVersion: 1 }, "human").pipe(Effect.flip))
+          .reason,
+      ).toBe("conflict");
+      expect(fixture.state.auditWriteAttempts).toBe(4);
+      expect((yield* access.snapshot).audit).toEqual([]);
+    }),
+  ),
+);
+
+it.effect("keeps human reveal history bounded without changing the policy revision", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      for (let index = 0; index < 257; index++)
+        yield* access.reveal({ id: itemId, expectedVersion: 1 }, `human:${index}`);
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.revision).toBe(0);
+      expect(snapshot.audit).toHaveLength(50);
+      expect(snapshot.audit[0]?.actor).toBe("human:256");
+      expect(snapshot.omittedAuditEvents).toBe(207);
+    }),
+  ),
+);
+
 it.effect(
   "persists a grant, enforces it, audits decisions and replays an atomic mutation once",
   () =>

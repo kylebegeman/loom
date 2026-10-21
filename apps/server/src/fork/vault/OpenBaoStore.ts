@@ -59,7 +59,9 @@ const ListResponse = Schema.Struct({
   }),
 });
 const HealthResponse = Schema.Struct({ initialized: Schema.Boolean, sealed: Schema.Boolean });
-const ConfigResponse = Schema.Struct({ data: Schema.Struct({ cas_required: Schema.Boolean }) });
+const ConfigResponse = Schema.Struct({
+  data: Schema.Struct({ cas_required: Schema.Literal(true) }),
+});
 const ErrorResponse = Schema.Struct({ errors: Schema.Array(Schema.String) });
 const decodeRead = Schema.decodeUnknownOption(ReadResponse);
 const decodeWrite = Schema.decodeUnknownOption(WriteResponse);
