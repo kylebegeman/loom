@@ -126,3 +126,12 @@ apps/server: references-cli (seven) and TerminalConnection (four) pass eleven te
 integration cases remain deliberately skipped without their explicit disposable SSH configuration.
 That integration file uses the same file-relative entrypoint. No install, SSH probe or production
 state is needed by the applicable CLI tests.
+
+## Explicit computer selection
+
+Standalone reference discovery now selects one computer at a time in web/desktop settings and
+mobile computer settings. A target-specific child checks connection, capability and inspection
+scope before mounting search, and target changes remount the picker to clear query/cursor state.
+Local profile binding pickers retain their destination scope. Web/mobile scoped typechecks and
+changed-file lint pass. Browser/native multi-computer interaction, remote/relay and accessibility
+acceptance remain unverified; no browser or simulator pass was run for this change.

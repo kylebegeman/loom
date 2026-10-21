@@ -433,8 +433,10 @@ personal SSH configuration is changed, and private keys stay in Vault's control 
 
 In web or desktop **Settings → Loom**, use **Vault references** to search names or item IDs
 and copy a stable reference. On mobile, open **Settings → Computers → Manage computer** and
-use **Vault references**. References contain no credential values and grant no access. Use
-**More references** when a sparse search page has no matches but more records remain.
+use **Vault references**. Choose **Search on computer** to inspect another connected computer's
+records. Each computer requires its own inspection permission and reference-search support;
+switching computers clears the current search. This does not move credentials or project bindings.
+References contain no credential values and grant no access. Use **More references** when a sparse search page has no matches but more records remain.
 
 Open **Vault project profiles**, choose the destination computer and project, and create a
 profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for
