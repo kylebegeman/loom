@@ -1,0 +1,114 @@
+import { useAtomValue } from "@effect/atom-react";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type { MessageId, RunId, ScopedThreadRef } from "@t3tools/contracts";
+import { useState } from "react";
+import { View } from "react-native";
+
+import { AppText } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
+import { useThreadVisibleTurnItems } from "../../state/use-thread-detail";
+import { threadOutboxDeliveryAtom } from "../../state/thread-outbox-delivery";
+import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
+import {
+  resolveThreadRecoveryPresentation,
+  resolveWorkspacePreparationError,
+} from "./threadRecoveryPresentation";
+
+export function ThreadRecoveryNotice(props: {
+  readonly threadRef: ScopedThreadRef;
+  readonly connectionState: EnvironmentConnectionPhase;
+  readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
+  readonly dispatchingMessageId: MessageId | null;
+  readonly acknowledged: boolean;
+  readonly runtimeStatus: ThreadRuntimeSummary["status"];
+  readonly runId: RunId | null;
+  readonly canOperate: boolean;
+  readonly onReconnect: () => void;
+  readonly onOpenConnection: () => void;
+  readonly onReviewFiles?: () => void;
+  readonly onResumeQueue: (() => Promise<void>) | null;
+}) {
+  const delivery = useAtomValue(threadOutboxDeliveryAtom);
+  const items = useThreadVisibleTurnItems(props.threadRef);
+  const presentation = resolveThreadRecoveryPresentation({
+    connectionState: props.connectionState,
+    queuedMessages: props.queuedMessages,
+    dispatchingMessageId: props.dispatchingMessageId,
+    delivery,
+    acknowledged: props.acknowledged,
+    runtimeStatus: props.runtimeStatus,
+    workspaceError: resolveWorkspacePreparationError({
+      runtimeStatus: props.runtimeStatus,
+      runId: props.runId,
+      items,
+    }),
+    queueHeld: props.onResumeQueue !== null,
+    canOperate: props.canOperate,
+  });
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  if (presentation === null) return null;
+  const resume = async () => {
+    if (resuming || props.onResumeQueue === null) return;
+    setResuming(true);
+    setResumeError(null);
+    try {
+      await props.onResumeQueue();
+    } catch (error) {
+      setResumeError(
+        error instanceof Error ? error.message : "Could not resume the queue. Try again.",
+      );
+    }
+    setResuming(false);
+  };
+  return (
+    <View className="mx-3 mb-2 gap-1.5 rounded-2xl border border-border-subtle bg-card p-3">
+      <AppText
+        textRole="footnote"
+        className={
+          presentation.danger
+            ? "font-t3-medium text-danger-foreground"
+            : "font-t3-medium text-foreground"
+        }
+        accessibilityLiveRegion="polite"
+      >
+        {presentation.title}
+      </AppText>
+      <AppText textRole="caption" className="text-foreground-muted">
+        {presentation.detail}
+      </AppText>
+      {resumeError !== null ? (
+        <AppText textRole="caption" accessibilityRole="alert" className="text-danger-foreground">
+          {resumeError}
+        </AppText>
+      ) : null}
+      {presentation.action !== null && (presentation.action !== "files" || props.onReviewFiles) ? (
+        <View className="pt-1">
+          <Button
+            label={
+              presentation.action === "resume"
+                ? "Resume queue"
+                : presentation.action === "connection"
+                  ? "Connection settings"
+                  : presentation.action === "files"
+                    ? "Review files"
+                    : "Reconnect"
+            }
+            tone="text"
+            loading={presentation.action === "resume" && resuming}
+            onPress={
+              presentation.action === "resume"
+                ? () => void resume()
+                : presentation.action === "connection"
+                  ? props.onOpenConnection
+                  : presentation.action === "files"
+                    ? () => props.onReviewFiles?.()
+                    : props.onReconnect
+            }
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}

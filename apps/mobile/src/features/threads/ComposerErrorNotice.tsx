@@ -1,10 +1,12 @@
 import { View } from "react-native";
+import { Button } from "../../components/ui/Button";
 import { Notice } from "../../components/ui/Notice";
 
 /** Why the thread's last message did not send, above the composer until dismissed. */
 export function ComposerErrorNotice(props: {
   readonly message: string;
   readonly onDismiss: () => void;
+  readonly onReviewContext?: () => void;
 }) {
   return (
     <View className="px-4 pb-3">
@@ -16,6 +18,11 @@ export function ComposerErrorNotice(props: {
         onDismiss={props.onDismiss}
         dismissLabel="Dismiss error"
       />
+      {props.onReviewContext ? (
+        <View className="pt-1">
+          <Button label="Conversation details" tone="text" onPress={props.onReviewContext} />
+        </View>
+      ) : null}
     </View>
   );
 }

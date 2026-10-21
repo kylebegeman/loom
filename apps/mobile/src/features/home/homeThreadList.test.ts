@@ -1,9 +1,10 @@
+import { buildProjectNavigationEntries } from "@t3tools/client-runtime/fork";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   buildHomeProjectScopes,
@@ -388,5 +389,91 @@ describe("home project scopes", () => {
     expect(findHomeProjectScope(scopes, "environment-local:project-target")).toBe(targetScope);
     expect(findHomeProjectScope(scopes, "environment-local:missing")).toBeNull();
     expect(findHomeProjectScope(scopes, null)).toBeNull();
+  });
+});
+
+describe("project list performance", () => {
+  it("classifies 5,120 thread shells once and limits each of 512 project previews to eight rows", () => {
+    const environmentId = EnvironmentId.make("performance");
+    const projects = Array.from({ length: 512 }, (_, index) =>
+      makeProject({
+        environmentId,
+        id: ProjectId.make(`project-${index}`),
+        title: `Project ${index}`,
+      }),
+    );
+    const scopes = buildHomeProjectScopes({
+      projects,
+      environmentId: null,
+      projectGroupingMode: "separate",
+    });
+    const threads = projects.flatMap((project, projectIndex) =>
+      Array.from({ length: 10 }, (_, threadIndex) =>
+        makeThread({
+          environmentId,
+          projectId: project.id,
+          id: ThreadId.make(`thread-${projectIndex}-${threadIndex}`),
+          title: `Thread ${threadIndex}`,
+        }),
+      ),
+    );
+    const classify = vi.fn(() => "ready" as const);
+    const entries = buildProjectNavigationEntries({
+      groups: sortHomeProjectScopes({
+        scopes,
+        threads,
+        pendingTasks: [],
+        projectSortOrder: "updated_at",
+      }),
+      threads,
+      getThreadActivity: classify,
+    });
+    expect(classify).toHaveBeenCalledTimes(5_120);
+    expect(entries).toHaveLength(512);
+    expect(
+      entries.every(
+        (entry) =>
+          entry.threadCount === 10 &&
+          entry.previewThreads.length === 8 &&
+          entry.hiddenThreadCount === 2,
+      ),
+    ).toBe(true);
+  });
+  it("derives each inactive project's sort timestamp once across 512 project rows", () => {
+    const environmentId = EnvironmentId.make("performance");
+    const scopes = buildHomeProjectScopes({
+      projects: Array.from({ length: 512 }, (_, index) =>
+        makeProject({
+          environmentId,
+          id: ProjectId.make(`project-${index}`),
+          title: `Project ${index}`,
+          updatedAt: new Date(Date.UTC(2026, 0, 1) + ((index * 137) % 512) * 1_000).toISOString(),
+        }),
+      ),
+      environmentId: null,
+      projectGroupingMode: "separate",
+    });
+    const reads = vi.fn();
+    for (const scope of scopes) {
+      for (const project of scope.projects) {
+        const timestamp = project.updatedAt;
+        Object.defineProperty(project, "updatedAt", {
+          get() {
+            reads();
+            return timestamp;
+          },
+        });
+      }
+    }
+    const sorted = sortHomeProjectScopes({
+      scopes,
+      threads: [],
+      pendingTasks: [],
+      projectSortOrder: "updated_at",
+    });
+    expect(sorted).toHaveLength(512);
+    expect(reads).toHaveBeenCalledTimes(512);
+    expect(sorted[0]?.representative.updatedAt).toBe("2026-01-01T00:08:31.000Z");
+    expect(scopes[0]).toBe(sorted.find((scope) => scope.key === scopes[0]?.key));
   });
 });

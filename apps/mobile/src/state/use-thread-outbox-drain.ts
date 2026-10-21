@@ -35,6 +35,7 @@ import {
   forgetAcknowledgedThreadMessage,
 } from "./acknowledged-thread-messages";
 import { appAtomRegistry } from "./atom-registry";
+import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery";
 import { restoredNewTaskDraftKey } from "./new-task-draft-key";
 import { useProjects, useServerConfigs, useThreadShells } from "./entities";
 import {
@@ -157,6 +158,9 @@ function beginDispatchingQueuedMessage(queuedMessageId: MessageId): void {
 }
 
 function finishDispatchingQueuedMessage(queuedMessageId: MessageId): void {
+  if (appAtomRegistry.get(threadOutboxDeliveryAtom)?.messageId === queuedMessageId) {
+    appAtomRegistry.set(threadOutboxDeliveryAtom, null);
+  }
   const current = appAtomRegistry.get(dispatchingQueuedMessageIdAtom);
   appAtomRegistry.set(dispatchingQueuedMessageIdAtom, current === queuedMessageId ? null : current);
 }
@@ -246,6 +250,27 @@ function isQueuedMessagePayloadCurrent(
       .flat()
       .some((candidate) => candidate === message)
   );
+}
+
+export async function markQueuedMessageDeliveryAttempted(
+  message: QueuedThreadMessage,
+  revision: number,
+): Promise<{ readonly message: QueuedThreadMessage; readonly revision: number } | null> {
+  if (!isQueuedMessagePayloadCurrent(message, revision)) return null;
+  if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[message.messageId]) return null;
+  const marked = message.deliveryAttempted ? message : { ...message, deliveryAttempted: true };
+  if (marked !== message && !(await updateThreadOutboxMessage(marked, revision))) return null;
+  const nextRevision = marked === message ? revision : revision + 1;
+  if (
+    !isQueuedMessagePayloadCurrent(marked, nextRevision) ||
+    appAtomRegistry.get(editingQueuedMessageIdsAtom)[message.messageId]
+  )
+    return null;
+  appAtomRegistry.set(threadOutboxDeliveryAtom, {
+    messageId: message.messageId,
+    phase: message.deliveryAttempted ? "confirming" : "sending",
+  });
+  return { message: marked, revision: nextRevision };
 }
 
 export async function completeQueuedMessageDelivery(
@@ -840,6 +865,32 @@ export function useThreadOutboxDrain(): void {
         currentConfig.providers,
       );
       if (!hasAccess()) return true;
+      try {
+        const attempted = await markQueuedMessageDeliveryAttempted(
+          persistedMessage,
+          deliveryRevision,
+        );
+        if (attempted === null) return true;
+        persistedMessage = attempted.message;
+        deliveryRevision = attempted.revision;
+      } catch (error) {
+        threadOutboxDebug.log("could not persist send recovery state", {
+          messageId: queuedMessage.messageId,
+          error,
+        });
+        setThreadComposerError(
+          scopedThreadKey(queuedMessage.environmentId, queuedMessage.threadId),
+          "Could not prepare your message for sending. It is still queued on this phone. Check available storage; Loom will retry automatically.",
+          queuedMessage.messageId,
+        );
+        return false;
+      }
+      if (
+        !hasAccess() ||
+        !isQueuedMessagePayloadCurrent(persistedMessage, deliveryRevision) ||
+        appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]
+      )
+        return true;
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: {
@@ -1010,6 +1061,32 @@ export function useThreadOutboxDrain(): void {
           startFromOrigin: false,
         };
       }
+      try {
+        const attempted = await markQueuedMessageDeliveryAttempted(
+          persistedMessage,
+          deliveryRevision,
+        );
+        if (attempted === null) return true;
+        persistedMessage = attempted.message;
+        deliveryRevision = attempted.revision;
+      } catch (error) {
+        threadOutboxDebug.log("could not persist send recovery state", {
+          messageId: queuedMessage.messageId,
+          error,
+        });
+        setThreadComposerError(
+          scopedThreadKey(queuedMessage.environmentId, queuedMessage.threadId),
+          "Could not prepare your message for sending. It is still queued on this phone. Check available storage; Loom will retry automatically.",
+          queuedMessage.messageId,
+        );
+        return false;
+      }
+      if (
+        !hasAccess() ||
+        !isQueuedMessagePayloadCurrent(persistedMessage, deliveryRevision) ||
+        appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]
+      )
+        return true;
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: buildProjectThreadStartTurnInput({

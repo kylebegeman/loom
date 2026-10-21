@@ -25,12 +25,13 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
 import { AsyncResult } from "effect/reactivity";
 import {
   createContext,
+  useCallback,
   use,
   useEffect,
   useEffectEvent,
@@ -241,6 +242,7 @@ type ThreadSettingsSubmenuPage =
   | { readonly kind: "runtime" };
 
 type ThreadSettingsSessionProps = {
+  readonly conversationDetails?: (onOpenModel: () => void) => ReactNode;
   readonly environmentId: EnvironmentId | null;
   readonly projectId: ProjectId | null;
   readonly providerInstanceId?: ProviderInstanceId;
@@ -271,12 +273,12 @@ const ExistingThreadSettingsRouteContext =
 
 export function ExistingThreadSettingsRouteProvider(props: { readonly children: ReactNode }) {
   const [session, setSession] = useState<ExistingThreadSettingsRouteSession | null>(null);
-  const present = (nextSession: ExistingThreadSettingsRouteSession) => {
+  const present = useCallback((nextSession: ExistingThreadSettingsRouteSession) => {
     setSession(nextSession);
-  };
-  const clear = (ownerId: string) => {
+  }, []);
+  const clear = useCallback((ownerId: string) => {
     setSession((current) => (current?.ownerId === ownerId ? null : current));
-  };
+  }, []);
   const value = { session, present, clear };
 
   return (
@@ -321,6 +323,7 @@ type ThreadSettingsSessionValue = {
   readonly showLegacy: boolean;
   readonly applyOptionChange: (id: string, value: string | boolean) => void;
   readonly commitPendingModel: () => boolean;
+  readonly discardPendingModel: () => void;
   readonly isApplied: (option: ModelOption) => boolean;
   readonly isDisplayed: (option: ModelOption) => boolean;
   readonly pressModel: (option: ModelOption) => void;
@@ -491,6 +494,7 @@ function ThreadSettingsSessionProvider(
     () => new Set(),
   );
   const [pendingModel, setPendingModel] = useState<ModelOption | null>(null);
+  const discardPendingModel = useCallback(() => setPendingModel(null), []);
 
   const isApplied = (option: ModelOption) =>
     option.selection.instanceId === props.selectedModel?.instanceId &&
@@ -598,6 +602,7 @@ function ThreadSettingsSessionProvider(
     showLegacy: showLegacyToggle,
     applyOptionChange,
     commitPendingModel,
+    discardPendingModel,
     isApplied,
     isDisplayed,
     pressModel,
@@ -1130,11 +1135,13 @@ function ThreadSettingsChoiceContent(props: {
 }
 
 type ThreadSettingsPickerStackParams = {
+  ThreadSettingsDetails: undefined;
   ThreadSettingsModels: undefined;
   ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
 };
 
 type ThreadSettingsPickerPresentation = {
+  readonly conversationDetails?: ThreadSettingsSessionProps["conversationDetails"];
   readonly onClose: () => void;
 };
 
@@ -1152,15 +1159,40 @@ function useThreadSettingsPickerPresentation() {
   return value;
 }
 
+function ThreadSettingsDetailsScreen() {
+  const { discardPendingModel } = useThreadSettingsSession();
+  useFocusEffect(
+    useCallback(() => {
+      discardPendingModel();
+    }, [discardPendingModel]),
+  );
+  const presentation = useThreadSettingsPickerPresentation();
+  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
+  return (
+    <>
+      <SheetHeader
+        title="Conversation details"
+        onClose={presentation.onClose}
+        accessibilityLabel="Close conversation details"
+      />
+      {presentation.conversationDetails?.(() => navigation.navigate("ThreadSettingsModels"))}
+    </>
+  );
+}
+
 function ThreadSettingsModelsScreen() {
   const session = useThreadSettingsSession();
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
+  const closeModels = () => {
+    if (presentation.conversationDetails) navigation.goBack();
+    else presentation.onClose();
+  };
   const hasCustomCatalogFilter = session.providerFilter !== null || session.showLegacy;
   const commitAndClose = useEffectEvent(() => {
     if (!session.commitPendingModel()) return;
-    presentation.onClose();
+    closeModels();
   });
   const providerFilters = [
     { id: "all-providers", title: "All providers", value: null },
@@ -1245,7 +1277,7 @@ function ThreadSettingsModelsScreen() {
               </AndroidAnchoredMenu>
             </View>
           }
-          onCancel={presentation.onClose}
+          onCancel={closeModels}
           title="Thread settings"
           confirm={session.pendingModel ? { label: "Save", onPress: commitAndClose } : undefined}
         />
@@ -1302,7 +1334,7 @@ function ThreadSettingsModelsScreen() {
       {Platform.OS === "ios" ? (
         <SheetHeader
           title="Thread settings"
-          onCancel={presentation.onClose}
+          onCancel={closeModels}
           accessibilityLabel="Cancel thread settings"
           confirm={{
             label: session.pendingModel ? "Save thread settings" : "Done",
@@ -1390,13 +1422,16 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
   const solidSheetBackground = theme["--color-sheet-solid"];
   const foreground = theme["--color-foreground"];
   const presentation = {
+    conversationDetails: props.conversationDetails,
     onClose: props.onClose,
   };
 
   return (
     <ThreadSettingsPickerPresentationContext.Provider value={presentation}>
       <ThreadSettingsPickerStack.Navigator
-        initialRouteName="ThreadSettingsModels"
+        initialRouteName={
+          props.conversationDetails ? "ThreadSettingsDetails" : "ThreadSettingsModels"
+        }
         screenOptions={{
           animation: Platform.OS === "android" ? "default" : "slide_from_right",
           contentStyle: { backgroundColor: solidSheetBackground },
@@ -1417,6 +1452,11 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
         }}
       >
         <ThreadSettingsPickerStack.Screen
+          name="ThreadSettingsDetails"
+          component={ThreadSettingsDetailsScreen}
+          options={{ headerBackVisible: false, title: "Conversation details" }}
+        />
+        <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsModels"
           component={ThreadSettingsModelsScreen}
           options={{ headerBackVisible: false, title: "Thread settings" }}
@@ -1436,7 +1476,10 @@ export function ThreadSettingsPickerScreen(
 ) {
   return (
     <ThreadSettingsSessionProvider {...props}>
-      <ThreadSettingsPickerNavigator onClose={props.onClose} />
+      <ThreadSettingsPickerNavigator
+        onClose={props.onClose}
+        conversationDetails={props.conversationDetails}
+      />
     </ThreadSettingsSessionProvider>
   );
 }

@@ -59,6 +59,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   interactionMode: Schema.optional(ProviderInteractionMode),
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
+  deliveryAttempted: Schema.optional(Schema.Boolean),
 });
 
 const decodeStoredQueuedThreadMessage = Schema.decodeUnknownSync(QueuedThreadMessageSchema);
@@ -80,6 +81,8 @@ export interface QueuedThreadMessage {
   readonly threadId: ThreadId;
   readonly messageId: MessageId;
   readonly commandId: CommandId;
+  /** Persisted before dispatch so an interrupted acknowledgement stays visible after restart. */
+  readonly deliveryAttempted?: boolean;
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;

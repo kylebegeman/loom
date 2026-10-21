@@ -152,8 +152,10 @@ import type { QueuedThreadMessage } from "./thread-outbox-model";
 import * as composerDrafts from "./use-composer-drafts";
 import { recoverFailedThreadDraft } from "./recover-failed-thread-draft";
 import { editingQueuedMessageIdsAtom } from "./use-thread-outbox";
+import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery";
 import {
   completeQueuedMessageDelivery,
+  markQueuedMessageDeliveryAttempted,
   prepareQueuedMessageAttachments,
   recoverEditedCreationAfterDelivery,
   removeAcknowledgedExistingThreadMessage,
@@ -211,6 +213,7 @@ function remainingMessages(): ReadonlyArray<QueuedThreadMessage> {
 
 beforeEach(() => {
   appAtomRegistry.set(acknowledgedThreadMessagesAtom, []);
+  appAtomRegistry.set(threadOutboxDeliveryAtom, null);
   harness.canOperate = true;
   harness.draftFile.setDocument({ schemaVersion: 1, drafts: {} });
 });
@@ -358,6 +361,42 @@ describe("thread outbox attachment preparation", () => {
     });
     expect(harness.prepareTurnAttachments).not.toHaveBeenCalled();
     expect(remainingMessages()).toEqual([edited]);
+  });
+});
+
+describe("durable interrupted-send recovery", () => {
+  it("persists uncertainty without changing the command or message identity", async () => {
+    const message = queuedMessage({ messageId: "uncertain-send", text: "Send once" });
+    await harness.manager.enqueue(message);
+    const marked = await markQueuedMessageDeliveryAttempted(
+      message,
+      harness.manager.revisionOf(message.messageId),
+    );
+    expect(marked?.message).toEqual({ ...message, deliveryAttempted: true });
+    expect(remainingMessages()).toEqual([marked?.message]);
+    expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("sending");
+    if (!marked) throw new Error("Expected a durable send attempt");
+    const retry = await markQueuedMessageDeliveryAttempted(marked.message, marked.revision);
+    expect(retry).toEqual(marked);
+    expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("confirming");
+  });
+
+  it("does not send content that an editor takes while recovery state is saving", async () => {
+    const message = queuedMessage({ messageId: "editing-during-send", text: "Keep the edit" });
+    await harness.manager.enqueue(message);
+    const update = vi
+      .spyOn(harness.manager, "update")
+      .mockImplementationOnce(async (updated, revision) => {
+        update.mockRestore();
+        const persisted = await harness.manager.update(updated, revision);
+        appAtomRegistry.set(editingQueuedMessageIdsAtom, { [message.messageId]: true });
+        return persisted;
+      });
+    await expect(
+      markQueuedMessageDeliveryAttempted(message, harness.manager.revisionOf(message.messageId)),
+    ).resolves.toBeNull();
+    expect(remainingMessages()).toEqual([{ ...message, deliveryAttempted: true }]);
+    expect(appAtomRegistry.get(threadOutboxDeliveryAtom)).toBeNull();
   });
 });
 
@@ -850,7 +889,10 @@ describe("thread outbox recovery rollback", () => {
   });
 
   it("rolls a failed recovery merge back so the retry cannot duplicate the text", async () => {
-    const message = queuedMessage({ messageId: "message-restore", text: "queued text" });
+    const message = {
+      ...queuedMessage({ messageId: "message-restore", text: "queued text" }),
+      deliveryAttempted: true,
+    };
     const draftKey = `${message.environmentId}:${message.threadId}`;
     appAtomRegistry.set(composerDrafts.composerDraftsAtom, {
       [draftKey]: { text: "typed offline", attachments: [] },

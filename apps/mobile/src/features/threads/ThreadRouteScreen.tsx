@@ -67,6 +67,7 @@ import {
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -91,6 +92,7 @@ import {
 import { threadRouteIsHydrating } from "./thread-route-hydration";
 import { useThreadPromptLink } from "../prompt-links/useThreadPromptLink";
 import { ThreadHeader } from "./ThreadHeader";
+import { useThreadConversationDetails } from "./useThreadConversationDetails";
 import {
   useAndroidWorkspaceBack,
   useWorkspaceBackNavigation,
@@ -446,6 +448,24 @@ function ThreadRouteContent(
       }
     : null;
 
+  const openConversationDetails = useThreadConversationDetails(
+    selectedThreadWithDraftSettings
+      ? {
+          thread: selectedThreadWithDraftSettings,
+          projectTitle: selectedThreadProject?.title ?? null,
+          computerLabel: selectedEnvironmentConnection?.environmentLabel ?? "Conversation computer",
+          connected: routeConnectionState === "connected",
+          cwd: selectedThreadCwd,
+          runtimeMode: selectedThreadWithDraftSettings.runtimeMode,
+          serverConfig: routeEnvironmentRuntime?.serverConfig ?? null,
+          canSwitchProvider: composer.canSwitchThreadProvider,
+          canOperate: canOperateThread,
+          onUpdateModelSelection: composer.onUpdateModelSelection,
+          onUpdateRuntimeMode: composer.onUpdateRuntimeMode,
+        }
+      : null,
+  );
+
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
@@ -592,10 +612,11 @@ function ThreadRouteContent(
 
   const handleResumeQueue = async () => {
     if (!selectedThread) return;
-    await resumeThreadQueue({
+    const result = await resumeThreadQueue({
       environmentId: selectedThread.environmentId,
       input: { threadId: selectedThread.id },
     });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
   };
 
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
@@ -913,6 +934,7 @@ function ThreadRouteContent(
 
       <ThreadPane>
         <ThreadDetailScreen
+          onOpenConversationDetails={openConversationDetails}
           canOperateThread={canOperateThread}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}
@@ -1013,6 +1035,7 @@ function ThreadRouteContent(
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
       <ThreadHeader
         title={selectedThread.title}
+        onOpenDetails={openConversationDetails}
         subtitle={headerSubtitle}
         headerColor={headerColor}
         usesNativeHeaderGlass={usesNativeHeaderGlass}

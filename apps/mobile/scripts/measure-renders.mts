@@ -64,6 +64,7 @@ interface Options {
   readonly server: string;
   readonly token: string;
   readonly metro: string;
+  readonly appId: string;
   readonly scheme: string;
   readonly runs: number;
   readonly windowSeconds: number;
@@ -81,14 +82,19 @@ const median = (values: ReadonlyArray<number>) => {
 };
 
 /** One Hermes inspector session, reached through Metro's inspector proxy. */
-const connectInspector = Effect.fn("measure.connectInspector")(function* (metro: string) {
+const connectInspector = Effect.fn("measure.connectInspector")(function* (
+  metro: string,
+  appId: string,
+) {
   const http = yield* HttpClient.HttpClient;
   const targets = yield* http
     .get(`${metro}/json/list`)
     .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(InspectorTargets)));
-  const target = targets.find((entry) => entry.appId.startsWith("com.t3tools.t3code"));
+  const target = targets.find((entry) => entry.appId === appId);
   if (!target)
-    return yield* new MeasureError({ message: `No T3 Code app is attached to Metro at ${metro}.` });
+    return yield* new MeasureError({
+      message: `No app with ID ${appId} is attached to Metro at ${metro}.`,
+    });
   // Expo terminates inspector sockets whose Origin differs from the URL Metro
   // advertises (the LAN address with `--lan`), so pass that URL as `--metro`.
   const socket = yield* Socket.makeWebSocket(target.webSocketDebuggerUrl, {
@@ -190,7 +196,7 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   route: Option.Option<string>,
 ) {
   if (Option.isSome(route)) yield* reloadAndOpen(options, route.value);
-  const evaluate = yield* connectInspector(options.metro);
+  const evaluate = yield* connectInspector(options.metro, options.appId);
   const { client, environmentId, projectId } = yield* connectServer(options);
   const threadId = ThreadId.make(yield* uuid);
   yield* client["orchestration.launchThread"]({
@@ -263,14 +269,14 @@ const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
 ) {
   // A link to an already-open screen only refocuses it, so each run starts from a reload.
   yield* Effect.scoped(
-    Effect.flatMap(connectInspector(options.metro), (evaluate) =>
+    Effect.flatMap(connectInspector(options.metro, options.appId), (evaluate) =>
       evaluate("__t3RenderCounterReload()"),
     ),
   );
   yield* Effect.sleep("15 seconds");
   if (route === "/" || route === "") return;
   yield* Effect.scoped(
-    Effect.flatMap(connectInspector(options.metro), (evaluate) =>
+    Effect.flatMap(connectInspector(options.metro, options.appId), (evaluate) =>
       evaluate(appLink(options, route)),
     ),
   );
@@ -284,12 +290,12 @@ const measureRouteOpen = Effect.fn("measure.routeOpen")(function* (
   run: number,
 ) {
   yield* Effect.scoped(
-    Effect.flatMap(connectInspector(options.metro), (evaluate) =>
+    Effect.flatMap(connectInspector(options.metro, options.appId), (evaluate) =>
       evaluate("__t3RenderCounterReload()"),
     ),
   );
   yield* Effect.sleep("15 seconds");
-  const evaluate = yield* connectInspector(options.metro);
+  const evaluate = yield* connectInspector(options.metro, options.appId);
   yield* evaluate("__t3RenderCounterStart()");
   yield* evaluate(appLink(options, route));
   yield* Effect.sleep(`${options.windowSeconds} seconds`);
@@ -359,7 +365,11 @@ const command = Command.make(
       Flag.optional,
     ),
     metro: Flag.String("metro").pipe(Flag.withDefault("http://127.0.0.1:8081")),
-    scheme: Flag.String("scheme").pipe(Flag.withDefault("t3code-dev")),
+    appId: Flag.String("app-id").pipe(
+      Flag.withDescription("Exact native app ID attached to Metro."),
+      Flag.withDefault("com.kylebegeman.loom.dev"),
+    ),
+    scheme: Flag.String("scheme").pipe(Flag.withDefault("loom-dev")),
     runs: Flag.Int("runs").pipe(Flag.withDefault(3)),
     window: Flag.Int("window").pipe(
       Flag.withDescription("Seconds to record; defaults to 12 for a reply and 6 for --route."),

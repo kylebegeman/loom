@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import { TERMINAL_PALETTES, terminalOutputSpans } from "@t3tools/shared/terminalOutput";
 import type React from "react";
@@ -6,7 +7,7 @@ import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { useServerConfigs } from "../../state/entities";
+import { serverEnvironment } from "../../state/server";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
 
@@ -15,8 +16,9 @@ const FOLLOW_SLACK = 8;
 
 /** True when the environment streams command output; older servers only return final output. */
 export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean {
-  return (
-    useServerConfigs().get(environmentId)?.environment.capabilities.commandOutputStreaming === true
+  return useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.commandOutputStreaming === true,
   );
 }
 

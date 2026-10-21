@@ -122,24 +122,22 @@ export function sortHomeProjectScopes(input: {
   }
 
   return Arr.sort(
-    input.scopes,
-    Order.mapInput(
-      Order.Struct({
-        timestamp: Order.flip(Order.Number),
-        title: Order.String,
-        key: Order.String,
-      }),
-      (scope: HomeProjectScope) => ({
-        timestamp:
-          latestActivityByScope.get(scope.key) ??
-          Math.max(
-            ...scope.projects.map((project) =>
-              getProjectSortTimestamp(project, input.projectSortOrder),
-            ),
+    input.scopes.map((scope) => ({
+      scope,
+      timestamp:
+        latestActivityByScope.get(scope.key) ??
+        Math.max(
+          ...scope.projects.map((project) =>
+            getProjectSortTimestamp(project, input.projectSortOrder),
           ),
-        title: scope.title,
-        key: scope.key,
-      }),
-    ),
-  );
+        ),
+      title: scope.title,
+      key: scope.key,
+    })),
+    Order.Struct({
+      timestamp: Order.flip(Order.Number),
+      title: Order.String,
+      key: Order.String,
+    }),
+  ).map(({ scope }) => scope);
 }

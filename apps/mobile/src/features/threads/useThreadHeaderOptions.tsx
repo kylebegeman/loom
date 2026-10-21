@@ -1,5 +1,5 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { isDuoDevice } from "../../lib/device-type";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -21,6 +21,7 @@ export function useThreadHeaderOptions(props: {
   readonly usesNativeHeaderGlass: boolean;
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
+  readonly onOpenDetails?: () => void;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
@@ -118,6 +119,45 @@ export function useThreadHeaderOptions(props: {
     [navigation, threadCenterHeaderItems],
   );
 
+  const openDetails = useRef(props.onOpenDetails);
+  useLayoutEffect(() => {
+    openDetails.current = props.onOpenDetails;
+  });
+  const handleOpenDetails = useCallback(() => openDetails.current?.(), []);
+  const hasDetails = props.onOpenDetails !== undefined;
+  const rightHeaderItems = useMemo<NativeHeaderItems>(
+    () => [
+      ...(usesDuoHeader
+        ? duoRightHeaderItems
+        : layout.usesSplitView
+          ? threadCenterHeaderItems
+          : compactRightHeaderItems),
+      ...(hasDetails
+        ? [
+            {
+              ...withNativeGlassHeaderItem({
+                type: "button" as const,
+                identifier: "thread-right-details",
+                accessibilityLabel: "Conversation details",
+                label: "Conversation details",
+                icon: { name: "info.circle", type: "sfSymbol" as const },
+              }),
+              onPress: handleOpenDetails,
+            },
+          ]
+        : []),
+    ],
+    [
+      usesDuoHeader,
+      duoRightHeaderItems,
+      layout.usesSplitView,
+      threadCenterHeaderItems,
+      compactRightHeaderItems,
+      hasDetails,
+      handleOpenDetails,
+    ],
+  );
+
   const options: AppNativeStackNavigationOptions = {
     headerShown: true,
     headerTitle: props.title,
@@ -134,12 +174,7 @@ export function useThreadHeaderOptions(props: {
       : canGoBack
         ? undefined
         : () => compactHomeHeaderItems,
-    unstable_headerRightItems: () =>
-      usesDuoHeader
-        ? duoRightHeaderItems
-        : layout.usesSplitView
-          ? threadCenterHeaderItems
-          : compactRightHeaderItems,
+    unstable_headerRightItems: () => rightHeaderItems,
     unstable_headerToolbarItems: () => [],
     unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
     contentStyle: undefined,
@@ -153,6 +188,7 @@ export function useThreadHeaderOptions(props: {
     // `commit_push` depending on the default ref), so that state is keyed too.
     optionsVersion: [
       splitLeftHeaderItems,
+      rightHeaderItems,
       threadCenterHeaderItems,
       compactRightHeaderItems,
       duoRightHeaderItems,

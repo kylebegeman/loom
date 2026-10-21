@@ -85,13 +85,18 @@ function status(
   } as unknown as VcsStatusResult;
 }
 
-function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly title?: string }) {
+function Header(props: {
+  readonly gitStatus: VcsStatusResult | null;
+  readonly title?: string;
+  readonly onOpenDetails?: () => void;
+}) {
   return (
     <ThreadHeader
       title={props.title ?? "Thread"}
       subtitle=""
       headerColor="#000"
       usesNativeHeaderGlass
+      onOpenDetails={props.onOpenDetails}
       gitControls={{
         environmentId: "environment-1",
         threadId: "thread-1",
@@ -163,6 +168,28 @@ afterEach(() => {
 });
 
 describe("ThreadHeader", () => {
+  it("keeps conversation details reachable without files or Git status", () => {
+    const open = vi.fn();
+    render(<Header gitStatus={null} onOpenDetails={open} />);
+    const details = harness.renderedRightItems
+      .at(-1)
+      ?.find((item) => item.identifier === "thread-right-details");
+    expect(details?.accessibilityLabel).toBe("Conversation details");
+    act(() => (details?.onPress as (() => void) | undefined)?.());
+    expect(open).toHaveBeenCalledOnce();
+    const next = vi.fn();
+    render(<Header gitStatus={null} onOpenDetails={next} />);
+    act(() =>
+      (
+        harness.renderedRightItems
+          .at(-1)
+          ?.find((item) => item.identifier === "thread-right-details")?.onPress as
+          | (() => void)
+          | undefined
+      )?.(),
+    );
+    expect(next).toHaveBeenCalledOnce();
+  });
   it("opens checkpoint review for a multi-repository parent while keeping Git actions unavailable", () => {
     render(<Header gitStatus={status([], { isRepo: false, checkpointCapable: true })} />);
     const review = renderedGitMenuItems().find((item) => item.label === "Review changes");

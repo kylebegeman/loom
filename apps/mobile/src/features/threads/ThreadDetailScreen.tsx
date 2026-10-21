@@ -126,6 +126,7 @@ import type {
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
+import { ThreadRecoveryNotice } from "./ThreadRecoveryNotice";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
@@ -158,6 +159,7 @@ import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 export interface ThreadDetailScreenProps {
+  readonly onOpenConversationDetails?: () => void;
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
   readonly canOperateThread: boolean;
@@ -564,6 +566,13 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
     }
     if (props.isCompacting && contentPresentationKind === "ready") {
       return { kind: "compacting" };
+    }
+    const workStatus = props.activityRun?.status ?? props.selectedThread.runtime?.status;
+    if (workStatus === "preparing" || workStatus === "starting") {
+      return {
+        kind: "preparing",
+        label: workStatus === "preparing" ? "Preparing files…" : "Starting agent…",
+      };
     }
     if (props.activeWorkStartedAt !== null && contentPresentationKind === "ready") {
       return { kind: "working", startedAt: props.activeWorkStartedAt };
@@ -1246,6 +1255,30 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                   }}
                 />
                 <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
+                  <ThreadRecoveryNotice
+                    key={selectedThreadKey}
+                    threadRef={{
+                      environmentId: props.environmentId,
+                      threadId: props.selectedThread.id,
+                    }}
+                    connectionState={props.connectionStateLabel}
+                    queuedMessages={props.queuedMessages}
+                    dispatchingMessageId={props.dispatchingMessageId}
+                    acknowledged={props.selectedThreadFeed.some(
+                      (entry) => "acknowledged" in entry && entry.acknowledged === true,
+                    )}
+                    runtimeStatus={
+                      props.activityRun?.status ?? props.selectedThread.runtime?.status ?? "idle"
+                    }
+                    runId={
+                      props.activityRun?.runId ?? props.selectedThread.latestRun?.runId ?? null
+                    }
+                    canOperate={props.canOperateThread}
+                    onReconnect={props.onReconnectEnvironment}
+                    onOpenConnection={props.onOpenConnectionEditor}
+                    onReviewFiles={props.onOpenConversationDetails}
+                    onResumeQueue={props.onResumeQueue}
+                  />
                   {props.queuedRunEdit !== null ? (
                     <Animated.View
                       className="shrink-0"
@@ -1281,6 +1314,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                     >
                       <ComposerErrorNotice
                         message={composerError}
+                        onReviewContext={props.onOpenConversationDetails}
                         onDismiss={() => clearThreadComposerError(selectedThreadKey)}
                       />
                     </Animated.View>

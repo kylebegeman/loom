@@ -10,7 +10,13 @@ import {
 import * as Cause from "effect/Cause";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { QueuedThreadMessage } from "./thread-outbox-model";
+import {
+  decodeQueuedThreadMessage,
+  encodeQueuedThreadMessage,
+  type QueuedThreadMessage,
+} from "./thread-outbox-model";
+import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery";
+import { threadComposerErrorsAtom } from "./thread-composer-error";
 
 const state = vi.hoisted(() => ({
   grantedEnvironments: new Set<string>(),
@@ -22,6 +28,8 @@ const state = vi.hoisted(() => ({
   interaction: vi.fn(),
   prepare: vi.fn(),
   checkout: vi.fn(),
+  persist: vi.fn(async () => {}),
+  connectionState: "connected",
   manager: null as unknown as ReturnType<
     typeof import("./thread-outbox-manager").createThreadOutboxManager
   >,
@@ -88,7 +96,7 @@ vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: state.prepar
 vi.mock("./use-remote-environment-registry", () => ({
   setPendingConnectionError: vi.fn(),
   useRemoteConnectionStatus: () => ({
-    connectedEnvironments: [{ environmentId: "secondary", connectionState: "connected" }],
+    connectedEnvironments: [{ environmentId: "secondary", connectionState: state.connectionState }],
   }),
 }));
 vi.mock("./thread-outbox", async () => {
@@ -98,7 +106,7 @@ vi.mock("./thread-outbox", async () => {
     registry: appAtomRegistry,
     storage: {
       load: async () => ({ messages: [], errors: [] }),
-      write: async () => {},
+      write: () => state.persist(),
       remove: async () => {},
     },
   });
@@ -173,6 +181,10 @@ function runDrain() {
 beforeEach(() => {
   state.grantedEnvironments = new Set(["primary"]);
   state.draftText = "Keep this draft separate";
+  state.connectionState = "connected";
+  state.persist.mockReset().mockResolvedValue(undefined);
+  appAtomRegistry.set(threadOutboxDeliveryAtom, null);
+  appAtomRegistry.set(threadComposerErrorsAtom, {});
   appAtomRegistry.set(state.manager.queuedMessagesByThreadKeyAtom, {});
   appAtomRegistry.set(dispatchingQueuedMessageIdAtom, null);
   for (const command of [
@@ -379,7 +391,7 @@ describe("queued task operation access", () => {
       );
       await drained;
 
-      expect(remaining()).toEqual(accepted ? [] : [queued]);
+      expect(remaining()).toEqual(accepted ? [] : [{ ...queued, deliveryAttempted: true }]);
       expect(state.draftText).toBe("Keep this draft separate");
       if (!accepted) {
         state.grantedEnvironments.add("secondary");
@@ -432,4 +444,92 @@ describe("queued task operation access", () => {
       expect(remaining()).toEqual([queued]);
     },
   );
+});
+
+describe("interrupted mobile message delivery", () => {
+  it.each([false, true])(
+    "retries the same request after a lost acknowledgement and restart (accepted before interruption: %s)",
+    async (acceptedBeforeInterruption) => {
+      state.grantedEnvironments.add("secondary");
+      const queued = message();
+      await state.manager.enqueue(queued);
+      const accepted = new Set<string>();
+      let deliveries = 0;
+      const accept = (input: { commandId: string; message: { messageId: string } }) => {
+        if (!accepted.has(input.commandId)) {
+          accepted.add(input.commandId);
+          deliveries += 1;
+        }
+      };
+      state.start.mockImplementationOnce(async ({ input }) => {
+        expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("sending");
+        if (acceptedBeforeInterruption) accept(input);
+        return AsyncResult.failure(
+          Cause.fail({ _tag: "RpcClientError", message: "Socket closed" }),
+        );
+      });
+      await runDrain();
+      expect(remaining()).toEqual([{ ...queued, deliveryAttempted: true }]);
+      expect(state.draftText).toBe("Keep this draft separate");
+      expect(appAtomRegistry.get(threadOutboxDeliveryAtom)).toBeNull();
+
+      // A new drain instance and a serialized outbox model stand in for an app restart.
+      for (const cleanup of state.cleanups.splice(0)) cleanup();
+      const recovered = decodeQueuedThreadMessage(encodeQueuedThreadMessage(remaining()[0]!));
+      await state.manager.enqueue(recovered);
+      state.start.mockImplementationOnce(async ({ input }) => {
+        expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("confirming");
+        accept(input);
+        return AsyncResult.success(undefined);
+      });
+      await runDrain();
+      expect(
+        state.start.mock.calls.map(([request]) => [
+          request.input.commandId,
+          request.input.message.messageId,
+        ]),
+      ).toEqual([
+        [queued.commandId, queued.messageId],
+        [queued.commandId, queued.messageId],
+      ]);
+      expect(deliveries).toBe(1);
+      expect(remaining()).toEqual([]);
+      expect(state.draftText).toBe("Keep this draft separate");
+    },
+  );
+
+  it("does not transmit when saving restart recovery state fails", async () => {
+    state.grantedEnvironments.add("secondary");
+    const queued = message();
+    await state.manager.enqueue(queued);
+    state.persist.mockRejectedValueOnce(new Error("Phone storage unavailable"));
+    await runDrain();
+    expect(appAtomRegistry.get(threadComposerErrorsAtom)["secondary:thread"]?.message).toContain(
+      "still queued on this phone",
+    );
+    expect(state.start).not.toHaveBeenCalled();
+    expect(remaining()).toEqual([queued]);
+    expect(state.draftText).toBe("Keep this draft separate");
+    expect(appAtomRegistry.get(threadOutboxDeliveryAtom)).toBeNull();
+    await runDrain();
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(remaining()).toEqual([]);
+    expect(appAtomRegistry.get(threadComposerErrorsAtom)["secondary:thread"]).toBeUndefined();
+  });
+
+  it("holds an offline queue and recovers it after reconnect without changing the request", async () => {
+    state.grantedEnvironments.add("secondary");
+    state.connectionState = "offline";
+    const queued = message();
+    await state.manager.enqueue(queued);
+    useThreadOutboxDrain();
+    await state.manager.serialize(async () => {});
+    expect(state.start).not.toHaveBeenCalled();
+    expect(remaining()).toEqual([queued]);
+    state.connectionState = "connected";
+    await runDrain();
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(state.start.mock.calls[0]?.[0].input.commandId).toBe(queued.commandId);
+    expect(state.draftText).toBe("Keep this draft separate");
+  });
 });
