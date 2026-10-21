@@ -275,3 +275,41 @@ it.effect("uses server timestamps and refuses a backwards clock without overwrit
     expect(f.raw()).toEqual(before);
   }),
 );
+
+it.effect(
+  "records a late mint acknowledgement after expiry and preserves its revocation path",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.add();
+      yield* f.advance("issuing");
+      yield* TestClock.adjust("6 minutes");
+      yield* f.advance("issued", issued);
+      expect((yield* (yield* f.rebuild).read).entries[0]).toMatchObject({
+        phase: "issued",
+        ...issued,
+      });
+      expect((yield* f.advance("validated").pipe(Effect.flip)).reason).toBe("invalid-input");
+      yield* f.advance("revoking");
+      yield* f.advance("revoked", { receiptDigest: "2".repeat(64) });
+      expect((yield* f.ledger.read).entries[0]!.phase).toBe("revoked");
+    }),
+);
+it.effect.each(["issuing", "unknown"] as const)(
+  "reconciles an expired %s mint directly into revocation without another issuance",
+  (phase) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.add();
+      yield* f.advance("issuing");
+      if (phase === "unknown") yield* f.advance("unknown");
+      yield* TestClock.adjust("6 minutes");
+      yield* f.advance("revoking", issued);
+      expect((yield* (yield* f.rebuild).read).entries[0]).toMatchObject({
+        phase: "revoking",
+        ...issued,
+      });
+      expect((yield* f.advance("issuing").pipe(Effect.flip)).reason).toBe("invalid-input");
+      yield* f.advance("revoked", { receiptDigest: "2".repeat(64) });
+    }),
+);

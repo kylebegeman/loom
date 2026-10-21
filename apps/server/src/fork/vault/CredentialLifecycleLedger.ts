@@ -93,13 +93,13 @@ const transitions: Readonly<
   Record<LifecycleRecord["phase"], ReadonlyArray<LifecycleRecord["phase"]>>
 > = {
   prepared: ["issuing", "cancelled"],
-  issuing: ["issued", "unknown"],
+  issuing: ["issued", "revoking", "unknown"],
   issued: ["validated", "revoking", "unknown"],
   validated: ["revoking", "unknown"],
   revoking: ["revoked", "unknown"],
   revoked: [],
   cancelled: [],
-  unknown: [],
+  unknown: ["revoking"],
 };
 const validTransition = (current: LifecycleState, next: LifecycleState, now: number) => {
   if (
@@ -135,14 +135,16 @@ const validTransition = (current: LifecycleState, next: LifecycleState, now: num
       !transitions[old.phase].includes(entry.phase)
     )
       return false;
-    if (
-      (entry.phase === "issuing" || entry.phase === "issued" || entry.phase === "validated") &&
-      now >= entry.expiresAt
-    )
+    if ((entry.phase === "issuing" || entry.phase === "validated") && now >= entry.expiresAt)
       return false;
     // A receipt can attach a reference only once, after issuance; later changes cannot redirect cleanup.
     if (old.credential && reference(old) !== reference(entry)) return false;
-    if (entry.phase === "revoking" && entry.receiptDigest !== old.receiptDigest) return false;
+    if (
+      entry.phase === "revoking" &&
+      old.receiptDigest !== null &&
+      entry.receiptDigest !== old.receiptDigest
+    )
+      return false;
   }
   return changes === 1;
 };

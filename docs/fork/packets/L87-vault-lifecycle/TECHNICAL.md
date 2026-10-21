@@ -70,8 +70,10 @@ and eventual mandatory one-time enforcement remain independent requirements.
 Issuing intent precedes any possible external mint. Lost acknowledgement leaves the durable
 phase visible after restart; it cannot be reset to prepared. Issued references cannot redirect
 later cleanup, and validation cannot replace the reviewed consumer digest. Expiry blocks new
-issuance/validation but permits revocation maintenance. An unresolved issuing/revoking/unknown
-record blocks overlapping generations for that item. Unknown stays blocked until a separately
+new issuance/validation but permits recording a late acknowledgement of an already-dispatched
+mint and revocation maintenance. An issuing or unknown record can move directly to revoking
+once reconciliation identifies the exact credential reference and receipt; it cannot remint. An unresolved issuing/revoking/unknown
+record blocks overlapping generations for that item. Unknown blocks issuance; a verified reconciliation may enter revocation, while a separately
 verified recovery procedure exists; absence, timeout or restart never remints. Cancellation is
 available only before issuing, and cannot resurrect revoked material.
 
