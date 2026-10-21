@@ -756,3 +756,13 @@ present, otherwise the active project default. Missing bindings, stale broker
 presence and a permission-limited or changed provider run include repair guidance. Supplying
 explicit requirements checks those instead. Profile configuration and broker presence do not
 prove an upstream login; use a supported explicit connection check for that destination.
+
+## Back up and recover Vault
+
+An operator can encrypt, verify and recover an existing consistent snapshot with
+`loom vault recovery`. Keep the recovery key separately from the archive and retain the
+backend's unseal material. See the [offline archive procedure](../operations/vault.md#offline-encrypted-snapshot-archives).
+These local commands do not capture or restore a server. Authentication does not prove that an
+older backup is safe to use: restore in isolation and reconcile later revocations before
+reconnecting workloads. Scheduled backups, in-app recovery and automatic promotion are not
+available yet.

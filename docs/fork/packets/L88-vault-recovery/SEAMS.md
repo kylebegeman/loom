@@ -16,6 +16,7 @@ backend decisions. Keep business logic in fork-owned paths.
 
 ## Actual seams and merge status
 
-None: this packet currently adds documentation only. No FORK.md seam-table rows or seam
-manifest entries are required. No code merge rehearsal has been run or claimed. Future
-implementation records exact marked edits, justified exceptions and the reviewed nightly tag.
+`apps/server/src/fork/vault/cli.ts` registers the fork-owned recovery command and service.
+All files remain under the existing fork-owned boundary. No upstream edit, new dependency,
+OpenBao policy/path or access-policy/journal format change is introduced. No seam-manifest
+entry is required. Landing and the post-merge rehearsal remain with the platform owner.

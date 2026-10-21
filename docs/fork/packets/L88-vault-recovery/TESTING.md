@@ -1,46 +1,43 @@
 # L88 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
-Shared foundation checks are recorded in L79; they do not establish this packet's acceptance.
+Status: offline encrypted archive acceptance passes locally. Full packet completion and
+production trust promotion are not established.
 
-## Automated behavior
+## Verified evidence
 
-- Restore decrypts all synthetic record kinds and preserves reference/version relationships.
-- A tampered or incomplete archive fails without modifying the target Vault.
-- An older snapshot cannot re-enable revoked machine identities or replay unexpired-looking grants without reconciliation.
-- Recovery is executable with the primary VPS unavailable and the original operator device lost.
+From `apps/server`, `../../node_modules/.bin/vp test run src/fork/vault/RecoveryArchive.test.ts`
+passes **14 tests**. Evidence covers a streamed binary round trip, private file modes,
+wrong key/environment, header/ciphertext/tag tampering, truncation and trailing bytes,
+pre-existing files, input/output symlinks, empty inputs and malformed independently encrypted
+manifests, including unsupported version, invalid time, unsafe byte count, size and digest
+mismatches, oversized and empty metadata. Actual CLI children run offline from a disposable
+working directory through key creation, seal, verify, unseal and tampered refusal. Archive
+bytes contain neither the synthetic secret canary nor environment/digest metadata in plaintext.
+Failed authentication publishes no recovered file and leaves no ordinary-operation staging file.
 
-Add service and adapter contract tests beside the future fork-owned implementation. Use
-synthetic credentials and disposable services. Assert that normal responses, persisted events,
-logs and error summaries contain no secret values. Exercise permission ceilings and server
-capability absence, not static markup or callback wiring.
-
-## Manual and integrated acceptance
-
-Back up a disposable Vault, restore to a clean host using separate recovery material and verify a permitted workload. Test an older backup after revocation and explicitly approve migration cutover.
-
-Run one integrated client pass after implementation is assembled, with Kyle's authorization for
-browser/device use. Cover web, Electron shell and native mobile where this packet claims them,
-plus a remote client and upstream-server compatibility. Verify keyboard operation, readable
-errors, focus restoration and every reverse action.
-
-## Focused verification commands
-
-Once implementation files exist, assign concrete test filenames in this document and run:
+The server scoped typecheck and changed-file lint pass. No client or wire contract changed.
 
 ```sh
-vp test run apps/server/src/fork/vault-recovery/service.test.ts
-vp lint apps/server/src/fork/vault-recovery
-vp run --filter t3 typecheck
+PYTHONDONTWRITEBYTECODE=1 python3 src/fork/vault/testkit/recovery_proof.py --bao /verified/path/to/bao
 ```
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+This separate proof passes with installed OpenBao **2.7.1**. It creates only disposable loopback
+Raft services, seeds synthetic encrypted versions and revoked grants using the real integration
+suite, captures a live Raft snapshot, encrypts/verifies/unseals through actual offline CLI
+children and restores into a different newly initialized disposable backend. The real store
+suite passes **2 initial plus 2 restored tests** (the other phase's 2 cases are skipped per run).
+It proves version/value, grant revocation and decision-history preservation. It separately
+revokes a synthetic OpenBao token after capture, demonstrates that the old snapshot revives
+that token in isolation and verifies denial after explicit reconciliation. No promotion occurs.
+Captured child processes stop in `finally`; private keys, storage and archives are removed.
 
-## Merge safety and results
+## Remaining acceptance
 
-Documentation checks cover paths, packet completeness, links and whitespace. No code seams are
-created here. At implementation, record the actual focused results and required upstream merge
-preview here; use the repository's post-merge rehearsal only at the authorized landing stage.
+- Independent durable revocation/authority barrier when the original host or latest log is lost.
+- Production recovery custody, off-host destination, retention, acceptable data loss and recovery time.
+- Consistent scheduled capture and its permissions, interrupted-host cleanup and real lost-device drill.
+- Web, Electron, mobile and remote management; Windows filesystem boundary.
+- Approved backend promotion and old-machine trust reconciliation.
+
+The local archive receipt never claims these checks passed. Native acceptance remains with
+the platform owner. No production service, Library change, installation or release was used.
