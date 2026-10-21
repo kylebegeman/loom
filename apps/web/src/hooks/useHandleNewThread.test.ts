@@ -277,6 +277,29 @@ describe.each([
     );
   });
 
+  it("keeps the source checkout on its computer so its lane is reused", async () => {
+    testState.reset(draft, { envMode: "local", startFromOrigin: true });
+    const projectRef = {
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never;
+    const workspace = {
+      branch: "feature/source",
+      worktreePath: "/remote/worktrees/source",
+      envMode: "worktree" as const,
+      startFromOrigin: false,
+      environmentSelection: "manual" as const,
+    };
+    const opened = await useNewThreadHandler()(projectRef, workspace);
+
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenLastCalledWith(
+      "remote-project",
+      projectRef,
+      opened!.draftId,
+      expect.objectContaining(workspace),
+    );
+  });
+
   it("abandons a delayed draft open when the user navigates elsewhere", async () => {
     testState.reset(draft);
     const openThread = useNewThreadHandler();
