@@ -12,6 +12,7 @@ type LaunchFilesInput = {
   readonly environmentId: EnvironmentId | null;
   readonly copies: readonly LibraryWorkingCopy[];
   readonly resourceId?: string | null;
+  readonly resourceIds?: readonly string[] | null;
   readonly copyId?: string | null;
   readonly allowReopen?: boolean;
 };
@@ -21,35 +22,47 @@ export function libraryLaunchCopyMatchesScope(
   project: LibraryProject,
   copy: LibraryWorkingCopy,
   resourceId: string | null,
+  resourceIds: readonly string[] | null = resourceId === null ? null : [resourceId],
 ) {
   return (
-    (resourceId !== null ||
+    (resourceIds !== null ||
       copy.repositories.length ===
         project.resources.filter((resource) => resource.kind !== "link").length) &&
     libraryCopiesForScope(
       project,
-      [{ ...copy, state: "ready" }],
+      [
+        {
+          ...copy,
+          state: "ready",
+          registered:
+            copy.state === "released" && copy.ownership === "managed" && copy.recovery
+              ? true
+              : copy.registered,
+        },
+      ],
       copy.environmentId,
-      resourceId === null ? null : [resourceId],
+      resourceIds,
     ).length > 0
   );
 }
 
 /** Released managed files are restored from their archive, never recreated by preparation. */
 export function libraryLaunchRetainedCopy(input: LaunchFilesInput) {
-  return (
-    input.copies
-      .filter(
-        (copy) =>
-          copy.environmentId === input.environmentId &&
-          copy.ownership === "managed" &&
-          (!input.copyId || copy.id === input.copyId) &&
-          ((copy.state === "released" && input.allowReopen !== false) ||
-            (copy.state === "ready" && copy.keepOnComputer !== false)) &&
-          libraryLaunchCopyMatchesScope(input.project, copy, input.resourceId ?? null),
-      )
-      .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+  const matches = input.copies.filter(
+    (copy) =>
+      copy.environmentId === input.environmentId &&
+      copy.ownership === "managed" &&
+      (!input.copyId || copy.id === input.copyId) &&
+      ((copy.state === "released" && input.allowReopen !== false) ||
+        (copy.state === "ready" && copy.keepOnComputer !== false)) &&
+      libraryLaunchCopyMatchesScope(
+        input.project,
+        copy,
+        input.resourceId ?? null,
+        input.resourceIds,
+      ),
   );
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 const normalizedRoot = (root: string) => {

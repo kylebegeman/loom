@@ -26,6 +26,15 @@ const FilesystemIdentity = Schema.Struct({
 export const WorkspaceReceipt = Schema.Struct({
   requestId: Schema.String,
   fingerprint: Schema.String,
+  snapshotRequests: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        requestId: Schema.String,
+        reviewToken: Schema.String,
+        copy: LibraryWorkingCopy,
+      }),
+    ),
+  ),
   unregisterRequests: Schema.optional(
     Schema.Array(Schema.Struct({ requestId: Schema.String, reviewToken: Schema.String })),
   ),

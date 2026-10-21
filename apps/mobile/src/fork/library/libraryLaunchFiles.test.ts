@@ -85,6 +85,35 @@ describe("mobile launch file safety", () => {
     expect(libraryLaunchCopiesForScope(moved, copies, host, null, true)).toEqual([]);
     expect(libraryLaunchCopiesForScope(moved, copies, host, "app", true)).toEqual([copy]);
   });
+  it("reopens verified released files at the same root after their local registration was removed", () => {
+    const released = {
+      ...copy,
+      registered: false,
+      recovery: {
+        sha256: "a".repeat(64),
+        byteLength: 2048,
+        archiveKey: "saved-files",
+        verifiedAt: project.updatedAt,
+      },
+    };
+    expect(libraryLaunchCopyMatchesScope(project, released, null)).toBe(true);
+    expect(libraryLaunchCopiesForScope(project, [released], host, null, true)).toEqual([released]);
+    expect(libraryLaunchCopiesForScope(project, [released], host, null, false)).toEqual([]);
+    expect(libraryLaunchCopyMatchesScope(project, { ...released, state: "ready" }, null)).toBe(
+      false,
+    );
+    expect(
+      libraryLaunchCopyMatchesScope({ ...project, resources: [repository("app")] }, released, null),
+    ).toBe(false);
+    expect(
+      libraryLaunchCopyMatchesScope(
+        { ...project, resources: [repository("app")] },
+        released,
+        "app",
+      ),
+    ).toBe(true);
+  });
+
   it("chooses a versioned fresh folder when the old folder is already recorded", () => {
     expect(libraryFreshRootPath(project, [copy], host, "/Projects")).toBe("/Projects/example-v2");
     expect(

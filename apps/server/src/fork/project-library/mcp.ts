@@ -1,9 +1,14 @@
-import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  OrchestratorMcpFailure,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Library from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
-import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
+import { McpInvocationContext, requireThreadScope } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
@@ -197,6 +202,36 @@ export const ProjectLibraryToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_snapshot", {
+    description:
+      "Save and verify the current project files for use on another computer without removing the originals. Review with loom_library_copy_status first. Retain requestId and reviewToken for retries; active work prevents saving.",
+    parameters: Library.LibrarySnapshotCopyRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_recovery_authorize", {
+    description:
+      "On the Library authority, authorize one verified saved file archive for the chosen destination computer. Only an in-app full-access conversation may request this short-lived grant. Pass the grant directly to loom_library_copy_restore on that computer; never persist or share its access token.",
+    parameters: Library.LibraryAuthorizeRecoveryRequest,
+    success: Library.LibraryRecoveryGrant,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_restore", {
+    description:
+      "Restore verified saved project files into a new location on this computer using a destination-specific Library grant. Preserves local files, unpushed Git work and checkpoint refs, creates new destination project identities, and never overwrites an existing folder. Retain requestId for retries; renew expired grants. Keeps files until the new conversation is bound and retention is explicitly chosen.",
+    parameters: Library.LibraryRestoreCopyRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_library_copy_release", {
     description:
       "Remove managed project files only after saving and verifying their full recovery archive. Review with loom_library_copy_status first and pass its current reviewToken. For an existing external folder, only removes its Library registration and preserves all files. Projects and saved conversation history persist.",
@@ -372,6 +407,28 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_copy_reopen: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.reopenCopy(input))),
+      ),
+      loom_library_copy_snapshot: McpToolAccess.writesEnvironment((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.snapshotCopy(input)),
+        ),
+      ),
+      loom_library_recovery_authorize: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const scope = yield* McpInvocationContext;
+          const caller = yield* requireThreadScope(scope, "Portable file recovery");
+          return yield* onHost(
+            Effect.flatMap(Catalog.LibraryService, (service) =>
+              service.authorizeRecovery(input, {
+                subject: `loom-thread:${caller.thread.threadId}`,
+                scopes: [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+              }),
+            ),
+          );
+        }),
+      ),
+      loom_library_copy_restore: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.restoreCopy(input))),
       ),
       loom_library_copy_release: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.release(input))),

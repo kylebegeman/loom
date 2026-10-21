@@ -16,9 +16,11 @@ import * as LibraryService from "./LibraryService.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
+import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 
 export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHandlers")(function* (
   auth: ForkRpcAuth,
+  session: AuthenticatedSession,
 ) {
   const replication = yield* Replication.LibraryReplication;
   const history = yield* LibraryHistorySource.LibraryHistorySource;
@@ -95,6 +97,12 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
       auth.effect(L.setCopyRetention, workspace.setCopyRetention(input)),
     [L.reopenCopy]: (input: Parameters<typeof workspace.reopenCopy>[0]) =>
       auth.effect(L.reopenCopy, workspace.reopenCopy(input)),
+    [L.snapshotCopy]: (input: Parameters<typeof workspace.snapshotCopy>[0]) =>
+      auth.effect(L.snapshotCopy, workspace.snapshotCopy(input)),
+    [L.authorizeRecovery]: (input: Parameters<typeof library.authorizeRecovery>[0]) =>
+      auth.effect(L.authorizeRecovery, library.authorizeRecovery(input, session)),
+    [L.restoreCopy]: (input: Parameters<typeof workspace.restoreCopy>[0]) =>
+      auth.effect(L.restoreCopy, workspace.restoreCopy(input)),
     [L.releaseCopy]: (input: Parameters<typeof workspace.release>[0]) =>
       auth.effect(L.releaseCopy, workspace.release(input)),
     [L.resolveBinding]: (input: Parameters<typeof workspace.resolveBinding>[0]) =>

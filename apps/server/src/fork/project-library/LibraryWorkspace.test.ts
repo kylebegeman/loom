@@ -193,6 +193,12 @@ const hostDependencies = Layer.mergeAll(
         path.join(config.stateDir, "project-library", "recovery", sha256);
       return LibraryRecoveryPublisher.LibraryRecoveryPublisher.of({
         configured: true,
+        retrievePortable: (input) =>
+          Effect.gen(function* () {
+            const recovery = input.grant.sourceCopy.recovery;
+            if (!recovery) return yield* new LibraryError({ reason: "archive-unverified" });
+            yield* fs.copyFile(canonicalFor(recovery.sha256), input.archivePath);
+          }).pipe(Effect.mapError(() => new LibraryError({ reason: "archive-unverified" }))),
         retrieve: (input) =>
           Effect.gen(function* () {
             yield* fs.copyFile(canonicalFor(input.sha256), input.archivePath);
@@ -275,6 +281,617 @@ const projectFor = (rootResource = false) =>
   );
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
+  it.effect(
+    "portable snapshots allow idle conversations, reject active and pending work, and replay immutable results",
+    () =>
+      Effect.gen(function* () {
+        const parent = yield* makeTemp;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const project = makeProject([]);
+        const rootPath = path.join(parent, "idle-snapshot");
+        const copy = yield* service.prepareCopy({
+          requestId: "idle-snapshot-prepare",
+          project,
+          rootPath,
+          strategy: "clone",
+        });
+        const archive = yield* archiveFor(project);
+        const importedProjectId = ProjectId.make("imported-snapshot-project");
+        const originalReceipt = yield* store.get(copy.id);
+        yield* store.put({
+          ...originalReceipt,
+          copy: { ...originalReceipt.copy, rootLocalProjectId: importedProjectId },
+          legacyThreadIds: [archive.projection.thread.id],
+        });
+        let state: "idle" | "active" | "pending" | "imported" | "legacy" = "idle";
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const snapshotting = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+          Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+          Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+            ...projections,
+            getShellSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                archivedThreads: [],
+                threads: [
+                  {
+                    ...archive.projection.thread,
+                    projectId:
+                      state === "imported"
+                        ? importedProjectId
+                        : state === "legacy"
+                          ? ProjectId.make("unrelated-legacy-project")
+                          : copy.rootLocalProjectId!,
+                    worktreePath: state === "imported" || state === "legacy" ? null : rootPath,
+                    latestRunId: null,
+                    status: "idle" as const,
+                    latestVisibleMessage: null,
+                    latestUserMessageAt: null,
+                    hasActionableProposedPlan: false,
+                    itemCount: 0,
+                    visibleItemCount: 0,
+                    activeRunId:
+                      state === "active" || state === "imported" || state === "legacy"
+                        ? RunId.make("active-snapshot-run")
+                        : null,
+                    pendingRuntimeRequest: state === "pending" ? ({} as never) : null,
+                    settledOverride: null,
+                    archivedAt: null,
+                    pendingBackgroundTasks: [],
+                    goal: null,
+                  },
+                ],
+              }),
+          }),
+        );
+        const notes = path.join(rootPath, "notes.txt");
+        yield* fs.writeFileString(notes, "first snapshot\n");
+        const firstReview = yield* snapshotting.status({ workingCopyId: copy.id });
+        const firstRequest = {
+          requestId: "immutable-snapshot-first",
+          workingCopyId: copy.id,
+          reviewToken: firstReview.reviewToken!,
+        };
+        const first = yield* snapshotting.snapshotCopy(firstRequest);
+        expect(first.keepOnComputer).toBe(false);
+        yield* fs.writeFileString(notes, "second snapshot\n");
+        const secondReview = yield* snapshotting.status({ workingCopyId: copy.id });
+        const secondRequest = {
+          requestId: "immutable-snapshot-second",
+          workingCopyId: copy.id,
+          reviewToken: secondReview.reviewToken!,
+        };
+        state = "active";
+        expect((yield* snapshotting.snapshotCopy(secondRequest).pipe(Effect.flip)).reason).toBe(
+          "blocked",
+        );
+        state = "pending";
+        expect((yield* snapshotting.snapshotCopy(secondRequest).pipe(Effect.flip)).reason).toBe(
+          "blocked",
+        );
+        for (const activeState of ["imported", "legacy"] as const) {
+          state = activeState;
+          expect((yield* snapshotting.snapshotCopy(secondRequest).pipe(Effect.flip)).reason).toBe(
+            "blocked",
+          );
+        }
+        state = "idle";
+        const second = yield* snapshotting.snapshotCopy(secondRequest);
+        expect(second.recovery?.sha256).not.toBe(first.recovery?.sha256);
+        expect(yield* snapshotting.snapshotCopy(firstRequest)).toEqual(first);
+        const finalReview = yield* snapshotting.status({ workingCopyId: copy.id });
+        publisherEdits.set(copy.id, { path: notes, contents: "changed during publication\n" });
+        const failed = yield* snapshotting
+          .snapshotCopy({
+            requestId: "snapshot-source-changed",
+            workingCopyId: copy.id,
+            reviewToken: finalReview.reviewToken!,
+          })
+          .pipe(Effect.flip, Effect.ensuring(Effect.sync(() => publisherEdits.delete(copy.id))));
+        expect(failed.reason).toBe("blocked");
+        expect((yield* store.get(copy.id)).copy.recovery).toEqual(second.recovery);
+        expect(yield* fs.readFileString(notes)).toBe("changed during publication\n");
+        expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+      }),
+  );
+
+  it.effect.each(["discussion", "multiple", "worktree", "rebase", "submodules"] as const)(
+    "portable recovery restores %s to an isolated computer with fresh identities and no source access",
+    (scope) =>
+      Effect.gen(function* () {
+        const parent = yield* makeTemp;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const sourceStore = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const sourceConfig = yield* ServerConfig.ServerConfig;
+        const rootPath = path.join(parent, "source-copy");
+        let project: LibraryProject;
+        let sourceCopy: LibraryWorkingCopy;
+        if (scope === "discussion") {
+          project = makeProject([]);
+          sourceCopy = yield* service.prepareCopy({
+            requestId: `portable-source-${scope}`,
+            project,
+            rootPath,
+            strategy: "clone",
+          });
+        } else {
+          project = scope === "multiple" ? projectFor() : projectFor(true);
+          if (scope === "worktree") {
+            const common = path.join(parent, "common");
+            yield* initRepo(common);
+            yield* git(common, ["worktree", "add", "-b", "feature/local", rootPath]);
+          } else if (scope === "rebase" || scope === "submodules") {
+            yield* initRepo(rootPath);
+          } else {
+            yield* initRepo(path.join(rootPath, "web"));
+            yield* initRepo(path.join(rootPath, "server"));
+          }
+          sourceCopy = yield* service.prepareCopy({
+            requestId: `portable-source-${scope}`,
+            project,
+            rootPath,
+            strategy: "reuse",
+          });
+        }
+        const repository = sourceCopy.repositories[0]?.path ?? rootPath;
+        let moduleHead: string | undefined;
+        if (scope === "submodules") {
+          const moduleOrigin = path.join(parent, "module-origin");
+          yield* initRepo(moduleOrigin);
+          moduleHead = yield* git(moduleOrigin, ["rev-parse", "HEAD"]);
+          for (const name of ["active-module", "cached-module", "removed-module"])
+            yield* git(repository, [
+              "-c",
+              "protocol.file.allow=always",
+              "submodule",
+              "add",
+              moduleOrigin,
+              name,
+            ]);
+          yield* git(repository, [
+            "config",
+            "submodule.active-module.url",
+            "https://example.com/portable-module.git",
+          ]);
+          yield* git(repository, ["config", "submodule.active-module.update", "checkout"]);
+          yield* git(repository, ["config", "submodule.active", "active-module"]);
+          yield* git(repository, [
+            "config",
+            "submodule.removed-module.update",
+            "!source-only-command",
+          ]);
+          yield* git(repository, ["submodule", "deinit", "-f", "cached-module"]);
+          yield* git(repository, ["rm", "--cached", "removed-module"]);
+          const cachedGit = path.join(repository, ".git", "modules", "cached-module");
+          yield* git(repository, [
+            `--git-dir=${cachedGit}`,
+            "config",
+            "core.worktree",
+            path.join(repository, "cached-module"),
+          ]);
+          yield* git(repository, [
+            `--git-dir=${cachedGit}`,
+            "config",
+            "include.path",
+            path.join(parent, "source-only-config"),
+          ]);
+          yield* fs.writeFileString(
+            path.join(repository, "active-module", "README.md"),
+            "saved submodule local work\n",
+          );
+          yield* git(path.join(repository, "active-module"), ["add", "README.md"]);
+          yield* fs.writeFileString(
+            path.join(repository, "removed-module", "README.md"),
+            "saved removed submodule work\n",
+          );
+          yield* git(path.join(repository, "removed-module"), ["add", "README.md"]);
+        }
+        yield* git(repository, [
+          "config",
+          "--add",
+          "remote.network.url",
+          "https://example.com/repo.git",
+        ]);
+        yield* git(repository, [
+          "config",
+          "--add",
+          "remote.network.fetch",
+          "+refs/heads/*:refs/remotes/network/*",
+        ]);
+        yield* git(repository, [
+          "config",
+          "--add",
+          "remote.network.fetch",
+          "+refs/notes/*:refs/notes/network/*",
+        ]);
+        yield* git(repository, ["config", "branch.saved-local.remote", rootPath]);
+        const checkpoint = "refs/t3/checkpoints/portable/turn/1";
+        const head = yield* git(repository, ["rev-parse", "HEAD"]);
+        yield* git(repository, ["branch", "saved-local"]);
+        yield* git(repository, ["tag", "saved-tag"]);
+        yield* git(repository, ["update-ref", checkpoint, head]);
+        yield* git(repository, [
+          "-c",
+          "user.name=Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "--allow-empty",
+          "-m",
+          "Saved reflog-only work",
+        ]);
+        const reflogOnly = yield* git(repository, ["rev-parse", "HEAD"]);
+        yield* git(repository, ["reset", "--soft", head]);
+        const sourceGitDirectory = yield* git(repository, ["rev-parse", "--absolute-git-dir"]);
+        yield* fs.remove(path.join(sourceGitDirectory, "ORIG_HEAD"), { force: true });
+        const runner = yield* ProcessRunner.ProcessRunner;
+        const unreachable = yield* runner.run({
+          command: "git",
+          args: ["hash-object", "-w", "--stdin"],
+          cwd: repository,
+          stdin: "unreachable saved local blob\n",
+        });
+        expect(unreachable.code).toBe(0);
+        const alternate = path.join(parent, "alternate-source");
+        yield* initRepo(alternate);
+        const alternateBlob = yield* runner.run({
+          command: "git",
+          args: ["hash-object", "-w", "--stdin"],
+          cwd: alternate,
+          stdin: "alternate local blob\n",
+        });
+        expect(alternateBlob.code).toBe(0);
+        const alternatePointer = path.resolve(
+          repository,
+          yield* git(repository, ["rev-parse", "--git-path", "objects/info/alternates"]),
+        );
+        yield* fs.makeDirectory(path.dirname(alternatePointer), { recursive: true });
+        yield* fs.writeFileString(alternatePointer, path.join(alternate, ".git", "objects") + "\n");
+        const operationFiles = new Map<string, string>();
+        if (scope === "worktree" || scope === "rebase") {
+          const originalBranch = yield* git(repository, ["symbolic-ref", "--short", "HEAD"]);
+          yield* git(repository, ["checkout", "-b", "conflicting-work"]);
+          yield* fs.writeFileString(path.join(repository, "README.md"), "their conflicting work\n");
+          yield* git(repository, ["add", "README.md"]);
+          yield* git(repository, ["commit", "-m", "Other local work"]);
+          yield* git(repository, ["checkout", originalBranch]);
+          yield* fs.writeFileString(path.join(repository, "README.md"), "our conflicting work\n");
+          yield* git(repository, ["add", "README.md"]);
+          yield* git(repository, ["commit", "-m", "Current local work"]);
+          const conflict = yield* runner.run({
+            command: "git",
+            args: [scope === "worktree" ? "merge" : "rebase", "conflicting-work"],
+            cwd: repository,
+          });
+          expect(conflict.code).toBe(1);
+          const filenames =
+            scope === "worktree"
+              ? ["MERGE_HEAD", "MERGE_MSG", "ORIG_HEAD"]
+              : [
+                  "rebase-merge/orig-head",
+                  "rebase-merge/head-name",
+                  "rebase-merge/git-rebase-todo",
+                  "rebase-merge/done",
+                  "rebase-merge/onto",
+                ];
+          for (const filename of filenames)
+            operationFiles.set(
+              filename,
+              yield* fs.readFileString(path.join(sourceGitDirectory, filename)),
+            );
+        }
+
+        yield* fs.writeFileString(path.join(repository, "staged.txt"), "staged-only blob\n");
+        yield* git(repository, ["add", "staged.txt"]);
+        if (scope === "worktree" || scope === "discussion")
+          yield* git(repository, ["update-index", "--split-index"]);
+        yield* fs.writeFileString(path.join(repository, "staged.txt"), "newer unstaged work\n");
+        yield* fs.writeFileString(path.join(rootPath, "local-only.txt"), "root local file\n");
+        yield* fs.symlink("local-only.txt", path.join(rootPath, "local-link"));
+        const sourceIndex = yield* git(repository, ["ls-files", "--stage"]);
+        const monitor = path.join(sourceGitDirectory, "hooks", "portable-fsmonitor");
+        yield* fs.makeDirectory(path.dirname(monitor), { recursive: true });
+        yield* fs.writeFileString(monitor, "#!/bin/sh\nprintf called > hook-ran\nprintf '\\0'\n", {
+          mode: 0o755,
+        });
+        yield* fs.copyFile(monitor, path.join(sourceGitDirectory, "hooks", "pre-commit"));
+        yield* git(repository, ["config", "core.fsmonitor", monitor]);
+        let review = yield* service.status({ workingCopyId: sourceCopy.id });
+        if (scope === "worktree") {
+          yield* git(repository, ["update-ref", "refs/t3/checkpoints/external-change", "HEAD"]);
+          expect(
+            (yield* service
+              .snapshotCopy({
+                requestId: "stale-external-git",
+                workingCopyId: sourceCopy.id,
+                reviewToken: review.reviewToken!,
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+          review = yield* service.status({ workingCopyId: sourceCopy.id });
+        }
+        const snapshotInput = {
+          requestId: `portable-snapshot-${scope}`,
+          workingCopyId: sourceCopy.id,
+          reviewToken: review.reviewToken!,
+        };
+        const saved = yield* service.snapshotCopy(snapshotInput);
+        expect(saved.id).toBe(sourceCopy.id);
+        expect(saved.state).toBe("ready");
+        expect(saved.keepOnComputer).toBe(sourceCopy.keepOnComputer);
+        expect(saved.recovery).toBeDefined();
+        expect(yield* git(repository, ["-c", "core.fsmonitor=false", "ls-files", "--stage"])).toBe(
+          sourceIndex,
+        );
+        expect(yield* fs.exists(path.join(repository, "hook-ran"))).toBe(false);
+        expect((yield* service.snapshotCopy(snapshotInput)).recovery).toEqual(saved.recovery);
+        expect(
+          (yield* service
+            .snapshotCopy({ ...snapshotInput, reviewToken: "different" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("request-conflict");
+        const authorityArchive = path.join(parent, "authority.tar.gz");
+        yield* fs.copyFile(
+          path.join(sourceConfig.stateDir, "project-library", "recovery", saved.recovery!.sha256),
+          authorityArchive,
+        );
+        const sourceReceipt = yield* sourceStore.get(sourceCopy.id);
+        yield* fs.remove(sourceReceipt.archivePath!, { force: true });
+        yield* fs.remove(rootPath, { recursive: true });
+        yield* fs.remove(alternate, { recursive: true });
+        if (scope === "submodules")
+          yield* fs.remove(path.join(parent, "module-origin"), { recursive: true });
+        if (scope === "worktree")
+          yield* fs.remove(path.join(parent, "common"), { recursive: true });
+        const destinationEnvironmentId = EnvironmentId.make(`portable-target-${scope}`);
+        const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
+        let downloads = 0;
+        const destinationLayer = Layer.fresh(LibraryWorkspace.layer).pipe(
+          Layer.provideMerge(
+            Layer.mergeAll(
+              Layer.fresh(hostDependencies),
+              Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(destinationEnvironmentId),
+              }),
+              Layer.succeed(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
+                ...publisher,
+                retrievePortable: (input) =>
+                  Effect.gen(function* () {
+                    downloads += 1;
+                    expect(input.grant.destinationEnvironmentId).toBe(destinationEnvironmentId);
+                    yield* fs.copyFile(authorityArchive, input.archivePath);
+                  }).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
+              }),
+            ),
+          ),
+        );
+        const destination = yield* Effect.gen(function* () {
+          return {
+            service: yield* LibraryWorkspace.LibraryWorkspace,
+            store: yield* LibraryWorkspaceStore.LibraryWorkspaceStore,
+            config: yield* ServerConfig.ServerConfig,
+            context: yield* Effect.context<Layer.Success<typeof destinationLayer>>(),
+          };
+        }).pipe(Effect.provide(destinationLayer));
+        expect(destination.config.stateDir).not.toBe(sourceConfig.stateDir);
+        const destinationRoot = path.join(parent, "destination", "renamed-copy");
+        const input = {
+          requestId: `portable-restore-${scope}`,
+          project,
+          rootPath: destinationRoot,
+          grant: {
+            sourceCopy: saved,
+            destinationEnvironmentId,
+            libraryEnvironmentId: EnvironmentId.make("portable-authority"),
+            expiresAt: "2099-01-01T00:00:00Z",
+            accessToken: "test-grant",
+          },
+        };
+        if (scope === "multiple") {
+          yield* fs.makeDirectory(path.dirname(destinationRoot), { recursive: true });
+          const protectedFile = path.join(parent, "existing-marker-target");
+          yield* fs.writeFileString(protectedFile, "saved destination data");
+          const marker = `${destinationRoot}.t3-setup-pending`;
+          yield* fs.symlink(protectedFile, marker);
+          expect((yield* destination.service.restoreCopy(input).pipe(Effect.flip)).reason).toBe(
+            "blocked",
+          );
+          expect(yield* fs.readFileString(protectedFile)).toBe("saved destination data");
+          expect(yield* fs.exists(destinationRoot)).toBe(false);
+          expect(downloads).toBe(0);
+          yield* fs.remove(marker);
+        }
+        let restoring = destination.service;
+        if (scope === "discussion") {
+          let interrupt = true;
+          restoring = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+            Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+            Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+              ...destination.store,
+              put: (receipt) => {
+                if (interrupt && receipt.copy.state === "ready") {
+                  interrupt = false;
+                  return Effect.fail(new LibraryError({ reason: "io" }));
+                }
+                return destination.store.put(receipt);
+              },
+            }),
+            Effect.provide(destination.context),
+          );
+          expect((yield* restoring.restoreCopy(input).pipe(Effect.flip)).reason).toBe("io");
+          expect(yield* fs.exists(destinationRoot)).toBe(true);
+          yield* fs.remove(authorityArchive);
+        }
+        const restored = yield* restoring.restoreCopy(input);
+        expect(restored.id).not.toBe(sourceCopy.id);
+        expect(restored.environmentId).toBe(destinationEnvironmentId);
+        expect(restored.state).toBe("ready");
+        expect(restored.keepOnComputer).toBe(true);
+        expect(restored.recovery).toBeUndefined();
+        expect(restored.rootLocalProjectId).not.toBe(sourceCopy.rootLocalProjectId);
+        expect(yield* destination.store.bindings).toEqual([]);
+        const targetRepository = restored.repositories[0]?.path ?? destinationRoot;
+        expect(yield* fs.readFileString(path.join(destinationRoot, "local-only.txt"))).toBe(
+          "root local file\n",
+        );
+        expect(yield* fs.readLink(path.join(destinationRoot, "local-link"))).toBe("local-only.txt");
+        expect(yield* git(targetRepository, ["show", ":staged.txt"])).toBe("staged-only blob");
+        expect(yield* fs.readFileString(path.join(targetRepository, "staged.txt"))).toBe(
+          "newer unstaged work\n",
+        );
+        expect(yield* git(targetRepository, ["rev-parse", "saved-local"])).toBe(head);
+        expect(yield* git(targetRepository, ["rev-parse", "saved-tag"])).toBe(head);
+        expect(yield* git(targetRepository, ["rev-parse", checkpoint])).toBe(head);
+        expect(yield* git(targetRepository, ["cat-file", "-t", reflogOnly])).toBe("commit");
+        expect(yield* git(targetRepository, ["reflog", "--format=%H"])).toContain(reflogOnly);
+        expect(yield* git(targetRepository, ["cat-file", "-p", unreachable.stdout.trim()])).toBe(
+          "unreachable saved local blob",
+        );
+        expect(yield* git(targetRepository, ["cat-file", "-p", alternateBlob.stdout.trim()])).toBe(
+          "alternate local blob",
+        );
+        expect(yield* git(targetRepository, ["ls-files", "--stage"])).toBe(sourceIndex);
+        const targetGitDirectory = path.join(targetRepository, ".git");
+        for (const [filename, content] of operationFiles)
+          expect(yield* fs.readFileString(path.join(targetGitDirectory, filename))).toBe(content);
+        yield* git(targetRepository, ["hook", "run", "--ignore-missing", "pre-commit"]);
+        expect(yield* fs.exists(path.join(targetRepository, "hook-ran"))).toBe(false);
+        expect(
+          yield* fs.readFileString(path.join(targetGitDirectory, "hooks", "portable-fsmonitor")),
+        ).toContain("hook-ran");
+        expect(
+          yield* fs.exists(path.join(targetGitDirectory, "objects", "info", "alternates")),
+        ).toBe(false);
+        const targetConfig = yield* fs.readFileString(path.join(targetGitDirectory, "config"));
+        expect(targetConfig).not.toContain(rootPath);
+        expect(targetConfig).not.toContain(alternate);
+        expect(yield* git(targetRepository, ["config", "--get-all", "remote.network.fetch"])).toBe(
+          "+refs/heads/*:refs/remotes/network/*\n+refs/notes/*:refs/notes/network/*",
+        );
+        if (scope === "submodules") {
+          expect(
+            yield* git(path.join(targetRepository, "active-module"), ["show", ":README.md"]),
+          ).toBe("saved submodule local work");
+          expect(
+            yield* git(path.join(targetRepository, "removed-module"), ["show", ":README.md"]),
+          ).toBe("saved removed submodule work");
+          expect(yield* git(targetRepository, ["config", "submodule.active-module.url"])).toBe(
+            "https://example.com/portable-module.git",
+          );
+          expect(yield* git(targetRepository, ["config", "submodule.active-module.active"])).toBe(
+            "true",
+          );
+          expect(yield* git(targetRepository, ["config", "submodule.active"])).toBe(
+            "active-module",
+          );
+          expect(
+            yield* git(targetRepository, ["submodule", "status", "active-module"]),
+          ).not.toMatch(/^-/);
+          expect(yield* git(targetRepository, ["submodule", "status", "active-module"])).toContain(
+            moduleHead,
+          );
+          expect(
+            yield* git(targetRepository, [
+              "-c",
+              "protocol.file.allow=never",
+              "-c",
+              "protocol.https.allow=never",
+              "submodule",
+              "update",
+              "--no-fetch",
+              "active-module",
+            ]),
+          ).toBe("");
+          expect(
+            yield* git(path.join(targetRepository, "active-module"), ["show", ":README.md"]),
+          ).toBe("saved submodule local work");
+          expect(targetConfig).not.toContain("!source-only-command");
+          const cachedGit = path.join(targetGitDirectory, "modules", "cached-module");
+          expect(
+            yield* git(targetRepository, [`--git-dir=${cachedGit}`, "rev-parse", "HEAD"]),
+          ).toBe(moduleHead);
+          const cachedConfig = yield* fs.readFileString(path.join(cachedGit, "config"));
+          expect(cachedConfig).not.toContain(rootPath);
+          expect(cachedConfig).not.toContain("include");
+          yield* git(targetRepository, [
+            `--git-dir=${cachedGit}`,
+            "fsck",
+            "--full",
+            "--no-dangling",
+          ]);
+        }
+
+        expect(yield* git(targetRepository, ["rev-parse", "--absolute-git-dir"])).toBe(
+          path.join(targetRepository, ".git"),
+        );
+        yield* git(targetRepository, ["fsck", "--full", "--cache", "--no-dangling"]);
+        for (const cwd of new Set([
+          destinationRoot,
+          ...restored.repositories.map((repository) => repository.path),
+        ]))
+          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
+        const binding = yield* destination.service.resolveBinding({
+          binding: {
+            projectId: project.id,
+            projectRevision: project.revision,
+            workingCopyId: restored.id,
+            environmentId: destinationEnvironmentId,
+            resourceIds: project.resources.map((resource) => resource.id),
+          },
+        });
+        expect(binding.cwd).toBe(destinationRoot);
+        expect((yield* destination.service.restoreCopy(input)).id).toBe(restored.id);
+        expect(downloads).toBe(1);
+        const occupied = path.join(parent, "occupied");
+        yield* fs.makeDirectory(occupied);
+        yield* fs.writeFileString(path.join(occupied, "keep.txt"), "existing destination");
+        expect(
+          (yield* destination.service
+            .restoreCopy({ ...input, requestId: `occupied-${scope}`, rootPath: occupied })
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        expect(yield* fs.readFileString(path.join(occupied, "keep.txt"))).toBe(
+          "existing destination",
+        );
+        const alias = path.join(parent, "destination-alias");
+        yield* fs.symlink(destinationRoot, alias);
+        expect(
+          (yield* destination.service
+            .restoreCopy({
+              ...input,
+              requestId: `alias-${scope}`,
+              rootPath: path.join(alias, "nested"),
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        if (scope !== "discussion") {
+          yield* fs.writeFileString(authorityArchive, "corrupt saved archive");
+          const corruptDestination = path.join(parent, "corrupt-destination");
+          expect(
+            (yield* destination.service
+              .restoreCopy({
+                ...input,
+                requestId: `corrupt-${scope}`,
+                rootPath: corruptDestination,
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("archive-unverified");
+          expect(yield* fs.exists(corruptDestination)).toBe(false);
+        }
+        expect(
+          (yield* destination.service
+            .restoreCopy({ ...input, rootPath: path.join(parent, "other") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("request-conflict");
+      }),
+  );
+
   it.effect.each(["root", "component"] as const)(
     "restores released managed files for a bound %s conversation without changing history or IDs",
     (scope) =>

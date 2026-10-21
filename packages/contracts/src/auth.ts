@@ -47,6 +47,8 @@ export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
 /** Narrow host-to-Library replication. It grants no ordinary client operations. */
 export const AuthLibraryPublishScope = "loom:library:publish" as const;
+/** Short-lived access to one saved archive for one destination computer. */
+export const AuthLibraryRecoveryReadScope = "loom:library:recovery-read" as const;
 export const AuthEnvironmentScope = Schema.Literals([
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -66,6 +68,7 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthRelayReadScope,
   AuthRelayWriteScope,
   AuthLibraryPublishScope,
+  AuthLibraryRecoveryReadScope,
 ]);
 export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
 export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope);

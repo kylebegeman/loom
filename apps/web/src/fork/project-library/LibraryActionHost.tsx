@@ -168,6 +168,7 @@ export function LibraryActionHost() {
       initialHostId={defaults?.environmentId}
       initialCopyId={defaults?.workingCopyId}
       initialResourceId={defaults?.resourceId}
+      initialResourceIds={defaults?.resourceIds}
       initialModelSelection={defaults?.modelSelection}
       initialRuntimeMode={defaults?.runtimeMode}
       initialInteractionMode={defaults?.interactionMode}

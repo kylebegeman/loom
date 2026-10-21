@@ -11,6 +11,7 @@ import {
   libraryLaunchChoice,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  libraryPortableRecoveryPlan,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
@@ -30,6 +31,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_PORTABLE_RECOVERY_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
@@ -66,12 +68,14 @@ import {
   launchLibraryConversation,
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
+  type LibraryLaunchReceipt,
 } from "./libraryLaunch";
 import { LibraryProfileReadiness } from "./LibraryProfileReadiness";
 import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
 import { libraryConversationModels } from "./libraryModels";
 import type { LibrarySourceSettings } from "./librarySourceLaunch";
 import { LibraryFolderStorage } from "./LibraryFolderStorage";
+import { preparePortableLibraryLaunchCopy } from "./libraryPortableLaunch";
 import {
   libraryFreshRootPath,
   libraryLaunchCopyMatchesScope,
@@ -232,6 +236,9 @@ function LibraryStartContent(props: {
           : null),
     ),
     [showModels, setShowModels] = useState(false);
+  const [recoverySourceId, setRecoverySourceId] = useState<string | null>(
+    saved?.review.recoverySource?.id ?? null,
+  );
   const [showFolderOptions, setShowFolderOptions] = useState(Boolean(props.reuseRootPath)),
     [showComputers, setShowComputers] = useState(false),
     [showOptions, setShowOptions] = useState(false),
@@ -254,7 +261,7 @@ function LibraryStartContent(props: {
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
   }, [launchedThread, pending, navigation]);
   const [progress, setProgress] = useState(saved?.receipt ?? emptyLibraryLaunchReceipt());
-  const receipt = useRef(saved?.receipt ?? emptyLibraryLaunchReceipt()),
+  const receipt = useRef<LibraryLaunchReceipt>(saved?.receipt ?? emptyLibraryLaunchReceipt()),
     requestId = useRef(saved?.requestId ?? uuidv4()),
     threadId = useRef(saved?.threadId ?? ThreadId.make(uuidv4())),
     busy = useRef(false);
@@ -265,11 +272,13 @@ function LibraryStartContent(props: {
     mode: "reuse" | "folder" | "clone";
     rootPath: string;
     copy: LibraryWorkingCopy | null;
+    recoverySource?: LibraryWorkingCopy;
     carryContext: string;
     keepOnComputer?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
   } | null>(saved?.review ?? null);
+  const [reviewState, setReviewState] = useState(saved?.review ?? null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
       ? library.history({
@@ -380,8 +389,36 @@ function LibraryStartContent(props: {
     const reasons = candidateFor(copy.environmentId, copy.id)?.reasons.slice(1) ?? [];
     return reasons.length > 0 ? sentence(reasons) : undefined;
   };
+  const sourceWorkingCopyId =
+    source.data?.summary.workingCopyId ?? (props.sourceThreadId ? props.initialCopyId : undefined);
+  const sourceEnvironmentId =
+    source.data?.summary.environmentId ??
+    (props.sourceThreadId ? props.reuseEnvironmentId : undefined);
+  const continuationMissingFiles = Boolean(
+    props.sourceArchiveId && source.data && !source.data.summary.workingCopyId,
+  );
+  const recoveryPlan = continuationMissingFiles
+    ? {
+        kind: "unavailable" as const,
+        message:
+          "The source conversation has no saved file location. Reconnect its computer to recover its project files.",
+      }
+    : execution
+      ? libraryPortableRecoveryPlan({
+          project: launchProject,
+          copies: knownCopies ?? [],
+          destinationEnvironmentId: execution,
+          resourceIds: scope === "all" ? null : resourceIds,
+          sourceWorkingCopyId,
+          sourceEnvironmentId,
+          selectedSourceCopyId: recoverySourceId,
+        })
+      : { kind: "clone" as const };
   const selectedCopy =
     eligible.find((copy) => copy.id === copyId) ??
+    (modeChoice === null && recoveryPlan.kind === "local"
+      ? eligible.find((copy) => copy.id === recoveryPlan.copy.id)
+      : undefined) ??
     (chosen?.kind === "copy" ? eligible.find((copy) => copy.id === chosen.copyId) : undefined) ??
     eligible[0] ??
     null;
@@ -418,11 +455,74 @@ function LibraryStartContent(props: {
   const canSetRetention = useAtomValue(library.setCopyRetention.permissionAtom(execution));
   const setRetention = useAtomCommand(library.setCopyRetention, { reportFailure: false });
   // New work prepares files automatically; using an existing folder is an explicit choice.
-  const needsCopy = copiesKnown && execution !== null && eligible.length === 0;
+  const needsCopy =
+    copiesKnown &&
+    execution !== null &&
+    (eligible.length === 0 ||
+      recoveryPlan.kind === "recover" ||
+      recoveryPlan.kind === "choose" ||
+      recoveryPlan.kind === "unavailable");
   const mode =
     modeChoice === "reuse" && copiesKnown && selectedCopy === null
       ? "clone"
       : (modeChoice ?? (needsCopy ? "clone" : "reuse"));
+  const recoverySource =
+    reviewState?.recoverySource ??
+    (mode === "clone"
+      ? recoveryPlan.kind === "recover"
+        ? recoveryPlan.sourceCopy
+        : recoveryPlan.kind === "local"
+          ? recoveryPlan.copy
+          : null
+      : null);
+  const recoveryAmbiguous =
+    !reviewState?.recoverySource && mode === "clone" && recoveryPlan.kind === "choose";
+  const sourceHost = recoverySource
+    ? environments.find((entry) => entry.environmentId === recoverySource.environmentId)
+    : undefined;
+  const canAuthorizeRecovery = useAtomValue(
+    library.authorizeRecovery.permissionAtom(authority.environmentId),
+  );
+  const canRestoreCopy = useAtomValue(library.restoreCopy.permissionAtom(execution));
+  const canReadSourceStatus = useAtomValue(
+    library.readCopyStatus.permissionAtom(recoverySource?.environmentId ?? null),
+  );
+  const canSnapshotSource = useAtomValue(
+    library.snapshotCopy.permissionAtom(recoverySource?.environmentId ?? null),
+  );
+  const authorizeRecovery = useAtomCommand(library.authorizeRecovery, { reportFailure: false });
+  const restoreCopy = useAtomCommand(library.restoreCopy, { reportFailure: false });
+  const readSourceStatus = useAtomCommand(library.readCopyStatus, { reportFailure: false });
+  const snapshotCopy = useAtomCommand(library.snapshotCopy, { reportFailure: false });
+  const portableSupported =
+    supportsFileLifecycle &&
+    supportsLoomFeature(config?.environment.capabilities, LIBRARY_PORTABLE_RECOVERY_FEATURE) &&
+    supportsLoomFeature(
+      configs.get(authority.environmentId!)?.environment.capabilities,
+      LIBRARY_PORTABLE_RECOVERY_FEATURE,
+    );
+  const sourceNeedsSnapshot = recoverySource?.state === "ready" && !progress.recoverySnapshot;
+  const sourceCanSnapshot =
+    sourceHost?.entry.enabled === true &&
+    sourceHost.connection.phase === "connected" &&
+    supportsLoomFeature(
+      sourceHost.serverConfig?.environment.capabilities,
+      LIBRARY_PORTABLE_RECOVERY_FEATURE,
+    ) &&
+    canReadSourceStatus &&
+    canSnapshotSource;
+  const recoveryUnavailable =
+    mode === "clone" && progress.copy === null
+      ? recoveryPlan.kind === "unavailable" && !reviewState?.recoverySource
+        ? recoveryPlan.message
+        : recoverySource && !portableSupported
+          ? "Update this computer and your Library to restore saved project files."
+          : recoverySource && (!canAuthorizeRecovery || !canRestoreCopy)
+            ? "Restoring saved files needs file access on this computer and your Library."
+            : sourceNeedsSnapshot && !sourceCanSnapshot
+              ? "Reconnect the source computer with file access to save its latest files before continuing here."
+              : null
+      : null;
   const keepOnComputer =
     mode === "folder" || (mode === "reuse" && selectedCopy?.ownership === "borrowed")
       ? true
@@ -486,15 +586,36 @@ function LibraryStartContent(props: {
       canReopen) &&
     (progress.intent !== null || !overlappingRoot) &&
     !launchProject.archived &&
+    !progress.recoverySnapshotRejected &&
+    (progress.copy !== null || (!recoveryAmbiguous && recoveryUnavailable === null)) &&
     (progress.copy !== null || mode === "reuse"
       ? progress.copy !== null || selectedCopy !== null
-      : canPrepare &&
-        rootPath.trim().length > 0 &&
-        (mode !== "clone" || (execution !== null && writable.has(execution)))) &&
+      : rootPath.trim().length > 0 &&
+        (recoverySource
+          ? canRestoreCopy && canAuthorizeRecovery
+          : canPrepare && (mode !== "clone" || (execution !== null && writable.has(execution))))) &&
     (!props.sourceArchiveId ||
       progress.intent !== null ||
       (source.data !== null && source.isSuccess && !source.isPending && source.error === null));
   if (!authority.environmentId) return <LibraryAuthorityScreen />;
+  async function persistAttempt() {
+    const review = reviewed.current;
+    if (!review) throw new Error("Review this preparation before saving it.");
+    const serialized = encodeLibraryLaunchAttempt({
+      version: 1,
+      requestId: requestId.current,
+      threadId: threadId.current,
+      receipt: receipt.current,
+      review,
+    });
+    if (serialized.length > 256 * 1024)
+      throw new Error("This preparation is too large to save safely on this device.");
+    await savePreferences({
+      transform: (current) => ({
+        loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
+      }),
+    });
+  }
   async function start() {
     if (busy.current || folderBusy.current || !canStart || !execution || !authority.environmentId)
       return;
@@ -543,12 +664,15 @@ function LibraryStartContent(props: {
         mode,
         rootPath: rootPath.trim(),
         copy: selectedCopy,
+        ...(recoverySource ? { recoverySource } : {}),
         carryContext,
         ...(supportsFileLifecycle ? { keepOnComputer } : {}),
       };
+      setReviewState(reviewed.current);
       setModelKey(chosenModel.key);
     }
     const review = reviewed.current;
+    const persist = persistAttempt;
     if (review.authorityEnvironmentId !== authority.environmentId) {
       setError("Reconnect the library used to start this preparation before resuming it.");
       return;
@@ -566,22 +690,6 @@ function LibraryStartContent(props: {
               sequence: source.data.summary.sequence,
             }
           : undefined);
-      const persist = async () => {
-        const serialized = encodeLibraryLaunchAttempt({
-          version: 1,
-          requestId: requestId.current,
-          threadId: threadId.current,
-          receipt: receipt.current,
-          review,
-        });
-        if (serialized.length > 256 * 1024)
-          throw new Error("This preparation is too large to save safely on this device.");
-        await savePreferences({
-          transform: (current) => ({
-            loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
-          }),
-        });
-      };
       const target = await launchLibraryConversation(
         {
           project: launchProject,
@@ -594,6 +702,31 @@ function LibraryStartContent(props: {
         {
           persist,
           prepare: async (intent) => {
+            if (review.recoverySource) {
+              return preparePortableLibraryLaunchCopy(
+                {
+                  sourceCopy: review.recoverySource,
+                  project: intent.project,
+                  destinationEnvironmentId: execution,
+                  authorityEnvironmentId: authority.environmentId!,
+                  rootPath: review.rootPath,
+                  resourceIds: intent.resourceIds,
+                  requestId: requestId.current,
+                },
+                receipt.current,
+                {
+                  readStatus: async (input) => unwrap(await readSourceStatus(input)),
+                  snapshot: async (input) => unwrap(await snapshotCopy(input)),
+                  registerCopy: async (input) => {
+                    unwrap(await registerCopy({ environmentId: authority.environmentId!, input }));
+                  },
+                  authorize: async (input) => unwrap(await authorizeRecovery(input)),
+                  restore: async (input) => unwrap(await restoreCopy(input)),
+                  persist,
+                  progress: setPending,
+                },
+              );
+            }
             const copy =
               review.mode === "reuse" && review.copy?.ownership === "managed"
                 ? review.copy.state === "released"
@@ -745,6 +878,31 @@ function LibraryStartContent(props: {
       setPending(null);
     }
   }
+  async function reviewLatestSourceFiles() {
+    if (
+      busy.current ||
+      folderBusy.current ||
+      receipt.current.copy ||
+      receipt.current.recoverySnapshot ||
+      !receipt.current.recoverySnapshotRejected
+    )
+      return;
+    busy.current = true;
+    setPending("Reviewing source files…");
+    setError(null);
+    try {
+      delete receipt.current.recoverySnapshotReview;
+      delete receipt.current.recoverySnapshotRejected;
+      receipt.current.recoverySnapshotAttempt = (receipt.current.recoverySnapshotAttempt ?? 0) + 1;
+      await persistAttempt();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The source review could not be saved.");
+    } finally {
+      setProgress({ ...receipt.current });
+      setPending(null);
+      busy.current = false;
+    }
+  }
   /** Fast-forward the copy's behind repositories, then start on it. */
   async function pullThenStart(paths: readonly string[]) {
     if (busy.current || !execution || !selectedCopy) return;
@@ -792,9 +950,11 @@ function LibraryStartContent(props: {
           : "Use files already on this computer"
         : mode === "folder"
           ? "Use an existing folder"
-          : rootPath.trim()
-            ? "Prepare project files when starting"
-            : "Choose a folder before starting";
+          : recoverySource || recoveryAmbiguous
+            ? "Restore source files when starting"
+            : rootPath.trim()
+              ? "Prepare project files when starting"
+              : "Choose a folder before starting";
   const retentionStatus = keepOnComputer
     ? "Files stay kept."
     : "Temporary files, saved work stays.";
@@ -922,6 +1082,7 @@ function LibraryStartContent(props: {
                       setMode(null);
                       setRootPath(null);
                       setKeepFiles(null);
+                      setRecoverySourceId(null);
                       setShowFolderOptions(false);
                     }
                     setExecution(env.environmentId);
@@ -993,7 +1154,9 @@ function LibraryStartContent(props: {
                       : "Start with the files already here."
                     : mode === "folder"
                       ? "Files stay here until you change their setting in the project."
-                      : "Loom prepares the files here when you start work."}
+                      : recoverySource
+                        ? "Loom restores saved files here, including local changes and work that has not been pushed."
+                        : "Loom prepares the files here when you start work."}
                 </Text>
               </View>
               {eligible.map((copy) => (
@@ -1001,9 +1164,11 @@ function LibraryStartContent(props: {
                   key={copy.id}
                   label={copy.rootPath}
                   description={
-                    copy.state === "released"
-                      ? "Restore saved files when starting work."
-                      : copyReasons(copy)
+                    sourceWorkingCopyId && copy.id !== sourceWorkingCopyId
+                      ? "Use these local files instead of the source conversation's files."
+                      : copy.state === "released"
+                        ? "Restore saved files when starting work."
+                        : copyReasons(copy)
                   }
                   selected={mode === "reuse" && selectedCopy?.id === copy.id}
                   disabled={locked || !copiesReady}
@@ -1031,7 +1196,7 @@ function LibraryStartContent(props: {
                 label="Prepare files in a new folder"
                 description="Loom brings the project files to this computer."
                 selected={mode === "clone"}
-                disabled={locked || !copiesReady || !canPrepare || !writable.has(execution)}
+                disabled={locked || !copiesReady || (!canPrepare && !canRestoreCopy)}
                 onPress={() => {
                   pin();
                   setMode("clone");
@@ -1089,11 +1254,44 @@ function LibraryStartContent(props: {
           {mode === "reuse" && selectedCopy?.state === "released" && !canReopen ? (
             <LibraryNotice detail="Restoring saved files needs file access on this computer." />
           ) : null}
-          {mode === "clone" && !writable.has(execution) ? (
+          {mode === "clone" && !recoverySource && !writable.has(execution) ? (
             <LibraryNotice detail="File preparation needs source control access on this computer. Choose an existing folder or another computer." />
           ) : null}
         </>
       ) : null}
+      {recoveryAmbiguous && recoveryPlan.kind === "choose" ? (
+        <SettingsSection title="Choose source files">
+          <View className="p-4">
+            <Text className="text-sm text-foreground-muted">{recoveryPlan.reason}</Text>
+          </View>
+          {recoveryPlan.candidates.map((copy) => (
+            <ListChoiceRow
+              key={`${copy.environmentId}:${copy.id}`}
+              label={`${environments.find((entry) => entry.environmentId === copy.environmentId)?.label ?? authority.computers.find((entry) => entry.environmentId === copy.environmentId)?.label ?? "Saved computer"}: ${copy.rootPath}`}
+              description={
+                copy.environmentId === execution
+                  ? copy.state === "released"
+                    ? "Restore these saved files on this computer."
+                    : "Use the files already on this computer."
+                  : copy.state === "released"
+                    ? "Restore these saved files."
+                    : "Save and restore the latest files from this computer."
+              }
+              selected={recoverySourceId === copy.id}
+              disabled={locked}
+              onPress={() => {
+                pin();
+                setRecoverySourceId(copy.id);
+                if (copy.environmentId === execution && modeChoice !== "clone") {
+                  setCopyId(copy.id);
+                  setMode("reuse");
+                }
+              }}
+            />
+          ))}
+        </SettingsSection>
+      ) : null}
+      {recoveryUnavailable ? <LibraryNotice detail={recoveryUnavailable} /> : null}
       {repositories.length > 1 ? (
         <SettingsSection title="Conversation context">
           <ListChoiceRow
@@ -1104,6 +1302,7 @@ function LibraryStartContent(props: {
             onPress={() => {
               setScope("all");
               setCopyId(null);
+              setRecoverySourceId(null);
             }}
           />
           {repositories.map((resource) => (
@@ -1116,6 +1315,7 @@ function LibraryStartContent(props: {
               onPress={() => {
                 setScope(resource.id);
                 setCopyId(null);
+                setRecoverySourceId(null);
               }}
             />
           ))}
@@ -1154,6 +1354,16 @@ function LibraryStartContent(props: {
         <LibraryNotice detail="The selected model is unavailable. Restore it in provider settings before resuming this preparation." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
+      {progress.recoverySnapshotRejected && !progress.copy && !progress.recoverySnapshot ? (
+        <Button
+          label="Review latest source files"
+          tone="text"
+          disabled={pending !== null}
+          onPress={() => {
+            void reviewLatestSourceFiles();
+          }}
+        />
+      ) : null}
       <Button
         label={
           pending ??

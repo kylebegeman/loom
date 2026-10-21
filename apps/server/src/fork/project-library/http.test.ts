@@ -3,6 +3,7 @@ import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthLibraryPublishScope,
+  AuthLibraryRecoveryReadScope,
   AuthOrchestrationOperateScope,
   AuthSessionId,
 } from "@t3tools/contracts";
@@ -121,6 +122,21 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
     return yield* use(yield* fixture);
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 describe("Library host HTTP publishing boundaries", () => {
+  it.effect("allows a saved-file grant to identify the Library without publishing history", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.session, (session) => ({
+          ...session,
+          subject: "loom-library-recovery:fixture",
+          scopes: [AuthLibraryRecoveryReadScope],
+        }));
+        expect((yield* f.request("info")).status).toBe(200);
+        expect((yield* f.request("history/ingest", yield* encodeIngest(f.input))).status).toBe(403);
+        expect(yield* Ref.get(f.calls)).toBe(0);
+      }),
+    ),
+  );
+
   it.effect("records a forwarded proposal as the sending computer's conversation", () =>
     run((f) =>
       Effect.gen(function* () {

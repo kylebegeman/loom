@@ -19,7 +19,16 @@ export function libraryLaunchCopyMatchesScope(
         project.resources.filter((resource) => resource.kind !== "link").length) &&
     libraryCopiesForScope(
       project,
-      [{ ...copy, state: "ready" }],
+      [
+        {
+          ...copy,
+          state: "ready",
+          registered:
+            copy.state === "released" && copy.ownership === "managed" && copy.recovery
+              ? true
+              : copy.registered,
+        },
+      ],
       copy.environmentId,
       resourceId === null ? null : [resourceId],
     ).length > 0

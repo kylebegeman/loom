@@ -128,8 +128,10 @@ export function useLibraryNewConversation() {
           environmentId: thread.environmentId,
           ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
           ...(saved.value.resourceIds.length === 1
-            ? { resourceId: saved.value.resourceIds[0] }
-            : {}),
+            ? { resourceId: saved.value.resourceIds[0]! }
+            : saved.value.resourceIds.length > 1
+              ? { resourceIds: saved.value.resourceIds }
+              : {}),
         });
         return true;
       }
@@ -168,7 +170,11 @@ export function useLibraryNewConversation() {
       ...launchDefaults,
       environmentId: result.value.environmentId,
       workingCopyId: result.value.workingCopyId,
-      ...(result.value.resourceIds.length === 1 ? { resourceId: result.value.resourceIds[0] } : {}),
+      ...(result.value.resourceIds.length === 1
+        ? { resourceId: result.value.resourceIds[0]! }
+        : result.value.resourceIds.length > 1
+          ? { resourceIds: result.value.resourceIds }
+          : {}),
     });
     return true;
   };

@@ -45,14 +45,17 @@ describe("project launch location", () => {
     );
     expect(libraryLaunchRootPath({ ...input, newProjectsRoot: undefined })).toBe("");
   });
-  it("reopens in the most recent retained location on the same computer", () => {
+  it("reopens an unambiguous retained location on the same computer", () => {
     expect(libraryLaunchRootPath({ ...input, copies: [copy] })).toBe(copy.rootPath);
     expect(
       libraryLaunchRootPath({
         ...input,
-        copies: [copy, { ...copy, rootPath: "/newer", updatedAt: "2026-10-16T12:00:00.000Z" }],
+        copies: [
+          copy,
+          { ...copy, id: "newer", rootPath: "/newer", updatedAt: "2026-10-16T12:00:00.000Z" },
+        ],
       }),
-    ).toBe("/newer");
+    ).toBe("/projects/my-project");
   });
   it("never uses another project's or computer's location or unregistered files", () => {
     expect(

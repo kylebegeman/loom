@@ -224,7 +224,7 @@ export const makeForkRpcLayer = (
             ),
           [FORK_WS_METHODS.limits]: () =>
             auth.effect(FORK_WS_METHODS.limits, switchboard.readLimits),
-          ...(yield* withForkRuntime(makeProjectLibraryRpcHandlers(auth))),
+          ...(yield* withForkRuntime(makeProjectLibraryRpcHandlers(auth, session))),
           ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),
           ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),

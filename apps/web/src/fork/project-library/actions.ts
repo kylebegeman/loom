@@ -9,6 +9,7 @@ export interface LibraryConversationDefaults {
   readonly environmentId?: EnvironmentId;
   readonly workingCopyId?: string;
   readonly resourceId?: string;
+  readonly resourceIds?: readonly string[];
   readonly modelSelection?: ModelSelection;
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;

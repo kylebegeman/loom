@@ -9,6 +9,8 @@ import {
   type LibraryFolderInspection,
   type LibraryInspectFolderRequest,
   LibraryPrepareCopyRequest,
+  type LibraryRestoreCopyRequest,
+  type LibrarySnapshotCopyRequest,
   type LibraryProfileReadiness,
   type LibraryProfileReadinessRequest,
   type LibraryProfileSettings,
@@ -37,6 +39,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { makeRecoveryTarReader, hasNonPortablePathCharacters } from "./LibraryPortableArchive.ts";
 import { fileIdentity } from "../fileIdentity.ts";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -75,6 +78,12 @@ export class LibraryWorkspace extends Context.Service<
     }) => Effect.Effect<LibraryWorkingCopy | null, LibraryError>;
     readonly prepareCopy: (
       input: LibraryPrepareCopyRequest,
+    ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    readonly restoreCopy: (
+      input: LibraryRestoreCopyRequest,
+    ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    readonly snapshotCopy: (
+      input: LibrarySnapshotCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     readonly status: (input: {
       readonly workingCopyId: string;
@@ -134,7 +143,6 @@ const ReviewRepository = Schema.Struct({
   resourceId: Schema.String,
   head: Schema.NullOr(Schema.String),
   branch: Schema.NullOr(Schema.String),
-  changes: Schema.NullOr(Schema.String),
   unpushed: Schema.NullOr(Schema.String),
 });
 const ReviewState = Schema.Struct({
@@ -146,6 +154,20 @@ const ReviewState = Schema.Struct({
   facts: Schema.Array(Schema.String),
 });
 
+const encodeRestoreIdentity = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      project: LibraryProject,
+      rootPath: Schema.String,
+      resourceIds: Schema.Array(Schema.String),
+      sourceCopyId: Schema.String,
+      sourceEnvironmentId: Schema.String,
+      sha256: Schema.String,
+      byteLength: Schema.Number,
+      libraryEnvironmentId: Schema.String,
+    }),
+  ),
+);
 const encodeWorkingCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryWorkingCopy));
 const encodePreparation = Schema.encodeEffect(Schema.fromJsonString(LibraryPrepareCopyRequest));
 const encodeReviewRepository = Schema.encodeEffect(Schema.fromJsonString(ReviewRepository));
@@ -158,6 +180,14 @@ const FullRecoveryManifest = Schema.Struct({
   copy: LibraryWorkingCopy,
   rootLocalProjectId: Schema.NullOr(ProjectId),
   rootCheckpointRepository: Schema.Boolean,
+  portableRepositories: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        relativePath: Schema.String,
+        gitDirectory: Schema.String,
+      }),
+    ),
+  ),
   bindings: Schema.Array(
     Schema.Struct({
       threadId: ThreadId,
@@ -166,6 +196,7 @@ const FullRecoveryManifest = Schema.Struct({
     }),
   ),
 });
+const decodeFullManifest = Schema.decodeEffect(Schema.fromJsonString(FullRecoveryManifest));
 const encodeFullManifest = Schema.encodeEffect(Schema.fromJsonString(FullRecoveryManifest));
 const isLibraryError = Schema.is(LibraryError);
 const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -205,6 +236,17 @@ const make = Effect.gen(function* () {
   const settings = yield* makeProfileSettings;
   const environmentId = yield* identity.getEnvironmentId;
   const homeDirectory = yield* HostProcess.HomeDirectory;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const isolatedGitEnvironment = {
+    ...Object.fromEntries(
+      Object.entries(hostEnvironment).filter(([key]) => !key.startsWith("GIT_")),
+    ),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: path.join(config.stateDir, "empty-git-config"),
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_NO_LAZY_FETCH: "1",
+    GIT_NO_REPLACE_OBJECTS: "1",
+  };
   const requestedRoot = (rootPath: string) =>
     path.resolve(expandHomePath(rootPath.trim(), homeDirectory));
   const canonicalRoot = Effect.fn("LibraryWorkspace.canonicalRoot")(function* (rootPath: string) {
@@ -247,18 +289,39 @@ const make = Effect.gen(function* () {
     archive?: { readonly path: string; readonly manifestDirectory: string },
   ) {
     const format = yield* tarFormat;
-    // With one-block records the suffix after this fixed manifest entry is the exact reviewed tar.
-    let manifestBytes =
+    const manifestNames =
       archive === undefined
-        ? 0
-        : TAR_BLOCK_BYTES *
-          (1 +
-            Math.ceil(
-              Number(
-                (yield* fs.stat(path.join(archive.manifestDirectory, "loom-working-copy.json")))
-                  .size,
-              ) / TAR_BLOCK_BYTES,
-            ));
+        ? []
+        : [
+            "loom-working-copy.json",
+            ...((yield* fs.exists(path.join(archive.manifestDirectory, "loom-portable-git")))
+              ? ["loom-portable-git"]
+              : []),
+          ];
+    // One-block records leave exactly two terminal zero blocks in the prefix tar.
+    let manifestBytes = 0;
+    if (archive !== undefined) {
+      const prefix = path.join(archive.manifestDirectory, "prefix.tar");
+      yield* Effect.gen(function* () {
+        const result = yield* runner.run({
+          command: "tar",
+          args: [
+            `--format=${format}`,
+            "-b",
+            "1",
+            "-cf",
+            prefix,
+            "-C",
+            archive.manifestDirectory,
+            ...manifestNames,
+          ],
+          timeout: "10 minutes",
+          maxOutputBytes: 1024,
+        });
+        if (result.code !== 0) return yield* new LibraryError({ reason: "io" });
+        manifestBytes = Number((yield* fs.stat(prefix)).size) - 2 * TAR_BLOCK_BYTES;
+      }).pipe(Effect.ensuring(fs.remove(prefix, { force: true }).pipe(Effect.ignore)));
+    }
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const hash = NodeCrypto.createHash("sha256");
@@ -270,9 +333,7 @@ const make = Effect.gen(function* () {
             "1",
             "-cf",
             "-",
-            ...(archive === undefined
-              ? []
-              : ["-C", archive.manifestDirectory, "loom-working-copy.json"]),
+            ...(archive === undefined ? [] : ["-C", archive.manifestDirectory, ...manifestNames]),
             "-C",
             path.dirname(rootPath),
             `./${path.basename(rootPath)}`,
@@ -327,8 +388,10 @@ const make = Effect.gen(function* () {
   ) {
     const result = yield* runner.run({
       command: "git",
-      args,
+      args: ["-c", "core.fsmonitor=false", ...args],
       cwd,
+      env: isolatedGitEnvironment,
+      extendEnv: false,
       timeout: "2 minutes",
       maxOutputBytes: 1024 * 1024,
     });
@@ -336,6 +399,293 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "io", cause: result });
     return result.code === 0 ? result.stdout.trim() : null;
   });
+  const workingRepositories = Effect.fn("LibraryWorkspace.workingRepositories")(function* (
+    copy: LibraryWorkingCopy,
+  ) {
+    const repositories = new Set(copy.repositories.map((repository) => repository.path));
+    const pending = [copy.rootPath];
+    while (pending.length > 0) {
+      const directory = pending.shift()!;
+      if ((yield* fs.realPath(directory)) !== directory) continue;
+      const names = yield* fs.readDirectory(directory);
+      if (names.includes(".git")) repositories.add(directory);
+      for (const name of names) {
+        if (name === ".git") continue;
+        const candidate = path.join(directory, name);
+        if (
+          (yield* fs.realPath(candidate).pipe(Effect.orElseSucceed(() => ""))) === candidate &&
+          (yield* fs.stat(candidate)).type === "Directory"
+        )
+          pending.push(candidate);
+      }
+    }
+    return [...repositories];
+  });
+  const portableGit = Effect.fn("LibraryWorkspace.portableGit")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    directory: string,
+  ) {
+    const repositories = yield* workingRepositories(receipt.copy);
+    const portableRepositories: Array<{ relativePath: string; gitDirectory: string }> = [];
+    for (const [index, source] of repositories.entries()) {
+      if (!contained(receipt.copy.rootPath, source))
+        return yield* new LibraryError({ reason: "invalid" });
+      const gitDirectory = yield* fs.realPath(
+        (yield* git(source, ["rev-parse", "--absolute-git-dir"]))!,
+      );
+      const commonDirectory = yield* fs.realPath(
+        path.resolve(source, (yield* git(source, ["rev-parse", "--git-common-dir"]))!),
+      );
+      const target = path.join(directory, "loom-portable-git", `repository-${index}`, ".git");
+      yield* fs.makeDirectory(target, { recursive: true, mode: 0o700 });
+      const objectStores = new Map<string, string>();
+      // Keep complete metadata, including reflogs and interrupted operations. A linked
+      // worktree gets common files plus its own private metadata, never another HEAD/index.
+      const pending: Array<{
+        source: string;
+        target: string;
+        relative: string;
+        common: boolean;
+        ancestors: ReadonlyArray<string>;
+      }> = [];
+      if (commonDirectory !== gitDirectory) {
+        for (const name of yield* fs.readDirectory(commonDirectory)) {
+          if (["objects", "worktrees", "commondir", "gitdir"].includes(name)) continue;
+          const location = path.resolve(
+            source,
+            (yield* git(source, ["rev-parse", "--git-path", name]))!,
+          );
+          if (location === path.join(commonDirectory, name))
+            pending.push({
+              source: path.join(commonDirectory, name),
+              target: path.join(target, name),
+              relative: name,
+              common: true,
+              ancestors: [],
+            });
+        }
+        objectStores.set(commonDirectory, target);
+      }
+      pending.push({ source: gitDirectory, target, relative: "", common: false, ancestors: [] });
+      while (pending.length > 0) {
+        const item = pending.shift()!;
+        if (
+          item.common &&
+          ["logs/HEAD", "refs/bisect", "refs/worktree", "refs/rewritten"].includes(item.relative)
+        )
+          continue;
+        const actual = yield* fs.realPath(item.source);
+        const info = yield* fs.stat(actual);
+        if (info.type === "Directory") {
+          if (item.ancestors.includes(actual))
+            return yield* new LibraryError({ reason: "archive-unverified" });
+          const names = yield* fs.readDirectory(actual);
+          const repository =
+            names.includes("objects") && (names.includes("config") || actual === gitDirectory);
+          if (repository)
+            objectStores.set(actual === gitDirectory ? commonDirectory : actual, item.target);
+          yield* fs.makeDirectory(item.target, { recursive: true, mode: 0o700 });
+          for (const name of names) {
+            if (
+              (repository || item.relative === "") &&
+              ["objects", "worktrees", "commondir", "gitdir", "locked"].includes(name)
+            )
+              continue;
+            pending.push({
+              source: path.join(actual, name),
+              target: path.join(item.target, name),
+              relative: item.relative ? `${item.relative}/${name}` : name,
+              common: item.common,
+              ancestors: [...item.ancestors, actual],
+            });
+          }
+        } else if (info.type === "File") {
+          yield* fs.makeDirectory(path.dirname(item.target), { recursive: true });
+          yield* fs.copyFile(actual, item.target);
+        } else return yield* new LibraryError({ reason: "archive-unverified" });
+      }
+      for (const [objectSource, objectTarget] of objectStores) {
+        const packDirectory = path.join(objectTarget, "objects", "pack");
+        yield* fs.makeDirectory(packDirectory, { recursive: true, mode: 0o700 });
+        const packPath = path.join(packDirectory, "portable.pack");
+        // Batch-all-objects includes unreachable and alternate-store objects that no
+        // bundle of refs can retain. Stream both processes so large stores stay bounded.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const objects = yield* spawner.spawn(
+              ChildProcess.make(
+                "git",
+                [
+                  `--git-dir=${objectSource}`,
+                  "-c",
+                  "core.fsmonitor=false",
+                  "cat-file",
+                  "--batch-all-objects",
+                  "--batch-check=%(objectname)",
+                  "--unordered",
+                ],
+                { cwd: source, env: isolatedGitEnvironment, extendEnv: false },
+              ),
+            );
+            const pack = yield* spawner.spawn(
+              ChildProcess.make(
+                "git",
+                [
+                  `--git-dir=${objectSource}`,
+                  "-c",
+                  "core.fsmonitor=false",
+                  "pack-objects",
+                  "--stdout",
+                ],
+                {
+                  cwd: source,
+                  env: isolatedGitEnvironment,
+                  extendEnv: false,
+                  stdin: objects.stdout,
+                },
+              ),
+            );
+            yield* Effect.all(
+              [
+                Stream.run(pack.stdout, fs.sink(packPath)),
+                Stream.runDrain(pack.stderr),
+                Stream.runDrain(objects.stderr),
+              ],
+              { concurrency: "unbounded" },
+            );
+            if ((yield* pack.exitCode) !== 0 || (yield* objects.exitCode) !== 0)
+              return yield* new LibraryError({ reason: "archive-unverified" });
+          }),
+        );
+        const objectFormat = yield* git(source, [
+          `--git-dir=${objectSource}`,
+          "rev-parse",
+          "--show-object-format",
+        ]);
+        if (objectFormat !== "sha1" && objectFormat !== "sha256")
+          return yield* new LibraryError({ reason: "archive-unverified" });
+        // Index the captured pack without allowing copied source config to resolve paths.
+        const indexed = yield* runner.run({
+          command: "git",
+          args: ["index-pack", `--object-format=${objectFormat}`, packPath],
+          cwd: directory,
+          env: isolatedGitEnvironment,
+          extendEnv: false,
+          timeout: "10 minutes",
+          maxOutputBytes: 1024,
+        });
+        if (indexed.code !== 0) return yield* new LibraryError({ reason: "archive-unverified" });
+        const packHash = indexed.stdout.trim();
+        if (!/^[a-f0-9]{40,64}$/.test(packHash))
+          return yield* new LibraryError({ reason: "archive-unverified" });
+        yield* fs.rename(packPath, path.join(packDirectory, `pack-${packHash}.pack`));
+        yield* fs.rename(
+          packPath.replace(/\.pack$/, ".idx"),
+          path.join(packDirectory, `pack-${packHash}.idx`),
+        );
+      }
+      portableRepositories.push({
+        relativePath: path.relative(receipt.copy.rootPath, source).split(path.sep).join("/") || ".",
+        gitDirectory: `loom-portable-git/repository-${index}/.git`,
+      });
+    }
+    return portableRepositories;
+  });
+
+  const externalGitReview = Effect.fn("LibraryWorkspace.externalGitReview")(function* (
+    copy: LibraryWorkingCopy,
+  ) {
+    const roots = new Set<string>();
+    const repositories: string[] = [];
+    for (const cwd of yield* workingRepositories(copy)) {
+      if (!(yield* fs.exists(path.join(cwd, ".git")))) continue;
+      let available = true;
+      for (const args of [
+        ["rev-parse", "--absolute-git-dir"],
+        ["rev-parse", "--git-common-dir"],
+      ]) {
+        const location = yield* git(cwd, args, true);
+        if (location === null) {
+          available = false;
+          continue;
+        }
+        const actual = yield* fs.realPath(path.resolve(cwd, location));
+        if (!contained(copy.rootPath, actual)) roots.add(actual);
+      }
+      if (available) repositories.push(cwd);
+    }
+    const digests: string[] = [];
+    // Alternate stores can change without changing their pointer file. Bind the
+    // reviewed snapshot to every available object, including unreachable objects.
+    for (const cwd of repositories) {
+      digests.push(
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const hash = NodeCrypto.createHash("sha256");
+            const child = yield* spawner.spawn(
+              ChildProcess.make(
+                "git",
+                [
+                  "-c",
+                  "core.fsmonitor=false",
+                  "cat-file",
+                  "--batch-all-objects",
+                  "--batch-check=%(objectname)",
+                ],
+                { cwd, env: isolatedGitEnvironment, extendEnv: false },
+              ),
+            );
+            yield* Effect.all(
+              [
+                child.stdout.pipe(
+                  Stream.runForEach((chunk) =>
+                    Effect.sync(() => {
+                      hash.update(chunk);
+                    }),
+                  ),
+                ),
+                Stream.runDrain(child.stderr),
+              ],
+              { concurrency: "unbounded" },
+            );
+            if ((yield* child.exitCode) !== 0)
+              return yield* new LibraryError({ reason: "archive-unverified" });
+            return hash.digest("hex");
+          }),
+        ),
+      );
+    }
+    for (const root of [...roots].toSorted()) {
+      if ([...roots].some((other) => other !== root && contained(other, root))) continue;
+      digests.push(yield* streamWorkingCopy(root));
+    }
+    return digests.join(":");
+  });
+
+  const inspectArchive = Effect.fn("LibraryWorkspace.inspectArchive")(function* (
+    archivePath: string,
+  ) {
+    const reader = makeRecoveryTarReader();
+    yield* fs.stream(archivePath).pipe(
+      NodeStream.pipeThroughSimple(() => NodeZlib.createGunzip()),
+      Stream.runForEach((chunk) =>
+        Effect.try({
+          try: () => reader.write(chunk),
+          catch: () => new LibraryError({ reason: "archive-unverified" }),
+        }),
+      ),
+      Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
+    );
+    const archive = yield* Effect.try({
+      try: reader.finish,
+      catch: () => new LibraryError({ reason: "archive-unverified" }),
+    });
+    const manifest = yield* decodeFullManifest(archive.manifest).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "archive-unverified" })),
+    );
+    return { ...archive, manifest };
+  });
+
   const inspectRepository = Effect.fnUntraced(function* (rootPath: string, repositoryPath: string) {
     if (!(yield* fs.exists(path.join(repositoryPath, ".git")))) return null;
     if ((yield* fs.realPath(repositoryPath)) !== repositoryPath) return null;
@@ -827,13 +1177,18 @@ const make = Effect.gen(function* () {
     const facts: string[] = [];
     if (copy.state === "released" || copy.registered === false)
       return { copy, blockers, reviewToken: null, contentsDigest: null };
-    if (copy.ownership === "borrowed")
+    if (copy.ownership === "borrowed") {
+      const contentsDigest =
+        (yield* fs.exists(copy.rootPath)) && (yield* fs.realPath(copy.rootPath)) === copy.rootPath
+          ? yield* streamWorkingCopy(copy.rootPath)
+          : null;
       return {
         copy,
         blockers,
-        reviewToken: yield* digest(`unregister:${yield* encodeWorkingCopy(copy)}`),
-        contentsDigest: null,
+        reviewToken: `${yield* digest(`unregister:${yield* encodeWorkingCopy(copy)}`)}:${contentsDigest ?? "missing"}:${contentsDigest === null ? "" : yield* externalGitReview(copy)}`,
+        contentsDigest,
       };
+    }
     const rootExists = yield* fs.exists(copy.rootPath);
     if (!rootExists)
       return {
@@ -904,12 +1259,6 @@ const make = Effect.gen(function* () {
         blockers.push("A repository in this working folder is unavailable.");
         continue;
       }
-      const changes = yield* git(repository.path, [
-        "--no-optional-locks",
-        "status",
-        "--porcelain=v1",
-        "-z",
-      ]);
       const unpushed = yield* git(
         repository.path,
         ["rev-list", "--count", "HEAD", "--not", "--remotes"],
@@ -920,7 +1269,6 @@ const make = Effect.gen(function* () {
           resourceId: repository.resourceId,
           head: inspected.head,
           branch: inspected.branch,
-          changes,
           unpushed,
         }),
       );
@@ -942,18 +1290,11 @@ const make = Effect.gen(function* () {
           (yield* fs.realPath(gitPath)) !== gitPath)
       )
         blockers.push("The project folder uses an external Git directory.");
-      const changes = yield* git(copy.rootPath, [
-        "--no-optional-locks",
-        "status",
-        "--porcelain=v1",
-        "-z",
-      ]);
       facts.push(
         yield* encodeReviewRepository({
           resourceId: "project-root",
           head: yield* git(copy.rootPath, ["rev-parse", "HEAD"]),
           branch: yield* git(copy.rootPath, ["symbolic-ref", "--quiet", "--short", "HEAD"], true),
-          changes,
           unpushed: null,
         }),
       );
@@ -966,8 +1307,11 @@ const make = Effect.gen(function* () {
         repositories.length === copy.repositories.length ? repositories : copy.repositories,
       state,
     };
+    // The archive digest binds index and working bytes. Git status would refresh
+    // split-index metadata during this read and make every review immediately stale.
     const contentsDigest = blockers.length === 0 ? yield* streamWorkingCopy(copy.rootPath) : null;
     if (contentsDigest !== null) facts.push(`contents:${contentsDigest}`);
+    if (contentsDigest !== null) facts.push(`git:${yield* externalGitReview(copy)}`);
     return {
       copy: current,
       contentsDigest,
@@ -1102,7 +1446,7 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "request-conflict" });
     if (receipt.copy.registered === false) return receipt.copy;
     const reviewed = yield* status({ workingCopyId: input.workingCopyId });
-    if (reviewed.reviewToken !== input.reviewToken)
+    if (reviewed.reviewToken?.split(":")[0] !== input.reviewToken.split(":")[0])
       return yield* new LibraryError({ reason: "blocked" });
     const removed = {
       ...receipt,
@@ -1252,6 +1596,212 @@ const make = Effect.gen(function* () {
     return archivePath;
   });
 
+  const publishArchive = Effect.fn("LibraryWorkspace.publishArchive")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    input: { readonly requestId: string; readonly reviewToken: string },
+    reviewed: { readonly contentsDigest: string | null },
+    commit: (
+      saved: LibraryWorkspaceStore.WorkspaceReceipt,
+    ) => Effect.Effect<LibraryWorkspaceStore.WorkspaceReceipt, LibraryError>,
+  ) {
+    const archiveDirectory = path.join(config.stateDir, "project-library", "archives");
+    yield* fs.makeDirectory(archiveDirectory, { recursive: true, mode: 0o700 });
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const archivePath = path.join(
+          archiveDirectory,
+          `recovery-${yield* crypto.randomUUIDv4()}.tar.gz`,
+        );
+        yield* Effect.acquireRelease(
+          fs
+            .writeFile(archivePath, new Uint8Array(), { flag: "wx", mode: 0o600 })
+            .pipe(Effect.as(archivePath)),
+          (stagingPath) =>
+            store.receipts.pipe(
+              Effect.flatMap((receipts) =>
+                receipts.some((saved) => saved.archivePath === stagingPath)
+                  ? Effect.void
+                  : fs.remove(stagingPath, { force: true }),
+              ),
+              // A failed write may have committed its receipt; uncertainty must retain recovery.
+              Effect.ignore,
+            ),
+        );
+        const manifestDirectory = yield* fs.makeTempDirectoryScoped({
+          directory: archiveDirectory,
+          prefix: "manifest-",
+        });
+        const portableRepositories = yield* portableGit(receipt, manifestDirectory);
+        const bindings = (yield* store.bindings).filter(
+          (row) => row.resolved.binding.workingCopyId === receipt.copy.id,
+        );
+        yield* fs.writeFileString(
+          path.join(manifestDirectory, "loom-working-copy.json"),
+          yield* encodeFullManifest({
+            version: 1,
+            project: receipt.project,
+            copy: receipt.copy,
+            rootLocalProjectId: receipt.rootLocalProjectId,
+            rootCheckpointRepository: receipt.rootCheckpointRepository,
+            bindings,
+            portableRepositories,
+          }),
+          { mode: 0o600 },
+        );
+        if (
+          (yield* streamWorkingCopy(receipt.copy.rootPath, {
+            path: archivePath,
+            manifestDirectory,
+          })) !== reviewed.contentsDigest
+        )
+          return yield* new LibraryError({ reason: "blocked" });
+        yield* fs.chmod(archivePath, 0o600);
+        const verified = yield* runner.run({
+          command: "tar",
+          args: ["-tf", archivePath],
+          timeout: "10 minutes",
+          maxOutputBytes: 1024,
+          outputMode: "truncate",
+        });
+        if (verified.code !== 0) return yield* new LibraryError({ reason: "io", cause: verified });
+        const archiveDigest = yield* fileDigest(archivePath);
+        yield* Effect.scoped(fs.open(archivePath).pipe(Effect.flatMap((file) => file.sync)));
+        yield* Effect.scoped(fs.open(archiveDirectory).pipe(Effect.flatMap((file) => file.sync)));
+        const stillCurrent = yield* status({ workingCopyId: receipt.copy.id });
+        if (stillCurrent.reviewToken !== input.reviewToken)
+          return yield* new LibraryError({ reason: "blocked" });
+        if (Option.isNone(recoveryPublisher))
+          return yield* new LibraryError({ reason: "publisher-unavailable" });
+        const recovery = yield* recoveryPublisher.value.publish({
+          archivePath,
+          sha256: archiveDigest,
+          manifest: {
+            version: 1,
+            projectId: receipt.copy.projectId,
+            projectRevision: receipt.copy.projectRevision,
+            copyId: receipt.copy.id,
+            environmentId: receipt.copy.environmentId,
+            title: receipt.project.title,
+            rootBasename: path.basename(receipt.copy.rootPath),
+            manifestFile: "loom-working-copy.json",
+          },
+        });
+        const saved = {
+          ...receipt,
+          copy: {
+            ...receipt.copy,
+            recovery: {
+              sha256: recovery.sha256,
+              byteLength: recovery.byteLength,
+              archiveKey: recovery.archiveKey,
+              verifiedAt: recovery.verifiedAt,
+            },
+          },
+          archivePath,
+          archiveDigest,
+        };
+        receipt = yield* commit(saved);
+      }),
+    );
+    return receipt;
+  });
+
+  const snapshotCopy = Effect.fn("LibraryWorkspace.snapshotCopy")(function* (
+    input: LibrarySnapshotCopyRequest,
+  ) {
+    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    const receipt = yield* store.get(input.workingCopyId);
+    if (receipt.copy.environmentId !== environmentId)
+      return yield* new LibraryError({ reason: "invalid" });
+    const previous = receipt.snapshotRequests?.find(
+      (request) => request.requestId === input.requestId,
+    );
+    if (previous !== undefined) {
+      if (previous.reviewToken !== input.reviewToken)
+        return yield* new LibraryError({ reason: "request-conflict" });
+      return previous.copy;
+    }
+    if (receipt.copy.state !== "ready" || receipt.copy.registered === false)
+      return yield* new LibraryError({ reason: "blocked" });
+    if (
+      (yield* store.receipts).some(
+        (saved) =>
+          saved.copy.id !== receipt.copy.id &&
+          (saved.requestId === input.requestId ||
+            saved.snapshotRequests?.some((request) => request.requestId === input.requestId)),
+      )
+    )
+      return yield* new LibraryError({ reason: "request-conflict" });
+    const bindings = (yield* store.bindings).filter(
+      (binding) => binding.resolved.binding.workingCopyId === receipt.copy.id,
+    );
+    const projectIds = new Set([
+      receipt.rootLocalProjectId,
+      receipt.copy.rootLocalProjectId,
+      ...receipt.copy.repositories.map((repository) => repository.localProjectId),
+    ]);
+    const assertIdle = Effect.gen(function* () {
+      const snapshot = yield* projections.getShellSnapshot();
+      if (
+        [...snapshot.threads, ...snapshot.archivedThreads].some(
+          (thread) =>
+            (projectIds.has(thread.projectId) ||
+              receipt.legacyThreadIds.includes(thread.id) ||
+              bindings.some((binding) => binding.threadId === thread.id) ||
+              (thread.worktreePath !== null &&
+                contained(receipt.copy.rootPath, thread.worktreePath))) &&
+            (thread.activeRunId !== null ||
+              thread.pendingRuntimeRequest !== null ||
+              (thread.pendingBackgroundTasks?.length ?? 0) > 0 ||
+              thread.goal?.status === "active"),
+        )
+      )
+        return yield* new LibraryError({ reason: "blocked" });
+      const processReason = yield* managedProjectProcessReason(receipt.copy.rootPath).pipe(
+        Effect.provide(restorationServices),
+      );
+      if (processReason !== null) return yield* new LibraryError({ reason: "blocked" });
+    });
+    yield* assertIdle;
+    const reviewed = yield* status({ workingCopyId: input.workingCopyId });
+    if (
+      reviewed.reviewToken !== input.reviewToken ||
+      reviewed.contentsDigest === null ||
+      reviewed.blockers.length > 0
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    const saved = yield* publishArchive(
+      receipt,
+      input,
+      reviewed,
+      Effect.fn("LibraryWorkspace.recordSnapshot")(function* (archived) {
+        yield* mapIo(assertIdle);
+        const finalReview = yield* mapIo(status({ workingCopyId: receipt.copy.id }));
+        if (finalReview.reviewToken !== input.reviewToken)
+          return yield* new LibraryError({ reason: "blocked" });
+        const recovery = archived.copy.recovery;
+        if (recovery === undefined)
+          return yield* new LibraryError({ reason: "archive-unverified" });
+        const timestamp = yield* now;
+        const saved = {
+          ...archived,
+          copy: { ...archived.copy, updatedAt: timestamp },
+          snapshotRequests: [
+            ...(archived.snapshotRequests ?? []),
+            {
+              requestId: input.requestId,
+              reviewToken: input.reviewToken,
+              copy: { ...archived.copy, updatedAt: timestamp },
+            },
+          ],
+        };
+        yield* store.put(saved);
+        return saved;
+      }),
+    );
+    return saved.copy;
+  });
+
   const release = Effect.fn("LibraryWorkspace.release")(function* (
     input: LibraryReleaseCopyRequest,
     isHistoryAcknowledged?: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
@@ -1283,106 +1833,20 @@ const make = Effect.gen(function* () {
       if (receipt.copy.ownership === "managed") {
         if (Option.isNone(recoveryPublisher) || !recoveryPublisher.value.configured)
           return yield* new LibraryError({ reason: "publisher-unavailable" });
-        const archiveDirectory = path.join(config.stateDir, "project-library", "archives");
-        yield* fs.makeDirectory(archiveDirectory, { recursive: true, mode: 0o700 });
-        yield* Effect.scoped(
-          Effect.gen(function* () {
-            const archivePath = path.join(
-              archiveDirectory,
-              `recovery-${yield* crypto.randomUUIDv4()}.tar.gz`,
-            );
-            yield* Effect.acquireRelease(
-              fs
-                .writeFile(archivePath, new Uint8Array(), { flag: "wx", mode: 0o600 })
-                .pipe(Effect.as(archivePath)),
-              (stagingPath) =>
-                store.receipts.pipe(
-                  Effect.flatMap((receipts) =>
-                    receipts.some((saved) => saved.archivePath === stagingPath)
-                      ? Effect.void
-                      : fs.remove(stagingPath, { force: true }),
-                  ),
-                  // A failed write may have committed its receipt; uncertainty must retain recovery.
-                  Effect.ignore,
-                ),
-            );
-            const manifestDirectory = yield* fs.makeTempDirectoryScoped({
-              directory: archiveDirectory,
-              prefix: "manifest-",
-            });
-            const bindings = (yield* store.bindings).filter(
-              (row) => row.resolved.binding.workingCopyId === receipt.copy.id,
-            );
-            yield* fs.writeFileString(
-              path.join(manifestDirectory, "loom-working-copy.json"),
-              yield* encodeFullManifest({
-                version: 1,
-                project: receipt.project,
-                copy: receipt.copy,
-                rootLocalProjectId: receipt.rootLocalProjectId,
-                rootCheckpointRepository: receipt.rootCheckpointRepository,
-                bindings,
-              }),
-              { mode: 0o600 },
-            );
-            if (
-              (yield* streamWorkingCopy(receipt.copy.rootPath, {
-                path: archivePath,
-                manifestDirectory,
-              })) !== reviewed.contentsDigest
-            )
-              return yield* new LibraryError({ reason: "blocked" });
-            yield* fs.chmod(archivePath, 0o600);
-            const verified = yield* runner.run({
-              command: "tar",
-              args: ["-tf", archivePath],
-              timeout: "10 minutes",
-              maxOutputBytes: 1024,
-              outputMode: "truncate",
-            });
-            if (verified.code !== 0)
-              return yield* new LibraryError({ reason: "io", cause: verified });
-            const archiveDigest = yield* fileDigest(archivePath);
-            yield* Effect.scoped(fs.open(archivePath).pipe(Effect.flatMap((file) => file.sync)));
-            yield* Effect.scoped(
-              fs.open(archiveDirectory).pipe(Effect.flatMap((file) => file.sync)),
-            );
-            const stillCurrent = yield* status({ workingCopyId: input.workingCopyId });
-            if (stillCurrent.reviewToken !== input.reviewToken)
-              return yield* new LibraryError({ reason: "blocked" });
-            const recovery = yield* recoveryPublisher.value.publish({
-              archivePath,
-              sha256: archiveDigest,
-              manifest: {
-                version: 1,
-                projectId: receipt.copy.projectId,
-                projectRevision: receipt.copy.projectRevision,
-                copyId: receipt.copy.id,
-                environmentId: receipt.copy.environmentId,
-                title: receipt.project.title,
-                rootBasename: path.basename(receipt.copy.rootPath),
-                manifestFile: "loom-working-copy.json",
-              },
-            });
-            receipt = {
-              ...receipt,
-              copy: {
-                ...receipt.copy,
-                recovery: {
-                  sha256: recovery.sha256,
-                  byteLength: recovery.byteLength,
-                  archiveKey: recovery.archiveKey,
-                  verifiedAt: recovery.verifiedAt,
-                },
-              },
+        receipt = yield* publishArchive(
+          receipt,
+          input,
+          reviewed,
+          Effect.fn("LibraryWorkspace.recordReleaseArchive")(function* (saved) {
+            const pending = {
+              ...saved,
               reopenRequestId: undefined,
               releaseRequestId: input.requestId,
               releaseReviewToken: input.reviewToken,
-              archivePath,
-              archiveDigest,
-              removalPath: `${receipt.copy.rootPath}.loom-released-${(yield* digest(input.requestId)).slice(0, 16)}`,
+              removalPath: `${saved.copy.rootPath}.loom-released-${(yield* digest(input.requestId)).slice(0, 16)}`,
             };
-            yield* store.put(receipt);
+            yield* store.put(pending);
+            return pending;
           }),
         );
       }
@@ -1460,6 +1924,527 @@ const make = Effect.gen(function* () {
     const copy = { ...receipt.copy, keepOnComputer: input.keepOnComputer, updatedAt: yield* now };
     yield* store.put({ ...receipt, copy });
     return copy;
+  });
+
+  const validatePortableRepository = Effect.fn("LibraryWorkspace.validatePortableRepository")(
+    function* (cwd: string, gitDirectory = path.join(cwd, ".git")) {
+      if (
+        !(yield* fs.exists(gitDirectory)) ||
+        (yield* fs.stat(gitDirectory)).type !== "Directory" ||
+        (yield* fs.realPath(gitDirectory)) !== gitDirectory
+      )
+        return yield* new LibraryError({ reason: "archive-unverified" });
+      for (const filename of [
+        "commondir",
+        "gitdir",
+        "objects/info/alternates",
+        "objects/info/http-alternates",
+      ])
+        if (yield* fs.exists(path.join(gitDirectory, filename)))
+          return yield* new LibraryError({ reason: "archive-unverified" });
+      const packDirectory = path.join(gitDirectory, "objects", "pack");
+      if (
+        (yield* fs.exists(packDirectory)) &&
+        (yield* fs.readDirectory(packDirectory)).some((name) => name.endsWith(".promisor"))
+      )
+        return yield* new LibraryError({ reason: "archive-unverified" });
+      const run = Effect.fn("LibraryWorkspace.isolatedGit")(function* (
+        args: ReadonlyArray<string>,
+      ) {
+        const result = yield* runner.run({
+          command: "git",
+          args: [
+            `--git-dir=${gitDirectory}`,
+            `--work-tree=${cwd}`,
+            "-c",
+            `core.hooksPath=${path.join(config.stateDir, "disabled-restore-hooks")}`,
+            "-c",
+            "core.fsmonitor=false",
+            ...args,
+          ],
+          cwd,
+          env: isolatedGitEnvironment,
+          extendEnv: false,
+          timeout: "10 minutes",
+          maxOutputBytes: 16 * 1024 * 1024,
+        });
+        if (result.code !== 0) return yield* new LibraryError({ reason: "archive-unverified" });
+        return result.stdout.trim();
+      });
+      const configPath = path.join(gitDirectory, "config");
+      let configuration = yield* run([
+        "config",
+        "--file",
+        configPath,
+        "--no-includes",
+        "--null",
+        "--list",
+      ]);
+      const worktreeConfig = path.join(gitDirectory, "config.worktree");
+      if (yield* fs.exists(worktreeConfig))
+        configuration +=
+          "\0" +
+          (yield* run(["config", "--file", worktreeConfig, "--no-includes", "--null", "--list"]));
+      // Keep portable repository settings; source includes and executable/path overrides stay local.
+      yield* fs.writeFileString(configPath, "[core]\nrepositoryformatversion = 0\nbare = false\n", {
+        mode: 0o600,
+      });
+      const records = configuration.split("\0").flatMap((record) => {
+        const separator = record.indexOf("\n");
+        return separator < 0
+          ? []
+          : [{ key: record.slice(0, separator), value: record.slice(separator + 1) }];
+      });
+      const isPortableNetworkUrl = (value: string) => {
+        if (/^[^/\s:@]+@[^/\s:]+:/.test(value)) return true;
+        try {
+          const remote = new URL(value);
+          return (
+            ["http:", "https:", "ssh:", "git:"].includes(remote.protocol) &&
+            remote.hostname !== "" &&
+            remote.password === "" &&
+            (remote.protocol === "ssh:" || remote.username === "")
+          );
+        } catch {
+          return false;
+        }
+      };
+      const isNetworkRemote = (key: string, value: string) =>
+        /^remote\..+\.(?:url|pushurl)$/.test(key) && isPortableNetworkUrl(value);
+      const isPortableSubmoduleSetting = (key: string, value: string) => {
+        if (/^submodule\..+\.url$/.test(key))
+          return (
+            isPortableNetworkUrl(value) ||
+            (/^\.\.?\//.test(value) && !hasNonPortablePathCharacters(value))
+          );
+        if (/^submodule\..+\.active$/.test(key))
+          return /^(?:true|false|yes|no|on|off|0|1)$/i.test(value);
+        if (/^submodule\..+\.update$/.test(key))
+          return ["checkout", "rebase", "merge", "none"].includes(value);
+        if (key === "submodule.active")
+          return (
+            value !== "" &&
+            !hasNonPortablePathCharacters(value) &&
+            !value.startsWith("/") &&
+            !value.split("/").includes("..")
+          );
+        return false;
+      };
+      const portableRemotes = new Set(
+        records
+          .filter(({ key, value }) => isNetworkRemote(key, value))
+          .map(({ key }) => key.slice("remote.".length, key.lastIndexOf("."))),
+      );
+      for (const { key, value } of records) {
+        if (
+          (key === "extensions.refstorage" && !["files", "reftable"].includes(value)) ||
+          (key === "extensions.objectformat" && !["sha1", "sha256"].includes(value))
+        )
+          return yield* new LibraryError({ reason: "archive-unverified" });
+        if (
+          isNetworkRemote(key, value) ||
+          isPortableSubmoduleSetting(key, value) ||
+          (/^remote\..+\.fetch$/.test(key) &&
+            portableRemotes.has(key.slice("remote.".length, -".fetch".length))) ||
+          (/^branch\..+\.remote$/.test(key) && (value === "." || portableRemotes.has(value))) ||
+          /^branch\..+\.(?:merge|rebase)$/.test(key) ||
+          /^(?:core\.(?:repositoryformatversion|filemode|ignorecase|precomposeunicode|symlinks|sparsecheckout|sparsecheckoutcone|autocrlf|eol|safecrlf|protecthfs|protectntfs)|extensions\.(?:objectformat|refstorage))$/.test(
+            key,
+          )
+        )
+          yield* run(["config", "--file", configPath, "--add", key, value]);
+      }
+      const disabledHooks = path.join(
+        gitDirectory,
+        `loom-disabled-hooks-${yield* crypto.randomUUIDv4()}`,
+      );
+      yield* fs.makeDirectory(disabledHooks);
+      yield* run([
+        "config",
+        "--file",
+        configPath,
+        "core.hooksPath",
+        path.relative(cwd, disabledHooks).split(path.sep).join("/"),
+      ]);
+      for (const filename of ["config.worktree", "worktrees"])
+        yield* fs.remove(path.join(gitDirectory, filename), { recursive: true, force: true });
+      if (
+        (yield* run(["rev-parse", "--show-toplevel"])) !== cwd ||
+        (yield* run(["rev-parse", "--absolute-git-dir"])) !== gitDirectory ||
+        (yield* fs.realPath(
+          yield* run(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+        )) !== gitDirectory
+      )
+        return yield* new LibraryError({ reason: "archive-unverified" });
+      yield* run(["-c", "core.fsmonitor=false", "fsck", "--full", "--cache", "--no-dangling"]);
+      yield* run(["-c", "core.fsmonitor=false", "ls-files", "--stage", "-z"]);
+    },
+  );
+
+  const ensureRestoreSetupPending = Effect.fn("LibraryWorkspace.ensureRestoreSetupPending")(
+    function* (cwd: string, create = true) {
+      const marker = `${cwd}.t3-setup-pending`;
+      const contents = "Workspace setup must complete before starting the agent.\n";
+      if (Option.isSome(yield* fs.readLink(marker).pipe(Effect.option)))
+        return yield* new LibraryError({ reason: "blocked" });
+      if (create)
+        yield* fs.writeFileString(marker, contents, { flag: "wx" }).pipe(
+          Effect.catch(() =>
+            Effect.gen(function* () {
+              if (
+                (yield* fs.realPath(marker)) !== marker ||
+                (yield* fs.stat(marker)).type !== "File" ||
+                (yield* fs.readFileString(marker)) !== contents
+              )
+                return yield* new LibraryError({ reason: "blocked" });
+            }),
+          ),
+        );
+      else if (yield* fs.exists(marker)) {
+        if (
+          (yield* fs.realPath(marker)) !== marker ||
+          (yield* fs.stat(marker)).type !== "File" ||
+          (yield* fs.readFileString(marker)) !== contents
+        )
+          return yield* new LibraryError({ reason: "blocked" });
+      }
+    },
+  );
+
+  const restoreCopy = Effect.fn("LibraryWorkspace.restoreCopy")(function* (
+    input: LibraryRestoreCopyRequest,
+    rootPath: string,
+  ) {
+    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    const source = input.grant.sourceCopy;
+    const recovery = source.recovery;
+    if (
+      input.project.archived ||
+      source.projectId !== input.project.id ||
+      recovery === undefined ||
+      input.grant.destinationEnvironmentId !== environmentId ||
+      !validLibraryResources(input.project.resources, { allowLocalRemotes: true })
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const resourceIds =
+      input.resourceIds ??
+      input.project.resources
+        .filter((resource) => resource.kind !== "link")
+        .map((resource) => resource.id);
+    if (
+      new Set(resourceIds).size !== resourceIds.length ||
+      resourceIds.some(
+        (id) => !source.repositories.some((repository) => repository.resourceId === id),
+      )
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const stateRoot = yield* canonicalRoot(config.stateDir);
+    if (contained(rootPath, stateRoot) || contained(stateRoot, rootPath))
+      return yield* new LibraryError({ reason: "invalid" });
+    const fingerprint = yield* digest(
+      yield* encodeRestoreIdentity({
+        project: input.project,
+        rootPath,
+        resourceIds: [...resourceIds].toSorted(),
+        sourceCopyId: source.id,
+        sourceEnvironmentId: source.environmentId,
+        sha256: recovery.sha256,
+        byteLength: recovery.byteLength,
+        libraryEnvironmentId: input.grant.libraryEnvironmentId,
+      }),
+    );
+    const receipts = yield* store.receipts;
+    let receipt = receipts.find((saved) => saved.requestId === input.requestId);
+    if (receipt !== undefined && receipt.fingerprint !== fingerprint)
+      return yield* new LibraryError({ reason: "request-conflict" });
+    if (
+      receipts.some(
+        (saved) =>
+          saved.copy.id !== receipt?.copy.id &&
+          saved.copy.registered !== false &&
+          saved.copy.state !== "released" &&
+          (contained(rootPath, saved.copy.rootPath) || contained(saved.copy.rootPath, rootPath)),
+      )
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    const ownProjectIds = new Set([
+      receipt?.rootLocalProjectId,
+      ...(receipt?.copy.repositories.map((repository) => repository.localProjectId) ?? []),
+    ]);
+    if (receipt !== undefined) {
+      for (const cwd of [
+        rootPath,
+        ...source.repositories.map((repository) => {
+          const resource = input.project.resources.find(
+            (resource) => resource.id === repository.resourceId,
+          );
+          return resource === undefined ? rootPath : path.resolve(rootPath, resource.relativePath);
+        }),
+      ])
+        ownProjectIds.add(
+          ProjectId.make(`library-copy:${receipt.copy.id}:${(yield* digest(cwd)).slice(0, 16)}`),
+        );
+    }
+    if (
+      (yield* projects.listShells()).some(
+        (project) =>
+          !ownProjectIds.has(project.id) &&
+          (contained(rootPath, project.workspaceRoot) ||
+            contained(project.workspaceRoot, rootPath)),
+      )
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    const ownsPublishedRoot = Effect.gen(function* () {
+      if (!(yield* fs.exists(rootPath))) return false;
+      if (
+        (yield* fs.stat(rootPath)).type !== "Directory" ||
+        (yield* fs.realPath(rootPath)) !== rootPath
+      )
+        return yield* new LibraryError({ reason: "blocked" });
+      const identity = fileIdentity(yield* fs.stat(rootPath));
+      if (
+        identity.device !== null &&
+        identity.inode !== null &&
+        receipt?.rootIdentity?.device === identity.device &&
+        receipt.rootIdentity.inode === identity.inode
+      )
+        return true;
+      if ((yield* fs.readDirectory(rootPath)).length !== 0)
+        return yield* new LibraryError({ reason: "blocked" });
+      return false;
+    });
+    yield* ensureRestoreSetupPending(rootPath, false);
+    let published = yield* ownsPublishedRoot;
+    if (receipt?.copy.state === "ready") {
+      if (!published) return yield* new LibraryError({ reason: "blocked" });
+      return receipt.copy;
+    }
+    if (
+      receipt !== undefined &&
+      receipt.copy.state !== "preparing" &&
+      receipt.copy.state !== "failed"
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    if (receipt === undefined) {
+      const timestamp = yield* now;
+      receipt = {
+        requestId: input.requestId,
+        fingerprint,
+        project: input.project,
+        copy: {
+          id: `copy:${(yield* digest(`portable\0${environmentId}\0${input.requestId}`)).slice(0, 40)}`,
+          projectId: input.project.id,
+          projectRevision: input.project.revision,
+          environmentId,
+          rootPath,
+          repositories: [],
+          ownership: "managed",
+          keepOnComputer: true,
+          state: "preparing",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        rootLocalProjectId: null,
+        rootCheckpointRepository: false,
+        legacyThreadIds: [],
+        rootIdentity: null,
+        releaseRequestId: null,
+        releaseReviewToken: null,
+        removalPath: null,
+        archivePath: null,
+        archiveDigest: null,
+      };
+      yield* store.put(receipt);
+    }
+    const copyId = receipt.copy.id;
+    if (!published) {
+      if (Option.isNone(recoveryPublisher))
+        return yield* new LibraryError({ reason: "publisher-unavailable" });
+      const retriever = recoveryPublisher.value;
+      yield* fs.makeDirectory(path.dirname(rootPath), { recursive: true });
+      if ((yield* fs.realPath(path.dirname(rootPath))) !== path.dirname(rootPath))
+        return yield* new LibraryError({ reason: "blocked" });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const staging = yield* fs.makeTempDirectoryScoped({
+            directory: path.dirname(rootPath),
+            prefix: ".loom-restore-",
+          });
+          const archivePath = path.join(staging, "recovery.tar.gz");
+          yield* retriever.retrievePortable({ grant: input.grant, archivePath });
+          if (
+            (yield* fs.stat(archivePath)).size !== BigInt(recovery.byteLength) ||
+            (yield* fileDigest(archivePath)) !== recovery.sha256
+          )
+            return yield* new LibraryError({ reason: "archive-unverified" });
+          const archive = yield* inspectArchive(archivePath);
+          const manifest = archive.manifest;
+          if (
+            manifest.project.id !== input.project.id ||
+            manifest.copy.id !== source.id ||
+            manifest.copy.environmentId !== source.environmentId ||
+            manifest.copy.projectId !== input.project.id ||
+            manifest.copy.projectRevision !== source.projectRevision
+          )
+            return yield* new LibraryError({ reason: "archive-unverified" });
+          for (const repository of source.repositories) {
+            const original = manifest.project.resources.find(
+              (resource) => resource.kind !== "link" && resource.id === repository.resourceId,
+            );
+            const current = input.project.resources.find(
+              (resource) => resource.kind !== "link" && resource.id === repository.resourceId,
+            );
+            if (!original || !current || current.relativePath !== original.relativePath)
+              return yield* new LibraryError({ reason: "archive-unverified" });
+          }
+          const extracted = path.join(staging, "files");
+          yield* fs.makeDirectory(extracted);
+          const result = yield* runner.run({
+            command: "tar",
+            args: ["-xf", archivePath, "--no-same-owner", "--no-same-permissions", "-C", extracted],
+            timeout: "10 minutes",
+            maxOutputBytes: 1024,
+          });
+          if (result.code !== 0) return yield* new LibraryError({ reason: "archive-unverified" });
+          const restored = path.join(extracted, archive.root);
+          const safeRelative = (relative: string) =>
+            relative === "." ||
+            (!hasNonPortablePathCharacters(relative) &&
+              !relative.startsWith("/") &&
+              relative.split("/").every((part) => part && part !== "." && part !== ".."));
+          const hydrated = new Set<string>();
+          for (const repository of manifest.portableRepositories ?? []) {
+            if (
+              !safeRelative(repository.relativePath) ||
+              !/^loom-portable-git\/repository-[0-9]+\/\.git$/.test(repository.gitDirectory) ||
+              hydrated.has(repository.relativePath)
+            )
+              return yield* new LibraryError({ reason: "archive-unverified" });
+            hydrated.add(repository.relativePath);
+            const cwd = path.resolve(restored, repository.relativePath);
+            if (!(yield* fs.exists(cwd)) || (yield* fs.realPath(cwd)) !== cwd)
+              return yield* new LibraryError({ reason: "archive-unverified" });
+            yield* fs.remove(path.join(cwd, ".git"), { recursive: true, force: true });
+            yield* fs.copy(path.join(extracted, repository.gitDirectory), path.join(cwd, ".git"), {
+              overwrite: false,
+            });
+          }
+          const gitRoots = new Set(
+            [...archive.entries.keys()]
+              .filter((name) => name.startsWith(`${archive.root}/`) && name.endsWith("/.git"))
+              .map((name) => path.resolve(extracted, name, "..")),
+          );
+          for (const cwd of gitRoots) {
+            yield* validatePortableRepository(cwd);
+            // Deinitialized modules retain saved objects and Git metadata even without
+            // a working folder. Their configs must become independent as well.
+            const pendingModules = [path.join(cwd, ".git", "modules")];
+            while (pendingModules.length > 0) {
+              const candidate = pendingModules.shift()!;
+              if (!(yield* fs.exists(candidate))) continue;
+              if ((yield* fs.stat(candidate)).type !== "Directory") continue;
+              if (
+                (yield* fs.exists(path.join(candidate, "config"))) &&
+                (yield* fs.exists(path.join(candidate, "objects")))
+              ) {
+                yield* validatePortableRepository(cwd, candidate);
+                pendingModules.push(path.join(candidate, "modules"));
+              } else {
+                for (const name of yield* fs.readDirectory(candidate))
+                  pendingModules.push(path.join(candidate, name));
+              }
+            }
+          }
+          for (const repository of source.repositories) {
+            const resource = input.project.resources.find(
+              (resource) => resource.id === repository.resourceId,
+            )!;
+            if (
+              !safeRelative(resource.relativePath) ||
+              !gitRoots.has(path.resolve(restored, resource.relativePath))
+            )
+              return yield* new LibraryError({ reason: "archive-unverified" });
+          }
+          if (manifest.rootCheckpointRepository && !gitRoots.has(restored))
+            return yield* new LibraryError({ reason: "archive-unverified" });
+          for (const repository of source.repositories) {
+            const resource = input.project.resources.find(
+              (resource) => resource.id === repository.resourceId,
+            )!;
+            if (resource.relativePath !== ".")
+              yield* ensureRestoreSetupPending(path.resolve(restored, resource.relativePath));
+          }
+          receipt = {
+            ...receipt!,
+            rootCheckpointRepository: manifest.rootCheckpointRepository,
+            rootIdentity: fileIdentity(yield* fs.stat(restored)),
+            copy: { ...receipt!.copy, updatedAt: yield* now },
+          };
+          // Persist the staged inode before publication so a crash cannot create an unowned destination.
+          yield* store.put(receipt);
+          if (yield* fs.exists(rootPath)) {
+            if (
+              (yield* fs.realPath(rootPath)) !== rootPath ||
+              (yield* fs.stat(rootPath)).type !== "Directory" ||
+              (yield* fs.readDirectory(rootPath)).length !== 0
+            )
+              return yield* new LibraryError({ reason: "blocked" });
+            yield* fs.remove(rootPath);
+          }
+          yield* fs.rename(restored, rootPath);
+          yield* Effect.scoped(
+            fs.open(path.dirname(rootPath)).pipe(Effect.flatMap((file) => file.sync)),
+          );
+          published = true;
+        }),
+      );
+    }
+    const repositories: Array<LibraryWorkingCopy["repositories"][number]> = [];
+    for (const original of source.repositories) {
+      const resource = input.project.resources.find(
+        (resource) => resource.id === original.resourceId,
+      )!;
+      const repositoryPath = path.resolve(rootPath, resource.relativePath);
+      const inspected = yield* inspectRepository(rootPath, repositoryPath);
+      if (inspected === null) return yield* new LibraryError({ reason: "archive-unverified" });
+      yield* ensureRestoreSetupPending(repositoryPath);
+      repositories.push({
+        resourceId: resource.id,
+        path: repositoryPath,
+        localProjectId: yield* registerProject(
+          input.requestId,
+          copyId,
+          repositoryPath,
+          resource.title,
+          rootPath,
+        ),
+        head: inspected.head,
+        branch: inspected.branch,
+      });
+      receipt = { ...receipt, copy: { ...receipt.copy, repositories: [...repositories] } };
+      yield* store.put(receipt);
+    }
+    yield* ensureRestoreSetupPending(rootPath);
+    const rootLocalProjectId = yield* registerProject(
+      input.requestId,
+      copyId,
+      rootPath,
+      input.project.title,
+      rootPath,
+    );
+    const ready = {
+      ...receipt,
+      rootLocalProjectId,
+      copy: {
+        ...receipt.copy,
+        rootLocalProjectId,
+        repositories,
+        state: "ready" as const,
+        updatedAt: yield* now,
+      },
+    };
+    yield* store.put(ready);
+    return ready.copy;
   });
 
   const reopenCopy = Effect.fn("LibraryWorkspace.reopenCopy")(function* (
@@ -1718,6 +2703,18 @@ const make = Effect.gen(function* () {
           ),
         )
         .pipe(Effect.tap((copy) => fillProfile(input, copy))),
+    restoreCopy: (input) =>
+      locks
+        .withLock(
+          "prepare",
+          mapIo(
+            Effect.gen(function* () {
+              const rootPath = yield* canonicalRoot(input.rootPath);
+              return yield* withWorkspaceLease(rootPath, restoreCopy(input, rootPath));
+            }),
+          ),
+        )
+        .pipe(Effect.tap(publishCopy)),
     readiness: (input) =>
       mapIo(
         Effect.gen(function* () {
@@ -1787,6 +2784,18 @@ const make = Effect.gen(function* () {
             Effect.gen(function* () {
               const receipt = yield* store.get(input.workingCopyId);
               return yield* withWorkspaceLease(receipt.copy.rootPath, reopenCopy(input));
+            }),
+          ),
+        )
+        .pipe(Effect.tap(publishCopy)),
+    snapshotCopy: (input) =>
+      locks
+        .withLock(
+          "prepare",
+          mapIo(
+            Effect.gen(function* () {
+              const receipt = yield* store.get(input.workingCopyId);
+              return yield* withWorkspaceLease(receipt.copy.rootPath, snapshotCopy(input));
             }),
           ),
         )

@@ -8,7 +8,12 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import { libraryLaunchRanking } from "@t3tools/client-runtime/fork";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LibraryError,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -32,6 +37,10 @@ const state = vi.hoisted(() => ({
   registerThread: Object.assign(vi.fn(), { permissionAtom: () => true }),
   reopen: Object.assign(vi.fn(), { permissionAtom: () => true }),
   retention: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  authorize: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  restore: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  readStatus: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  snapshotCopy: Object.assign(vi.fn(), { permissionAtom: () => true }),
   create: vi.fn(),
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
@@ -54,6 +63,7 @@ const state = vi.hoisted(() => ({
       environmentId: EnvironmentId;
       threadId: ThreadId;
       sequence: number;
+      workingCopyId: string | null;
     };
     projection: { messages: { role: string; text: string }[]; visibleTurnItems: [] };
   } | null,
@@ -100,6 +110,10 @@ vi.mock("./libraryState", () => ({
     registerThread: state.registerThread,
     reopenCopy: state.reopen,
     setCopyRetention: state.retention,
+    authorizeRecovery: state.authorize,
+    restoreCopy: state.restore,
+    readCopyStatus: state.readStatus,
+    snapshotCopy: state.snapshotCopy,
     resolveBinding: state.resolve,
     snapshotThread: state.snapshot,
   },
@@ -114,7 +128,12 @@ vi.mock("../../state/environments", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useServerConfigs: () =>
-    new Map(state.computers.map((computer) => [computer.environmentId, computer.serverConfig])),
+    new Map([
+      ...state.computers.map(
+        (computer) => [computer.environmentId, computer.serverConfig] as const,
+      ),
+      ["library", state.computers[0]?.serverConfig],
+    ]),
   useProject: () => null,
 }));
 vi.mock("../../state/session", () => ({
@@ -126,9 +145,11 @@ vi.mock("../../state/atom-registry", () => ({
   appAtomRegistry: {
     refresh: vi.fn(),
     get: (atom: unknown) =>
-      atom === "copies"
-        ? { _tag: "Success", value: state.copies, waiting: false }
-        : state.computers.find((computer) => computer.environmentId === atom),
+      typeof atom === "boolean"
+        ? atom
+        : atom === "copies"
+          ? { _tag: "Success", value: state.copies, waiting: false }
+          : state.computers.find((computer) => computer.environmentId === atom),
   },
 }));
 vi.mock("../../state/presentation", () => ({
@@ -325,7 +346,11 @@ const makeComputer = (id: EnvironmentId, label: string, online = true): Computer
   entry: { enabled: true },
   connection: { phase: online ? "connected" : "offline" },
   serverConfig: {
-    environment: { capabilities: { loomFeatures: ["project-library", "library-file-lifecycle"] } },
+    environment: {
+      capabilities: {
+        loomFeatures: ["project-library", "library-file-lifecycle", "library-portable-recovery"],
+      },
+    },
     newProjectsRoot: `/Projects/${id}`,
     settings: {
       ...DEFAULT_SERVER_SETTINGS,
@@ -357,6 +382,12 @@ const project: LibraryProject = {
   archived: false,
   createdAt: "2026-10-21T00:00:00Z",
   updatedAt: "2026-10-21T00:00:00Z",
+};
+const recoveryMetadata = {
+  sha256: "a".repeat(64),
+  byteLength: 2048,
+  archiveKey: "source-files",
+  verifiedAt: project.updatedAt,
 };
 const copy: LibraryWorkingCopy = {
   id: "copy-a",
@@ -415,6 +446,30 @@ beforeEach(() => {
   state.warning = null;
   state.prepare.mockResolvedValue(AsyncResult.success(copy));
   state.create.mockResolvedValue(AsyncResult.success({}));
+  state.registerCopy.mockResolvedValue(AsyncResult.success({}));
+  state.readStatus.mockResolvedValue(
+    AsyncResult.success({ copy, blockers: [], reviewToken: "review" }),
+  );
+  state.snapshotCopy.mockResolvedValue(
+    AsyncResult.success({ ...copy, recovery: recoveryMetadata }),
+  );
+  state.authorize.mockResolvedValue(
+    AsyncResult.success({
+      sourceCopy: { ...copy, recovery: recoveryMetadata },
+      destinationEnvironmentId: computerA,
+      libraryEnvironmentId: "library",
+      expiresAt: "2026-10-21T01:00:00Z",
+      accessToken: "temporary-grant",
+    }),
+  );
+  state.restore.mockResolvedValue(
+    AsyncResult.success({
+      ...copy,
+      id: "new-copy",
+      rootPath: "/Projects/Reviewed",
+      keepOnComputer: true,
+    }),
+  );
   state.launch.mockImplementation(async (intent, _receipt, ports) => {
     await ports.prepare(intent);
     await ports.create(localProjectId);
@@ -439,7 +494,7 @@ describe("Library start progressive disclosure", () => {
           id: "app",
           title: "App",
           relativePath: ".",
-          remoteUrl: null,
+          remoteUrl: "https://github.com/team/app",
           defaultBranch: null,
         })),
       };
@@ -497,13 +552,14 @@ describe("Library start progressive disclosure", () => {
     expect(button("Keep files on this computer").getAttribute("aria-checked")).toBe("true");
     await click("Files");
     await click("Start work");
-    expect(state.prepare).toHaveBeenCalledWith({
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.snapshotCopy).toHaveBeenCalledWith({
       environmentId: computerA,
-      input: expect.objectContaining({
-        rootPath: "/Projects/Reviewed",
-        strategy: "clone",
-        resourceIds: [],
-      }),
+      input: expect.objectContaining({ workingCopyId: copy.id, reviewToken: "review" }),
+    });
+    expect(state.restore).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ rootPath: "/Projects/Reviewed", resourceIds: [] }),
     });
     expect(state.create).toHaveBeenCalledWith({
       environmentId: computerA,
@@ -523,7 +579,7 @@ describe("Library start progressive disclosure", () => {
         id,
         title: id,
         relativePath: id,
-        remoteUrl: null,
+        remoteUrl: "https://github.com/team/app",
         defaultBranch: null,
       })),
     };
@@ -620,6 +676,7 @@ describe("Library start progressive disclosure", () => {
         environmentId: computerA,
         threadId: ThreadId.make("source-thread"),
         sequence: 4,
+        workingCopyId: copy.id,
       },
       projection: {
         messages: [{ role: "user", text: "Keep the existing behavior" }],
@@ -646,5 +703,236 @@ describe("Library start progressive disclosure", () => {
       threadId: "source-thread",
       sequence: 4,
     });
+  });
+});
+
+describe("portable project files on mobile", () => {
+  const savedCopy = { ...copy, state: "released" as const, recovery: recoveryMetadata };
+  const continuedSource = (): NonNullable<typeof state.source> => ({
+    summary: {
+      title: "Earlier work",
+      resourceIds: [],
+      environmentId: computerA,
+      threadId: ThreadId.make("source-thread"),
+      sequence: 4,
+      workingCopyId: copy.id,
+    },
+    projection: { messages: [], visibleTurnItems: [] },
+  });
+  const restoreToB = (sourceCopy: LibraryWorkingCopy = savedCopy) => {
+    const rootPath = "/Projects/computer-b/loom";
+    state.authorize.mockResolvedValue(
+      AsyncResult.success({
+        sourceCopy,
+        destinationEnvironmentId: computerB,
+        libraryEnvironmentId: "library",
+        expiresAt: "2026-10-21T01:00:00Z",
+        accessToken: "temporary-grant",
+      }),
+    );
+    state.restore.mockResolvedValue(
+      AsyncResult.success({
+        ...copy,
+        environmentId: computerB,
+        rootPath,
+        id: "new-destination-copy",
+        keepOnComputer: true,
+      }),
+    );
+  };
+
+  it("restores local-only saved files from an offline source instead of cloning Git", async () => {
+    const released = { ...savedCopy, registered: false };
+    state.copies = [released];
+    state.computers[0] = makeComputer(computerA, "MacBook", false);
+    params = { ...params, reuseEnvironmentId: computerB };
+    restoreToB(released);
+    await render();
+    expect(button("Files").textContent).toContain("Restore source files when starting");
+    expect(button("Start work").disabled).toBe(false);
+    await click("Start work");
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.snapshotCopy).not.toHaveBeenCalled();
+    expect(state.restore).toHaveBeenCalledWith({
+      environmentId: computerB,
+      input: expect.objectContaining({
+        rootPath: "/Projects/computer-b/loom",
+        grant: expect.objectContaining({ sourceCopy: released }),
+      }),
+    });
+    expect(state.create.mock.calls[0]![0].environmentId).toBe(computerB);
+    expect(JSON.stringify(state.savePreferences.mock.calls)).not.toContain("temporary-grant");
+  });
+
+  it("starts on another computer from idle kept source files without changing Keep", async () => {
+    const kept = { ...copy, keepOnComputer: true };
+    state.copies = [kept];
+    params = { ...params, reuseEnvironmentId: computerB };
+    state.readStatus.mockResolvedValue(
+      AsyncResult.success({
+        copy: kept,
+        blockers: [],
+        reviewToken: "snapshot-review",
+      }),
+    );
+    state.snapshotCopy.mockResolvedValue(
+      AsyncResult.success({ ...kept, recovery: recoveryMetadata }),
+    );
+    restoreToB({ ...kept, recovery: recoveryMetadata });
+    await render();
+    expect(button("Start work").disabled).toBe(false);
+    await click("Start work");
+    expect(state.snapshotCopy).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ workingCopyId: copy.id, reviewToken: "snapshot-review" }),
+    });
+    expect(state.restore).toHaveBeenCalledOnce();
+    expect(state.create).toHaveBeenCalled();
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(kept.keepOnComputer).toBe(true);
+  });
+
+  it("requires a fresh snapshot of ready files and does not use their old backup while offline", async () => {
+    state.copies = [{ ...copy, recovery: recoveryMetadata }];
+    state.computers[0] = makeComputer(computerA, "MacBook", false);
+    params = { ...params, reuseEnvironmentId: computerB };
+    await render();
+    expect(container.textContent).toContain("Reconnect the source computer");
+    expect(button("Start work").disabled).toBe(true);
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+
+  it("asks which files to use when a continuation conflicts with destination files", async () => {
+    state.copies = [savedCopy, { ...copy, id: "destination-copy", environmentId: computerB }];
+    state.source = continuedSource();
+    params = { ...params, sourceArchiveId: "source-archive", reuseEnvironmentId: computerB };
+    restoreToB();
+    await render();
+    expect(container.querySelector('section[aria-label="Choose source files"]')).not.toBeNull();
+    expect(button("Start work").disabled).toBe(true);
+    await click(`MacBook: ${copy.rootPath}`);
+    expect(button("Start work").disabled).toBe(false);
+    await click("Start work");
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.restore.mock.calls[0]![0].input.grant.sourceCopy.id).toBe(copy.id);
+    expect(state.launch.mock.calls[0]![0].continuationOf?.threadId).toBe("source-thread");
+  });
+
+  it("allows the deliberate local alternative for a continuation", async () => {
+    const local = { ...copy, id: "destination-copy", environmentId: computerB };
+    state.copies = [savedCopy, local];
+    state.source = continuedSource();
+    params = { ...params, sourceArchiveId: "source-archive", reuseEnvironmentId: computerB };
+    await render();
+    await click(`Mac mini: ${local.rootPath}`);
+    expect(button("Files").textContent).toContain("Use files already on this computer");
+    await click("Start work");
+    expect(state.restore).not.toHaveBeenCalled();
+    expect(state.snapshotCopy).not.toHaveBeenCalled();
+    expect(state.create).toHaveBeenCalled();
+  });
+
+  it("blocks a continuation with no source file identity until files are deliberately selected", async () => {
+    state.source = continuedSource();
+    state.source.summary.workingCopyId = null;
+    params = { ...params, sourceArchiveId: "source-archive", reuseEnvironmentId: computerB };
+    await render();
+    expect(container.textContent).toContain("The source conversation has no saved file location");
+    expect(button("Start work").disabled).toBe(true);
+    expect(state.launch).not.toHaveBeenCalled();
+  });
+
+  it("blocks whole-project continuation from a saved layout containing a removed repository", async () => {
+    state.project = {
+      ...project,
+      resources: [
+        {
+          id: "app",
+          title: "App",
+          relativePath: "app",
+          remoteUrl: "https://github.com/team/app",
+          defaultBranch: null,
+        },
+      ],
+    };
+    state.copies = [
+      {
+        ...savedCopy,
+        repositories: ["app", "removed"].map((id) => ({
+          resourceId: id,
+          path: `${copy.rootPath}/${id}`,
+          localProjectId,
+          head: null,
+          branch: null,
+        })),
+      },
+    ];
+    state.source = continuedSource();
+    params = { ...params, sourceArchiveId: "source-archive", reuseEnvironmentId: computerB };
+    await render();
+    expect(button("Start work").disabled).toBe(true);
+    expect(container.textContent).toContain("no longer match the selected repositories");
+    expect(state.restore).not.toHaveBeenCalled();
+    expect(state.prepare).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit source among multiple saved snapshots", async () => {
+    const second = {
+      ...savedCopy,
+      id: "second-source",
+      rootPath: "/Projects/Other",
+      recovery: { ...recoveryMetadata, sha256: "b".repeat(64) },
+    };
+    state.copies = [savedCopy, second];
+    params = { ...params, reuseEnvironmentId: computerB };
+    restoreToB(second);
+    await render();
+    expect(button("Start work").disabled).toBe(true);
+    await click(`MacBook: ${second.rootPath}`);
+    await click("Start work");
+    expect(state.restore.mock.calls[0]![0].input.grant.sourceCopy.id).toBe(second.id);
+  });
+
+  it("requires the review action before retrying a definite source snapshot rejection", async () => {
+    state.copies = [copy];
+    params = { ...params, reuseEnvironmentId: computerB };
+    restoreToB({ ...copy, recovery: recoveryMetadata });
+    state.snapshotCopy.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked" }))),
+    );
+    await render();
+    await click("Start work");
+    expect(button("Start work").disabled).toBe(true);
+    expect(button("Review latest source files").disabled).toBe(false);
+    state.readStatus.mockResolvedValue(
+      AsyncResult.success({ copy, blockers: [], reviewToken: "latest-review" }),
+    );
+    await click("Review latest source files");
+    expect(button("Start work").disabled).toBe(false);
+    await click("Start work");
+    expect(state.snapshotCopy.mock.calls[0]![0].input.reviewToken).toBe("review");
+    expect(state.snapshotCopy.mock.calls[1]![0].input).toEqual({
+      requestId: `${state.snapshotCopy.mock.calls[0]![0].input.requestId}:1`,
+      workingCopyId: copy.id,
+      reviewToken: "latest-review",
+    });
+    expect(state.restore).toHaveBeenCalledOnce();
+  });
+
+  it("keeps unregistered released exact-root restoration on its original identity", async () => {
+    state.copies = [{ ...savedCopy, registered: false }];
+    state.reopen.mockResolvedValue(
+      AsyncResult.success({ ...savedCopy, state: "ready", registered: true, keepOnComputer: true }),
+    );
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id };
+    await render();
+    await click("Start work");
+    expect(state.reopen).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: { requestId: expect.stringContaining(":reopen"), workingCopyId: copy.id },
+    });
+    expect(state.restore).not.toHaveBeenCalled();
+    expect(state.prepare).not.toHaveBeenCalled();
   });
 });

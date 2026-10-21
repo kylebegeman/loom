@@ -94,8 +94,16 @@ in the computer's storage settings.
 and conversations stay available. **Restore files** brings the saved contents back to the
 same computer and keeps them there. Starting another conversation or resuming work also restores
 files automatically and preserves your Keep choice. Reading saved history does not download files.
-Recovery uses a verified archive, downloading it from the Library when needed. A computer must
-be connected to prepare, remove or restore its files.
+To continue on another computer, choose that computer when starting a conversation. Loom uses
+its existing files or brings over the saved project files, including local-only files and
+unpushed commits. When the original files are still present, their computer must be connected
+and its work finished so Loom can save the current contents first. Files already saved and
+removed can be restored while their original computer is offline. If different locations have
+different files, Loom asks which to use and preserves the other locations.
+
+Recovery uses a verified archive in your Library. The destination computer and Library must
+be connected to restore files on another computer. Reading saved history does not require
+restoring files.
 
 Computer details show repository changes and optional tools. When a repository is behind
 and has no local changes, **Pull** updates it. Offline computers show their last reported

@@ -17,6 +17,7 @@ import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-lib
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
+export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -110,6 +111,36 @@ export const LibraryWorkingCopy = Schema.Struct({
   health: Schema.optional(LibraryCopyHealth),
 });
 export type LibraryWorkingCopy = typeof LibraryWorkingCopy.Type;
+export const LibraryAuthorizeRecoveryRequest = Schema.Struct({
+  sourceEnvironmentId: EnvironmentId,
+  workingCopyId: LibraryId,
+  destinationEnvironmentId: EnvironmentId,
+  sourceCopy: Schema.optional(LibraryWorkingCopy),
+});
+export type LibraryAuthorizeRecoveryRequest = typeof LibraryAuthorizeRecoveryRequest.Type;
+export const LibraryRecoveryGrant = Schema.Struct({
+  sourceCopy: LibraryWorkingCopy,
+  destinationEnvironmentId: EnvironmentId,
+  libraryEnvironmentId: EnvironmentId,
+  expiresAt: IsoDateTime,
+  accessToken: TrimmedNonEmptyString.check(Schema.isMaxLength(8192)),
+});
+export type LibraryRecoveryGrant = typeof LibraryRecoveryGrant.Type;
+export const LibraryRestoreCopyRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  project: LibraryProject,
+  rootPath: Schema.String,
+  grant: LibraryRecoveryGrant,
+  resourceIds: Schema.optional(Schema.Array(LibraryId)),
+});
+export type LibraryRestoreCopyRequest = typeof LibraryRestoreCopyRequest.Type;
+export const LibrarySnapshotCopyRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  workingCopyId: LibraryId,
+  reviewToken: Schema.String,
+});
+export type LibrarySnapshotCopyRequest = typeof LibrarySnapshotCopyRequest.Type;
+
 export const LibraryContinuation = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -453,6 +484,9 @@ export const LIBRARY_WS_METHODS = {
   releaseCopy: "loom.library.release-copy",
   setCopyRetention: "loom.library.set-copy-retention",
   reopenCopy: "loom.library.reopen-copy",
+  snapshotCopy: "loom.library.snapshot-copy",
+  authorizeRecovery: "loom.library.authorize-recovery",
+  restoreCopy: "loom.library.restore-copy",
   resolveBinding: "loom.library.resolve-binding",
   bindThread: "loom.library.bind-thread",
 } as const;
@@ -602,6 +636,21 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
   }),
   Rpc.make(LIBRARY_WS_METHODS.reopenCopy, {
     payload: LibraryReopenCopyRequest,
+    success: LibraryWorkingCopy,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.snapshotCopy, {
+    payload: LibrarySnapshotCopyRequest,
+    success: LibraryWorkingCopy,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.authorizeRecovery, {
+    payload: LibraryAuthorizeRecoveryRequest,
+    success: LibraryRecoveryGrant,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.restoreCopy, {
+    payload: LibraryRestoreCopyRequest,
     success: LibraryWorkingCopy,
     error,
   }),

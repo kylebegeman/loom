@@ -3,6 +3,7 @@ import {
   libraryContinuationContext,
   libraryCopyReadiness,
   libraryLaunchChoice,
+  libraryPortableRecoveryPlan,
   libraryLaunchDefaults,
   libraryLaunchWarning,
   isRepositoryResource,
@@ -67,6 +68,7 @@ import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
 import { newThreadId, randomUUID } from "~/lib/utils";
 import { useLibraryAttempt } from "./attempts";
+import { PortableLaunchAttempt, restoreLibraryLaunchCopy } from "./portableLaunch";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
@@ -202,6 +204,7 @@ export function NewConversationDialog({
   initialHostId,
   initialCopyId,
   initialResourceId,
+  initialResourceIds,
   initialModelSelection,
   initialRuntimeMode,
   initialInteractionMode,
@@ -219,6 +222,7 @@ export function NewConversationDialog({
   readonly initialHostId?: EnvironmentId | undefined;
   readonly initialCopyId?: string | undefined;
   readonly initialResourceId?: string | undefined;
+  readonly initialResourceIds?: readonly string[] | undefined;
   readonly initialModelSelection?: ModelSelection | undefined;
   readonly initialRuntimeMode?: RuntimeMode | undefined;
   readonly initialInteractionMode?: ProviderInteractionMode | undefined;
@@ -244,12 +248,24 @@ export function NewConversationDialog({
     `loom:library:launch-reopen:${authority.authorityId}:${project.id}`,
     ReopeningAttempt,
   );
-  const locked = attempt !== null || preparation !== null || reopening !== null;
+  const [restoring, saveRestoring] = useLibraryAttempt(
+    `loom:library:launch-portable:${authority.authorityId}:${project.id}`,
+    PortableLaunchAttempt,
+  );
+  const needsSourceReview =
+    restoring?.sourceSnapshotRejected === true && !restoring.sourceSnapshot && !restoring.copy;
+  const locked =
+    attempt !== null || preparation !== null || reopening !== null || restoring !== null;
   const launchProject =
-    attempt?.project ?? reopening?.project ?? preparation?.input.project ?? project;
+    attempt?.project ??
+    restoring?.project ??
+    reopening?.project ??
+    preparation?.input.project ??
+    project;
   // Null until the user picks a computer, so the ranked choice can follow data as it arrives.
   const [hostChoice, setHostId] = useState<EnvironmentId | null>(
     attempt?.environmentId ??
+      restoring?.environmentId ??
       reopening?.environmentId ??
       preparation?.environmentId ??
       initialHostId ??
@@ -266,10 +282,23 @@ export function NewConversationDialog({
           initialResourceId ??
           (continuation?.resourceIds.length === 1 ? continuation.resourceIds[0]! : null)),
   );
+  const [scopeChanged, setScopeChanged] = useState(false);
+  const launchResourceIds =
+    attempt?.binding.resourceIds ??
+    restoring?.resourceIds ??
+    reopening?.resourceIds ??
+    preparation?.input.resourceIds ??
+    (!scopeChanged ? (initialResourceIds ?? continuation?.resourceIds) : undefined) ??
+    (resourceId ? [resourceId] : []);
+  const selectedScope = launchResourceIds.length ? launchResourceIds : null;
   const [title, setTitle] = useState(
-    attempt?.title ?? (continuation ? `Continue: ${continuation.title}` : ""),
+    attempt?.title ??
+      restoring?.launch?.title ??
+      (continuation ? `Continue: ${continuation.title}` : ""),
   );
-  const [contextInput, setContext] = useState<string | null>(attempt?.context ?? null);
+  const [contextInput, setContext] = useState<string | null>(
+    attempt?.context ?? restoring?.launch?.context ?? null,
+  );
   const source = useEnvironmentQuery(
     authority.authorityId && continuation
       ? projectLibrary.history({
@@ -286,16 +315,19 @@ export function NewConversationDialog({
   const [copyId, setCopyId] = useState<string | null>(
     attempt?.binding.workingCopyId ?? initialCopyId ?? null,
   );
+  const [sourceChoiceId, setSourceChoiceId] = useState<string | null>(null);
   const [keepChoice, setKeepChoice] = useState<boolean | null>(null);
   const [typedPath, setRootPath] = useState<string | null>(null);
+  const [existingFolder, setExistingFolder] = useState<string | null>(null);
+  const [localFolder, setLocalFolder] = useState<string | null>(null);
   const [modelChoice, setModelChoice] = useState<ModelSelection | null>(
-    initialModelSelection ?? null,
+    restoring?.launch?.requestedModelSelection ?? initialModelSelection ?? null,
   );
   const [runtimeChoice, setRuntimeChoice] = useState<RuntimeMode | null>(
-    initialRuntimeMode ?? null,
+    restoring?.launch?.requestedRuntimeMode ?? initialRuntimeMode ?? null,
   );
   const [interactionChoice, setInteractionChoice] = useState<ProviderInteractionMode>(
-    initialInteractionMode ?? "default",
+    restoring?.launch?.interactionMode ?? initialInteractionMode ?? "default",
   );
   const [busy, setBusy] = useState(false);
   const [pulling, setPulling] = useState(false);
@@ -313,18 +345,33 @@ export function NewConversationDialog({
         ? knownCopies.filter(
             (entry) =>
               entry.ownership !== "managed" ||
-              libraryLaunchCopyMatchesScope(launchProject, entry, resourceId),
+              libraryLaunchCopyMatchesScope(launchProject, entry, resourceId, selectedScope),
           )
         : [],
     resourceId,
   });
-  // Nothing is preselected while copies load, so the choice never jumps away from a copy.
+  const otherComputer =
+    continuation && ranking.preselected
+      ? ranking.candidates.find(
+          (candidate) =>
+            candidate.kind !== "mini" &&
+            candidate.online &&
+            candidate.environmentId !== continuation.environmentId &&
+            candidate.readiness !== "not-ready",
+        )
+      : null;
+  // Continuing elsewhere starts with another computer, while an explicit choice stays put.
   const choice =
-    copiesReadiness === "ready"
-      ? libraryLaunchChoice({ ranking, hostId: hostChoice, copyId })
+    copiesReadiness === "ready" && !(continuation && hostChoice === null && !otherComputer)
+      ? libraryLaunchChoice({
+          ranking,
+          hostId: hostChoice ?? otherComputer?.environmentId ?? null,
+          copyId,
+        })
       : { hostId: hostChoice, candidate: null };
   const hostId =
     attempt?.environmentId ??
+    restoring?.environmentId ??
     reopening?.environmentId ??
     preparation?.environmentId ??
     choice.hostId;
@@ -343,24 +390,66 @@ export function NewConversationDialog({
         })
       : null,
   );
+  const latestCopies = new Map<string, LibraryWorkingCopy>();
+  for (const entry of [...knownCopies, ...(retained.data ?? [])]) {
+    const previous = latestCopies.get(entry.id);
+    if (!previous || entry.updatedAt > previous.updatedAt) latestCopies.set(entry.id, entry);
+  }
+  if (preparedCopy) latestCopies.set(preparedCopy.id, preparedCopy);
+  const allCopies = [...latestCopies.values()];
+  const sourceWorkingCopyId = continuation?.workingCopyId ?? initialCopyId ?? null;
+  const sourcePlan =
+    localFolder && localFolder === typedPath
+      ? { kind: "clone" as const }
+      : continuation && !sourceWorkingCopyId
+        ? {
+            kind: "unavailable" as const,
+            message:
+              "This conversation has no saved project files. Review its original location before continuing.",
+          }
+        : hostId
+          ? libraryPortableRecoveryPlan({
+              project: launchProject,
+              copies: allCopies,
+              destinationEnvironmentId: hostId,
+              resourceIds: selectedScope,
+              sourceWorkingCopyId,
+              sourceEnvironmentId: continuation?.environmentId ?? initialHostId ?? null,
+              selectedSourceCopyId: null,
+            })
+          : { kind: "unavailable" as const, message: "Choose a computer before starting." };
+  const filesPlan =
+    sourceChoiceId && hostId && !localFolder
+      ? libraryPortableRecoveryPlan({
+          project: launchProject,
+          copies: allCopies,
+          destinationEnvironmentId: hostId,
+          resourceIds: selectedScope,
+          sourceWorkingCopyId,
+          sourceEnvironmentId: continuation?.environmentId ?? initialHostId ?? null,
+          selectedSourceCopyId: sourceChoiceId,
+        })
+      : sourcePlan;
   const copy =
     copiesReadiness !== "ready"
       ? null
       : attempt
-        ? (knownCopies.find((entry) => entry.id === attempt.binding.workingCopyId) ??
-          retained.data?.find((entry) => entry.id === attempt.binding.workingCopyId) ??
-          null)
-        : chosen?.kind === "copy"
-          ? (knownCopies.find((entry) => entry.id === chosen.copyId) ?? null)
-          : null;
+        ? (allCopies.find((entry) => entry.id === attempt.binding.workingCopyId) ?? null)
+        : (restoring?.copy ?? (filesPlan.kind === "local" ? filesPlan.copy : null));
   const warning = attempt ? null : libraryLaunchWarning(chosen, copy, resourceId);
   const supportsReopen = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     LIBRARY_FILE_LIFECYCLE_FEATURE,
   );
+  const plannedSource = filesPlan.kind === "recover" ? filesPlan.sourceCopy : null;
+  const supportsPortable = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    "library-portable-recovery",
+  );
   const suggestedPath = libraryLaunchRootPath({
     project: launchProject,
     resourceId,
+    resourceIds: selectedScope,
     copyId: attempt?.binding.workingCopyId ?? copyId,
     allowReopen: supportsReopen,
     environmentId: hostId,
@@ -368,28 +457,58 @@ export function NewConversationDialog({
     copies: retained.data ?? knownCopies,
   });
   const rootPath =
+    restoring?.rootPath ??
     preparation?.input.rootPath ??
     reopening?.rootPath ??
     (attempt ? copy?.rootPath : undefined) ??
     typedPath ??
+    copy?.rootPath ??
     suggestedPath;
+  const movingLocalCopy = copy !== null && rootPath.trim() !== copy.rootPath;
+  const portableSource = plannedSource ?? (movingLocalCopy ? copy : null);
   const retainedCopy = libraryLaunchRetainedCopy({
     project: launchProject,
     environmentId: hostId,
     copies: (retained.data ?? knownCopies).filter((entry) => entry.rootPath === rootPath.trim()),
     resourceId,
+    resourceIds: selectedScope,
     copyId: attempt?.binding.workingCopyId ?? copyId,
     allowReopen: supportsReopen,
   });
-  const filesPolicy = copy ?? retainedCopy;
+  const filesPolicy = movingLocalCopy ? null : (copy ?? retainedCopy);
   const keepOnComputer =
     attempt?.keepOnComputer ??
+    restoring?.keepOnComputer ??
     reopening?.keepOnComputer ??
     preparation?.keepOnComputer ??
     keepChoice ??
-    (filesPolicy ? filesPolicy.keepOnComputer !== false : false);
+    (movingLocalCopy ? false : filesPolicy ? filesPolicy.keepOnComputer !== false : false);
   const needsReopen =
-    reopening !== null || (copy?.state !== "ready" && retainedCopy?.state === "released");
+    reopening !== null ||
+    (!movingLocalCopy &&
+      copy?.state !== "ready" &&
+      retainedCopy?.state === "released" &&
+      (copy?.id === retainedCopy.id ||
+        portableSource?.id === retainedCopy.id ||
+        (!supportsPortable &&
+          filesPlan.kind !== "choose" &&
+          !plannedSource &&
+          (!sourceWorkingCopyId || sourceWorkingCopyId === retainedCopy.id))));
+  const needsPortable = restoring !== null || (portableSource !== null && !needsReopen);
+  const snapshotSource = restoring?.sourceCopy ?? portableSource;
+  const sourceHost = authority.environments.find(
+    (entry) => entry.environmentId === snapshotSource?.environmentId,
+  );
+  const sourceCanSnapshot =
+    snapshotSource?.state !== "ready" ||
+    restoring?.sourceSnapshot !== undefined ||
+    (restoring?.copy !== null && restoring?.copy !== undefined) ||
+    (sourceHost?.entry.enabled === true &&
+      sourceHost.connection.phase === "connected" &&
+      supportsLoomFeature(
+        sourceHost.serverConfig?.environment.capabilities,
+        "library-portable-recovery",
+      ));
   const localProjectId = resourceId
     ? copy?.repositories.find((repository) => repository.resourceId === resourceId)?.localProjectId
     : copy?.rootLocalProjectId;
@@ -406,9 +525,17 @@ export function NewConversationDialog({
         ...(runtimeChoice ? { runtimeMode: runtimeChoice } : {}),
       })
     : null;
-  const modelSelection = attempt?.modelSelection ?? defaults?.modelSelection ?? null;
+  const modelSelection =
+    attempt?.modelSelection ??
+    restoring?.launch?.modelSelection ??
+    defaults?.modelSelection ??
+    null;
   const runtimeMode =
-    attempt?.runtimeMode ?? runtimeChoice ?? defaults?.runtimeMode ?? "approval-required";
+    attempt?.runtimeMode ??
+    restoring?.launch?.runtimeMode ??
+    runtimeChoice ??
+    defaults?.runtimeMode ??
+    "approval-required";
   const interactionMode = attempt?.interactionMode ?? interactionChoice;
   const providerEntry = defaults?.entries.find(
     (entry) => entry.instanceId === modelSelection?.instanceId,
@@ -436,6 +563,12 @@ export function NewConversationDialog({
   const bind = useAtomCommand(projectLibrary.bindThread, { reportFailure: false });
   const prepareCopy = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const reopenCopy = useAtomCommand(projectLibrary.reopenCopy, { reportFailure: false });
+  const readCopyStatus = useAtomCommand(projectLibrary.readCopyStatus, { reportFailure: false });
+  const snapshotCopy = useAtomCommand(projectLibrary.snapshotCopy, { reportFailure: false });
+  const authorizeRecovery = useAtomCommand(projectLibrary.authorizeRecovery, {
+    reportFailure: false,
+  });
+  const restoreCopy = useAtomCommand(projectLibrary.restoreCopy, { reportFailure: false });
   const setRetention = useAtomCommand(projectLibrary.setCopyRetention, { reportFailure: false });
   const registerCopy = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerThread, { reportFailure: false });
@@ -446,6 +579,19 @@ export function NewConversationDialog({
   });
   const canPrepare = useLibraryPermission(projectLibrary.prepareCopy, hostId);
   const canReopen = useLibraryPermission(projectLibrary.reopenCopy, hostId);
+  const canReadSource = useLibraryPermission(
+    projectLibrary.readCopyStatus,
+    snapshotSource?.environmentId ?? null,
+  );
+  const canSnapshotSource = useLibraryPermission(
+    projectLibrary.snapshotCopy,
+    snapshotSource?.environmentId ?? null,
+  );
+  const canAuthorizeRecovery = useLibraryPermission(
+    projectLibrary.authorizeRecovery,
+    authority.authorityId,
+  );
+  const canRestoreCopy = useLibraryPermission(projectLibrary.restoreCopy, hostId);
   const canSetRetention = useLibraryPermission(projectLibrary.setCopyRetention, hostId);
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canRegisterCopy = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
@@ -460,6 +606,120 @@ export function NewConversationDialog({
     const launch = async () => {
       let launchCopy = copy ?? (retainedCopy?.state === "ready" ? retainedCopy : null);
       let pendingPreparation = preparation;
+      if (!locked && filesPlan.kind === "choose")
+        throw new Error("Choose which project files to use before starting.");
+      if (!locked && filesPlan.kind === "unavailable" && !needsReopen)
+        throw new Error(filesPlan.message);
+      if (needsPortable) {
+        if (!supportsPortable || !canRestoreCopy || !canAuthorizeRecovery || !canRegisterCopy)
+          throw new Error(
+            "This computer cannot restore saved project files with your current access.",
+          );
+        if (
+          !sourceCanSnapshot ||
+          (snapshotSource?.state === "ready" &&
+            !restoring?.copy &&
+            !restoring?.sourceSnapshot &&
+            (!canReadSource || !canSnapshotSource))
+        )
+          throw new Error(
+            "Connect the source computer to save its latest files before starting here.",
+          );
+        const files =
+          restoring ??
+          (portableSource
+            ? {
+                environmentId: hostId,
+                project: launchProject,
+                rootPath: rootPath.trim(),
+                resourceIds: launchResourceIds,
+                sourceCopy: portableSource,
+                requestId: randomUUID(),
+                registerRequestId: randomUUID(),
+                snapshotRequestId: randomUUID(),
+                copy: null,
+                keepOnComputer,
+                launch: {
+                  title: title.trim() || "New project conversation",
+                  context,
+                  modelSelection,
+                  runtimeMode,
+                  interactionMode,
+                  ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
+                  ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
+                  ...(continuation
+                    ? {
+                        continuationOf: {
+                          environmentId: continuation.environmentId,
+                          threadId: continuation.threadId,
+                          sequence: continuation.sequence,
+                        },
+                      }
+                    : {}),
+                },
+              }
+            : null);
+        if (!files)
+          throw new Error(
+            "The selected saved files are unavailable. Reload the project and retry.",
+          );
+        if (!restoring) {
+          const occupied = allCopies.some(
+            (entry) =>
+              entry.environmentId === hostId &&
+              libraryLaunchPathOverlaps(entry.rootPath, files.rootPath),
+          );
+          if (occupied)
+            throw new Error(
+              "Choose a separate folder. Existing project files stay in their current location.",
+            );
+          const inspected = await inspect({
+            environmentId: hostId,
+            input: { rootPath: files.rootPath },
+          });
+          if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
+          if (inspected.value.exists) {
+            setExistingFolder(files.rootPath);
+            return;
+          }
+        }
+        saveRestoring(files);
+        launchCopy = await restoreLibraryLaunchCopy(files, {
+          readStatus: async (input) => {
+            const result = await readCopyStatus(input);
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          snapshot: async (input) => {
+            const result = await snapshotCopy(input);
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          authorize: async (input) => {
+            const result = await authorizeRecovery({ environmentId: authorityId, input });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          restore: async (input) => {
+            const result = await restoreCopy(input);
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          register: async (input) => {
+            const result = await registerCopy({ environmentId: authorityId, input });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          save: saveRestoring,
+        });
+        setPreparedCopy(launchCopy);
+        setCopyId(launchCopy.id);
+        setHostId(files.environmentId);
+        pendingPreparation = null;
+        submittedPreparation = null;
+        savePreparation(null);
+        onChanged();
+      }
       if (needsReopen) {
         if (!supportsReopen || !canReopen || !canRegisterCopy)
           throw new Error(
@@ -472,7 +732,7 @@ export function NewConversationDialog({
                 environmentId: hostId,
                 input: { requestId: randomUUID(), workingCopyId: retainedCopy.id },
                 project: launchProject,
-                resourceIds: attempt?.binding.resourceIds ?? (resourceId ? [resourceId] : []),
+                resourceIds: launchResourceIds,
                 rootPath: retainedCopy.rootPath,
                 registerRequestId: randomUUID(),
                 copy: null,
@@ -536,7 +796,7 @@ export function NewConversationDialog({
               project: launchProject,
               rootPath: rootPath.trim(),
               strategy: inspected.value.exists ? ("reuse" as const) : ("clone" as const),
-              ...(resourceId ? { resourceIds: [resourceId] } : {}),
+              ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
             },
             registerRequestId: randomUUID(),
             copy: null,
@@ -583,13 +843,13 @@ export function NewConversationDialog({
           projectRevision: launchProject.revision,
           workingCopyId: launchCopy.id,
           environmentId: hostId,
-          resourceIds: resourceId ? [resourceId] : [],
-          ...(continuation
+          resourceIds: launchResourceIds,
+          ...(continuation || restoring?.launch?.continuationOf
             ? {
-                continuationOf: {
-                  environmentId: continuation.environmentId,
-                  threadId: continuation.threadId,
-                  sequence: continuation.sequence,
+                continuationOf: restoring?.launch?.continuationOf ?? {
+                  environmentId: continuation!.environmentId,
+                  threadId: continuation!.threadId,
+                  sequence: continuation!.sequence,
                 },
               }
             : {}),
@@ -598,7 +858,11 @@ export function NewConversationDialog({
         context,
         modelSelection,
         defaultsResolved: false,
-        keepOnComputer: reopening?.keepOnComputer ?? preparation?.keepOnComputer ?? keepOnComputer,
+        keepOnComputer:
+          restoring?.keepOnComputer ??
+          reopening?.keepOnComputer ??
+          preparation?.keepOnComputer ??
+          keepOnComputer,
         ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
         ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
         runtimeMode,
@@ -609,6 +873,7 @@ export function NewConversationDialog({
       };
       saveAttempt(next);
       saveReopening(null);
+      saveRestoring(null);
       savePreparation(null);
       submittedPreparation = null;
       if (launchCopy.ownership === "borrowed" && !next.created) {
@@ -806,25 +1071,46 @@ export function NewConversationDialog({
     setBusy(false);
   };
   const canCreate =
+    !needsSourceReview &&
     !busy &&
     !pulling &&
+    existingFolder === null &&
+    (!movingLocalCopy || rootPath.trim().length > 0) &&
     copiesReadiness === "ready" &&
-    (needsReopen
-      ? supportsReopen && canReopen && canRegisterCopy && libraryCopyReadiness(retained) === "ready"
-      : (copy?.state === "ready" &&
-          (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
-        (canPrepare &&
-          canInspect &&
+    (needsPortable
+      ? supportsPortable &&
+        canRestoreCopy &&
+        canAuthorizeRecovery &&
+        canRegisterCopy &&
+        canInspect &&
+        rootPath.trim().length > 0 &&
+        sourceCanSnapshot &&
+        (snapshotSource?.state !== "ready" ||
+          restoring?.sourceSnapshot !== undefined ||
+          restoring?.copy != null ||
+          (canReadSource && canSnapshotSource))
+      : needsReopen
+        ? supportsReopen &&
+          canReopen &&
           canRegisterCopy &&
-          rootPath.trim().length > 0 &&
-          libraryCopyReadiness(retained) === "ready")) &&
+          libraryCopyReadiness(retained) === "ready"
+        : (copy?.state === "ready" &&
+            (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
+          (canPrepare &&
+            canInspect &&
+            canRegisterCopy &&
+            rootPath.trim().length > 0 &&
+            libraryCopyReadiness(retained) === "ready")) &&
+    (locked || needsReopen || (filesPlan.kind !== "choose" && filesPlan.kind !== "unavailable")) &&
     supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library") &&
     allowed &&
     canRegister &&
     (!(
       supportsReopen &&
       filesPolicy?.ownership !== "borrowed" &&
-      (needsReopen || (filesPolicy && (filesPolicy.keepOnComputer !== false) !== keepOnComputer))
+      (needsPortable ||
+        needsReopen ||
+        (filesPolicy && (filesPolicy.keepOnComputer !== false) !== keepOnComputer))
     ) ||
       (canSetRetention && canRegisterCopy)) &&
     modelSelection !== null &&
@@ -890,6 +1176,38 @@ export function NewConversationDialog({
           <Button variant="outline" disabled={busy} onClick={onClose}>
             Close
           </Button>
+          {restoring && needsSourceReview ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                saveRestoring({
+                  ...restoring,
+                  sourceReviewToken: undefined,
+                  sourceSnapshotRejected: undefined,
+                  snapshotRequestId: randomUUID(),
+                });
+                setError(null);
+              }}
+            >
+              Review latest source files
+            </Button>
+          ) : null}
+          {restoring && !restoring.copy && !attempt && error ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setRootPath(restoring.rootPath);
+                saveRestoring(null);
+                setError(null);
+                retained.refresh();
+                onChanged();
+              }}
+            >
+              Choose files again
+            </Button>
+          ) : null}
           {preparation?.copy?.state === "failed" ? (
             <Button
               variant="outline"
@@ -925,16 +1243,24 @@ export function NewConversationDialog({
         </LibraryField>
         <LibraryField label="Scope">
           <Select
-            value={resourceId ?? "whole"}
+            value={launchResourceIds.length > 1 ? "source-scope" : (resourceId ?? "whole")}
             disabled={busy || locked}
             onValueChange={(value) => {
+              if (value === "source-scope") return;
+              setScopeChanged(true);
               setResourceId(value === "whole" ? null : value);
               setCopyId(null);
+              setSourceChoiceId(null);
+              setExistingFolder(null);
+              setLocalFolder(null);
               setRootPath(null);
               setKeepChoice(null);
             }}
             items={[
               { value: "whole", label: "Whole project" },
+              ...(launchResourceIds.length > 1
+                ? [{ value: "source-scope", label: "Original repositories" }]
+                : []),
               ...project.resources
                 .filter(isRepositoryResource)
                 .map((resource) => ({ value: resource.id, label: resource.title })),
@@ -945,6 +1271,9 @@ export function NewConversationDialog({
             </SelectTrigger>
             <SelectPopup>
               <SelectItem value="whole">Whole project</SelectItem>
+              {launchResourceIds.length > 1 ? (
+                <SelectItem value="source-scope">Original repositories</SelectItem>
+              ) : null}
               {project.resources.filter(isRepositoryResource).map((resource) => (
                 <SelectItem key={resource.id} value={resource.id}>
                   {resource.title}
@@ -966,6 +1295,9 @@ export function NewConversationDialog({
                   onValueChange={(value) => {
                     setHostId(value);
                     setCopyId(null);
+                    setSourceChoiceId(null);
+                    setExistingFolder(null);
+                    setLocalFolder(null);
                     setRootPath(null);
                     setModelChoice(null);
                     setRuntimeChoice(null);
@@ -1138,12 +1470,53 @@ export function NewConversationDialog({
             to run work there. Saved conversations are available here.
           </p>
         ) : null}
-        {candidates.length > 1 ? (
+        {!locked && sourcePlan.kind === "choose" ? (
+          <LibraryField label="Files">
+            <p className="mb-2 text-xs text-muted-foreground">{sourcePlan.reason}</p>
+            <Select
+              value={sourceChoiceId}
+              disabled={busy}
+              items={sourcePlan.candidates.map((entry) => ({
+                value: entry.id,
+                label: entry.rootPath,
+              }))}
+              onValueChange={(value) => {
+                setSourceChoiceId(value);
+                setExistingFolder(null);
+                setLocalFolder(null);
+                setCopyId(value);
+                setRootPath(null);
+                setKeepChoice(null);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose project files" />
+              </SelectTrigger>
+              <SelectPopup>
+                {sourcePlan.candidates.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {entry.rootPath} on{" "}
+                    {authority.environments.find(
+                      (host) => host.environmentId === entry.environmentId,
+                    )?.label ??
+                      authority.computers.find((host) => host.environmentId === entry.environmentId)
+                        ?.label ??
+                      entry.environmentId}
+                    {entry.environmentId === hostId && entry.state === "ready"
+                      ? " (on this computer)"
+                      : " (saved files)"}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+        ) : candidates.length > 1 && !sourceWorkingCopyId && !portableSource ? (
           <LibraryField label="Files location">
             <Select
               value={copy?.id ?? null}
               onValueChange={(value) => {
                 setCopyId(value);
+                setSourceChoiceId(value);
                 setKeepChoice(null);
               }}
               disabled={busy || locked}
@@ -1162,6 +1535,51 @@ export function NewConversationDialog({
             </Select>
           </LibraryField>
         ) : null}
+        {existingFolder ? (
+          <div className="space-y-2">
+            <p role="alert" className="text-sm text-muted-foreground">
+              {existingFolder} already has files. Choose which files to use.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setRootPath(existingFolder);
+                  setLocalFolder(existingFolder);
+                  setExistingFolder(null);
+                }}
+              >
+                Use files in this folder
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setExistingFolder(null);
+                  setRootPath("");
+                }}
+              >
+                Choose another folder
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {hostId && !locked && filesPlan.kind === "unavailable" && !needsReopen ? (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {filesPlan.message}
+          </p>
+        ) : null}
+        {needsPortable && !supportsPortable ? (
+          <p role="alert" className="text-sm text-muted-foreground">
+            Update Loom on this computer to use these saved files here.
+          </p>
+        ) : null}
+        {needsPortable && !sourceCanSnapshot ? (
+          <p role="alert" className="text-sm text-muted-foreground">
+            Connect the source computer to save its latest files before starting here.
+          </p>
+        ) : null}
         {copiesReadiness === "loading" ? (
           <p role="status" className="text-sm text-muted-foreground">
             Loading project files...
@@ -1171,11 +1589,24 @@ export function NewConversationDialog({
             error={copiesQuery.error ?? "Could not load project files."}
             onRetry={copiesQuery.refresh}
           />
-        ) : copy?.state === "ready" ? (
+        ) : copy?.state === "ready" && !needsPortable ? (
           <div className="space-y-2">
             <p className="break-words text-sm text-muted-foreground">
               Files on {host?.label}: {copy.rootPath}
             </p>
+            <details className="text-sm text-muted-foreground">
+              <summary className="cursor-pointer">Files location</summary>
+              <div className="mt-2">
+                <LibraryField label="Folder">
+                  <Input
+                    font="mono"
+                    value={rootPath}
+                    disabled={busy || locked}
+                    onChange={(event) => setRootPath(event.target.value)}
+                  />
+                </LibraryField>
+              </div>
+            </details>
             {warning ? (
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm text-warning-foreground">
@@ -1217,13 +1648,19 @@ export function NewConversationDialog({
             )}
             rootPath={rootPath}
             disabled={busy || pulling || locked || host?.connection.phase !== "connected"}
-            needsExistingFolder={project.resources.some(
-              (resource) =>
-                isRepositoryResource(resource) &&
-                (!resourceId || resource.id === resourceId) &&
-                !resource.remoteUrl,
-            )}
-            onRootPathChange={setRootPath}
+            needsExistingFolder={
+              !needsPortable &&
+              project.resources.some(
+                (resource) =>
+                  isRepositoryResource(resource) &&
+                  (!resourceId || resource.id === resourceId) &&
+                  !resource.remoteUrl,
+              )
+            }
+            onRootPathChange={(path) => {
+              setRootPath(path);
+              setExistingFolder(null);
+            }}
           />
         ) : null}
         {supportsReopen && filesPolicy?.ownership !== "borrowed" ? (
@@ -1280,8 +1717,9 @@ export function NewConversationDialog({
         ) : null}
         {locked ? (
           <p className="text-xs text-muted-foreground">
-            This conversation is waiting for confirmation. Retry to recover it without starting
-            another one.
+            {needsSourceReview
+              ? "Review the latest source files to continue this conversation."
+              : "This conversation is waiting for confirmation. Retry to recover it without starting another one."}
           </p>
         ) : null}
         <LibraryErrorNotice error={error} />

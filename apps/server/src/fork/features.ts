@@ -3,6 +3,7 @@ import {
   DIRECTORY_REPORTING_FEATURE,
   LIBRARY_SEMANTIC_SEARCH_FEATURE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_PORTABLE_RECOVERY_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
@@ -88,6 +89,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "device-qa",
   "code-graph",
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_PORTABLE_RECOVERY_FEATURE,
   "library-copy-health",
   "library-search",
   "library-timeline",

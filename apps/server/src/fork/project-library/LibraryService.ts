@@ -674,8 +674,34 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "publisher-unavailable" });
     const saved = yield* store.copy(input.workingCopyId).pipe(Effect.mapError(io));
     if (saved === null) return yield* new LibraryError({ reason: "not-found" });
-    const sourceCopy = yield* decode(codecs.copy, saved);
-    if (sourceCopy.environmentId !== input.sourceEnvironmentId)
+    const current = yield* decode(codecs.copy, saved);
+    const sourceCopy = input.sourceCopy ?? current;
+    // Recovery and observed Git state can advance after a user accepts a snapshot. Its checkout
+    // binding must still belong to the authoritative copy before the immutable archive is granted.
+    if (
+      current.environmentId !== input.sourceEnvironmentId ||
+      sourceCopy.id !== current.id ||
+      sourceCopy.environmentId !== current.environmentId ||
+      sourceCopy.projectId !== current.projectId ||
+      sourceCopy.projectRevision !== current.projectRevision ||
+      sourceCopy.rootPath !== current.rootPath ||
+      (sourceCopy.rootLocalProjectId ?? null) !== (current.rootLocalProjectId ?? null) ||
+      sourceCopy.ownership !== current.ownership ||
+      sourceCopy.createdAt !== current.createdAt ||
+      sourceCopy.repositories.length !== current.repositories.length ||
+      new Set(sourceCopy.repositories.map((repository) => repository.resourceId)).size !==
+        sourceCopy.repositories.length ||
+      sourceCopy.repositories.some((repository) => {
+        const registered = current.repositories.find(
+          (entry) => entry.resourceId === repository.resourceId,
+        );
+        return (
+          registered === undefined ||
+          registered.path !== repository.path ||
+          registered.localProjectId !== repository.localProjectId
+        );
+      })
+    )
       return yield* new LibraryError({ reason: "blocked" });
     yield* getProject(sourceCopy.projectId, sourceCopy.projectRevision).pipe(Effect.mapError(io));
     const metadata = sourceCopy.recovery;

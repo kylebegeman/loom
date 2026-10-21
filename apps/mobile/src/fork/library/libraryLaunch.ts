@@ -31,6 +31,11 @@ export interface LibraryLaunchReceipt {
   copy: LibraryWorkingCopy | null;
   copyRegistered: boolean;
   retentionCopy?: LibraryWorkingCopy;
+  recoverySnapshot?: LibraryWorkingCopy;
+  recoverySnapshotReview?: { readonly requestId: string; readonly reviewToken: string };
+  recoverySnapshotRejected?: boolean;
+  recoverySnapshotAttempt?: number;
+  recoverySnapshotRegistered?: boolean;
   resolved: LibraryResolvedBinding | null;
   threadCreated: boolean;
   threadBound: boolean;
@@ -49,6 +54,13 @@ const Receipt = Schema.Struct({
   copy: Schema.NullOr(LibraryWorkingCopy),
   copyRegistered: Schema.Boolean,
   retentionCopy: Schema.optional(LibraryWorkingCopy),
+  recoverySnapshot: Schema.optional(LibraryWorkingCopy),
+  recoverySnapshotReview: Schema.optional(
+    Schema.Struct({ requestId: Schema.String, reviewToken: Schema.String }),
+  ),
+  recoverySnapshotRegistered: Schema.optional(Schema.Boolean),
+  recoverySnapshotRejected: Schema.optional(Schema.Boolean),
+  recoverySnapshotAttempt: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   resolved: Schema.NullOr(LibraryResolvedBinding),
   threadCreated: Schema.Boolean,
   threadBound: Schema.Boolean,
@@ -66,6 +78,7 @@ export const LibraryLaunchAttempt = Schema.Struct({
     mode: Schema.Literals(["reuse", "folder", "clone"]),
     rootPath: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
+    recoverySource: Schema.optional(LibraryWorkingCopy),
     carryContext: Schema.String,
     keepOnComputer: Schema.optional(Schema.Boolean),
     runtimeMode: Schema.optional(RuntimeMode),

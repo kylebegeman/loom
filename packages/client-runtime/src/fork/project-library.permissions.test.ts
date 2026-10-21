@@ -43,41 +43,47 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["setCopyRetention", "reopenCopy"] as const)(
-  "Project files %s requires the copy computer grant and observes revocation",
-  (method) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const registry = AtomRegistry.make();
-        registry.mount(sessions(destination));
-        registry.mount(sessions(other));
-        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
-        const scope =
-          method === "reopenCopy" ? AuthTerminalOperateScope : AuthOrchestrationOperateScope;
-        const command = createProjectLibraryAtoms(runtime)[method];
-        const policy = createCommandPermissions(runtime, LIBRARY_WS_METHODS[method]);
-        registry.mount(command.permissionAtom(destination));
-        expect(policy.requiredScopes()).toEqual([scope]);
+it.effect.each([
+  "setCopyRetention",
+  "reopenCopy",
+  "snapshotCopy",
+  "authorizeRecovery",
+  "restoreCopy",
+] as const)("Project files %s requires the copy computer grant and observes revocation", (method) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      registry.mount(sessions(destination));
+      registry.mount(sessions(other));
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const scope =
+        method === "setCopyRetention" || method === "authorizeRecovery"
+          ? AuthOrchestrationOperateScope
+          : AuthTerminalOperateScope;
+      const command = createProjectLibraryAtoms(runtime)[method];
+      const policy = createCommandPermissions(runtime, LIBRARY_WS_METHODS[method]);
+      registry.mount(command.permissionAtom(destination));
+      expect(policy.requiredScopes()).toEqual([scope]);
 
-        registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
-        registry.set(sessions(other), AsyncResult.success(grant(true, scope)));
-        expect(registry.get(command.permissionAtom(destination))).toBe(false);
-        expect(registry.get(command.permissionAtom(other))).toBe(true);
-        expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: scope,
-        });
+      registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
+      registry.set(sessions(other), AsyncResult.success(grant(true, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
+      expect(registry.get(command.permissionAtom(other))).toBe(true);
+      expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: scope,
+      });
 
-        registry.set(sessions(destination), AsyncResult.success(grant(true, scope)));
-        registry.set(sessions(other), AsyncResult.success(grant(false, scope)));
-        expect(registry.get(command.permissionAtom(destination))).toBe(true);
-        yield* policy.authorize(registry, destination);
-        expect(registry.get(command.permissionAtom(other))).toBe(false);
+      registry.set(sessions(destination), AsyncResult.success(grant(true, scope)));
+      registry.set(sessions(other), AsyncResult.success(grant(false, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(true);
+      yield* policy.authorize(registry, destination);
+      expect(registry.get(command.permissionAtom(other))).toBe(false);
 
-        registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
-        expect(registry.get(command.permissionAtom(destination))).toBe(false);
-        expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: scope,
-        });
-      }),
-    ),
+      registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
+      expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: scope,
+      });
+    }),
+  ),
 );

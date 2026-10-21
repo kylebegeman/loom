@@ -195,9 +195,14 @@ const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
 const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHttpClient.layer));
+const layerLibraryService = LibraryService.layer.pipe(
+  Layer.provide(layerLibraryAssets),
+  Layer.provide(layerLibraryRecovery),
+);
+
 const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
-  Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+  Layer.provide(layerLibraryService),
   Layer.provide(layerLibraryAssets),
   Layer.provide(PreviewAccess.layer),
 );
@@ -206,6 +211,8 @@ export const layerProjectLifecycle = ProjectLifecycle.layer.pipe(
   Layer.provide(ProjectStore.layer),
   Layer.provide(RuntimeLayer.layerThreadManagementProvided),
   Layer.provide(RuntimeLayer.layerProjectService),
+  // Runtime callers acquire this shared layer before ForkLayer's migration boundary.
+  Layer.provide(ForkMigrationsLive),
 );
 
 export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
@@ -295,15 +302,10 @@ const ForkServicesLive = Layer.mergeAll(
   layerOperationAdmission,
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
-  SitesService.layer.pipe(
-    Layer.provide(FetchHttpClient.layer),
-    Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
-  ),
-  LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
+  SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
+  layerLibraryService,
   LibraryTimeline.layer,
-  LibraryLaunchCandidates.layer.pipe(
-    Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
-  ),
+  LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService)),
   LibraryReplication.layer.pipe(
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
@@ -409,12 +411,12 @@ const ForkServicesLive = Layer.mergeAll(
         Layer.provide(
           LibraryPublisher.layer.pipe(
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+            Layer.provide(layerLibraryService),
             Layer.provide(layerLibraryAssets),
             Layer.provide(PreviewAccess.layer),
           ),
         ),
-        Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+        Layer.provide(layerLibraryService),
         Layer.provide(LibraryWorkspaceStore.layer),
       ),
     ),

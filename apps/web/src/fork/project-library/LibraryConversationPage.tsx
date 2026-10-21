@@ -177,7 +177,7 @@ export function LibraryConversationPage({
             }
             onClick={() => setContinuing(true)}
           >
-            Continue elsewhere
+            Start on another computer
           </Button>
         </div>
       </div>

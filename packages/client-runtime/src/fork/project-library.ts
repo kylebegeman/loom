@@ -202,6 +202,18 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:reopen-copy",
       tag: L.reopenCopy,
     }),
+    snapshotCopy: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:snapshot-copy",
+      tag: L.snapshotCopy,
+    }),
+    authorizeRecovery: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:authorize-recovery",
+      tag: L.authorizeRecovery,
+    }),
+    restoreCopy: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:restore-copy",
+      tag: L.restoreCopy,
+    }),
     releaseCopy: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:release-copy",
       tag: L.releaseCopy,

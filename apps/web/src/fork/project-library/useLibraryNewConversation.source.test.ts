@@ -90,6 +90,20 @@ describe("sidebar source conversation", () => {
     expect(state.copies.run).not.toHaveBeenCalled();
   });
 
+  it("preserves a source binding that selects multiple repositories", async () => {
+    state.binding.run.mockResolvedValue({
+      _tag: "Success",
+      value: { ...binding, resourceIds: ["web", "api"] },
+    });
+    await useLibraryNewConversation()(source, { inheritSettings: true });
+    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "source-project", {
+      environmentId,
+      workingCopyId: "source-files",
+      resourceIds: ["web", "api"],
+      ...launchSettings,
+    });
+  });
+
   it("preserves the regular Library form without source defaults", async () => {
     await useLibraryNewConversation()();
     expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "viewed-project");

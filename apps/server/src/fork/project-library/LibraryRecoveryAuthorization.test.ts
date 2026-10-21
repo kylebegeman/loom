@@ -7,6 +7,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentId,
+  ProjectId,
 } from "@t3tools/contracts";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Clock from "effect/Clock";
@@ -37,7 +38,7 @@ import * as Publisher from "./LibraryRecoveryPublisher.ts";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { LibraryRecoveryHttpRoutes } from "./assets/recoveryHttp.ts";
-import { copyFor, source } from "./Library.testkit.ts";
+import { copyFor, source, resource } from "./Library.testkit.ts";
 import { recoveryDescriptorDigest, recoveryGrantSubject } from "./recoveryGrant.ts";
 
 const authority = EnvironmentId.make("library");
@@ -60,11 +61,10 @@ const fixture = Effect.gen(function* () {
   const project = yield* service.createProject({
     requestId: "create",
     title: "Portable project",
-    resources: [],
+    resources: [resource],
   });
   const copy = {
     ...copyFor(project),
-    repositories: [],
     ownership: "managed" as const,
     state: "released" as const,
   };
@@ -119,6 +119,131 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   );
 
 describe("destination-authorized recovery", () => {
+  it.effect(
+    "reauthorizes the accepted snapshot after a newer snapshot replaces the catalog recovery",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const laterBytes = new TextEncoder().encode("newer snapshot B contains different files");
+          const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", laterBytes));
+          const archived = yield* f.recovery.get(source, f.copy.id, f.read.sha256);
+          const later = yield* f.recovery.put({
+            sourceEnvironmentId: source,
+            copyId: f.copy.id,
+            sha256,
+            byteLength: laterBytes.length,
+            manifest: archived.manifest,
+            body: Stream.make(laterBytes),
+          });
+          yield* f.service.registerCopy({
+            requestId: "snapshot-b",
+            copy: {
+              ...f.copy,
+              recovery: later,
+              state: "ready",
+              repositories: f.copy.repositories.map((repository) => ({
+                ...repository,
+                head: "newer-head",
+                branch: "newer-branch",
+              })),
+              updatedAt: "2100-01-01T00:00:00Z",
+            },
+          });
+          yield* TestClock.adjust("1 minute");
+          expect((yield* f.sessions.verify(f.grant.accessToken).pipe(Effect.flip))._tag).toBe(
+            "SessionTokenExpiredError",
+          );
+          const caller = {
+            ...f.caller,
+            expiresAt: DateTime.add(yield* DateTime.now, { minutes: 5 }),
+          };
+          const latest = yield* f.service.authorizeRecovery(f.request, caller);
+          expect(latest.sourceCopy.recovery?.sha256).toBe(sha256);
+          const accepted = f.grant.sourceCopy;
+          const granted = yield* f.service.authorizeRecovery(
+            { ...f.request, sourceCopy: accepted },
+            caller,
+          );
+          expect(granted.sourceCopy).toEqual(accepted);
+          expect(granted.sourceCopy.recovery?.sha256).toBe(f.read.sha256);
+          const session = yield* f.sessions.verify(granted.accessToken);
+          const recovered = yield* f.service.readRecoveryGrant(
+            { ...f.read, descriptorDigest: yield* recoveryDescriptorDigest(granted) },
+            session,
+          );
+          expect(
+            (yield* recovered.body.pipe(Stream.runCollect)).flatMap((chunk) => [...chunk]),
+          ).toEqual([...bytes]);
+        }),
+      ),
+  );
+  it.effect("rejects pinned snapshots whose copy or checkout binding was altered", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const accepted = f.grant.sourceCopy;
+        for (const change of [
+          { id: "other-copy" },
+          { environmentId: destination },
+          { projectId: "other-project" },
+          { projectRevision: accepted.projectRevision + 1 },
+          { rootPath: "/injected/root" },
+          { rootLocalProjectId: ProjectId.make("other-root") },
+          { ownership: "borrowed" as const },
+          { createdAt: "1999-01-01T00:00:00Z" },
+          { repositories: [] },
+          {
+            repositories: accepted.repositories.map((repository) => ({
+              ...repository,
+              resourceId: "other-resource",
+            })),
+          },
+          {
+            repositories: accepted.repositories.map((repository) => ({
+              ...repository,
+              path: "/injected/repo",
+            })),
+          },
+          {
+            repositories: accepted.repositories.map((repository) => ({
+              ...repository,
+              localProjectId: ProjectId.make("other-project"),
+            })),
+          },
+        ]) {
+          const result = yield* f.service
+            .authorizeRecovery({ ...f.request, sourceCopy: { ...accepted, ...change } }, f.caller)
+            .pipe(Effect.result);
+          expect(result._tag).toBe("Failure");
+          if (result._tag === "Failure") expect(result.failure.reason).toBe("blocked");
+        }
+      }),
+    ),
+  );
+  it.effect(
+    "rejects pinned archive metadata that cannot be proven by the immutable recovery receipt",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const accepted = f.grant.sourceCopy;
+          for (const change of [
+            { recovery: undefined },
+            { recovery: { ...accepted.recovery!, sha256: "0".repeat(64) } },
+            { recovery: { ...accepted.recovery!, byteLength: bytes.length + 1 } },
+            { recovery: { ...accepted.recovery!, archiveKey: "recovery/other" } },
+          ]) {
+            const result = yield* f.service
+              .authorizeRecovery({ ...f.request, sourceCopy: { ...accepted, ...change } }, f.caller)
+              .pipe(Effect.result);
+            expect(result._tag).toBe("Failure");
+            if (result._tag === "Failure")
+              expect(result.failure.reason).toBe(
+                change.recovery?.sha256 === "0".repeat(64) ? "not-found" : "archive-unverified",
+              );
+          }
+        }),
+      ),
+  );
+
   it.effect("caps recovery grants at five minutes even for longer lived callers", () =>
     run((f) =>
       Effect.gen(function* () {

@@ -1,5 +1,6 @@
 import {
   AuthLibraryPublishScope,
+  AuthLibraryRecoveryReadScope,
   AuthOrchestrationOperateScope,
   EnvironmentId,
 } from "@t3tools/contracts";
@@ -56,7 +57,9 @@ const handler = (
         session.scopes.includes(AuthLibraryPublishScope) &&
         session.subject.startsWith("loom-host:");
       if (
-        (!operator && !publisher) ||
+        (!operator &&
+          !publisher &&
+          !(operation === "info" && session.scopes.includes(AuthLibraryRecoveryReadScope))) ||
         session.subject === "mcp-client" ||
         ((operation === "import" || operation === "verify") && !operator) ||
         // A forwarded proposal names its conversation's computer by the session that sent it.
