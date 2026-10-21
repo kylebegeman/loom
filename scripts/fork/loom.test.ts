@@ -3,6 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeVM from "node:vm";
 
 import { afterEach, expect, it } from "@effect/vitest";
 
@@ -451,4 +452,55 @@ it("does not fabricate a rollback revision when legacy metadata has no commit", 
   const output = run(f, "cmd_rollback");
   expect(output).toContain("The previous build has no recorded source commit");
   expect(output).not.toContain("git reset --hard");
+});
+
+function runningAppState(
+  apps: ReadonlyArray<{ readonly bundleURL: { readonly path: string } | null }>,
+) {
+  return NodeVM.runInNewContext(
+    NodeFS.readFileSync(NodePath.join(import.meta.dirname, "running-apps.js"), "utf8") +
+      "\nrun(paths)",
+    {
+      ObjC: { import: () => {}, unwrap: (value: string) => value },
+      $: {
+        NSWorkspace: {
+          sharedWorkspace: {
+            runningApplications: {
+              count: apps.length,
+              objectAtIndex: (index: number) => apps[index],
+            },
+          },
+        },
+      },
+      paths: ["/Applications/Loom.app", "/Applications/T3 Code (Alpha).app"],
+    },
+  );
+}
+
+it.each(["/Applications/Loom.app", "/Applications/T3 Code (Alpha).app"])(
+  "waits for the registered desktop app at %s",
+  (path) => {
+    expect(runningAppState([{ bundleURL: { path } }])).toBe("running");
+  },
+);
+
+it("does not treat helper processes or a different installation as the desktop app", () => {
+  expect(
+    runningAppState([
+      { bundleURL: null },
+      { bundleURL: { path: "/Users/kyle/other/Loom.app" } },
+      { bundleURL: { path: "/Applications/Loom.app.old" } },
+    ]),
+  ).toBe("stopped");
+});
+
+it("refuses installation when application discovery fails", () => {
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    ["-c", 'source "$LOOM_TEST_SCRIPT"; osascript() { return 1; }; app_running; echo unsafe'],
+    { encoding: "utf8", env: { ...process.env, LOOM_TEST_SCRIPT: script } },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stdout).not.toContain("unsafe");
+  expect(result.stderr).toContain("could not determine whether the desktop app is running");
 });
