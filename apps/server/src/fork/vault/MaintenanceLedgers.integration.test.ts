@@ -22,6 +22,7 @@ import { syntheticCleanupBarrier } from "./testkit/SyntheticCleanupBarrier.ts";
 const origin = process.env.LOOM_VAULT_TEST_JOURNAL_URL;
 const tokenFile = process.env.LOOM_VAULT_TEST_JOURNAL_TOKEN_FILE;
 const configured = Boolean(origin && tokenFile);
+const deleted = process.env.LOOM_VAULT_TEST_MAINTENANCE_DELETED === "1";
 const restarted = process.env.LOOM_VAULT_TEST_JOURNAL_RESTART === "1";
 if (configured && new URL(origin!).hostname !== "127.0.0.1")
   throw new Error("Maintenance proof requires disposable loopback OpenBao");
@@ -79,7 +80,7 @@ const prepared: LifecycleLedger.LifecycleRecord = {
   receiptDigest: null,
 };
 
-it.live.skipIf(!configured)(
+it.live.skipIf(!configured || deleted)(
   "persists independent maintenance records using only profiles/* and keeps format-3 approvals readable",
   () =>
     Effect.gen(function* () {
@@ -156,5 +157,16 @@ it.live.skipIf(!configured)(
         automaticResumption: false,
         allowOnceConsumption: false,
       });
+    }).pipe(Effect.provide(layers)),
+);
+
+it.live.skipIf(!configured || !deleted)(
+  "refuses soft-deleted maintenance records rather than reporting revision zero",
+  () =>
+    Effect.gen(function* () {
+      const cleanup = yield* CleanupLedger.CleanupLedger;
+      const lifecycle = yield* LifecycleLedger.CredentialLifecycleLedger;
+      expect((yield* cleanup.read.pipe(Effect.flip)).reason).toBe("invalid-response");
+      expect((yield* lifecycle.read.pipe(Effect.flip)).reason).toBe("invalid-response");
     }).pipe(Effect.provide(layers)),
 );

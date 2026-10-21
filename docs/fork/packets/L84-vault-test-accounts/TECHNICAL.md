@@ -490,7 +490,11 @@ identity. Corrupt, future-version, foreign-environment, duplicate or orphaned ev
 missing storage creates no clean state. Enrollment always begins quarantined. CAS protects each
 transition and preserves replay sets and resource bindings. No authority or provider receipt is
 inferred from the storage layer; a future runtime caller must still authorize and verify the
-actual provider evidence. There is no public surface or live controller worker.
+actual provider evidence. A real provider must itself enforce the one-start-per-generation
+and reset-generation rules proved by the synthetic provider. A deleted-version 404 refuses;
+fully purged metadata remains indistinguishable from never-created storage and requires the
+host-owner deletion/rollback barrier and independent provider evidence. There is no public
+surface or live controller worker.
 
 The bounds remain 32 resources, 128 start/lease identities and 160 reset identities. No unresolved
 state or replay history ages out. This intentionally differs from the approval inbox's 24-hour

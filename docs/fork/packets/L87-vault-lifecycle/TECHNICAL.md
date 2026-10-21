@@ -90,3 +90,9 @@ provider fencing/replay guarantees and a host rollback barrier. This initial led
 does not infer safety from queue age. Older runtimes ignore the separate record; no live workflow
 may be enabled under a reader that ignores it. Real issuer integration, overlapping credentials,
 consumer validation and cutover, review/repair UI, complete audit and production rollout remain.
+
+A KV v2 data-read 404 carrying version metadata (soft deletion or destruction) refuses instead
+of becoming revision zero. This uses the existing data-read permission, without metadata-read
+rights. Complete metadata erasure can look identical to never-created storage; only the
+host-owner rollback/deletion barrier and independently retained provider generations can
+prevent replay after that loss. Storage validation cannot establish those guarantees.
