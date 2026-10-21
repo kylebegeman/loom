@@ -1352,7 +1352,15 @@ const make = Effect.gen(function* () {
         !intent ||
         intent.state !== "reviewed" ||
         intent.revision !== input.expectedIntentRevision ||
-        intent.binding.threadId !== requester
+        intent.binding.threadId !== requester ||
+        // Reviews of one item can coexist, so a reservation must recheck that no other intent for
+        // the item is in flight or awaiting reconciliation. intentWrite CASes this policy version.
+        policy.intents.some(
+          (entry) =>
+            entry.id !== intent.id &&
+            entry.binding.itemId === intent.binding.itemId &&
+            (entry.state === "reserved" || entry.state === "unknown"),
+        )
       )
         return yield* new VaultError({ reason: "conflict" });
       const prepared = yield* intentBinding(policy, input);

@@ -613,7 +613,11 @@ Only an already-format-4 policy can enroll a mode or tighten ordinary access to 
 protection cannot be removed. All policy writers preserve format-4 fields. The evaluator and
 raw credential reveal refuse unclassified or protected credential-bearing actions, including
 administrator probes, signing/reusable sessions, typed adapters and delegation. Metadata
-inspection remains governed by its existing grants.
+grants are unchanged, but the SSH and GitHub adapters still read metadata by decoding the stored
+item through raw reveal. Under format 4, `ssh.info`, SSH inspect, `trust`, an idempotent
+`generate` replay, `github.info` and any profile preview or resolve that binds such an item
+therefore refuse for protected or unclassified items. This fails closed. A metadata-only reader
+must replace those reveal calls before an environment migrates.
 
 Internal intent preview/review/reservation bind server-computed canonical digests to current
 request, grant revision, item, classification and run. Review requires an authenticated

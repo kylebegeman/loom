@@ -496,6 +496,101 @@ it.effect("revokes review, retains uncertain reservations and never refunds aged
     }),
   ),
 );
+it.effect("refuses a second reservation of one item while another is reserved or unknown", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* journalFixture;
+      // A second approved request for the same item, made before protection is installed.
+      const otherRequest = yield* f.id;
+      yield* f.access.approvalCreate(
+        {
+          id: otherRequest,
+          threadId: f.threadId,
+          itemId: f.itemId,
+          action: "use",
+          destination: f.key.destination,
+        },
+        `thread:${f.threadId}`,
+        Effect.void,
+      );
+      yield* f.access.approvalChange(
+        {
+          ...f.decision,
+          id: otherRequest,
+          operationId: yield* f.id,
+          expectedPolicyRevision: (yield* f.access.snapshot).revision,
+        },
+        "human",
+        Effect.void,
+      );
+      const path = [...f.records.keys()].find((key) => key.endsWith("/access-policy"))!;
+      const preview = yield* f.access.protectionMigrationPreview(
+        {
+          expectedPolicyRevision: (yield* f.access.snapshot).revision,
+          selections: [{ itemId: f.itemId, itemVersion: 1, mode: "one-time" }],
+        },
+        "human",
+        Effect.void,
+      );
+      f.records.set(path, {
+        value: Redacted.make(preview.proposal),
+        version: f.records.get(path)!.version + 1,
+      });
+      const raw = () => decodeProtected(Redacted.value(f.records.get(path)!.value));
+      const reviewAndPrepare = (requestId: string, waitingOperationId: string) =>
+        Effect.gen(function* () {
+          const proposal: AccessPolicy.IntentProposal = {
+            requestId,
+            expectedRequestRevision: 2,
+            waitingOperationId,
+            operation: f.input.operation,
+          };
+          const previewed = yield* f.access.intentPreview(proposal, "human", Effect.void);
+          const id = yield* f.id;
+          const reviewed = yield* f.access.intentReview(
+            {
+              ...proposal,
+              id,
+              expectedPolicyRevision: previewed.policyRevision,
+              reviewedDigest: previewed.binding.operationDigest,
+              expiresAt: previewed.expiresNoLaterThan,
+            },
+            "human",
+            Effect.void,
+          );
+          return () => ({
+            ...proposal,
+            id,
+            expectedIntentRevision: reviewed.intent.revision,
+            expectedPolicyRevision: raw().revision,
+          });
+        });
+      const first = yield* reviewAndPrepare(f.input.id, f.input.waitingOperationId);
+      const second = yield* reviewAndPrepare(otherRequest, otherRequest);
+      const reserved = yield* f.access.intentReserve(first(), f.threadId, Effect.void);
+      const afterReserve = f.records.get(path);
+      expect(
+        (yield* f.access.intentReserve(second(), f.threadId, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect(f.records.get(path)).toEqual(afterReserve);
+      yield* f.access.intentClose(
+        {
+          id: reserved.intent.id,
+          expectedIntentRevision: reserved.intent.revision,
+          expectedPolicyRevision: raw().revision,
+        },
+        "human",
+        Effect.void,
+      );
+      const afterUnknown = f.records.get(path);
+      expect(raw().intents.find((entry) => entry.id === reserved.intent.id)?.state).toBe("unknown");
+      expect(
+        (yield* f.access.intentReserve(second(), f.threadId, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect(f.records.get(path)).toEqual(afterUnknown);
+    }),
+  ),
+);
 it.effect("expires an unused review without persisting or recreating an opportunity", () =>
   run(
     Effect.gen(function* () {
