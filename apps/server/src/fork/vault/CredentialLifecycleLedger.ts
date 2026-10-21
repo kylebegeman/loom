@@ -16,6 +16,11 @@ const Counter = Schema.Int.check(
 const PositiveCounter = Counter.check(Schema.isGreaterThan(0));
 const Digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
 const Reference = Schema.Struct({ itemId: VaultItemId, version: PositiveCounter });
+const Receipt = Schema.Struct({
+  phase: Schema.Literals(["issued", "validated", "revoked", "reconciled", "legacy"]),
+  digest: Digest,
+  at: Counter,
+});
 const Record = Schema.Struct({
   id: VaultItemId,
   itemId: VaultItemId,
@@ -40,11 +45,19 @@ const Record = Schema.Struct({
   ]),
   credential: Schema.NullOr(Reference),
   receiptDigest: Schema.NullOr(Digest),
+  receiptHistory: Schema.optionalKey(Schema.Array(Receipt).check(Schema.isMaxLength(8))),
 }).check(
   Schema.makeFilter(
     (entry) =>
       entry.expiresAt > entry.createdAt &&
       entry.updatedAt >= entry.createdAt &&
+      (entry.receiptHistory === undefined ||
+        (entry.receiptHistory.every(
+          (receipt) => receipt.at >= entry.createdAt && receipt.at <= entry.updatedAt,
+        ) &&
+          (entry.receiptDigest === null
+            ? entry.receiptHistory.length === 0
+            : entry.receiptHistory.at(-1)?.digest === entry.receiptDigest))) &&
       (entry.phase === "prepared" || entry.phase === "issuing" || entry.phase === "cancelled"
         ? entry.credential === null && entry.receiptDigest === null
         : entry.phase === "unknown"
@@ -86,6 +99,13 @@ const immutable = (entry: LifecycleRecord) =>
     entry.createdAt,
     entry.expiresAt,
   ]);
+// A pre-history record can preserve only its last surviving digest. Do not invent lost receipts.
+const receipts = (entry: LifecycleRecord | undefined): ReadonlyArray<typeof Receipt.Type> =>
+  entry?.receiptHistory ??
+  (entry?.receiptDigest
+    ? [{ phase: "legacy", digest: entry.receiptDigest, at: entry.updatedAt }]
+    : []);
+const sameReceipts = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const reference = (entry: LifecycleRecord) => JSON.stringify(entry.credential);
 const terminal = (entry: LifecycleRecord) =>
   entry.phase === "revoked" || entry.phase === "cancelled";
@@ -139,6 +159,12 @@ const validTransition = (current: LifecycleState, next: LifecycleState, now: num
       return false;
     // A receipt can attach a reference only once, after issuance; later changes cannot redirect cleanup.
     if (old.credential && reference(old) !== reference(entry)) return false;
+    if (
+      old.receiptDigest !== null &&
+      (entry.receiptDigest === null ||
+        (entry.phase === "unknown" && entry.receiptDigest !== old.receiptDigest))
+    )
+      return false;
     if (
       entry.phase === "revoking" &&
       old.receiptDigest !== null &&
@@ -197,6 +223,14 @@ export const layer = Layer.effect(
           return yield* new VaultError({ reason: "conflict" });
         const updatedAt = yield* Clock.currentTimeMillis;
         if (updatedAt < current.updatedAt) return yield* new VaultError({ reason: "unavailable" });
+        for (const entry of next.entries) {
+          const old = current.state.entries.find((candidate) => candidate.id === entry.id);
+          if (
+            entry.receiptHistory !== undefined &&
+            !sameReceipts(entry.receiptHistory, receipts(old))
+          )
+            return yield* new VaultError({ reason: "invalid-input" });
+        }
         const value = yield* decode({
           schemaVersion: 1,
           environmentId,
@@ -210,6 +244,22 @@ export const layer = Layer.effect(
                   ...entry,
                   createdAt: old ? entry.createdAt : updatedAt,
                   updatedAt,
+                  receiptHistory:
+                    entry.receiptDigest !== null && entry.receiptDigest !== old?.receiptDigest
+                      ? [
+                          ...receipts(old),
+                          {
+                            phase:
+                              entry.phase === "issued" ||
+                              entry.phase === "validated" ||
+                              entry.phase === "revoked"
+                                ? entry.phase
+                                : "reconciled",
+                            digest: entry.receiptDigest,
+                            at: updatedAt,
+                          },
+                        ]
+                      : receipts(old),
                 };
           }),
         }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));

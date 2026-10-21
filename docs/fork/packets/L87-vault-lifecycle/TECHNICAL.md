@@ -70,12 +70,19 @@ and eventual mandatory one-time enforcement remain independent requirements.
 Issuing intent precedes any possible external mint. Lost acknowledgement leaves the durable
 phase visible after restart; it cannot be reset to prepared. Issued references cannot redirect
 later cleanup, and validation cannot replace the reviewed consumer digest. Expiry blocks new
-new issuance/validation but permits recording a late acknowledgement of an already-dispatched
+issuance and validation but permits recording a late acknowledgement of an already-dispatched
 mint and revocation maintenance. An issuing or unknown record can move directly to revoking
-once reconciliation identifies the exact credential reference and receipt; it cannot remint. An unresolved issuing/revoking/unknown
-record blocks overlapping generations for that item. Unknown blocks issuance; a verified reconciliation may enter revocation, while a separately
-verified recovery procedure exists; absence, timeout or restart never remints. Cancellation is
-available only before issuing, and cannot resurrect revoked material.
+once verified reconciliation identifies the exact credential reference and receipt; it cannot
+remint. Unresolved issuing, revoking or unknown records block overlapping generations.
+Absence, timeout or restart never remints. Cancellation is available only before issuing and
+cannot resurrect revoked material.
+
+The latest receipt digest remains visible, with up to eight acknowledged receipt events retained
+alongside it. The ledger appends that history itself; callers cannot replace or truncate earlier
+evidence. Unknown preserves every acknowledged digest, and later validation/revocation never
+erases issuance evidence. Capacity refuses rather than evicting. Older internal records without
+history retain their last surviving digest as `legacy` evidence when next updated; missing earlier
+receipts cannot be reconstructed. These records are still gated and have no production rollout.
 
 All 128 records, including terminal receipts and per-item generation history, are retained;
 capacity refuses rather than evicts spent issuance IDs. A future reclamation scheme requires

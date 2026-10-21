@@ -313,3 +313,92 @@ it.effect.each(["issuing", "unknown"] as const)(
       yield* f.advance("revoked", { receiptDigest: "2".repeat(64) });
     }),
 );
+
+it.effect(
+  "preserves every acknowledged receipt through validation, uncertainty and revocation",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.add();
+      yield* f.advance("issuing");
+      yield* f.advance("issued", issued);
+      yield* f.advance("validated", { receiptDigest: "2".repeat(64) });
+      yield* f.advance("unknown");
+      yield* f.advance("revoking");
+      yield* f.advance("revoked", { receiptDigest: "3".repeat(64) });
+      expect((yield* (yield* f.rebuild).read).entries[0]).toMatchObject({
+        receiptDigest: "3".repeat(64),
+        receiptHistory: [
+          { phase: "issued", digest: "1".repeat(64) },
+          { phase: "validated", digest: "2".repeat(64) },
+          { phase: "revoked", digest: "3".repeat(64) },
+        ],
+      });
+    }),
+);
+it.effect.each(["issued", "validated", "revoking"] as const)(
+  "cannot erase an acknowledged receipt when %s becomes unknown",
+  (phase) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.add();
+      yield* f.advance("issuing");
+      yield* f.advance("issued", issued);
+      if (phase === "validated") yield* f.advance("validated", { receiptDigest: "2".repeat(64) });
+      if (phase === "revoking") yield* f.advance("revoking");
+      const before = f.raw();
+      expect((yield* f.advance("unknown", { receiptDigest: null }).pipe(Effect.flip)).reason).toBe(
+        "invalid-input",
+      );
+      expect(f.raw()).toEqual(before);
+    }),
+);
+
+it.effect("refuses replacing receipt history and preserves surviving legacy evidence", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.add();
+    yield* f.advance("issuing");
+    yield* f.advance("issued", issued);
+    const before = f.raw();
+    expect(
+      (yield* f
+        .advance("validated", { receiptDigest: "2".repeat(64), receiptHistory: [] })
+        .pipe(Effect.flip)).reason,
+    ).toBe("invalid-input");
+    expect(f.raw()).toEqual(before);
+    f.replace((value) => {
+      delete (value.entries as Array<Record<string, unknown>>)[0]!.receiptHistory;
+    });
+    yield* f.advance("validated", { receiptDigest: "2".repeat(64) });
+    expect((yield* f.ledger.read).entries[0]).toMatchObject({
+      receiptHistory: [
+        { phase: "legacy", digest: "1".repeat(64) },
+        { phase: "validated", digest: "2".repeat(64) },
+      ],
+    });
+  }),
+);
+it.effect("refuses receipt history overflow without discarding older evidence", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.add();
+    yield* f.advance("issuing");
+    yield* f.advance("issued", issued);
+    f.replace((value) => {
+      (value.entries as Array<Record<string, unknown>>)[0]!.receiptHistory = Array.from(
+        { length: 8 },
+        (_, index) => ({
+          phase: "legacy",
+          at: 0,
+          digest: index === 7 ? issued.receiptDigest : (index + 2).toString(16).padStart(64, "0"),
+        }),
+      );
+    });
+    const before = f.raw();
+    expect(
+      (yield* f.advance("validated", { receiptDigest: "2".repeat(64) }).pipe(Effect.flip)).reason,
+    ).toBe("invalid-input");
+    expect(f.raw()).toEqual(before);
+  }),
+);
