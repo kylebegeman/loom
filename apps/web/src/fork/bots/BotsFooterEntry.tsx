@@ -11,7 +11,7 @@ const footerLabel = (count: number) =>
 function FooterIcon({ count }: { readonly count: number }) {
   return (
     <>
-      <BotIcon />
+      <BotIcon className="size-4" />
       {count === 0 ? null : (
         <span
           aria-hidden
