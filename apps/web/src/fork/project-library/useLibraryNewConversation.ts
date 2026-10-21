@@ -94,6 +94,8 @@ export function useLibraryNewConversation() {
     }
     if (!authority.authorityId) return false;
     const sourceShell = options?.inheritSettings ? readThreadShell(thread) : null;
+    // The project form cannot select an explicit branch; reuse that checkout and its lane.
+    if (sourceShell?.branch) return false;
     const launchDefaults = sourceShell
       ? {
           modelSelection: sourceShell.modelSelection,

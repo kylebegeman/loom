@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import { ProjectLifecycleError, type ProjectLifecycleStatus } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -26,6 +27,7 @@ import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as ThreadSettlement from "../../orchestration-v2/ThreadSettlementService.ts";
 import {
   ThreadManagementService,
   type ThreadManagementSendInput,
@@ -137,6 +139,7 @@ const setupWith = (
   options: {
     readonly devUrl?: URL;
     readonly wrapSpaces?: ProjectLifecycleOptions["wrapSpaces"];
+    readonly prepareForCleanup?: (threadId: ThreadId) => Effect.Effect<boolean>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -229,6 +232,12 @@ const setupWith = (
       Effect.provideService(ThreadManagementService, threadManagement),
       Effect.provideService(ProjectStore.ProjectStoreV2, projects),
       Effect.provideService(DeviceService, devices),
+      Effect.provideService(
+        ThreadSettlement.ThreadSettlementServiceV2,
+        partial<ThreadSettlement.ThreadSettlementServiceV2["Service"]>({
+          prepareForCleanup: options.prepareForCleanup ?? (() => Effect.succeed(true)),
+        }),
+      ),
     );
     const service = yield* create;
     yield* service.updateSettings({ ...(yield* service.getSettings), reserveGb: 0 });
@@ -256,6 +265,52 @@ const laneOf = (status: ProjectLifecycleStatus, checkoutPath: string) =>
   status.lanes.find((lane) => lane.checkoutPath === checkoutPath);
 
 describe("ProjectLifecycleService", () => {
+  it.live.each([false, true])(
+    "awaits settlement before releasing a lane (reengaged: %s)",
+    (reengaged) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const completed = yield* Deferred.make<void>();
+        const t = yield* setupWith({
+          prepareForCleanup: () =>
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Deferred.await(completed)),
+              Effect.as(true),
+            ),
+        });
+        t.threads.push(thread("settling", { worktreePath: t.worktree }));
+        const lane = yield* t.service.ensureForThread(ThreadId.make("settling"));
+        NodeFS.writeFileSync(`${lane.laneDir}/space/build/settle-input`, "needed by settle hook");
+        t.threads[0] = thread("settling", { worktreePath: t.worktree, settledOverride: "settled" });
+        const cleanup = yield* t.service.tick().pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.raceFirst(
+          Deferred.await(entered),
+          Fiber.join(cleanup).pipe(
+            Effect.andThen(Effect.die("Lane cleanup did not await settlement")),
+          ),
+        );
+        expect(NodeFS.readFileSync(`${lane.laneDir}/space/build/settle-input`, "utf8")).toBe(
+          "needed by settle hook",
+        );
+        if (reengaged) t.threads[0] = thread("settling", { worktreePath: t.worktree });
+        yield* Deferred.succeed(completed, undefined);
+        yield* Fiber.join(cleanup);
+        expect(NodeFS.existsSync(lane.laneDir)).toBe(reengaged);
+        expect(NodeFS.existsSync(t.worktree)).toBe(true);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("preserves a lane when its settlement preparation fails", () =>
+    Effect.gen(function* () {
+      const t = yield* setupWith({ prepareForCleanup: () => Effect.succeed(false) });
+      t.threads.push(thread("settling", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("settling"));
+      t.threads[0] = thread("settling", { worktreePath: t.worktree, settledOverride: "settled" });
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("gives each checkout one lane under the lanes folder and removes it once released", () =>
     Effect.gen(function* () {
       const t = yield* setup;
@@ -295,6 +350,91 @@ describe("ProjectLifecycleService", () => {
       expect(NodeFS.existsSync(feature.laneDir)).toBe(false);
       expect(NodeFS.existsSync(t.worktree)).toBe(true);
       expect(NodeFS.readFileSync(`${lanes}/.loom/lanes.tsv`, "utf8")).not.toContain(t.worktree);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("preserves shared checkout process leases until the last holder settles", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("first"), thread("second", { activeRunId: RunId.make("working") }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("first"));
+      const child = NodeChildProcess.spawn("/bin/sleep", ["60"], {
+        cwd: t.checkout,
+        stdio: "ignore",
+      });
+      const pid = child.pid!;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (alive(pid)) process.kill(pid, "SIGKILL");
+        }),
+      );
+      yield* t.service.adoptLease(lane.id, "process", String(pid), "shared server");
+
+      t.threads[0] = thread("first", { settledOverride: "settled" });
+      const shared = yield* t.service.tick();
+      expect(laneOf(shared, t.checkout)?.threadIds).toEqual(["second"]);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+      expect(alive(pid)).toBe(true);
+
+      t.threads[1] = thread("second", { settledOverride: "settled" });
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+      expect(alive(pid)).toBe(false);
+      expect(NodeFS.existsSync(t.checkout)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("prepares a lane only after a released checkout has been restored", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("resuming", { activeRunId: RunId.make("resume-run") }));
+      NodeFS.rmSync(t.checkout, { recursive: true });
+      const failure = yield* t.service.ensureForThread(ThreadId.make("resuming")).pipe(Effect.flip);
+      expect(failure.reason).toBe("command-failed");
+      expect(failure.message).toContain("ENOENT");
+      expect(yield* t.store.listLanes()).toEqual([]);
+
+      NodeFS.mkdirSync(t.checkout);
+      NodeFS.writeFileSync(`${t.checkout}/retained.txt`, "restored work");
+      const lane = yield* t.service.ensureForThread(ThreadId.make("resuming"));
+      expect(lane.checkoutPath).toBe(t.checkout);
+      expect(NodeFS.existsSync(`${lane.laneDir}/space/tmp`)).toBe(true);
+      expect(NodeFS.readFileSync(`${t.checkout}/retained.txt`, "utf8")).toBe("restored work");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("blocks startup on failed lane shims and repairs them before retrying", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("setup-shims", { activeRunId: RunId.make("setup-run") }));
+      const shims = `${(yield* t.service.getSettings).lanesRoot}/.loom/shims`;
+      NodeFS.rmSync(shims, { recursive: true });
+      NodeFS.writeFileSync(shims, "blocked");
+      const failure = yield* t.service
+        .ensureForThread(ThreadId.make("setup-shims"))
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("command-failed");
+      NodeFS.unlinkSync(shims);
+      const lane = yield* t.service.ensureForThread(ThreadId.make("setup-shims"));
+      expect((yield* t.store.listLanes()).map((row) => row.id)).toEqual([lane.id]);
+      expect(NodeFS.existsSync(`${shims}/xcodebuild`)).toBe(true);
+      expect(NodeFS.existsSync(`${shims}/lane-slot`)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("prepares the setup checkout before the thread's worktree is restored", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(
+        thread("setup-root", { worktreePath: t.worktree, activeRunId: RunId.make("setup-run") }),
+      );
+      NodeFS.rmSync(t.worktree, { recursive: true });
+      const lane = yield* t.service.ensureForThread(ThreadId.make("setup-root"), t.checkout);
+      expect(lane.checkoutPath).toBe(t.checkout);
+      expect(NodeFS.existsSync(`${lane.laneDir}/space/build`)).toBe(true);
+      expect(
+        NodeFS.readFileSync(`${(yield* t.service.getSettings).lanesRoot}/.loom/lanes.tsv`, "utf8"),
+      ).toContain(t.checkout);
     }).pipe(Effect.scoped),
   );
 
@@ -415,7 +555,7 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("creates lanes when runs start and reclaims them when threads settle", () =>
+  it.live("reclaims prepared lanes when threads settle", () =>
     Effect.gen(function* () {
       const t = yield* setup;
       yield* t.service.start();
@@ -425,10 +565,8 @@ describe("ProjectLifecycleService", () => {
       t.threads.push(thread("worker", { activeRunId: RunId.make("run-1") }));
       const created = yield* Effect.forkChild(settledStatus((status) => status.lanes.length === 1));
       yield* Effect.yieldNow;
-      yield* PubSub.publish(t.events, {
-        type: "run.created",
-        payload: { threadId: ThreadId.make("worker") },
-      } as OrchestrationV2DomainEvent);
+      yield* t.service.ensureForThread(ThreadId.make("worker"));
+      yield* t.service.tick();
       yield* Fiber.join(created);
 
       t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });

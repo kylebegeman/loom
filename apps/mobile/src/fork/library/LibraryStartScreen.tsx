@@ -9,6 +9,7 @@ import {
 import {
   libraryContinuationContext,
   libraryLaunchChoice,
+  libraryLaunchDefaults,
   libraryLaunchWarning,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
@@ -25,7 +26,6 @@ import {
   AuthSourceControlWriteScope,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  DEFAULT_RUNTIME_MODE,
   EnvironmentId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -637,7 +637,10 @@ function LibraryStartContent(props: {
                   projectId: localProjectId,
                   title: review.title,
                   modelSelection: review.model.selection,
-                  runtimeMode: config?.settings.defaultRuntimeMode ?? DEFAULT_RUNTIME_MODE,
+                  runtimeMode: libraryLaunchDefaults({
+                    settings: config?.settings,
+                    localProjectId,
+                  }).runtimeMode,
                   interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
                   branch: null,
                   worktreePath: null,

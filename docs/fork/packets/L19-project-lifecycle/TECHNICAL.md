@@ -61,14 +61,20 @@ integrate with existing server services; [SEAMS.md](./SEAMS.md) records the merg
 
 ### Lane lifecycle
 
-- **Ensure**: on `run.created`, resolve the thread's checkout from its shell and project.
-  If no lane exists for it, create the lane directory, the space (image created at the cap,
-  attached at `space/`, `.metadata_never_index` at its root, `tmp`, `build`, `data`
-  created), write `LANE.md`, store the row and rewrite the index. Creation runs in the
-  background and never delays the run. One lock serializes lane changes; they are short
-  except for image resize.
+- **Ensure**: provider startup restores project and Library working files before ensuring the
+  checkout's lane. When lanes are enabled, startup awaits creation or reattachment before opening
+  the provider session; failure follows the workspace-preparation failure path. A released Library
+  checkout is absent when `run.created` commits, so an event observer cannot prepare it reliably.
+  If no lane exists, create the lane directory and space (image created at the cap, attached at
+  `space/`, `.metadata_never_index` at its root, `tmp`, `build`, `data` created), write `LANE.md`,
+  store the row and rewrite the index. One lock serializes lane changes; they are short except for
+  image resize. Disabled lanes do not delay or block startup.
 - **Reclaim**: on `thread.settled`, `thread.archived` and `thread.deleted`, and in the
-  startup reconcile, a lane with no active holder is detached and its directory removed. A
+  startup reconcile, a lane with no active holder is detached and its directory removed.
+  Reclamation awaits the settlement service's finish action before taking the checkout lease
+  and rechecking holders under the lane mutation lock. This also covers a watchdog sweep that
+  arrives before the settlement event listener. A failed finish action preserves its lane;
+  resuming and settling again permits another attempt. A
   holder is a thread whose checkout is the lane's and which is neither archived nor settled
   (`settledOverride === "settled"`, or `settledAt` set without an `active` override). The
   lane service never removes the checkout itself; storage cleanup applies its separate

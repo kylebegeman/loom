@@ -210,12 +210,15 @@ export function useThreadActionMenu(input: {
           return;
         }
         case "new-thread-on-branch": {
+          // The Library form chooses files afresh and cannot preserve an explicit branch.
           const result = await settlePromise(() =>
             handleNewThread(scopeProjectRef(threadRef.environmentId, thread.projectId), {
               branch: thread.branch,
               worktreePath: thread.worktreePath,
               envMode: thread.worktreePath ? "worktree" : "local",
               startFromOrigin: false,
+              environmentSelection: "manual",
+              sourceSettings: thread,
             }),
           );
           if (result._tag === "Failure") {

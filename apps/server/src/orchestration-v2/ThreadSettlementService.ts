@@ -220,6 +220,8 @@ export class ThreadSettlementServiceV2 extends Context.Service<
   {
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
+    /** Await settle actions before releasing their working resources. False preserves them for retry. */
+    readonly prepareForCleanup: (threadId: ThreadId) => Effect.Effect<boolean>;
   }
 >()("t3/orchestration-v2/ThreadSettlementService/ThreadSettlementServiceV2") {}
 
@@ -277,7 +279,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   // Settling a settled thread re-emits thread.settled with the same settledAt,
   // so this keeps the settle action to one run per settlement.
-  const settleActionRunAt = new Map<ThreadId, number>();
+  const settleActionResults = new Map<ThreadId, { readonly at: number; readonly ready: boolean }>();
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
@@ -525,14 +527,14 @@ export const make = Effect.gen(function* () {
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
-      if (settled.settledOverride !== "settled") return;
+      if (settled.settledOverride !== "settled") return true;
       yield* terminals.closeIdle({ threadId });
       const worktreePath = settled.worktreePath;
-      if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
+      if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return true;
       // Closing and the worktree check wait on I/O. A thread re-engaged
       // meanwhile is working again, so its worktree is no place for cleanup.
       const thread = yield* projections.getThread(threadId);
-      if (thread.settledOverride !== "settled") return;
+      if (thread.settledOverride !== "settled") return true;
       // fork: project-lifecycle -- another unsettled thread in this worktree keeps it.
       const active = yield* projections.getShellSnapshot();
       const archived = yield* projections.getShellSnapshot({ location: "archive" });
@@ -545,9 +547,11 @@ export const make = Effect.gen(function* () {
             holder.settledOverride !== "settled",
         )
       )
-        return;
+        return true;
       const settledAtMs = toMillis(thread.settledAt);
-      if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
+      if (settledAtMs === null) return true;
+      const previous = settleActionResults.get(threadId);
+      if (previous?.at === settledAtMs) return previous.ready;
       const run = yield* projectScripts.runForThread({
         threadId,
         projectId: thread.projectId,
@@ -556,26 +560,27 @@ export const make = Effect.gen(function* () {
         workspaceLeaseHeld: true, // fork: project-lifecycle
         observeCompletion: {},
       });
-      settleActionRunAt.set(threadId, settledAtMs);
-      if (run.status === "started" && run.completion) {
-        yield* run.completion; // fork: project-lifecycle
-      }
+      const ready =
+        run.status !== "started" ||
+        (run.completion !== undefined && (yield* run.completion).exitCode === 0);
+      settleActionResults.set(threadId, { at: settledAtMs, ready });
+      return ready;
     },
     (effect, threadId) =>
       // fork: project-lifecycle
       Effect.gen(function* () {
         const thread = yield* projections.getThread(threadId);
         if (thread.worktreePath === null) return yield* effect;
-        yield* withWorkspaceLease(path.resolve(thread.worktreePath), effect);
+        return yield* withWorkspaceLease(path.resolve(thread.worktreePath), effect);
       }).pipe(
-        Effect.andThen(cleanup.requestSweep),
+        Effect.tap((ready) => (ready ? cleanup.requestSweep : Effect.void)),
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
-            ? Effect.failCause(cause)
+            ? Effect.interrupt
             : Effect.logWarning("cleaning up a settled thread failed", {
                 threadId,
                 cause: Cause.pretty(cause),
-              }),
+              }).pipe(Effect.as(false)),
         ),
       ),
   );
@@ -590,9 +595,10 @@ export const make = Effect.gen(function* () {
     switch (event.type) {
       case "thread.settled":
         // fork: project-lifecycle
-        return FiberSet.run(settlementTasks, cleanUpSettledThread(event.threadId)).pipe(
-          Effect.asVoid,
-        );
+        return FiberSet.run(
+          settlementTasks,
+          cleanUpSettledThread(event.threadId).pipe(Effect.asVoid),
+        ).pipe(Effect.asVoid);
       case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "provider-session.detached":
@@ -648,6 +654,7 @@ export const make = Effect.gen(function* () {
 
   return {
     start,
+    prepareForCleanup: cleanUpSettledThread,
     drain: worker.drain.pipe(Effect.andThen(FiberSet.awaitEmpty(settlementTasks))), // fork: project-lifecycle
   } satisfies ThreadSettlementServiceV2["Service"];
 });

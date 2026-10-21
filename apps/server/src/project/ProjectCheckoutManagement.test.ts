@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { ProjectCheckoutManagementError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,6 +21,7 @@ import {
   resolveManagedProjectRetention,
 } from "../workspace/ManagedProjectCheckout.ts";
 import * as ProjectCheckoutManagement from "./ProjectCheckoutManagement.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const projectId = ProjectId.make("existing-project");
@@ -111,6 +112,10 @@ const fixture = Effect.gen(function* () {
     service,
     preview,
     adopt,
+    libraryStore: yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
+      Effect.provide(LibraryWorkspaceStore.layer),
+      Effect.provideService(ServerConfig.ServerConfig, configuration),
+    ),
     sweepCount: () => sweeps,
     setEnvironmentPaths: (input: Partial<ServerConfig.ServerConfig["Service"]>) => {
       Object.assign(configuration, input);
@@ -126,7 +131,140 @@ const fixture = Effect.gen(function* () {
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
+const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceipt => ({
+  requestId: "library-copy",
+  fingerprint: "copy",
+  project: {
+    id: "library-project",
+    revision: 1,
+    title: "Library project",
+    brief: "",
+    resources: [],
+    archived: false,
+    createdAt: "2026-10-13T00:00:00.000Z",
+    updatedAt: "2026-10-13T00:00:00.000Z",
+  },
+  copy: {
+    id: "library-copy",
+    projectId: "library-project",
+    projectRevision: 1,
+    environmentId: EnvironmentId.make("library-computer"),
+    rootPath,
+    repositories: [],
+    ownership: "managed",
+    state: "ready",
+    keepOnComputer: true,
+    createdAt: "2026-10-13T00:00:00.000Z",
+    updatedAt: "2026-10-13T00:00:00.000Z",
+  },
+  rootLocalProjectId: projectId,
+  rootCheckpointRepository: false,
+  legacyThreadIds: [],
+  rootIdentity: null,
+  releaseRequestId: null,
+  releaseReviewToken: null,
+  removalPath: null,
+  archivePath: null,
+  archiveDigest: null,
+});
+
 describe("reviewed project checkout management", () => {
+  it.live.each([
+    "root",
+    "component",
+    "alias",
+    "ancestor",
+    "released",
+    "detached-component",
+  ] as const)("blocks native adoption of a Library-managed %s", (location) =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const review = yield* f.preview();
+        let receipt = libraryReceipt(location === "component" ? f.parent : f.cwd);
+        if (location === "alias") {
+          const alias = `${f.parent}/alias`;
+          yield* f.fs.symlink(f.cwd, alias);
+          receipt = libraryReceipt(alias);
+        }
+        if (location === "ancestor") receipt = libraryReceipt(`${f.cwd}/nested-copy`);
+        if (location === "detached-component") {
+          receipt = {
+            ...libraryReceipt(`${f.parent}/other-root`),
+            copy: {
+              ...libraryReceipt(`${f.parent}/other-root`).copy,
+              repositories: [
+                {
+                  resourceId: "repo",
+                  path: f.cwd,
+                  localProjectId: projectId,
+                  head: null,
+                  branch: null,
+                },
+              ],
+            },
+          };
+        }
+        if (location === "released") {
+          receipt = { ...receipt, copy: { ...receipt.copy, state: "released" } };
+        }
+        yield* f.libraryStore.put(receipt);
+        const blocked = yield* f.preview();
+        expect(blocked.state).toBe("blocked");
+        expect(blocked.blockers).toContain(
+          "The Library manages these files. Use the Library to change their storage policy.",
+        );
+        const result = yield* f.service
+          .adopt({ projectId, reviewToken: review.reviewToken!, retention: "release-on-settle" })
+          .pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+        expect(yield* readManagedProjectCheckout(f.cwd)).toBeNull();
+      }),
+    ),
+  );
+  it.live("blocks a conflicting native receipt after Library management takes ownership", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const review = yield* f.adopt("release-on-settle");
+        yield* f.libraryStore.put(libraryReceipt(f.cwd));
+        expect((yield* f.preview()).state).toBe("blocked");
+        expect(
+          (yield* f.service
+            .setRetention({ projectId, reviewToken: review.reviewToken!, retention: "keep" })
+            .pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        expect((yield* readManagedProjectCheckout(f.cwd))?.retention).toBe("release-on-settle");
+      }),
+    ),
+  );
+  it.live("rechecks Library ownership after live authorization", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const review = yield* f.preview();
+        const result = yield* f.service
+          .adopt(
+            { projectId, reviewToken: review.reviewToken!, retention: "release-on-settle" },
+            f.libraryStore.put(libraryReceipt(f.cwd)).pipe(Effect.orDie),
+          )
+          .pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+        expect(yield* readManagedProjectCheckout(f.cwd)).toBeNull();
+      }),
+    ),
+  );
+  it.live("retains reviewed native adoption for a borrowed Library folder", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const receipt = libraryReceipt(f.cwd);
+        yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership: "borrowed" } });
+        expect((yield* f.adopt("release-on-settle")).ownershipSource).toBe("adopted");
+      }),
+    ),
+  );
+
   it.live(
     "reads the physical origin instead of cached upstream identity without adopting or restoring",
     () =>

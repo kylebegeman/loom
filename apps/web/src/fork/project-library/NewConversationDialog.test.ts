@@ -87,7 +87,10 @@ describe("Library conversation defaults", () => {
     ).toEqual(chosen);
   });
   it("resolves the actual local project's overrides before the shared profile and computer", () => {
-    const chosen = selection("local-model");
+    const chosen = {
+      ...selection("local-model"),
+      options: [{ id: "reasoningEffort", value: "high" }],
+    };
     const resolved = defaults({
       localProject,
       project: {
@@ -127,8 +130,47 @@ describe("Library conversation defaults", () => {
     ).toEqual(selection("computer-model"));
   });
   it("keeps a model the user deliberately chooses for this launch", () => {
-    const chosen = selection("picked-model");
-    expect(defaults({ localProject, selection: chosen }).modelSelection).toEqual(chosen);
+    const chosen = {
+      ...selection("picked-model"),
+      options: [{ id: "reasoningEffort", value: "high" }],
+    };
+    const resolved = defaults({
+      localProject,
+      selection: chosen,
+      runtimeMode: "approval-required",
+      project: { ...project, profile: { defaultModelSelection: selection("profile-model") } },
+      settings: {
+        ...settings,
+        projectSettingsOverrides: {
+          [localProject.id]: {
+            defaultModelSelection: selection("local-model"),
+            defaultRuntimeMode: "full-access",
+          },
+        },
+      },
+    });
+    expect(resolved.modelSelection).toEqual(chosen);
+    expect(resolved.runtimeMode).toBe("approval-required");
+  });
+  it("uses the provider default when no launch, project, Library or computer model is set", () => {
+    expect(
+      defaults({ settings: { ...settings, defaultModelSelection: null } }).modelSelection,
+    ).toEqual(selection("computer-model"));
+  });
+  it("falls back when the Library preference uses an unavailable provider", () => {
+    expect(
+      defaults({
+        project: {
+          ...project,
+          profile: {
+            defaultModelSelection: {
+              instanceId: ProviderInstanceId.make("unavailable"),
+              model: "profile-model",
+            },
+          },
+        },
+      }).modelSelection,
+    ).toEqual(selection("computer-model"));
   });
   it("applies local provider enablement before resolving a default", () => {
     const disabled = {

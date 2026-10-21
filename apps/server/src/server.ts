@@ -3,7 +3,6 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
-import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 import * as DelegatedTaskQuestionReactor from "./orchestration-v2/DelegatedTaskQuestionReactor.ts";
@@ -32,7 +31,12 @@ import { createHttpServer } from "./httpServer.ts";
 import { fixPath } from "./os-jank.ts";
 import * as Ws from "./ws.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
-import { ForkLayer, ForkRoutesLayer, layerLibraryWorkspace } from "./fork/ForkLayer.ts"; // fork: ext-core
+import {
+  ForkLayer,
+  ForkRoutesLayer,
+  layerLibraryWorkspace,
+  layerProjectLifecycle,
+} from "./fork/ForkLayer.ts"; // fork: ext-core
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
@@ -345,6 +349,7 @@ const layerRepositoryIdentityResolver = Layer.effect(
 ).pipe(Layer.provide(layerSourceControlProviderRegistry), Layer.provide(ProcessRunner.layer));
 
 const layerPullRequestService = PullRequestService.layer.pipe(
+  Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(PullRequestProviderRegistry.layer),
   Layer.provide(PullRequestFilesViewed.layer),
   Layer.provide(PullRequestReadCache.layer),
@@ -497,6 +502,8 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerProjectLifecycle), // fork: project-lifecycle
+  Layer.provide(layerPullRequestService),
   Layer.provide(layerLibraryWorkspace), // fork: library-projects
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
@@ -517,11 +524,15 @@ const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
 );
 
 // fork: project-lifecycle -- settlement and the runtime share one storage cleanup service.
-const layerStorageCleanup = StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer));
+const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
-  ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
+  Effect.gen(function* () {
+    const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+    yield* service.start();
+  }),
 ).pipe(
+  Layer.provide(RuntimeLayer.layerThreadSettlement),
   Layer.provide(layerPullRequestService),
   Layer.provide(layerStorageCleanup), // fork: project-lifecycle
   Layer.provide(ProjectionStoreV2.layer),

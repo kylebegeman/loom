@@ -343,14 +343,15 @@ describe("durable Library history replication", () => {
             }),
             Effect.provide(
               Layer.mock(Workspace.LibraryWorkspace)({
-                cleanupTemporaryCopies: Ref.update(cleanups, (count) => count + 1).pipe(
-                  Effect.andThen(
-                    Ref.update(current, (value) => ({
+                cleanupTemporaryCopies: (isHistoryAcknowledged) =>
+                  Effect.gen(function* () {
+                    if (!(yield* isHistoryAcknowledged(threadId))) return;
+                    yield* Ref.update(cleanups, (count) => count + 1);
+                    yield* Ref.update(current, (value) => ({
                       ...value,
                       copy: { ...value.copy, state: "released" as const },
-                    })),
-                  ),
-                ),
+                    }));
+                  }),
               }),
             ),
           );
@@ -373,6 +374,175 @@ describe("durable Library history replication", () => {
           yield* service.drain;
           expect((yield* Ref.get(f.registered)).at(-1)?.copy.keepOnComputer).toBe(true);
           expect((yield* Ref.get(f.requests)).length).toBe(snapshots);
+        }),
+      ),
+  );
+
+  it.effect("cleans up acknowledged copies while unrelated oversized history waits", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const pendingThread = ThreadId.make("pending-thread");
+        const unknownThread = ThreadId.make("unknown-thread");
+        const unboundThread = ThreadId.make("unbound-thread");
+        const pendingResolved = {
+          ...resolved,
+          binding: { ...resolved.binding, workingCopyId: "pending-copy" },
+        };
+        const bindings = [
+          { threadId: pendingThread, resolved: pendingResolved },
+          { threadId, resolved },
+        ];
+        const cleaned = yield* Ref.make<string[]>([]);
+        const pendingArchive = yield* Ref.get(f.archive).pipe(
+          Effect.map((archive) => ({
+            ...archive,
+            summary: {
+              ...archive.summary,
+              threadId: pendingThread,
+              workingCopyId: "pending-copy",
+            },
+            projection: {
+              ...archive.projection,
+              thread: { ...archive.projection.thread, id: pendingThread },
+              messages: archive.projection.messages.map((message) => ({
+                ...message,
+                threadId: pendingThread,
+                text: longText,
+              })),
+            },
+          })),
+        );
+        // Old acknowledgement rows cannot prove an unbound conversation is saved now.
+        yield* f.sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${unboundThread},1,1)`;
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            bindings: Effect.succeed(bindings),
+            getBinding: (id) =>
+              Effect.succeed(bindings.find((binding) => binding.threadId === id)?.resolved ?? null),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: (input) =>
+              input.threadId === pendingThread
+                ? Effect.succeed(pendingArchive)
+                : Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: (isHistoryAcknowledged) =>
+                Effect.gen(function* () {
+                  for (const [copyId, related] of [
+                    ["pending-copy", [pendingThread]],
+                    [copy.id, [threadId]],
+                    ["unknown-copy", [unknownThread]],
+                    ["unbound-copy", [unboundThread]],
+                  ] as const) {
+                    const saved = yield* Effect.forEach(related, isHistoryAcknowledged);
+                    if (saved.every(Boolean)) yield* Ref.update(cleaned, (ids) => [...ids, copyId]);
+                  }
+                }),
+            }),
+          ),
+        );
+        expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
+        expect((yield* service.status).threads).toMatchObject([
+          { threadId: pendingThread, pending: true },
+          { threadId, acknowledgedSequence: 1, pending: false },
+        ]);
+        expect(yield* Ref.get(cleaned)).toEqual([copy.id]);
+      }),
+    ).pipe(pendingLimit(300000)),
+  );
+
+  it.effect("keeps history beyond the published batch ineligible for cleanup", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const threads = Array.from({ length: 11 }, (_, index) => ThreadId.make(`thread-${index}`));
+        const acknowledged = yield* Ref.make<ThreadId[]>([]);
+        const archive = yield* Ref.get(f.archive);
+        const service = yield* serviceFor(f, threads, (input) =>
+          Effect.succeed({
+            ...archive,
+            summary: { ...archive.summary, threadId: input.threadId },
+            projection: {
+              ...archive.projection,
+              thread: { ...archive.projection.thread, id: input.threadId },
+              messages: archive.projection.messages.map((message) => ({
+                ...message,
+                threadId: input.threadId,
+              })),
+            },
+          }),
+        ).pipe(
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: (isHistoryAcknowledged) =>
+                Effect.gen(function* () {
+                  const saved = yield* Effect.filter(threads, isHistoryAcknowledged);
+                  yield* Ref.set(acknowledged, saved);
+                }),
+            }),
+          ),
+        );
+        yield* service.drain;
+        expect(yield* Ref.get(acknowledged)).toEqual(threads.slice(0, 10));
+        expect((yield* service.status).pendingEntries).toBe(1);
+        expect((yield* service.status).threads.at(-1)).toMatchObject({
+          threadId: threads.at(-1),
+          pending: true,
+        });
+      }),
+    ),
+  );
+
+  it.effect(
+    "rechecks current events and deferred history for every related cleanup conversation",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const checks = yield* Ref.make<boolean[]>([]);
+          let changedDuringCleanup = false;
+          yield* Ref.update(f.archive, (archive) => withText(archive, longText));
+          const service = yield* Replication.LibraryReplication.pipe(
+            Effect.provide(Replication.layer),
+            Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+            Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, workspace),
+            Effect.provideService(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(source),
+            }),
+            Effect.provideService(HistorySource.LibraryHistorySource, {
+              snapshotThread: () => Ref.get(f.archive),
+            }),
+            Effect.provide(
+              Layer.mock(Workspace.LibraryWorkspace)({
+                cleanupTemporaryCopies: (isHistoryAcknowledged) =>
+                  Effect.gen(function* () {
+                    const saved = yield* isHistoryAcknowledged(threadId);
+                    yield* Ref.update(checks, (values) => [...values, saved]);
+                    if (changedDuringCleanup) return;
+                    changedDuringCleanup = true;
+                    // A new event arriving during cleanup invalidates its next history check.
+                    yield* f.event(2, "thread.settled", "{}").pipe(Effect.orDie);
+                    expect(yield* isHistoryAcknowledged(threadId)).toBe(false);
+                  }),
+              }),
+            ),
+          );
+          yield* f.event(1, "thread.created", "{}");
+          yield* service.drain;
+          // Compaction drops the milestone but keeps a navigation event. The deferred snapshot
+          // must still block cleanup even though the event tail now matches the acknowledgement.
+          yield* f.event(3, "thread.active-reordered", "{}");
+          yield* service.drain;
+          yield* f.sql`DELETE FROM orchestration_events WHERE sequence=2`;
+          yield* service.drain;
+          expect(yield* Ref.get(checks)).toEqual([true, false, false]);
+          expect((yield* service.status).threads[0]?.pending).toBe(true);
         }),
       ),
   );

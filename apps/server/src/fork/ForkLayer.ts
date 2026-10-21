@@ -201,6 +201,13 @@ const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(layerLibraryAssets),
   Layer.provide(PreviewAccess.layer),
 );
+export const layerProjectLifecycle = ProjectLifecycle.layer.pipe(
+  Layer.provide(RuntimeLayer.layerThreadSettlement),
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(RuntimeLayer.layerThreadManagementProvided),
+  Layer.provide(RuntimeLayer.layerProjectService),
+);
+
 export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
   Layer.provide(
     LibraryRecoveryPublisher.layer.pipe(
@@ -341,14 +348,14 @@ const ForkServicesLive = Layer.mergeAll(
   SwitchboardStatus.layer,
   WorkspaceHandoff.layer.pipe(
     Layer.provide(CommandReceiptStore.layer),
-    Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provide(layerProjectLifecycle),
     Layer.provide(ProjectionStore.layer),
   ),
   PcbPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   ModelPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   // Apple builds run in L19 lanes, so both share the one ProjectLifecycle instance.
   AppleBuild.layer.pipe(
-    Layer.provideMerge(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provideMerge(layerProjectLifecycle),
     Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
   ),
   // The cleanup reactor shares the Device QA service it cleans for.
@@ -388,7 +395,7 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   // Agent links end with their lane, so this watches the one ProjectLifecycle instance too.
   PreviewLinks.layer.pipe(
-    Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provide(layerProjectLifecycle),
     Layer.provide(layerLibraryPublisher),
   ),
   // The pages host serves the pages the Library routes store and checks tickets with the same

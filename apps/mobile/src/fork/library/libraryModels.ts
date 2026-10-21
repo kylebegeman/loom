@@ -1,8 +1,6 @@
 import type { ModelSelection, ProjectId, ServerConfig } from "@t3tools/contracts";
-import {
-  resolveProjectSettings,
-  type LegacyProjectSettingsFields,
-} from "@t3tools/shared/projectSettings";
+import { libraryLaunchDefaults } from "@t3tools/client-runtime/fork";
+import type { LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
 import {
   buildModelOptions,
   resolveDefaultableModelSelection,
@@ -17,13 +15,22 @@ export function libraryConversationModels(input: {
   savedSelection: ModelSelection | null;
 }) {
   const { config, localProjectId } = input;
-  const localDefault = config?.settings
-    ? resolveProjectSettings(config.settings, localProjectId, input.localProject).settings
-        .defaultModelSelection
-    : null;
-  const preferred =
-    resolveDefaultableModelSelection(config, input.projectDefaultSelection, localProjectId) ??
-    resolveDefaultableModelSelection(config, localDefault, localProjectId);
+  const defaults = libraryLaunchDefaults({
+    settings: config?.settings,
+    localProjectId,
+    localProject: input.localProject,
+    projectDefaultSelection: resolveDefaultableModelSelection(
+      config,
+      input.projectDefaultSelection,
+      localProjectId,
+    ),
+    selection: input.savedSelection,
+  });
+  const preferred = resolveDefaultableModelSelection(
+    config,
+    defaults.modelSelection,
+    localProjectId,
+  );
   const models = buildModelOptions(
     config,
     input.savedSelection ?? preferred,

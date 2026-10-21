@@ -27,6 +27,8 @@ import {
   restoreManagedProjectCheckout,
   setManagedProjectRetention,
 } from "../workspace/ManagedProjectCheckout.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
 import { fileIdentity } from "../fork/fileIdentity.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
@@ -70,6 +72,7 @@ const publicIdentity = (identity: RepositoryIdentity): RepositoryIdentity => ({
 });
 
 const make = Effect.gen(function* () {
+  const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -129,6 +132,10 @@ const make = Effect.gen(function* () {
       blockers: [reason],
       reviewToken: null,
     });
+    if ((yield* libraryCheckoutOwners(cwd)).some((receipt) => receipt.copy.ownership === "managed"))
+      return blocked(
+        "The Library manages these files. Use the Library to change their storage policy.",
+      );
     // Metadata adoption must never give cleanup ownership of environment state or its parent.
     const protectedPaths: { path: string; state: boolean }[] = [];
     for (const [root, state] of [
@@ -407,6 +414,15 @@ const make = Effect.gen(function* () {
             projectId: input.projectId,
             reason: "stale-review",
           });
+        if (
+          (yield* libraryCheckoutOwners(cwd)).some(
+            (receipt) => receipt.copy.ownership === "managed",
+          )
+        )
+          return yield* new ProjectCheckoutManagementError({
+            projectId: input.projectId,
+            reason: "blocked",
+          });
         if (adoption) {
           if (
             review.state !== "external" ||
@@ -453,4 +469,6 @@ const make = Effect.gen(function* () {
       mutate(input, false, authorize).pipe(Effect.mapError(mapError(input.projectId))),
   });
 });
-export const layer = Layer.effect(ProjectCheckoutManagement, make);
+export const layer = Layer.effect(ProjectCheckoutManagement, make).pipe(
+  Layer.provide(LibraryWorkspaceStore.layer),
+);

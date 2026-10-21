@@ -63,8 +63,8 @@ through existing projects without losing your place.
 
 Start a conversation from a project and Loom chooses an available computer and prepares
 its files automatically. You can choose another computer or work on one repository.
-The conversation uses the project's model preference, with the computer's defaults as a
-fallback. Editing the brief applies to new conversations; earlier conversations keep their
+The conversation uses your chosen model, then any computer folder override, the project's
+preference and the computer's default. Editing the brief applies to new conversations; earlier conversations keep their
 original context.
 
 T3's folder records are the computer locations of these projects. Adding an existing folder
@@ -84,6 +84,11 @@ Use **Files** in the project to manage its repositories, links and files on comp
 after all related conversations are finished and saved. Active work, unpublished commits
 and unsaved changes prevent automatic cleanup. Existing folders stay kept until you
 explicitly allow Loom to manage them.
+
+**Temporary resources** shows build and scratch space used by these files, including
+resources shared by conversations. Keep preserves your working files; temporary resources
+are cleaned up separately after work and finish actions complete. Advanced controls stay
+in the computer's storage settings.
 
 **Remove files** saves and verifies a recovery archive before freeing space. Your project
 and conversations stay available. **Restore files** brings the saved contents back to the

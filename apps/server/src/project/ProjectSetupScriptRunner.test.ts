@@ -1,6 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it, vi } from "@effect/vitest";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { ProjectLifecycleError } from "@t3tools/contracts/fork";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -186,3 +189,119 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     });
   }).pipe(Effect.provide(layer));
 });
+
+it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)(
+  "prepares the setup directory's lane before opening its shell (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+      const entered = yield* Deferred.make<void>();
+      const ready = yield* Deferred.make<void>();
+      const laneFailure = new ProjectLifecycleError({
+        reason: "command-failed",
+        message: "Lane unavailable",
+      });
+      const ensureForThread = vi.fn(
+        (
+          ..._input: Parameters<
+            ProjectLifecycle.ProjectLifecycleService["Service"]["ensureForThread"]
+          >
+        ) =>
+          Effect.gen(function* () {
+            events.push("lane-start");
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(ready);
+            if (mode === "failure") return yield* laneFailure;
+            events.push("lane-ready");
+            return {} as never;
+          }),
+      );
+      // Construct without ProjectLifecycle: settlement also uses this runner.
+      const runner = yield* ProjectSetupScriptRunner.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(ProjectService.ProjectService)({}),
+            Layer.mock(TerminalManager.TerminalManager)({
+              open: () =>
+                Effect.sync(() => {
+                  events.push("open");
+                  return {} as never;
+                }),
+              write: () =>
+                Effect.sync(() => {
+                  events.push("setup");
+                }),
+            }),
+            ServerSettings.layerTest(),
+            NodeCrypto.layer,
+          ),
+        ),
+      );
+      const run = runner
+        .runForThread({
+          threadId: "thread-setup-order",
+          worktreePath: "/repo",
+          workspaceLeaseHeld: true,
+          trigger: mode === "settle" ? "settle" : "setup",
+          project: {
+            id: ProjectId.make("project-setup-order"),
+            workspaceRoot: "/repo",
+            scripts:
+              mode === "no-script"
+                ? []
+                : [
+                    {
+                      id: "setup",
+                      name: "Setup",
+                      command: "vp install",
+                      icon: "configure",
+                      runOnWorktreeCreate: true,
+                      runOnSettle: true,
+                    },
+                  ],
+          },
+        })
+        .pipe(
+          Effect.provide(
+            Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
+              getSettings: Effect.succeed({ enabled: mode !== "disabled" } as never),
+              ensureForThread,
+            }),
+          ),
+        );
+      const running = yield* run.pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+      if (mode === "setup" || mode === "failure") {
+        yield* Effect.raceFirst(
+          Deferred.await(entered),
+          Fiber.join(running).pipe(Effect.andThen(Effect.die("Setup ran before lane preparation"))),
+        );
+        assert.deepEqual(events, ["lane-start"]);
+        assert.deepEqual(ensureForThread.mock.calls, [
+          [ThreadId.make("thread-setup-order"), "/repo"],
+        ]);
+        yield* Deferred.succeed(ready, undefined);
+      }
+      const result = yield* Fiber.join(running);
+      if (mode === "failure") {
+        assert.equal(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.equal(result.failure._tag, "ProjectSetupScriptOperationError");
+          if (result.failure._tag === "ProjectSetupScriptOperationError")
+            assert.equal(result.failure.cause, laneFailure);
+        }
+        assert.deepEqual(events, ["lane-start"]);
+      } else {
+        assert.equal(result._tag, "Success");
+        assert.deepEqual(
+          events,
+          mode === "setup"
+            ? ["lane-start", "lane-ready", "open", "setup"]
+            : mode === "no-script"
+              ? []
+              : ["open", "setup"],
+        );
+      }
+      if (mode !== "setup" && mode !== "failure")
+        assert.equal(ensureForThread.mock.calls.length, 0);
+    }),
+);

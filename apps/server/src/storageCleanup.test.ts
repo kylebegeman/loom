@@ -47,11 +47,14 @@ import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   EventId,
   ProjectId,
   ProviderDriverKind,
@@ -306,6 +309,7 @@ const cleanupFixture = (
       workspaceRoot,
       createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
     });
+    let librarySql: SqlClient.SqlClient | undefined;
     let pendingEffects = false; // fork: project-lifecycle
     let editBeforeRemoval = false;
     let openSessionCwd: string | null = null;
@@ -420,35 +424,41 @@ const cleanupFixture = (
       Effect.provideService(Orchestrator.OrchestratorV2, {
         streamDomainEvents: Stream.suspend(() => events),
       } as unknown as Orchestrator.OrchestratorV2["Service"]),
-      Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
-        Effect.sync(() =>
-          // fork: project-lifecycle
-          pendingEffects && strings.join("").includes("effect_outbox")
-            ? [{ id: 1 }]
-            : openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
-              ? [
-                  {
-                    payload_json: JSON.stringify({
-                      id: "session-1",
-                      driver: "codex",
-                      providerInstanceId: "codex",
-                      status: "ready",
-                      cwd: openSessionCwd,
-                      model: null,
-                      capabilities: CodexProviderCapabilitiesV2,
-                      createdAt: "2026-06-01T12:00:00.000Z",
-                      updatedAt: "2026-06-01T12:00:00.000Z",
-                      lastError: null,
-                    }),
-                  },
-                ]
-              : strings.join("").includes('AS "worktreePath"')
-                ? [
-                    ...threads.flatMap((thread) => thread.worktreePath ?? []),
-                    ...storedWorktreePaths,
-                  ].map((worktreePath) => ({ worktreePath }))
-                : [],
-        )) as unknown as SqlClient.SqlClient),
+      Effect.provideService(SqlClient.SqlClient, ((
+        strings: TemplateStringsArray,
+        ...values: ReadonlyArray<string | number>
+      ) =>
+        librarySql !== undefined && /fork_library|orchestration_events/.test(strings.join(""))
+          ? librarySql(strings, ...values)
+          : Effect.sync(() =>
+              // fork: project-lifecycle
+              pendingEffects && strings.join("").includes("effect_outbox")
+                ? [{ id: 1 }]
+                : openSessionCwd !== null &&
+                    strings.join("").includes("projection_provider_sessions")
+                  ? [
+                      {
+                        payload_json: JSON.stringify({
+                          id: "session-1",
+                          driver: "codex",
+                          providerInstanceId: "codex",
+                          status: "ready",
+                          cwd: openSessionCwd,
+                          model: null,
+                          capabilities: CodexProviderCapabilitiesV2,
+                          createdAt: "2026-06-01T12:00:00.000Z",
+                          updatedAt: "2026-06-01T12:00:00.000Z",
+                          lastError: null,
+                        }),
+                      },
+                    ]
+                  : strings.join("").includes('AS "worktreePath"')
+                    ? [
+                        ...threads.flatMap((thread) => thread.worktreePath ?? []),
+                        ...storedWorktreePaths,
+                      ].map((worktreePath) => ({ worktreePath }))
+                    : [],
+            )) as unknown as SqlClient.SqlClient),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
       } as unknown as GitManager.GitManager["Service"]),
@@ -468,6 +478,12 @@ const cleanupFixture = (
     const service = Context.get(context, StorageCleanup.StorageCleanup);
     return {
       service,
+      libraryStore: yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
+        Effect.provide(LibraryWorkspaceStore.layer),
+      ),
+      useLibraryHistory: (sql: SqlClient.SqlClient) => {
+        librarySql = sql;
+      },
       repo,
       /** Starts the hourly sweep and the `publishThreadEvent` subscription, then drains. */
       activateEvents: Effect.gen(function* () {
@@ -2582,6 +2598,20 @@ describe("native Scratch and pin retention", () => {
     };
   });
 
+  it.live("Library management also excludes native Scratch cleanup", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* scratchFixture;
+        const receipt = libraryReceipt(f.cwd);
+        yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership: "managed" } });
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toBe("The Library manages these files");
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+
   it.live("archives and restores a clean local Scratch repository and checkpoint refs", () =>
     runCleanupTest(
       Effect.gen(function* () {
@@ -2897,18 +2927,297 @@ const primaryFixture = Effect.gen(function* () {
   f.setProjectRoot(cwd);
   f.setThreads([shell()]);
   f.setProjectPolicy(8);
-  const mark = markManagedProjectCheckout(
-    cwd,
-    buildRepositoryIdentity({
-      rootPath: cwd,
-      remoteName: "origin",
-      remoteUrl: remote,
-      originUrl: remote,
-    }),
-  );
-  return { ...f, cwd, mark };
+  const repositoryIdentity = buildRepositoryIdentity({
+    rootPath: cwd,
+    remoteName: "origin",
+    remoteUrl: remote,
+    originUrl: remote,
+  });
+  const mark = markManagedProjectCheckout(cwd, repositoryIdentity);
+  const adopt = markManagedProjectCheckout(cwd, repositoryIdentity, {
+    ownershipSource: "adopted",
+    retention: "release-on-settle",
+    projectId: ProjectId.make("project-1"),
+  });
+  return { ...f, cwd, mark, adopt };
 });
+const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceipt => {
+  const timestamp = "2026-06-01T12:00:00.000Z";
+  return {
+    requestId: "library-copy",
+    fingerprint: "copy",
+    project: {
+      id: "library-project",
+      revision: 1,
+      title: "Library project",
+      brief: "",
+      resources: [],
+      archived: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    copy: {
+      id: "library-copy",
+      projectId: "library-project",
+      projectRevision: 1,
+      environmentId: EnvironmentId.make("library-computer"),
+      rootPath,
+      repositories: [
+        {
+          resourceId: "repo",
+          path: rootPath,
+          localProjectId: ProjectId.make("project-1"),
+          head: null,
+          branch: "main",
+        },
+      ],
+      ownership: "borrowed",
+      state: "ready",
+      keepOnComputer: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    rootLocalProjectId: ProjectId.make("project-1"),
+    rootCheckpointRepository: false,
+    legacyThreadIds: [],
+    rootIdentity: null,
+    releaseRequestId: null,
+    releaseReviewToken: null,
+    removalPath: null,
+    archivePath: null,
+    archiveDigest: null,
+  };
+};
+const libraryPrimaryFixture = Effect.gen(function* () {
+  const f = yield* primaryFixture;
+  yield* f.adopt;
+  const store = f.libraryStore;
+  const receipt = libraryReceipt(f.cwd);
+  yield* store.put(receipt);
+  const bind = (threadId: ThreadId, localProjectId = ProjectId.make("project-1")) =>
+    store.bind(threadId, {
+      binding: {
+        projectId: receipt.project.id,
+        projectRevision: 1,
+        environmentId: receipt.copy.environmentId,
+        workingCopyId: receipt.copy.id,
+        resourceIds: ["repo"],
+      },
+      cwd: f.cwd,
+      localProjectId,
+      repositoryPaths: [f.cwd],
+    });
+  yield* bind(ThreadId.make("thread-1"));
+  const context = yield* Layer.build(NodeSqliteClient.layer({ filename: ":memory:" }));
+  const history = Context.get(context, SqlClient.SqlClient);
+  yield* history`CREATE TABLE fork_library_source_state (key TEXT, environment_id TEXT)`;
+  yield* history`CREATE TABLE fork_library_source_threads (thread_id TEXT, queued_sequence INTEGER, acknowledged_sequence INTEGER)`;
+  yield* history`CREATE TABLE fork_library_source_outbox (thread_id TEXT)`;
+  yield* history`CREATE TABLE orchestration_events (sequence INTEGER, application_event_version INTEGER, aggregate_kind TEXT, stream_id TEXT, event_type TEXT)`;
+  yield* history`INSERT INTO fork_library_source_state VALUES ('host', 'library-computer')`;
+  yield* history`INSERT INTO fork_library_source_threads VALUES ('thread-1', 10, 10)`;
+  yield* history`INSERT INTO orchestration_events VALUES (10, 2, 'thread', 'thread-1', 'thread.settled')`;
+  f.useLibraryHistory(history);
+  f.setThreads([shell({ settledOverride: "settled" })]);
+  return { ...f, receipt, bind, history };
+});
+
 describe("primary project storage cleanup", () => {
+  it.live("an unrelated Library Keep does not protect an independent native folder", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        yield* f.libraryStore.put({
+          ...f.receipt,
+          copy: {
+            ...f.receipt.copy,
+            ownership: "managed",
+            rootPath: `${f.cwd}-library`,
+            repositories: [],
+          },
+        });
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.outcome,
+        ).toBe("removed");
+      }),
+    ),
+  );
+
+  it.live("Library management also excludes native linked-worktree cleanup", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* cleanupFixture();
+        const receipt = libraryReceipt(f.worktree);
+        yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership: "managed" } });
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "worktree")?.reason,
+        ).toBe("The Library manages these files");
+        expect(yield* f.fs.exists(f.worktree)).toBe(true);
+      }),
+    ),
+  );
+
+  it.live("rechecks Library ownership acquired during native publication checks", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        f.onPublicationFetch(
+          f.libraryStore
+            .put({ ...f.receipt, copy: { ...f.receipt.copy, ownership: "managed" } })
+            .pipe(Effect.orDie),
+        );
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.reason).toBe("The Library manages these files");
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+  it.live("Library history acknowledges late events before native release can proceed", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        f.onPublicationFetch(
+          f.history`INSERT INTO orchestration_events VALUES (11, 2, 'thread', 'thread-1', 'thread.settled')`.pipe(
+            Effect.asVoid,
+            Effect.orDie,
+          ),
+        );
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.reason,
+        ).toBe("Library history has not been acknowledged");
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        yield* f.history`UPDATE fork_library_source_threads SET queued_sequence=11,acknowledged_sequence=11`;
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.outcome,
+        ).toBe("removed");
+      }),
+    ),
+  );
+  it.live("visiting an acknowledged Library conversation does not prevent native cleanup", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        yield* f.history`INSERT INTO orchestration_events VALUES (11, 2, 'thread', 'thread-1', 'thread.visited')`;
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.outcome,
+        ).toBe("removed");
+      }),
+    ),
+  );
+  it.live.each(["unbound", "missing", "unregistered"] as const)(
+    "protects %s Library bindings",
+    (state) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* libraryPrimaryFixture;
+          if (state === "missing") yield* f.bind(ThreadId.make("missing-thread"));
+          else
+            f.setThreads([
+              shell({ settledOverride: "settled" }),
+              shell({ id: ThreadId.make("unbound-thread"), settledOverride: "settled" }),
+            ]);
+          if (state === "unregistered")
+            yield* f.libraryStore.put({
+              ...f.receipt,
+              copy: { ...f.receipt.copy, registered: false },
+            });
+          expect(
+            (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.reason,
+          ).toBe("Library conversation bindings could not be verified");
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
+
+  it.live.each(["root", "component", "alias", "ancestor"] as const)(
+    "Library Keep survives a competing native release of its %s",
+    (location) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* libraryPrimaryFixture;
+          let rootPath = location === "component" ? `${f.cwd}/..` : f.cwd;
+          if (location === "alias") {
+            rootPath = `${f.cwd}-alias`;
+            yield* f.fs.symlink(f.cwd, rootPath);
+          }
+          if (location === "ancestor") rootPath = `${f.cwd}/nested-copy`;
+          yield* f.libraryStore.put({
+            ...f.receipt,
+            copy: {
+              ...f.receipt.copy,
+              ownership: "managed",
+              rootPath,
+              repositories:
+                location === "alias" || location === "ancestor" ? [] : f.receipt.copy.repositories,
+            },
+          });
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.reason).toBe("The Library manages these files");
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+          expect((yield* readManagedProjectCheckout(f.cwd))?.released).toBe(false);
+        }),
+      ),
+  );
+  it.live.each(["queued", "uncaptured", "outbox", "unknown-thread", "unknown-journal"] as const)(
+    "native release cannot bypass %s Library history",
+    (pending) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* libraryPrimaryFixture;
+          if (pending === "queued")
+            yield* f.history`UPDATE fork_library_source_threads SET queued_sequence=11`;
+          if (pending === "uncaptured")
+            yield* f.history`INSERT INTO orchestration_events VALUES (11, 2, 'thread', 'thread-1', 'thread.settled')`;
+          if (pending === "outbox")
+            yield* f.history`INSERT INTO fork_library_source_outbox VALUES ('thread-1')`;
+          if (pending === "unknown-thread")
+            yield* f.history`DELETE FROM fork_library_source_threads`;
+          if (pending === "unknown-journal")
+            yield* f.history`DELETE FROM fork_library_source_state`;
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.reason).toBe("Library history has not been acknowledged");
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
+  it.live("an active Library root thread protects an adopted component", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        const rootId = ProjectId.make("library-root");
+        yield* f.libraryStore.put({
+          ...f.receipt,
+          rootLocalProjectId: rootId,
+          copy: { ...f.receipt.copy, rootPath: `${f.cwd}/..`, rootLocalProjectId: rootId },
+        });
+        yield* f.bind(ThreadId.make("root-thread"), rootId);
+        f.setThreads([
+          shell({ settledOverride: "settled" }),
+          shell({
+            id: ThreadId.make("root-thread"),
+            projectId: rootId,
+            activeRunId: RunId.make("root-run"),
+          }),
+        ]);
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.reason).toBe("A Library conversation is active or has pending work");
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+  it.live("preserves native release and restore for an acknowledged borrowed Library folder", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* libraryPrimaryFixture;
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe("removed");
+        expect(yield* f.fs.exists(f.cwd)).toBe(false);
+        expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.cwd}/tracked.txt`)).toBe("original\n");
+      }),
+    ),
+  );
+
   it.live.each(["busy", "unverifiable"] as const)(
     "keeps a managed primary checkout when process inspection is %s",
     (inspection) =>

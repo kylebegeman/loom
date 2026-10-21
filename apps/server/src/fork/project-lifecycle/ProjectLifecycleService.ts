@@ -35,6 +35,8 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerConfig } from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as ThreadSettlement from "../../orchestration-v2/ThreadSettlementService.ts";
+import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { forkParked } from "../../serverActivation.ts";
@@ -234,6 +236,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
 ) {
   const config = yield* ServerConfig;
   const threads = yield* ThreadManagementService;
+  const settlement = yield* ThreadSettlement.ThreadSettlementServiceV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const devices = yield* DeviceService;
   const platform = yield* HostProcess.Platform;
@@ -436,7 +439,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   const slotCount = (settings: ProjectLifecycleSettings) =>
     settings.buildSlots ?? autoBuildSlots(NodeOS.availableParallelism());
 
+  let shellFilesReady = false;
   const writeShellFiles = Effect.gen(function* () {
+    shellFilesReady = false;
     const settings = yield* getSettings;
     const root = rootOf(settings);
     const index = yield* Effect.forEach([...lanes.values()], (lane) =>
@@ -454,9 +459,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     for (const [name, contents] of Object.entries(renderShims(root)))
       yield* writeAtomically(`${shimsDir(root)}/${name}`, contents, 0o755);
     yield* writeAtomically(`${slotsDir(root)}/count`, `${slotCount(settings)}\n`);
-  }).pipe(
-    Effect.catch((cause) => Effect.logWarning("Could not write lane shell files", { cause })),
-  );
+    shellFilesReady = true;
+  });
 
   const readProfile = Effect.promise(() =>
     NodeFSP.realpath(profilePath)
@@ -781,6 +785,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const sessions = yield* devices.sessionsForThread(released);
     if (sessions.length === 0) return;
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
+    if (view === null || view.threads.some((thread) => thread.id === released && holdsLane(thread)))
+      return;
     const { sessions: all } = yield* devices.state;
     yield* Effect.forEach(
       sessions,
@@ -915,6 +921,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   /** The lane for a thread's checkout, created or reattached as needed. */
   const ensureForThread = Effect.fn("ProjectLifecycle.ensureForThread")(function* (
     threadId: ThreadId,
+    // Root setup can precede restoration of the thread's worktree.
+    setupCheckout?: string,
   ) {
     const view = yield* loadThreads.pipe(
       Effect.mapError(() => error("command-failed", "Could not read threads.")),
@@ -922,7 +930,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const thread = view.threads.find((candidate) => candidate.id === threadId);
     if (thread === undefined) return yield* error("not-found", "The thread was not found.");
     const project = view.projects.get(thread.projectId);
-    const checkout = checkoutOf(thread, view.projects);
+    const checkout = setupCheckout ?? checkoutOf(thread, view.projects);
     if (project === undefined || checkout === null)
       return yield* error("not-found", "The thread has no project checkout.");
     return yield* mutate.withPermits(1)(
@@ -934,6 +942,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
           return yield* createLane(checkout, project);
         }
         if (!(yield* opsFor(current).isMounted(lanePaths(current)))) yield* attach(current);
+        // A failed shell-file write can leave the lane persisted but unusable for setup.
+        if (!shellFilesReady) yield* writeShellFiles;
         return lanes.get(current.id) ?? current;
       }),
     );
@@ -1082,16 +1092,37 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     return true;
   });
 
-  /** Removes lanes no thread holds any more. Skipped when threads cannot be read. */
-  const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* (released?: ThreadId) {
+  /** Settle actions can still use lane files after their thread becomes settled. */
+  const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* () {
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return;
-    yield* mutate.withPermits(1)(
-      Effect.forEach(
-        [...lanes.values()].filter((lane) => holdersOf(lane, view, released).length === 0),
-        (lane) => removeLane(lane).pipe(Effect.ignore({ log: true })),
-        { discard: true },
-      ),
+    yield* Effect.forEach(
+      [...lanes.values()].filter((lane) => holdersOf(lane, view).length === 0),
+      (lane) =>
+        Effect.gen(function* () {
+          const related = view.threads.filter(
+            (thread) => checkoutOf(thread, view.projects) === lane.checkoutPath,
+          );
+          for (const thread of related) {
+            if (!(yield* settlement.prepareForCleanup(thread.id))) {
+              liveOf(lane.id).message = "Waiting for the project's finish action to complete.";
+              return;
+            }
+          }
+          // Startup and settle hooks take the checkout lease before the lane mutation lock.
+          yield* withWorkspaceLease(
+            NodePath.resolve(lane.checkoutPath),
+            mutate.withPermits(1)(
+              Effect.gen(function* () {
+                const latest = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
+                if (latest === null || !lanes.has(lane.id) || holdersOf(lane, latest).length > 0)
+                  return;
+                yield* removeLane(lane);
+              }),
+            ),
+          );
+        }).pipe(Effect.ignore({ log: true })),
+      { concurrency: 8, discard: true },
     );
   });
 
@@ -1190,6 +1221,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const settings = yield* getSettings;
     if (!settings.enabled) return yield* publish();
     yield* measureHost();
+    yield* reclaimFree();
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return yield* publish();
     const reserveBytes = settings.reserveGb * GB;
@@ -1200,7 +1232,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         (lane) =>
           Effect.gen(function* () {
             const holders = holdersOf(lane, view);
-            if (holders.length === 0) return yield* removeLane(lane).pipe(Effect.asVoid);
+            if (holders.length === 0) return;
             liveOf(lane.id).portsReleased = false;
             let entry = yield* measure(lane);
             if (!entry.mounted && lane.backend === "image") {
@@ -1511,18 +1543,16 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     yield* forkParked(
       Stream.runForEach(threads.streamDomainEvents, (event) => {
         switch (event.type) {
-          case "run.created":
-            return getSettings.pipe(
-              Effect.flatMap((settings) =>
-                settings.enabled
-                  ? ensureForThread(event.payload.threadId).pipe(
-                      Effect.andThen(publish()),
-                      Effect.ignore({ log: true }),
-                    )
+          case "thread.settled":
+            return settlement.prepareForCleanup(event.payload.id).pipe(
+              Effect.flatMap((ready) =>
+                ready
+                  ? releaseThreadDevices(event.payload.id).pipe(Effect.andThen(reclaimFree()))
                   : Effect.void,
               ),
+              Effect.andThen(publish()),
+              Effect.ignore({ log: true }),
             );
-          case "thread.settled":
           case "thread.archived":
           case "thread.deleted":
             return getSettings.pipe(
@@ -1531,7 +1561,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
                   ? releaseThreadDevices(event.payload.id).pipe(Effect.ignore({ log: true }))
                   : Effect.void,
               ),
-              Effect.andThen(reclaimFree(event.payload.id)),
+              Effect.andThen(reclaimFree()),
               Effect.andThen(publish()),
               Effect.ignore({ log: true }),
             );

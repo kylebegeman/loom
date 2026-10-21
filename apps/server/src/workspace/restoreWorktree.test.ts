@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import {
   CheckpointRef,
@@ -13,6 +14,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -79,6 +83,7 @@ const fixture = Effect.gen(function* () {
     readonly checkpoints?: ProjectionStore.ProjectionCheckpointContext;
     readonly git?: GitVcsDriver.GitVcsDriver["Service"];
     readonly failSetup?: boolean;
+    readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   }) =>
     restoreWorktree(input).pipe(
       Effect.provide(
@@ -108,22 +113,24 @@ const fixture = Effect.gen(function* () {
               }),
           }),
           Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-            runForThread: () =>
-              Effect.sync(() => {
-                setupCalls++;
-                return options?.failSetup
-                  ? {
-                      status: "started",
-                      scriptId: "setup",
-                      scriptName: "Setup",
-                      scriptCommand: "setup",
-                      terminalId: "setup",
-                      cwd,
-                      async: false,
-                      completion: Effect.succeed({ exitCode: 1, durationMs: 1 }),
-                    }
-                  : { status: "no-script" };
-              }),
+            runForThread:
+              options?.runSetup ??
+              (() =>
+                Effect.sync(() => {
+                  setupCalls++;
+                  return options?.failSetup
+                    ? {
+                        status: "started",
+                        scriptId: "setup",
+                        scriptName: "Setup",
+                        scriptCommand: "setup",
+                        terminalId: "setup",
+                        cwd,
+                        async: false,
+                        completion: Effect.succeed({ exitCode: 1, durationMs: 1 }),
+                      }
+                    : { status: "no-script" };
+                })),
           }),
           Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({
             begin: () => Effect.void,
@@ -148,6 +155,80 @@ const fixture = Effect.gen(function* () {
     counts: () => ({ contextReads, setupCalls }),
   };
 });
+
+it.live("restores checkpoint files before preparing the lane and running worktree setup", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const order: string[] = [];
+    let listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+    const runner = yield* ProjectSetupScriptRunner.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () =>
+              Effect.succeedSome({
+                workspaceRoot: f.root,
+                scripts: [
+                  {
+                    id: "setup",
+                    name: "Setup",
+                    command: "vp install",
+                    icon: "configure",
+                    runOnWorktreeCreate: true,
+                  },
+                ],
+              } as never),
+          }),
+          Layer.mock(TerminalManager.TerminalManager)({
+            open: (_input, options) =>
+              Effect.sync(() => {
+                expect(order).toEqual(["files-restored", "lane-ready"]);
+                expect(options?.workspaceLeaseHeld).toBe(true);
+                return {} as never;
+              }),
+            subscribe: (onEvent) =>
+              Effect.sync(() => {
+                listener = onEvent;
+                return () => undefined;
+              }),
+            write: (input) =>
+              Effect.gen(function* () {
+                order.push("setup");
+                const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
+                yield* listener({
+                  type: "output",
+                  threadId: input.threadId,
+                  terminalId: input.terminalId,
+                  data: `\r\n${sentinel}0\r\n$ `,
+                });
+              }),
+            closeIdle: () => Effect.void,
+          }),
+          ServerSettings.layerTest(),
+          NodeCrypto.layer,
+        ),
+      ),
+    );
+    yield* f.restore({ runSetup: runner.runForThread }).pipe(
+      Effect.provide(
+        Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
+          getSettings: Effect.succeed({ enabled: true } as never),
+          ensureForThread: (threadId, setupCheckout) =>
+            Effect.gen(function* () {
+              expect(threadId).toBe(f.input.threadId);
+              expect(setupCheckout).toBe(f.cwd);
+              expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("saved work\n");
+              expect(yield* f.fs.readFileString(`${f.cwd}/note.txt`)).toBe("saved new file\n");
+              order.push("files-restored", "lane-ready");
+              return {} as never;
+            }).pipe(Effect.orDie),
+        }),
+      ),
+    );
+    expect(order).toEqual(["files-restored", "lane-ready", "setup"]);
+    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
+  }).pipe(Effect.provide(layer), Effect.scoped),
+);
 
 it.live("restores a missing branch from its exact saved HEAD and working files", () =>
   Effect.gen(function* () {

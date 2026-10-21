@@ -51,13 +51,18 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
+import { LIBRARY_RECOVERY_MAX_BYTES } from "./assets/LibraryRecoveryStore.ts";
 import * as LibraryPublisher from "./LibraryPublisher.ts";
 import { makeCopyHealthReader } from "./LibraryCopyHealth.ts";
 import { makeProfileReadinessReader } from "./LibraryProfileReadiness.ts";
 import { makeProfileSettings } from "./LibraryProfileSettings.ts";
 import { validLibraryResources } from "./policy.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
-import { restoreManagedProjectCheckout } from "../../workspace/ManagedProjectCheckout.ts";
+import { proveGitPublication } from "../../workspace/gitPublication.ts";
+import {
+  managedProjectProcessReason,
+  restoreManagedProjectCheckout,
+} from "../../workspace/ManagedProjectCheckout.ts";
 
 export class LibraryWorkspace extends Context.Service<
   LibraryWorkspace,
@@ -99,7 +104,9 @@ export class LibraryWorkspace extends Context.Service<
     readonly prepareThreadFiles: (input: {
       readonly threadId: ThreadId;
     }) => Effect.Effect<void, LibraryError>;
-    readonly cleanupTemporaryCopies: Effect.Effect<void, LibraryError>;
+    readonly cleanupTemporaryCopies: (
+      isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+    ) => Effect.Effect<void, LibraryError>;
     readonly release: (
       input: LibraryReleaseCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -255,6 +262,7 @@ const make = Effect.gen(function* () {
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const hash = NodeCrypto.createHash("sha256");
+        let archiveBytes = 0;
         const child = yield* spawner.spawn(
           ChildProcess.make("tar", [
             `--format=${format}`,
@@ -285,6 +293,14 @@ const make = Effect.gen(function* () {
               ? Stream.runDrain(body)
               : body.pipe(
                   NodeStream.pipeThroughSimple(() => NodeZlib.createGzip()),
+                  Stream.tap((chunk) =>
+                    Effect.suspend(() => {
+                      archiveBytes += chunk.length;
+                      return archiveBytes > LIBRARY_RECOVERY_MAX_BYTES
+                        ? Effect.fail(new LibraryError({ reason: "archive-too-large" }))
+                        : Effect.void;
+                    }),
+                  ),
                   Stream.run(fs.sink(archive.path, { mode: 0o600 })),
                 ),
             Stream.runDrain(child.stderr),
@@ -740,6 +756,11 @@ const make = Effect.gen(function* () {
                   normalizeGitRemoteUrl(inspected.remoteUrl)))
           )
             return yield* new LibraryError({ reason: "invalid" });
+          if (input.strategy === "clone")
+            yield* fs.writeFileString(
+              `${repositoryPath}.t3-setup-pending`,
+              "Workspace setup must complete before starting the agent.\n",
+            );
           repositories.push({
             resourceId: resource.id,
             path: repositoryPath,
@@ -758,6 +779,11 @@ const make = Effect.gen(function* () {
         }
         if (selected.length === 0) receipt = yield* ensureCheckpointRoot(receipt);
         const rootCheckpointRepository = receipt.rootCheckpointRepository;
+        if (input.strategy === "clone")
+          yield* fs.writeFileString(
+            `${rootPath}.t3-setup-pending`,
+            "Workspace setup must complete before starting the agent.\n",
+          );
         const rootLocalProjectId = yield* registerProject(
           input.requestId,
           receipt.copy.id,
@@ -1102,6 +1128,7 @@ const make = Effect.gen(function* () {
 
   const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
     receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
   ) {
     const copy = receipt.copy;
     if (!isTemporaryCopy(copy)) return false;
@@ -1110,18 +1137,21 @@ const make = Effect.gen(function* () {
     );
     const projectIds = new Set([
       receipt.rootLocalProjectId,
+      copy.rootLocalProjectId,
       ...copy.repositories.map((repository) => repository.localProjectId),
     ]);
     const snapshot = yield* projections.getShellSnapshot();
     const related = [...snapshot.threads, ...snapshot.archivedThreads].filter(
       (thread) =>
         projectIds.has(thread.projectId) ||
+        receipt.legacyThreadIds.includes(thread.id) ||
         bindings.some((binding) => binding.threadId === thread.id) ||
         (thread.worktreePath !== null && contained(copy.rootPath, thread.worktreePath)),
     );
     // A folder prepared for work has no finished work yet. Missing bound threads are uncertain.
     if (
       related.length === 0 ||
+      receipt.legacyThreadIds.some((id) => !related.some((thread) => thread.id === id)) ||
       bindings.some((binding) => !related.some((thread) => thread.id === binding.threadId)) ||
       related.some((thread) => !bindings.some((binding) => binding.threadId === thread.id))
     )
@@ -1137,19 +1167,35 @@ const make = Effect.gen(function* () {
       )
     )
       return false;
-    if (!(yield* fs.exists(copy.rootPath))) return receipt.removalPath !== null;
+    for (const thread of related) if (!(yield* isHistoryAcknowledged(thread.id))) return false;
+    const rootExists = yield* fs.exists(copy.rootPath);
+    const processPath = rootExists ? copy.rootPath : receipt.removalPath;
+    if (processPath === null) return false;
+    // A settled conversation may still have a server or watcher using its checkout.
+    if (
+      (yield* managedProjectProcessReason(processPath).pipe(
+        Effect.provide(restorationServices),
+      )) !== null
+    )
+      return false;
+    if (!rootExists) return true;
     for (const repository of copy.repositories) {
       const changes = yield* git(
         repository.path,
         ["--no-optional-locks", "status", "--porcelain=v1", "-z"],
         true,
       );
-      const unpushed = yield* git(
-        repository.path,
-        ["rev-list", "--count", "HEAD", "--not", "--remotes"],
-        true,
+      if (changes !== "") return false;
+      const publication = yield* proveGitPublication((args) =>
+        git(repository.path, args).pipe(
+          Effect.flatMap((output) =>
+            output === null
+              ? Effect.fail(new LibraryError({ reason: "io" }))
+              : Effect.succeed(output),
+          ),
+        ),
       );
-      if (changes !== "" || unpushed !== "0") return false;
+      if (!publication.published) return false;
     }
     // A discussion's synthetic Git repository has no upstream. Its full history is archived.
     if (
@@ -1208,7 +1254,7 @@ const make = Effect.gen(function* () {
 
   const release = Effect.fn("LibraryWorkspace.release")(function* (
     input: LibraryReleaseCopyRequest,
-    automatic = false,
+    isHistoryAcknowledged?: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
   ) {
     let receipt = yield* store.get(input.workingCopyId);
     if (receipt.copy.environmentId !== environmentId)
@@ -1224,7 +1270,7 @@ const make = Effect.gen(function* () {
       yield* removeArchiveCache(receipt);
       return receipt.copy;
     }
-    if (automatic && !(yield* canCleanUp(receipt)))
+    if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
       return yield* new LibraryError({ reason: "blocked" });
     if (receipt.removalPath === null) {
       const reviewed = yield* status({ workingCopyId: input.workingCopyId });
@@ -1239,12 +1285,27 @@ const make = Effect.gen(function* () {
           return yield* new LibraryError({ reason: "publisher-unavailable" });
         const archiveDirectory = path.join(config.stateDir, "project-library", "archives");
         yield* fs.makeDirectory(archiveDirectory, { recursive: true, mode: 0o700 });
-        const archivePath = path.join(
-          archiveDirectory,
-          `${(yield* digest(receipt.copy.id)).slice(0, 40)}.tar.gz`,
-        );
         yield* Effect.scoped(
           Effect.gen(function* () {
+            const archivePath = path.join(
+              archiveDirectory,
+              `recovery-${yield* crypto.randomUUIDv4()}.tar.gz`,
+            );
+            yield* Effect.acquireRelease(
+              fs
+                .writeFile(archivePath, new Uint8Array(), { flag: "wx", mode: 0o600 })
+                .pipe(Effect.as(archivePath)),
+              (stagingPath) =>
+                store.receipts.pipe(
+                  Effect.flatMap((receipts) =>
+                    receipts.some((saved) => saved.archivePath === stagingPath)
+                      ? Effect.void
+                      : fs.remove(stagingPath, { force: true }),
+                  ),
+                  // A failed write may have committed its receipt; uncertainty must retain recovery.
+                  Effect.ignore,
+                ),
+            );
             const manifestDirectory = yield* fs.makeTempDirectoryScoped({
               directory: archiveDirectory,
               prefix: "manifest-",
@@ -1271,56 +1332,59 @@ const make = Effect.gen(function* () {
               })) !== reviewed.contentsDigest
             )
               return yield* new LibraryError({ reason: "blocked" });
+            yield* fs.chmod(archivePath, 0o600);
+            const verified = yield* runner.run({
+              command: "tar",
+              args: ["-tf", archivePath],
+              timeout: "10 minutes",
+              maxOutputBytes: 1024,
+              outputMode: "truncate",
+            });
+            if (verified.code !== 0)
+              return yield* new LibraryError({ reason: "io", cause: verified });
+            const archiveDigest = yield* fileDigest(archivePath);
+            yield* Effect.scoped(fs.open(archivePath).pipe(Effect.flatMap((file) => file.sync)));
+            yield* Effect.scoped(
+              fs.open(archiveDirectory).pipe(Effect.flatMap((file) => file.sync)),
+            );
+            const stillCurrent = yield* status({ workingCopyId: input.workingCopyId });
+            if (stillCurrent.reviewToken !== input.reviewToken)
+              return yield* new LibraryError({ reason: "blocked" });
+            const recovery = yield* recoveryPublisher.value.publish({
+              archivePath,
+              sha256: archiveDigest,
+              manifest: {
+                version: 1,
+                projectId: receipt.copy.projectId,
+                projectRevision: receipt.copy.projectRevision,
+                copyId: receipt.copy.id,
+                environmentId: receipt.copy.environmentId,
+                title: receipt.project.title,
+                rootBasename: path.basename(receipt.copy.rootPath),
+                manifestFile: "loom-working-copy.json",
+              },
+            });
+            receipt = {
+              ...receipt,
+              copy: {
+                ...receipt.copy,
+                recovery: {
+                  sha256: recovery.sha256,
+                  byteLength: recovery.byteLength,
+                  archiveKey: recovery.archiveKey,
+                  verifiedAt: recovery.verifiedAt,
+                },
+              },
+              reopenRequestId: undefined,
+              releaseRequestId: input.requestId,
+              releaseReviewToken: input.reviewToken,
+              archivePath,
+              archiveDigest,
+              removalPath: `${receipt.copy.rootPath}.loom-released-${(yield* digest(input.requestId)).slice(0, 16)}`,
+            };
+            yield* store.put(receipt);
           }),
         );
-        yield* fs.chmod(archivePath, 0o600);
-        const verified = yield* runner.run({
-          command: "tar",
-          args: ["-tf", archivePath],
-          timeout: "10 minutes",
-          maxOutputBytes: 1024,
-          outputMode: "truncate",
-        });
-        if (verified.code !== 0) return yield* new LibraryError({ reason: "io", cause: verified });
-        const archiveDigest = yield* fileDigest(archivePath);
-        yield* Effect.scoped(fs.open(archivePath).pipe(Effect.flatMap((file) => file.sync)));
-        yield* Effect.scoped(fs.open(archiveDirectory).pipe(Effect.flatMap((file) => file.sync)));
-        const stillCurrent = yield* status({ workingCopyId: input.workingCopyId });
-        if (stillCurrent.reviewToken !== input.reviewToken)
-          return yield* new LibraryError({ reason: "blocked" });
-        const recovery = yield* recoveryPublisher.value.publish({
-          archivePath,
-          sha256: archiveDigest,
-          manifest: {
-            version: 1,
-            projectId: receipt.copy.projectId,
-            projectRevision: receipt.copy.projectRevision,
-            copyId: receipt.copy.id,
-            environmentId: receipt.copy.environmentId,
-            title: receipt.project.title,
-            rootBasename: path.basename(receipt.copy.rootPath),
-            manifestFile: "loom-working-copy.json",
-          },
-        });
-        receipt = {
-          ...receipt,
-          copy: {
-            ...receipt.copy,
-            recovery: {
-              sha256: recovery.sha256,
-              byteLength: recovery.byteLength,
-              archiveKey: recovery.archiveKey,
-              verifiedAt: recovery.verifiedAt,
-            },
-          },
-          reopenRequestId: undefined,
-          releaseRequestId: input.requestId,
-          releaseReviewToken: input.reviewToken,
-          archivePath,
-          archiveDigest,
-          removalPath: `${receipt.copy.rootPath}.loom-released-${(yield* digest(input.requestId)).slice(0, 16)}`,
-        };
-        yield* store.put(receipt);
       }
     }
     if (receipt.copy.ownership === "managed") {
@@ -1343,7 +1407,7 @@ const make = Effect.gen(function* () {
         const current = yield* status({ workingCopyId: input.workingCopyId });
         if (current.reviewToken !== input.reviewToken)
           return yield* new LibraryError({ reason: "blocked" });
-        if (automatic && !(yield* canCleanUp(receipt)))
+        if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
           return yield* new LibraryError({ reason: "blocked" });
         yield* fs.rename(receipt.copy.rootPath, receipt.removalPath);
       }
@@ -1536,11 +1600,13 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const cleanupTemporaryCopies = Effect.fn("LibraryWorkspace.cleanupTemporaryCopies")(function* () {
+  const cleanupTemporaryCopies = Effect.fn("LibraryWorkspace.cleanupTemporaryCopies")(function* (
+    isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+  ) {
     for (const receipt of (yield* store.receipts).filter((entry) => isTemporaryCopy(entry.copy))) {
       const result = yield* Effect.result(
         Effect.gen(function* () {
-          if (!(yield* canCleanUp(receipt))) return;
+          if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
           const review =
             receipt.removalPath !== null && receipt.releaseReviewToken !== null
               ? { reviewToken: receipt.releaseReviewToken, blockers: [] }
@@ -1555,7 +1621,7 @@ const make = Effect.gen(function* () {
                 workingCopyId: receipt.copy.id,
                 reviewToken: receipt.releaseReviewToken ?? review.reviewToken,
               },
-              true,
+              isHistoryAcknowledged,
             ),
           );
         }),
@@ -1726,7 +1792,8 @@ const make = Effect.gen(function* () {
         )
         .pipe(Effect.tap(publishCopy)),
     prepareThreadFiles: (input) => locks.withLock("prepare", mapIo(prepareThreadFiles(input))),
-    cleanupTemporaryCopies: locks.withLock("prepare", mapIo(cleanupTemporaryCopies())),
+    cleanupTemporaryCopies: (isHistoryAcknowledged) =>
+      locks.withLock("prepare", mapIo(cleanupTemporaryCopies(isHistoryAcknowledged))),
     unregister: (input) => locks.withLock("prepare", mapIo(unregister(input))),
     release: (input) =>
       locks.withLock(

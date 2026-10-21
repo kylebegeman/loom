@@ -3,6 +3,7 @@ import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
 import type { LibraryError } from "@t3tools/contracts/fork";
 import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -152,6 +153,7 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace);
+    const projectLifecycle = yield* Effect.serviceOption(ProjectLifecycle.ProjectLifecycleService);
     const libraryWorkspaces = yield* Effect.serviceOption(
       LibraryWorkspaceStore.LibraryWorkspaceStore,
     );
@@ -537,7 +539,7 @@ export const layer: Layer.Layer<
               holdsWorkspaceLease(project.value.workspaceRoot),
             );
             const marker = `${project.value.workspaceRoot}.t3-setup-pending`;
-            yield* withWorkspaceLease(
+            const prepareRoot = withWorkspaceLease(
               marker,
               Effect.gen(function* () {
                 if (!(yield* fileSystem.exists(marker))) return;
@@ -546,7 +548,7 @@ export const layer: Layer.Layer<
                   projectId: projection.thread.projectId,
                   worktreePath: project.value.workspaceRoot,
                   trigger: "setup",
-                  workspaceLeaseHeld: holdsWorkspaceLease(project.value.workspaceRoot),
+                  workspaceLeaseHeld: true,
                   observeCompletion: {},
                 });
                 if (setup.status === "started") {
@@ -559,6 +561,10 @@ export const layer: Layer.Layer<
                 yield* fileSystem.remove(marker);
               }),
             );
+            // Root setup can serve a thread in another checkout, so its lane has no holder.
+            yield* holdsWorkspaceLease(project.value.workspaceRoot)
+              ? prepareRoot
+              : withWorkspaceLease(path.resolve(project.value.workspaceRoot), prepareRoot);
           }
           if (worktreePath === null) return;
           if (branch !== null) {
@@ -618,7 +624,21 @@ export const layer: Layer.Layer<
               }
             }
           }
-        }).pipe(Effect.provide(restorationServices), Effect.result);
+        }).pipe(
+          Effect.provide(restorationServices),
+          Effect.andThen(
+            Option.isNone(projectLifecycle)
+              ? Effect.void
+              : projectLifecycle.value.getSettings.pipe(
+                  Effect.flatMap((settings) =>
+                    settings.enabled
+                      ? projectLifecycle.value.ensureForThread(projection.thread.id)
+                      : Effect.void,
+                  ),
+                ),
+          ),
+          Effect.result,
+        );
         if (preparation._tag === "Failure") {
           if (input.willRetry === true)
             return yield* Effect.fail(

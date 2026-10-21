@@ -1,6 +1,8 @@
 import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
   ThreadId,
   type ContextMenuItem,
 } from "@t3tools/contracts";
@@ -21,6 +23,8 @@ const state = vi.hoisted(() => ({
   granted: new Set<string>(),
   effects: [] as string[],
   completed: deferred<void>(),
+  createThread: vi.fn(),
+  worktreePath: null as string | null,
   show: vi.fn<
     (
       items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>,
@@ -36,6 +40,10 @@ function recordEffect(action: string) {
 
 vi.mock("~/fork/workspace-handoff/state", () => ({
   openWorkspaceHandoff: () => recordEffect("workspace-handoff"),
+}));
+vi.mock("~/fork/bots/fromThread/state", () => ({
+  openSaveAsBot: () => recordEffect("save-as-bot"),
+  threadCanBeSavedAsBot: () => false,
 }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => new Map() } }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
@@ -63,7 +71,14 @@ vi.mock("../state/entities", () => ({
     projectId: "project",
     title: "Thread",
     branch: "main",
-    worktreePath: null,
+    worktreePath: state.worktreePath,
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "source-model",
+      options: [{ id: "reasoningEffort", value: "high" }],
+    },
+    runtimeMode: "full-access",
+    interactionMode: "plan",
     runtime: null,
     latestRun: null,
   }),
@@ -116,7 +131,7 @@ vi.mock("./useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: () => recordEffect("copy") }),
 }));
 vi.mock("./useHandleNewThread", () => ({
-  useNewThreadHandler: () => async () => recordEffect("draft"),
+  useNewThreadHandler: () => state.createThread,
 }));
 vi.mock("./useSettings", () => ({
   useClientSettings: (select: (settings: unknown) => unknown) =>
@@ -167,6 +182,8 @@ beforeEach(() => {
   state.granted = new Set(["primary"]);
   state.effects = [];
   state.completed = deferred<void>();
+  state.worktreePath = null;
+  state.createThread.mockReset().mockImplementation(async () => recordEffect("draft"));
   state.show.mockReset().mockResolvedValue(null);
 });
 
@@ -228,4 +245,36 @@ describe("thread menu permissions", () => {
     await state.completed.promise;
     expect(state.effects).toEqual([effect]);
   });
+});
+
+describe("new thread on branch", () => {
+  it.each([null, "/project/checkouts/feature"])(
+    "preserves the selected thread's checkout and settings for %s",
+    async (worktreePath) => {
+      state.worktreePath = worktreePath;
+      state.show.mockResolvedValue("new-thread-on-branch");
+      createMenu().openMenu(position);
+      await state.completed.promise;
+
+      expect(state.createThread).toHaveBeenCalledExactlyOnceWith(
+        { environmentId: target.environmentId, projectId: ProjectId.make("project") },
+        {
+          branch: "main",
+          worktreePath,
+          envMode: worktreePath ? "worktree" : "local",
+          startFromOrigin: false,
+          environmentSelection: "manual",
+          sourceSettings: expect.objectContaining({
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "source-model",
+              options: [{ id: "reasoningEffort", value: "high" }],
+            },
+            runtimeMode: "full-access",
+            interactionMode: "plan",
+          }),
+        },
+      );
+    },
+  );
 });

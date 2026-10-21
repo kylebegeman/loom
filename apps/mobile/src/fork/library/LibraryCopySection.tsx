@@ -20,6 +20,7 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { uuidv4 } from "../../lib/uuid";
 import { LibraryCopyHealth } from "./LibraryCopyHealth";
 import { LibraryFolderStorage } from "./LibraryFolderStorage";
+import { LibraryTemporaryResources } from "./LibraryTemporaryResources";
 import { LibraryCopyProfileSetup } from "./LibraryProfileReadiness";
 import { library, useLoomFeature } from "./libraryState";
 import { loadLibraryRecovery } from "./rpc/libraryAssets";
@@ -324,6 +325,7 @@ export function LibraryCopySection(props: {
             lastSeenAt={props.lastSeenAt}
           />
         ) : null}
+        <LibraryTemporaryResources copy={copy} connected={connected} />
         {connected && !removed && copy.state === "ready" ? (
           <View className="gap-2">
             <Button

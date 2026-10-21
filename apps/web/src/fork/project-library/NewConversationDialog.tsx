@@ -3,6 +3,7 @@ import {
   libraryContinuationContext,
   libraryCopyReadiness,
   libraryLaunchChoice,
+  libraryLaunchDefaults,
   libraryLaunchWarning,
   isRepositoryResource,
   supportsLoomFeature,
@@ -55,10 +56,7 @@ import {
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
 } from "~/providerInstances";
-import {
-  resolveProjectSettings,
-  type LegacyProjectSettingsFields,
-} from "@t3tools/shared/projectSettings";
+import { type LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
 import { useProjects, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
@@ -172,28 +170,27 @@ export function libraryConversationDefaults(input: {
   readonly project: LibraryProject;
   readonly providers: readonly ServerProvider[];
   readonly selection?: ModelSelection | undefined;
+  readonly runtimeMode?: RuntimeMode | undefined;
 }) {
-  const resolved = resolveProjectSettings(
-    input.settings,
-    input.localProject?.id ?? null,
-    input.localProject,
-  );
+  const defaults = libraryLaunchDefaults({
+    settings: input.settings,
+    localProjectId: input.localProject?.id ?? null,
+    localProject: input.localProject,
+    projectDefaultSelection: input.project.profile?.defaultModelSelection,
+    selection: input.selection,
+    runtimeMode: input.runtimeMode,
+  });
   const entries = applyProviderInstanceSettings(
     deriveProviderInstanceEntries(input.providers),
     input.settings,
     input.localProject?.id ?? null,
   );
   const providers = entries.map((entry) => ({ ...entry.snapshot, enabled: entry.enabled }));
-  const preferred =
-    input.selection ??
-    (resolved.sources.defaultModelSelection === "project"
-      ? resolved.settings.defaultModelSelection
-      : (input.project.profile?.defaultModelSelection ?? resolved.settings.defaultModelSelection));
   return {
     entries,
     providers,
-    modelSelection: resolveDefaultProviderModelSelection(providers, preferred),
-    runtimeMode: resolved.settings.defaultRuntimeMode,
+    modelSelection: resolveDefaultProviderModelSelection(providers, defaults.modelSelection),
+    runtimeMode: defaults.runtimeMode,
   };
 }
 
@@ -406,6 +403,7 @@ export function NewConversationDialog({
         project,
         providers: providersByEnvironment.get(host.environmentId) ?? [],
         ...(modelChoice ? { selection: modelChoice } : {}),
+        ...(runtimeChoice ? { runtimeMode: runtimeChoice } : {}),
       })
     : null;
   const modelSelection = attempt?.modelSelection ?? defaults?.modelSelection ?? null;
@@ -651,6 +649,7 @@ export function NewConversationDialog({
           providers:
             appAtomRegistry.get(serverEnvironment.providersValueAtom(next.environmentId)) ?? [],
           ...(next.requestedModelSelection ? { selection: next.requestedModelSelection } : {}),
+          ...(next.requestedRuntimeMode ? { runtimeMode: next.requestedRuntimeMode } : {}),
         });
         if (!resolvedDefaults.modelSelection)
           throw new Error("Enable a provider on this computer before starting a conversation.");

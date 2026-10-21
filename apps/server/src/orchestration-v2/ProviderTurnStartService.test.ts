@@ -1,8 +1,11 @@
-import { LibraryError, type LibraryProject } from "@t3tools/contracts/fork";
+import { LibraryError, type LibraryProject, ProjectLifecycleError } from "@t3tools/contracts/fork";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as TerminalManager from "../terminal/Manager.ts";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
@@ -470,8 +473,11 @@ it.each(["projection", "checkout", "setup"] as const)(
 function makeLocalCommandHarness(input: {
   readonly libraryProject?: LibraryProject;
   readonly prepareLibraryFiles?: LibraryWorkspace.LibraryWorkspace["Service"]["prepareThreadFiles"];
+  readonly prepareLane?: Effect.Effect<void, ProjectLifecycleError>;
+  readonly lanesEnabled?: boolean;
   readonly text: string;
   readonly worktreePath?: string;
+  readonly workspaceRoot?: string;
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
   readonly previousNativeSession?: boolean;
@@ -491,6 +497,7 @@ function makeLocalCommandHarness(input: {
     readonly git: GitVcsDriver.GitVcsDriver["Service"];
     readonly beforeOpen: Effect.Effect<void>;
     readonly primary?: boolean;
+    readonly fresh?: boolean;
     readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   };
 }) {
@@ -530,13 +537,14 @@ function makeLocalCommandHarness(input: {
     providerSessionId,
     appThreadId: threadId,
     ownerNodeId: null,
-    nativeThreadRef: input.restoredWorkspace
-      ? {
-          driver: ProviderDriverKind.make("codex"),
-          nativeId: "retained-scratch-native-thread",
-          strength: "strong",
-        }
-      : null,
+    nativeThreadRef:
+      input.restoredWorkspace && !input.restoredWorkspace.fresh
+        ? {
+            driver: ProviderDriverKind.make("codex"),
+            nativeId: "retained-scratch-native-thread",
+            strength: "strong",
+          }
+        : null,
     nativeConversationHeadRef: null,
     status: "not_loaded",
     firstRunOrdinal: 2,
@@ -667,22 +675,23 @@ function makeLocalCommandHarness(input: {
         createdAt: now,
       },
     ],
-    providerSessions: input.restoredWorkspace
-      ? [
-          {
-            id: providerSessionId,
-            driver: ProviderDriverKind.make("codex"),
-            providerInstanceId: newInstanceId,
-            status: "stopped",
-            cwd: input.restoredWorkspace.cwd,
-            model: null,
-            capabilities: CodexProviderCapabilitiesV2,
-            createdAt: now,
-            updatedAt: now,
-            lastError: null,
-          },
-        ]
-      : [],
+    providerSessions:
+      input.restoredWorkspace && !input.restoredWorkspace.fresh
+        ? [
+            {
+              id: providerSessionId,
+              driver: ProviderDriverKind.make("codex"),
+              providerInstanceId: newInstanceId,
+              status: "stopped",
+              cwd: input.restoredWorkspace.cwd,
+              model: null,
+              capabilities: CodexProviderCapabilitiesV2,
+              createdAt: now,
+              updatedAt: now,
+              lastError: null,
+            },
+          ]
+        : [],
     providerTurns: [],
     contextHandoffs: [],
     contextTransfers: [],
@@ -767,7 +776,18 @@ function makeLocalCommandHarness(input: {
       ? input.restoredWorkspace.beforeOpen.pipe(
           Effect.as({
             driver: providerThread.driver,
-            providerSession: projection.providerSessions[0],
+            providerSession: projection.providerSessions[0] ?? {
+              id: providerSessionId,
+              driver: providerThread.driver,
+              providerInstanceId: newInstanceId,
+              status: "ready",
+              cwd: input.restoredWorkspace.cwd,
+              model: null,
+              capabilities: CodexProviderCapabilitiesV2,
+              createdAt: now,
+              updatedAt: now,
+              lastError: null,
+            },
             ensureThread: () => Effect.succeed(providerThread),
             resumeThread: () => Effect.succeed(providerThread),
           } as never),
@@ -883,6 +903,12 @@ function makeLocalCommandHarness(input: {
     Layer.provide(
       Layer.mergeAll(
         ProviderTurnStartTestkit.layer,
+        input.prepareLane === undefined
+          ? Layer.empty
+          : Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
+              getSettings: Effect.succeed({ enabled: input.lanesEnabled ?? true } as never),
+              ensureForThread: () => Effect.as(input.prepareLane!, {} as never),
+            }),
         input.prepareLibraryFiles
           ? Layer.mock(LibraryWorkspace.LibraryWorkspace)({
               prepareThreadFiles: input.prepareLibraryFiles,
@@ -938,7 +964,7 @@ function makeLocalCommandHarness(input: {
                   ? input.restoredWorkspace.primary
                     ? input.restoredWorkspace.cwd
                     : input.restoredWorkspace.scratchRoot
-                  : "/tmp/native-account-project",
+                  : (input.workspaceRoot ?? "/tmp/native-account-project"),
               } as never),
             ),
         }),
@@ -1049,6 +1075,94 @@ effectIt.effect(
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
+effectIt.effect.each([
+  { resume: false, worktree: false },
+  { resume: true, worktree: false },
+  { resume: false, worktree: true },
+  { resume: true, worktree: true },
+])(
+  "prepares a restored Library checkout's lane before provider startup (resume: $resume, worktree: $worktree)",
+  ({ resume, worktree }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+      const cwd = `${parent}/released-copy`;
+      const laneEntered = yield* Deferred.make<void>();
+      const finishLane = yield* Deferred.make<void>();
+      let prepared = false;
+      const harness = makeLocalCommandHarness({
+        text: "Continue project work",
+        failReadsAfterRunning: true,
+        previousNativeSession: resume,
+        workspaceRoot: cwd,
+        ...(worktree ? { worktreePath: cwd } : {}),
+        fileSystem: fs,
+        prepareLibraryFiles: () =>
+          fs
+            .makeDirectory(cwd)
+            .pipe(
+              Effect.andThen(fs.writeFileString(`${cwd}/restored.txt`, "retained files")),
+              Effect.orDie,
+            ),
+        prepareLane: Effect.gen(function* () {
+          expect(yield* fs.readDirectory(cwd).pipe(Effect.orDie)).toContain("restored.txt");
+          yield* Deferred.succeed(laneEntered, undefined);
+          yield* Deferred.await(finishLane);
+          prepared = true;
+        }),
+      });
+      const open = harness.open.getMockImplementation()!;
+      harness.open.mockImplementation(() =>
+        Effect.gen(function* () {
+          expect(prepared).toBe(true);
+          return yield* open();
+        }),
+      );
+      const startup = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Effect.raceFirst(
+        Deferred.await(laneEntered),
+        Fiber.join(startup).pipe(Effect.andThen(Effect.die("Startup did not prepare its lane"))),
+      );
+      expect(harness.open).not.toHaveBeenCalled();
+      yield* Deferred.succeed(finishLane, undefined);
+      yield* Fiber.join(startup);
+      expect(harness.open).toHaveBeenCalledOnce();
+      expect(harness.startRootRun).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+effectIt.effect.each([false, true])(
+  "blocks provider startup when enabled lane preparation fails (retry: %s)",
+  (retry) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Start project work",
+        prepareLane: Effect.fail(
+          new ProjectLifecycleError({ reason: "command-failed", message: "Lane unavailable" }),
+        ),
+      });
+      if (retry) yield* harness.startWithRetry.pipe(Effect.flip);
+      else yield* harness.start;
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe(retry ? "starting" : "failed");
+    }),
+);
+
+effectIt.effect("starts with lanes disabled without preparing a lane", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Start project work",
+      failReadsAfterRunning: true,
+      lanesEnabled: false,
+      prepareLane: Effect.die("Disabled lanes must not be prepared"),
+    });
+    yield* harness.start;
+    expect(harness.open).toHaveBeenCalledOnce();
+    expect(harness.startRootRun).toHaveBeenCalledOnce();
+  }),
+);
+
 effectIt.effect.each([false, true])(
   "blocks provider startup when Library recovery fails (retry: %s)",
   (retry) =>
@@ -1056,6 +1170,7 @@ effectIt.effect.each([false, true])(
       const harness = makeLocalCommandHarness({
         text: "Resume prior work",
         prepareLibraryFiles: () => Effect.fail(new LibraryError({ reason: "archive-unverified" })),
+        prepareLane: Effect.die("Lane preparation must wait for Library recovery"),
       });
       if (retry) yield* harness.startWithRetry.pipe(Effect.flip);
       else yield* harness.start;
@@ -1724,9 +1839,11 @@ effectIt.effect(
 );
 
 // fork: project-lifecycle
-for (const primary of [false, true]) {
+for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as const) {
+  const primary = checkout !== "Scratch";
+  const fresh = checkout === "fresh Library clone";
   effectIt.effect(
-    `waits for restored ${primary ? "primary project" : "Scratch"} setup and retries after failure`,
+    `waits for ${fresh ? checkout : `restored ${checkout}`} setup and retries after failure`,
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -1750,7 +1867,9 @@ for (const primary of [false, true]) {
           "initial",
         ]);
         const projectId = ProjectId.make("scratch-resume-project");
-        if (primary) {
+        if (fresh) {
+          yield* fs.writeFileString(`${cwd}.t3-setup-pending`, "Fresh Library setup is pending.\n");
+        } else if (primary) {
           yield* markManagedProjectCheckout(
             cwd,
             buildRepositoryIdentity({
@@ -1773,31 +1892,71 @@ for (const primary of [false, true]) {
           yield* fs.remove(cwd, { recursive: true });
         }
         let setupCount = 0;
-        const runSetup: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"] =
-          (input) =>
-            Effect.gen(function* () {
-              expect(input.observeCompletion).toBeDefined();
-              expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe("restored before provider");
-              setupCount++;
-              return {
-                status: "started" as const,
-                async: true,
-                scriptId: "setup",
-                scriptName: "Setup",
-                scriptCommand: "fixture setup",
-                terminalId: "setup-terminal",
-                cwd,
-                completion: Effect.succeed({ exitCode: setupCount === 1 ? 1 : 0, durationMs: 0 }),
-              };
-            }).pipe(Effect.orDie);
+        const order: string[] = [];
+        let listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+        const scripts = [
+          {
+            id: "setup",
+            name: "Setup",
+            command: "fixture setup",
+            icon: "configure" as const,
+            runOnWorktreeCreate: true,
+          },
+        ];
+        const setupRunner = yield* ProjectSetupScriptRunner.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.mock(ProjectService.ProjectService)({
+                getById: () => Effect.succeedSome({ workspaceRoot: cwd, scripts } as never),
+              }),
+              Layer.mock(TerminalManager.TerminalManager)({
+                open: () =>
+                  Effect.sync(() => {
+                    expect(order.at(-1)).toBe("lane-ready");
+                    return {} as never;
+                  }),
+                subscribe: (onEvent) =>
+                  Effect.sync(() => {
+                    listener = onEvent;
+                    return () => undefined;
+                  }),
+                write: (input) =>
+                  Effect.gen(function* () {
+                    expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe(
+                      "restored before provider",
+                    );
+                    setupCount++;
+                    order.push("setup");
+                    const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
+                    yield* listener({
+                      type: "output",
+                      threadId: input.threadId,
+                      terminalId: input.terminalId,
+                      data: `\r\n${sentinel}${setupCount === 1 ? 1 : 0}\r\n$ `,
+                    });
+                  }).pipe(Effect.orDie),
+                closeIdle: () => Effect.void,
+              }),
+              ServerSettings.layerTest(),
+              NodeCrypto.layer,
+            ),
+          ),
+        );
+        const runSetup = setupRunner.runForThread;
+        const prepareLane = Effect.gen(function* () {
+          expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe("restored before provider");
+          order.push("lane-ready");
+        }).pipe(Effect.orDie);
         const beforeOpen = Effect.gen(function* () {
           expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
           expect(setupCount).toBe(2);
+          order.push("provider");
         }).pipe(Effect.orDie);
         const input = {
           text: "Continue retained work",
-          previousNativeSession: true,
-          restoredWorkspace: { cwd, scratchRoot, fs, git, primary, runSetup, beforeOpen },
+          prepareLane,
+          previousNativeSession: !fresh,
+          restoredWorkspace: { cwd, scratchRoot, fs, git, primary, fresh, runSetup, beforeOpen },
         };
         const failed = makeLocalCommandHarness(input);
         yield* failed.start;
@@ -1808,6 +1967,14 @@ for (const primary of [false, true]) {
         yield* retry.start;
         expect(retry.open).toHaveBeenCalledOnce();
         expect(retry.startRootRun).toHaveBeenCalledOnce();
+        expect(order).toEqual([
+          "lane-ready",
+          "setup",
+          "lane-ready",
+          "setup",
+          "lane-ready",
+          "provider",
+        ]);
       }).pipe(
         Effect.provide(
           GitVcsDriver.layer.pipe(

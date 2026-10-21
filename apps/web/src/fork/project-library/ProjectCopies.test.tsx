@@ -96,6 +96,7 @@ vi.mock("./ProjectIdentity", () => ({
 }));
 vi.mock("./ProfileReadiness", () => ({ CopyProfileSetup: () => null }));
 vi.mock("./ExistingFolderStorage", () => ({ ExistingFolderStorage: () => null }));
+vi.mock("./TemporaryResources", () => ({ TemporaryResources: () => null }));
 
 import { ProjectCopies } from "./ProjectCopies";
 import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";

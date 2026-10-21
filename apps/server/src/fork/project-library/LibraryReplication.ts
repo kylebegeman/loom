@@ -435,6 +435,44 @@ const make = Effect.gen(function* () {
     }
   }, mapIo);
 
+  // Status checks every bound conversation, so keep its per-thread reads untraced.
+  const threadStatus = Effect.fnUntraced(function* (threadId: ThreadId) {
+    const row = (yield* sql<{
+      queued_sequence: number;
+      acknowledged_sequence: number;
+    }>`SELECT queued_sequence,acknowledged_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`)[0];
+    const eventTail =
+      (yield* sql<{
+        sequence: number;
+      }>`SELECT COALESCE(MAX(sequence),0) AS sequence FROM orchestration_events WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=${threadId} AND NOT (${navigation})`)[0]
+        ?.sequence ?? 0;
+    const latest = Math.max(eventTail, row?.queued_sequence ?? 0);
+    const pending =
+      (yield* sql<{
+        count: number;
+      }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
+        ?.count ?? 0;
+    return {
+      threadId,
+      queuedSequence: row?.queued_sequence ?? 0,
+      acknowledgedSequence: row?.acknowledged_sequence ?? 0,
+      currentSequence: latest,
+      // Compaction can replace a deferred milestone with navigation the tail ignores.
+      pending:
+        row === undefined ||
+        pending > 0 ||
+        latest > row.acknowledged_sequence ||
+        deferred.has(threadId),
+    };
+  }, mapIo);
+  const isHistoryAcknowledged = Effect.fn("LibraryReplication.isHistoryAcknowledged")(function* (
+    threadId: ThreadId,
+  ) {
+    // A previous watermark cannot prove an unbound conversation is still replicated.
+    if ((yield* workspaces.getBinding(threadId)) === null) return false;
+    return !(yield* threadStatus(threadId)).pending;
+  });
+
   const pass = Effect.fnUntraced(function* (flushed: Set<ThreadId> | undefined) {
     const initialized = (yield* readState)[0] !== undefined;
     if (!initialized) yield* ensureAuthority(yield* publisher.info);
@@ -443,12 +481,9 @@ const make = Effect.gen(function* () {
     if (initialized) yield* ensureAuthority(yield* publisher.info);
     const published = yield* publish;
     yield* publishCopyChanges();
-    if (Option.isSome(workspace) && !captured.waiting) {
-      const history = yield* status;
-      if (history.pendingEntries === 0 && history.threads.every((thread) => !thread.pending)) {
-        yield* workspace.value.cleanupTemporaryCopies;
-        yield* publishCopyChanges();
-      }
+    if (Option.isSome(workspace)) {
+      yield* workspace.value.cleanupTemporaryCopies(isHistoryAcknowledged);
+      yield* publishCopyChanges();
     }
     return { progressed: captured.queued || published, waiting: captured.waiting };
   }, mapIo);
@@ -479,37 +514,7 @@ const make = Effect.gen(function* () {
       }>`SELECT COUNT(*) AS count,COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))),0) AS bytes FROM fork_library_source_outbox`)[0];
       const count = outbox?.count ?? 0;
       const bindings = yield* workspaces.bindings;
-      const threads = yield* Effect.forEach(bindings, (entry) =>
-        Effect.gen(function* () {
-          const row = (yield* sql<{
-            queued_sequence: number;
-            acknowledged_sequence: number;
-          }>`SELECT queued_sequence,acknowledged_sequence FROM fork_library_source_threads WHERE thread_id=${entry.threadId}`)[0];
-          const eventTail =
-            (yield* sql<{
-              sequence: number;
-            }>`SELECT COALESCE(MAX(sequence),0) AS sequence FROM orchestration_events WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=${entry.threadId} AND NOT (${navigation})`)[0]
-              ?.sequence ?? 0;
-          const latest = Math.max(eventTail, row?.queued_sequence ?? 0);
-          const pending =
-            (yield* sql<{
-              count: number;
-            }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${entry.threadId}`)[0]
-              ?.count ?? 0;
-          return {
-            threadId: entry.threadId,
-            queuedSequence: row?.queued_sequence ?? 0,
-            acknowledgedSequence: row?.acknowledged_sequence ?? 0,
-            currentSequence: latest,
-            // Compaction can replace a deferred milestone with navigation the tail ignores.
-            pending:
-              row === undefined ||
-              pending > 0 ||
-              latest > row.acknowledged_sequence ||
-              deferred.has(entry.threadId),
-          };
-        }),
-      );
+      const threads = yield* Effect.forEach(bindings, (entry) => threadStatus(entry.threadId));
       return {
         enabled: true,
         journalId: current?.journal_id ?? null,

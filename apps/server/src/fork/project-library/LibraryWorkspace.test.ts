@@ -28,7 +28,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { expect } from "vite-plus/test";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Stream from "effect/Stream";
+import { expect, vi } from "vite-plus/test";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
@@ -58,6 +61,17 @@ import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
+
+const recoveryArchiveLimit = vi.hoisted(() => ({ bytes: undefined as number | undefined }));
+vi.mock("./assets/LibraryRecoveryStore.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof LibraryRecoveryStore>();
+  return {
+    ...actual,
+    get LIBRARY_RECOVERY_MAX_BYTES() {
+      return recoveryArchiveLimit.bytes ?? actual.LIBRARY_RECOVERY_MAX_BYTES;
+    },
+  };
+});
 
 const environmentId = EnvironmentId.make("library-workspace-test");
 const decodeUnknownJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -896,6 +910,11 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(copy.ownership).toBe("managed");
         expect(copy.repositories).toHaveLength(2);
+        for (const cwd of [
+          copy.rootPath,
+          ...copy.repositories.map((repository) => repository.path),
+        ])
+          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
         expect(yield* fs.exists(path.join(copy.rootPath, "web", "README.md"))).toBe(true);
         expect(yield* fs.exists(path.join(copy.rootPath, "server", "README.md"))).toBe(true);
         const subset = yield* service.prepareCopy({
@@ -907,6 +926,16 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(subset.repositories.map((repository) => repository.resourceId)).toEqual(["server"]);
         expect(yield* fs.exists(path.join(subset.rootPath, "web"))).toBe(false);
+        yield* fs.remove(`${copy.rootPath}.t3-setup-pending`);
+        yield* fs.remove(`${copy.repositories[0]!.path}.t3-setup-pending`);
+        yield* service.prepareCopy({
+          requestId: "clone-all",
+          rootPath: copy.rootPath,
+          project,
+          strategy: "clone",
+        });
+        expect(yield* fs.exists(`${copy.rootPath}.t3-setup-pending`)).toBe(false);
+        expect(yield* fs.exists(`${copy.repositories[0]!.path}.t3-setup-pending`)).toBe(false);
       }),
   );
   it.effect("retries a partial clone without duplicating completed repositories", () =>
@@ -1388,6 +1417,12 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const notes = path.join(rootPath, "notes.txt");
       yield* fs.writeFileString(notes, "dirty work to preserve\n");
       const review = yield* service.status({ workingCopyId: copy.id });
+      const config = yield* ServerConfig.ServerConfig;
+      const archiveDirectory = path.join(config.stateDir, "project-library", "archives");
+      yield* fs.makeDirectory(archiveDirectory, { recursive: true });
+      const unrelatedArchive = path.join(archiveDirectory, "unrelated.tar.gz");
+      yield* fs.writeFileString(unrelatedArchive, "another recovery archive");
+      const previousArchives = yield* fs.readDirectory(archiveDirectory);
       publisherFailures.add(copy.id);
       const failure = yield* service
         .release({
@@ -1404,6 +1439,89 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(receipt.copy.state).toBe("ready");
       expect(receipt.removalPath).toBeNull();
       expect(receipt.copy.recovery).toBeUndefined();
+      expect((yield* fs.readDirectory(archiveDirectory)).toSorted()).toEqual(
+        previousArchives.toSorted(),
+      );
+      expect(yield* fs.readFileString(unrelatedArchive)).toBe("another recovery archive");
+      expect(
+        (yield* service.release({
+          requestId: "failed-recovery-release",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        })).state,
+      ).toBe("released");
+      yield* service.reopenCopy({ requestId: "failed-recovery-reopen", workingCopyId: copy.id });
+      expect(yield* fs.readFileString(notes)).toBe("dirty work to preserve\n");
+    }),
+  );
+  it.effect("bounds staging archive writes before an oversized recovery is published", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const rootPath = path.join(parent, "oversized-recovery");
+      const copy = yield* service.prepareCopy({
+        requestId: "oversized-recovery-prepare",
+        project: makeProject([]),
+        rootPath,
+        strategy: "clone",
+      });
+      const bytes = yield* (yield* Crypto.Crypto).randomBytes(64 * 1024);
+      const ignoredPath = path.join(rootPath, "local-only.bin");
+      yield* fs.writeFileString(path.join(rootPath, ".gitignore"), "local-only.bin\n");
+      yield* fs.writeFile(ignoredPath, bytes);
+      const review = yield* service.status({ workingCopyId: copy.id });
+      const config = yield* ServerConfig.ServerConfig;
+      const archiveDirectory = path.join(config.stateDir, "project-library", "archives");
+      const previousArchives = (yield* fs.exists(archiveDirectory))
+        ? yield* fs.readDirectory(archiveDirectory)
+        : [];
+      const removedSizes: bigint[] = [];
+      const limited = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          remove: (filePath, options) =>
+            Effect.gen(function* () {
+              if (
+                path.dirname(filePath) === archiveDirectory &&
+                (yield* fs.stat(filePath)).type === "File"
+              ) {
+                removedSizes.push((yield* fs.stat(filePath)).size);
+              }
+              yield* fs.remove(filePath, options);
+            }),
+        }),
+      );
+      recoveryArchiveLimit.bytes = 1024;
+      const failure = yield* limited
+        .release({
+          requestId: "oversized-recovery-release",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        })
+        .pipe(
+          Effect.flip,
+          Effect.ensuring(
+            Effect.sync(() => {
+              recoveryArchiveLimit.bytes = undefined;
+            }),
+          ),
+        );
+      expect(failure.reason).toBe("archive-too-large");
+      expect(removedSizes).toHaveLength(1);
+      expect(removedSizes[0]).toBeLessThanOrEqual(1024n);
+      expect((yield* fs.readDirectory(archiveDirectory)).toSorted()).toEqual(
+        previousArchives.toSorted(),
+      );
+      expect(yield* fs.readFile(ignoredPath)).toEqual(bytes);
+      expect(yield* fs.exists(path.join(rootPath, ".git"))).toBe(true);
+      const receipt = yield* store.get(copy.id);
+      expect(receipt.copy.state).toBe("ready");
+      expect(receipt.copy.recovery).toBeUndefined();
+      expect(receipt.removalPath).toBeNull();
     }),
   );
   it.effect("imports receipts and pinned bindings atomically and preserves existing metadata", () =>
@@ -1846,7 +1964,14 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     "missing-thread",
     "unbound",
     "another-unsettled",
+    "pending-history",
+    "missing-legacy-thread",
+    "legacy-unbound",
+    "root-unbound",
+    "component-pending-history",
     "goal",
+    "process",
+    "process-unknown",
   ] as const)("automatic cleanup respects %s work", (scenario) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1888,6 +2013,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(kept.keepOnComputer).toBe(true);
         expect((yield* store.get(copy.id)).copy.keepOnComputer).toBe(true);
+      }
+      if (scenario === "missing-legacy-thread") {
+        const receipt = yield* store.get(copy.id);
+        yield* store.put({ ...receipt, legacyThreadIds: [ThreadId.make("unknown-legacy-thread")] });
       }
       if (scenario === "legacy") {
         const receipt = yield* store.get(copy.id);
@@ -1952,6 +2081,60 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         yield* store.bind(ThreadId.make("absent-cleanup-thread"), resolved, project);
       }
       const threads = yield* Ref.make<readonly OrchestrationV2ThreadShell[]>([thread]);
+      if (
+        scenario === "legacy-unbound" ||
+        scenario === "root-unbound" ||
+        scenario === "component-pending-history"
+      ) {
+        const receipt = yield* store.get(copy.id);
+        const other = {
+          ...thread,
+          id: ThreadId.make("related-cleanup-thread"),
+          projectId: ProjectId.make("related-local-project"),
+          worktreePath: null,
+        };
+        yield* Ref.set(threads, [thread, other]);
+        if (scenario === "legacy-unbound")
+          yield* store.put({ ...receipt, legacyThreadIds: [other.id] });
+        if (scenario === "root-unbound")
+          yield* store.put({
+            ...receipt,
+            copy: { ...receipt.copy, rootLocalProjectId: other.projectId },
+          });
+        if (scenario === "component-pending-history") {
+          yield* store.put({
+            ...receipt,
+            copy: {
+              ...receipt.copy,
+              repositories: [
+                {
+                  resourceId: "component",
+                  path: rootPath,
+                  localProjectId: other.projectId,
+                  head: null,
+                  branch: null,
+                },
+              ],
+            },
+          });
+          yield* store.bind(
+            other.id,
+            {
+              cwd: rootPath,
+              localProjectId: other.projectId,
+              repositoryPaths: [rootPath],
+              binding: {
+                projectId: copy.projectId,
+                projectRevision: copy.projectRevision,
+                workingCopyId: copy.id,
+                environmentId,
+                resourceIds: ["component"],
+              },
+            },
+            project,
+          );
+        }
+      }
       if (scenario === "pending")
         yield* Ref.set(threads, [
           { ...thread, pendingBackgroundTasks: [{ kind: "subagent", taskId: "working-child" }] },
@@ -1969,6 +2152,20 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         yield* store.bind(other.id, (yield* store.getBinding(thread.id))!, project);
         yield* Ref.set(threads, [thread, other]);
       }
+      const child =
+        scenario === "process"
+          ? yield* (yield* ChildProcessSpawner.ChildProcessSpawner).spawn(
+              ChildProcess.make(
+                process.execPath,
+                ["-e", "process.stdout.write('ready'); setInterval(() => {}, 1000)"],
+                { cwd: rootPath },
+              ),
+            )
+          : undefined;
+      if (child !== undefined)
+        expect(yield* child.stdout.pipe(Stream.decodeText(), Stream.runHead)).toEqual(
+          Option.some("ready"),
+        );
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
@@ -1983,8 +2180,18 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
               })),
             ),
         }),
+        Effect.provideService(
+          HostProcess.Platform,
+          scenario === "process-unknown" ? "win32" : HostProcess.Platform.defaultValue(),
+        ),
       );
-      yield* cleaner.cleanupTemporaryCopies;
+      yield* cleaner.cleanupTemporaryCopies((threadId) =>
+        Effect.succeed(
+          scenario !== "pending-history" &&
+            !(scenario === "component-pending-history" && threadId === "related-cleanup-thread"),
+        ),
+      );
+      if (child !== undefined) expect(yield* child.isRunning).toBe(true);
       const shouldRemove = scenario === "settled" || scenario === "archived";
       expect(yield* fs.exists(rootPath)).toBe(!shouldRemove);
       expect((yield* store.get(copy.id)).copy.state).toBe(shouldRemove ? "released" : "ready");
@@ -1996,31 +2203,67 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(reopened.state).toBe("ready");
         expect(reopened.keepOnComputer).toBe(true);
-        yield* cleaner.cleanupTemporaryCopies;
+        yield* cleaner.cleanupTemporaryCopies(() => Effect.succeed(true));
         expect(yield* fs.exists(rootPath)).toBe(true);
       }
     }),
   );
 
-  it.effect("honors Keep while automatic cleanup is publishing recovery", () =>
+  it.effect.each([
+    "published",
+    "unpublished-branch",
+    "unpublished-tag",
+    "deleted-remote-branch",
+    "unreachable-remote",
+  ] as const)("automatic cleanup verifies fresh publication for %s copies", (scenario) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const parent = yield* makeTemp;
       const service = yield* LibraryWorkspace.LibraryWorkspace;
       const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
-      const rootPath = path.join(parent, "keep-during-cleanup");
-      const project = makeProject([]);
+      const rootPath = path.join(parent, "files");
+      const remote = path.join(parent, "remote");
+      yield* initRepo(remote);
+      const remoteUrl = `https://example.com/publication/${scenario}.git`;
+      cloneSources.set(remoteUrl, remote);
+      const project = makeProject([
+        { id: "root", title: "Root", relativePath: ".", remoteUrl, defaultBranch: "main" },
+      ]);
       const copy = yield* service.prepareCopy({
-        requestId: "keep-during-cleanup",
+        requestId: `publication-${scenario}`,
         project,
         rootPath,
         strategy: "clone",
       });
-      const archive = yield* archiveFor(project);
+      const resolved = yield* service.resolveBinding({
+        binding: {
+          projectId: copy.projectId,
+          projectRevision: copy.projectRevision,
+          workingCopyId: copy.id,
+          environmentId,
+          resourceIds: ["root"],
+        },
+      });
+      yield* git(rootPath, ["remote", "set-url", "origin", remote]);
+      if (scenario === "unpublished-branch" || scenario === "deleted-remote-branch") {
+        yield* git(rootPath, ["switch", "-c", "sibling"]);
+        yield* git(rootPath, ["commit", "--allow-empty", "-m", "Sibling work"]);
+        if (scenario === "deleted-remote-branch") {
+          yield* git(rootPath, ["push", "origin", "sibling"]);
+          yield* git(remote, ["update-ref", "-d", "refs/heads/sibling"]);
+          expect(yield* git(rootPath, ["rev-parse", "refs/remotes/origin/sibling"])).toBe(
+            yield* git(rootPath, ["rev-parse", "HEAD"]),
+          );
+        }
+        yield* git(rootPath, ["switch", "main"]);
+      }
+      if (scenario === "unpublished-tag")
+        yield* git(rootPath, ["tag", "-a", "local-only", "-m", "Local tag"]);
+      const archived = yield* archiveFor(project);
       const thread: OrchestrationV2ThreadShell = {
-        ...archive.projection.thread,
-        id: ThreadId.make("keep-during-cleanup-thread"),
+        ...archived.projection.thread,
+        id: ThreadId.make(`publication-thread-${scenario}`),
         projectId: copy.rootLocalProjectId!,
         latestRunId: null,
         activeRunId: null,
@@ -2032,20 +2275,11 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         itemCount: 0,
         visibleItemCount: 0,
         settledOverride: "settled",
+        archivedAt: null,
       };
-      const resolved = yield* service.resolveBinding({
-        binding: {
-          projectId: copy.projectId,
-          projectRevision: copy.projectRevision,
-          workingCopyId: copy.id,
-          environmentId,
-          resourceIds: [],
-        },
-      });
       yield* store.bind(thread.id, resolved, project);
-      const publishing = yield* Deferred.make<void>();
-      const proceed = yield* Deferred.make<void>();
-      const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
+      if (scenario === "unreachable-remote")
+        yield* git(rootPath, ["remote", "set-url", "origin", path.join(parent, "missing.git")]);
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
@@ -2058,27 +2292,107 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
               archivedThreads: [],
             }),
         }),
-        Effect.provideService(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
-          ...publisher,
-          publish: (input) =>
-            publisher.publish(input).pipe(
-              Effect.tap(() => Deferred.succeed(publishing, undefined)),
-              Effect.tap(() => Deferred.await(proceed)),
-            ),
-        }),
       );
-      const cleanup = yield* Effect.forkChild(cleaner.cleanupTemporaryCopies);
-      yield* Deferred.await(publishing);
-      const keep = yield* Effect.forkChild(
-        cleaner.setCopyRetention({ workingCopyId: copy.id, keepOnComputer: true }),
-        { startImmediately: true },
-      );
-      yield* Deferred.succeed(proceed, undefined);
-      yield* Fiber.join(cleanup);
-      expect((yield* Fiber.join(keep)).keepOnComputer).toBe(true);
-      expect(yield* fs.exists(rootPath)).toBe(true);
-      expect((yield* store.get(copy.id)).removalPath).toBeNull();
+      yield* cleaner.cleanupTemporaryCopies(() => Effect.succeed(true));
+      const shouldRemove = scenario === "published";
+      expect(yield* fs.exists(rootPath)).toBe(!shouldRemove);
+      expect((yield* store.get(copy.id)).copy.state).toBe(shouldRemove ? "released" : "ready");
     }),
+  );
+
+  it.effect.each(["keep", "pending-history"] as const)(
+    "honors %s while automatic cleanup is publishing recovery",
+    (protection) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const parent = yield* makeTemp;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const rootPath = path.join(parent, "keep-during-cleanup");
+        const project = makeProject([]);
+        const copy = yield* service.prepareCopy({
+          requestId: `keep-during-cleanup-${protection}`,
+          project,
+          rootPath,
+          strategy: "clone",
+        });
+        const archive = yield* archiveFor(project);
+        const thread: OrchestrationV2ThreadShell = {
+          ...archive.projection.thread,
+          id: ThreadId.make(`keep-during-cleanup-thread-${protection}`),
+          projectId: copy.rootLocalProjectId!,
+          latestRunId: null,
+          activeRunId: null,
+          status: "idle",
+          pendingRuntimeRequest: null,
+          latestVisibleMessage: null,
+          latestUserMessageAt: null,
+          hasActionableProposedPlan: false,
+          itemCount: 0,
+          visibleItemCount: 0,
+          settledOverride: "settled",
+        };
+        const resolved = yield* service.resolveBinding({
+          binding: {
+            projectId: copy.projectId,
+            projectRevision: copy.projectRevision,
+            workingCopyId: copy.id,
+            environmentId,
+            resourceIds: [],
+          },
+        });
+        yield* store.bind(thread.id, resolved, project);
+        const publishing = yield* Deferred.make<void>();
+        const proceed = yield* Deferred.make<void>();
+        const acknowledged = yield* Ref.make(true);
+        const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
+        const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+          Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+          Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+            ...(yield* ProjectionStore.ProjectionStoreV2),
+            getShellSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                threads: [thread],
+                archivedThreads: [],
+              }),
+          }),
+          Effect.provideService(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
+            ...publisher,
+            publish: (input) =>
+              publisher.publish(input).pipe(
+                Effect.tap(() => Deferred.succeed(publishing, undefined)),
+                Effect.tap(() => Deferred.await(proceed)),
+              ),
+          }),
+        );
+        const cleanup = yield* Effect.forkChild(
+          cleaner.cleanupTemporaryCopies(() => Ref.get(acknowledged)),
+        );
+        yield* Deferred.await(publishing);
+        const keep =
+          protection === "keep"
+            ? yield* Effect.forkChild(
+                cleaner.setCopyRetention({ workingCopyId: copy.id, keepOnComputer: true }),
+                { startImmediately: true },
+              )
+            : undefined;
+        if (protection === "pending-history") yield* Ref.set(acknowledged, false);
+        yield* Deferred.succeed(proceed, undefined);
+        yield* Fiber.join(cleanup);
+        if (keep !== undefined) expect((yield* Fiber.join(keep)).keepOnComputer).toBe(true);
+        expect(yield* fs.exists(rootPath)).toBe(true);
+        if (protection === "keep") expect((yield* store.get(copy.id)).removalPath).toBeNull();
+        else {
+          expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+          yield* Ref.set(acknowledged, true);
+          yield* cleaner.cleanupTemporaryCopies(() => Ref.get(acknowledged));
+          expect(yield* fs.exists(rootPath)).toBe(false);
+          expect((yield* store.get(copy.id)).copy.state).toBe("released");
+        }
+      }),
   );
 
   it.effect("publishes retention on this computer and rejects another computer's copies", () =>
@@ -2131,8 +2445,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
-  it.effect.each(["before-removal", "after-removal"] as const)(
-    "retains recovery cache until a failed %s release receipt can be retried",
+  it.effect.each(["before-removal", "after-commit", "after-removal"] as const)(
+    "retains only durably referenced recovery cache after a failed %s release receipt",
     (stage) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -2150,18 +2464,27 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         yield* fs.writeFileString(path.join(rootPath, "local.txt"), "local-only work");
         const review = yield* service.status({ workingCopyId: copy.id });
         let failReceipt = true;
+        let stagingPath: string | null = null;
         const interrupted = yield* LibraryWorkspace.LibraryWorkspace.pipe(
           Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
           Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
             ...store,
             put: (receipt) =>
-              failReceipt &&
-              receipt.copy.id === copy.id &&
-              (stage === "before-removal"
-                ? receipt.removalPath !== null && receipt.copy.state === "ready"
-                : receipt.copy.state === "released")
-                ? Effect.fail(new LibraryError({ reason: "io" }))
-                : store.put(receipt),
+              Effect.gen(function* () {
+                if (receipt.copy.id === copy.id && receipt.archivePath !== null)
+                  stagingPath = receipt.archivePath;
+                if (
+                  failReceipt &&
+                  receipt.copy.id === copy.id &&
+                  (stage !== "after-removal"
+                    ? receipt.removalPath !== null && receipt.copy.state === "ready"
+                    : receipt.copy.state === "released")
+                ) {
+                  if (stage === "after-commit") yield* store.put(receipt);
+                  return yield* new LibraryError({ reason: "io" });
+                }
+                yield* store.put(receipt);
+              }),
           }),
         );
         const request = {
@@ -2170,19 +2493,13 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
           reviewToken: review.reviewToken!,
         };
         expect((yield* interrupted.release(request).pipe(Effect.flip)).reason).toBe("io");
-        expect(yield* fs.exists(rootPath)).toBe(stage === "before-removal");
-        const config = yield* ServerConfig.ServerConfig;
-        const hash = Hex.encode(
-          yield* (yield* Crypto.Crypto).digest("SHA-256", new TextEncoder().encode(copy.id)),
-        );
-        const cache = path.join(
-          config.stateDir,
-          "project-library",
-          "archives",
-          `${hash.slice(0, 40)}.tar.gz`,
-        );
-        expect(yield* fs.exists(cache)).toBe(true);
-        expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+        expect(yield* fs.exists(rootPath)).toBe(stage !== "after-removal");
+        expect(stagingPath).not.toBeNull();
+        const cache = stagingPath!;
+        expect(yield* fs.exists(cache)).toBe(stage !== "before-removal");
+        const pending = yield* store.get(copy.id);
+        expect(pending.copy.state).toBe("ready");
+        expect(pending.archivePath).toBe(stage === "before-removal" ? null : cache);
         failReceipt = false;
         expect((yield* interrupted.release(request)).state).toBe("released");
         expect(yield* fs.exists(rootPath)).toBe(false);

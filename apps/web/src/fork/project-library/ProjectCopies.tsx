@@ -41,6 +41,7 @@ import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryContr
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { useLibraryAttempt } from "./attempts";
 import { ExistingFolderStorage } from "./ExistingFolderStorage";
+import { TemporaryResources } from "./TemporaryResources";
 import { CopyProfileSetup } from "./ProfileReadiness";
 import { ComputerIcon, ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
@@ -477,6 +478,7 @@ export function ProjectCopies({
                     copy={copy}
                   />
                 ) : null}
+                <TemporaryResources copy={copy} connected={online} />
                 <details className="space-y-3">
                   <summary className="w-fit cursor-pointer text-xs text-muted-foreground">
                     Computer details

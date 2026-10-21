@@ -285,7 +285,7 @@ apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	mini-native-rete
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	workspace-handoff	1
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecycle	5
-apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	10
+apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	9
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	2

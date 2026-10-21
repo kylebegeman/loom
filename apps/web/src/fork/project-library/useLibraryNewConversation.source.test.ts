@@ -147,6 +147,18 @@ describe("sidebar source conversation", () => {
     expect(state.binding.run).not.toHaveBeenCalled();
   });
 
+  it("preserves a source branch and its lane through the existing checkout flow", async () => {
+    state.shell.mockReturnValue({
+      projectId: ProjectId.make("local-project"),
+      ...launchSettings,
+      branch: "feature/current-work",
+      worktreePath: "/worktrees/current-work",
+    });
+    expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(false);
+    expect(state.open).not.toHaveBeenCalled();
+    expect(state.binding.run).not.toHaveBeenCalled();
+  });
+
   it("uses the existing local flow for a folder with no Library project", async () => {
     state.binding.run.mockResolvedValue({ _tag: "Success", value: null });
     expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(false);

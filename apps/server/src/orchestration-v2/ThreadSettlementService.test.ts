@@ -26,6 +26,7 @@ import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
@@ -1321,6 +1322,87 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* Deferred.succeed(completion, { exitCode: 0, durationMs: 1 });
           yield* Queue.take(requests);
           yield* service.drain;
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("prepares lane cleanup before settlement delivery and runs the hook once", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const completion =
+          yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
+        const thread = appThread("lane-cleanup", "settled", "/worktrees/lane-cleanup");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [thread],
+          existingWorktreePaths: [thread.worktreePath!],
+          scriptResult: () => ({
+            status: "started",
+            scriptId: "settle",
+            scriptName: "Settle",
+            scriptCommand: "cleanup",
+            terminalId: "settle-terminal",
+            cwd: thread.worktreePath!,
+            async: true,
+            completion: Deferred.await(completion),
+          }),
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          let finished = false;
+          const cleanup = yield* service.prepareForCleanup(thread.id).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                finished = true;
+              }),
+            ),
+            Effect.forkChild({ startImmediately: true }),
+          );
+          yield* Queue.take(fixture.scriptRuns);
+          expect(finished).toBe(false);
+          yield* Deferred.succeed(completion, { exitCode: 0, durationMs: 1 });
+          expect(yield* Fiber.join(cleanup)).toBe(true);
+          expect(yield* service.prepareForCleanup(thread.id)).toBe(true);
+          expect(yield* Queue.size(fixture.scriptRuns)).toBe(0);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("keeps failed settle work retryable before releasing its lane", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const thread = appThread("retry-lane-cleanup", "settled", "/worktrees/retry-lane-cleanup");
+        const currentThreads = [thread];
+        let exitCode = 1;
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads,
+          existingWorktreePaths: [thread.worktreePath!],
+          scriptResult: () => ({
+            status: "started",
+            scriptId: "settle",
+            scriptName: "Settle",
+            scriptCommand: "cleanup",
+            terminalId: "settle-terminal",
+            cwd: thread.worktreePath!,
+            async: true,
+            completion: Effect.sync(() => ({ exitCode, durationMs: 1 })),
+          }),
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          expect(yield* service.prepareForCleanup(thread.id)).toBe(false);
+          exitCode = 0;
+          expect(yield* service.prepareForCleanup(thread.id)).toBe(false);
+          currentThreads[0] = {
+            ...thread,
+            settledAt: DateTime.add(thread.settledAt!, { seconds: 1 }),
+          };
+          expect(yield* service.prepareForCleanup(thread.id)).toBe(true);
+          expect(yield* service.prepareForCleanup(thread.id)).toBe(true);
+          expect(yield* Queue.size(fixture.scriptRuns)).toBe(2);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

@@ -1,3 +1,5 @@
+import * as ThreadSettlementService from "./ThreadSettlementService.ts";
+import * as StorageCleanup from "../storageCleanup.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
@@ -255,7 +257,7 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
   ),
 );
 
-const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
+export const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerOrchestratorProvided,
@@ -267,6 +269,27 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
 );
 export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe(
   Layer.provide(layerProjectService),
+);
+export const layerStorageCleanup = StorageCleanup.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      ProjectionStore.layer,
+      layerOrchestratorProvided,
+      layerProviderSessionManagerProvided,
+    ),
+  ),
+  Layer.provide(layerProjectService),
+);
+export const layerThreadSettlement = ThreadSettlementService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerOrchestratorProvided,
+      ProjectionStore.layer,
+      layerProjectSetupScriptRunner,
+      layerStorageCleanup,
+    ),
+  ),
+  Layer.provide(ProjectStore.layer),
 );
 const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),

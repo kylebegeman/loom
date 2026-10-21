@@ -20,7 +20,7 @@
 - `space.test.ts`: attach output and `diskutil info` parsing; on macOS with `diskutil image`,
   create, attach, write, grow, detach and remove a 1 GB image in a temporary directory.
 - `ProjectLifecycleService.test.ts`: with mocked thread management and a folder backend,
-  `run.created` creates one lane per checkout, concurrent runs share it, settling the last
+  provider preparation creates one lane per checkout, concurrent runs share it, settling the last
   holder reclaims it, a running thread at 75% is steered once with a deterministic id, startup
   reconcile reclaims lanes whose threads settled while the server was down. Phase 2, with
   stub `xcrun`, `docker` and `lsof` and a fake `DeviceService`: lanes get distinct port
