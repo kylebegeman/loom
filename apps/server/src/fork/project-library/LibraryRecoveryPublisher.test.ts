@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, AuthSessionId } from "@t3tools/contracts";
-import { type LibraryRecoveryReceipt } from "@t3tools/contracts/fork";
+import { type LibraryRecoveryGrant, type LibraryRecoveryReceipt } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -17,9 +17,11 @@ import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { libraryComputerDirectory } from "./enrollment.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
+import { recoveryDescriptorDigest } from "./recoveryGrant.ts";
 
 const source = EnvironmentId.make("source-host");
 const library = EnvironmentId.make("central-library");
+const destination = EnvironmentId.make("destination-host");
 const bytes = new TextEncoder().encode("archive with work and complete Git recovery history");
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const manifest = {
@@ -33,13 +35,16 @@ const manifest = {
   manifestFile: "loom-working-copy.json" as const,
 };
 const fixture = Effect.fnUntraced(function* (mode = "valid") {
+  const portable = mode.startsWith("portable");
+  const responseMode = portable ? mode.slice("portable-".length) : mode;
+  const localEnvironmentId = portable ? destination : source;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: "recovery-publisher-" });
   const archivePath = path.join(directory, "archive.tar");
   const credentialPath =
-    mode === "enrolled"
-      ? path.join(libraryComputerDirectory(directory, source), "publisher.json")
+    responseMode === "enrolled"
+      ? path.join(libraryComputerDirectory(directory, localEnvironmentId), "publisher.json")
       : path.join(directory, "credential.json");
   yield* fs.makeDirectory(path.dirname(credentialPath), { recursive: true, mode: 0o700 });
   yield* fs.writeFile(archivePath, bytes);
@@ -47,7 +52,7 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
     credentialPath,
     encodeJson({
       version: 1,
-      sourceEnvironmentId: mode === "wrong-source" ? "other-host" : source,
+      sourceEnvironmentId: mode === "wrong-source" ? "other-host" : localEnvironmentId,
       libraryEnvironmentId: library,
       libraryUrl: "https://library.example.test",
       sessionId: AuthSessionId.make("publisher-session"),
@@ -65,6 +70,26 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
     archiveKey: "recovery/key",
     verifiedAt: "2026-10-15T00:00:00Z",
   };
+  const grant: LibraryRecoveryGrant = {
+    sourceCopy: {
+      id: manifest.copyId,
+      projectId: manifest.projectId,
+      projectRevision: manifest.projectRevision,
+      environmentId: source,
+      rootPath: "/source/work",
+      repositories: [],
+      ownership: "managed",
+      state: "released",
+      recovery: receipt,
+      createdAt: receipt.verifiedAt,
+      updatedAt: receipt.verifiedAt,
+    },
+    destinationEnvironmentId: destination,
+    libraryEnvironmentId: library,
+    expiresAt: "2100-01-01T00:00:00Z",
+    accessToken: "portable-token",
+  };
+  const descriptorDigest = yield* recoveryDescriptorDigest(grant);
   const requests: string[] = [];
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
@@ -73,12 +98,15 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
         expect(request.headers.authorization).toBeUndefined();
         return HttpClientResponse.fromWeb(request, new Response(bytes));
       }
-      expect(request.headers.authorization).toBe("Bearer fixture-credential");
+      expect(request.headers.authorization).toBe(
+        portable ? "Bearer portable-token" : "Bearer fixture-credential",
+      );
       if (request.url.endsWith("/info"))
         return HttpClientResponse.fromWeb(
           request,
           Response.json({
-            environmentId: mode === "wrong-library" ? "another-library" : library,
+            environmentId: responseMode === "wrong-library" ? "another-library" : library,
+            isAuthority: true,
             authorityId: "authority",
             authorityEpoch: 1,
             assets: "b2",
@@ -105,21 +133,23 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
               ),
         );
       }
+      if (portable && request.headers["x-loom-recovery-descriptor"] !== descriptorDigest)
+        return HttpClientResponse.fromWeb(request, new Response(null, { status: 403 }));
       return HttpClientResponse.fromWeb(
         request,
-        mode === "redirect"
+        responseMode === "redirect"
           ? new Response(null, {
               status: 302,
               headers: { location: "https://objects.example.test/archive" },
             })
-          : mode === "unavailable"
+          : responseMode === "unavailable"
             ? new Response(null, { status: 503 })
             : new Response(
-                mode === "corrupt"
+                responseMode === "corrupt"
                   ? bytes.slice(0, bytes.length - 1)
-                  : mode === "oversized"
+                  : responseMode === "oversized"
                     ? new Uint8Array([...bytes, 1])
-                    : mode === "wrong-digest"
+                    : responseMode === "wrong-digest"
                       ? bytes.map((byte) => byte ^ 1)
                       : bytes,
               ),
@@ -130,16 +160,24 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
     Effect.provide(Publisher.layer),
     Effect.provideService(HttpClient.HttpClient, http),
     Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "recovery-enrollment-test-" })),
-    Effect.provideService(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(source) }),
+    Effect.provideService(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(localEnvironmentId),
+    }),
     Effect.provideService(HostProcess.HomeDirectory, directory),
     Effect.provideService(
       HostProcess.Environment,
-      ["unconfigured", "enrolled"].includes(mode)
-        ? {}
-        : { LOOM_LIBRARY_CREDENTIAL_FILE: credentialPath },
+      portable
+        ? responseMode === "unconfigured"
+          ? {}
+          : responseMode === "enrolled"
+            ? {}
+            : { LOOM_LIBRARY_URL: "https://library.example.test" }
+        : ["unconfigured", "enrolled"].includes(mode)
+          ? {}
+          : { LOOM_LIBRARY_CREDENTIAL_FILE: credentialPath },
     ),
   );
-  return { publisher, archivePath, sha256, receipt, requests, fs };
+  return { publisher, archivePath, sha256, receipt, requests, fs, grant };
 });
 const run = <A, E, R>(
   mode: string,
@@ -150,6 +188,88 @@ const run = <A, E, R>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("recovery archive publishing", () => {
+  it.effect.each(["portable-valid", "portable-redirect", "portable-enrolled"])(
+    "retrieves another computer's archive with a destination grant through %s configuration",
+    (mode) =>
+      run(mode, (test) =>
+        Effect.gen(function* () {
+          const restored = `${test.archivePath}.portable`;
+          yield* test.publisher.retrievePortable({ grant: test.grant, archivePath: restored });
+          expect([...(yield* test.fs.readFile(restored))]).toEqual([...bytes]);
+          expect(test.requests[1]).toContain(
+            `/recovery-grants/${destination}/${source}/${manifest.copyId}/`,
+          );
+          expect(test.requests).toHaveLength(mode === "portable-redirect" ? 3 : 2);
+        }),
+      ),
+  );
+  it.effect("rejects a destination or expiry mismatch before network or filesystem writes", () =>
+    run("portable-valid", (test) =>
+      Effect.gen(function* () {
+        for (const change of [
+          { destinationEnvironmentId: source },
+          { expiresAt: "1970-01-01T00:00:00Z" },
+        ])
+          expect(
+            (yield* test.publisher
+              .retrievePortable({
+                grant: { ...test.grant, ...change },
+                archivePath: `${test.archivePath}.portable`,
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+        expect(test.requests).toEqual([]);
+        expect(yield* test.fs.exists(`${test.archivePath}.portable`)).toBe(false);
+      }),
+    ),
+  );
+  it.effect("authenticates the supplied copy descriptor before writing portable bytes", () =>
+    run("portable-valid", (test) =>
+      Effect.gen(function* () {
+        const restored = `${test.archivePath}.portable`;
+        yield* test.fs.writeFileString(restored, "preserved");
+        expect(
+          (yield* test.publisher
+            .retrievePortable({
+              grant: {
+                ...test.grant,
+                sourceCopy: { ...test.grant.sourceCopy, projectId: "injected" },
+              },
+              archivePath: restored,
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("archive-unverified");
+        expect(yield* test.fs.readFileString(restored)).toBe("preserved");
+      }),
+    ),
+  );
+  it.effect.each([
+    "corrupt",
+    "oversized",
+    "wrong-digest",
+    "unavailable",
+    "wrong-library",
+    "unconfigured",
+  ])("preserves destination bytes when portable recovery is %s", (mode) =>
+    run(`portable-${mode}`, (test) =>
+      Effect.gen(function* () {
+        const restored = `${test.archivePath}.portable`;
+        yield* test.fs.writeFileString(restored, "preserved");
+        yield* test.publisher
+          .retrievePortable({ grant: test.grant, archivePath: restored })
+          .pipe(Effect.flip);
+        expect(yield* test.fs.readFileString(restored)).toBe("preserved");
+        expect(
+          (yield* test.fs.readDirectory((yield* Path.Path).dirname(restored))).filter((name) =>
+            name.startsWith("recovery-"),
+          ),
+        ).toEqual([]);
+        if (mode === "wrong-library") expect(test.requests).toHaveLength(1);
+        if (mode === "unconfigured") expect(test.requests).toEqual([]);
+      }),
+    ),
+  );
+
   it.effect("uses the computer enrollment for recovery without shell configuration", () =>
     run("enrolled", (test) =>
       Effect.gen(function* () {

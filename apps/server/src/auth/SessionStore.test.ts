@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
@@ -115,6 +116,36 @@ const layerFailingSessionLookupCredential = Layer.effect(
 );
 
 it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+  it.effect("binds an explicit credential deadline within its allowed lifetime", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const now = yield* DateTime.now;
+      const expiresAt = DateTime.add(now, { minutes: 2 });
+      const issued = yield* sessions.issue({ ttl: Duration.minutes(5), expiresAt });
+      expect(issued.expiresAt).toEqual(expiresAt);
+      expect((yield* sessions.verify(issued.token)).expiresAt).toEqual(expiresAt);
+      for (const invalid of [
+        now,
+        DateTime.add(now, { minutes: -1 }),
+        DateTime.add(now, { minutes: 6 }),
+      ]) {
+        expect(
+          (yield* sessions
+            .issue({ ttl: Duration.minutes(5), expiresAt: invalid })
+            .pipe(Effect.flip))._tag,
+        ).toBe("SessionCredentialIssueError");
+      }
+      expect(
+        (yield* sessions.issue({ expiresAt: DateTime.add(now, { days: 31 }) }).pipe(Effect.flip))
+          ._tag,
+      ).toBe("SessionCredentialIssueError");
+      yield* TestClock.adjust(Duration.minutes(2));
+      expect((yield* sessions.verify(issued.token).pipe(Effect.flip))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+    }).pipe(Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
   it.effect.each(["revoke", "revokeAllExcept", "replace"] as const)(
     "invalidates every connection for a session on %s and leaves other sessions active",
     (operation) =>

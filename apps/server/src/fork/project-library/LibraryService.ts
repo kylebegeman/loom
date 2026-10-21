@@ -1,5 +1,7 @@
 import {
   LibraryComputer,
+  LibraryAuthorizeRecoveryRequest,
+  LibraryRecoveryGrant,
   LibraryRegisterComputerRequest,
   LibraryProject,
   LibraryWorkingCopy,
@@ -34,7 +36,13 @@ import {
   type LibraryBriefProposalsRequest,
   type LibraryProposeBriefRequest,
 } from "@t3tools/contracts/fork";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthLibraryRecoveryReadScope,
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  type EnvironmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
@@ -65,6 +73,10 @@ import * as ServerActivation from "../../serverActivation.ts";
 import * as BriefProposals from "./LibraryBriefProposals.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import { LOOM_SERVER_FEATURES } from "../features.ts";
+import * as SessionStore from "../../auth/SessionStore.ts";
+import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
+import * as Recovery from "./assets/LibraryRecoveryStore.ts";
+import { readRecoveryGrantClaims, recoveryGrantSubject } from "./recoveryGrant.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -73,6 +85,20 @@ export class LibraryService extends Context.Service<
       input: LibraryRegisterComputerRequest,
     ) => Effect.Effect<LibraryComputer, LibraryError>;
     readonly info: Effect.Effect<LibraryInfo, LibraryError>;
+    readonly authorizeRecovery: (
+      input: LibraryAuthorizeRecoveryRequest,
+      session: Pick<AuthenticatedSession, "subject" | "scopes" | "expiresAt">,
+    ) => Effect.Effect<LibraryRecoveryGrant, LibraryError>;
+    readonly readRecoveryGrant: (
+      input: {
+        readonly destinationEnvironmentId: EnvironmentId;
+        readonly sourceEnvironmentId: EnvironmentId;
+        readonly workingCopyId: string;
+        readonly sha256: string;
+        readonly descriptorDigest: string;
+      },
+      session: Pick<AuthenticatedSession, "subject" | "scopes" | "expiresAt">,
+    ) => ReturnType<Recovery.LibraryRecoveryStore["Service"]["get"]>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly projects: (input: {
       includeArchived?: boolean | undefined;
@@ -219,6 +245,8 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
   const assets = yield* Assets.LibraryAssetService;
+  const sessions = yield* Effect.serviceOption(SessionStore.SessionStore);
+  const recovery = yield* Effect.serviceOption(Recovery.LibraryRecoveryStore);
   const historySearch = yield* makeLibrarySearch;
   const lock = yield* Semaphore.make(1);
   const refreshes = yield* SubscriptionRef.make(0);
@@ -628,6 +656,107 @@ const make = Effect.gen(function* () {
       };
     }),
   );
+  const authorizeRecovery: LibraryService["Service"]["authorizeRecovery"] = Effect.fn(
+    "LibraryService.authorizeRecovery",
+  )(function* (input, session) {
+    if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+    const issuedAt = yield* DateTime.now;
+    if (
+      !session.scopes.includes(AuthOrchestrationOperateScope) ||
+      !session.scopes.includes(AuthOrchestrationReadScope) ||
+      session.subject === "mcp-client" ||
+      session.subject.startsWith("loom-host:") ||
+      (session.expiresAt !== undefined &&
+        session.expiresAt.epochMilliseconds <= issuedAt.epochMilliseconds)
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    if (Option.isNone(sessions) || Option.isNone(recovery))
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const saved = yield* store.copy(input.workingCopyId).pipe(Effect.mapError(io));
+    if (saved === null) return yield* new LibraryError({ reason: "not-found" });
+    const sourceCopy = yield* decode(codecs.copy, saved);
+    if (sourceCopy.environmentId !== input.sourceEnvironmentId)
+      return yield* new LibraryError({ reason: "blocked" });
+    yield* getProject(sourceCopy.projectId, sourceCopy.projectRevision).pipe(Effect.mapError(io));
+    const metadata = sourceCopy.recovery;
+    if (metadata === undefined) return yield* new LibraryError({ reason: "archive-unverified" });
+    const archive = yield* recovery.value.get(
+      sourceCopy.environmentId,
+      sourceCopy.id,
+      metadata.sha256,
+    );
+    if (
+      archive.receipt.byteLength !== metadata.byteLength ||
+      archive.receipt.archiveKey !== metadata.archiveKey ||
+      archive.manifest.projectId !== sourceCopy.projectId ||
+      archive.manifest.projectRevision !== sourceCopy.projectRevision ||
+      archive.manifest.environmentId !== sourceCopy.environmentId ||
+      archive.manifest.copyId !== sourceCopy.id ||
+      archive.receipt.sourceEnvironmentId !== sourceCopy.environmentId ||
+      archive.receipt.copyId !== sourceCopy.id ||
+      archive.receipt.sha256 !== metadata.sha256
+    )
+      return yield* new LibraryError({ reason: "archive-unverified" });
+    const expiresAt = DateTime.makeUnsafe(
+      Math.min(
+        issuedAt.epochMilliseconds + 5 * 60 * 1000,
+        session.expiresAt?.epochMilliseconds ?? Infinity,
+      ),
+    );
+    const descriptor = {
+      sourceCopy,
+      destinationEnvironmentId: input.destinationEnvironmentId,
+      libraryEnvironmentId: yield* identity.getEnvironmentId,
+      expiresAt: DateTime.formatIso(expiresAt),
+    };
+    const issued = yield* sessions.value
+      .issue({
+        subject: yield* recoveryGrantSubject(descriptor).pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+        ),
+        method: "bearer-access-token",
+        scopes: [AuthLibraryRecoveryReadScope],
+        expiresAt,
+        client: { deviceType: "bot", label: "Loom project recovery" },
+      })
+      .pipe(Effect.mapError(() => new LibraryError({ reason: "io" })));
+    return { ...descriptor, accessToken: issued.token };
+  });
+  const readRecoveryGrant: LibraryService["Service"]["readRecoveryGrant"] = Effect.fn(
+    "LibraryService.readRecoveryGrant",
+  )(function* (input, session) {
+    if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+    const claims = yield* readRecoveryGrantClaims(session);
+    if (
+      claims.destinationEnvironmentId !== input.destinationEnvironmentId ||
+      claims.sourceEnvironmentId !== input.sourceEnvironmentId ||
+      claims.copyId !== input.workingCopyId ||
+      claims.sha256 !== input.sha256 ||
+      claims.descriptorDigest !== input.descriptorDigest ||
+      claims.libraryEnvironmentId !== (yield* identity.getEnvironmentId) ||
+      Date.parse(claims.expiresAt) <= (yield* DateTime.now).epochMilliseconds
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    if (Option.isNone(recovery))
+      return yield* new LibraryError({ reason: "publisher-unavailable" });
+    const archive = yield* recovery.value.get(
+      input.sourceEnvironmentId,
+      input.workingCopyId,
+      input.sha256,
+    );
+    if (
+      archive.receipt.sourceEnvironmentId !== claims.sourceEnvironmentId ||
+      archive.receipt.copyId !== claims.copyId ||
+      archive.receipt.sha256 !== claims.sha256 ||
+      archive.receipt.byteLength !== claims.byteLength ||
+      archive.manifest.projectId !== claims.projectId ||
+      archive.manifest.projectRevision !== claims.projectRevision ||
+      archive.manifest.copyId !== claims.copyId ||
+      archive.manifest.environmentId !== claims.sourceEnvironmentId
+    )
+      return yield* new LibraryError({ reason: "archive-unverified" });
+    return archive;
+  });
   const createProject = (input: LibraryCreateProjectRequest) =>
     mutation(
       "create-project",
@@ -989,6 +1118,8 @@ const make = Effect.gen(function* () {
     isAuthority ? effect : Effect.fail(new LibraryError({ reason: "not-authority" }));
   return LibraryService.of({
     info,
+    authorizeRecovery,
+    readRecoveryGrant,
     registerComputer,
     subscribeRefreshes: SubscriptionRef.changes(refreshes),
     createProject,

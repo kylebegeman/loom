@@ -14,6 +14,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as EnvironmentAuth from "../../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, withForkRuntime } from "../../ForkRuntime.ts";
 import * as Recovery from "./LibraryRecoveryStore.ts";
+import * as LibraryService from "../LibraryService.ts";
 const decodeManifest = Schema.decodeEffect(Schema.fromJsonString(LibraryRecoveryManifest));
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
 const prefix = "/api/loom/library/recovery/";
@@ -123,10 +124,88 @@ const handler = (method: "GET" | "PUT") =>
       HttpServerResponse.text("Recovery archive unavailable", { status: 401 }),
     ),
   );
+const grantPrefix = "/api/loom/library/recovery-grants/";
+const grantHandler = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const auth = yield* EnvironmentAuth.EnvironmentAuth;
+    const session = yield* auth.authenticateHttpRequest(request);
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) return HttpServerResponse.text("Invalid request", { status: 400 });
+    const parts = yield* Effect.try({
+      try: () => url.value.pathname.slice(grantPrefix.length).split("/").map(decodeURIComponent),
+      catch: () => new LibraryError({ reason: "invalid" }),
+    });
+    const descriptorDigest = request.headers["x-loom-recovery-descriptor"] ?? "";
+    if (
+      parts.length !== 4 ||
+      !parts.slice(0, 3).every((part) => /^[A-Za-z0-9._:-]{1,200}$/.test(part)) ||
+      !/^[a-f0-9]{64}$/.test(parts[3]!) ||
+      !/^[a-f0-9]{64}$/.test(descriptorDigest)
+    )
+      return HttpServerResponse.text("Invalid recovery archive", { status: 400 });
+    const service = yield* LibraryService.LibraryService;
+    const archive = yield* service.readRecoveryGrant(
+      {
+        destinationEnvironmentId: yield* decodeEnvironmentId(parts[0]),
+        sourceEnvironmentId: yield* decodeEnvironmentId(parts[1]),
+        workingCopyId: parts[2]!,
+        sha256: parts[3]!,
+        descriptorDigest,
+      },
+      session,
+    );
+    if (archive.url !== null)
+      return HttpServerResponse.empty({
+        status: 302,
+        headers: {
+          location: archive.url,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    return HttpServerResponse.stream(archive.body, {
+      headers: {
+        "content-type": "application/x-tar",
+        "content-disposition": `attachment; filename="${parts[2]}.tar"`,
+        "content-length": String(archive.receipt.byteLength),
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  }),
+).pipe(
+  Effect.catchTags({
+    LibraryError: (error) =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          { reason: error.reason },
+          {
+            status:
+              error.reason === "blocked"
+                ? 403
+                : error.reason === "not-found"
+                  ? 404
+                  : error.reason === "invalid"
+                    ? 400
+                    : 503,
+          },
+        ),
+      ),
+  }),
+  Effect.orElseSucceed(() =>
+    HttpServerResponse.text("Recovery archive unavailable", { status: 401 }),
+  ),
+);
 export const LibraryRecoveryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
-    return Layer.merge(
+    return Layer.mergeAll(
+      HttpRouter.add(
+        "GET",
+        `${grantPrefix}*`,
+        grantHandler.pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "PUT",
         `${prefix}*`,

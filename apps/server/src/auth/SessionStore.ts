@@ -370,6 +370,7 @@ export class SessionStore extends Context.Service<
     readonly legacyCookieName: string | undefined;
     readonly issue: (input?: {
       readonly ttl?: Duration.Duration;
+      readonly expiresAt?: DateTime.DateTime;
       readonly subject?: string;
       readonly method?: ServerAuthSessionMethod;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -658,9 +659,22 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ cause }))),
       );
       const issuedAt = yield* DateTime.now;
-      const expiresAt = DateTime.add(issuedAt, {
-        milliseconds: Duration.toMillis(input?.ttl ?? DEFAULT_SESSION_TTL),
-      });
+      if (
+        input?.expiresAt !== undefined &&
+        (input.expiresAt.epochMilliseconds <= issuedAt.epochMilliseconds ||
+          input.expiresAt.epochMilliseconds >
+            issuedAt.epochMilliseconds + Duration.toMillis(input.ttl ?? DEFAULT_SESSION_TTL))
+      )
+        return yield* new SessionCredentialIssueError({
+          sessionId,
+          cause: new Error("Session expiration must be within its allowed lifetime."),
+        });
+      const expiresAt =
+        input?.expiresAt === undefined
+          ? DateTime.add(issuedAt, {
+              milliseconds: Duration.toMillis(input?.ttl ?? DEFAULT_SESSION_TTL),
+            })
+          : DateTime.toUtc(input.expiresAt);
       const claims: SessionClaims = {
         v: 1,
         kind: "session",
