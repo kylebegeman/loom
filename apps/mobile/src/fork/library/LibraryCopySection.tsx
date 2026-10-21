@@ -13,7 +13,7 @@ import { View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
+import { LibraryManagedFileControls } from "./LibraryManagedFileControls";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -50,10 +50,6 @@ export function LibraryCopySection(props: {
     props.copy.environmentId,
     LIBRARY_FILE_LIFECYCLE_FEATURE,
   );
-  const canSetRetention = useAtomValue(
-    library.setCopyRetention.permissionAtom(props.copy.environmentId),
-  );
-  const setRetention = useAtomCommand(library.setCopyRetention, { reportFailure: false });
   const inspect = useAtomQueryRunner(library.copyStatus, { refresh: true, reportFailure: false });
   const release = useAtomCommand(library.releaseCopy, { reportFailure: false }),
     unregister = useAtomCommand(library.unregisterCopy, { reportFailure: false }),
@@ -72,12 +68,6 @@ export function LibraryCopySection(props: {
   const recoveryController = useRef<AbortController | null>(null);
   useEffect(() => () => recoveryController.current?.abort(), []);
   const [retainedCopy, setRetainedCopy] = useState<LibraryWorkingCopy | null>(null);
-  const [retentionAttempt, setRetentionAttempt] = useState<{
-    keepOnComputer: boolean;
-    copy: LibraryWorkingCopy | null;
-    requestId: string;
-    authorityId: EnvironmentId;
-  } | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [removedCopy, setRemovedCopy] = useState<LibraryWorkingCopy | null>(null),
     [removalRegistered, setRemovalRegistered] = useState(false);
@@ -96,71 +86,7 @@ export function LibraryCopySection(props: {
     permitted &&
     canRegister &&
     !removed &&
-    retentionAttempt === null &&
     (borrowed || !supportsFileLifecycle || !keepOnComputer);
-  async function saveRetention(keepOnComputer: boolean) {
-    if (
-      busy.current ||
-      folderBusy.current ||
-      recoveryController.current ||
-      !connected ||
-      !props.authorityReady ||
-      !canRegister ||
-      !canSetRetention ||
-      !supportsFileLifecycle ||
-      borrowed ||
-      removed
-    )
-      return;
-    busy.current = true;
-    setPending(true);
-    setError(null);
-    setNotice(null);
-    setReview(null);
-    let attempt = retentionAttempt ?? {
-      keepOnComputer,
-      copy: null,
-      requestId: uuidv4(),
-      authorityId: props.authorityEnvironmentId,
-    };
-    setRetentionAttempt(attempt);
-    try {
-      if (attempt.authorityId !== props.authorityEnvironmentId)
-        throw new Error("Reconnect the library used for this setting before retrying.");
-      if (!attempt.copy) {
-        const result = await setRetention({
-          environmentId: copy.environmentId,
-          input: { workingCopyId: copy.id, keepOnComputer: attempt.keepOnComputer },
-        });
-        if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-        attempt = { ...attempt, copy: result.value };
-        setRetentionAttempt(attempt);
-        setRetainedCopy(result.value);
-      }
-      const result = await register({
-        environmentId: props.authorityEnvironmentId,
-        input: { requestId: attempt.requestId, copy: attempt.copy! },
-      });
-      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-      setRetentionAttempt(null);
-      setNotice(
-        keepOnComputer
-          ? "Files will stay on this computer."
-          : "Files can be removed after a safety review. Your project and conversations stay saved.",
-      );
-      props.onChanged();
-    } catch (cause) {
-      setError(
-        (attempt.copy
-          ? "The setting changed on this computer; it still needs saving to your library. "
-          : "") +
-          (cause instanceof Error ? cause.message : "The Keep files setting could not be saved."),
-      );
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
-  }
   async function remove() {
     if (
       busy.current ||
@@ -269,21 +195,31 @@ export function LibraryCopySection(props: {
           onPending={onFolderPending}
         />
       ) : null}
-      {!borrowed && !removed && supportsFileLifecycle ? (
-        <SettingsSwitchRow
-          label="Keep files on this computer"
-          subtitle="Loom frees space once all work is finished and safely saved. Your project and conversations stay available."
-          value={keepOnComputer}
-          disabled={
-            !connected ||
-            !props.authorityReady ||
-            !canSetRetention ||
-            !canRegister ||
-            pending ||
-            recoveryProgress !== null ||
-            retentionAttempt !== null
-          }
-          onValueChange={(value) => void saveRetention(value)}
+      {!borrowed ? (
+        <LibraryManagedFileControls
+          copy={copy}
+          connected={connected}
+          supported={supportsFileLifecycle}
+          canAct={props.authorityReady && !pending && recoveryProgress === null}
+          authorityEnvironmentId={props.authorityEnvironmentId}
+          onPending={onFolderPending}
+          onChanged={(updated) => {
+            setRemovedCopy(null);
+            setRetainedCopy(updated);
+            released.current = null;
+            setRemovalRegistered(false);
+            setReview(null);
+            setError(null);
+            setNotice(
+              removed || copy.state === "missing" || copy.state === "failed"
+                ? "Files restored and kept on this computer."
+                : updated.keepOnComputer !== false
+                  ? "Files will stay on this computer."
+                  : "Files can be cleaned up after all work is finished and safely saved.",
+            );
+            requestId.current = uuidv4();
+            props.onChanged();
+          }}
         />
       ) : null}
       <View className="gap-3 p-4">
@@ -315,7 +251,7 @@ export function LibraryCopySection(props: {
             Reconnect this computer to inspect its files.
           </Text>
         ) : null}
-        {!borrowed && !removed ? (
+        {!borrowed && !removed && copy.repositories.length > 0 ? (
           <LibraryCopyHealth
             project={props.project}
             copy={copy}
@@ -424,20 +360,6 @@ export function LibraryCopySection(props: {
               void remove();
             }}
           />
-        ) : null}
-        {retentionAttempt !== null && error ? (
-          <Button
-            label="Retry saving Keep files setting"
-            disabled={
-              pending || !connected || !props.authorityReady || !canRegister || !canSetRetention
-            }
-            onPress={() => void saveRetention(retentionAttempt.keepOnComputer)}
-          />
-        ) : null}
-        {!borrowed && removed && copy.recovery ? (
-          <Text className="text-sm text-foreground-muted">
-            Reopen a conversation to restore its saved files on this computer.
-          </Text>
         ) : null}
         {borrowed && removed ? (
           <Button

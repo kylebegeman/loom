@@ -559,37 +559,6 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
       </View>
-      <SettingsSection title="Brief">
-        <View className="p-4">
-          <Text selectable className="text-sm leading-normal text-foreground">
-            {p.brief ||
-              "Every conversation in this project starts with the brief. Say what you're building and what matters."}
-          </Text>
-        </View>
-        <LibraryBriefProposalsRow project={p} authorityId={target} hostLabel={hostLabel} />
-      </SettingsSection>
-      <ProjectSites environmentId={target} projectId={p.id} />
-      <SettingsSection title="Repositories and links">
-        {p.resources.map((resource) => (
-          <View key={resource.id} className="gap-1 px-4 py-3">
-            <Text className="text-sm font-t3-medium text-foreground">{resource.title}</Text>
-            <Text selectable className="text-xs text-foreground-muted">
-              {libraryResourceLocation(resource)}
-            </Text>
-          </View>
-        ))}
-        {p.resources.length === 0 ? (
-          <Text className="p-4 text-sm text-foreground-muted">
-            Add the repositories this project is made of, plus any links worth keeping close.
-          </Text>
-        ) : null}
-        <Button
-          label={p.resources.length ? "Edit project" : "Add repositories or links"}
-          tone="text"
-          disabled={!authority.ready || p.archived}
-          onPress={() => navigation.navigate("LibraryEdit", { projectId: p.id })}
-        />
-      </SettingsSection>
       <View className="gap-3">
         <Text className="text-base font-t3-medium text-foreground">Project files</Text>
         {activeCopies.map((copy) => (
@@ -680,8 +649,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           {showHistory ? (
             <>
               <Text className="text-sm text-foreground-muted">
-                Your project and conversations stay saved. Reopen a conversation to restore its
-                saved files. Existing folders stay on disk until you remove them yourself.
+                Your project and conversations stay saved. Restore files here or reopen a
+                conversation to continue. Existing folders stay on disk until you remove them
+                yourself.
               </Text>
               {removedCopies.map((copy) => (
                 <LibraryCopySection
@@ -700,6 +670,37 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           ) : null}
         </View>
       ) : null}
+      <SettingsSection title="Brief">
+        <View className="p-4">
+          <Text selectable className="text-sm leading-normal text-foreground">
+            {p.brief ||
+              "Every conversation in this project starts with the brief. Say what you're building and what matters."}
+          </Text>
+        </View>
+        <LibraryBriefProposalsRow project={p} authorityId={target} hostLabel={hostLabel} />
+      </SettingsSection>
+      <ProjectSites environmentId={target} projectId={p.id} />
+      <SettingsSection title="Repositories and links">
+        {p.resources.map((resource) => (
+          <View key={resource.id} className="gap-1 px-4 py-3">
+            <Text className="text-sm font-t3-medium text-foreground">{resource.title}</Text>
+            <Text selectable className="text-xs text-foreground-muted">
+              {libraryResourceLocation(resource)}
+            </Text>
+          </View>
+        ))}
+        {p.resources.length === 0 ? (
+          <Text className="p-4 text-sm text-foreground-muted">
+            Add the repositories this project is made of, plus any links worth keeping close.
+          </Text>
+        ) : null}
+        <Button
+          label={p.resources.length ? "Edit project" : "Add repositories or links"}
+          tone="text"
+          disabled={!authority.ready || p.archived}
+          onPress={() => navigation.navigate("LibraryEdit", { projectId: p.id })}
+        />
+      </SettingsSection>
       {project.error ? <LibraryNotice error={project.error} onRetry={project.refresh} /> : null}
       {error ? <LibraryNotice error={error} /> : null}
       <Button

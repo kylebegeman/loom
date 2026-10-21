@@ -79,6 +79,8 @@ import {
   NativeWorkspaceInspectorContext,
 } from "../../native/v5-workspace-context";
 
+// fork: library - Sidebar source actions use the same launch flow as the Home list.
+import { useNewTaskFromSource } from "../../fork/library/NewTaskLibraryProjects";
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
 import { AndroidHingeObserver } from "../../native/AndroidHingeObserver";
 import { WindowHingeContext } from "../../native/window-hinge-context";
@@ -469,17 +471,7 @@ function AdaptiveWorkspaceLayoutContent(
   const handleOpenThreadPullRequests = useOpenThreadPullRequests();
   const { openPendingTask: handleOpenPendingTask } = usePendingTaskListActions();
 
-  const handleNewThreadOnBranch = (thread: EnvironmentThreadShell) => {
-    navigation.navigate("NewTaskSheet", {
-      screen: "NewTaskDraft",
-      params: {
-        environmentId: String(thread.environmentId),
-        projectId: String(thread.projectId),
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-      },
-    });
-  };
+  const handleNewThreadOnBranch = useNewTaskFromSource();
 
   const handleNewThreadInProject = (project: EnvironmentProject) => {
     navigation.navigate("NewTaskSheet", {

@@ -49,6 +49,7 @@ import { threadListEnvironmentsAtom } from "../../state/server";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { ProjectCheckoutSection } from "../project-checkout/ProjectCheckoutSection";
+import { ProjectFolderLocation } from "../project-navigation/ProjectFolderLocation";
 import { projectThreadActivity } from "../project-navigation/projectNavigation.logic";
 import {
   PROJECT_HOME_PAGE_SIZE,
@@ -718,6 +719,10 @@ function ProjectHomeContent(props: {
                   <Text selectable className="text-xs leading-normal text-foreground-muted">
                     {project.workspaceRoot}
                   </Text>
+                  <ProjectFolderLocation
+                    project={project}
+                    computerLabel={environmentLabel(project.environmentId)}
+                  />
                   <Button
                     label={
                       connected && reviewProjectKey === key

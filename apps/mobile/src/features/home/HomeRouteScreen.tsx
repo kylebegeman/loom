@@ -1,3 +1,4 @@
+import { useNewTaskFromSource } from "../../fork/library/NewTaskLibraryProjects";
 import { Toolbar } from "../../components/ui/Toolbar";
 // fork: library
 import {
@@ -11,10 +12,9 @@ import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Platform, useWindowDimensions } from "react-native";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
 
 import { NativeStackScreenOptions } from "../../native/StackHeader";
@@ -74,20 +74,7 @@ export function HomeRouteScreen() {
   // fork: library - Threads on unreachable computers open their saved Library history.
   const libraryHome = useHomeLibraryProjects(useHomeThreadSelection());
   const handleSelectThread = libraryHome.selectThread;
-  const handleNewThreadOnBranch = useCallback(
-    (thread: EnvironmentThreadShell) => {
-      navigation.navigate("NewTaskSheet", {
-        screen: "NewTaskDraft",
-        params: {
-          environmentId: String(thread.environmentId),
-          projectId: String(thread.projectId),
-          branch: thread.branch,
-          worktreePath: thread.worktreePath,
-        },
-      });
-    },
-    [navigation],
-  );
+  const handleNewThreadOnBranch = useNewTaskFromSource();
 
   useEffect(() => {
     void checkForAppUpdateOnLaunch();
@@ -194,7 +181,7 @@ export function HomeRouteScreen() {
             <Toolbar.Button
               accessibilityLabel="New task"
               icon="square.and.pencil"
-              onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+              onPress={startConversation}
             />
           </Toolbar>
         ) : null}

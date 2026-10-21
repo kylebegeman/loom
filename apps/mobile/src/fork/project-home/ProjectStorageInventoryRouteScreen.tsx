@@ -19,6 +19,7 @@ import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { useWorkspaceState } from "../../state/workspace";
+import { ProjectFolderLocation } from "../project-navigation/ProjectFolderLocation";
 import { ProjectStorageRolloutQueue } from "../project-checkout/storageRollout/ProjectStorageRolloutQueue";
 import { useProjectStorageRollout } from "../project-checkout/storageRollout/useProjectStorageRollout";
 import {
@@ -257,6 +258,13 @@ export function ProjectStorageInventoryRouteScreen() {
                     </Text>
                   </View>
                 </Pressable>
+                <View className="px-4 pb-3">
+                  <ProjectFolderLocation
+                    project={project}
+                    computerLabel={computerLabel}
+                    disabled={busy}
+                  />
+                </View>
               </View>
             </View>
           );

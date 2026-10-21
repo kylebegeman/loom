@@ -28,6 +28,8 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
   ThreadId,
+  type RuntimeMode,
+  type ProviderInteractionMode,
 } from "@t3tools/contracts";
 import {
   LIBRARY_FILE_LIFECYCLE_FEATURE,
@@ -70,6 +72,7 @@ import {
 import { LibraryProfileReadiness } from "./LibraryProfileReadiness";
 import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
 import { libraryConversationModels } from "./libraryModels";
+import type { LibrarySourceSettings } from "./librarySourceLaunch";
 import { LibraryFolderStorage } from "./LibraryFolderStorage";
 import {
   libraryFreshRootPath,
@@ -93,6 +96,9 @@ export function LibraryStartRouteScreen({
 }: StaticScreenProps<{
   readonly projectId: string;
   readonly initialResourceId?: string;
+  readonly initialCopyId?: string;
+  readonly sourceThreadId?: ThreadId;
+  readonly launchSettings?: LibrarySourceSettings;
   readonly sourceArchiveId?: string;
   readonly reuseEnvironmentId?: EnvironmentId;
   readonly reuseRootPath?: string;
@@ -134,7 +140,7 @@ export function LibraryStartRouteScreen({
   );
   return project.data && AsyncResult.isSuccess(preferences) ? (
     <LibraryStartContent
-      key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}`}
+      key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}:${route.params.initialCopyId ?? ""}:${route.params.sourceThreadId ?? ""}`}
       project={project.data}
       projectReady={project.isSuccess && !project.isPending && project.error === null}
       projectNotice={
@@ -143,6 +149,9 @@ export function LibraryStartRouteScreen({
       projectError={project.error}
       onRefreshProject={project.refresh}
       initialResourceId={route.params.initialResourceId}
+      initialCopyId={route.params.initialCopyId}
+      sourceThreadId={route.params.sourceThreadId}
+      launchSettings={route.params.launchSettings}
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
@@ -164,6 +173,9 @@ function LibraryStartContent(props: {
   projectError: string | null;
   onRefreshProject: () => void;
   initialResourceId?: string | undefined;
+  initialCopyId?: string | undefined;
+  sourceThreadId?: ThreadId | undefined;
+  launchSettings?: LibrarySourceSettings | undefined;
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
@@ -177,7 +189,10 @@ function LibraryStartContent(props: {
   const attemptKey = JSON.stringify([
     authority.environmentId,
     props.project.id,
-    props.sourceArchiveId ?? "new",
+    props.sourceArchiveId ??
+      (props.sourceThreadId
+        ? `settings:${props.reuseEnvironmentId ?? ""}:${props.sourceThreadId}`
+        : "new"),
   ]);
   const [saved] = useState(() =>
     readLibraryLaunchAttempt(
@@ -206,11 +221,16 @@ function LibraryStartContent(props: {
     [typedPath, setRootPath] = useState<string | null>(
       saved?.review.rootPath ?? props.reuseRootPath ?? null,
     ),
-    [copyId, setCopyId] = useState<string | null>(null),
+    [copyId, setCopyId] = useState<string | null>(props.initialCopyId ?? null),
     [title, setTitle] = useState(
       saved?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
     ),
-    [modelKey, setModelKey] = useState<string | null>(saved?.review.model.key ?? null),
+    [modelKey, setModelKey] = useState<string | null>(
+      saved?.review.model.key ??
+        (props.launchSettings
+          ? `${props.launchSettings.modelSelection.instanceId}:${props.launchSettings.modelSelection.model}`
+          : null),
+    ),
     [showModels, setShowModels] = useState(false);
   const [showFolderOptions, setShowFolderOptions] = useState(Boolean(props.reuseRootPath)),
     [showSetup, setShowSetup] = useState(false),
@@ -245,6 +265,8 @@ function LibraryStartContent(props: {
     copy: LibraryWorkingCopy | null;
     carryContext: string;
     keepOnComputer?: boolean;
+    runtimeMode?: RuntimeMode;
+    interactionMode?: ProviderInteractionMode;
   } | null>(saved?.review ?? null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
@@ -372,7 +394,8 @@ function LibraryStartContent(props: {
     execution && localProjectId ? { environmentId: execution, projectId: localProjectId } : null,
   );
   const projectDefaultSelection = launchProject.profile?.defaultModelSelection ?? null;
-  const savedModelSelection = saved?.review.model.selection ?? null;
+  const savedModelSelection =
+    saved?.review.model.selection ?? props.launchSettings?.modelSelection ?? null;
   const { models, defaultModel } = libraryConversationModels({
     config,
     projectDefaultSelection,
@@ -508,6 +531,12 @@ function LibraryStartContent(props: {
       reviewed.current = {
         authorityEnvironmentId: authority.environmentId,
         model: chosenModel,
+        ...(props.launchSettings
+          ? {
+              runtimeMode: props.launchSettings.runtimeMode,
+              interactionMode: props.launchSettings.interactionMode,
+            }
+          : {}),
         title: title.trim() || "Project discussion",
         mode,
         rootPath: rootPath.trim(),
@@ -637,11 +666,13 @@ function LibraryStartContent(props: {
                   projectId: localProjectId,
                   title: review.title,
                   modelSelection: review.model.selection,
-                  runtimeMode: libraryLaunchDefaults({
-                    settings: config?.settings,
-                    localProjectId,
-                  }).runtimeMode,
-                  interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+                  runtimeMode:
+                    review.runtimeMode ??
+                    libraryLaunchDefaults({
+                      settings: config?.settings,
+                      localProjectId,
+                    }).runtimeMode,
+                  interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
                   branch: null,
                   worktreePath: null,
                 },

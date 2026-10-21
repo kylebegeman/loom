@@ -140,13 +140,19 @@ describe("library conversation launch", () => {
       authorityEnvironmentId: EnvironmentId.make("authority"),
       model: {
         key: "codex",
-        selection: { instanceId: ProviderInstanceId.make("codex"), model: "model" },
+        selection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "model",
+          options: [{ id: "reasoningEffort", value: "max" }],
+        },
       },
       title: "Project discussion",
       mode: "reuse" as const,
       rootPath: copy.rootPath,
       copy,
       carryContext: "Reviewed context",
+      runtimeMode: "approval-required" as const,
+      interactionMode: "plan" as const,
     };
     h.ports.bind.mockRejectedValueOnce(new Error("offline"));
     const persist = async () => {
@@ -164,6 +170,9 @@ describe("library conversation launch", () => {
     const restored = readLibraryLaunchAttempt(serialized)!;
     expect(restored.receipt.threadCreated).toBe(true);
     expect(restored.review.carryContext).toBe("Reviewed context");
+    expect(restored.review.model.selection).toEqual(review.model.selection);
+    expect(restored.review.runtimeMode).toBe("approval-required");
+    expect(restored.review.interactionMode).toBe("plan");
     await launchLibraryConversation(input, restored.receipt, h.ports);
     expect(h.ports.create).toHaveBeenCalledTimes(1);
     expect(h.ports.prepare).toHaveBeenCalledTimes(1);

@@ -2,6 +2,8 @@ import { libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useEnvironmentQuery } from "../../state/query";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts"; // fork: project-navigation
+import { ProjectFolderLocation } from "../../fork/project-navigation/ProjectFolderLocation";
+import { projectFolderSettingsSuccessor } from "../../fork/project-navigation/projectFolderSettingsSelection";
 import { resolveProjectSettingsScope } from "../../fork/project-navigation/projectNavigation.logic"; // fork: project-navigation
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
@@ -53,6 +55,20 @@ export function SettingsProjectOverviewRouteScreen({
     selectProject(settingsScope);
   }, [initialEnvironmentId, initialProjectId, projectGroups, selectAll, selectProject]);
   const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
+  // Folder paths can change grouping keys, while the selected project IDs stay the same.
+  const previousSelection = useRef<(typeof projectGroups)[number] | null>(null);
+  useEffect(() => {
+    if (group) {
+      previousSelection.current = group;
+      return;
+    }
+    const successor = projectFolderSettingsSuccessor(
+      projectGroups,
+      selectedProjectKey,
+      previousSelection.current,
+    );
+    if (successor) selectProject(successor);
+  }, [group, projectGroups, selectedProjectKey, selectProject]);
   const selectedEnvironmentIds = new Set(selectedTargets.map((entry) => entry.environmentId));
   const members =
     group?.members
@@ -221,6 +237,10 @@ function ProjectOverviewContent(props: {
               <Text className="text-sm leading-normal text-foreground-muted" selectable>
                 {member.workspaceRoot}
               </Text>
+              <ProjectFolderLocation
+                project={member}
+                computerLabel={environment?.label ?? "Computer"}
+              />
             </View>
           );
         })}

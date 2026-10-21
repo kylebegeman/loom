@@ -1,4 +1,11 @@
-import { EnvironmentId, ModelSelection, ThreadId, type ProjectId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ModelSelection,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ThreadId,
+  type ProjectId,
+} from "@t3tools/contracts";
 import {
   LibraryProject,
   type LibraryResolveBindingRequest,
@@ -61,6 +68,8 @@ export const LibraryLaunchAttempt = Schema.Struct({
     copy: Schema.NullOr(LibraryWorkingCopy),
     carryContext: Schema.String,
     keepOnComputer: Schema.optional(Schema.Boolean),
+    runtimeMode: Schema.optional(RuntimeMode),
+    interactionMode: Schema.optional(ProviderInteractionMode),
   }),
 });
 const decodeLibraryLaunchAttempt = Schema.decodeSync(Schema.fromJsonString(LibraryLaunchAttempt));

@@ -1309,15 +1309,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         {(close) => (
           <Menu
             actions={[
-              ...(thread.branch
-                ? [
-                    {
-                      id: "new-thread-on-branch",
-                      title: getThreadListV2NewBranchMenuTitle(thread.branch),
-                      image: "square.and.pencil",
-                    },
-                  ]
-                : []),
+              {
+                id: "new-thread-on-branch",
+                title: getThreadListV2NewBranchMenuTitle(thread.branch),
+                image: "square.and.pencil",
+              },
               ...handoffMenuItems, // fork: project-home
               { id: "copy-thread-id", title: "Copy thread ID", image: "doc.on.doc" },
               ...(snoozedRow

@@ -81,6 +81,7 @@ export interface Preferences {
   readonly loomProjectPreparations?: ProjectPreparationReceipts; // fork: project-home
   // fork: library
   readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
+  readonly loomLibraryFileChanges?: Readonly<Record<string, string>>;
   readonly "loom.library.authorityEnvironmentId"?: string | null;
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
@@ -160,6 +161,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     loomProjectPreparations?: ProjectPreparationReceipts; // fork: project-home
     // fork: library
     loomLibraryLaunches?: Readonly<Record<string, string>>;
+    loomLibraryFileChanges?: Readonly<Record<string, string>>;
     "loom.library.authorityEnvironmentId"?: string | null;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
@@ -309,6 +311,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (isLibraryLaunches(parsed.loomLibraryLaunches))
     preferences.loomLibraryLaunches = parsed.loomLibraryLaunches;
+  if (isLibraryLaunches(parsed.loomLibraryFileChanges))
+    preferences.loomLibraryFileChanges = parsed.loomLibraryFileChanges;
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
   if (isThreadListFilters(parsed.threadListFilters)) {
