@@ -596,3 +596,32 @@ intent or OpenBao format/path/policy changes are included; policy3/journal1 rema
 No UI/native, real OpenBao or live adapter pass is inferred or repeated. The bounded synthetic
 review is complete; remaining owners and opening checks are in IMPLEMENT-NOW. L86 remains partial
 and L75 parked. No Library schema, production, SSH, install or release action is included.
+
+## Approved format-4 reader and internal preparation
+
+The review unit's package-CWD consumer pass runs 317 tests across ten files, including 60
+mandatory-protection cases. Server, contracts, client-runtime, web and mobile typechecks pass.
+The format-4 tests exercise the actual access/core services: strict required classification,
+corrupt/foreign/unsupported policies, ordinary/project grant bypass refusal, administrator raw
+reveal and probe refusal, stable protection after rotation, writer preservation, bounded
+migration preview without writes, exact review binding, item/run/grant changes across async
+authorization, racing reservations, before/after-write acknowledgement loss, revoked/spent
+identities, age/cap refusal and legacy-reader rejection. Legacy timed-approval behavior remains
+covered by the existing suites. No client or native acceptance is claimed for the new internal
+methods, which have no public surface.
+
+```sh
+cd apps/server
+../../node_modules/.bin/vp test run src/fork/vault/MandatoryProtection.test.ts src/fork/vault/VaultAccess.test.ts src/fork/vault/VaultCore.test.ts src/fork/vault/OperationIntent.proof.test.ts src/fork/vault/OperationJournal.test.ts src/fork/vault/OperationAdmission.test.ts src/fork/vault/VaultSsh.test.ts src/fork/vault/VaultGitHub.test.ts src/fork/vault/VaultProfiles.test.ts src/fork/vault/VaultTestAccountWorkloads.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 src/fork/vault/testkit/journal_proof.py --bao /path/to/bao-2.7.1
+```
+
+The disposable OpenBao proof uses the unchanged documented scoped token with no metadata-read
+capability. It installs a reviewed synthetic migration preview explicitly, checks old-reader
+refusal, mandatory raw/evaluator refusal, actual CAS conflict, one reservation, fresh-service
+reconstruction and unknown outcome retention, then restarts the backend and rechecks protection
+and unknown evidence. The earlier journal-format-1/format-3 compatibility and maintenance
+restart/deletion proofs run before this synthetic policy migration. This is not production
+migration, live dispatcher acceptance or a host rollback proof. Every execution/resumption/
+allow-once gate remains literal false. Old format-3 readers reject migrated format-4 policies;
+never lower the version or restore legacy authority to make a downgrade run.

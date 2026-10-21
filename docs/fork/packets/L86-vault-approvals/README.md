@@ -56,7 +56,7 @@ does not prove an operation never ran. Project retirement preserves the reserved
 Explicit retry preparation includes recovery observations, checks retained digests and refuses
 blind replay of reservations or terminal outcomes. Current denials retain precedence and journal
 outages fail closed. Preparation itself creates or consumes no journal evidence.
-Policy format remains 3. The inbox shows current record/thread/project names with stable ID fallback and accessible
+Legacy policies remain format 3. The inbox shows current record/thread/project names with stable ID fallback and accessible
 decision context. Changed or unavailable pending context requires refreshed review; deny/cancel
 remain reachable. Names do not replace server-side decision checks.
 The inbox opens with pending work first and shows retained/pending counts. Show all requests
@@ -76,11 +76,18 @@ aged evidence without recreating an opportunity. Durable resumption/consumption 
 live-provider acceptance remain open. One-time intent and downgrade-reader design now rejects
 optional format-3 metadata and alternate-grant fallback using real-service counterexamples;
 its eligibility model is synthetic only. The mandatory boundary design covers omitted references, delegation and alternate entry points;
-its protected-item classification and coverage checks exist only in a synthetic model. No
-persisted intent or gate change is selected. Temporal synthetic proof now covers handoff and
+its earlier classification and coverage model is now complemented by the approved internal
+format-4 reader/writer contract below. No live gate changes. Temporal synthetic proof now covers handoff and
 callback races, with a coherent commit explicitly assumed rather than implemented. The bounded
 synthetic review is complete; [next-owner checks](../IMPLEMENT-NOW.md#vault-completion-dependencies)
 identify the remaining decisions and real verification. The packet remains partial.
+
+Kyle approved format 4 behind closed gates. Internal classification and exact-intent
+preview/review/reservation now share the existing policy CAS. The evaluator and raw credential
+boundary refuse protected or unclassified use, regardless of ordinary grants. Existing format-3
+policies are unchanged; migration is preview-only. No public intent API, exact-operation review
+UI or live dispatcher is enabled. Older runtimes reject format 4 and must not be made compatible
+by lowering the version or restoring legacy authority. Journal format 1 is unchanged.
 
 ## Scope
 

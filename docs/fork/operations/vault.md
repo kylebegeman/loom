@@ -680,8 +680,17 @@ older runtime rewrites may omit fields they do not recognize.
 ## Temporary approval policy compatibility
 
 The first approval milestone introduced access-policy format 2. Requester lifecycle and retention
-writes use format 3 whenever an approval ledger is present. Readers accept formats 1/2/3, but
-0.0.97 and earlier cannot read format 3. Use a compatible runtime for every policy writer.
+writes use format 3 whenever an approval ledger is present, unless the policy already uses
+format 4. Current readers accept formats 1/2/3/4; 0.0.97 and earlier cannot read format 3.
+Format-4 readers preserve required credential classifications and operation intents in every
+policy write. Existing format-3 policies are not automatically migrated.
+
+Older runtimes that accept only formats 1/2/3 reject format 4 and cannot operate that
+environment's Vault. Never lower the version, strip classifications/intents or restore a legacy
+policy to enable downgrade. Use a compatible reader or the host owner's reviewed stop/fence,
+recovery and post-snapshot revocation reconciliation procedure. A nightly alone does not
+migrate policy or enable one-time execution. Production migration, existing-session fencing
+and independent rollback/deletion protection remain host-owner operations behind L79.
 Downgrade requires a compatible reader or an explicitly reviewed pre-feature backup, including
 reconciliation of revocations after that backup. Never silently strip correlation, the request
 queue or restore old access by changing a version number.

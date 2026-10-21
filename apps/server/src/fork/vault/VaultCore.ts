@@ -21,6 +21,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
+import { decodePolicy, credentialUseRefusal } from "./AccessPolicy.ts";
 
 export class VaultCore extends Context.Service<
   VaultCore,
@@ -154,6 +155,19 @@ const make = Effect.gen(function* () {
         return yield* new VaultError({ reason: "not-found" });
       if (current.version !== decoded.value.expectedVersion)
         return yield* new VaultError({ reason: "conflict" });
+      // Admin reveal, probes and secret-decoding adapters bypass the thread evaluator. Until a
+      // protected dispatcher exists, none may release a protected or unclassified credential.
+      const storedPolicy = yield* store.read(`environments/${namespace}/access-policy`);
+      if (storedPolicy) {
+        const policy = decodePolicy(Redacted.value(storedPolicy.value));
+        if (
+          Option.isNone(policy) ||
+          (policy.value.schemaVersion === 4 && policy.value.environmentId !== environmentId)
+        )
+          return yield* new VaultError({ reason: "invalid-response" });
+        if (credentialUseRefusal(policy.value, decoded.value.id))
+          return yield* new VaultError({ reason: "denied" });
+      }
       return { item: summary(current.item, current.version), value: current.item.value };
     }),
     list: Effect.fn("VaultCore.list")(function* (raw) {

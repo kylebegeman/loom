@@ -83,6 +83,9 @@ const decisionMessages: Readonly<Record<string, string>> = {
   "item-unavailable": "This item is missing, archived or deleted.",
   "caller-permission":
     "The runner mode does not permit this action. A Vault grant cannot increase T3 permissions.",
+  "classification-required": "This credential needs an explicit access classification before use.",
+  "approval-required":
+    "This credential requires an exact one-time approval. Protected execution is disabled.",
   "workload-inactive": "The authenticated thread no longer has an active run.",
 };
 export const vaultDecisionMessage = (reason: string) => decisionMessages[reason] ?? reason;
