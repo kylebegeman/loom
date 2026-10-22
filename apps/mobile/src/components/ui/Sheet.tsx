@@ -32,7 +32,8 @@ export function Sheet(props: SheetProps) {
       onDismiss={props.onClose}
       onNativeDismiss={props.onClose}
     >
-      <View collapsable={false} className="flex-1 bg-sheet">
+      {/* Pin content to the native sheet bounds; flex sizing can grow with long forms. */}
+      <View collapsable={false} className="absolute inset-0 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
           <NativeScreen
             activityState={2}
