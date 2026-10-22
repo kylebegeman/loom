@@ -372,7 +372,15 @@ const ForkServicesLive = Layer.mergeAll(
     BotTriggerScheduleLive,
     BotVersions.BotVersionsRecoveryLive.pipe(Layer.provideMerge(BotVersions.layer)),
     BotSharing.layer.pipe(
-      Layer.provide(Layer.merge(LibraryWorkspaceStore.layer, layerVaultReferences)),
+      Layer.provide(
+        Layer.mergeAll(
+          LibraryWorkspaceStore.layer,
+          layerVaultReferences,
+          layerVaultCore,
+          layerLibraryWorkspace,
+          Directory.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+        ),
+      ),
     ),
   ).pipe(
     Layer.provideMerge(BotTriggers.layer),
