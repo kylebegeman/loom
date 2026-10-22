@@ -2,18 +2,31 @@ import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useServerConfigs } from "~/state/entities";
 import { MiniWorkers } from "./Workers";
-import { LoomSettingsNotice } from "~/fork/settings/parts";
+import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
 export function MiniOffloadSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
+  if (!environment)
+    return (
+      <LoomSettingsContent>
+        <LoomSettingsNotice>
+          Select a connected environment to manage command workers.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
-    !environment ||
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       "mini-offload",
     )
   )
     return (
-      <LoomSettingsNotice>Command jobs are unavailable on this Loom server.</LoomSettingsNotice>
+      <LoomSettingsContent>
+        <LoomSettingsNotice>Command jobs are unavailable on this Loom server.</LoomSettingsNotice>
+      </LoomSettingsContent>
     );
-  return <MiniWorkers key={environment.environmentId} environmentId={environment.environmentId} />;
+  return (
+    <LoomSettingsContent>
+      <MiniWorkers key={environment.environmentId} environmentId={environment.environmentId} />
+    </LoomSettingsContent>
+  );
 }

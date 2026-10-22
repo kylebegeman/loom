@@ -12,7 +12,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { PreviewPage, PreviewPageAction } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
-import { SettingsRow } from "~/components/settings/settingsLayout";
+import { LoomSettingsContent, LoomSettingsPanel } from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { ensureLocalApi } from "~/localApi";
@@ -55,7 +55,7 @@ function PageRow({
   };
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-border/70 px-3 py-2.5">
+    <li className="flex min-w-0 flex-col gap-3 border-b border-border/60 py-4 last:border-b-0">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="break-words font-medium text-sm">{page.title}</span>
         <span className="text-muted-foreground text-xs">{previewPageSummary(page, now)}</span>
@@ -94,39 +94,41 @@ export function EnvironmentPreviewPages({ environmentId }: { environmentId: Envi
   const pages = list?.available ? visiblePreviewPages(list.pages, now) : [];
 
   return (
-    <SettingsRow
-      title="Pages"
-      description="Pages that agents on this computer published to your Library, such as a rendered page or a Dossier. Each opens only in a browser signed in to your Library."
-    >
-      <div className="flex flex-col gap-2 pb-2">
-        {failure && (
-          <div className="flex flex-col items-start gap-1.5">
-            <Alert>{failure}</Alert>
-            <Button size="xs" variant="outline" disabled={result.waiting} onClick={refresh}>
-              Try again
-            </Button>
-          </div>
-        )}
-        {list === null ? (
-          !failure && <Muted>Loading pages...</Muted>
-        ) : !list.available ? (
-          <Muted>{PREVIEW_PAGES_UNAVAILABLE_TEXT}</Muted>
-        ) : pages.length === 0 ? (
-          <Muted>{PREVIEW_PAGES_EMPTY_TEXT}</Muted>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {pages.map((page) => (
-              <PageRow
-                key={page.id}
-                environmentId={environmentId}
-                page={page}
-                now={now}
-                canUpdate={canUpdate}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
-    </SettingsRow>
+    <LoomSettingsContent>
+      <LoomSettingsPanel
+        title="Published pages"
+        description="Pages that agents on this computer published to your Library, such as a rendered page or a Dossier. Each opens only in a browser signed in to your Library."
+      >
+        <div className="flex flex-col gap-2 pb-2">
+          {failure && (
+            <div className="flex flex-col items-start gap-1.5">
+              <Alert>{failure}</Alert>
+              <Button size="xs" variant="outline" disabled={result.waiting} onClick={refresh}>
+                Try again
+              </Button>
+            </div>
+          )}
+          {list === null ? (
+            !failure && <Muted>Loading pages...</Muted>
+          ) : !list.available ? (
+            <Muted>{PREVIEW_PAGES_UNAVAILABLE_TEXT}</Muted>
+          ) : pages.length === 0 ? (
+            <Muted>{PREVIEW_PAGES_EMPTY_TEXT}</Muted>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {pages.map((page) => (
+                <PageRow
+                  key={page.id}
+                  environmentId={environmentId}
+                  page={page}
+                  now={now}
+                  canUpdate={canUpdate}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </LoomSettingsPanel>
+    </LoomSettingsContent>
   );
 }

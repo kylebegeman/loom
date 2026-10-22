@@ -1,9 +1,10 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   LoomSettingsActions,
   LoomSettingsNotice,
   LoomSettingsDetails,
   LoomSettingsField,
-  LoomSettingsPanel,
 } from "~/fork/settings/parts";
 import { OriginalRouteReview } from "./OriginalRouteReview";
 import { migrationInventory as atoms } from "./migrationState";
@@ -46,8 +47,15 @@ export function VaultMigrationInventorySettingsSection() {
       "vault-migration-inventory",
     )
   )
-    return <p>Dependency inventory needs a newer Vault server.</p>;
-  if (!canRead) return <p>Your connection does not include credential inspection.</p>;
+    return (
+      <LoomSettingsNotice>Dependency inventory needs a newer Vault server.</LoomSettingsNotice>
+    );
+  if (!canRead)
+    return (
+      <LoomSettingsNotice>
+        Your connection does not include credential inspection.
+      </LoomSettingsNotice>
+    );
   return (
     <Inventory
       key={environment.environmentId}
@@ -105,9 +113,8 @@ function Inventory({
           ? cause.message
           : "Could not update migration planning. Refresh and retry.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const planAct = (work: () => Promise<VaultReplacementResult>) =>
     act(async () => {
@@ -126,12 +133,12 @@ function Inventory({
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <div className="space-y-1">
-        <h3 className="text-sm font-medium">Project dependency inventory</h3>
+        <h3 className="text-base font-medium">Project dependency inventory</h3>
         <p className="max-w-prose text-muted-foreground">
           Inspect registered projects before replacing development access.
         </p>
       </div>
-      <LoomSettingsNotice>Selected computer: {computer}</LoomSettingsNotice>
+      <p className="text-xs text-muted-foreground">Inspecting projects on {computer}</p>
       <LoomSettingsDetails title="What the inventory inspects">
         <p>
           Only selected local Git configuration is inspected. Personal stores, global configuration,
@@ -139,17 +146,18 @@ function Inventory({
           consumers are not inspected. Endpoints are hints; access has not been verified.
         </p>
       </LoomSettingsDetails>
-      <LoomSettingsNotice>
+      <p className="max-w-prose text-sm text-muted-foreground">
         Reviewing a plan never changes repository settings or grants access. Verification is
         required before any cutover.
-      </LoomSettingsNotice>
+      </p>
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       <LoomSettingsActions>
-        <Button disabled={busy} onClick={() => inspectInventory(null)}>
+        <Button size="sm-multiline" disabled={busy} onClick={() => inspectInventory(null)}>
           Inspect project dependencies
         </Button>
         {inventory?.nextCursor ? (
           <Button
+            size="sm-multiline"
             variant="outline"
             disabled={busy}
             onClick={() => inspectInventory(inventory.nextCursor)}
@@ -175,7 +183,7 @@ function Inventory({
             <section
               key={project.projectId}
               aria-label={`Dependencies for ${project.title}`}
-              className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
+              className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
             >
               <h3 className="font-medium">{project.title}</h3>
               {project.state === "unavailable" ? (
@@ -185,7 +193,7 @@ function Inventory({
                 </p>
               ) : (
                 <>
-                  <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-3">
+                  <dl className="grid min-w-0 gap-4 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
                     <div className="min-w-0 space-y-1">
                       <dt className="text-xs text-muted-foreground">Local SSH command</dt>
                       <dd>{project.localSshCommand ? "Configured" : "Not found"}</dd>
@@ -217,7 +225,7 @@ function Inventory({
                       <h4 className="font-medium">
                         {dep.remote}: {dep.direction} URL {dep.position + 1}
                       </h4>
-                      <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+                      <dl className="grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                         <div className="min-w-0 space-y-1">
                           <dt className="text-xs text-muted-foreground">Transport and host</dt>
                           <dd>
@@ -238,7 +246,7 @@ function Inventory({
                       ) : null}
                       <LoomSettingsActions>
                         <Button
-                          size="sm"
+                          size="sm-multiline"
                           variant="outline"
                           aria-label={`Plan replacement for ${dep.remote} ${dep.direction} ${dep.position + 1}`}
                           disabled={
@@ -302,7 +310,7 @@ function Inventory({
       {result ? (
         <section
           aria-label="Replacement plan review"
-          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
+          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
         >
           <div className="space-y-1">
             <h3 className="font-medium">{result.plan.projectTitle}</h3>
@@ -339,16 +347,15 @@ function Inventory({
           {result.plan.state === "prepared" ? (
             <>
               <label className="flex items-start gap-2 text-sm leading-6">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   checked={confirmed}
                   disabled={busy || !canWrite}
-                  onChange={(e) => setConfirmed(e.target.checked)}
+                  onCheckedChange={(checked) => setConfirmed(checked)}
                 />{" "}
                 I reviewed this development replacement, scope and selected computer.
               </label>
               <Button
+                size="sm-multiline"
                 disabled={
                   busy ||
                   !canWrite ||
@@ -389,6 +396,7 @@ function Inventory({
           ) : null}
           <LoomSettingsActions>
             <Button
+              size="sm-multiline"
               variant="outline"
               disabled={busy}
               onClick={() =>
@@ -401,6 +409,7 @@ function Inventory({
             </Button>
             {result.plan.state !== "cancelled" ? (
               <Button
+                size="sm-multiline"
                 variant="outline"
                 disabled={busy || !canWrite}
                 onClick={() =>
@@ -413,6 +422,7 @@ function Inventory({
               </Button>
             ) : null}
             <Button
+              size="sm-multiline"
               variant="outline"
               disabled={busy}
               onClick={() => {
@@ -427,14 +437,11 @@ function Inventory({
           </LoomSettingsActions>
         </section>
       ) : null}
-      <LoomSettingsPanel
-        title="Recent replacement plans"
-        description="Open a plan to recheck source and item freshness."
-      >
+      <LoomSettingsDetails title="Recent replacement plans">
         <LoomSettingsActions>
           <Button
             variant="outline"
-            size="sm"
+            size="sm-multiline"
             disabled={busy}
             onClick={() => appAtomRegistry.refresh(listAtom)}
           >
@@ -444,26 +451,28 @@ function Inventory({
         <p className="text-xs text-muted-foreground">
           Listing plans does not recheck source or item freshness. Open a plan to check them.
         </p>
-        {list.waiting ? (
-          <LoomSettingsNotice role="status">Loading replacement plans…</LoomSettingsNotice>
-        ) : null}
-        {list._tag === "Failure" ? (
-          <LoomSettingsNotice role="alert">
-            Could not load replacement plans. Check Vault access and refresh.
-          </LoomSettingsNotice>
-        ) : null}
+        <VaultQueryFeedback
+          result={list}
+          loading="Loading replacement plans…"
+          error="Could not load replacement plans. Check Vault access and retry."
+          onRetry={() => appAtomRegistry.refresh(listAtom)}
+        />
         {page?.items.length === 0 ? <p>No replacement plans on this page.</p> : null}
         {page?.items.map((entry) => (
           <div
             key={entry.plan.id}
             className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0"
           >
-            <span>
-              {entry.plan.projectTitle} · {entry.plan.replacement.label} · {entry.plan.state}
-            </span>
+            <div className="min-w-0 space-y-1">
+              <h4 className="wrap-anywhere text-sm font-medium">{entry.plan.projectTitle}</h4>
+              <p className="wrap-anywhere text-sm text-muted-foreground">
+                {entry.plan.replacement.label}
+              </p>
+              <p className="text-xs text-muted-foreground">{entry.plan.state}</p>
+            </div>
             <Button
               variant="outline"
-              size="sm"
+              size="sm-multiline"
               disabled={busy}
               onClick={() => {
                 setChoice(null);
@@ -480,7 +489,7 @@ function Inventory({
         <LoomSettingsActions>
           <Button
             variant="outline"
-            size="sm"
+            size="sm-multiline"
             disabled={busy || list.waiting || !cursor}
             onClick={() => setCursor(null)}
           >
@@ -488,14 +497,14 @@ function Inventory({
           </Button>
           <Button
             variant="outline"
-            size="sm"
+            size="sm-multiline"
             disabled={busy || list.waiting || !page?.nextCursor}
             onClick={() => setCursor(page?.nextCursor ?? null)}
           >
             More replacement plans
           </Button>
         </LoomSettingsActions>
-      </LoomSettingsPanel>
+      </LoomSettingsDetails>
     </div>
   );
 }
@@ -529,11 +538,14 @@ function ReplacementDraft({
   return (
     <section
       aria-label="Choose development replacement"
-      className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
+      className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
     >
-      <h3 className="font-medium">
-        Replacement for {choice.title} · {choice.dependency.remote}
-      </h3>
+      <div className="space-y-1">
+        <h3 className="text-base font-medium">Replacement for {choice.title}</h3>
+        <p className="text-sm text-muted-foreground">
+          {choice.dependency.remote}. Draft selection, not yet prepared for review.
+        </p>
+      </div>
       <p>
         Prefer a fresh key created in Vault or a dedicated GitHub App/token connection. The server
         checks the selected adapter and endpoint; usable access requires separate verification.
@@ -563,39 +575,21 @@ function ReplacementDraft({
           </SelectPopup>
         </Select>
       </LoomSettingsField>
-      {list._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          Could not load replacement records. Refresh and retry.
-        </LoomSettingsNotice>
-      ) : null}
-      {list.waiting ? (
-        <LoomSettingsNotice role="status">Loading replacement records…</LoomSettingsNotice>
-      ) : null}
+      <VaultQueryFeedback
+        result={list}
+        loading="Loading replacement records…"
+        error="Could not load replacement records."
+        onRetry={() => appAtomRegistry.refresh(listAtom)}
+      />
       {page && items.length === 0 ? (
         <p>
           No compatible record on this page. Create a fresh SSH key in Vault or a dedicated GitHub
           connection, then refresh.
         </p>
       ) : null}
-      <label className="flex items-start gap-2 text-sm leading-6">
-        <input
-          type="checkbox"
-          checked={dedicated}
-          disabled={locked}
-          onChange={(e) => setDedicated(e.target.checked)}
-        />{" "}
-        This replacement is dedicated to development and separate from personal accounts.
-      </label>
       <LoomSettingsActions>
         <Button
-          disabled={locked || !dedicated || !item}
-          onClick={() => {
-            if (item) onPrepare(item, item.kind === "ssh-key" ? "ssh" : "github", id);
-          }}
-        >
-          Prepare replacement review
-        </Button>
-        <Button
+          size="sm-multiline"
           variant="outline"
           disabled={locked}
           onClick={() => appAtomRegistry.refresh(listAtom)}
@@ -603,6 +597,7 @@ function ReplacementDraft({
           Refresh replacement records
         </Button>
         <Button
+          size="sm-multiline"
           variant="outline"
           disabled={locked || !cursor || list.waiting}
           onClick={() => {
@@ -613,6 +608,7 @@ function ReplacementDraft({
           First records
         </Button>
         <Button
+          size="sm-multiline"
           variant="outline"
           disabled={locked || !page?.nextCursor || list.waiting}
           onClick={() => {
@@ -622,7 +618,26 @@ function ReplacementDraft({
         >
           More records
         </Button>
-        <Button variant="outline" disabled={locked} onClick={onCancel}>
+      </LoomSettingsActions>
+      <label className="flex items-start gap-2 text-sm leading-6">
+        <Checkbox
+          checked={dedicated}
+          disabled={locked}
+          onCheckedChange={(checked) => setDedicated(checked)}
+        />{" "}
+        This replacement is dedicated to development and separate from personal accounts.
+      </label>
+      <LoomSettingsActions>
+        <Button
+          size="sm-multiline"
+          disabled={locked || !dedicated || !item}
+          onClick={() => {
+            if (item) onPrepare(item, item.kind === "ssh-key" ? "ssh" : "github", id);
+          }}
+        >
+          Prepare replacement review
+        </Button>
+        <Button size="sm-multiline" variant="outline" disabled={locked} onClick={onCancel}>
           Cancel replacement selection
         </Button>
       </LoomSettingsActions>

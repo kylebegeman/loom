@@ -1,3 +1,5 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   LoomSettingsActions,
   LoomSettingsNotice,
@@ -51,8 +53,11 @@ export function VaultHealthSettingsSection() {
       "vault-health",
     )
   )
-    return <p>Choose a computer with Vault health support.</p>;
-  if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
+    return <LoomSettingsNotice>Choose a computer with Vault health support.</LoomSettingsNotice>;
+  if (!canRead)
+    return (
+      <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
   return (
     <Inbox
       key={environment.environmentId}
@@ -88,10 +93,17 @@ function Inbox({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
-  const pageResult = useAtomValue(
-      core.list({ environmentId, input: { cursor, includeArchived: false } }),
-    ),
+  const pageAtom = core.list({ environmentId, input: { cursor, includeArchived: false } });
+  const pageResult = useAtomValue(pageAtom),
     page = pageResult._tag === "Success" && !pageResult.waiting ? pageResult.value : null;
+  const savedRule = snapshot?.rules.find((rule) => rule.itemId === itemId);
+  const ruleChanged =
+    !!itemId &&
+    (!savedRule ||
+      (expires ? Date.parse(expires) : null) !== savedRule.expiresAt ||
+      (repository.trim() || null) !== savedRule.githubRepository ||
+      automatic !== savedRule.automatic ||
+      (supportsSshValidation && sshValidation !== (savedRule.sshValidation ?? false)));
   const canApply = useAtomValue(atoms.apply.permissionAtom(environmentId));
   const now = useVaultTime(snapshot?.issues.map((issue) => issue.snoozedUntil) ?? []);
   const locked =
@@ -108,9 +120,8 @@ function Inbox({
       setError(
         cause instanceof Error ? cause.message : "Could not update health. Refresh and retry.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const apply = (change: VaultHealthMutation["change"]) => {
     if (!snapshot) return Promise.resolve();
@@ -137,7 +148,7 @@ function Inbox({
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <div className="space-y-1">
-        <h3 className="text-sm font-medium">Maintenance inbox</h3>
+        <h3 className="text-base font-medium">Maintenance inbox</h3>
         <p className="max-w-prose text-muted-foreground">
           Review expiry and failed development access. Provider outages do not revoke credentials.
           Only explicitly enabled rules run in the background.
@@ -145,7 +156,7 @@ function Inbox({
       </div>
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy}
           onClick={() => {
@@ -156,22 +167,26 @@ function Inbox({
         >
           Refresh health
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setHistory(!history)}>
+        <Button size="sm-multiline" variant="outline" onClick={() => setHistory(!history)}>
           {history ? "Hide resolved and dismissed" : "Show resolved and dismissed"}
         </Button>
       </LoomSettingsActions>
-      {result.waiting ? (
-        <LoomSettingsNotice role="status">Loading Vault health…</LoomSettingsNotice>
-      ) : null}
-      {error || result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? "Could not load Vault health. Check the backend and refresh."}
-        </LoomSettingsNotice>
-      ) : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading Vault health…"
+        error="Could not load Vault health. Check the backend and retry."
+        onRetry={() => appAtomRegistry.refresh(atom)}
+      />
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      {busy ? <LoomSettingsNotice role="status">Updating Vault health…</LoomSettingsNotice> : null}
       {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
       {snapshot?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
         .length === 0 ? (
-        <p>No active maintenance issues.</p>
+        <LoomSettingsNotice>
+          {history
+            ? "No maintenance issues in the retained history."
+            : "No active maintenance issues. Saved health rules continue to monitor the records you selected."}
+        </LoomSettingsNotice>
       ) : null}
       {snapshot
         ? vaultHealthInboxGroups(snapshot, history).map((group) => (
@@ -188,23 +203,29 @@ function Inbox({
               {group.issues.map((issue) => (
                 <section
                   key={issue.id}
-                  className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 sm:p-4"
+                  className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-5 sm:p-6"
                   aria-label={`${issue.itemLabel} ${issue.category}`}
                 >
-                  <p className="font-medium">
-                    {issue.itemLabel}: {issue.category}
-                  </p>
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 space-y-1">
+                      <h4 className="wrap-anywhere text-sm font-medium">{issue.itemLabel}</h4>
+                      <p className="text-sm text-muted-foreground">{issue.category}</p>
+                    </div>
+                    <span className="rounded-md bg-muted px-2 py-1 text-xs">
+                      {vaultHealthVisibleState(issue, now)}
+                    </span>
+                  </div>
                   <p>{vaultHealthMessage(issue)}</p>
                   <LoomSettingsActions>
                     <Button
-                      size="sm"
+                      size="sm-multiline"
                       variant="outline"
                       onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
                     >
                       Review access
                     </Button>
                     <Button
-                      size="sm"
+                      size="sm-multiline"
                       variant="outline"
                       onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
                     >
@@ -216,13 +237,13 @@ function Inbox({
                   {contextIssue === issue.id ? (
                     <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
                   ) : null}
-                  <p className="text-sm">
-                    {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences · Last
-                    seen {new Date(issue.lastSeenAt).toLocaleString()}
+                  <p className="text-xs text-muted-foreground">
+                    {issue.occurrences} occurrences. Last seen{" "}
+                    {new Date(issue.lastSeenAt).toLocaleString()}.
                   </p>
                   <LoomSettingsActions>
                     <Button
-                      size="sm"
+                      size="sm-multiline"
                       variant="outline"
                       disabled={locked}
                       onClick={() =>
@@ -239,7 +260,7 @@ function Inbox({
                     </Button>
                     {issue.state === "snoozed" ? (
                       <Button
-                        size="sm"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={locked}
                         onClick={() => void issueAction(issue, "unsnooze")}
@@ -248,7 +269,7 @@ function Inbox({
                       </Button>
                     ) : (
                       <Button
-                        size="sm"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={locked}
                         onClick={() => void issueAction(issue, "snooze")}
@@ -258,7 +279,7 @@ function Inbox({
                     )}
                     {["dismissed", "resolved"].includes(issue.state) ? (
                       <Button
-                        size="sm"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={locked}
                         onClick={() => void issueAction(issue, "reopen")}
@@ -267,7 +288,7 @@ function Inbox({
                       </Button>
                     ) : (
                       <Button
-                        size="sm"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={locked}
                         onClick={() => void issueAction(issue, "dismiss")}
@@ -312,14 +333,12 @@ function Inbox({
             });
           }}
         >
-          {pageResult.waiting ? (
-            <LoomSettingsNotice role="status">Loading Vault items…</LoomSettingsNotice>
-          ) : null}
-          {pageResult._tag === "Failure" ? (
-            <LoomSettingsNotice role="alert">
-              Could not load Vault items. Refresh and retry.
-            </LoomSettingsNotice>
-          ) : null}
+          <VaultQueryFeedback
+            result={pageResult}
+            loading="Loading Vault items…"
+            error="Could not load Vault items."
+            onRetry={() => appAtomRegistry.refresh(pageAtom)}
+          />
           {page?.items.length === 0 ? <p>No active items on this page.</p> : null}
           <LoomSettingsField label="Vault item">
             <Select
@@ -354,7 +373,7 @@ function Inbox({
           <LoomSettingsActions>
             <Button
               type="button"
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={!cursor}
               onClick={() => setCursor(null)}
@@ -363,7 +382,7 @@ function Inbox({
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={!page?.nextCursor}
               onClick={() => setCursor(page?.nextCursor ?? null)}
@@ -371,7 +390,10 @@ function Inbox({
               More items
             </Button>
           </LoomSettingsActions>
-          <LoomSettingsField label="Declared expiry, ISO date (optional)">
+          <LoomSettingsField
+            label="Declared expiry (optional)"
+            description="Enter an ISO date, such as 2027-01-01T00:00:00Z. Warnings start seven days before this date."
+          >
             <Input
               aria-label="Declared expiry"
               value={expires}
@@ -394,15 +416,13 @@ function Inbox({
             (sshValidation ||
               page?.items.find((item) => item.id === itemId)?.kind === "ssh-key") ? (
               <label className="flex items-start gap-2 text-sm leading-6">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   aria-label="Validate SSH connection"
                   checked={sshValidation}
                   disabled={locked}
-                  onChange={(e) => {
-                    setSshValidation(e.target.checked);
-                    if (e.target.checked) setRepository("");
+                  onCheckedChange={(checked) => {
+                    setSshValidation(checked);
+                    if (checked) setRepository("");
                   }}
                 />{" "}
                 Validate the saved SSH connection using its trusted host key and a fixed no-op
@@ -421,22 +441,27 @@ function Inbox({
             </LoomSettingsField>
           </LoomSettingsDetails>
           <label className="flex items-start gap-2 text-sm leading-6">
-            <input
-              className="mt-1 shrink-0"
-              type="checkbox"
+            <Checkbox
               checked={automatic}
               disabled={locked}
-              onChange={(e) => setAutomatic(e.target.checked)}
+              onCheckedChange={(checked) => setAutomatic(checked)}
             />{" "}
             Run checks automatically, at most every 15 minutes
           </label>
+          <p role="status" className="text-sm text-muted-foreground">
+            {!itemId
+              ? "Choose an item to configure its health rule."
+              : ruleChanged
+                ? "Unsaved rule changes. Save to apply this configuration."
+                : "Showing the saved rule for this item."}
+          </p>
           <LoomSettingsActions>
-            <Button type="submit" size="sm" disabled={locked || !itemId}>
+            <Button type="submit" size="sm-multiline" disabled={locked || !itemId}>
               Save health rule
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={locked || !itemId}
               onClick={() =>
@@ -451,16 +476,24 @@ function Inbox({
             >
               Check selected item
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive-outline"
-              disabled={locked || !itemId}
-              onClick={() => void act(() => apply({ action: "remove-rule", itemId }))}
-            >
-              Remove rule
-            </Button>
           </LoomSettingsActions>
+          <LoomSettingsDetails title="Remove health rule">
+            <p className="text-sm text-muted-foreground">
+              Stop monitoring the selected item. The Vault record and its access grants are
+              preserved.
+            </p>
+            <LoomSettingsActions>
+              <Button
+                type="button"
+                size="sm-multiline"
+                variant="destructive-outline"
+                disabled={locked || !itemId}
+                onClick={() => void act(() => apply({ action: "remove-rule", itemId }))}
+              >
+                Remove rule
+              </Button>
+            </LoomSettingsActions>
+          </LoomSettingsDetails>
         </form>
       </LoomSettingsPanel>
     </div>

@@ -78,13 +78,15 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
           ? cause.message
           : "The decision could not be confirmed. Retry or refresh its status.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
-    <section aria-label="Vault approvals" className="flex min-w-0 flex-col gap-4">
-      <h3 className="font-medium">Remote approvals</h3>
+    <section
+      aria-label="Vault approvals"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-5 sm:p-6"
+    >
+      <h3 className="text-base font-medium">Remote approvals</h3>
       <p className="text-sm text-muted-foreground">
         Review temporary access for the exact thread, record, action and destination. Notification
         delivery is not connected. Approvals do not restart an operation.
@@ -102,6 +104,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
           {error ?? (result._tag === "Failure" ? String(Cause.squash(result.cause)) : null)}
         </LoomSettingsNotice>
       ) : null}
+      {busy ? <LoomSettingsNotice role="status">Saving access decision…</LoomSettingsNotice> : null}
       {pending && error ? (
         <LoomSettingsActions>
           <Button
@@ -167,16 +170,22 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
               aria-labelledby={`vault-request-${r.id}`}
               className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 text-sm leading-relaxed wrap-anywhere sm:p-4"
             >
-              <h4 id={`vault-request-${r.id}`} className="break-words font-medium">
-                {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
-              </h4>
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <h4 id={`vault-request-${r.id}`} className="wrap-anywhere text-sm font-medium">
+                    {labels.item}
+                  </h4>
+                  <p className="text-sm text-muted-foreground">{VAULT_ACTION_LABELS[r.action]}</p>
+                </div>
+                <span className="rounded-md bg-muted px-2 py-1 text-xs capitalize">{state}</span>
+              </div>
               <p className="break-words text-sm">
                 {labels.thread} · {labels.project}
               </p>
               {state === "pending" && labels.warning ? (
                 <LoomSettingsNotice role="status">{labels.warning}</LoomSettingsNotice>
               ) : null}
-              <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <dl className="grid min-w-0 gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                 <div className="min-w-0 space-y-1">
                   <dt className="text-xs text-muted-foreground">Thread</dt>
                   <dd>{r.threadId}</dd>

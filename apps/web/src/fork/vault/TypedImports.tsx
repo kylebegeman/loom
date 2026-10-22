@@ -1,8 +1,10 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   LoomSettingsActions,
   LoomSettingsField,
+  LoomSettingsDetails,
   LoomSettingsNotice,
-  LoomSettingsPanel,
 } from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -110,9 +112,8 @@ export function TypedImports({
           ? cause.message
           : "Import response was lost. Refresh its receipt before retrying.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const credential = (): VaultTypedMigrationCredential =>
     result
@@ -145,7 +146,6 @@ export function TypedImports({
   const pending = result && ["prepared", "applying"].includes(result.plan.state);
   return (
     <div className="flex min-w-0 flex-col gap-5 text-sm leading-relaxed wrap-anywhere">
-      <h3 className="font-medium">Typed development imports</h3>
       <p className="max-w-prose text-muted-foreground">
         Import one dedicated SSH key or GitHub identity into a new development record on this
         computer. Personal stores and Git configuration are not read or changed. Nothing is
@@ -154,7 +154,10 @@ export function TypedImports({
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!result ? (
         <div className="flex min-w-0 flex-col gap-5">
-          <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+          <p role="status" className="text-sm text-muted-foreground">
+            Draft import. Review the record and destination before storing it.
+          </p>
+          <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
             <Field
               label="Typed development label"
               value={label}
@@ -187,7 +190,7 @@ export function TypedImports({
           {mode === "ssh" ? (
             <>
               <Field label="SSH hostname" value={hostname} change={setHostname} disabled={locked} />
-              <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                 <Field
                   label="SSH username"
                   value={username}
@@ -198,6 +201,7 @@ export function TypedImports({
               </div>
               <Field
                 label="Independently verified host Ed25519 key (optional)"
+                description="Without a verified host key, SSH access stays blocked until trust is configured."
                 value={hostKey}
                 change={setHostKey}
                 disabled={locked}
@@ -212,13 +216,14 @@ export function TypedImports({
                 disabled={locked}
               />
               <Field
-                label="GitHub repositories (owner/repo, separated by spaces)"
+                label="GitHub repositories"
+                description="Enter exact owner/repository names, separated by spaces or commas."
                 value={repositories}
                 change={setRepositories}
                 disabled={locked}
               />
               {mode === "app" ? (
-                <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                   <Field label="GitHub App ID" value={appId} change={setAppId} disabled={locked} />
                   <Field
                     label="GitHub installation ID"
@@ -251,7 +256,6 @@ export function TypedImports({
           <LoomSettingsActions>
             <Button
               size="sm-multiline"
-              variant="outline"
               onClick={() =>
                 void act(() =>
                   runVault(atoms.typedPrepare, {
@@ -353,7 +357,6 @@ export function TypedImports({
               />
               <Button
                 size="sm-multiline"
-                variant="outline"
                 onClick={() =>
                   void act(() =>
                     runVault(atoms.typedApply, {
@@ -430,15 +433,13 @@ export function TypedImports({
           </LoomSettingsActions>
         </section>
       )}
-      <LoomSettingsPanel title="Recent typed import reviews">
-        {query.waiting ? (
-          <LoomSettingsNotice role="status">Loading typed reviews…</LoomSettingsNotice>
-        ) : null}
-        {query._tag === "Failure" ? (
-          <LoomSettingsNotice role="alert">
-            Could not load typed reviews. Refresh and retry.
-          </LoomSettingsNotice>
-        ) : null}
+      <LoomSettingsDetails title="Recent SSH and GitHub import reviews">
+        <VaultQueryFeedback
+          result={query}
+          loading="Loading import reviews…"
+          error="Could not load SSH and GitHub import reviews."
+          onRetry={refresh}
+        />
         <LoomSettingsActions>
           <Button
             size="sm-multiline"
@@ -455,9 +456,12 @@ export function TypedImports({
             key={entry.plan.id}
             className="flex min-w-0 flex-wrap items-start justify-between gap-3"
           >
-            <p>
-              {entry.plan.label} · {entry.plan.kind} · {entry.plan.state}
-            </p>
+            <div className="min-w-0 space-y-1">
+              <h4 className="wrap-anywhere text-sm font-medium">{entry.plan.label}</h4>
+              <p className="text-xs text-muted-foreground">
+                {entry.plan.kind}. {entry.plan.state}
+              </p>
+            </div>
             <Button
               size="sm-multiline"
               variant="outline"
@@ -493,12 +497,13 @@ export function TypedImports({
             More typed reviews
           </Button>
         </LoomSettingsActions>
-      </LoomSettingsPanel>
+      </LoomSettingsDetails>
     </div>
   );
 }
 function Field({
   label,
+  description,
   value,
   change,
   disabled,
@@ -506,6 +511,7 @@ function Field({
   multiline = false,
 }: {
   label: string;
+  description?: string;
   value: string;
   change: (value: string) => void;
   disabled: boolean;
@@ -513,7 +519,7 @@ function Field({
   multiline?: boolean;
 }) {
   return (
-    <LoomSettingsField label={label}>
+    <LoomSettingsField label={label} description={description}>
       {multiline ? (
         <Textarea
           aria-label={label}
@@ -551,12 +557,11 @@ function Confirm({
 }) {
   return (
     <label className="flex items-start gap-2 text-sm leading-6">
-      <input
-        className="mt-1 shrink-0"
+      <Checkbox
         aria-label={label}
-        type="checkbox"
+
         checked={value}
-        onChange={(e) => change(e.target.checked)}
+        onCheckedChange={(checked) => change(checked)}
         disabled={disabled}
       />
       <span>{label}</span>

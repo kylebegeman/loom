@@ -45,43 +45,53 @@ export function PythonCadSettings({
   return (
     <>
       <SettingsRow
+        className="px-0 sm:px-0"
         title="Python CAD interpreter"
         description="Leave blank to use Loom's managed environment. Python models use the .b3d.py file extension and a model() function."
       >
         <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="Python CAD interpreter"
+            autoComplete="off"
+            spellCheck={false}
             value={pythonPath ?? ""}
             onChange={(event) => onPathChange(event.target.value || null)}
           />
           <LoomSettingsNotice>
             {!info
-              ? "Update this environment's Loom server to use Python CAD."
+              ? "Python CAD status is unavailable. Refresh detection below to check this host."
               : info.state === "ready"
                 ? `Python ${info.pythonVersion}, build123d ${info.build123dVersion}`
                 : (info.detail ?? "Python CAD is not set up on this host.")}
           </LoomSettingsNotice>
+          {info?.path && <p className="text-sm text-muted-foreground wrap-anywhere">{info.path}</p>}
           {info && !pythonPath && (
-            <LoomSettingsActions>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canSetup || !info.uv || busy !== null || info.state === "setting-up"}
-                onClick={() => void setup("install")}
-              >
-                {info.state === "ready" ? "Update Python CAD" : "Set up Python CAD"}
-              </Button>
-              {info.path && (
+            <div className="flex min-w-0 flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                Setup and removal apply immediately on this environment. Setup saves the interpreter
+                choice.
+              </p>
+              <LoomSettingsActions>
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={!canSetup || busy !== null}
-                  onClick={() => void setup("remove")}
+                  disabled={!canSetup || !info.uv || busy !== null || info.state === "setting-up"}
+                  onClick={() => void setup("install")}
                 >
-                  Remove
+                  {info.state === "ready" ? "Update Python CAD" : "Set up Python CAD"}
                 </Button>
-              )}
-            </LoomSettingsActions>
+                {info.path && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canSetup || busy !== null}
+                    onClick={() => void setup("remove")}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </LoomSettingsActions>
+            </div>
           )}
           {info && !info.uv && !pythonPath && (
             <LoomSettingsDetails title="Manual setup commands">

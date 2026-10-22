@@ -1,3 +1,5 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   LoomSettingsActions,
   LoomSettingsNotice,
@@ -88,12 +90,14 @@ export function VaultAccessSettingsSection() {
     )
   )
     return (
-      <p className="text-sm text-muted-foreground">
+      <LoomSettingsNotice>
         Vault access management needs a server with grant support.
-      </p>
+      </LoomSettingsNotice>
     );
   if (!canRead)
-    return <p className="text-sm">Your connection does not include Vault inspection.</p>;
+    return (
+      <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
   return (
     <AccessManager
       key={`${environment.environmentId}:${canWrite}`}
@@ -141,9 +145,8 @@ function AccessManager({
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const preview = (input: VaultGrantMutation) =>
     act(async () => {
@@ -166,12 +169,10 @@ function AccessManager({
     )?.label ?? grant.definition.principal.id;
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
-      <LoomSettingsPanel>
-        <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
-      </LoomSettingsPanel>
+      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-medium">Access grants</h3>
+          <h3 className="text-base font-medium">Access grants</h3>
           <p className="max-w-prose text-sm">
             Choose who may inspect, manage or use development records.
           </p>
@@ -180,26 +181,32 @@ function AccessManager({
           </p>
         </div>
         <LoomSettingsActions>
-          <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
-            Refresh access
-          </Button>
           <Button
-            size="sm"
+            size="sm-multiline"
             disabled={!canWrite || busy || pending !== null || !snapshot || !catalog}
             onClick={() => setEditing("new")}
           >
             Add grant
           </Button>
+          <Button size="sm-multiline" variant="ghost" disabled={busy} onClick={refresh}>
+            Refresh access
+          </Button>
         </LoomSettingsActions>
       </div>
-      {error || failure(snapshotResult) || failure(catalogResult) ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? failure(snapshotResult) ?? failure(catalogResult)}
-        </LoomSettingsNotice>
-      ) : null}
-      {!snapshot ? (
-        <LoomSettingsNotice role="status">Loading access policy…</LoomSettingsNotice>
-      ) : (
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      <VaultQueryFeedback
+        result={snapshotResult}
+        loading="Loading access policy…"
+        error={failure(snapshotResult)}
+        onRetry={refresh}
+      />
+      <VaultQueryFeedback
+        result={catalogResult}
+        loading="Loading projects and threads…"
+        error={failure(catalogResult)}
+        onRetry={refresh}
+      />
+      {snapshot ? (
         <>
           <p className="text-xs text-muted-foreground">
             Policy revision {snapshot.revision}. Changes use this revision to protect newer edits.
@@ -245,7 +252,7 @@ function AccessManager({
                   {grant.state !== "revoked" ? (
                     <LoomSettingsActions>
                       <Button
-                        size="xs"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={!canWrite || busy || pending !== null}
                         onClick={() => setEditing(grant)}
@@ -257,7 +264,7 @@ function AccessManager({
                       ).map((state) => (
                         <Button
                           key={state}
-                          size="xs"
+                          size="sm-multiline"
                           variant={state === "revoked" ? "ghost-destructive" : "ghost"}
                           disabled={!canWrite || busy || pending !== null}
                           onClick={() =>
@@ -291,7 +298,14 @@ function AccessManager({
               role="region"
               aria-label="Grant change preview"
             >
-              <p className="text-sm font-medium">Review {pending.preview.grant.definition.label}</p>
+              <div className="space-y-1">
+                <h3 className="text-base font-medium">
+                  Review {pending.preview.grant.definition.label}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Preview only. Apply this reviewed change to update the policy.
+                </p>
+              </div>
               <p className="text-sm">
                 {pending.input.change.type === "state"
                   ? `Set grant to ${pending.input.change.state}.`
@@ -306,14 +320,18 @@ function AccessManager({
               ))}
               <LoomSettingsActions>
                 <Button
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={busy}
                   onClick={() => setPending(null)}
                 >
                   Abandon preview
                 </Button>
-                <Button size="sm" disabled={!canWrite || busy} onClick={() => void apply()}>
+                <Button
+                  size="sm-multiline"
+                  disabled={!canWrite || busy}
+                  onClick={() => void apply()}
+                >
                   {busy ? "Applying…" : "Apply reviewed change"}
                 </Button>
               </LoomSettingsActions>
@@ -346,7 +364,7 @@ function AccessManager({
             </div>
           </LoomSettingsDetails>
         </>
-      )}
+      ) : null}
       {editing !== null && catalog && snapshot ? (
         <GrantEditor
           key={editing === "new" ? "new" : editing.definition.id}
@@ -464,7 +482,13 @@ function GrantEditor({
             submit();
           }}
         >
-          <LoomSettingsField label="Grant name">
+          <p className="text-sm text-muted-foreground">
+            Draft grant. Preview the exact scope before applying it.
+          </p>
+          <LoomSettingsField
+            label="Grant name"
+            description="Choose a name that explains why this workload needs access."
+          >
             <Input
               aria-label="Grant name"
               autoFocus
@@ -477,7 +501,10 @@ function GrantEditor({
               }}
             />
           </LoomSettingsField>
-          <LoomSettingsField label="Thread or project">
+          <LoomSettingsField
+            label="Thread or project"
+            description="A project grant applies to every thread in that project."
+          >
             <Select
               value={principal}
               disabled={disabled}
@@ -537,7 +564,7 @@ function GrantEditor({
             ) : null}
             <Button
               type="button"
-              size="xs"
+              size="sm-multiline"
               variant="outline"
               onClick={() => appAtomRegistry.refresh(itemAtom)}
             >
@@ -545,16 +572,12 @@ function GrantEditor({
             </Button>
             {page?.items.map((item) => (
               <label key={item.id} className="flex items-start gap-2 text-sm">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   checked={items.includes(item.id)}
-                  disabled={!items.includes(item.id) && items.length >= 32}
-                  onChange={(event) => {
+                  disabled={disabled || (!items.includes(item.id) && items.length >= 32)}
+                  onCheckedChange={(checked) => {
                     setItems((previous) =>
-                      event.target.checked
-                        ? [...previous, item.id]
-                        : previous.filter((id) => id !== item.id),
+                      checked ? [...previous, item.id] : previous.filter((id) => id !== item.id),
                     );
                     changed();
                   }}
@@ -569,7 +592,7 @@ function GrantEditor({
             <LoomSettingsActions>
               <Button
                 type="button"
-                size="xs"
+                size="sm-multiline"
                 variant="outline"
                 disabled={cursor === null}
                 onClick={() => setCursor(null)}
@@ -578,7 +601,7 @@ function GrantEditor({
               </Button>
               <Button
                 type="button"
-                size="xs"
+                size="sm-multiline"
                 variant="outline"
                 disabled={!page?.nextCursor}
                 onClick={() => {
@@ -601,7 +624,7 @@ function GrantEditor({
                 />
                 <Button
                   type="button"
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={!/^[a-f0-9]{32}$/.test(futureItem) || items.length >= 32}
                   onClick={() => {
@@ -616,7 +639,7 @@ function GrantEditor({
               {items.some((id) => !page?.items.some((item) => item.id === id)) ? (
                 <Button
                   type="button"
-                  size="xs"
+                  size="sm-multiline"
                   variant="ghost"
                   onClick={() => {
                     setItems([]);
@@ -632,13 +655,12 @@ function GrantEditor({
             <legend className="mb-2 text-sm">Allowed actions</legend>
             {VaultAccessAction.literals.map((action) => (
               <label key={action} className="flex items-start gap-2 text-sm leading-6">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   checked={actions.includes(action)}
-                  onChange={(event) => {
+                  disabled={disabled}
+                  onCheckedChange={(checked) => {
                     setActions((previous) =>
-                      event.target.checked
+                      checked
                         ? [...previous, action]
                         : previous.filter((value) => value !== action),
                     );
@@ -653,7 +675,10 @@ function GrantEditor({
             Use, reveal and export grants do not enable a delivery channel by themselves. Delegate
             lets this workload pass a narrower grant to a real subagent.
           </p>
-          <LoomSettingsField label="Exact destination, optional">
+          <LoomSettingsField
+            label="Exact destination (optional)"
+            description="Leave empty to allow any destination within this grant's project scope."
+          >
             <Input
               aria-label="Exact destination, optional"
               placeholder="Leave empty for any destination in scope"
@@ -666,7 +691,7 @@ function GrantEditor({
               }}
             />
           </LoomSettingsField>
-          <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
             <LoomSettingsField label="Starts">
               <Input
                 aria-label="Starts"
@@ -682,13 +707,11 @@ function GrantEditor({
             </LoomSettingsField>
             <div className="flex min-w-0 flex-col gap-4">
               <label className="flex items-start gap-2 text-sm leading-6">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   checked={noExpiry}
                   disabled={disabled}
-                  onChange={(event) => {
-                    setNoExpiry(event.target.checked);
+                  onCheckedChange={(checked) => {
+                    setNoExpiry(checked);
                     changed();
                   }}
                 />
@@ -715,10 +738,16 @@ function GrantEditor({
             <LoomSettingsNotice role="alert">{error ?? previewError}</LoomSettingsNotice>
           ) : null}
           <LoomSettingsActions>
-            <Button type="button" variant="outline" disabled={disabled} onClick={onClose}>
+            <Button
+              size="sm-multiline"
+              type="button"
+              variant="outline"
+              disabled={disabled}
+              onClick={onClose}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={disabled}>
+            <Button size="sm-multiline" type="submit" disabled={disabled}>
               Preview grant
             </Button>
           </LoomSettingsActions>
@@ -743,9 +772,9 @@ function AccessCheck({
   const [thread, setThread] = useState(initialThreadId);
   const [itemId, setItemId] = useState(initialItemId);
   const [cursor, setCursor] = useState<string | null>(null);
-  const itemPage = data(
-    useAtomValue(vault.list({ environmentId, input: { cursor, includeArchived: true } })),
-  );
+  const itemAtom = vault.list({ environmentId, input: { cursor, includeArchived: true } });
+  const itemResult = useAtomValue(itemAtom);
+  const itemPage = data(itemResult);
   const [action, setAction] = useState<VaultAccessAction>("manage");
   const [destination, setDestination] = useState("");
   const [explanation, setExplanation] = useState<VaultAccessExplanation | null>(null);
@@ -791,38 +820,55 @@ function AccessCheck({
         access.explain.resultAtom({ environmentId, input }),
         options,
       );
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setExplanation(result.value);
-      const readiness = await executeAtomQuery(
-        appAtomRegistry,
-        access.readiness.resultAtom({
-          environmentId,
-          input: {
-            threadId: input.threadId,
-            requirements: [{ itemId, action, destination: input.destination }],
-          },
-        }),
-        options,
-      );
-      if (readiness._tag === "Failure") throw squashAtomCommandFailure(readiness);
-      setReport(readiness.value);
+      if (result._tag === "Failure") {
+        setError(
+          cancellation.signal.aborted
+            ? "Check cancelled. Run it again for a fresh result."
+            : message(squashAtomCommandFailure(result)),
+        );
+      } else {
+        setExplanation(result.value);
+        const readiness = await executeAtomQuery(
+          appAtomRegistry,
+          access.readiness.resultAtom({
+            environmentId,
+            input: {
+              threadId: input.threadId,
+              requirements: [{ itemId, action, destination: input.destination }],
+            },
+          }),
+          options,
+        );
+        if (readiness._tag === "Failure") {
+          setError(
+            cancellation.signal.aborted
+              ? "Check cancelled. Run it again for a fresh result."
+              : message(squashAtomCommandFailure(readiness)),
+          );
+        } else setReport(readiness.value);
+      }
     } catch (cause) {
       setError(
         cancellation.signal.aborted
           ? "Check cancelled. Run it again for a fresh result."
           : message(cause),
       );
-    } finally {
-      setController(null);
-      setBusy(false);
     }
+    setController(null);
+    setBusy(false);
   };
   return (
     <LoomSettingsPanel
       title="Why this access?"
       description="Check the actual thread context. A grant alone does not prove an external service is reachable."
     >
-      <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+      <VaultQueryFeedback
+        result={itemResult}
+        loading="Loading Vault items…"
+        error={failure(itemResult)}
+        onRetry={() => appAtomRegistry.refresh(itemAtom)}
+      />
+      <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
         <LoomSettingsField label="Thread">
           <Select
             value={thread}
@@ -883,7 +929,7 @@ function AccessCheck({
       </div>
       <LoomSettingsActions>
         <Button
-          size="xs"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || cursor === null}
           onClick={() => setCursor(null)}
@@ -891,7 +937,7 @@ function AccessCheck({
           First items
         </Button>
         <Button
-          size="xs"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || !itemPage?.nextCursor}
           onClick={() => {
@@ -901,8 +947,11 @@ function AccessCheck({
           Next items
         </Button>
       </LoomSettingsActions>
-      <div className="grid min-w-0 gap-5 sm:grid-cols-2">
-        <LoomSettingsField label="Item ID">
+      <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
+        <LoomSettingsField
+          label="Item ID"
+          description="Use the selected item or enter an exact ID."
+        >
           <Input
             aria-label="Item ID"
             value={itemId}
@@ -949,7 +998,7 @@ function AccessCheck({
       </LoomSettingsField>
       <div>
         <Button
-          size="sm"
+          size="sm-multiline"
           disabled={busy || !thread || !/^[a-f0-9]{32}$/.test(itemId)}
           onClick={() => void check()}
         >
@@ -958,7 +1007,7 @@ function AccessCheck({
       </div>
       {busy ? (
         <div>
-          <Button size="sm" variant="outline" onClick={() => controller?.abort()}>
+          <Button size="sm-multiline" variant="outline" onClick={() => controller?.abort()}>
             Cancel access check
           </Button>
         </div>

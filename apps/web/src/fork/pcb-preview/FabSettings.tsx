@@ -10,8 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
+import { LoomSettingsActions, LoomSettingsNotice } from "~/fork/settings/parts";
 import { pcb } from "./state";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { asyncError, asyncValue } from "./usePcbPreview";
 import { useWrite } from "./InspectorKit";
 import { runModelCommand } from "../model-preview-3d/state";
@@ -28,6 +29,7 @@ export function FabSettings({ environmentId }: { environmentId: EnvironmentId })
   return (
     <>
       <SettingsRow
+        className="px-0 sm:px-0"
         title="Fabrication profile"
         description="Choose the default fabrication limits for this environment."
         control={
@@ -71,10 +73,24 @@ export function FabSettings({ environmentId }: { environmentId: EnvironmentId })
           </div>
         }
       />
+      {write.busy && (
+        <LoomSettingsNotice role="status">Saving fabrication profile...</LoomSettingsNotice>
+      )}
       {error && (
-        <LoomSettingsContent>
+        <>
           <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>
-        </LoomSettingsContent>
+          <LoomSettingsActions>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                appAtomRegistry.refresh(pcb.fabCapabilities({ environmentId, input: {} }))
+              }
+            >
+              Reload profiles
+            </Button>
+          </LoomSettingsActions>
+        </>
       )}
       <FabCapabilitiesDialog environmentId={environmentId} open={open} onOpenChange={setOpen} />
     </>

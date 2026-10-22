@@ -1,3 +1,4 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
@@ -144,11 +145,16 @@ function ProfileProjects({
             </SelectPopup>
           </Select>
         </LoomSettingsField>
-        {result.waiting ? (
-          <LoomSettingsNotice role="status">Loading projects…</LoomSettingsNotice>
-        ) : null}
-        {failure(result) ? (
-          <LoomSettingsNotice role="alert">{failure(result)}</LoomSettingsNotice>
+        <VaultQueryFeedback
+          result={result}
+          loading="Loading projects…"
+          error={failure(result)}
+          onRetry={() => appAtomRegistry.refresh(atom)}
+        />
+        {catalog && !projects.length && !result.waiting ? (
+          <LoomSettingsNotice>
+            No projects available. Add a project on this computer before creating a profile.
+          </LoomSettingsNotice>
         ) : null}
         {catalog?.truncated ? (
           <LoomSettingsNotice>
@@ -156,7 +162,11 @@ function ProfileProjects({
           </LoomSettingsNotice>
         ) : null}
         <LoomSettingsActions>
-          <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            onClick={() => appAtomRegistry.refresh(atom)}
+          >
             Refresh projects
           </Button>
         </LoomSettingsActions>
@@ -253,7 +263,7 @@ function ProfileManager({
     <div className="flex min-w-0 flex-col gap-5">
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           disabled={locked || !snapshot || !!editing || snapshot.profiles.length >= 32}
           onClick={() =>
             edit({
@@ -266,7 +276,7 @@ function ProfileManager({
           Create profile
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy}
           onClick={() => {
@@ -282,23 +292,25 @@ function ProfileManager({
           Your connection can inspect profiles but cannot change them.
         </LoomSettingsNotice>
       ) : null}
-      <VaultRequirementImport
-        supportsGitHub={supportsGitHub}
-        disabled={locked || !!editing || !snapshot || snapshot.profiles.length >= 32}
-        onImport={edit}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading profiles…"
+        error={failure(result)}
+        onRetry={() => {
+          setReview(null);
+          appAtomRegistry.refresh(atom);
+        }}
       />
-      {error || failure(result) ? (
-        <LoomSettingsNotice role="alert">{error ?? failure(result)}</LoomSettingsNotice>
-      ) : null}
-      {result.waiting ? (
-        <LoomSettingsNotice role="status">Loading profiles…</LoomSettingsNotice>
-      ) : null}
       {editing ? (
         <section aria-label="Profile editor" className="min-w-0">
           <LoomSettingsPanel
-            title="Profile editor"
+            title={editing.label ? `Edit ${editing.label}` : "New project profile"}
             description="Name each requirement, choose its operation and bind the key or connection it should use."
           >
+            <p role="status" className="text-sm text-muted-foreground">
+              Draft changes. Review the profile before saving.
+            </p>
             <LoomSettingsField label="Profile label">
               <Input
                 aria-label="Profile label"
@@ -312,10 +324,10 @@ function ProfileManager({
             {editing.bindings.map((b, i) => (
               <fieldset
                 key={b.rowId}
-                className="flex min-w-0 flex-col gap-4 rounded-lg border border-border px-4 pb-4"
+                className="flex min-w-0 flex-col gap-4 border-t border-border pt-4"
               >
-                <legend className="px-1 text-sm font-medium">Requirement {i + 1}</legend>
-                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <legend className="pr-3 text-sm font-medium">Requirement {i + 1}</legend>
+                <div className="grid min-w-0 gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                   <LoomSettingsField
                     label="Requirement name"
                     description="Use a unique lowercase name."
@@ -406,12 +418,13 @@ function ProfileManager({
                     "No key bound"
                   )}
                 </p>
-                <div className="flex min-w-0 flex-col gap-3">
-                  <h4 className="text-sm font-medium">
-                    {b.kind === "github"
+                <LoomSettingsDetails
+                  title={
+                    b.kind === "github"
                       ? "Choose or replace GitHub connection"
-                      : "Choose or replace SSH key"}
-                  </h4>
+                      : "Choose or replace SSH key"
+                  }
+                >
                   {b.kind === "github" ? (
                     <VaultGitHubConnectionPicker
                       environmentId={environmentId}
@@ -440,10 +453,10 @@ function ProfileManager({
                       }
                     />
                   )}
-                </div>
+                </LoomSettingsDetails>
                 <LoomSettingsActions>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
                     variant="outline"
                     disabled={locked || !b.itemId}
                     onClick={() =>
@@ -458,7 +471,7 @@ function ProfileManager({
                     {b.kind === "github" ? "Unbind connection" : "Unbind key"}
                   </Button>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
                     variant="outline"
                     disabled={locked || editing.bindings.length === 1}
                     onClick={() =>
@@ -472,7 +485,7 @@ function ProfileManager({
             ))}
             <LoomSettingsActions>
               <Button
-                size="sm"
+                size="sm-multiline"
                 variant="outline"
                 disabled={locked || editing.bindings.length >= 16}
                 onClick={() =>
@@ -527,12 +540,6 @@ function ProfileManager({
               availability are checked separately. Incomplete profiles can be saved for later
               repair.
             </p>
-            <LoomSettingsDetails title="Archiving and restoring profiles">
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Archiving blocks further profile use. Restoring does not restore the project
-                default.
-              </p>
-            </LoomSettingsDetails>
             {review ? (
               <div
                 role="region"
@@ -551,17 +558,19 @@ function ProfileManager({
             <LoomSettingsActions>
               {review ? (
                 <Button
+                  size="sm-multiline"
                   disabled={locked}
                   onClick={() => void apply({ type: "save", profile: editing })}
                 >
-                  Save reviewed profile
+                  {busy ? "Saving profile…" : "Save reviewed profile"}
                 </Button>
               ) : (
-                <Button disabled={locked} onClick={() => void preview()}>
-                  Review profile
+                <Button size="sm-multiline" disabled={locked} onClick={() => void preview()}>
+                  {busy ? "Reviewing profile…" : "Review profile"}
                 </Button>
               )}
               <Button
+                size="sm-multiline"
                 variant="outline"
                 disabled={busy}
                 onClick={() => {
@@ -575,6 +584,15 @@ function ProfileManager({
           </LoomSettingsPanel>
         </section>
       ) : null}
+      {snapshot && !editing ? (
+        <div className="space-y-1">
+          <h3 className="text-base font-medium">Saved profiles</h3>
+          <p className="text-sm text-muted-foreground">
+            {snapshot.profiles.length} profiles. Choose a default for new runs or edit a profile's
+            requirements.
+          </p>
+        </div>
+      ) : null}
       {snapshot?.profiles.length === 0 ? (
         <LoomSettingsNotice>
           No profiles yet. Create one for this project's development environment.
@@ -583,7 +601,7 @@ function ProfileManager({
       {snapshot?.activeProfileId ? (
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             disabled={locked || !!editing}
             onClick={() => void apply({ type: "activate", id: null })}
@@ -611,10 +629,9 @@ function ProfileManager({
             {p.bindings.map((b) => b.name).join(", ")}
           </p>
           <p className="text-xs text-muted-foreground">Version {p.version}</p>
-          <VaultRequirementExport profile={p} />
           <LoomSettingsActions>
             <Button
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={locked || !!editing || p.state === "archived"}
               aria-label={`Edit ${p.label}`}
@@ -622,18 +639,9 @@ function ProfileManager({
             >
               Edit
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={locked || !!editing || (snapshot?.profiles.length ?? 0) >= 32}
-              aria-label={`Clone ${p.label}`}
-              onClick={() => edit({ ...p, id: newId(), label: `${p.label} copy` })}
-            >
-              Clone
-            </Button>
             {p.state === "active" && snapshot.activeProfileId !== p.id ? (
               <Button
-                size="sm"
+                size="sm-multiline"
                 variant="outline"
                 disabled={locked || !!editing}
                 aria-label={`Use ${p.label} by default`}
@@ -642,24 +650,47 @@ function ProfileManager({
                 Use by default
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={locked || !!editing}
-              aria-label={`${p.state === "active" ? "Archive" : "Restore"} ${p.label}`}
-              onClick={() =>
-                void apply({
-                  type: "state",
-                  id: p.id,
-                  state: p.state === "active" ? "archived" : "active",
-                })
-              }
-            >
-              {p.state === "active" ? "Archive" : "Restore"}
-            </Button>
           </LoomSettingsActions>
+          <LoomSettingsDetails title="Profile maintenance">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Archiving blocks further profile use. Restoring does not restore the project default.
+            </p>
+            <LoomSettingsActions>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={locked || !!editing || (snapshot?.profiles.length ?? 0) >= 32}
+                aria-label={`Clone ${p.label}`}
+                onClick={() => edit({ ...p, id: newId(), label: `${p.label} copy` })}
+              >
+                Clone
+              </Button>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={locked || !!editing}
+                aria-label={`${p.state === "active" ? "Archive" : "Restore"} ${p.label}`}
+                onClick={() =>
+                  void apply({
+                    type: "state",
+                    id: p.id,
+                    state: p.state === "active" ? "archived" : "active",
+                  })
+                }
+              >
+                {p.state === "active" ? "Archive" : "Restore"}
+              </Button>
+            </LoomSettingsActions>
+            <VaultRequirementExport profile={p} />
+          </LoomSettingsDetails>
         </LoomSettingsPanel>
       ))}
+      <VaultRequirementImport
+        supportsGitHub={supportsGitHub}
+        disabled={locked || !!editing || !snapshot || snapshot.profiles.length >= 32}
+        onImport={edit}
+      />
+
       <VaultProfileHistory
         environmentId={environmentId}
         projectId={projectId}

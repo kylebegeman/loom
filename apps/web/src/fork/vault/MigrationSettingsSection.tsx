@@ -1,3 +1,5 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   LoomSettingsActions,
   LoomSettingsNotice,
@@ -43,8 +45,13 @@ export function VaultMigrationSettingsSection() {
       "vault-migration-imports",
     )
   )
-    return <p>Development import reviews need a newer Vault server.</p>;
-  if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
+    return (
+      <LoomSettingsNotice>Development import reviews need a newer Vault server.</LoomSettingsNotice>
+    );
+  if (!canRead)
+    return (
+      <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Imports key={environment.environmentId} environmentId={environment.environmentId} />
@@ -52,7 +59,7 @@ export function VaultMigrationSettingsSection() {
         configs.get(environment.environmentId)?.environment.capabilities,
         "vault-migration-typed-imports",
       ) ? (
-        <LoomSettingsPanel title="SSH and GitHub imports">
+        <LoomSettingsPanel title="Import an SSH key or GitHub connection">
           <TypedImports
             key={`typed:${environment.environmentId}`}
             environmentId={environment.environmentId}
@@ -96,9 +103,8 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           ? cause.message
           : "Import failed. Refresh its status before retrying.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const reset = () => {
     setResult(null);
@@ -123,10 +129,15 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           workload access or verify a provider login.
         </p>
       </LoomSettingsDetails>
-      <LoomSettingsNotice>Selected computer: {environmentId}</LoomSettingsNotice>
+      <p className="wrap-anywhere text-xs text-muted-foreground">
+        Destination computer ID: {environmentId}
+      </p>
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!result ? (
-        <LoomSettingsPanel title="Import a development secret or note">
+        <LoomSettingsPanel
+          title="Import a development secret or note"
+          description="Enter the record, review its destination, then confirm the import."
+        >
           <form
             className="flex min-w-0 flex-col gap-5"
             onSubmit={(event) => {
@@ -146,7 +157,10 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
               );
             }}
           >
-            <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+            <p role="status" className="text-sm text-muted-foreground">
+              Draft import. Prepare a review before storing this record.
+            </p>
+            <div className="grid min-w-0 gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
               <LoomSettingsField label="Development item label">
                 <Input
                   aria-label="Development import label"
@@ -178,7 +192,14 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                 </Select>
               </LoomSettingsField>
             </div>
-            <LoomSettingsField label="Private value">
+            <LoomSettingsField
+              label="Private value"
+              description={
+                kind === "secret"
+                  ? "Enter the dedicated development credential. Its value stays hidden."
+                  : "Secure notes use visible multiline entry. Review the text before preparing the import."
+              }
+            >
               {kind === "secret" ? (
                 <Input
                   type="password"
@@ -202,21 +223,29 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
               )}
             </LoomSettingsField>
             <label className="flex items-start gap-2 text-sm leading-6">
-              <input
-                className="mt-1 shrink-0"
-                type="checkbox"
+              <Checkbox
                 checked={dedicated}
                 disabled={locked}
-                onChange={(e) => setDedicated(e.target.checked)}
+                onCheckedChange={(checked) => setDedicated(checked)}
               />{" "}
               This credential is dedicated to development and is not shared with my personal
               accounts.
             </label>
             <LoomSettingsActions>
-              <Button type="submit" disabled={locked || !dedicated || !label.trim() || !value}>
-                Review development import
+              <Button
+                size="sm-multiline"
+                type="submit"
+                disabled={locked || !dedicated || !label.trim() || !value}
+              >
+                {busy ? "Preparing review…" : "Review development import"}
               </Button>
-              <Button type="button" variant="outline" disabled={busy} onClick={reset}>
+              <Button
+                size="sm-multiline"
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={reset}
+              >
                 Clear private input
               </Button>
             </LoomSettingsActions>
@@ -225,7 +254,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
       ) : (
         <section
           aria-label="Development import review"
-          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
+          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
         >
           <div className="space-y-1">
             <h3 className="font-medium">{result.plan.label}</h3>
@@ -273,12 +302,10 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                 <p>Private value is held only for this review and is hidden here.</p>
               )}
               <label className="flex items-start gap-2 text-sm leading-6">
-                <input
-                  className="mt-1 shrink-0"
-                  type="checkbox"
+                <Checkbox
                   checked={reviewed}
                   disabled={locked}
-                  onChange={(e) => setReviewed(e.target.checked)}
+                  onCheckedChange={(checked) => setReviewed(checked)}
                 />{" "}
                 I reviewed this new development record and selected computer.
               </label>
@@ -288,6 +315,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                 </LoomSettingsNotice>
               ) : null}
               <Button
+                size="sm-multiline"
                 disabled={
                   locked ||
                   !reviewed ||
@@ -311,6 +339,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           ) : null}
           <LoomSettingsActions>
             <Button
+              size="sm-multiline"
               variant="outline"
               disabled={busy}
               onClick={() =>
@@ -323,6 +352,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
             </Button>
             {["prepared", "expired"].includes(result.plan.state) ? (
               <Button
+                size="sm-multiline"
                 variant="outline"
                 disabled={locked}
                 onClick={() =>
@@ -336,6 +366,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
             ) : null}
             {result.canArchive ? (
               <Button
+                size="sm-multiline"
                 variant="outline"
                 disabled={locked}
                 onClick={() =>
@@ -348,7 +379,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
               </Button>
             ) : null}
             {!pending ? (
-              <Button variant="outline" disabled={busy} onClick={reset}>
+              <Button size="sm-multiline" variant="outline" disabled={busy} onClick={reset}>
                 Start another review
               </Button>
             ) : null}
@@ -362,10 +393,10 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
         </section>
       )}
       {busy ? <LoomSettingsNotice role="status">Updating import review…</LoomSettingsNotice> : null}
-      <LoomSettingsPanel title="Recent import reviews">
+      <LoomSettingsDetails title="Recent secret and note import reviews">
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             onClick={() => appAtomRegistry.refresh(listAtom)}
             disabled={busy}
@@ -373,25 +404,24 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
             Refresh import reviews
           </Button>
         </LoomSettingsActions>
-        {list.waiting ? (
-          <LoomSettingsNotice role="status">Loading import reviews…</LoomSettingsNotice>
-        ) : null}
-        {list._tag === "Failure" ? (
-          <LoomSettingsNotice role="alert">
-            Could not load import reviews. Check Vault access and refresh.
-          </LoomSettingsNotice>
-        ) : null}
+        <VaultQueryFeedback
+          result={list}
+          loading="Loading import reviews…"
+          error="Could not load import reviews. Check Vault access and retry."
+          onRetry={() => appAtomRegistry.refresh(listAtom)}
+        />
         {page?.items.length === 0 ? <p>No import reviews on this page.</p> : null}
         {page?.items.map((entry) => (
           <div
             key={entry.plan.id}
             className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0"
           >
-            <span>
-              {entry.plan.label} · {entry.plan.state}
-            </span>
+            <div className="min-w-0 space-y-1">
+              <h4 className="wrap-anywhere text-sm font-medium">{entry.plan.label}</h4>
+              <p className="text-xs text-muted-foreground">{entry.plan.state}</p>
+            </div>
             <Button
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={busy}
               onClick={() => {
@@ -409,7 +439,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
         ))}
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             disabled={!cursor || list.waiting || busy}
             onClick={() => setCursor(null)}
@@ -417,7 +447,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
             First import reviews
           </Button>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             disabled={!page?.nextCursor || list.waiting || busy}
             onClick={() => setCursor(page?.nextCursor ?? null)}
@@ -425,7 +455,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
             More import reviews
           </Button>
         </LoomSettingsActions>
-      </LoomSettingsPanel>
+      </LoomSettingsDetails>
     </div>
   );
 }

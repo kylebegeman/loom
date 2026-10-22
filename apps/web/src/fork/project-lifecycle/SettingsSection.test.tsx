@@ -77,7 +77,9 @@ function notices() {
 }
 async function saveCap(value: number) {
   await act(async () => {
-    renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.onChange({ target: { value } });
+    renderer!.root
+      .findByProps({ "aria-label": "Lane cap" })
+      .props.onChange({ target: { value: String(value) } });
   });
   await act(async () => {
     renderer!.root
@@ -110,7 +112,7 @@ it("keeps the save confirmation after refreshed settings arrive and clears it on
   state.settings = { ...state.settings, defaultCapGb: 41 };
   await render();
   expect(notices()).toContain("Settings saved.");
-  expect(renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.value).toBe(41);
+  expect(renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.value).toBe("41");
   state.environmentId = "another-computer";
   await render();
   expect(notices()).not.toContain("Settings saved.");
@@ -124,7 +126,46 @@ it("keeps the draft and displays a failed save so it can be retried", async () =
   expect(
     renderer!.root.findAllByProps({ role: "alert" }).map((node) => node.props.children),
   ).toContain("Computer disconnected");
-  expect(renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.value).toBe(41);
+  expect(renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.value).toBe("41");
   await saveCap(41);
   expect(notices()).toContain("Settings saved.");
+});
+
+it("keeps an empty numeric draft visible and prevents saving it", async () => {
+  await render();
+  const saveButton = () =>
+    renderer!.root.findAllByType("button").find((node) => node.props.children === "Save settings")!;
+  expect(saveButton().props.disabled).toBe(true);
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Lane cap" })
+      .props.onChange({ target: { value: "" } });
+  });
+  expect(renderer!.root.findByProps({ "aria-label": "Lane cap" }).props.value).toBe("");
+  expect(saveButton().props.disabled).toBe(true);
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Lane cap" })
+      .props.onChange({ target: { value: "42" } });
+  });
+  expect(saveButton().props.disabled).toBe(false);
+});
+
+it("disables saving after a draft is restored to its original values", async () => {
+  await render();
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Lane cap" })
+      .props.onChange({ target: { value: "42" } });
+  });
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Lane cap" })
+      .props.onChange({ target: { value: "40" } });
+  });
+  const button = renderer!.root
+    .findAllByType("button")
+    .find((node) => node.props.children === "Save settings")!;
+  expect(button.props.disabled).toBe(true);
+  expect(state.save).not.toHaveBeenCalled();
 });

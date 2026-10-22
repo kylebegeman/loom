@@ -22,6 +22,7 @@ import {
   LoomSettingsActions,
   LoomSettingsContent,
   LoomSettingsField,
+  LoomSettingsDetails,
   LoomSettingsNotice,
   LoomSettingsPanel,
 } from "~/fork/settings/parts";
@@ -31,6 +32,7 @@ import { useServerConfigs } from "~/state/entities";
 import { FEATURE, formatGb, lanes, runLaneCommand } from "./state";
 
 const validateSettings = Schema.decodeSync(ProjectLifecycleSettings);
+const isValidSettings = Schema.is(ProjectLifecycleSettings);
 
 /** Tracks one action at a time and reports its result under the form. */
 function useAction() {
@@ -47,7 +49,7 @@ function useAction() {
     }
     setBusy(false);
   };
-  return { busy, message, act };
+  return { busy, message, act, clearMessage: () => setMessage(null) };
 }
 
 function ActionMessage({ message }: { message: { text: string; failed: boolean } | null }) {
@@ -65,20 +67,30 @@ function GbInput({
   onChange,
 }: {
   label: string;
-  value: number;
+  value: string;
   min: number;
-  onChange: (value: number) => void;
+  onChange: (value: string) => void;
 }) {
+  const number = Number(value);
+  const invalid = value.trim() === "" || !Number.isInteger(number) || number < min || number > 4000;
   return (
-    <Input
-      aria-label={label}
-      type="number"
-      size="sm"
-      min={min}
-      max={4000}
-      value={value}
-      onChange={(event) => onChange(Number(event.target.value))}
-    />
+    <div className="flex min-w-0 flex-col gap-2">
+      <Input
+        aria-label={label}
+        type="number"
+        size="sm"
+        min={min}
+        max={4000}
+        value={value}
+        aria-invalid={invalid}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {invalid && (
+        <p role="alert" className="text-sm text-destructive-foreground">
+          Enter a whole number from {min} to 4000 GB.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -92,122 +104,184 @@ function SettingsForm({
   environmentId: EnvironmentId;
   initial: ProjectLifecycleSettings;
   hasLanes: boolean;
-  /** Shown while the setting is automatic; null until the status arrives. */
   autoSlots: number | null;
   saveAction: ReturnType<typeof useAction>;
 }) {
   const [settings, setSettings] = useState(initial);
-  const { busy, message, act } = saveAction;
+  const initialNumbers = {
+    defaultCapGb: String(initial.defaultCapGb),
+    appleCapGb: String(initial.appleCapGb),
+    reserveGb: String(initial.reserveGb),
+    buildSlots: initial.buildSlots === null ? "" : String(initial.buildSlots),
+  };
+  const [numbers, setNumbers] = useState(initialNumbers);
+  const { busy, message, act, clearMessage } = saveAction;
   const canSave = useAtomValue(lanes.updateSettings.permissionAtom(environmentId));
+  const draft = {
+    ...settings,
+    defaultCapGb: Number(numbers.defaultCapGb),
+    appleCapGb: Number(numbers.appleCapGb),
+    reserveGb: Number(numbers.reserveGb),
+    buildSlots: numbers.buildSlots.trim() === "" ? null : Number(numbers.buildSlots),
+  };
+  const valid =
+    numbers.defaultCapGb.trim() !== "" &&
+    numbers.appleCapGb.trim() !== "" &&
+    numbers.reserveGb.trim() !== "" &&
+    isValidSettings(draft);
+  const dirty = !valid || JSON.stringify(draft) !== JSON.stringify(initial);
   const set = <K extends keyof ProjectLifecycleSettings>(
     key: K,
     value: ProjectLifecycleSettings[K],
-  ) => setSettings((current) => ({ ...current, [key]: value }));
+  ) => {
+    clearMessage();
+    setSettings((current) => ({ ...current, [key]: value }));
+  };
+  const setNumber = (key: keyof typeof numbers, value: string) => {
+    clearMessage();
+    setNumbers((current) => ({ ...current, [key]: value }));
+  };
   const save = () =>
     act(async () => {
-      await runLaneCommand(lanes.updateSettings, {
-        environmentId,
-        input: validateSettings(settings),
-      });
+      await runLaneCommand(lanes.updateSettings, { environmentId, input: validateSettings(draft) });
       appAtomRegistry.refresh(lanes.settings({ environmentId, input: {} }));
     }, "Settings saved.");
   return (
-    <div className="flex min-w-0 flex-col">
-      <SettingsRow
-        title="Give each checkout a lane"
-        description="Agents get a capped space for temporary files and build output. Lanes are removed when their threads settle or are archived."
-        control={
-          <Switch
-            aria-label="Give each checkout a lane"
-            checked={settings.enabled}
-            onCheckedChange={(checked) => set("enabled", checked)}
+    <LoomSettingsContent className="flex flex-col gap-5">
+      <fieldset disabled={busy || !canSave} className="flex min-w-0 flex-col gap-5">
+        <LoomSettingsPanel
+          title="Workspace lanes"
+          description="Give each checkout its own space for temporary files and build output."
+        >
+          <SettingsRow
+            className="px-0 sm:px-0"
+            title="Give each checkout a lane"
+            description="Lanes are removed when their threads settle or are archived."
+            control={
+              <Switch
+                aria-label="Give each checkout a lane"
+                checked={settings.enabled}
+                onCheckedChange={(checked) => set("enabled", checked)}
+              />
+            }
           />
-        }
-      />
-      <SettingsRow
-        title="Lanes folder"
-        description={
-          hasLanes ? "Discard every lane before moving the folder." : "Created when needed."
-        }
-      >
-        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-          <Input
-            aria-label="Lanes folder"
-            value={settings.lanesRoot}
-            disabled={hasLanes}
-            onChange={(event) => set("lanesRoot", event.target.value)}
-          />
-        </div>
-      </SettingsRow>
-      <LoomSettingsContent className="flex flex-col gap-3">
-        <LoomSettingsPanel title="Storage limits">
-          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-            <LoomSettingsField label="Lane cap (GB)" description="Applies to new lanes.">
+          <LoomSettingsField
+            label="Lanes folder"
+            description={
+              hasLanes
+                ? "Discard every lane before moving this folder."
+                : "An absolute path on this environment. Created when needed."
+            }
+          >
+            <Input
+              aria-label="Lanes folder"
+              value={settings.lanesRoot}
+              disabled={hasLanes}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => set("lanesRoot", event.target.value)}
+            />
+          </LoomSettingsField>
+        </LoomSettingsPanel>
+        <LoomSettingsPanel
+          title="Storage limits"
+          description="Capacity is measured in GB. Lane caps apply to new lanes."
+        >
+          <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+            <LoomSettingsField
+              label="Default lane cap"
+              description="1 to 4000 GB for each new lane."
+            >
               <GbInput
                 label="Lane cap"
                 min={1}
-                value={settings.defaultCapGb}
-                onChange={(value) => set("defaultCapGb", value)}
+                value={numbers.defaultCapGb}
+                onChange={(value) => setNumber("defaultCapGb", value)}
               />
             </LoomSettingsField>
             <LoomSettingsField
-              label="Xcode project lane cap (GB)"
-              description="Xcode builds keep DerivedData and packages in the lane."
+              label="Xcode lane cap"
+              description="1 to 4000 GB, including DerivedData and packages."
             >
               <GbInput
                 label="Xcode project lane cap"
                 min={1}
-                value={settings.appleCapGb}
-                onChange={(value) => set("appleCapGb", value)}
+                value={numbers.appleCapGb}
+                onChange={(value) => setNumber("appleCapGb", value)}
               />
             </LoomSettingsField>
             <LoomSettingsField
-              label="Keep free on this disk (GB)"
-              description="Below this, running agents are asked to free space and lanes stop growing."
+              label="Disk space to keep free"
+              description="0 to 4000 GB. Below this reserve, lanes stop growing and agents are asked to free space."
             >
               <GbInput
                 label="Keep free on this disk"
                 min={0}
-                value={settings.reserveGb}
-                onChange={(value) => set("reserveGb", value)}
+                value={numbers.reserveGb}
+                onChange={(value) => setNumber("reserveGb", value)}
               />
             </LoomSettingsField>
           </div>
         </LoomSettingsPanel>
-      </LoomSettingsContent>
-
-      <SettingsRow
-        title="Build slots"
-        description="Heavy builds this machine runs at once; others wait their turn. Leave blank for automatic."
-        control={
-          <Input
-            aria-label="Build slots"
-            type="number"
-            size="sm"
-            className="w-full sm:w-36"
-            min={1}
-            max={64}
-            placeholder={autoSlots === null ? "Automatic" : `Automatic (${autoSlots})`}
-            value={settings.buildSlots ?? ""}
-            onChange={(event) =>
-              set("buildSlots", event.target.value === "" ? null : Number(event.target.value))
-            }
-          />
-        }
-      />
-      <LoomSettingsContent className="flex flex-col gap-3">
-        <LoomSettingsActions>
-          <Button
-            disabled={busy || !canSave}
-            title={canSave ? undefined : "This connection cannot edit storage settings."}
-            onClick={() => void save()}
+        <LoomSettingsPanel
+          title="Build concurrency"
+          description="Limit heavy builds on this environment. Other builds wait their turn."
+        >
+          <LoomSettingsField
+            label="Build slots"
+            description={`Leave blank for automatic${autoSlots === null ? "." : ` (${autoSlots} slots on this machine).`} Otherwise enter 1 to 64.`}
           >
-            Save settings
+            <div className="w-full sm:max-w-48">
+              <Input
+                aria-label="Build slots"
+                type="number"
+                size="sm"
+                min={1}
+                max={64}
+                placeholder="Automatic"
+                value={numbers.buildSlots}
+                onChange={(event) => setNumber("buildSlots", event.target.value)}
+              />
+            </div>
+          </LoomSettingsField>
+        </LoomSettingsPanel>
+      </fieldset>
+      <LoomSettingsNotice role={busy ? "status" : undefined}>
+        {busy
+          ? "Saving settings..."
+          : dirty
+            ? "You have unsaved changes."
+            : "Settings are up to date."}
+      </LoomSettingsNotice>
+      {dirty && !valid && (
+        <LoomSettingsNotice role="alert">
+          Check the storage limits, build slots and folder before saving.
+        </LoomSettingsNotice>
+      )}
+      <LoomSettingsActions>
+        <Button
+          disabled={busy || !canSave || !dirty || !valid}
+          title={canSave ? undefined : "This connection cannot edit storage settings."}
+          onClick={() => void save()}
+        >
+          Save settings
+        </Button>
+        {dirty && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setSettings(initial);
+              setNumbers(initialNumbers);
+              clearMessage();
+            }}
+          >
+            Discard changes
           </Button>
-        </LoomSettingsActions>
-        <ActionMessage message={message} />
-      </LoomSettingsContent>
-    </div>
+        )}
+      </LoomSettingsActions>
+      <ActionMessage message={message} />
+    </LoomSettingsContent>
   );
 }
 
@@ -224,7 +298,13 @@ function ShellRow({
     <div className="flex flex-col gap-2">
       <SettingsRow
         title="Terminal integration"
-        description={`Routes TMPDIR and Xcode build output into the lane when a shell is inside a checkout. Edits ${shell.profilePath}.`}
+        description={
+          <span className="wrap-anywhere">
+            Routes TMPDIR and Xcode build output into the lane when a shell is inside a checkout.
+            Edits {shell.profilePath}.
+          </span>
+        }
+        status={shell.installed ? "Installed for new shells" : "Not installed"}
         control={
           <Button
             variant="outline"
@@ -285,7 +365,7 @@ function LeaseList({
               <span className="text-muted-foreground"> ({lease.ref})</span>
             )}
           </span>
-          <Button size="xs" variant="outline" disabled={disabled} onClick={() => onRelease(lease)}>
+          <Button size="sm" variant="outline" disabled={disabled} onClick={() => onRelease(lease)}>
             Release
           </Button>
         </li>
@@ -451,19 +531,23 @@ function StatusView({
           {status.backend === "image"
             ? "Lanes are capped disk images."
             : "Lanes are folders with a soft cap."}{" "}
-          {status.lanesRoot}
         </p>
+        <p className="text-sm text-muted-foreground wrap-anywhere">{status.lanesRoot}</p>
         {status.belowReserve && (
           <LoomSettingsNotice role="alert">
             Free space is below the {formatGb(status.reserveBytes)} reserve.
           </LoomSettingsNotice>
         )}
       </LoomSettingsContent>
-      <ShellRow environmentId={environmentId} shell={status.shell} />
+      <LoomSettingsContent>
+        <LoomSettingsDetails title="Terminal integration">
+          <ShellRow environmentId={environmentId} shell={status.shell} />
+        </LoomSettingsDetails>
+      </LoomSettingsContent>
       <LoomSettingsContent className="flex flex-col gap-3">
-        <LoomSettingsPanel title="Build activity">
+        <LoomSettingsDetails title="Current build activity">
           <BuildSlots status={status} />
-        </LoomSettingsPanel>
+        </LoomSettingsDetails>
         <LoomSettingsPanel title="Current lanes">
           {status.lanes.length === 0 ? (
             <LoomSettingsNotice>
@@ -492,6 +576,14 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
         <LoomSettingsNotice role="alert">
           {String(Cause.squash(settingsResult.cause))}
         </LoomSettingsNotice>
+        <LoomSettingsActions>
+          <Button
+            variant="outline"
+            onClick={() => appAtomRegistry.refresh(lanes.settings({ environmentId, input: {} }))}
+          >
+            Try again
+          </Button>
+        </LoomSettingsActions>
       </LoomSettingsContent>
     );
   const settings = Option.getOrNull(AsyncResult.value(settingsResult));
@@ -517,6 +609,14 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
           <LoomSettingsNotice role="alert">
             {String(Cause.squash(statusResult.cause))}
           </LoomSettingsNotice>
+          <LoomSettingsActions>
+            <Button
+              variant="outline"
+              onClick={() => appAtomRegistry.refresh(lanes.status({ environmentId, input: {} }))}
+            >
+              Retry storage status
+            </Button>
+          </LoomSettingsActions>
         </LoomSettingsContent>
       )}
       {status && <StatusView environmentId={environmentId} status={status} />}

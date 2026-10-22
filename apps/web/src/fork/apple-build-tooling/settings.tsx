@@ -8,6 +8,8 @@ import { SettingsRow } from "~/components/settings/settingsLayout";
 import {
   LoomSettingsActions,
   LoomSettingsContent,
+  LoomSettingsPanel,
+  LoomSettingsDetails,
   LoomSettingsNotice,
 } from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
@@ -49,6 +51,11 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
     return (
       <LoomSettingsContent className="flex flex-col gap-3">
         <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+        <LoomSettingsActions>
+          <Button variant="outline" onClick={() => appAtomRegistry.refresh(settingsAtom)}>
+            Try again
+          </Button>
+        </LoomSettingsActions>
       </LoomSettingsContent>
     );
   if (!view)
@@ -59,17 +66,22 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
     );
   const { settings, storage } = view;
 
-  const update = (patch: AppleBuildSettingsPatch) =>
-    void save.act(async () => {
+  const update = async (patch: AppleBuildSettingsPatch) => {
+    setNotice(null);
+    const saved = await save.act(async () => {
       await runAppleCommand(apple.updateSettings, { environmentId, input: patch });
       appAtomRegistry.refresh(settingsAtom);
     });
+    if (saved) setNotice("Changes saved.");
+    return saved;
+  };
   const toggle = (
     key: "agentToolsEnabled" | "useXcbeautify" | "openLaunchedSimulatorInDevicePanel",
     title: string,
     description: string,
   ) => (
     <SettingsRow
+      className="px-0 sm:px-0"
       title={title}
       description={description}
       control={
@@ -101,127 +113,157 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
       setNotice(includeDerivedData ? "Derived data and history deleted." : "History cleared.");
   };
   const keepValue = keep ?? String(settings.keepRunsPerProject);
+  const keepNumber = Number(keepValue);
+  const keepProblem =
+    keepValue.trim() === "" ||
+    !Number.isInteger(keepNumber) ||
+    keepNumber < KEEP_MIN ||
+    keepNumber > KEEP_MAX;
 
   return (
-    <div className="flex min-w-0 flex-col">
-      {toggle(
-        "agentToolsEnabled",
-        "Agent tools",
-        "Agents can build, test and run through Loom and get a compact summary. Off, the tools return an error.",
-      )}
-      {toggle(
-        "useXcbeautify",
-        "Readable logs",
-        "Pipe xcodebuild output through xcbeautify when it is installed.",
-      )}
-      <SettingsRow
-        title="Collect test diagnostics"
-        description="Gathering diagnostics after a failed test can add minutes."
-        control={
-          <Switch
-            aria-label="Collect test diagnostics"
-            disabled={!canEdit || save.busy}
-            checked={settings.collectTestDiagnostics === "on-failure"}
-            onCheckedChange={(checked) =>
-              update({ collectTestDiagnostics: checked ? "on-failure" : "never" })
-            }
-          />
-        }
-      />
-      <SettingsRow
-        title="Derived data"
-        description={`Loom's own folder keeps its builds apart from a running Xcode. ${formatBytes(storage.derivedDataBytes)} in Loom's folder.`}
-        control={
-          <Select
-            value={settings.derivedData}
-            disabled={!canEdit || save.busy}
-            onValueChange={(value) => {
-              if (value) update({ derivedData: value });
-            }}
-            items={DERIVED_DATA}
-          >
-            <SelectTrigger size="sm" aria-label="Derived data">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              {DERIVED_DATA.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        }
-      />
-      <SettingsRow
-        title="Runs kept per project"
-        description={`Older runs, their logs and result bundles are deleted. ${storage.runCount} runs use ${formatBytes(storage.runsBytes)}.`}
-        control={
-          <Input
-            aria-label="Runs kept per project"
-            type="number"
-            size="sm"
-            className="w-full sm:w-24"
-            min={KEEP_MIN}
-            max={KEEP_MAX}
-            disabled={!canEdit || save.busy}
-            value={keepValue}
-            onChange={(event) => setKeep(event.target.value)}
-            onBlur={() => {
-              const next = Math.round(Number(keepValue));
-              setKeep(null);
-              if (
-                Number.isFinite(next) &&
-                next >= KEEP_MIN &&
-                next <= KEEP_MAX &&
-                next !== settings.keepRunsPerProject
-              )
-                update({ keepRunsPerProject: next });
-            }}
-          />
-        }
-      />
-      {toggle(
-        "openLaunchedSimulatorInDevicePanel",
-        "Show launched simulators in the Device panel",
-        "After Build and run on a simulator, open it in the thread's Device panel.",
-      )}
+    <LoomSettingsContent className="flex flex-col gap-5">
+      <LoomSettingsPanel
+        title="Build and test"
+        description="Choose how agents run Xcode work on this environment."
+      >
+        {toggle(
+          "agentToolsEnabled",
+          "Agent tools",
+          "Agents can build, test and run through Loom and get a compact summary. Off, the tools return an error.",
+        )}
+        {toggle(
+          "useXcbeautify",
+          "Readable logs",
+          "Pipe xcodebuild output through xcbeautify when it is installed.",
+        )}
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Collect test diagnostics"
+          description="Gathering diagnostics after a failed test can add minutes."
+          control={
+            <Switch
+              aria-label="Collect test diagnostics"
+              disabled={!canEdit || save.busy}
+              checked={settings.collectTestDiagnostics === "on-failure"}
+              onCheckedChange={(checked) =>
+                update({ collectTestDiagnostics: checked ? "on-failure" : "never" })
+              }
+            />
+          }
+        />
+        {toggle(
+          "openLaunchedSimulatorInDevicePanel",
+          "Show launched simulators in the Device panel",
+          "After Build and run on a simulator, open it in the thread's Device panel.",
+        )}
+      </LoomSettingsPanel>
+      <LoomSettingsPanel
+        title="Build storage"
+        description="Keep build output and run history within predictable limits."
+      >
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Derived data"
+          description={`Loom's own folder keeps its builds apart from a running Xcode. ${formatBytes(storage.derivedDataBytes)} in Loom's folder.`}
+          control={
+            <Select
+              value={settings.derivedData}
+              disabled={!canEdit || save.busy}
+              onValueChange={(value) => {
+                if (value) update({ derivedData: value });
+              }}
+              items={DERIVED_DATA}
+            >
+              <SelectTrigger size="sm" aria-label="Derived data">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                {DERIVED_DATA.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Runs kept per project"
+          description={`Keep ${KEEP_MIN} to ${KEEP_MAX} runs. Older logs and result bundles are deleted. ${storage.runCount} runs use ${formatBytes(storage.runsBytes)}.`}
+          control={
+            <Input
+              aria-label="Runs kept per project"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={KEEP_MIN}
+              max={KEEP_MAX}
+              disabled={!canEdit || save.busy}
+              value={keepValue}
+              onChange={(event) => {
+                setKeep(event.target.value);
+                setNotice(null);
+              }}
+              aria-invalid={keepProblem}
+              onBlur={() => {
+                if (keepProblem) return;
+                if (keepNumber === settings.keepRunsPerProject) setKeep(null);
+                else
+                  void update({ keepRunsPerProject: keepNumber }).then((saved) => {
+                    if (saved) setKeep(null);
+                  });
+              }}
+            />
+          }
+        />
+        {keepProblem && (
+          <LoomSettingsNotice role="alert">
+            Enter a whole number from {KEEP_MIN} to {KEEP_MAX} runs.
+          </LoomSettingsNotice>
+        )}
+      </LoomSettingsPanel>
+      <LoomSettingsNotice role="status">
+        {save.busy
+          ? "Saving changes..."
+          : keep !== null && keepValue !== String(settings.keepRunsPerProject)
+            ? "Your run limit saves when you leave the field."
+            : (notice ?? "Changes save automatically. Numbers save when you leave the field.")}
+      </LoomSettingsNotice>
       {save.error && (
-        <LoomSettingsContent className="flex flex-col gap-3">
-          <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>
-        </LoomSettingsContent>
+        <LoomSettingsNotice role="alert">
+          {save.error} Try the change again. For the run limit, leave the field again to retry.
+        </LoomSettingsNotice>
       )}
-      <SettingsRow
-        title="Run history"
-        description="Clearing is refused while a run is going."
-        control={
-          <LoomSettingsActions>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canClear || clear.busy}
-              onClick={() => void clearHistory(false)}
-            >
-              Clear history
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive-outline"
-              disabled={!canClear || clear.busy}
-              onClick={() => void clearHistory(true)}
-            >
-              Delete derived data
-            </Button>
-          </LoomSettingsActions>
-        }
-      />
-      {(clear.error || notice) && (
-        <LoomSettingsContent className="flex flex-col gap-3">
-          {clear.error && <LoomSettingsNotice role="alert">{clear.error}</LoomSettingsNotice>}
-          {notice && <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice>}
-        </LoomSettingsContent>
-      )}
-    </div>
+      <LoomSettingsDetails title="Clear build storage and history">
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Run history"
+          description="Clearing is refused while a run is going."
+          control={
+            <LoomSettingsActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canClear || clear.busy}
+                onClick={() => void clearHistory(false)}
+              >
+                Clear history
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive-outline"
+                disabled={!canClear || clear.busy}
+                onClick={() => void clearHistory(true)}
+              >
+                Delete derived data
+              </Button>
+            </LoomSettingsActions>
+          }
+        />
+        {clear.error && <LoomSettingsNotice role="alert">{clear.error}</LoomSettingsNotice>}
+      </LoomSettingsDetails>
+    </LoomSettingsContent>
   );
 }
 

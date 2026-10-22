@@ -1,3 +1,4 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -13,12 +14,7 @@ import {
   SelectPopup,
   SelectItem,
 } from "~/components/ui/select";
-import {
-  LoomSettingsActions,
-  LoomSettingsField,
-  LoomSettingsNotice,
-  LoomSettingsPanel,
-} from "../settings/parts";
+import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { connectionAtomRuntime } from "~/connection/runtime";
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime);
@@ -43,7 +39,7 @@ export function VaultGitHubConnectionPicker({
       </p>
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled}
           aria-label="Refresh available GitHub connections"
@@ -52,14 +48,12 @@ export function VaultGitHubConnectionPicker({
           Refresh connections
         </Button>
       </LoomSettingsActions>
-      {result.waiting ? (
-        <LoomSettingsNotice role="status">Loading GitHub connections…</LoomSettingsNotice>
-      ) : null}
-      {result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          Could not load GitHub connections. Check Vault access and refresh.
-        </LoomSettingsNotice>
-      ) : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading GitHub connections…"
+        error="Could not load GitHub connections. Check Vault access and retry."
+        onRetry={() => appAtomRegistry.refresh(atom)}
+      />
       {page?.items.length === 0 ? (
         <LoomSettingsNotice>
           No GitHub connections on this page. Continue if more pages are available.
@@ -75,7 +69,7 @@ export function VaultGitHubConnectionPicker({
       ))}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || !cursor}
           aria-label="First available GitHub connections"
@@ -84,7 +78,7 @@ export function VaultGitHubConnectionPicker({
           First connections
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || !page?.nextCursor}
           aria-label="More available GitHub connections"
@@ -107,7 +101,7 @@ function Choice({
 }) {
   const [repository, setRepository] = useState(info.repositories[0]!);
   return (
-    <LoomSettingsPanel>
+    <article className="flex min-w-0 flex-col gap-4 border-b border-border/60 pb-4 last:border-0">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <h4 className="wrap-anywhere text-sm font-medium">{info.item.label}</h4>
@@ -138,7 +132,7 @@ function Choice({
       <p className="wrap-anywhere text-sm text-muted-foreground">https://github.com/{repository}</p>
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           aria-label={`Bind GitHub connection ${info.item.label}`}
           disabled={disabled || info.item.state !== "active"}
@@ -147,6 +141,6 @@ function Choice({
           Bind connection
         </Button>
       </LoomSettingsActions>
-    </LoomSettingsPanel>
+    </article>
   );
 }

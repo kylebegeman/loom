@@ -1,3 +1,4 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { GitHubReadiness } from "./GitHubReadiness";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -106,12 +107,12 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         short-lived tokens or a dedicated fine-grained token.
       </p>
       <LoomSettingsActions>
-        <Button size="sm" disabled={locked || !!draft} onClick={() => edit()}>
+        <Button size="sm-multiline" disabled={locked || !!draft} onClick={() => edit()}>
           Connect GitHub
         </Button>
         <Button
-          size="sm"
-          variant="outline"
+          size="sm-multiline"
+          variant="ghost"
           disabled={busy}
           onClick={() => appAtomRegistry.refresh(atom)}
         >
@@ -127,14 +128,13 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         Each connection is limited to named github.com repositories. Agents still need an exact use
         grant for the active run. Personal GitHub logins and SSH agents stay separate.
       </p>
-      {result.waiting ? (
-        <LoomSettingsNotice role="status">Loading GitHub connections…</LoomSettingsNotice>
-      ) : null}
-      {error || result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? "Could not load connections. Check Vault access and refresh."}
-        </LoomSettingsNotice>
-      ) : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading GitHub connections…"
+        error="Could not load connections. Check Vault access and retry."
+        onRetry={() => appAtomRegistry.refresh(atom)}
+      />
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
       {page?.items.length === 0 ? (
         <LoomSettingsNotice>
@@ -146,7 +146,13 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
           title={draft.expectedVersion ? "Replace GitHub credentials" : "New GitHub connection"}
           description="Loom verifies the identity and API access to every allowed repository before saving."
         >
-          <fieldset disabled={locked} className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <p role="status" className="text-sm text-muted-foreground">
+            Draft connection. Credentials and repository access are verified when you save.
+          </p>
+          <fieldset
+            disabled={locked}
+            className="grid min-w-0 gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]"
+          >
             <legend className="sr-only">GitHub connection</legend>
             <LoomSettingsField
               label="Connection label"
@@ -182,7 +188,10 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
             </LoomSettingsField>
             {draft.type === "app" ? (
               <>
-                <LoomSettingsField label="App ID">
+                <LoomSettingsField
+                  label="App ID"
+                  description="The numeric ID from your GitHub App settings."
+                >
                   <Input
                     aria-label="GitHub App ID"
                     value={draft.appId}
@@ -191,7 +200,10 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
                     onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
                   />
                 </LoomSettingsField>
-                <LoomSettingsField label="Installation ID">
+                <LoomSettingsField
+                  label="Installation ID"
+                  description="The numeric ID for this App installation."
+                >
                   <Input
                     aria-label="GitHub installation ID"
                     value={draft.installationId}
@@ -242,6 +254,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
           </LoomSettingsDetails>
           <LoomSettingsActions>
             <Button
+              size="sm-multiline"
               disabled={locked}
               onClick={() =>
                 void act(async () => {
@@ -260,11 +273,19 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
             >
               {busy ? "Testing and saving…" : "Test and save GitHub connection"}
             </Button>
-            <Button variant="outline" disabled={busy} onClick={() => setDraft(null)}>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setDraft(null)}
+            >
               Cancel GitHub connection
             </Button>
           </LoomSettingsActions>
         </LoomSettingsPanel>
+      ) : null}
+      {page && page.items.length > 0 ? (
+        <h3 className="text-base font-medium">Saved GitHub connections</h3>
       ) : null}
       {page?.items.map((info) => (
         <Connection
@@ -308,7 +329,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
       ))}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || !cursor}
           onClick={() => setCursor(null)}
@@ -316,7 +337,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
           First GitHub connections
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || !page?.nextCursor}
           onClick={() => setCursor(page?.nextCursor ?? null)}
@@ -383,34 +404,16 @@ function Connection({
       </div>
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || info.item.state !== "active"}
           onClick={() => onTest(repo)}
         >
           Test GitHub API access
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disabled || info.item.state !== "active"}
-          aria-label={`Replace credentials for ${info.item.label}`}
-          onClick={onEdit}
-        >
-          Replace credentials
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          aria-label={`${info.item.state === "archived" ? "Restore" : "Disconnect"} ${info.item.label}`}
-          onClick={() => (info.item.state === "archived" ? onChange("restore") : setConfirm(true))}
-        >
-          {info.item.state === "archived" ? "Restore" : "Disconnect"}
-        </Button>
       </LoomSettingsActions>
-      <LoomSettingsDetails title="Connection details">
-        <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+      <LoomSettingsDetails title="Connection details and maintenance">
+        <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
           <div className="min-w-0 space-y-1">
             <dt className="text-muted-foreground">Connection ID</dt>
             <dd className="wrap-anywhere">{info.item.id}</dd>
@@ -424,6 +427,28 @@ function Connection({
           API testing does not prove Git HTTPS or GH CLI availability. Use the explicit Vault
           terminal command for supported gh and Git HTTPS operations.
         </p>
+        <LoomSettingsActions>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            disabled={disabled || info.item.state !== "active"}
+            aria-label={`Replace credentials for ${info.item.label}`}
+            onClick={onEdit}
+          >
+            Replace credentials
+          </Button>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            disabled={disabled}
+            aria-label={`${info.item.state === "archived" ? "Restore" : "Disconnect"} ${info.item.label}`}
+            onClick={() =>
+              info.item.state === "archived" ? onChange("restore") : setConfirm(true)
+            }
+          >
+            {info.item.state === "archived" ? "Restore" : "Disconnect"}
+          </Button>
+        </LoomSettingsActions>
       </LoomSettingsDetails>
       <GitHubReadiness
         environmentId={environmentId}
@@ -436,7 +461,8 @@ function Connection({
           <p>Disconnect this connection locally? Provider-side revocation is separate.</p>
           <LoomSettingsActions>
             <Button
-              size="sm"
+              size="sm-multiline"
+              variant="destructive"
               disabled={disabled}
               onClick={() => {
                 setConfirm(false);
@@ -446,7 +472,7 @@ function Connection({
               Confirm local disconnect
             </Button>
             <Button
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={disabled}
               onClick={() => setConfirm(false)}

@@ -27,8 +27,11 @@ import {
   LoomSettingsActions,
   LoomSettingsContent,
   LoomSettingsField,
+  LoomSettingsDetails,
+  LoomSettingsPanel,
   LoomSettingsNotice,
 } from "~/fork/settings/parts";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { ensureLocalApi } from "~/localApi";
 import { useServerConfigs } from "~/state/entities";
 import {
@@ -70,8 +73,12 @@ function EnvironmentPreviewLinks({
   const action = useAction();
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [token, setToken] = useState("");
+  const [saved, setSaved] = useState(false);
   const shown = draft ?? draftFromSettings(setup.settings);
-  const edit = (patch: Partial<SettingsDraft>) => setDraft({ ...shown, ...patch });
+  const edit = (patch: Partial<SettingsDraft>) => {
+    setSaved(false);
+    setDraft({ ...shown, ...patch });
+  };
   const parsed = settingsFromDraft(shown);
   const trimmedToken = token.trim();
   const tokenProblem =
@@ -79,7 +86,9 @@ function EnvironmentPreviewLinks({
       ? "That connector token looks too short."
       : null;
   const problem = "problem" in parsed ? parsed.problem : tokenProblem;
-  const dirty = draft !== null || trimmedToken.length > 0;
+  const dirty =
+    JSON.stringify("settings" in parsed ? draftFromSettings(parsed.settings) : shown) !==
+      JSON.stringify(draftFromSettings(setup.settings)) || trimmedToken.length > 0;
   const disabled = !canSave || action.busy;
   const status = setupStatus(setup);
   const openCount = links.filter((link) => link.state === "open").length;
@@ -116,6 +125,7 @@ function EnvironmentPreviewLinks({
       });
       setDraft(null);
       setToken("");
+      setSaved(true);
     });
 
   const removeToken = () =>
@@ -160,182 +170,221 @@ function EnvironmentPreviewLinks({
     });
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <SettingsRow title="Status">
-        <div className="flex min-w-0 flex-col gap-2 pt-3 pb-2 text-xs">
-          <span className="font-medium text-sm">{status.label}</span>
-          <span className="break-words text-muted-foreground">Gateway: {gatewayStatus(setup)}</span>
-          <span className="break-words text-muted-foreground">Tunnel: {tunnelStatus(setup)}</span>
-        </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Share ports as links"
-        description="Open this computer's dev servers from any device through your own domain. Each link opens only in a browser that entered from Loom or signed in to your Library."
-        control={
-          <Switch
-            aria-label="Share ports as links"
-            checked={shown.enabled}
-            disabled={disabled}
-            onCheckedChange={(enabled) => edit({ enabled })}
-          />
-        }
-      />
-      <SettingsRow title="Link address">
-        <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
-          <LoomSettingsField
-            label="Link domain"
-            description="A domain whose wildcard record points at this computer's Cloudflare tunnel."
-          >
-            <Input
-              aria-label="Link domain"
-              size="sm"
-              placeholder="example.com"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={disabled}
-              value={shown.suffix}
-              onChange={(event) => edit({ suffix: event.target.value })}
-            />
-          </LoomSettingsField>
-          <LoomSettingsField
-            label="Computer name"
-            description="Part of every link address, so each computer gets its own links."
-          >
-            <Input
-              aria-label="Computer name"
-              size="sm"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={disabled}
-              value={shown.machine}
-              onChange={(event) => edit({ machine: event.target.value })}
-            />
-          </LoomSettingsField>
-        </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Default lifetime"
-        description="How long a new link stays open. You can extend or end it later."
-        control={
-          <Select
-            value={shown.defaultLifetime}
-            disabled={disabled}
-            items={LIFETIME_ITEMS}
-            onValueChange={(value) => {
-              if (value) edit({ defaultLifetime: value as PreviewLinkLifetime });
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Default lifetime">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              {LIFETIME_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        }
-      />
-      <SettingsRow
-        title="Gateway port"
-        description="The loopback port the tunnel forwards to. The tunnel's public hostname must use the same port."
-        control={
-          <Input
-            aria-label="Gateway port"
-            size="sm"
-            className="w-full sm:w-24"
-            inputMode="numeric"
-            disabled={disabled}
-            value={shown.gatewayPort}
-            onChange={(event) => edit({ gatewayPort: event.target.value })}
-          />
-        }
-      />
-      <SettingsRow
-        title="Connector token"
-        description="The token from your Cloudflare tunnel. It stays on this computer and is never shown again."
+    <LoomSettingsContent className="flex flex-col gap-5">
+      <LoomSettingsPanel
+        title="Share development previews"
+        description="Configure link addresses and defaults for this computer."
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-3 pt-3 pb-2">
-          <div className="min-w-0 flex-1 basis-48">
-            <SecretInput
-              aria-label="Connector token"
-              size="sm"
-              configured={setup.tokenStored}
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Share ports as links"
+          description="Open this computer's dev servers from any device through your own domain. Each link opens only in a browser that entered from Loom or signed in to your Library."
+          control={
+            <Switch
+              aria-label="Share ports as links"
+              checked={shown.enabled}
               disabled={disabled}
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
+              onCheckedChange={(enabled) => edit({ enabled })}
             />
+          }
+        />
+        <SettingsRow className="px-0 sm:px-0" title="Link address">
+          <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
+            <LoomSettingsField
+              label="Link domain"
+              description="A domain whose wildcard record points at this computer's Cloudflare tunnel."
+            >
+              <Input
+                aria-label="Link domain"
+                size="sm"
+                placeholder="example.com"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={disabled}
+                value={shown.suffix}
+                onChange={(event) => edit({ suffix: event.target.value })}
+              />
+            </LoomSettingsField>
+            <LoomSettingsField
+              label="Computer name"
+              description="Part of every link address, so each computer gets its own links."
+            >
+              <Input
+                aria-label="Computer name"
+                size="sm"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={disabled}
+                value={shown.machine}
+                onChange={(event) => edit({ machine: event.target.value })}
+              />
+            </LoomSettingsField>
           </div>
-          {setup.tokenStored && (
-            <Button size="xs" variant="outline" disabled={disabled} onClick={removeToken}>
-              Remove
-            </Button>
-          )}
-        </div>
-      </SettingsRow>
-      <LoomSettingsContent className="flex flex-col gap-3">
+        </SettingsRow>
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Default lifetime"
+          description="How long a new link stays open. You can extend or end it later."
+          control={
+            <Select
+              value={shown.defaultLifetime}
+              disabled={disabled}
+              items={LIFETIME_ITEMS}
+              onValueChange={(value) => {
+                if (value) edit({ defaultLifetime: value as PreviewLinkLifetime });
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Default lifetime">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                {LIFETIME_ITEMS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+      </LoomSettingsPanel>
+      <LoomSettingsDetails title="Cloudflare connection and gateway">
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Gateway port"
+          description="The loopback port the tunnel forwards to. The tunnel's public hostname must use the same port."
+          control={
+            <Input
+              aria-label="Gateway port"
+              size="sm"
+              className="w-full sm:w-24"
+              type="number"
+              min={1024}
+              max={65535}
+              inputMode="numeric"
+              disabled={disabled}
+              value={shown.gatewayPort}
+              onChange={(event) => edit({ gatewayPort: event.target.value })}
+            />
+          }
+        />
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Connector token"
+          description="The token from your Cloudflare tunnel. It stays on this computer and is never shown again."
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-3 pt-3 pb-2">
+            <div className="min-w-0 flex-1 basis-48">
+              <SecretInput
+                aria-label="Connector token"
+                size="sm"
+                configured={setup.tokenStored}
+                disabled={disabled}
+                value={token}
+                onChange={(event) => {
+                  setSaved(false);
+                  setToken(event.target.value);
+                }}
+              />
+            </div>
+            {setup.tokenStored && (
+              <Button size="sm" variant="outline" disabled={disabled} onClick={removeToken}>
+                Remove
+              </Button>
+            )}
+          </div>
+        </SettingsRow>
+      </LoomSettingsDetails>
+      <div className="flex min-w-0 flex-col gap-3">
+        <LoomSettingsNotice role={saved ? "status" : undefined}>
+          {action.busy
+            ? "Working..."
+            : dirty
+              ? "You have unsaved changes."
+              : saved
+                ? "Preview settings saved."
+                : "Settings are up to date."}
+        </LoomSettingsNotice>
         {dirty && problem && <LoomSettingsNotice role="alert">{problem}</LoomSettingsNotice>}
         <LoomSettingsActions>
-          {draft !== null && (
+          {dirty && (
             <Button
-              size="xs"
+              size="sm"
               variant="ghost"
               disabled={action.busy}
               onClick={() => {
                 setDraft(null);
                 setToken("");
+                setSaved(false);
               }}
             >
-              Discard
+              Discard changes
             </Button>
           )}
           <Button
-            size="xs"
+            size="sm"
             disabled={disabled || !dirty || problem !== null}
             title={canSave ? undefined : NO_SETTINGS_ACCESS}
             onClick={save}
           >
-            Save
+            Save settings
           </Button>
         </LoomSettingsActions>
-      </LoomSettingsContent>
-      <SettingsRow
-        title="Links"
-        description={
-          openCount === 0
-            ? "No links are open on this computer."
-            : `${openCount} ${openCount === 1 ? "link is" : "links are"} open on this computer.`
-        }
+      </div>
+      <LoomSettingsPanel title="Connection status">
+        <p className="text-sm font-medium">{status.label}</p>
+        <dl className="grid min-w-0 gap-3 text-sm">
+          <div className="grid min-w-0 gap-1 sm:grid-cols-[5rem_minmax(0,1fr)]">
+            <dt className="font-medium">Gateway</dt>
+            <dd className="text-muted-foreground wrap-anywhere">{gatewayStatus(setup)}</dd>
+          </div>
+          <div className="grid min-w-0 gap-1 sm:grid-cols-[5rem_minmax(0,1fr)]">
+            <dt className="font-medium">Tunnel</dt>
+            <dd className="text-muted-foreground wrap-anywhere">{tunnelStatus(setup)}</dd>
+          </div>
+        </dl>
+      </LoomSettingsPanel>
+      <LoomSettingsPanel
+        title="Manage access"
+        description="Review open links or end access for preview browsers."
       >
-        <div className="pt-3 pb-2">
-          <LoomSettingsActions>
-            <Button size="xs" variant="outline" onClick={openPreviewLinksSheet}>
-              Manage links
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!canOperate || action.busy}
-              title={canOperate ? undefined : NO_PREVIEW_ACCESS}
-              onClick={signOutBrowsers}
-            >
-              Sign out preview browsers
-            </Button>
-            <Button
-              size="xs"
-              variant="destructive-outline"
-              disabled={!canOperate || action.busy || openCount === 0}
-              title={canOperate ? undefined : NO_PREVIEW_ACCESS}
-              onClick={endAll}
-            >
-              End all links
-            </Button>
-          </LoomSettingsActions>
-        </div>
-      </SettingsRow>
-    </div>
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Open links"
+          description={
+            openCount === 0
+              ? "No links are open on this computer."
+              : `${openCount} ${openCount === 1 ? "link is" : "links are"} open on this computer.`
+          }
+        >
+          <div className="pt-3 pb-2">
+            <LoomSettingsActions>
+              <Button size="sm" variant="outline" onClick={openPreviewLinksSheet}>
+                Manage links
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canOperate || action.busy}
+                title={canOperate ? undefined : NO_PREVIEW_ACCESS}
+                onClick={signOutBrowsers}
+              >
+                Sign out preview browsers
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive-outline"
+                disabled={!canOperate || action.busy || openCount === 0}
+                title={canOperate ? undefined : NO_PREVIEW_ACCESS}
+                onClick={endAll}
+              >
+                End all links
+              </Button>
+            </LoomSettingsActions>
+          </div>
+        </SettingsRow>
+      </LoomSettingsPanel>
+    </LoomSettingsContent>
   );
 }
 
@@ -353,7 +402,19 @@ function EnvironmentPreviewLinksLoader({
     return (
       <LoomSettingsContent className="flex flex-col gap-3">
         {failure ? (
-          <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+          <>
+            <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+            <LoomSettingsActions>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  appAtomRegistry.refresh(previewLinks.snapshot({ environmentId, input: {} }))
+                }
+              >
+                Try again
+              </Button>
+            </LoomSettingsActions>
+          </>
         ) : (
           <LoomSettingsNotice role="status">Loading preview link settings...</LoomSettingsNotice>
         )}

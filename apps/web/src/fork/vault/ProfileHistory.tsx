@@ -44,7 +44,7 @@ function History({
       </div>
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy}
           onClick={() => {
@@ -82,7 +82,7 @@ function History({
             {pin.retiredAt ? ` · Retired ${pin.retiredAt}` : ""}
           </p>
           <LoomSettingsDetails title="Run details">
-            <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+            <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
               <div className="min-w-0 space-y-1">
                 <dt className="text-muted-foreground">Thread ID</dt>
                 <dd className="wrap-anywhere">{pin.threadId}</dd>
@@ -105,7 +105,7 @@ function History({
                     className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0"
                   >
                     <p className="wrap-anywhere text-sm font-medium">{b.name}</p>
-                    <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                    <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                       <div className="min-w-0 space-y-1">
                         <dt className="text-muted-foreground">
                           {b.kind === "github" ? "Connection ID" : "Key ID"}
@@ -116,7 +116,7 @@ function History({
                         <dt className="text-muted-foreground">Version</dt>
                         <dd>{b.version}</dd>
                       </div>
-                      <div className="min-w-0 space-y-1 sm:col-span-2">
+                      <div className="min-w-0 space-y-1 col-span-full">
                         <dt className="text-muted-foreground">Destination</dt>
                         <dd className="wrap-anywhere">{b.destination}</dd>
                       </div>
@@ -135,7 +135,8 @@ function History({
                 </p>
                 <LoomSettingsActions>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
+                    variant="destructive"
                     disabled={busy || !canWrite || !pin.canRetire}
                     onClick={() => {
                       setBusy(true);
@@ -161,10 +162,10 @@ function History({
                         .finally(() => setBusy(false));
                     }}
                   >
-                    Retire selection permanently
+                    {busy ? "Retiring selection…" : "Retire selection permanently"}
                   </Button>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
                     variant="outline"
                     disabled={busy}
                     onClick={() => setConfirm(null)}
@@ -177,7 +178,7 @@ function History({
           ) : pin.resolution ? (
             <LoomSettingsActions>
               <Button
-                size="sm"
+                size="sm-multiline"
                 variant="outline"
                 disabled={busy || !canWrite || !pin.canRetire}
                 onClick={() => setConfirm(pin.id)}
@@ -195,7 +196,7 @@ function History({
       ))}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || !cursor || result.waiting}
           onClick={() => {
@@ -206,7 +207,7 @@ function History({
           First selections
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={busy || !page?.nextCursor}
           onClick={() => {
@@ -230,5 +231,9 @@ export function VaultProfileHistory(props: Parameters<typeof History>[0]) {
     )
   )
     return null;
-  return <History {...props} />;
+  return (
+    <LoomSettingsDetails title="Retained run selections">
+      <History {...props} />
+    </LoomSettingsDetails>
+  );
 }

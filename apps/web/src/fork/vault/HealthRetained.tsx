@@ -95,7 +95,7 @@ function SelectionPage({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <LoomSettingsActions>
-        <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+        <Button size="sm-multiline" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
           Refresh retained selections
         </Button>
       </LoomSettingsActions>
@@ -161,7 +161,7 @@ function SelectionPage({
       ) : null}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={!cursor || result.waiting}
           onClick={() => setCursor(null)}
@@ -169,7 +169,7 @@ function SelectionPage({
           First retained selections
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={!page?.nextCursor || result.waiting || result._tag === "Failure"}
           onClick={() => setCursor(page?.nextCursor ?? null)}

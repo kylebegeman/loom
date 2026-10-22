@@ -1,4 +1,4 @@
-import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
+import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 import { useId, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -79,7 +79,7 @@ export function VaultSshDialog({
               onCreated={setId}
             />
           )}
-          <Button variant="outline" disabled={busy} onClick={onClose}>
+          <Button size="sm-multiline" variant="outline" disabled={busy} onClick={onClose}>
             Close
           </Button>
         </div>
@@ -135,9 +135,8 @@ function SshCreator({
       onCreated(result.item.id);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
     <form
@@ -147,8 +146,10 @@ function SshCreator({
         void create();
       }}
     >
-      <label htmlFor={`${fieldId}-name`} className="flex flex-col gap-2 text-sm">
-        Key name
+      <LoomSettingsField
+        label={<label htmlFor={`${fieldId}-name`}>Key name</label>}
+        description="A name for this dedicated key in Vault."
+      >
         <Input
           id={`${fieldId}-name`}
           autoFocus
@@ -160,9 +161,11 @@ function SshCreator({
             changed();
           }}
         />
-      </label>
-      <label htmlFor={`${fieldId}-host`} className="flex flex-col gap-2 text-sm">
-        Host name or IPv4 address
+      </LoomSettingsField>
+      <LoomSettingsField
+        label={<label htmlFor={`${fieldId}-host`}>Host name or IPv4 address</label>}
+        description="Use the exact host this key will connect to."
+      >
         <Input
           id={`${fieldId}-host`}
           autoCapitalize="none"
@@ -175,10 +178,9 @@ function SshCreator({
             changed();
           }}
         />
-      </label>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label htmlFor={`${fieldId}-user`} className="flex flex-col gap-2 text-sm">
-          SSH user
+      </LoomSettingsField>
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
+        <LoomSettingsField label={<label htmlFor={`${fieldId}-user`}>SSH user</label>}>
           <Input
             id={`${fieldId}-user`}
             autoCapitalize="none"
@@ -191,9 +193,8 @@ function SshCreator({
               changed();
             }}
           />
-        </label>
-        <label htmlFor={`${fieldId}-port`} className="flex flex-col gap-2 text-sm">
-          Port
+        </LoomSettingsField>
+        <LoomSettingsField label={<label htmlFor={`${fieldId}-port`}>Port</label>}>
           <Input
             id={`${fieldId}-port`}
             inputMode="numeric"
@@ -205,7 +206,7 @@ function SshCreator({
               changed();
             }}
           />
-        </label>
+        </LoomSettingsField>
       </div>
       <p className="text-sm text-muted-foreground">
         The private key stays in Vault. Host trust starts empty, so this key cannot connect until
@@ -217,7 +218,7 @@ function SshCreator({
           Vault write access is required to create keys.
         </LoomSettingsNotice>
       ) : null}
-      <Button type="submit" disabled={!allowed || busy}>
+      <Button size="sm-multiline" type="submit" disabled={!allowed || busy}>
         {busy ? "Creating key…" : "Create key"}
       </Button>
     </form>
@@ -289,10 +290,9 @@ function SshDetails({
       setOperationId(newId());
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setAction(null);
-      setBusy(false);
     }
+    setAction(null);
+    setBusy(false);
   };
   const test = async () => {
     if (!info || busy || !canProbe) return;
@@ -312,10 +312,9 @@ function SshDetails({
       );
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setAction(null);
-      setBusy(false);
     }
+    setAction(null);
+    setBusy(false);
   };
   if (!info)
     return (
@@ -323,7 +322,7 @@ function SshDetails({
         <LoomSettingsNotice role={failure(result) ? "alert" : "status"}>
           {failure(result) ?? "Loading SSH key…"}
         </LoomSettingsNotice>
-        <Button variant="outline" disabled={busy} onClick={refresh}>
+        <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
           Retry loading key
         </Button>
       </>
@@ -341,14 +340,14 @@ function SshDetails({
       {failure(result) ? (
         <LoomSettingsNotice role="alert">{failure(result)}</LoomSettingsNotice>
       ) : null}
-      <div className="flex min-w-0 flex-col gap-4">
-        <p className="text-sm font-medium">Public key</p>
+      <div className="flex min-w-0 flex-col gap-4 border-t border-border/60 pt-5">
+        <h3 className="text-sm font-medium">Register the public key</h3>
         <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">
           {info.publicKey}
         </pre>
         <p className="break-all text-xs">{info.fingerprint}</p>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           autoFocus
           onClick={() => copy.copyToClipboard(info.publicKey, undefined)}
@@ -359,8 +358,8 @@ function SshDetails({
           Register this public key on the intended host. Never register the private key.
         </p>
       </div>
-      <div className="flex min-w-0 flex-col gap-4">
-        <p className="text-sm font-medium">Host trust</p>
+      <div className="flex min-w-0 flex-col gap-4 border-t border-border/60 pt-5">
+        <h3 className="text-sm font-medium">Verify host trust</h3>
         <p className="text-sm">
           {info.target.hostKey
             ? "A host key is pinned."
@@ -371,8 +370,9 @@ function SshDetails({
         ) : null}
         {!removing ? (
           <>
-            <label htmlFor={`${fieldId}-key`} className="flex flex-col gap-2 text-sm">
-              Verified host public key
+            <LoomSettingsField
+              label={<label htmlFor={`${fieldId}-key`}>Verified host public key</label>}
+            >
               <Textarea
                 id={`${fieldId}-key`}
                 value={hostKey}
@@ -388,7 +388,7 @@ function SshDetails({
                   setError(null);
                 }}
               />
-            </label>
+            </LoomSettingsField>
             <p className="text-xs text-muted-foreground">
               Compare the fingerprint with the intended host through a trusted channel. A key scan
               alone does not establish trust.
@@ -421,7 +421,7 @@ function SshDetails({
         </label>
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant={removing ? "destructive" : "default"}
             disabled={!writable || busy || !confirmed || (!removing && !candidate)}
             onClick={() => void changeTrust()}
@@ -434,7 +434,7 @@ function SshDetails({
           </Button>
           {info.target.hostKey ? (
             <Button
-              size="sm"
+              size="sm-multiline"
               variant={removing ? "outline" : "destructive-outline"}
               disabled={!writable || busy}
               onClick={() => {
@@ -454,15 +454,15 @@ function SshDetails({
           </p>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-4">
-        <p className="text-sm font-medium">Connection test</p>
+      <div className="flex min-w-0 flex-col gap-4 border-t border-border/60 pt-5">
+        <h3 className="text-sm font-medium">Test the connection</h3>
         <p className="text-sm text-muted-foreground">
           Run a fixed, harmless command from the Loom server as {info.target.username}. This checks
           this key and pinned host; provider and Git setup are separate.
         </p>
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             disabled={
               !canProbe ||
               busy ||
@@ -475,7 +475,7 @@ function SshDetails({
           >
             {action === "probe" ? "Testing SSH…" : "Test SSH connection"}
           </Button>
-          <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
+          <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
             Refresh key
           </Button>
         </LoomSettingsActions>

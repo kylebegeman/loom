@@ -1,3 +1,5 @@
+import { Checkbox } from "~/components/ui/checkbox";
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
 import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementPreview } from "./ReplacementPreview";
@@ -67,14 +69,13 @@ export function ReplacementVerification({
           ? cause.message
           : "Verification response was lost. Refresh its receipt before retrying.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
     <section
       aria-label="Replacement verification"
-      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 sm:p-4"
+      className="flex min-w-0 flex-col gap-4 border-t border-border/60 pt-5"
     >
       <h4 className="font-medium">Verify replacement access</h4>
       <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
@@ -82,13 +83,14 @@ export function ReplacementVerification({
           ? `Check read access to ${plan.dependency.gitPath} using the saved SSH key and pinned host. The check reads refs without fetching or changing Git configuration.`
           : "Check this repository through the dedicated GitHub connection's API. This does not test Git SSH/HTTPS transport or the local gh executable."}
       </p>
-      {busy || query.waiting ? (
+      <VaultQueryFeedback
+        result={query}
+        loading="Loading verification evidence…"
+        error="Could not load verification evidence. Refresh before continuing."
+        onRetry={refresh}
+      />
+      {busy ? (
         <LoomSettingsNotice role="status">Updating verification receipt…</LoomSettingsNotice>
-      ) : null}
-      {query._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          Could not load verification evidence. Refresh before continuing.
-        </LoomSettingsNotice>
       ) : null}
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {status ? (
@@ -150,13 +152,11 @@ export function ReplacementVerification({
         <p>Route previews need a newer Vault server.</p>
       )}
       <label className="flex items-start gap-2 text-sm leading-6">
-        <input
-          className="mt-1 shrink-0"
-          type="checkbox"
+        <Checkbox
           aria-label="Allow replacement verification"
           checked={confirmed}
           disabled={busy || !canWrite || plan.state !== "reviewed"}
-          onChange={(e) => setConfirmed(e.target.checked)}
+          onCheckedChange={(checked) => setConfirmed(checked)}
         />{" "}
         Allow a verification attempt against the saved destination. Missing host trust will block
         it.
@@ -177,7 +177,11 @@ export function ReplacementVerification({
           }
           onClick={() => void verify()}
         >
-          {pending ? "Retry verification request" : "Verify replacement access"}
+          {busy
+            ? "Verifying replacement…"
+            : pending
+              ? "Retry verification request"
+              : "Verify replacement access"}
         </Button>
         <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
           Refresh verification receipt

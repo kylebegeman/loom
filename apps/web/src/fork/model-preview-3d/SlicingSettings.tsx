@@ -108,7 +108,8 @@ export function SlicingSettings({
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
     [importKind, setImportKind] = useState<ImportSlicerProfile["kind"]>("machine"),
-    [reload, setReload] = useState(0);
+    [reload, setReload] = useState(0),
+    [importing, setImporting] = useState(false);
   const bedId =
     chosenBed && beds.some((bed) => bed.id === chosenBed)
       ? chosenBed
@@ -164,6 +165,7 @@ export function SlicingSettings({
       setError("This profile is too large. Choose a file under 2 MiB.");
       return;
     }
+    setImporting(true);
     try {
       const kind = app === "prusa-slicer" ? "config" : importKind;
       const entry = await runModelCommand(models.importSlicerProfile, {
@@ -198,6 +200,7 @@ export function SlicingSettings({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
+    setImporting(false);
   };
   const suggestion = DEFAULT_BAMBU_MAPPINGS[bedId];
   const materialSelect = (slot: number) => (
@@ -243,43 +246,61 @@ export function SlicingSettings({
   );
   return (
     <>
+      <LoomSettingsNotice>
+        Profile mappings are saved with model settings. Imported profile files are stored on this
+        environment immediately.
+      </LoomSettingsNotice>
+      <LoomSettingsDetails title="Slicer executables on this environment">
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Slicer applications"
+          description="Slicing runs on this host. Loom estimates and exports projects; open them in the slicer to review and print."
+        >
+          <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
+            {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => {
+              const info = status.find((item) => item.app === name);
+              return (
+                <label key={name} className="flex min-w-0 flex-col gap-2 text-sm">
+                  <span className="font-medium">{SLICER_LABELS[name]}</span>
+                  <span className="text-xs text-muted-foreground wrap-anywhere">
+                    {info?.path
+                      ? ` ${info.version ?? ""}${info.supported ? "" : " (unsupported version)"}`
+                      : info
+                        ? "Not detected"
+                        : "Detection pending"}
+                  </span>
+                  <Input
+                    size="sm"
+                    aria-label={`${SLICER_LABELS[name]} executable`}
+                    placeholder="Automatic detection"
+                    disabled={disabled}
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={value.paths[name] ?? ""}
+                    onChange={(event) =>
+                      onChange({
+                        ...value,
+                        paths: { ...value.paths, [name]: event.target.value || null },
+                      })
+                    }
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </SettingsRow>
+      </LoomSettingsDetails>
       <SettingsRow
-        title="Slicer applications"
-        description="Slicing runs on this host. Loom estimates and exports projects; open them in the slicer to review and print."
-      >
-        <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
-          {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => {
-            const info = status.find((item) => item.app === name);
-            return (
-              <label key={name} className="flex min-w-0 flex-col gap-2 text-sm">
-                <span className="font-medium">{SLICER_LABELS[name]}</span>
-                <span className="text-xs text-muted-foreground wrap-anywhere">
-                  {info?.path
-                    ? ` ${info.version ?? ""}${info.supported ? "" : " (unsupported version)"}`
-                    : "Not detected"}
-                </span>
-                <Input
-                  size="sm"
-                  aria-label={`${SLICER_LABELS[name]} executable`}
-                  placeholder="Automatic detection"
-                  value={value.paths[name] ?? ""}
-                  onChange={(event) =>
-                    onChange({
-                      ...value,
-                      paths: { ...value.paths, [name]: event.target.value || null },
-                    })
-                  }
-                />
-              </label>
-            );
-          })}
-        </div>
-      </SettingsRow>
-      <SettingsRow
+        className="px-0 sm:px-0"
         title="Slicer profile mapping"
         description="Choose the printer, process and filament presets used for its estimates."
       >
         <div className="flex min-w-0 flex-col gap-4 pt-3 pb-2">
+          {beds.length === 0 && (
+            <LoomSettingsNotice>
+              Add a printer in Printers, surfaces and materials before assigning slicer profiles.
+            </LoomSettingsNotice>
+          )}
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
             <LoomSettingsField label="Printer">
               <Select
@@ -372,7 +393,7 @@ export function SlicingSettings({
                   {mapping && mapping.filaments.length > 1 && (
                     <Button
                       variant="ghost-muted"
-                      size="xs"
+                      size="sm"
                       onClick={() =>
                         setMapping({
                           ...mapping,
@@ -396,7 +417,7 @@ export function SlicingSettings({
                 <LoomSettingsActions>
                   <Button
                     variant="ghost-muted"
-                    size="xs"
+                    size="sm"
                     onClick={() =>
                       setMapping({
                         ...mapping,
@@ -419,19 +440,35 @@ export function SlicingSettings({
           {app === "prusa-slicer" && mapping && materialSelect(0)}
           {!mapping && suggestion && app === "bambu-studio" && (
             <LoomSettingsActions>
-              <Button variant="outline" size="xs" onClick={() => setMapping(suggestion)}>
+              <Button variant="outline" size="sm" onClick={() => setMapping(suggestion)}>
                 Use suggested Bambu profiles
               </Button>
             </LoomSettingsActions>
           )}
           {mapping && (
             <LoomSettingsActions>
-              <Button variant="ghost-muted" size="xs" onClick={() => setMapping(null)}>
+              <Button variant="ghost-muted" size="sm" onClick={() => setMapping(null)}>
                 Clear mapping
               </Button>
             </LoomSettingsActions>
           )}
           {loading && <LoomSettingsNotice role="status">Loading profiles...</LoomSettingsNotice>}
+          {!loading && !error && profiles && profiles.machines.length === 0 && (
+            <LoomSettingsNotice>
+              No machine profiles were found for this slicer. Import an exported profile below, or
+              create a preset in the slicer and reload profiles.
+            </LoomSettingsNotice>
+          )}
+          <LoomSettingsActions>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={loading || importing}
+              onClick={() => setReload((current) => current + 1)}
+            >
+              Reload profiles
+            </Button>
+          </LoomSettingsActions>
           <LoomSettingsDetails title="Import slicer profiles">
             {app !== "prusa-slicer" && (
               <LoomSettingsField label="Profile type">
@@ -469,7 +506,7 @@ export function SlicingSettings({
                 size="sm"
                 aria-label="Import slicer profile"
                 accept={app === "prusa-slicer" ? ".ini" : ".json"}
-                disabled={disabled}
+                disabled={disabled || importing}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) void importFile(file);
@@ -478,11 +515,16 @@ export function SlicingSettings({
               />
             </label>
           </LoomSettingsDetails>
+          {importing && (
+            <LoomSettingsNotice role="status">Importing slicer profile...</LoomSettingsNotice>
+          )}
           {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
         </div>
       </SettingsRow>
       <SettingsRow
-        title="Slicing timeout (seconds)"
+        className="px-0 sm:px-0"
+        title="Slicing timeout"
+        description="30 to 1800 seconds per slice. Longer jobs stop at this limit."
         control={
           <Input
             size="sm"
@@ -490,18 +532,36 @@ export function SlicingSettings({
             min={30}
             max={1800}
             aria-label="Slicing timeout"
-            value={value.timeoutSeconds}
-            onChange={(event) => onChange({ ...value, timeoutSeconds: Number(event.target.value) })}
+            value={Number.isNaN(value.timeoutSeconds) ? "" : value.timeoutSeconds}
+            aria-invalid={
+              !Number.isInteger(value.timeoutSeconds) ||
+              value.timeoutSeconds < 30 ||
+              value.timeoutSeconds > 1800
+            }
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                timeoutSeconds:
+                  event.target.value.trim() === "" ? Number.NaN : Number(event.target.value),
+              })
+            }
           />
         }
       />
       <SettingsRow
+        className="px-0 sm:px-0"
         title="Estimate currency"
-        description="Cost uses saved material prices or an explicitly priced user profile."
+        description="Three-letter currency code, such as USD or EUR. Cost uses saved material prices or an explicitly priced user profile."
         control={
           <Input
             size="sm"
             maxLength={3}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="USD"
+            aria-invalid={!/^[A-Z]{3}$/.test(value.currency)}
+            disabled={disabled}
             aria-label="Estimate currency"
             value={value.currency}
             onChange={(event) => onChange({ ...value, currency: event.target.value.toUpperCase() })}

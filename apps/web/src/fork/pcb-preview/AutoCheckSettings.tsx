@@ -6,6 +6,9 @@ import { Switch } from "~/components/ui/switch";
 import { pcb } from "./state";
 import { asyncValue } from "./usePcbPreview";
 import { runModelCommand } from "../model-preview-3d/state";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { Button } from "~/components/ui/button";
+import { LoomSettingsActions, LoomSettingsNotice } from "~/fork/settings/parts";
 import k from "./inspector.module.css";
 
 export function AutoCheckSettings({
@@ -25,8 +28,11 @@ export function AutoCheckSettings({
   const [saving, setSaving] = useState(false),
     [error, setError] = useState(false);
   return (
-    <div>
-      <strong>Check after each save</strong>
+    <div className="flex min-w-0 flex-col gap-3">
+      <strong className="text-sm font-semibold">Check after each design save</strong>
+      {!settings && loaded._tag !== "Failure" && (
+        <LoomSettingsNotice role="status">Loading automatic checks...</LoomSettingsNotice>
+      )}
       {(["erc", "drc", "review"] as const).map((kind) => (
         <label key={kind} className={k.markerToggle}>
           <Switch
@@ -52,16 +58,36 @@ export function AutoCheckSettings({
                 .finally(() => setSaving(false));
             }}
           />
-          {kind.toUpperCase()}
+          {
+            {
+              erc: "Electrical rules (ERC)",
+              drc: "Board design rules (DRC)",
+              review: "Design review",
+            }[kind]
+          }
         </label>
       ))}
       <p className={k.hint}>
         For this project. Runs while this design is open or when an agent reads checks.
       </p>
+      {saving && <LoomSettingsNotice role="status">Saving automatic checks...</LoomSettingsNotice>}
       {(error || loaded._tag === "Failure") && (
-        <p role="alert" className={k.error}>
-          The setting could not be saved or loaded.
-        </p>
+        <>
+          <LoomSettingsNotice role="alert">
+            {error
+              ? "The automatic check setting could not be saved. Try the change again."
+              : "Automatic checks could not be loaded."}
+          </LoomSettingsNotice>
+          <LoomSettingsActions>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => appAtomRegistry.refresh(pcb.projectSettings(target))}
+            >
+              Reload settings
+            </Button>
+          </LoomSettingsActions>
+        </>
       )}
     </div>
   );

@@ -10,6 +10,8 @@ interface ScopeState {
 
 const state = vi.hoisted(() => ({
   pathname: "/settings/diagnostics",
+  section: undefined as string | undefined,
+  unavailable: false,
   scope: { search: {}, environmentId: null } as ScopeState,
 }));
 
@@ -21,7 +23,12 @@ vi.mock(import("@tanstack/react-router"), async (original) => ({
     useNavigate: () => vi.fn(),
   })) as never,
   useLocation: ((options?: { select: (location: unknown) => unknown }) => {
-    const location = { pathname: state.pathname, hash: "", state: {} };
+    const location = {
+      pathname: state.pathname,
+      hash: "",
+      state: {},
+      search: { section: state.section },
+    };
     return options ? options.select(location) : location;
   }) as never,
   Outlet: (() => <StatefulContent />) as never,
@@ -38,7 +45,9 @@ vi.mock(import("./SettingsScopeContext"), async (original) => {
       const { search, environmentId } = useContext(Scope);
       return {
         search,
-        scope: { kind: "all" },
+        scope: state.unavailable
+          ? { kind: "unavailable", message: "Environment unavailable" }
+          : { kind: "all" },
         environment: environmentId ? { environmentId } : null,
         connectedEnvironments: environmentId ? [{}] : [],
       };
@@ -99,6 +108,8 @@ function retainedValue() {
 }
 
 beforeEach(() => {
+  state.section = undefined;
+  state.unavailable = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -136,4 +147,16 @@ it.each([
   await render(after);
 
   expect(retainedValue()).toBe(expected);
+});
+
+it("keeps device-only Loom preferences available with an unavailable environment", async () => {
+  state.pathname = "/settings/loom";
+  state.section = "panel-picker";
+  state.unavailable = true;
+  await render({ search: { machine: "missing" }, environmentId: null });
+  expect(retainedValue()).toBe("0");
+  await act(() =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Retained value"]')!.click(),
+  );
+  expect(retainedValue()).toBe("1");
 });

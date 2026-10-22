@@ -7,7 +7,6 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAction, valueOf, failureOf } from "../apple-build-tooling/parts";
 import {
@@ -73,23 +72,33 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
         environment. Existing tasks remain accessible when a worker is disabled.
       </LoomSettingsNotice>
       {failureOf(result) && (
-        <LoomSettingsNotice role="alert">{failureOf(result)}</LoomSettingsNotice>
+        <>
+          <LoomSettingsNotice role="alert">{failureOf(result)}</LoomSettingsNotice>
+          <LoomSettingsActions>
+            <Button variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+              Try again
+            </Button>
+          </LoomSettingsActions>
+        </>
       )}
-      {!workers ? (
+      {!workers && !failureOf(result) ? (
         <LoomSettingsNotice role="status">Loading workers...</LoomSettingsNotice>
-      ) : workers.length === 0 ? (
-        <LoomSettingsNotice>No workers registered.</LoomSettingsNotice>
+      ) : workers?.length === 0 ? (
+        <LoomSettingsNotice>
+          No command workers yet. Add a computer reachable by SSH to run command jobs there.
+        </LoomSettingsNotice>
       ) : (
-        workers.map((worker) => (
+        workers?.map((worker) => (
           <LoomSettingsPanel
             key={worker.id}
             title={<span className="wrap-anywhere">{worker.name}</span>}
             description={worker.enabled ? "Enabled for commands" : "Disabled"}
           >
+            <p className="text-sm text-muted-foreground wrap-anywhere">Worker ID: {worker.id}</p>
             <LoomSettingsActions>
               {supportsCheck && (
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="outline"
                   disabled={!canCheck || action.busy}
                   onClick={() => void action.act(() => check(worker.id))}
@@ -98,7 +107,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                 </Button>
               )}
               <Button
-                size="xs"
+                size="sm"
                 variant="outline"
                 disabled={!canEnable || action.busy}
                 onClick={() =>
@@ -115,7 +124,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
               </Button>
               {supportsEdit && canUpdate && (
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="outline"
                   disabled={action.busy}
                   onClick={() => startEditing(worker.id, "connection")}
@@ -125,7 +134,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
               )}
               {supportsEdit && canRemove && (
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="outline"
                   disabled={action.busy}
                   onClick={() => startEditing(worker.id, "remove")}
@@ -162,9 +171,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   it blank for the server's default SSH config.
                 </LoomSettingsNotice>
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                  <LoomSettingsField
-                    label={<Label htmlFor={`${formId}-edit-target`}>SSH host alias</Label>}
-                  >
+                  <LoomSettingsField label="SSH host alias">
                     <Input
                       id={`${formId}-edit-target`}
                       aria-label="SSH host alias"
@@ -175,13 +182,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                       disabled={action.busy}
                     />
                   </LoomSettingsField>
-                  <LoomSettingsField
-                    label={
-                      <Label htmlFor={`${formId}-edit-config`}>
-                        SSH config path on server (optional)
-                      </Label>
-                    }
-                  >
+                  <LoomSettingsField label="SSH config path on server (optional)">
                     <Input
                       id={`${formId}-edit-config`}
                       aria-label="SSH config path on server (optional)"
@@ -193,11 +194,16 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   </LoomSettingsField>
                 </div>
                 <LoomSettingsActions>
-                  <Button size="xs" variant="outline" type="submit" disabled={action.busy}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    type="submit"
+                    disabled={action.busy || !newTarget.trim()}
+                  >
                     Save connection
                   </Button>
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="ghost"
                     disabled={action.busy}
                     onClick={() => setEditing(null)}
@@ -215,7 +221,8 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                 </LoomSettingsNotice>
                 <LoomSettingsActions>
                   <Button
-                    size="xs"
+                    size="sm"
+                    variant="destructive"
                     disabled={action.busy}
                     onClick={() =>
                       void action.act(async () => {
@@ -232,7 +239,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                     Remove worker
                   </Button>
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="outline"
                     disabled={action.busy}
                     onClick={() => setEditing(null)}
@@ -276,7 +283,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   checks[worker.id]!.reasons.includes("worker_stopped") && (
                     <LoomSettingsActions>
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="outline"
                         disabled={action.busy}
                         onClick={() => void action.act(() => check(worker.id, true))}
@@ -290,6 +297,9 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
           </LoomSettingsPanel>
         ))
       )}
+      {action.busy && (
+        <LoomSettingsNotice role="status">Updating command workers...</LoomSettingsNotice>
+      )}
       {canRegister && !adding && (
         <LoomSettingsActions>
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
@@ -298,7 +308,10 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
         </LoomSettingsActions>
       )}
       {canRegister && adding ? (
-        <LoomSettingsPanel title="Add command worker">
+        <LoomSettingsPanel
+          title="Add command worker"
+          description="Name the computer and choose an SSH host alias configured on this environment."
+        >
           <form
             className="flex min-w-0 flex-col gap-4"
             onSubmit={(event) => {
@@ -306,20 +319,26 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
               void action.act(async () => {
                 await runMini(mini.register, {
                   environmentId,
-                  input: { id, name, target, sshConfig: sshConfig.trim() || null, enabled: true },
+                  input: {
+                    id: id.trim(),
+                    name: name.trim(),
+                    target: target.trim(),
+                    sshConfig: sshConfig.trim() || null,
+                    enabled: true,
+                  },
                 });
                 appAtomRegistry.refresh(atom);
-                if (supportsCheck && canCheck) await check(id);
                 setAdding(false);
                 setId("worker-" + randomUUID().replaceAll("-", ""));
                 setName("");
                 setTarget("");
                 setSshConfig("");
+                if (supportsCheck && canCheck) await check(id.trim());
               });
             }}
           >
             <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-              <LoomSettingsField label={<Label htmlFor={`${formId}-add-name`}>Name</Label>}>
+              <LoomSettingsField label="Name">
                 <Input
                   id={`${formId}-add-name`}
                   aria-label="Name"
@@ -327,11 +346,10 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Orange Pi 5 Pro"
                   required
+                  disabled={action.busy}
                 />
               </LoomSettingsField>
-              <LoomSettingsField
-                label={<Label htmlFor={`${formId}-add-target`}>SSH host alias</Label>}
-              >
+              <LoomSettingsField label="SSH host alias">
                 <Input
                   id={`${formId}-add-target`}
                   aria-label="SSH host alias"
@@ -339,18 +357,13 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   onChange={(event) => setTarget(event.target.value)}
                   placeholder="loom-mini"
                   required
+                  disabled={action.busy}
                 />
               </LoomSettingsField>
             </div>
             <LoomSettingsDetails title="Advanced connection settings">
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <LoomSettingsField
-                  label={
-                    <Label htmlFor={`${formId}-add-config`}>
-                      SSH config path on server (optional)
-                    </Label>
-                  }
-                >
+                <LoomSettingsField label="SSH config path on server (optional)">
                   <Input
                     id={`${formId}-add-config`}
                     aria-label="SSH config path on server (optional)"
@@ -360,7 +373,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                     disabled={action.busy}
                   />
                 </LoomSettingsField>
-                <LoomSettingsField label={<Label htmlFor={`${formId}-add-id`}>Worker ID</Label>}>
+                <LoomSettingsField label="Worker ID">
                   <Input
                     id={`${formId}-add-id`}
                     aria-label="Worker ID"
@@ -373,7 +386,12 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
               </div>
             </LoomSettingsDetails>
             <LoomSettingsActions>
-              <Button size="sm" variant="outline" type="submit" disabled={action.busy}>
+              <Button
+                size="sm"
+                variant="outline"
+                type="submit"
+                disabled={action.busy || !id.trim() || !name.trim() || !target.trim()}
+              >
                 Add worker
               </Button>
               <Button

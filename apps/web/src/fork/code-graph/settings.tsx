@@ -17,6 +17,7 @@ import {
   LoomSettingsContent,
   LoomSettingsDetails,
   LoomSettingsNotice,
+  LoomSettingsPanel,
 } from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -64,7 +65,7 @@ function ProjectGraph({
           </span>
         </div>
         <Button
-          size="xs"
+          size="sm"
           variant="ghost-destructive"
           disabled={disabled}
           onClick={() =>
@@ -93,6 +94,9 @@ function ProjectGraph({
           }
         />
       </label>
+      {action.busy && (
+        <LoomSettingsNotice role="status">Updating project graph...</LoomSettingsNotice>
+      )}
       {action.error && <LoomSettingsNotice role="alert">{action.error}</LoomSettingsNotice>}
     </li>
   );
@@ -108,12 +112,18 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
   const canEdit = useAtomValue(codeGraph.updateSettings.permissionAtom(environmentId));
   const canOperate = useAtomValue(codeGraph.deleteGraph.permissionAtom(environmentId));
   const save = useAction();
+  const [saved, setSaved] = useState(false);
   const [commandText, setCommandText] = useState<string | null>(null);
   const failure = failureOf(result);
   if (failure)
     return (
       <LoomSettingsContent className="flex flex-col gap-3">
         <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+        <LoomSettingsActions>
+          <Button variant="outline" onClick={() => appAtomRegistry.refresh(settingsAtom)}>
+            Try again
+          </Button>
+        </LoomSettingsActions>
       </LoomSettingsContent>
     );
   if (!settings)
@@ -124,112 +134,168 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
     );
   const disabled = !canEdit || save.busy;
 
-  const update = (patch: CodeGraphSettingsPatch) =>
-    void save.act(async () => {
+  const update = async (patch: CodeGraphSettingsPatch) => {
+    setSaved(false);
+    const done = await save.act(async () => {
       await runCommand(codeGraph.updateSettings, { environmentId, input: patch });
       appAtomRegistry.refresh(settingsAtom);
       appAtomRegistry.refresh(listAtom);
     });
+    setSaved(done);
+    return done;
+  };
   const shownCommand = commandText ?? settings.command.join(" ");
   const availability = graphs?.[0]?.availability;
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <SettingsRow
-        title="Graphify command"
-        description="How Loom starts Graphify on this environment's host. Loom never installs it."
+    <LoomSettingsContent className="flex flex-col gap-5">
+      <LoomSettingsPanel
+        title="Graph updates"
+        description="Keep existing code maps current as agents work."
       >
-        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-          <Input
-            aria-label="Graphify command"
-            font="mono"
-            placeholder="graphify"
-            disabled={disabled}
-            value={shownCommand}
-            onChange={(event) => setCommandText(event.target.value)}
-            onBlur={() => {
-              const next = parseCommand(shownCommand);
-              setCommandText(null);
-              if (next.length > 0 && next.join(" ") !== settings.command.join(" "))
-                update({ command: next });
-            }}
-          />
-          <Muted>
-            Loom is tested with Graphify {TESTED_GRAPHIFY_VERSION}.
-            {availability?._tag === "available" &&
-              ` This host has ${availability.version}${availability.tested ? "." : ", an untested version."}`}
-            {availability?._tag === "missing" && " Graphify was not found on this host."} Install it
-            with one of these commands, or run it through uvx without installing.
-          </Muted>
-          <LoomSettingsDetails title="Install Graphify">
-            <div className="flex min-w-0 flex-col gap-2">
-              {graphifyInstallCommands().map((command) => (
-                <CommandLine key={command} command={command} />
-              ))}
-            </div>
-          </LoomSettingsDetails>
-          <LoomSettingsActions>
-            <Button
-              size="xs"
-              variant="outline"
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Update graphs automatically"
+          description="After a turn changes files in a project's main checkout, and when you open a project whose graph is out of date. Never builds a first graph."
+          control={
+            <Switch
+              aria-label="Update graphs automatically"
               disabled={disabled}
-              onClick={() => update({ command: graphifyUvxCommand() })}
-            >
-              Use uvx
-            </Button>
-            <Button
-              size="xs"
-              variant="ghost"
-              disabled={disabled}
-              onClick={() => update({ command: DEFAULT_CODE_GRAPH_SETTINGS.command })}
-            >
-              Reset command
-            </Button>
-          </LoomSettingsActions>
-          {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
-        </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Update graphs automatically"
-        description="After a turn changes files in a project's main checkout, and when you open a project whose graph is out of date. Never builds a first graph."
-        control={
-          <Switch
-            aria-label="Update graphs automatically"
-            disabled={disabled}
-            checked={settings.autoUpdate}
-            onCheckedChange={(checked) => update({ autoUpdate: checked })}
-          />
-        }
-      />
-      <SettingsRow
+              checked={settings.autoUpdate}
+              onCheckedChange={(checked) => update({ autoUpdate: checked })}
+            />
+          }
+        />
+      </LoomSettingsPanel>
+      <LoomSettingsNotice role={save.busy || saved ? "status" : undefined}>
+        {save.busy ? "Saving changes..." : saved ? "Changes saved." : "Changes save automatically."}
+      </LoomSettingsNotice>
+      {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
+      <LoomSettingsPanel
         title="Project graphs"
-        description={
-          graphs?.length === 0
-            ? "No project has a graph yet. Build one from the Code map panel."
-            : "Graphs this environment keeps, with their size."
-        }
+        description="Manage stored graphs and agent access for each project."
       >
-        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-          {failureOf(listResult) ? (
-            <LoomSettingsNotice role="alert">{failureOf(listResult)}</LoomSettingsNotice>
-          ) : !graphs ? (
-            <LoomSettingsNotice role="status">Loading project graphs...</LoomSettingsNotice>
-          ) : graphs.length === 0 ? null : (
-            <ul className="flex flex-col">
-              {graphs.map((status) => (
-                <ProjectGraph
-                  key={status.projectId}
-                  environmentId={environmentId}
-                  status={status}
-                  canOperate={canOperate}
-                  onChanged={() => appAtomRegistry.refresh(listAtom)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </SettingsRow>
-    </div>
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Stored graphs"
+          description={
+            graphs?.length === 0
+              ? "No project has a graph yet. Build one from the Code map panel."
+              : "Graphs this environment keeps, with their size."
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
+            {failureOf(listResult) ? (
+              <>
+                <LoomSettingsNotice role="alert">{failureOf(listResult)}</LoomSettingsNotice>
+                <LoomSettingsActions>
+                  <Button variant="outline" onClick={() => appAtomRegistry.refresh(listAtom)}>
+                    Retry project graphs
+                  </Button>
+                </LoomSettingsActions>
+              </>
+            ) : !graphs ? (
+              <LoomSettingsNotice role="status">Loading project graphs...</LoomSettingsNotice>
+            ) : graphs.length === 0 ? (
+              <LoomSettingsNotice>
+                Open the Code map panel in a project to build its first graph.
+              </LoomSettingsNotice>
+            ) : (
+              <ul className="flex flex-col">
+                {graphs.map((status) => (
+                  <ProjectGraph
+                    key={status.projectId}
+                    environmentId={environmentId}
+                    status={status}
+                    canOperate={canOperate}
+                    onChanged={() => appAtomRegistry.refresh(listAtom)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </SettingsRow>
+      </LoomSettingsPanel>
+      <LoomSettingsDetails title="Graphify command and installation">
+        <SettingsRow
+          className="px-0 sm:px-0"
+          title="Graphify command"
+          description="How Loom starts Graphify on this environment's host. Loom never installs it."
+        >
+          <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
+            <Input
+              aria-label="Graphify command"
+              font="mono"
+              placeholder="graphify"
+              disabled={disabled}
+              value={shownCommand}
+              onChange={(event) => {
+                setCommandText(event.target.value);
+                setSaved(false);
+              }}
+              onBlur={() => {
+                const next = parseCommand(shownCommand);
+                if (next.length === 0) return;
+                if (next.join(" ") === settings.command.join(" ")) setCommandText(null);
+                else
+                  void update({ command: next }).then((done) => {
+                    if (done) setCommandText(null);
+                  });
+              }}
+            />
+            {shownCommand.trim() === "" && (
+              <LoomSettingsNotice role="alert">
+                Enter a command, or choose Use uvx below.
+              </LoomSettingsNotice>
+            )}
+            <Muted>
+              Arguments are separated by spaces. For an executable path containing spaces, use a
+              wrapper script. The command saves when you leave this field.
+            </Muted>
+            <Muted>
+              Loom is tested with Graphify {TESTED_GRAPHIFY_VERSION}.
+              {availability?._tag === "available" &&
+                ` This host has ${availability.version}${availability.tested ? "." : ", an untested version."}`}
+              {availability?._tag === "missing" && " Graphify was not found on this host."} Install
+              it with one of these commands, or run it through uvx without installing.
+            </Muted>
+            <LoomSettingsDetails title="Install Graphify">
+              <div className="flex min-w-0 flex-col gap-2">
+                {graphifyInstallCommands().map((command) => (
+                  <CommandLine key={command} command={command} />
+                ))}
+              </div>
+            </LoomSettingsDetails>
+            <LoomSettingsActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                onClick={() =>
+                  void update({ command: graphifyUvxCommand() }).then((done) => {
+                    if (done) setCommandText(null);
+                  })
+                }
+              >
+                Use uvx
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={disabled}
+                onClick={() =>
+                  void update({ command: DEFAULT_CODE_GRAPH_SETTINGS.command }).then((done) => {
+                    if (done) setCommandText(null);
+                  })
+                }
+              >
+                Reset command
+              </Button>
+            </LoomSettingsActions>
+          </div>
+        </SettingsRow>
+      </LoomSettingsDetails>
+    </LoomSettingsContent>
   );
 }
 

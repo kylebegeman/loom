@@ -56,7 +56,7 @@ interface SettingsScopeMenuProps {
   readonly onChange: (next: SettingsScopeSearch) => void;
 }
 
-export function SettingsScopeSentence() {
+export function SettingsScopeSentence({ environmentOnly = false }: { environmentOnly?: boolean }) {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
@@ -68,6 +68,14 @@ export function SettingsScopeSentence() {
     environments,
     onChange: scope.selectScope,
   };
+  if (environmentOnly) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+        <span>Settings on</span>
+        <EnvironmentScopeMenu {...props} value={{ machine: scope.environment?.environmentId }} />
+      </div>
+    );
+  }
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-base text-muted-foreground sm:px-4">
       <span className="flex min-w-0 items-center gap-1.5">

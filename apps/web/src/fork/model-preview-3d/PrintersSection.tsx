@@ -28,7 +28,6 @@ import {
   LoomSettingsContent,
   LoomSettingsDetails,
   LoomSettingsNotice,
-  LoomSettingsPanel,
 } from "../settings/parts";
 
 const decodePrinterExport = Schema.decodeUnknownSync(Schema.fromJsonString(PrinterExport));
@@ -157,14 +156,15 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
   const atLimit = library.printers.length >= USER_PRINTER_LIMIT;
   return (
     <div className="min-w-0" id="printers">
-      <LoomSettingsContent className="flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-5">
         <fieldset disabled={!canSave || busy} className="flex min-w-0 flex-col gap-4">
-          <legend className="mb-3 text-sm font-medium">Printers</legend>
+          <legend className="mb-3 text-sm font-semibold">Printer and material library</legend>
           <LoomSettingsNotice>
             Printers and materials belong to this environment. Export the library to keep a portable
-            backup.
+            backup. Library changes save immediately, separately from model settings.
           </LoomSettingsNotice>
-          <LoomSettingsPanel title="Your printers">
+          <div className="flex min-w-0 flex-col gap-4">
+            <h4 className="text-sm font-semibold">Your printers</h4>
             {!library.printers.length && (
               <LoomSettingsNotice>
                 No printers of your own yet. Add one or import a profile.
@@ -173,7 +173,7 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
             {library.printers.map((printer) => (
               <div
                 key={printer.id}
-                className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 py-4"
               >
                 <div className="min-w-0 flex-1 basis-48 text-xs wrap-anywhere">
                   <p className="text-sm font-medium">{printer.name}</p>
@@ -244,7 +244,7 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
               </Button>
             </LoomSettingsActions>
             {atLimit && <LoomSettingsNotice>Up to 64 printers and surfaces.</LoomSettingsNotice>}
-          </LoomSettingsPanel>
+          </div>
           <LoomSettingsDetails title="Built-in printers and surfaces">
             {(["printer", "surface"] as const).map((kind) => (
               <div key={kind} className="flex min-w-0 flex-col gap-3">
@@ -391,7 +391,7 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
             />
           </>
         )}
-      </LoomSettingsContent>
+      </div>
     </div>
   );
 }

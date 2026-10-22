@@ -1,3 +1,4 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
@@ -190,8 +191,8 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
       </p>
       <LoomSettingsActions>
         <Button
-          size="sm"
-          disabled={!canInvite || busy}
+          size="sm-multiline"
+          disabled={!canInvite || busy || !snapshot}
           onClick={() => {
             setAdding(true);
             setError(null);
@@ -199,22 +200,18 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
         >
           Enroll broker
         </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
+        <Button size="sm-multiline" variant="ghost" disabled={busy} onClick={refresh}>
           Refresh brokers
         </Button>
       </LoomSettingsActions>
-      {error || result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? (result._tag === "Failure" ? message(Cause.squash(result.cause)) : "")}
-        </LoomSettingsNotice>
-      ) : null}
-      {!snapshot ? (
-        <LoomSettingsNotice role="status">
-          {result._tag === "Failure"
-            ? "Broker inspection is unavailable. Refresh to try again."
-            : "Loading brokers…"}
-        </LoomSettingsNotice>
-      ) : (
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading brokers…"
+        error={result._tag === "Failure" ? message(Cause.squash(result.cause)) : null}
+        onRetry={refresh}
+      />
+      {snapshot ? (
         <>
           {snapshot.enrollments.length > 0 ? (
             <LoomSettingsPanel
@@ -247,7 +244,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
                     <LoomSettingsActions>
                       {enrollment.state === "awaiting-approval" ? (
                         <Button
-                          size="sm"
+                          size="sm-multiline"
                           disabled={!canApply || busy}
                           onClick={() =>
                             inspectChange(
@@ -266,7 +263,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
                         </Button>
                       ) : null}
                       <Button
-                        size="sm"
+                        size="sm-multiline"
                         variant="outline"
                         disabled={!canApply || busy}
                         onClick={() =>
@@ -318,34 +315,34 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
                         ? "No heartbeat yet"
                         : `Last seen ${new Date(machine.lastSeenAt).toLocaleString()}`}
                     </p>
-                    {machine.state === "active" ? (
-                      <LoomSettingsActions>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canApply || busy}
-                          onClick={() =>
-                            inspectChange(
-                              { type: "disable", machineId: machine.id },
-                              machine.label,
-                              machine.fingerprint,
-                              "Disable this identity permanently and reject new heartbeats. Re-enrollment requires a new broker key in a separate identity directory.",
-                            )
-                          }
-                        >
-                          Review disable
-                        </Button>
-                      </LoomSettingsActions>
-                    ) : (
-                      <LoomSettingsNotice>
-                        Enroll a new identity to restore this machine. Previously copied credentials
-                        are outside this control.
-                      </LoomSettingsNotice>
-                    )}
-                    <LoomSettingsDetails title="Machine fingerprint">
+                    <LoomSettingsDetails title="Machine identity and maintenance">
                       <p className="wrap-anywhere font-mono text-xs leading-relaxed">
                         {machine.fingerprint}
                       </p>
+                      {machine.state === "active" ? (
+                        <LoomSettingsActions>
+                          <Button
+                            size="sm-multiline"
+                            variant="destructive-outline"
+                            disabled={!canApply || busy}
+                            onClick={() =>
+                              inspectChange(
+                                { type: "disable", machineId: machine.id },
+                                machine.label,
+                                machine.fingerprint,
+                                "Disable this identity permanently and reject new heartbeats. Re-enrollment requires a new broker key in a separate identity directory.",
+                              )
+                            }
+                          >
+                            Review disable
+                          </Button>
+                        </LoomSettingsActions>
+                      ) : (
+                        <LoomSettingsNotice>
+                          Enroll a new identity to restore this machine. Previously copied
+                          credentials are outside this control.
+                        </LoomSettingsNotice>
+                      )}
                     </LoomSettingsDetails>
                   </li>
                 ))}
@@ -376,7 +373,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
             </p>
           </LoomSettingsDetails>
         </>
-      )}
+      ) : null}
       <Dialog
         open={adding}
         onOpenChange={(open) => {
@@ -398,7 +395,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               void begin();
             }}
           >
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
               <LoomSettingsField label="Broker name">
                 <Input
                   aria-label="Broker name"
@@ -448,8 +445,14 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               />
             </LoomSettingsField>
             {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+            <p role="status" className="text-sm text-muted-foreground">
+              {pendingBegin
+                ? "Invitation submission pending. Retrying reuses the same operation."
+                : "Draft invitation. Create it before enrolling the intended broker."}
+            </p>
             <LoomSettingsActions>
               <Button
+                size="sm-multiline"
                 type="button"
                 variant="outline"
                 disabled={busy}
@@ -457,7 +460,11 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canInvite || busy}>
+              <Button
+                size="sm-multiline"
+                type="submit"
+                disabled={!canInvite || busy || !snapshot || !label.trim() || !publicKey.trim()}
+              >
                 {busy ? "Creating invitation…" : "Create invitation"}
               </Button>
             </LoomSettingsActions>
@@ -489,8 +496,10 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               Expires {invitation ? new Date(invitation.expiresAt).toLocaleString() : ""}.
             </p>
             <LoomSettingsActions>
-              <Button onClick={download}>Download invitation</Button>
-              <Button variant="outline" onClick={() => setInvitation(null)}>
+              <Button size="sm-multiline" onClick={download}>
+                Download invitation
+              </Button>
+              <Button size="sm-multiline" variant="outline" onClick={() => setInvitation(null)}>
                 Done
               </Button>
             </LoomSettingsActions>
@@ -523,10 +532,19 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
             </label>
             {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
             <LoomSettingsActions>
-              <Button variant="outline" disabled={busy} onClick={() => setReview(null)}>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setReview(null)}
+              >
                 Abandon review
               </Button>
-              <Button disabled={!canApply || !confirmed || busy} onClick={() => void apply()}>
+              <Button
+                size="sm-multiline"
+                disabled={!canApply || !confirmed || busy}
+                onClick={() => void apply()}
+              >
                 {busy ? "Applying…" : "Apply reviewed change"}
               </Button>
             </LoomSettingsActions>

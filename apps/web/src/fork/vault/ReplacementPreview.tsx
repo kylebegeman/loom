@@ -72,7 +72,7 @@ function Preview({
   const failure = query._tag === "Failure" ? Cause.squash(query.cause) : null;
   return (
     <div
-      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 wrap-anywhere"
+      className="flex min-w-0 flex-col gap-4 rounded-lg bg-muted/30 p-4 wrap-anywhere"
       aria-label={`${input.kind} route preview`}
     >
       {query.waiting ? (

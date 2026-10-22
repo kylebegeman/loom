@@ -46,7 +46,7 @@ export function VaultRequirementImport({
         </LoomSettingsField>
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             disabled={disabled || !text.trim()}
             onClick={() => {
               const declaration = readVaultProfileRequirements(text);
@@ -92,7 +92,7 @@ export function VaultRequirementExport({ profile }: { profile: VaultProfileDefin
         </LoomSettingsField>
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             onClick={() =>
               void navigator.clipboard.writeText(text).then(

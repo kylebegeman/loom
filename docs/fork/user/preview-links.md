@@ -32,7 +32,7 @@ wildcard record sends every address to that computer's tunnel.
    you change it there, change it here too.
 3. Cloudflare does not create DNS records for wildcard routes. In the domain's DNS, add a
    CNAME record named `*` pointing at `<tunnel ID>.cfargotunnel.com`, with the proxy on.
-4. In Loom, open **Settings > Loom > Previews** for that computer. Turn on
+4. In Loom, open **Settings > Loom > Preview links** for that computer. Turn on
    **Share ports as links**, enter the domain in **Link domain**, check **Computer name**,
    paste the token into **Connector token**, and choose **Save**.
 
@@ -107,9 +107,9 @@ are off, **Restore** says so; ask the agent to share the folder again.
 ## Lifetimes and restoring
 
 A link stays open for 1 hour, 12 hours or 24 hours. **Default lifetime** in
-**Settings > Loom > Previews** sets it for new links; 12 hours unless you change it.
+**Settings > Loom > Preview links** sets it for new links; 12 hours unless you change it.
 
-Manage links from **Manage links** in Settings > Loom > Previews, the **Preview links** command
+Manage links from **Manage links** in Settings > Loom > Preview links, the **Preview links** command
 in the command palette, or Settings > Previews on mobile:
 
 - **Open** signs a browser in and opens the link.
@@ -131,7 +131,7 @@ An agent can publish a page it rendered, or an HTML file from its workspace such
 Dossier. The page lives in your Library at an address on its own pages host, so it stays
 readable while the computer is asleep.
 
-Each computer's pages are listed under **Pages** in **Settings > Loom > Previews**, or under
+Each computer's pages are listed under **Pages** in **Settings > Loom > Preview links**, or under
 **Pages on** the computer in Settings > Previews on mobile:
 
 - **Open** opens the page in your browser.
@@ -176,7 +176,7 @@ and restarting Loom on that computer is quicker. Removing a computer's access to
 stops sign-in to its links at once. Computers that connected with one shared Library token
 lose it together.
 
-**Sign out preview browsers** in Settings > Loom > Previews signs out every browser that
+**Sign out preview browsers** in Settings > Loom > Preview links signs out every browser that
 opened any link on that computer, whether it came from Loom or signed in to your Library. It
 also signs every browser out of your published pages, from every computer. Links and pages
 stay open; each browser has to open them from Loom or sign in again. If your Library cannot be

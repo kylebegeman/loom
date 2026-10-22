@@ -1,3 +1,4 @@
+import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
@@ -206,10 +207,14 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
         to this Loom connection. Release or expiry quarantines an account until you check it clean.
       </p>
       <LoomSettingsActions>
-        <Button disabled={!canWrite || busy || !snapshot} onClick={() => start("collection")}>
+        <Button
+          size="sm-multiline"
+          disabled={!canWrite || busy || !snapshot}
+          onClick={() => start("collection")}
+        >
           Create collection
         </Button>
-        <Button variant="outline" disabled={busy} onClick={refresh}>
+        <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
           Refresh accounts
         </Button>
       </LoomSettingsActions>
@@ -218,15 +223,17 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
           Your connection can inspect test accounts but cannot change them.
         </LoomSettingsNotice>
       ) : null}
-      <LoomSettingsNotice>
+      <p className="text-sm leading-relaxed text-muted-foreground">
         Provisioning, automatic reset and login delivery are not available yet.
-      </LoomSettingsNotice>
+      </p>
       {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
-      {error || result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? (result._tag === "Failure" ? message(Cause.squash(result.cause)) : "")}
-        </LoomSettingsNotice>
-      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading test accounts…"
+        error={result._tag === "Failure" ? message(Cause.squash(result.cause)) : null}
+        onRetry={refresh}
+      />
       {editor ? (
         <LoomSettingsPanel
           title={
@@ -244,7 +251,10 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
               : "Choose an existing Vault account. Added accounts start in quarantine and grant no login access."
           }
         >
-          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <p role="status" className="text-sm text-muted-foreground">
+            Draft changes. Review and confirm to save.
+          </p>
+          <div className="grid min-w-0 gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
             <LoomSettingsField label={editor === "collection" ? "Collection name" : "Account name"}>
               <Input
                 aria-label={editor === "collection" ? "Collection name" : "Account name"}
@@ -342,22 +352,21 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
             </>
           )}
           <LoomSettingsActions>
-            <Button disabled={busy || !canWrite || !!review} onClick={save}>
+            <Button size="sm-multiline" disabled={busy || !canWrite || !!review} onClick={save}>
               Review changes
             </Button>
-            <Button variant="outline" disabled={busy || !!review} onClick={() => setEditor(null)}>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              disabled={busy || !!review}
+              onClick={() => setEditor(null)}
+            >
               Cancel
             </Button>
           </LoomSettingsActions>
         </LoomSettingsPanel>
       ) : null}
-      {!snapshot ? (
-        <LoomSettingsNotice role="status">
-          {result._tag === "Failure"
-            ? "Account inspection is unavailable. Refresh accounts to try again."
-            : "Loading test accounts…"}
-        </LoomSettingsNotice>
-      ) : (
+      {snapshot ? (
         <>
           {!snapshot.collections.length ? (
             <LoomSettingsNotice>
@@ -398,49 +407,61 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                 >
                   <LoomSettingsActions>
                     <Button
+                      size="sm-multiline"
                       disabled={!canWrite || busy || collection.archived}
                       onClick={() => start("account")}
                     >
                       Add account reference
                     </Button>
-                    <Button
-                      variant="outline"
-                      disabled={!canWrite || busy}
-                      onClick={renameCollection}
-                    >
-                      Rename collection
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={!canWrite || busy}
-                      onClick={() =>
-                        prepare(
-                          {
-                            type: "collection-archive",
-                            id: collection.id,
-                            archived: !collection.archived,
-                          },
-                          collection.archived ? "Restore collection" : "Archive collection",
-                          "Active reservations must end before this change. Account credentials remain unchanged.",
-                        )
-                      }
-                    >
-                      {collection.archived ? "Restore collection" : "Archive collection"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        copy.copyToClipboard(vaultTestAccountDestination(collection.id), undefined)
-                      }
-                    >
-                      Copy agent grant destination
-                    </Button>
                   </LoomSettingsActions>
-                  <LoomSettingsDetails title="Agent grant destination">
+                  <LoomSettingsDetails title="Collection settings and access">
+                    <LoomSettingsActions>
+                      <Button
+                        size="sm-multiline"
+                        variant="outline"
+                        disabled={!canWrite || busy}
+                        onClick={renameCollection}
+                      >
+                        Rename collection
+                      </Button>
+                      <Button
+                        size="sm-multiline"
+                        variant="outline"
+                        disabled={!canWrite || busy}
+                        onClick={() =>
+                          prepare(
+                            {
+                              type: "collection-archive",
+                              id: collection.id,
+                              archived: !collection.archived,
+                            },
+                            collection.archived ? "Restore collection" : "Archive collection",
+                            "Active reservations must end before this change. Account credentials remain unchanged.",
+                          )
+                        }
+                      >
+                        {collection.archived ? "Restore collection" : "Archive collection"}
+                      </Button>
+                    </LoomSettingsActions>
+                    <p className="text-sm text-muted-foreground">Agent grant destination</p>
                     <p className="wrap-anywhere text-sm leading-relaxed">
                       <code>{vaultTestAccountDestination(collection.id)}</code>
                     </p>
+                    <LoomSettingsActions>
+                      <Button
+                        size="sm-multiline"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                          copy.copyToClipboard(
+                            vaultTestAccountDestination(collection.id),
+                            undefined,
+                          )
+                        }
+                      >
+                        Copy agent grant destination
+                      </Button>
+                    </LoomSettingsActions>
                   </LoomSettingsDetails>
                   {!snapshot.accounts.some((a) => a.collectionId === collection.id) ? (
                     <LoomSettingsNotice>
@@ -476,7 +497,7 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                           ) : null}
                           <LoomSettingsActions>
                             <Button
-                              size="sm"
+                              size="sm-multiline"
                               variant="outline"
                               disabled={
                                 !canWrite ||
@@ -497,8 +518,15 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                             ).map((action) => (
                               <Button
                                 key={action.label}
-                                size="sm"
-                                variant="outline"
+                                size="sm-multiline"
+                                variant={
+                                  action.change.type === "retire"
+                                    ? "destructive-outline"
+                                    : action.change.type === "reserve" ||
+                                        action.change.type === "mark-clean"
+                                      ? "default"
+                                      : "outline"
+                                }
                                 disabled={!canWrite || busy}
                                 onClick={() =>
                                   prepare(
@@ -513,7 +541,7 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                             ))}
                           </LoomSettingsActions>
                           <LoomSettingsDetails title="Vault account reference">
-                            <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                            <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                               <div className="min-w-0 space-y-1">
                                 <dt className="text-muted-foreground">Account ID</dt>
                                 <dd className="wrap-anywhere">{account.itemId}</dd>
@@ -532,7 +560,7 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
             </>
           )}
         </>
-      )}
+      ) : null}
       <Dialog
         open={!!review}
         onOpenChange={(open) => {
@@ -551,10 +579,15 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
               same operation.
             </p>
             <LoomSettingsActions>
-              <Button disabled={!canWrite || busy || !snapshot} onClick={apply}>
+              <Button size="sm-multiline" disabled={!canWrite || busy || !snapshot} onClick={apply}>
                 {busy ? "Saving…" : "Confirm"}
               </Button>
-              <Button variant="outline" disabled={busy} onClick={() => setReview(null)}>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setReview(null)}
+              >
                 Cancel
               </Button>
             </LoomSettingsActions>

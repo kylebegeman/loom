@@ -45,7 +45,7 @@ export function VaultReferencePicker({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <form
-        className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+        className="flex min-w-0 flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           setSearch(query.trim());
@@ -53,18 +53,20 @@ export function VaultReferencePicker({
           setNotice(null);
         }}
       >
-        <LoomSettingsField label={<label htmlFor={field}>Search Vault references</label>}>
-          <Input
-            id={field}
-            value={query}
-            maxLength={100}
-            disabled={disabled}
-            placeholder="Name or item ID"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </LoomSettingsField>
+        <div className="min-w-0 flex-1 basis-56">
+          <LoomSettingsField label={<label htmlFor={field}>Search Vault references</label>}>
+            <Input
+              id={field}
+              value={query}
+              maxLength={100}
+              disabled={disabled}
+              placeholder="Name or item ID"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </LoomSettingsField>
+        </div>
         <LoomSettingsActions>
-          <Button type="submit" variant="outline" disabled={disabled || result.waiting}>
+          <Button type="submit" size="sm-multiline" disabled={disabled || result.waiting}>
             Search
           </Button>
         </LoomSettingsActions>
@@ -88,7 +90,11 @@ export function VaultReferencePicker({
           <div className="flex flex-col gap-3">
             <p>{error instanceof Error ? error.message : "Vault search failed."}</p>
             <LoomSettingsActions>
-              <Button variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                onClick={() => appAtomRegistry.refresh(atom)}
+              >
                 Retry search
               </Button>
             </LoomSettingsActions>
@@ -99,14 +105,16 @@ export function VaultReferencePicker({
         <LoomSettingsNotice>
           {page.nextCursor
             ? "No matches on this page. Continue searching or narrow the name."
-            : "No matching Vault references."}
+            : search
+              ? "No matching references. Try a different name or item ID."
+              : "No references available. Add a Vault record on this computer to get started."}
         </LoomSettingsNotice>
       ) : null}
-      <ul className="flex min-w-0 flex-col gap-3">
+      <ul className="flex min-w-0 flex-col divide-y divide-border">
         {page?.items.map((reference) => (
           <li
             key={reference.item.id}
-            className="flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-lg border border-border/60 p-3"
+            className="flex min-w-0 flex-wrap items-start justify-between gap-3 py-4 first:pt-0 last:pb-0"
           >
             <div className="min-w-0 space-y-1">
               <p className="wrap-anywhere text-sm font-medium">{reference.item.label}</p>
@@ -114,11 +122,14 @@ export function VaultReferencePicker({
                 {VAULT_KIND_LABELS[reference.item.kind]} · Version {reference.item.version}
                 {reference.item.state === "archived" ? " · Archived" : ""}
               </p>
+              <p className="wrap-anywhere text-xs text-muted-foreground">
+                Item ID: {reference.item.id}
+              </p>
             </div>
             <LoomSettingsActions>
               {onSelect ? (
                 <Button
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={
                     disabled ||
@@ -133,7 +144,7 @@ export function VaultReferencePicker({
                 </Button>
               ) : (
                 <Button
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={disabled || result.waiting || result._tag === "Failure"}
                   onClick={async () => {
@@ -155,7 +166,7 @@ export function VaultReferencePicker({
       {notice ? <LoomSettingsNotice role="alert">{notice}</LoomSettingsNotice> : null}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || result.waiting || cursor === null}
           onClick={() => setCursor(null)}
@@ -163,7 +174,7 @@ export function VaultReferencePicker({
           First references
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || result.waiting || !page?.nextCursor}
           onClick={() => setCursor(page?.nextCursor ?? null)}

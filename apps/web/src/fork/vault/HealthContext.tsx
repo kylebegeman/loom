@@ -46,7 +46,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
         selections separately below. External consumers are not discovered.
       </p>
       <LoomSettingsActions>
-        <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+        <Button size="sm-multiline" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
           Refresh project references
         </Button>
       </LoomSettingsActions>
@@ -70,7 +70,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
           {page.coverage && page.coverage.unattributedGrants > 0 ? (
             <LoomSettingsActions>
               <Button
-                size="sm"
+                size="sm-multiline"
                 variant="outline"
                 onClick={() => openVaultAccess({ environmentId, itemId })}
               >
@@ -148,7 +148,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
                 ) : null}
                 <LoomSettingsActions>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
                     variant="outline"
                     onClick={() =>
                       openVaultProfiles({
@@ -161,7 +161,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
                     Review project profiles
                   </Button>
                   <Button
-                    size="sm"
+                    size="sm-multiline"
                     variant="outline"
                     onClick={() => openVaultAccess({ environmentId, itemId })}
                   >
@@ -175,7 +175,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
       ) : null}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={!cursor || result.waiting}
           onClick={() => setCursor(null)}
@@ -183,7 +183,7 @@ function ContextPage({ environmentId, itemId }: { environmentId: EnvironmentId; 
           First projects
         </Button>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={!page?.nextCursor || result.waiting || result._tag === "Failure"}
           onClick={() => setCursor(page?.nextCursor ?? null)}

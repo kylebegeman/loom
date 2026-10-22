@@ -7,7 +7,7 @@ list; optional shortcuts for opening the panel and capturing a view are in Keybi
 After an agent turn changes a model, its changed files card offers to open it, including SCAD
 parts affected by an included file. With a model panel already open, newly written models
 arrive as background tabs and changed tabs show a dot until viewed. Choose **When an agent
-writes a model** in **Settings > Loom > 3D model** to offer to open, open automatically, or do
+writes a model** in **Settings > Loom > 3D models** to offer to open, open automatically, or do
 nothing. The picker and **3D model: Open models from the last turn** in the command palette
 let you return to those models later. Hide a turn's offer to dismiss it on this browser.
 
@@ -20,7 +20,7 @@ A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a 
 Surfaces have no height limit. The choice is saved for the environment, so the Part tab,
 variants and settings follow it. To keep a custom size, choose **Bed > Custom size**, enter its
 size and **Save as bed**. Named beds appear under Custom. **Manage printers** opens
-**Settings > Loom > 3D model > Printers** to rename, resize or delete them and hide unused presets.
+**Settings > Loom > 3D models > Printers** to rename, resize or delete them and hide unused presets.
 The active preset stays visible.
 Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
 panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
@@ -36,7 +36,7 @@ orbit and **Shift + arrows** pan; they leave fields and menus to use their own a
 The canvas names the file and describes its controls. Screen reader announcements report a
 loaded part's dimensions and bed fit, tool changes and capture results.
 The help button beside the zoom controls lists every shortcut.
-Choose **Units** in the Bed menu or **Settings > Loom > 3D model** to display lengths in
+Choose **Units** in the Bed menu or **Settings > Loom > 3D models** to display lengths in
 millimetres or decimal inches. The command palette's **3D model: Switch units** changes the
 same setting. Dimensions, measurements, section offsets and custom bed inputs follow it;
 **Copy value** on a measurement copies the number in the selected unit. The grid pattern is a
@@ -77,7 +77,7 @@ available.
 Install an [OpenSCAD development snapshot](https://openscad.org/downloads.html#snapshots)
 on the environment host to preview SCAD. Snapshots support the faster Manifold backend,
 geometry summaries and model-color export; stable 2021.01 lacks those capabilities.
-In **Settings > Loom > 3D model**, set the executable path if automatic detection does not
+In **Settings > Loom > 3D models**, set the executable path if automatic detection does not
 find it. Save an edited executable path before refreshing detection. Refresh detection after
 installing or changing the executable.
 
@@ -124,7 +124,7 @@ Loom centres the plate under the model. Clear render cache removes cached output
 
 ## Python CAD and STEP
 
-In **Settings > Loom > 3D model**, choose **Set up Python CAD** to install the host's managed
+In **Settings > Loom > 3D models**, choose **Set up Python CAD** to install the host's managed
 build123d environment. Install uv first if setup shows manual commands, or select an existing
 Python interpreter with build123d installed. Setup, running build123d source and exporting STEP
 require terminal permission. STEP previews use the normal model permission.
@@ -137,7 +137,7 @@ When Python CAD is unavailable, a configured Fabrication link offers a fallback.
 
 ## Printers and materials
 
-Use **Settings > Loom > 3D model > Printers** to add a printer or surface, duplicate a built-in
+Use **Settings > Loom > 3D models > Printers** to add a printer or surface, duplicate a built-in
 entry, or import an exported Bambu Studio, OrcaSlicer or PrusaSlicer printer profile. Choose a
 printer from **Bed** to use its build volume and nozzle size. A surface checks only the footprint.
 
@@ -317,7 +317,7 @@ the findings too. **Display > Print check pins** and Markup's pin control show o
 shown pins appear in captures. **Check again** reruns the report, and **Cancel** stops an active
 check. A changed part keeps its old report marked out of date until the new check finishes.
 
-Set nozzle diameter, overhang limit and first-layer height in **Settings > Loom > 3D model**.
+Set nozzle diameter, overhang limit and first-layer height in **Settings > Loom > 3D models**.
 The selected printer supplies its nozzle diameter. The saved nozzle setting is used when the
 printer has no nozzle size.
 Thin walls below two nozzle widths and features below one nozzle width are flagged. The report
@@ -331,7 +331,7 @@ STEP and build123d use the host's Python CAD environment. Print checks are unava
 ## Estimate a print and inspect layers
 
 Install Bambu Studio, OrcaSlicer or PrusaSlicer on the environment host. In
-**Settings > Loom > 3D model**, choose the slicer and map the selected printer to machine,
+**Settings > Loom > 3D models**, choose the slicer and map the selected printer to machine,
 process and filament presets. Import exported JSON presets or a Prusa INI configuration when
 needed. Save the settings, then choose **Part > Print > Estimate print**.
 

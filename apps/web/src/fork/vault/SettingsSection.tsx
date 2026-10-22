@@ -4,6 +4,8 @@ import {
   LoomSettingsDetails,
   LoomSettingsField,
 } from "~/fork/settings/parts";
+import { VaultQueryFeedback } from "./SettingsFeedback";
+import { Checkbox } from "~/components/ui/checkbox";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
@@ -72,13 +74,13 @@ export function VaultSettingsSection() {
       "vault-core",
     )
   ) {
-    return <p className="text-sm text-muted-foreground">Vault is unavailable on this server.</p>;
+    return <LoomSettingsNotice>Vault is unavailable on this server.</LoomSettingsNotice>;
   }
   if (!canRead)
     return (
-      <p className="text-sm text-muted-foreground">
+      <LoomSettingsNotice>
         Your access to this environment does not include Vault inspection.
-      </p>
+      </LoomSettingsNotice>
     );
   return (
     <VaultItems
@@ -125,9 +127,8 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const change = (item: VaultItemSummary, action: "archive" | "restore" | "delete") =>
     act(async () => {
@@ -170,18 +171,15 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-medium">Development records</h3>
+          <h3 className="text-base font-medium">Development records</h3>
           <p className="max-w-prose text-sm text-muted-foreground">
             Store and manage development access for this environment.
           </p>
         </div>
         <LoomSettingsActions>
-          <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
-            Refresh
-          </Button>
           {sshEnabled ? (
             <Button
-              size="sm"
+              size="sm-multiline"
               variant="outline"
               disabled={!canSave || busy || status?.state !== "ready"}
               onClick={() => setSshItem(null)}
@@ -190,49 +188,59 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
             </Button>
           ) : null}
           <Button
-            size="sm"
+            size="sm-multiline"
             disabled={!canSave || status?.state !== "ready" || busy}
             onClick={() => setEditing("new")}
           >
             Add item
           </Button>
+          <Button
+            size="sm-multiline"
+            variant="ghost"
+            disabled={busy || statusResult.waiting}
+            onClick={refresh}
+          >
+            Refresh records
+          </Button>
         </LoomSettingsActions>
       </div>
-      {!status ? (
-        <LoomSettingsNotice role="status">
-          {failure(statusResult) ?? "Checking Vault connection…"}
-        </LoomSettingsNotice>
-      ) : (
+      <VaultQueryFeedback
+        result={statusResult}
+        loading="Checking Vault connection…"
+        error={failure(statusResult)}
+        onRetry={refresh}
+      />
+      {status && statusResult._tag !== "Failure" && !statusResult.waiting ? (
         <LoomSettingsNotice role="status">{vaultStatusMessage(status)}</LoomSettingsNotice>
-      )}
+      ) : null}
       {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
       {status?.state === "ready" && (
         <>
           <label className="flex items-start gap-2 text-sm leading-6">
-            <input
-              className="mt-1 shrink-0"
-              type="checkbox"
+            <Checkbox
               checked={includeArchived}
-              onChange={(event) => {
-                setIncludeArchived(event.target.checked);
+              onCheckedChange={(checked) => {
+                setIncludeArchived(checked);
                 setCursors([null]);
                 setRevealed(null);
               }}
             />
             Include archived items
           </label>
-          {failure(pageResult) && (
-            <LoomSettingsNotice role="alert">{failure(pageResult)}</LoomSettingsNotice>
-          )}
-          {!page ? (
-            <LoomSettingsNotice role="status">Loading Vault items…</LoomSettingsNotice>
-          ) : (
+          <VaultQueryFeedback
+            result={pageResult}
+            loading="Loading Vault items…"
+            error={failure(pageResult)}
+            onRetry={() => appAtomRegistry.refresh(pageAtom)}
+          />
+          {page ? (
             <>
               {page.items.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No items on this page. Add your first development credential or check the next
-                  page.
-                </p>
+                <LoomSettingsNotice>
+                  {cursors.length > 1
+                    ? "No items on this page. Return to the previous page to find a record."
+                    : "No development records yet. Add an item or create a dedicated SSH key to get started."}
+                </LoomSettingsNotice>
               )}
               <div className="flex flex-col divide-y divide-border">
                 {page.items.map((item) => (
@@ -246,20 +254,9 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                         </p>
                       </div>
                       <LoomSettingsActions>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() => {
-                            setRevealed(null);
-                            openVaultAccess({ environmentId, itemId: item.id });
-                          }}
-                        >
-                          Why this access?
-                        </Button>
                         {sshEnabled && item.kind === "ssh-key" ? (
                           <Button
-                            size="xs"
+                            size="sm-multiline"
                             variant="outline"
                             disabled={busy}
                             onClick={() => {
@@ -271,7 +268,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                           </Button>
                         ) : null}
                         <Button
-                          size="xs"
+                          size="sm-multiline"
                           variant="ghost"
                           disabled={!canReveal || busy}
                           onClick={() => void reveal(item)}
@@ -284,7 +281,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                         </Button>
                         {item.state === "active" && (
                           <Button
-                            size="xs"
+                            size="sm-multiline"
                             variant="outline"
                             disabled={!canSave || busy}
                             onClick={() => {
@@ -295,25 +292,48 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                             Edit
                           </Button>
                         )}
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={!canChange || busy}
-                          onClick={() =>
-                            void change(item, item.state === "active" ? "archive" : "restore")
-                          }
-                        >
-                          {item.state === "active" ? "Archive" : "Restore"}
-                        </Button>
                       </LoomSettingsActions>
-                      <LoomSettingsDetails title="Delete current value">
-                        <p className="max-w-prose text-xs text-muted-foreground">
+                      <LoomSettingsDetails title="Item details and maintenance">
+                        <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
+                          <div className="min-w-0 space-y-1">
+                            <dt className="text-xs text-muted-foreground">Item ID</dt>
+                            <dd className="wrap-anywhere">{item.id}</dd>
+                          </div>
+                          <div className="space-y-1">
+                            <dt className="text-xs text-muted-foreground">Version</dt>
+                            <dd>{item.version}</dd>
+                          </div>
+                        </dl>
+                        <LoomSettingsActions>
+                          <Button
+                            size="sm-multiline"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => {
+                              setRevealed(null);
+                              openVaultAccess({ environmentId, itemId: item.id });
+                            }}
+                          >
+                            Why this access?
+                          </Button>
+                          <Button
+                            size="sm-multiline"
+                            variant="outline"
+                            disabled={!canChange || busy}
+                            onClick={() =>
+                              void change(item, item.state === "active" ? "archive" : "restore")
+                            }
+                          >
+                            {item.state === "active" ? "Archive" : "Restore"}
+                          </Button>
+                        </LoomSettingsActions>
+                        <p className="max-w-prose text-sm text-muted-foreground">
                           Deleting removes the current value after confirmation. Encrypted history
                           follows the backend retention policy.
                         </p>
                         <LoomSettingsActions>
                           <Button
-                            size="xs"
+                            size="sm-multiline"
                             variant="destructive-outline"
                             disabled={!canChange || busy}
                             onClick={() => setDeleting(item)}
@@ -333,7 +353,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
               </div>
               <LoomSettingsActions>
                 <Button
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={cursors.length <= 1 || busy}
                   onClick={() => {
@@ -344,7 +364,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                   Previous
                 </Button>
                 <Button
-                  size="sm"
+                  size="sm-multiline"
                   variant="outline"
                   disabled={!page.nextCursor || busy}
                   onClick={() => {
@@ -356,7 +376,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                 </Button>
               </LoomSettingsActions>
             </>
-          )}
+          ) : null}
         </>
       )}
       {sshItem !== undefined ? (
@@ -393,18 +413,29 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
               backend’s retention policy.
             </DialogDescription>
           </DialogHeader>
+          {error ? (
+            <div className="px-6 pb-4">
+              <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>
+            </div>
+          ) : null}
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setDeleting(null)}
+            >
               Cancel
             </Button>
             <Button
+              size="sm-multiline"
               variant="destructive"
               disabled={busy || !deleting || !canChange}
               onClick={() => {
                 if (deleting) void change(deleting, "delete");
               }}
             >
-              Delete item
+              {busy ? "Deleting…" : "Delete item"}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -472,9 +503,8 @@ function VaultEditor({
       setError(null);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const save = async () => {
     if (busy || !allowed) return;
@@ -496,9 +526,8 @@ function VaultEditor({
       onSaved();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
     <Dialog
@@ -517,7 +546,7 @@ function VaultEditor({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="flex min-w-0 flex-col gap-5 px-6 pb-4"
+          className="flex max-h-[70vh] min-w-0 flex-col gap-5 overflow-y-auto px-6 pb-5"
           onSubmit={(event) => {
             event.preventDefault();
             void save();
@@ -566,12 +595,11 @@ function VaultEditor({
           </LoomSettingsField>
           {item && (
             <label className="flex items-start gap-2 text-sm leading-6">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={replace}
                 disabled={busy}
-                onChange={(event) => {
-                  setReplace(event.target.checked);
+                onCheckedChange={(checked) => {
+                  setReplace(checked);
                   setKind(item.kind);
                   setValue("");
                   setFileName(null);
@@ -621,7 +649,7 @@ function VaultEditor({
                 <div>
                   <Button
                     type="button"
-                    size="xs"
+                    size="sm-multiline"
                     variant="ghost"
                     disabled={busy || (multiline && value.includes("\n"))}
                     onClick={() => setMultiline((previous) => !previous)}
@@ -632,11 +660,25 @@ function VaultEditor({
               </LoomSettingsField>
             ))}
           {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
+          <p className="text-sm text-muted-foreground">
+            {item
+              ? replace
+                ? "Saving creates a new version with the replacement value."
+                : "Saving changes the name. The existing value is retained."
+              : "Draft item. Save to add it to this computer's Vault."}
+          </p>
           <LoomSettingsActions>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            <Button
+              size="sm-multiline"
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={onClose}
+            >
               Cancel
             </Button>
             <Button
+              size="sm-multiline"
               type="submit"
               disabled={
                 !allowed ||

@@ -78,7 +78,7 @@ again. A locked or disconnected device shows its own message.
 Agents can use `loom_apple_build_tooling_run` and `loom_apple_build_tooling_status` to build,
 test and run through the same pipeline. Their runs appear in the history marked **Agent**, and
 they get the same compact summary you see. To stop agents from starting runs, turn off
-**Settings, Loom, Apple build, Agent tools**.
+**Settings, Loom, Apple builds, Agent tools**.
 
 ## Xcode's own MCP server
 

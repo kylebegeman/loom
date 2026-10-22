@@ -56,13 +56,15 @@ export function GitHubReadiness({
   )
     return null;
   return (
-    <Checks
-      key={`${info.item.version}:${repository}`}
-      environmentId={environmentId}
-      info={info}
-      repository={repository}
-      disabled={disabled}
-    />
+    <LoomSettingsDetails title="Terminal and run readiness">
+      <Checks
+        key={`${info.item.version}:${repository}`}
+        environmentId={environmentId}
+        info={info}
+        repository={repository}
+        disabled={disabled}
+      />
+    </LoomSettingsDetails>
   );
 }
 function Checks({
@@ -187,7 +189,7 @@ function Checks({
             <p>Could not load readiness threads. You can still check Loom server tools.</p>
             <LoomSettingsActions>
               <Button
-                size="sm"
+                size="sm-multiline"
                 variant="outline"
                 disabled={disabled || !!controller}
                 onClick={() => appAtomRegistry.refresh(catalogAtom)}
@@ -200,7 +202,7 @@ function Checks({
       ) : null}
       <LoomSettingsActions>
         <Button
-          size="sm"
+          size="sm-multiline"
           variant="outline"
           disabled={disabled || !allowed || !!controller || info.item.state !== "active"}
           onClick={() => void check()}
@@ -208,7 +210,7 @@ function Checks({
           {controller ? "Checking GitHub readiness…" : "Check GitHub readiness"}
         </Button>
         {controller ? (
-          <Button size="sm" variant="outline" onClick={() => controller.abort()}>
+          <Button size="sm-multiline" variant="outline" onClick={() => controller.abort()}>
             Cancel readiness check
           </Button>
         ) : null}
@@ -217,12 +219,12 @@ function Checks({
       {report ? (
         <div
           role="status"
-          className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-3 sm:p-4"
+          className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-5 sm:p-6"
         >
           <p className="text-sm font-medium">
             {expired ? "Report expired. Run the check again." : "Current readiness result"}
           </p>
-          <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+          <dl className="grid min-w-0 gap-3 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
             <div className="space-y-1">
               <dt className="text-muted-foreground">Execution</dt>
               <dd>Loom server</dd>
@@ -232,7 +234,7 @@ function Checks({
               <dd>{report.grant === "unchecked" ? "Not checked" : report.grant}</dd>
             </div>
             {report.providerInstanceId ? (
-              <div className="min-w-0 space-y-1 sm:col-span-2">
+              <div className="min-w-0 space-y-1 col-span-full">
                 <dt className="text-muted-foreground">Provider</dt>
                 <dd className="wrap-anywhere">{report.providerInstanceId}</dd>
               </div>
@@ -276,7 +278,7 @@ function Checks({
         </pre>
         <LoomSettingsActions>
           <Button
-            size="sm"
+            size="sm-multiline"
             variant="outline"
             onClick={() => {
               void navigator.clipboard.writeText(example).then(
