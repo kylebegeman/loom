@@ -22,6 +22,15 @@ export function ProjectNavigationControl(_props: {
         <SymbolView name="folder" size={16} tintColorClassName="accent-icon-muted" />
         <Text className="text-xs font-t3-medium text-foreground-muted">Projects</Text>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Bots"
+        onPress={() => navigation.navigate("Bots")}
+        className="min-h-[44px] flex-row items-center gap-2 rounded-full px-2 active:opacity-70"
+      >
+        <SymbolView name="bolt.circle" size={16} tintColorClassName="accent-icon-muted" />
+        <Text className="text-xs font-t3-medium text-foreground-muted">Bots</Text>
+      </Pressable>
     </View>
   );
 }

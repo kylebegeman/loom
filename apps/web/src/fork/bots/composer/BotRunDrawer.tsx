@@ -10,7 +10,7 @@ import { Switch } from "~/components/ui/switch";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerContext } from "../../composer/registry";
 import { ParameterField } from "../BotRunForm";
-import { initialRunValues, runInputs } from "../draft";
+import { initialRunValues, runInputs } from "@t3tools/client-runtime/fork";
 import { bots, useBots } from "../state";
 import { useBotRunDrawerStore } from "./drawerStore";
 import { useComposerBotsAccess } from "./slashSource";

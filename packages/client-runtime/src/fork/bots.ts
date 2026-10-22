@@ -597,6 +597,10 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:list", tag: B.list }),
     listRuns,
+    getRun: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:get-run",
+      tag: B.getRun,
+    }),
     changes,
     recentRuns,
     /** Unwatched while disconnected: changes missed then never arrive. */

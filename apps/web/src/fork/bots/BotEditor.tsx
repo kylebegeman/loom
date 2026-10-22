@@ -31,6 +31,7 @@ import { LibraryDialog, LibraryField } from "../project-library/LibraryControls"
 import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
 import {
   botDraft,
+  rollingBotsUsageWindow,
   emptyBotDraft,
   newParameterDraft,
   newVaultSlotDraft,
@@ -40,11 +41,10 @@ import {
   type BotParameterDraft,
   type BotVaultSlotDraft,
   type BotWorkspaceChoice,
-} from "./draft";
+} from "@t3tools/client-runtime/fork";
 import { budgetMeterText } from "./BotsUsage";
 import { refineInputFromDraft } from "./fromThread/logic";
 import { bots } from "./state";
-import { rollingWindow } from "./usageWindow";
 
 export const RUNTIME_MODE_LABELS: Record<RuntimeMode, string> = {
   "approval-required": "Ask before actions",
@@ -302,7 +302,7 @@ export function BotEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.save, { reportFailure: false });
-  const [meterWindow] = useState(() => rollingWindow(1, Date.now()));
+  const [meterWindow] = useState(() => rollingBotsUsageWindow(1, Date.now()));
   const usage = useEnvironmentQuery(
     budgetsSupported && bot?.budget !== undefined
       ? bots.usage({ environmentId, input: { ...meterWindow, botId: bot.id } })

@@ -6,7 +6,7 @@ import {
   newStepDraft,
   pipelineDraft,
   pipelineInputFromDraft,
-} from "./pipelineDraft";
+} from "@t3tools/client-runtime/fork";
 
 const reviewFixVerify: BotPipelineInput = {
   id: "review-fix",
@@ -39,6 +39,20 @@ const reviewFixVerify: BotPipelineInput = {
 };
 
 describe("pipeline drafts", () => {
+  it("preserves a fan-out item label when editing a saved pipeline", () => {
+    const pipeline: BotPipelineInput = {
+      ...reviewFixVerify,
+      steps: reviewFixVerify.steps.map((step) =>
+        step.forEach === undefined
+          ? step
+          : {
+              ...step,
+              forEach: { ...step.forEach, itemLabel: "Finding {{item}}" },
+            },
+      ),
+    };
+    expect(pipelineInputFromDraft(pipelineDraft(pipeline))).toEqual({ ok: true, input: pipeline });
+  });
   it("round-trips a saved pipeline, leaving default gates and empty templates out", () => {
     const draft = pipelineDraft(reviewFixVerify);
     const withBlank = {

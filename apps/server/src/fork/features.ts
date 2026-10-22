@@ -103,6 +103,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "preview-pages",
   "preview-backings",
   "bots",
+  "bots-run-details",
   "bots-starters",
   "bots-invocation",
   "bots-verdicts",

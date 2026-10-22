@@ -231,7 +231,9 @@ const eventFromDraft = (draft: TriggerDraft): BotTriggerEvent | string => {
         schedule: {
           type: "fixed_time",
           timeOfDay: draft.timeOfDay,
-          ...(draft.weekdays.length === 0 ? {} : { weekdays: draft.weekdays.toSorted() }),
+          ...(draft.weekdays.length === 0
+            ? {}
+            : { weekdays: [...draft.weekdays].sort((left, right) => left - right) }),
         },
       };
     }

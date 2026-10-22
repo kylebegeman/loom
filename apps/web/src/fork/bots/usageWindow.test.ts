@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { UsageDay } from "@t3tools/contracts";
-import { rollingWindow, usagePageWindow } from "./usageWindow";
+import { usagePageWindow } from "./usageWindow";
 
 describe("usagePageWindow", () => {
   it("spans whole local days in the page's time zone", () => {
@@ -34,14 +34,5 @@ describe("usagePageWindow", () => {
         untilTime: "2026-10-20T09:13:00.000Z",
       }),
     ).toEqual({ since: "2026-10-19T09:13:00.000Z", until: "2026-10-20T09:13:00.000Z" });
-  });
-});
-
-describe("rollingWindow", () => {
-  it("ends on the current minute", () => {
-    expect(rollingWindow(7, Date.parse("2026-10-20T10:15:42.000Z"))).toEqual({
-      since: "2026-10-13T10:15:00.000Z",
-      until: "2026-10-20T10:15:00.000Z",
-    });
   });
 });

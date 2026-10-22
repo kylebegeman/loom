@@ -76,6 +76,17 @@ export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (
       ),
     [B.cancel]: (input: { runId: string }) => auth.effect(B.cancel, service.cancel(input.runId)),
     [B.listRuns]: (input: BotsListRunsInput) => auth.effect(B.listRuns, service.listRuns(input)),
+    [B.getRun]: (input: { runId: string }) =>
+      auth.effect(
+        B.getRun,
+        service.getRun(input.runId).pipe(
+          Effect.map((run) => ({ run })),
+          Effect.catchTags({
+            BotsError: (error) =>
+              error.reason === "not_found" ? Effect.succeed({ run: null }) : Effect.fail(error),
+          }),
+        ),
+      ),
     [B.watch]: () => auth.stream(B.watch, service.changes),
     [B.listStarters]: () =>
       auth.effect(

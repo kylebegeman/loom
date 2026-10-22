@@ -1,3 +1,5 @@
+// fork: bots
+import { buildThreadBotsMenuItems } from "../../fork/bots/threadMenu";
 // fork: project-home - Thread rows offer "Move work" on hosts that support workspace handoff.
 import { useNavigation } from "@react-navigation/native";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
@@ -604,6 +606,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     serverConfigs.get(thread.environmentId)?.environment.capabilities,
     "workspace-handoff",
   );
+  // fork: bots
+  const botMenuItems = buildThreadBotsMenuItems({
+    capabilities: serverConfigs.get(thread.environmentId)?.environment.capabilities,
+    threadId: thread.id,
+    canOperate: canOperateThread,
+  });
   const handoffMenuItems = useMemo<MenuAction[]>(
     () =>
       handoffSupported
@@ -753,13 +761,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
+      ...botMenuItems,
       { id: "rename", title: "Rename", image: "square.and.pencil" },
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
     ],
-    [props.titleRegenerationSupported, thread.titleRegeneration],
+    [botMenuItems, props.titleRegenerationSupported, thread.titleRegeneration],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -825,6 +834,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           environmentId: thread.environmentId,
           threadId: thread.id,
         });
+      // fork: bots
+      if (canOperateThread && botMenuItems.some((item) => item.id === nativeEvent.event)) {
+        if (nativeEvent.event === "bots-run")
+          navigation.navigate("Bots", {
+            environmentId: thread.environmentId,
+            callerThreadId: thread.id,
+          });
+        if (nativeEvent.event === "bots-create")
+          navigation.navigate("BotsCreate", {
+            environmentId: thread.environmentId,
+            sourceThreadId: thread.id,
+          });
+      }
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
@@ -866,6 +888,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       thread,
       navigation,
       canOperateThread,
+      botMenuItems,
       handleArchive,
       handleDelete,
       handleRegenerateTitle,

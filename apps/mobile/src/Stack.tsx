@@ -1,3 +1,15 @@
+// fork: bots
+import { BotsRouteScreen, BotDetailRouteScreen, BotsRunsRouteScreen } from "./fork/bots/BotsScreen";
+import { BotCreateRouteScreen, BotEditRouteScreen } from "./fork/bots/BotEditorScreen";
+import { BotRunRouteScreen } from "./fork/bots/BotRunScreen";
+import { BotRunDetailRouteScreen } from "./fork/bots/BotRunDetailScreen";
+import { BotsInboxRouteScreen } from "./fork/bots/BotsInboxScreen";
+import { BotBatchesRouteScreen } from "./fork/bots/BotBatchesScreen";
+import { BotTriggersRouteScreen } from "./fork/bots/BotTriggersScreen";
+import { BotPipelinesRouteScreen } from "./fork/bots/BotPipelinesScreen";
+import { BotHistoryRouteScreen, BotsReplayRouteScreen } from "./fork/bots/BotHistoryScreen";
+import { BotsUsageRouteScreen } from "./fork/bots/BotsUsageScreen";
+import { BotsComputersRouteScreen } from "./fork/bots/BotsComputersScreen";
 import { SitesRouteScreen } from "./fork/sites/SitesScreen";
 import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen"; // fork: preview-links
 // fork: library
@@ -726,6 +738,82 @@ const RootStackConfig = createWorkspaceStackNavigator({
     headerShown: false,
   },
   screens: {
+    // fork: bots
+    Bots: createNativeStackScreen({
+      screen: BotsRouteScreen,
+      linking: "bots",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsDetail: createNativeStackScreen({
+      screen: BotDetailRouteScreen,
+      linking: "bots/:environmentId/bot/:botId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsCreate: createNativeStackScreen({
+      screen: BotCreateRouteScreen,
+      linking: "bots/:environmentId/new",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsEdit: createNativeStackScreen({
+      screen: BotEditRouteScreen,
+      linking: "bots/:environmentId/bot/:botId/edit",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsRun: createNativeStackScreen({
+      screen: BotRunRouteScreen,
+      linking: "bots/:environmentId/bot/:botId/run",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsRunDetail: createNativeStackScreen({
+      screen: BotRunDetailRouteScreen,
+      linking: "bots/:environmentId/run/:runId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsRuns: createNativeStackScreen({
+      screen: BotsRunsRouteScreen,
+      linking: "bots/:environmentId/runs",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsInbox: createNativeStackScreen({
+      screen: BotsInboxRouteScreen,
+      linking: "bots/:environmentId/inbox",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsBatches: createNativeStackScreen({
+      screen: BotBatchesRouteScreen,
+      linking: "bots/:environmentId/batches",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsTriggers: createNativeStackScreen({
+      screen: BotTriggersRouteScreen,
+      linking: "bots/:environmentId/triggers",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsPipelines: createNativeStackScreen({
+      screen: BotPipelinesRouteScreen,
+      linking: "bots/:environmentId/pipelines",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsHistory: createNativeStackScreen({
+      screen: BotHistoryRouteScreen,
+      linking: "bots/:environmentId/history",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsReplay: createNativeStackScreen({
+      screen: BotsReplayRouteScreen,
+      linking: "bots/:environmentId/bot/:botId/replay",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsUsage: createNativeStackScreen({
+      screen: BotsUsageRouteScreen,
+      linking: "bots/:environmentId/usage",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    BotsComputers: createNativeStackScreen({
+      screen: BotsComputersRouteScreen,
+      linking: "bots/:environmentId/computers",
+      options: SOLID_HEADER_OPTIONS,
+    }),
     Sites: createNativeStackScreen({
       screen: SitesRouteScreen,
       linking: "sites",

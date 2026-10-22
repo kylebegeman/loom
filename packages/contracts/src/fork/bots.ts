@@ -11,6 +11,7 @@ import { LibraryId } from "./project-library.ts";
 import { VaultAccessAction } from "./vault-access.ts";
 
 export const BOTS_FEATURE = "bots";
+export const BOTS_RUN_DETAILS_FEATURE = "bots-run-details";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
 export const BOTS_INVOCATION_FEATURE = "bots-invocation";
 export const BOTS_VERDICTS_FEATURE = "bots-verdicts";
@@ -31,6 +32,7 @@ export const BOTS_WS_METHODS = {
   run: "loom.bots.run",
   cancel: "loom.bots.cancel",
   listRuns: "loom.bots.listRuns",
+  getRun: "loom.bots.getRun",
   watch: "loom.bots.watch",
   listStarters: "loom.bots.listStarters",
   restoreStarter: "loom.bots.restoreStarter",
@@ -598,6 +600,11 @@ export const BotsRpcGroup = RpcGroup.make(
   Rpc.make(M.listRuns, {
     payload: BotsListRunsInput,
     success: Schema.Struct({ runs: Schema.Array(BotRun), hasMore: Schema.Boolean }),
+    error: errors,
+  }),
+  Rpc.make(M.getRun, {
+    payload: Schema.Struct({ runId: BotRunId }),
+    success: Schema.Struct({ run: Schema.NullOr(BotRun) }),
     error: errors,
   }),
   Rpc.make(M.watch, {

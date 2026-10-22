@@ -7,9 +7,15 @@ whether you start it, an agent starts it, or you start it for the tenth time tod
 
 ## Opening Bots
 
-- **Sidebar:** the bot icon in the sidebar footer, after Sites.
+- **Web and desktop:** the bot icon in the sidebar footer, after Sites.
 - **Command palette:** **Go to Bots** opens the page. **Run bot...** lists your bots; picking one
   opens its run form.
+
+On mobile, open **Bots** above the thread list or in **Settings > Automations**. Choose the
+computer that owns your bots. Open a bot to edit or run it; its management actions include
+versions and replay, triggers, batches, usage, sharing and local Vault bindings. The Bots tools
+menu also opens pipelines and the inbox. A thread's menu offers **Run bot** and **Create bot
+from thread**, keeping that thread's checkout as the run context.
 
 Bots live on the server you are connected to and run there. When that server is offline or runs
 an older Loom, the page says so.
