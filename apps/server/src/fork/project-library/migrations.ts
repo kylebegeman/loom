@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import { LIBRARY_DOCUMENTS_SCHEMA } from "./LibraryDocuments.ts";
 import { DIRECTORY_SCHEMA } from "../directory/DirectoryService.ts";
 import type { ForkMigrationSet } from "../persistence/migrations.ts";
 import { LIBRARY_SEARCH_SCHEMA, backfillLibrarySearch } from "./LibrarySearch.ts";
@@ -129,6 +130,14 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         for (const statement of DIRECTORY_SCHEMA) yield* sql.unsafe(statement);
+      }),
+    ],
+    [
+      12,
+      "LibraryDocuments",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        for (const statement of LIBRARY_DOCUMENTS_SCHEMA) yield* sql.unsafe(statement);
       }),
     ],
   ],

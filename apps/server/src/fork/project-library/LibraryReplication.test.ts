@@ -124,6 +124,9 @@ const fixture = Effect.gen(function* () {
     assets: "local" as const,
   });
   const publisher = Publisher.LibraryPublisher.of({
+    copyRegistrations: Stream.empty,
+    publishDocuments: () => Effect.die("unused"),
+    decisions: () => Effect.die("unused"),
     enabled: true,
     info: Ref.get(authority),
     registerCopy: (input) =>
@@ -268,6 +271,9 @@ describe("durable Library history replication", () => {
           const service = yield* Replication.LibraryReplication.pipe(
             Effect.provide(Replication.layer),
             Effect.provideService(Publisher.LibraryPublisher, {
+              copyRegistrations: Stream.empty,
+              publishDocuments: () => Effect.die("unused"),
+              decisions: () => Effect.die("unused"),
               enabled: true,
               info: Ref.get(f.authority),
               registerCopy: (input) => Effect.succeed(input.copy),
@@ -1292,6 +1298,9 @@ describe("durable Library history replication", () => {
   it.effect("does no database work when replication is disabled", () =>
     Effect.gen(function* () {
       const publisher = Publisher.LibraryPublisher.of({
+        copyRegistrations: Stream.empty,
+        publishDocuments: () => Effect.die("unused"),
+        decisions: () => Effect.die("unused"),
         enabled: false,
         info: Effect.fail(new LibraryError({ reason: "blocked" })),
         ingest: () => Effect.fail(new LibraryError({ reason: "blocked" })),

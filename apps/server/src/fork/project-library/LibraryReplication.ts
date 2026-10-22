@@ -23,6 +23,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ServerActivation from "../../serverActivation.ts";
+import * as DocumentPublication from "./LibraryDocumentPublication.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as Publisher from "./LibraryPublisher.ts";
@@ -550,6 +551,16 @@ const make = Effect.gen(function* () {
       ),
     ),
   });
+  const documentSource = yield* Effect.serviceOption(DocumentPublication.LibraryDocumentSource);
+  if (Option.isSome(documentSource)) {
+    const documents = yield* DocumentPublication.makeDocumentPublication({
+      environmentId,
+      publisher,
+      workspaces,
+      source: documentSource.value,
+    });
+    yield* ServerActivation.forkParked(documents.run);
+  }
   yield* ServerActivation.forkParked(copyHealth.run);
   return LibraryReplication.of({ drain, flush, status, reportCopyHealth: copyHealth.report });
 });

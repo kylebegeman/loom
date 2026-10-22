@@ -77,6 +77,9 @@ const fixture = Effect.gen(function* () {
     validateThreadCwd: (input) => Effect.succeed(input.cwd),
   });
   const publisher = Publisher.LibraryPublisher.of({
+    copyRegistrations: Stream.empty,
+    publishDocuments: () => Effect.die("unused"),
+    decisions: () => Effect.die("unused"),
     enabled: true,
     info: Effect.succeed({
       environmentId: source,

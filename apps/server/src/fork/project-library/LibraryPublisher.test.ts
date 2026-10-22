@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { ChatAttachmentId, EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
   LibraryIngestHistoryRequest,
@@ -136,6 +136,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           authorityEpoch: 1,
           assets: "local",
         };
+      else if (pathname.endsWith("/documents/search")) response = { hits: [] };
+      else if (pathname.endsWith("/documents/publish")) response = { published: 1, removed: 0 };
       else if (pathname.endsWith("/copies/register")) response = copyFor(project);
       else if (pathname.endsWith("/history/ingest")) {
         const input = decodeIngest(new TextDecoder().decode(bytes));
@@ -289,6 +291,34 @@ const pageReply: LibraryPageReply = {
 const pageReason = (error: PreviewPagesError) => ({ reason: error.reason, message: error.message });
 
 describe("authenticated Library publishing", () => {
+  it.effect("forwards decision reads and binds document publishing to this computer", () =>
+    run(configured, (f) =>
+      Effect.gen(function* () {
+        expect(yield* f.publisher.decisions({ query: "owner recovery" })).toEqual({ hits: [] });
+        const input = {
+          computerId: source,
+          projectId: project.id,
+          resourceId: resource.id,
+          authorityId: "authority",
+          authorityEpoch: 1,
+          commit: "a".repeat(40),
+          documents: [],
+          removed: [],
+        };
+        expect(yield* f.publisher.publishDocuments(input)).toEqual({ published: 1, removed: 0 });
+        expect(
+          (yield* f.publisher
+            .publishDocuments({ ...input, computerId: EnvironmentId.make("other") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        expect(yield* Ref.get(f.requests)).toEqual([
+          "/api/loom/library/documents/search",
+          "/api/loom/library/documents/publish",
+        ]);
+      }),
+    ),
+  );
+
   it.effect(
     "verifies remote asset bytes before caching success and sends complete JSON history",
     () =>

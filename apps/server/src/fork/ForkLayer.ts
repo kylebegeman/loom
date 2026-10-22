@@ -37,6 +37,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
 import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
+import * as LibraryDocumentPublication from "./project-library/LibraryDocumentPublication.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
 import * as LibraryBriefSuggestions from "./project-library/LibraryBriefSuggestions.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
@@ -304,9 +305,11 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
   layerLibraryService,
+  layerLibraryPublisher,
   LibraryTimeline.layer,
   LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService)),
   LibraryReplication.layer.pipe(
+    Layer.provide(LibraryDocumentPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer))),
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
     Layer.provide(
