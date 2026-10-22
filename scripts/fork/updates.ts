@@ -1114,13 +1114,97 @@ async function publishIos(release: Release) {
     );
 }
 
-async function main(command: string | undefined, args: readonly string[] = []) {
+const UPDATE_USAGE = `Usage: node scripts/fork/updates.ts <check|prepare|publish> [--wait] [--expect-tag <loom-v...> --expect-sha <40-character lowercase SHA> --expect-version <version>]
+       node scripts/fork/updates.ts next-version [upstream v* tag]
+       node scripts/fork/updates.ts <enable|disable|status>
+All three --expect-* flags must be supplied together, using separate flag and value arguments.`;
+
+type ReleasePin = Pick<Release, "tag" | "commit" | "version">;
+
+export function parseUpdateArgs(command: string | undefined, args: readonly string[] = []) {
+  function fail(message: string): never {
+    throw new Error(`${message}\n${UPDATE_USAGE}`);
+  }
   if (command === "next-version") {
+    const upstreamTag = args[0];
+    if (
+      args.length > 1 ||
+      (upstreamTag !== undefined &&
+        upstreamTag !== "" &&
+        (upstreamTag !== upstreamTag.trim() ||
+          !upstreamTag.startsWith("v") ||
+          !LOOM_VERSION.test(upstreamTag.slice(1))))
+    )
+      fail("next-version accepts at most one exact upstream v* tag.");
+    return { command, upstreamTag } as const;
+  }
+  if (command === "enable" || command === "disable" || command === "status") {
+    if (args.length) fail(`${command} does not accept arguments.`);
+    return { command } as const;
+  }
+  if (command !== "check" && command !== "prepare" && command !== "publish")
+    fail(`Unknown publisher command: ${command ?? "(missing)"}.`);
+
+  let wait = false;
+  const values = new Map<string, string>();
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index]!;
+    if (flag === "--wait") {
+      if (wait) fail("Duplicate --wait flag.");
+      wait = true;
+      continue;
+    }
+    if (flag !== "--expect-tag" && flag !== "--expect-sha" && flag !== "--expect-version")
+      fail(`Unknown publisher argument: ${flag}.`);
+    if (values.has(flag)) fail(`Duplicate ${flag} flag.`);
+    const value = args[++index];
+    if (!value || value.startsWith("-")) fail(`${flag} requires a value.`);
+    values.set(flag, value);
+  }
+  if (values.size !== 0 && values.size !== 3)
+    fail("A publication pin requires --expect-tag, --expect-sha and --expect-version together.");
+  const expected = values.size
+    ? {
+        tag: values.get("--expect-tag")!,
+        commit: values.get("--expect-sha")!,
+        version: values.get("--expect-version")!,
+      }
+    : undefined;
+  if (expected) {
+    if (
+      expected.tag !== expected.tag.trim() ||
+      !expected.tag.startsWith("loom-v") ||
+      !LOOM_VERSION.test(expected.tag.slice("loom-v".length))
+    )
+      fail("--expect-tag requires an exact Loom integration tag (loom-v<version>).");
+    if (expected.commit !== expected.commit.trim() || !SOURCE_COMMIT.test(expected.commit))
+      fail("--expect-sha requires a full 40-character lowercase hexadecimal commit SHA.");
+    if (expected.version !== expected.version.trim() || !LOOM_VERSION.test(expected.version))
+      fail("--expect-version requires an exact bare Loom publication version.");
+  }
+  return { command, wait, expected } as const;
+}
+
+export function assertReleasePin(release: Release, expected: ReleasePin | undefined) {
+  if (expected) {
+    for (const field of ["tag", "commit", "version"] as const) {
+      if (release[field] !== expected[field])
+        throw new Error(
+          `Loom publication pin mismatch for ${field}: expected ${expected[field]}, selected ${release[field]}.`,
+        );
+    }
+  }
+  return release;
+}
+
+export async function main(command: string | undefined, args: readonly string[] = []) {
+  const options = parseUpdateArgs(command, args);
+  if (options.command === "next-version") {
     // loom.sh tags fork changes on main with this, so they join the same release train.
     console.log(
       nextLoomVersion(
         publicationTags(NodeProcess.cwd()).map((item) => item.tag),
-        args[0],
+        options.upstreamTag,
       ),
     );
     return;
@@ -1131,8 +1215,8 @@ async function main(command: string | undefined, args: readonly string[] = []) {
     );
   if (NodeProcess.platform !== "darwin" || NodeProcess.arch !== "arm64")
     throw new Error("The local Loom publisher requires an Apple Silicon Mac.");
-  if (command === "enable") return enable();
-  if (command === "disable") {
+  if (options.command === "enable") return enable();
+  if (options.command === "disable") {
     if (await exists(PLIST_PATH)) {
       run("launchctl", ["bootout", `gui/${NodeProcess.getuid!()}`, PLIST_PATH]);
       await NodeFSP.rm(PLIST_PATH);
@@ -1140,34 +1224,29 @@ async function main(command: string | undefined, args: readonly string[] = []) {
     console.log("Automatic Loom publishing is disabled.");
     return;
   }
-  if (command === "status") {
+  if (options.command === "status") {
     console.log(
       `Scheduler: ${(await exists(PLIST_PATH)) ? "installed" : "not installed"}\nBuilds: ${BUILDS_DIR}\nLog: ${LOG_PATH}`,
     );
     return;
   }
-  if (command !== "prepare" && command !== "publish" && command !== "check") {
-    throw new Error(
-      "Usage: node scripts/fork/updates.ts <check|prepare|publish [--wait]|next-version [upstream tag]|enable|disable|status>",
-    );
-  }
   await withLock(async () => {
-    const release = await latestIntegration();
+    const release = assertReleasePin(await latestIntegration(), options.expected);
     const state = await releaseState(release);
     console.log(`${new Date().toISOString()} ${release.tag}: ${state}`);
-    if (command === "check") return;
-    if (command === "publish" && state === "published") {
+    if (options.command === "check") return;
+    if (options.command === "publish" && state === "published") {
       await publishIos(release);
       return;
     }
-    if (command === "publish") reservePublicationTag(release);
+    if (options.command === "publish") reservePublicationTag(release);
     const prepared = await prepare(release);
     console.log(`Prepared ${prepared.record}/Loom.app`);
-    if (command === "publish") {
+    if (options.command === "publish") {
       await publish(release, prepared);
       await publishIos(release);
     }
-  }, args.includes("--wait"));
+  }, options.wait);
 }
 
 if (import.meta.main) {

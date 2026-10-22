@@ -1,18 +1,22 @@
 // @effect-diagnostics nodeBuiltinImport:off - Exercises the standalone publisher's filesystem boundary without an Effect runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { parseLoomConnectConfig } from "./connect-config.ts";
 
 import { normalizeDesktopUpdateReleaseNotes } from "../../apps/desktop/src/updates/releaseNotes.ts";
 import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
+  assertReleasePin,
   buildEnvironment,
+  main,
+  parseUpdateArgs,
   installedUpdateRequirement,
   preparedConnectConfig,
   launchAgent,
@@ -32,6 +36,34 @@ import {
   updateManifest,
   validateFeedConfig,
 } from "./updates.ts";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+});
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    mkdir: vi.fn(actual.mkdir),
+    stat: vi.fn(actual.stat),
+    writeFile: vi.fn(actual.writeFile),
+    rm: vi.fn(actual.rm),
+  };
+});
+vi.mock("node:process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:process")>();
+  return {
+    ...actual,
+    platform: "darwin",
+    arch: "arm64",
+    versions: { ...actual.versions, node: "24.21.0" },
+  };
+});
 
 const COMMIT = "cdbf78ca63edbd1289a81deecba28c2bcfcf73fd";
 
@@ -59,6 +91,127 @@ async function publicationFixture() {
     },
   };
 }
+
+describe("publisher CLI pins", () => {
+  const tag = "loom-v0.0.48-nightly.20261013.3044";
+  const version = "0.0.48-nightly.20261013.3044";
+  const pinArgs = ["--expect-tag", tag, "--expect-sha", COMMIT, "--expect-version", version];
+
+  it.each(["check", "prepare", "publish"])("accepts an optional complete pin on %s", (command) => {
+    expect(parseUpdateArgs(command, [])).toEqual({ command, wait: false, expected: undefined });
+    expect(parseUpdateArgs(command, ["--wait", ...pinArgs])).toEqual({
+      command,
+      wait: true,
+      expected: { tag, commit: COMMIT, version },
+    });
+    const release = releaseForTag(tag, COMMIT);
+    expect(assertReleasePin(release, undefined)).toBe(release);
+    expect(assertReleasePin(release, { tag, commit: COMMIT, version })).toBe(release);
+  });
+
+  it.each([
+    ["--wait", "--wait"],
+    ["--unknown"],
+    ["extra"],
+    ["--expect-tag"],
+    ["--expect-sha"],
+    ["--expect-version"],
+    ["--expect-tag", "--wait"],
+    ["--expect-tag", ""],
+    ["--expect-tag", tag],
+    ["--expect-sha", COMMIT],
+    ["--expect-version", version],
+    ["--expect-tag", tag, "--expect-sha", COMMIT],
+    [...pinArgs, "--expect-tag", tag],
+    [...pinArgs, "--expect-sha", COMMIT],
+    [...pinArgs, "--expect-version", version],
+    ["--expect-tag=" + tag, "--expect-sha=" + COMMIT, "--expect-version=" + version],
+  ])("rejects incomplete or ambiguous publication arguments %j", (...args) => {
+    expect(() => parseUpdateArgs("publish", args)).toThrow("Usage:");
+  });
+
+  it.each([
+    ["--expect-tag", "main"],
+    ["--expect-tag", "loom-v01.0.0"],
+    ["--expect-tag", tag + "\n"],
+    ["--expect-sha", "main"],
+    ["--expect-sha", COMMIT.slice(0, 12)],
+    ["--expect-sha", COMMIT.toUpperCase()],
+    ["--expect-sha", COMMIT + "\n"],
+    ["--expect-version", "v" + version],
+    ["--expect-version", "latest"],
+    ["--expect-version", version + "\n"],
+  ])("rejects invalid %s values", (flag, value) => {
+    const args = [...pinArgs];
+    args[args.indexOf(flag) + 1] = value;
+    expect(() => parseUpdateArgs("publish", args)).toThrow("Usage:");
+  });
+
+  it("rejects extra arguments on commands that cannot use a publication pin", () => {
+    for (const command of ["enable", "disable", "status", "next-version"]) {
+      expect(() => parseUpdateArgs(command, pinArgs)).toThrow("Usage:");
+    }
+    expect(() => parseUpdateArgs(undefined, [])).toThrow("Usage:");
+    expect(() => parseUpdateArgs("unknown", [])).toThrow("Usage:");
+    expect(() => parseUpdateArgs("next-version", ["v0.0.46", "v0.0.47"])).toThrow("Usage:");
+    expect(parseUpdateArgs("next-version", ["v0.0.46"])).toEqual({
+      command: "next-version",
+      upstreamTag: "v0.0.46",
+    });
+  });
+
+  it.each([
+    ["tag", "loom-v0.0.49-nightly.20261013.3044"],
+    ["commit", "a".repeat(40)],
+    ["version", "0.0.49-nightly.20261013.3044"],
+  ] as const)(
+    "rejects a selected %s mismatch before release queries, reservation or build",
+    async (field, value) => {
+      const stats = await NodeFSP.stat(import.meta.filename);
+      const expected = { tag, commit: COMMIT, version, [field]: value };
+      vi.resetAllMocks();
+      const spawn = vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command, rawArgs) => {
+        const args = [...rawArgs!];
+        let stdout = "";
+        if (command !== "git") throw new Error(`Unexpected publication side effect: ${command}`);
+        if (args[0] === "remote") stdout = "https://github.com/kylebegeman/loom.git";
+        else if (args[0] === "fetch") stdout = "";
+        else if (args[0] === "for-each-ref")
+          stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
+        else if (args[0] === "rev-parse") stdout = COMMIT;
+        else if (args[0] === "cat-file") stdout = "commit";
+        else if (args[0] !== "tag" || args[1] !== "--list") {
+          throw new Error(`Unexpected Git mutation: ${args.join(" ")}`);
+        }
+        return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
+      });
+      try {
+        vi.mocked(NodeFS.existsSync).mockReturnValue(false);
+        vi.mocked(NodeFSP.mkdir).mockResolvedValue(undefined);
+        vi.mocked(NodeFSP.stat).mockResolvedValue(stats);
+        vi.mocked(NodeFSP.writeFile).mockResolvedValue();
+        vi.mocked(NodeFSP.rm).mockResolvedValue();
+        await expect(
+          main("publish", [
+            "--expect-tag",
+            expected.tag,
+            "--expect-sha",
+            expected.commit,
+            "--expect-version",
+            expected.version,
+          ]),
+        ).rejects.toThrow(`Loom publication pin mismatch for ${field}`);
+        expect(spawn.mock.calls.some(([command]) => command !== "git")).toBe(false);
+        expect(spawn.mock.calls.some(([, args]) => args?.[0] === "push")).toBe(false);
+        expect(
+          spawn.mock.calls.some(([, args]) => args?.[0] === "tag" && args[1] !== "--list"),
+        ).toBe(false);
+      } finally {
+        vi.resetAllMocks();
+      }
+    },
+  );
+});
 
 describe("Loom update publishing", () => {
   it("distinguishes an ad hoc installed app from an update-compatible signing requirement", () => {
