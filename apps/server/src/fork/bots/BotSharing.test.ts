@@ -749,6 +749,94 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("keeps a pinned revision through historical lookup and remote delivery", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const shared = yield* sharing.share("reviewer");
+        yield* bots.save(
+          { ...versionInput(shared), instructions: "Rewrite {{file}}." },
+          USER_CALLER,
+        );
+        const pinned = yield* bots.definitionAt("reviewer", shared.version);
+        expect(pinned.library?.revision).toBe(1);
+        yield* library.reportStatus(studio, studioReport());
+        const run = yield* bots.startRunWith(
+          pinned,
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          { untrusted: { names: ["file"], origin: "a pipeline" } },
+        );
+        const [delivery] = yield* library.nextRequests(studio, 0);
+        expect(run).toMatchObject({ status: "queued", botVersion: shared.version });
+        expect(delivery?.message).toMatchObject({
+          _tag: "run",
+          request: { revision: 1, untrusted: { names: ["file"], origin: "a pipeline" } },
+        });
+        // The target has since synced revision 2. It must refuse rather than run it for revision 1.
+        yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        yield* library.reportStatus(
+          laptop,
+          studioReport({
+            label: "Laptop",
+            bots: [{ libraryBotId: "reviewer", revision: 2, ready: true, reasons: [] }],
+          }),
+        );
+        expect(delivery!.message._tag).toBe("run");
+        if (delivery!.message._tag !== "run") return;
+        yield* library.submit(studio, {
+          targetEnvironmentId: laptop,
+          request: {
+            ...delivery!.message.request,
+            requestId: "stale-target",
+            threadId: botRunThreadId("stale-target"),
+          },
+        });
+        for (const incoming of yield* library.nextRequests(laptop, 0))
+          yield* sharing.handleDelivery(incoming);
+        const [refusal] = yield* library.nextResults(studio, 0);
+        expect(refusal?.update).toMatchObject({
+          status: "failed",
+          error: "Reviewer changed after this run was sent. Run it again.",
+        });
+        expect(harness.launches).toHaveLength(0);
+      }),
+    ),
+  );
+
+  it.effect("refuses a historical definition without a proven shared revision", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        const old = yield* bots.save(reviewer(), USER_CALLER);
+        yield* bots.save(reviewer({ instructions: "Rewrite {{file}}." }), USER_CALLER);
+        yield* sharing.share("reviewer");
+        const pinned = yield* bots.definitionAt("reviewer", old.version);
+        yield* library.reportStatus(studio, studioReport());
+        const run = yield* bots.startRunWith(
+          pinned,
+          {
+            botId: "reviewer",
+            inputs: { file: "a.ts" },
+            projectId,
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+          {},
+        );
+        expect(run).toMatchObject({ status: "failed", botVersion: old.version });
+        expect(run.error).toContain("shared revision");
+        expect(yield* library.nextRequests(studio, 0)).toEqual([]);
+      }),
+    ),
+  );
+
   it.effect("refuses a pinned remote run when the target has a different revision", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

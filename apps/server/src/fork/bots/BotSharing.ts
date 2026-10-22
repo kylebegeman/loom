@@ -461,7 +461,10 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
         reasons = ["It has not reported current bot readiness."];
       } else if (unshared !== null) reasons = [unshared];
       else if (!status!.report.acceptRemote) reasons = ["Remote runs are off on that computer."];
-      else if (bot.library == null) reasons = ["Share this bot to run it on other computers."];
+      else if (bot.library == null)
+        reasons = [
+          "This bot version has no shared revision. Share it to run it on other computers.",
+        ];
       else if (entry === undefined) reasons = ["It does not have this bot yet."];
       else if (entry.revision !== bot.library.revision)
         reasons = [

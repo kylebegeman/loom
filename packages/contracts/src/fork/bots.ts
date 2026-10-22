@@ -1248,7 +1248,12 @@ const VersionFields = {
   restoredFrom: Schema.NullOr(Schema.Int),
 };
 
-export const BotVersion = Schema.Struct({ ...VersionFields, definition: BotDefinitionInput });
+export const BotVersion = Schema.Struct({
+  ...VersionFields,
+  definition: BotDefinitionInput,
+  /** The shared revision this saved definition came from, when it is known. */
+  library: Schema.optionalKey(BotLibraryLink),
+});
 export type BotVersion = typeof BotVersion.Type;
 
 export const BotVersionSummary = Schema.Struct({
