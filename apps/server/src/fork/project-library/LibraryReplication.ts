@@ -391,10 +391,10 @@ const make = Effect.gen(function* () {
         payload_json: string;
         wire_json: string | null;
       }>`SELECT sequence,thread_id,source_sequence,payload_json,wire_json FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} ORDER BY sequence LIMIT ${PUBLISH_BATCH_LIMIT}`;
-      if (!supportsDeltas) {
-        yield* sql`UPDATE fork_library_source_outbox SET wire_json=NULL WHERE wire_json IS NOT NULL`;
-        for (const row of rows) row.wire_json = null;
-      }
+      // A previous attempt may already be committed. Preserve its exact fingerprint even if
+      // the Library is temporarily downgraded; an older reader would treat tails as full history.
+      if (!supportsDeltas && rows.some((row) => row.wire_json !== null))
+        return yield* new LibraryError({ reason: "publisher-unavailable" });
       const batch: (typeof rows)[number][] = [];
       let bytes = 0;
       for (const row of rows) {
@@ -445,16 +445,7 @@ const make = Effect.gen(function* () {
         fromSequence: current.acknowledged_sequence,
         entries,
       };
-      const response = yield* publisher.ingest(request).pipe(
-        Effect.tapError((error) =>
-          (error.reason === "sequence-gap" || error.reason === "sequence-conflict") &&
-          batch.some((row) => row.wire_json !== null)
-            ? // A conclusive rejection applied nothing. Retry the retained full snapshot next time;
-              // transport failures keep the exact saved delta for an idempotent retry.
-              sql`UPDATE fork_library_source_outbox SET wire_json=NULL WHERE sequence>${current.acknowledged_sequence} AND sequence<=${through}`
-            : Effect.void,
-        ),
-      );
+      const response = yield* publisher.ingest(request);
       if (
         response.sourceEnvironmentId !== environmentId ||
         response.journalId !== current.journal_id ||

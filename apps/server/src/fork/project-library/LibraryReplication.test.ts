@@ -257,7 +257,7 @@ const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Eff
 
 describe("durable Library history replication", () => {
   it.effect(
-    "sends a complete archive if the Library loses delta support while an upload is pending",
+    "retains a pending delta across a Library downgrade without sending tails as complete history",
     () =>
       run((f) =>
         Effect.gen(function* () {
@@ -276,47 +276,54 @@ describe("durable Library history replication", () => {
           yield* f.event(2, "checkpoint.captured", "{}");
           yield* Ref.set(f.failAck, true);
           yield* f.service.flush.pipe(Effect.flip);
-          expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
+          const pending = (yield* Ref.get(f.requests)).at(-1)!;
+          expect(pending.entries[0]!.delta).toBeDefined();
+          const attempts = (yield* Ref.get(f.requests)).length;
           yield* Ref.update(f.authority, (info) => ({ ...info, features: [] }));
           yield* Ref.set(f.failAck, false);
-          yield* f.service.flush;
-          const request = (yield* Ref.get(f.requests)).at(-1)!;
-          expect(request.entries[0]!.delta).toBeUndefined();
-          expect(request.entries[0]!.thread.projection.messages).toEqual(
-            initial.projection.messages,
-          );
-        }),
-      ),
-  );
-
-  it.effect(
-    "falls back to the retained full snapshot after a conclusive delta-base rejection",
-    () =>
-      run((f) =>
-        Effect.gen(function* () {
+          expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("publisher-unavailable");
+          expect((yield* Ref.get(f.requests)).length).toBe(attempts);
+          expect((yield* f.service.status).pendingEntries).toBe(1);
           yield* Ref.update(f.authority, (info) => ({
             ...info,
             features: ["library-history-deltas"],
           }));
-          yield* f.event(1, "thread.created", "{}");
-          const initial = withText(yield* Ref.get(f.archive), "unchanged transcript ".repeat(500));
-          yield* Ref.set(f.archive, initial);
           yield* f.service.flush;
-          yield* Ref.update(f.archive, (archive) => ({
-            ...archive,
-            summary: { ...archive.summary, sequence: 2 },
-          }));
-          yield* f.event(2, "checkpoint.captured", "{}");
-          yield* Ref.set(f.rejectDeltas, true);
-          expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("sequence-conflict");
-          expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
-          yield* f.service.flush;
-          const complete = (yield* Ref.get(f.requests)).at(-1)!.entries[0]!;
-          expect(complete.delta).toBeUndefined();
-          expect(complete.thread.projection.messages).toEqual(initial.projection.messages);
+          expect((yield* Ref.get(f.requests)).at(-1)).toEqual(pending);
           expect((yield* f.service.status).pendingEntries).toBe(0);
         }),
       ),
+  );
+
+  it.effect("keeps a rejected delta immutable until the Library can accept the same history", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.authority, (info) => ({
+          ...info,
+          features: ["library-history-deltas"],
+        }));
+        yield* f.event(1, "thread.created", "{}");
+        const initial = withText(yield* Ref.get(f.archive), "unchanged transcript ".repeat(500));
+        yield* Ref.set(f.archive, initial);
+        yield* f.service.flush;
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* f.event(2, "checkpoint.captured", "{}");
+        yield* Ref.set(f.rejectDeltas, true);
+        expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("sequence-conflict");
+        expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
+        const pending = (yield* Ref.get(f.requests)).at(-1)!;
+        expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("sequence-conflict");
+        expect((yield* Ref.get(f.requests)).at(-1)).toEqual(pending);
+        expect((yield* f.service.status).pendingEntries).toBe(1);
+        yield* Ref.set(f.rejectDeltas, false);
+        yield* f.service.flush;
+        expect((yield* Ref.get(f.requests)).at(-1)).toEqual(pending);
+        expect((yield* f.service.status).pendingEntries).toBe(0);
+      }),
+    ),
   );
 
   it.effect(
