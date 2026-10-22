@@ -29,7 +29,10 @@ const studioReport = (fields: Partial<BotLibraryStatusReport> = {}): BotLibraryS
   acceptRemote: true,
   runtimeModeCeiling: "auto",
   freeSlots: 4,
-  bots: [{ libraryBotId: "reviewer", revision: 1, ready: true, reasons: [] }],
+  bots: [
+    { libraryBotId: "reviewer", revision: 1, ready: true, reasons: [], availability: "ready" },
+  ],
+  projects: [{ libraryProjectId: libraryProject, ready: true, reasons: [], availability: "ready" }],
   ...fields,
 });
 
@@ -66,6 +69,7 @@ const setup = (
         toLibrary: (id) => Effect.succeed(id === projectId ? libraryProject : null),
         toLocal: (id) => Effect.succeed(id === libraryProject ? projectId : null),
         readiness: () => Effect.sync(() => readiness.project),
+        libraryProjects: Effect.succeed([libraryProject]),
       },
       vault: {
         describe: (id) => Effect.sync(() => readiness.items.get(id) ?? null),
@@ -276,6 +280,49 @@ describe("BotSharing", () => {
             ready: false,
             availability: "blocked",
             reasons: ["That computer does not run agents."],
+          });
+        }),
+      ),
+  );
+
+  it.effect(
+    "checks the selected project's copy and tools for global bots on another computer",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { library, bots, sharing } = yield* setup(harness);
+          yield* bots.save(reviewer(), USER_CALLER);
+          yield* sharing.share("reviewer");
+          yield* library.reportStatus(
+            studio,
+            studioReport({
+              projects: [
+                {
+                  libraryProjectId: libraryProject,
+                  ready: false,
+                  availability: "blocked",
+                  reasons: ["The required Swift tool is missing on this computer."],
+                },
+              ],
+            }),
+          );
+          expect((yield* sharing.targets("reviewer", projectId)).targets[1]).toMatchObject({
+            ready: false,
+            availability: "blocked",
+            reasons: ["The required Swift tool is missing on this computer."],
+          });
+          yield* library.reportStatus(studio, studioReport({ projects: [] }));
+          expect((yield* sharing.targets("reviewer", projectId)).targets[1]).toMatchObject({
+            ready: false,
+            availability: "blocked",
+            reasons: ["This computer has no ready copy of this run's project."],
+          });
+          const { projects: _projects, ...legacy } = studioReport();
+          yield* library.reportStatus(studio, legacy);
+          expect((yield* sharing.targets("reviewer", projectId)).targets[1]).toMatchObject({
+            ready: false,
+            availability: "unknown",
+            reasons: ["It has not reported readiness for this run's project."],
           });
         }),
       ),

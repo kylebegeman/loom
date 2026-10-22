@@ -74,6 +74,7 @@ const FALLBACK_TIMEOUT_MINUTES = 30;
 export interface BotProjectMap {
   readonly toLibrary: (projectId: ProjectId) => Effect.Effect<string | null>;
   readonly toLocal: (libraryProjectId: string) => Effect.Effect<ProjectId | null>;
+  readonly libraryProjects: Effect.Effect<ReadonlyArray<string>>;
   readonly readiness: (
     projectId: ProjectId | null,
     libraryProjectId: string | null,
@@ -193,6 +194,16 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
   const statusReport = Effect.gen(function* () {
     const settings = yield* storage(store.remoteSettings());
     const shared = (yield* bots.list()).filter((bot) => bot.library != null);
+    const projectReports: NonNullable<BotLibraryStatusReport["projects"]>[number][] = [];
+    for (const libraryProjectId of (yield* projects.libraryProjects).slice(0, 500)) {
+      const problems = yield* projects.readiness(null, libraryProjectId);
+      projectReports.push({
+        libraryProjectId,
+        ready: problems.length === 0,
+        reasons: problems.map((problem) => problem.message),
+        availability: problems.length === 0 ? "ready" : problemAvailability(problems),
+      });
+    }
     const entries: Array<BotLibraryStatusReport["bots"][number]> = [];
     for (const bot of shared.slice(0, 500)) {
       const problems = yield* readiness(bot);
@@ -222,6 +233,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
       runtimeModeCeiling: settings.runtimeModeCeiling,
       freeSlots: yield* freeSlots,
       bots: entries,
+      projects: projectReports,
     } satisfies BotLibraryStatusReport;
   });
 
@@ -391,8 +403,9 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     projectId: ProjectId | null = null,
   ) {
     const runProject = projectId ?? definitionProject(bot);
+    const runLibraryProject = runProject === null ? null : yield* projects.toLibrary(runProject);
     const unshared =
-      runProject !== null && (yield* projects.toLibrary(runProject)) === null
+      runProject !== null && runLibraryProject === null
         ? "Add this project to the Library to run it on other computers."
         : null;
     const library = yield* client.availability();
@@ -482,6 +495,25 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
             : ["Its bot readiness could not be verified."];
         if (entry.reasons.length === 0) availability = "unknown";
       } else availability = "ready";
+      if (availability === "ready" && runLibraryProject !== null) {
+        const project = status?.report.projects?.find(
+          (project) => project.libraryProjectId === runLibraryProject,
+        );
+        if (project === undefined && status?.report.projects !== undefined) {
+          availability = "blocked";
+          reasons = ["This computer has no ready copy of this run's project."];
+        } else if (project === undefined && bot.library?.libraryProjectId !== runLibraryProject) {
+          availability = "unknown";
+          reasons = ["It has not reported readiness for this run's project."];
+        } else if (project !== undefined && !project.ready) {
+          availability = project.availability === "unknown" ? "unknown" : "blocked";
+          reasons =
+            project.reasons.length > 0
+              ? [...project.reasons]
+              : ["Its project's readiness could not be verified."];
+          if (project.reasons.length === 0) availability = "unknown";
+        }
+      }
       const slots = Math.max(
         0,
         Math.min(
@@ -948,6 +980,9 @@ const make = Effect.gen(function* () {
     bots,
     client,
     projects: {
+      libraryProjects: receipts.pipe(
+        Effect.map((all) => [...new Set(all.map((receipt) => receipt.project.id))]),
+      ),
       readiness: Effect.fn("BotSharing.projectReadiness")(function* (projectId, libraryProjectId) {
         const all = yield* workspace.receipts.pipe(Effect.option);
         if (Option.isNone(all))
@@ -967,6 +1002,17 @@ const make = Effect.gen(function* () {
               ),
           )?.project.id;
         if (libraryId == null) return [];
+        if (
+          !all.value.some(
+            (receipt) => receipt.project.id === libraryId && receipt.copy.state === "ready",
+          )
+        )
+          return [
+            {
+              availability: "blocked" as const,
+              message: "This computer has no ready copy of this run's project.",
+            },
+          ];
         const report = yield* projectWorkspace
           .readiness({ projectId: libraryId })
           .pipe(Effect.option);
