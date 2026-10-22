@@ -2,17 +2,26 @@ import { loomFeaturesOf, MINI_WORKER_EDIT_FEATURE } from "@t3tools/client-runtim
 import { useServerConfigs } from "~/state/entities";
 import { randomUUID } from "~/lib/utils";
 import type { MiniWorkerReadiness } from "@t3tools/contracts/fork";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { Alert, Muted, useAction, valueOf, failureOf } from "../apple-build-tooling/parts";
+import { useAction, valueOf, failureOf } from "../apple-build-tooling/parts";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { workerCheckStatus } from "./presentation";
 import { mini, runMini } from "./state";
 
 export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId }) {
+  const formId = useId();
   const atom = mini.workers({ environmentId, input: {} });
   const result = useAtomValue(atom);
   const workers = valueOf(result);
@@ -35,7 +44,12 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
     });
     setChecks((previous) => ({ ...previous, [workerId]: report }));
   };
-  const forgetCheck = (workerId: string) => setChecks(({ [workerId]: _old, ...rest }) => rest);
+  const forgetCheck = (workerId: string) =>
+    setChecks((previous) => {
+      const next = { ...previous };
+      delete next[workerId];
+      return next;
+    });
   const [editing, setEditing] = useState<{
     workerId: string;
     kind: "connection" | "remove";
@@ -53,78 +67,76 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
   const [target, setTarget] = useState("");
   const [sshConfig, setSshConfig] = useState("");
   return (
-    <div className="flex flex-col gap-3">
-      <Muted>
+    <div className="flex min-w-0 flex-col gap-4">
+      <LoomSettingsNotice>
         These connections run command jobs. For agents, connect the computer as a normal Loom
         environment. Existing tasks remain accessible when a worker is disabled.
-      </Muted>
-      {failureOf(result) && <Alert>{failureOf(result)}</Alert>}
+      </LoomSettingsNotice>
+      {failureOf(result) && (
+        <LoomSettingsNotice role="alert">{failureOf(result)}</LoomSettingsNotice>
+      )}
       {!workers ? (
-        <p>Loading workers...</p>
+        <LoomSettingsNotice role="status">Loading workers...</LoomSettingsNotice>
       ) : workers.length === 0 ? (
-        <Muted>No workers registered.</Muted>
+        <LoomSettingsNotice>No workers registered.</LoomSettingsNotice>
       ) : (
         workers.map((worker) => (
-          <div key={worker.id} className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="min-w-0 break-words text-sm">
-                {worker.name}
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {worker.enabled ? "Enabled for commands" : "Disabled"}
-                </span>
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {supportsCheck && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={!canCheck || action.busy}
-                    onClick={() => void action.act(() => check(worker.id))}
-                  >
-                    Check connection
-                  </Button>
-                )}
+          <LoomSettingsPanel
+            key={worker.id}
+            title={<span className="wrap-anywhere">{worker.name}</span>}
+            description={worker.enabled ? "Enabled for commands" : "Disabled"}
+          >
+            <LoomSettingsActions>
+              {supportsCheck && (
                 <Button
                   size="xs"
                   variant="outline"
-                  disabled={!canEnable || action.busy}
-                  onClick={() =>
-                    void action.act(async () => {
-                      await runMini(mini.setEnabled, {
-                        environmentId,
-                        input: { workerId: worker.id, enabled: !worker.enabled },
-                      });
-                      appAtomRegistry.refresh(atom);
-                    })
-                  }
+                  disabled={!canCheck || action.busy}
+                  onClick={() => void action.act(() => check(worker.id))}
                 >
-                  {worker.enabled ? "Disable" : "Enable"}
+                  Check connection
                 </Button>
-                {supportsEdit && canUpdate && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={action.busy}
-                    onClick={() => startEditing(worker.id, "connection")}
-                  >
-                    Change connection
-                  </Button>
-                )}
-                {supportsEdit && canRemove && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={action.busy}
-                    onClick={() => startEditing(worker.id, "remove")}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            </div>
+              )}
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={!canEnable || action.busy}
+                onClick={() =>
+                  void action.act(async () => {
+                    await runMini(mini.setEnabled, {
+                      environmentId,
+                      input: { workerId: worker.id, enabled: !worker.enabled },
+                    });
+                    appAtomRegistry.refresh(atom);
+                  })
+                }
+              >
+                {worker.enabled ? "Disable" : "Enable"}
+              </Button>
+              {supportsEdit && canUpdate && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={action.busy}
+                  onClick={() => startEditing(worker.id, "connection")}
+                >
+                  Change connection
+                </Button>
+              )}
+              {supportsEdit && canRemove && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={action.busy}
+                  onClick={() => startEditing(worker.id, "remove")}
+                >
+                  Remove
+                </Button>
+              )}
+            </LoomSettingsActions>
             {editing?.workerId === worker.id && editing.kind === "connection" && (
               <form
-                className="flex flex-col gap-2"
+                className="flex min-w-0 flex-col gap-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void action.act(async () => {
@@ -143,32 +155,44 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   });
                 }}
               >
-                <Muted>
+                <LoomSettingsNotice>
                   Use this when the same worker moved or its SSH setup changed. Its earlier jobs use
                   the new connection. Add a different computer as a new worker. This replaces the
                   saved connection: enter the SSH config path again if the worker uses one, or leave
                   it blank for the server's default SSH config.
-                </Muted>
-                <label className="text-sm">
-                  SSH host alias
-                  <Input
-                    value={newTarget}
-                    onChange={(event) => setNewTarget(event.target.value)}
-                    placeholder="loom-mini"
-                    required
-                    disabled={action.busy}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs">
-                  SSH config path on server (optional)
-                  <Input
-                    value={newSshConfig}
-                    onChange={(event) => setNewSshConfig(event.target.value)}
-                    placeholder="/absolute/path/to/ssh-config"
-                    disabled={action.busy}
-                  />
-                </label>
-                <div className="flex gap-2">
+                </LoomSettingsNotice>
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  <LoomSettingsField
+                    label={<Label htmlFor={`${formId}-edit-target`}>SSH host alias</Label>}
+                  >
+                    <Input
+                      id={`${formId}-edit-target`}
+                      aria-label="SSH host alias"
+                      value={newTarget}
+                      onChange={(event) => setNewTarget(event.target.value)}
+                      placeholder="loom-mini"
+                      required
+                      disabled={action.busy}
+                    />
+                  </LoomSettingsField>
+                  <LoomSettingsField
+                    label={
+                      <Label htmlFor={`${formId}-edit-config`}>
+                        SSH config path on server (optional)
+                      </Label>
+                    }
+                  >
+                    <Input
+                      id={`${formId}-edit-config`}
+                      aria-label="SSH config path on server (optional)"
+                      value={newSshConfig}
+                      onChange={(event) => setNewSshConfig(event.target.value)}
+                      placeholder="/absolute/path/to/ssh-config"
+                      disabled={action.busy}
+                    />
+                  </LoomSettingsField>
+                </div>
+                <LoomSettingsActions>
                   <Button size="xs" variant="outline" type="submit" disabled={action.busy}>
                     Save connection
                   </Button>
@@ -180,45 +204,49 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                   >
                     Cancel
                   </Button>
-                </div>
+                </LoomSettingsActions>
               </form>
             )}
             {editing?.workerId === worker.id && editing.kind === "remove" && (
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <p>
+              <div className="flex min-w-0 flex-col gap-3">
+                <LoomSettingsNotice>
                   Remove {worker.name}? It gets no new commands. Its earlier jobs stay listed, and
                   its ID can only be added again at this connection.
-                </p>
-                <Button
-                  size="xs"
-                  disabled={action.busy}
-                  onClick={() =>
-                    void action.act(async () => {
-                      await runMini(mini.removeWorker, {
-                        environmentId,
-                        input: { workerId: worker.id },
-                      });
-                      setEditing(null);
-                      forgetCheck(worker.id);
-                      appAtomRegistry.refresh(atom);
-                    })
-                  }
-                >
-                  Remove worker
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={action.busy}
-                  onClick={() => setEditing(null)}
-                >
-                  Keep worker
-                </Button>
+                </LoomSettingsNotice>
+                <LoomSettingsActions>
+                  <Button
+                    size="xs"
+                    disabled={action.busy}
+                    onClick={() =>
+                      void action.act(async () => {
+                        await runMini(mini.removeWorker, {
+                          environmentId,
+                          input: { workerId: worker.id },
+                        });
+                        setEditing(null);
+                        forgetCheck(worker.id);
+                        appAtomRegistry.refresh(atom);
+                      })
+                    }
+                  >
+                    Remove worker
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={action.busy}
+                    onClick={() => setEditing(null)}
+                  >
+                    Keep worker
+                  </Button>
+                </LoomSettingsActions>
               </div>
             )}
             {checks[worker.id] && (
-              <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-                <p role="status">{workerCheckStatus(checks[worker.id]!)}</p>
+              <div className="flex min-w-0 flex-col gap-3 text-xs text-muted-foreground">
+                <LoomSettingsNotice role="status">
+                  {workerCheckStatus(checks[worker.id]!)}
+                </LoomSettingsNotice>
                 {checks[worker.id]!.architecture && (
                   <p>
                     {checks[worker.id]!.architecture} · {checks[worker.id]!.active} of{" "}
@@ -231,13 +259,12 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                     : "Connect a running Loom server in Computers to use agents here."}
                 </p>
                 {checks[worker.id]!.missingTools.length > 0 && (
-                  <details>
-                    <summary className="cursor-pointer">Project tools to prepare</summary>
-                    <p className="mt-1 break-words">
+                  <LoomSettingsDetails title="Project tools to prepare">
+                    <LoomSettingsNotice>
                       {checks[worker.id]!.missingTools.join(", ")}. Choose the required toolsets on
                       this computer.
-                    </p>
-                  </details>
+                    </LoomSettingsNotice>
+                  </LoomSettingsDetails>
                 )}
                 {checks[worker.id]!.reasons.length > 0 && (
                   <p className="break-words">
@@ -247,7 +274,7 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                 {canPrepare &&
                   worker.enabled &&
                   checks[worker.id]!.reasons.includes("worker_stopped") && (
-                    <div>
+                    <LoomSettingsActions>
                       <Button
                         size="xs"
                         variant="outline"
@@ -256,99 +283,116 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                       >
                         Start worker
                       </Button>
-                    </div>
+                    </LoomSettingsActions>
                   )}
               </div>
             )}
-          </div>
+          </LoomSettingsPanel>
         ))
       )}
       {canRegister && !adding && (
-        <div>
+        <LoomSettingsActions>
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             Add command worker
           </Button>
-        </div>
+        </LoomSettingsActions>
       )}
       {canRegister && adding ? (
-        <form
-          className="flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void action.act(async () => {
-              await runMini(mini.register, {
-                environmentId,
-                input: { id, name, target, sshConfig: sshConfig.trim() || null, enabled: true },
+        <LoomSettingsPanel title="Add command worker">
+          <form
+            className="flex min-w-0 flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void action.act(async () => {
+                await runMini(mini.register, {
+                  environmentId,
+                  input: { id, name, target, sshConfig: sshConfig.trim() || null, enabled: true },
+                });
+                appAtomRegistry.refresh(atom);
+                if (supportsCheck && canCheck) await check(id);
+                setAdding(false);
+                setId("worker-" + randomUUID().replaceAll("-", ""));
+                setName("");
+                setTarget("");
+                setSshConfig("");
               });
-              appAtomRegistry.refresh(atom);
-              if (supportsCheck && canCheck) await check(id);
-              setAdding(false);
-              setId("worker-" + randomUUID().replaceAll("-", ""));
-              setName("");
-              setTarget("");
-              setSshConfig("");
-            });
-          }}
-        >
-          <label className="text-sm">
-            Name
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Orange Pi 5 Pro"
-              required
-            />
-          </label>
-          <label className="text-sm">
-            SSH host alias
-            <Input
-              value={target}
-              onChange={(event) => setTarget(event.target.value)}
-              placeholder="loom-mini"
-              required
-            />
-          </label>
-          <details className="text-sm">
-            <summary className="cursor-pointer">Advanced connection settings</summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <label className="flex flex-col gap-1 text-xs">
-                SSH config path on server (optional)
+            }}
+          >
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <LoomSettingsField label={<Label htmlFor={`${formId}-add-name`}>Name</Label>}>
                 <Input
-                  value={sshConfig}
-                  onChange={(event) => setSshConfig(event.target.value)}
-                  placeholder="/absolute/path/to/ssh-config"
-                  disabled={action.busy}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs">
-                Worker ID
-                <Input
-                  value={id}
-                  onChange={(event) => setId(event.target.value)}
+                  id={`${formId}-add-name`}
+                  aria-label="Name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Orange Pi 5 Pro"
                   required
-                  disabled={action.busy}
                 />
-              </label>
+              </LoomSettingsField>
+              <LoomSettingsField
+                label={<Label htmlFor={`${formId}-add-target`}>SSH host alias</Label>}
+              >
+                <Input
+                  id={`${formId}-add-target`}
+                  aria-label="SSH host alias"
+                  value={target}
+                  onChange={(event) => setTarget(event.target.value)}
+                  placeholder="loom-mini"
+                  required
+                />
+              </LoomSettingsField>
             </div>
-          </details>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" type="submit" disabled={action.busy}>
-              Add worker
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={action.busy}
-              onClick={() => setAdding(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <LoomSettingsDetails title="Advanced connection settings">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <LoomSettingsField
+                  label={
+                    <Label htmlFor={`${formId}-add-config`}>
+                      SSH config path on server (optional)
+                    </Label>
+                  }
+                >
+                  <Input
+                    id={`${formId}-add-config`}
+                    aria-label="SSH config path on server (optional)"
+                    value={sshConfig}
+                    onChange={(event) => setSshConfig(event.target.value)}
+                    placeholder="/absolute/path/to/ssh-config"
+                    disabled={action.busy}
+                  />
+                </LoomSettingsField>
+                <LoomSettingsField label={<Label htmlFor={`${formId}-add-id`}>Worker ID</Label>}>
+                  <Input
+                    id={`${formId}-add-id`}
+                    aria-label="Worker ID"
+                    value={id}
+                    onChange={(event) => setId(event.target.value)}
+                    required
+                    disabled={action.busy}
+                  />
+                </LoomSettingsField>
+              </div>
+            </LoomSettingsDetails>
+            <LoomSettingsActions>
+              <Button size="sm" variant="outline" type="submit" disabled={action.busy}>
+                Add worker
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={action.busy}
+                onClick={() => setAdding(false)}
+              >
+                Cancel
+              </Button>
+            </LoomSettingsActions>
+          </form>
+        </LoomSettingsPanel>
       ) : !canRegister ? (
-        <Muted>Adding workers requires environment maintenance access.</Muted>
+        <LoomSettingsNotice>
+          Adding workers requires environment maintenance access.
+        </LoomSettingsNotice>
       ) : null}
-      {action.error && <Alert>{action.error}</Alert>}
+      {action.error && <LoomSettingsNotice role="alert">{action.error}</LoomSettingsNotice>}
     </div>
   );
 }

@@ -1,3 +1,9 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsNotice,
+  LoomSettingsDetails,
+  LoomSettingsField,
+} from "~/fork/settings/parts";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
@@ -161,10 +167,15 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
       } else setRevealed({ id: item.id, value });
     });
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Development access for this environment</p>
-        <div className="flex gap-2">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-sm font-medium">Development records</h3>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Store and manage development access for this environment.
+          </p>
+        </div>
+        <LoomSettingsActions>
           <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
             Refresh
           </Button>
@@ -185,26 +196,21 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
           >
             Add item
           </Button>
-        </div>
+        </LoomSettingsActions>
       </div>
       {!status ? (
-        <p role="status" className="text-sm">
+        <LoomSettingsNotice role="status">
           {failure(statusResult) ?? "Checking Vault connection…"}
-        </p>
+        </LoomSettingsNotice>
       ) : (
-        <p role="status" className="text-sm">
-          {vaultStatusMessage(status)}
-        </p>
+        <LoomSettingsNotice role="status">{vaultStatusMessage(status)}</LoomSettingsNotice>
       )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      )}
+      {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
       {status?.state === "ready" && (
         <>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-start gap-2 text-sm leading-6">
             <input
+              className="mt-1 shrink-0"
               type="checkbox"
               checked={includeArchived}
               onChange={(event) => {
@@ -216,14 +222,10 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
             Include archived items
           </label>
           {failure(pageResult) && (
-            <p role="alert" className="text-sm text-destructive-foreground">
-              {failure(pageResult)}
-            </p>
+            <LoomSettingsNotice role="alert">{failure(pageResult)}</LoomSettingsNotice>
           )}
           {!page ? (
-            <p role="status" className="text-sm">
-              Loading Vault items…
-            </p>
+            <LoomSettingsNotice role="status">Loading Vault items…</LoomSettingsNotice>
           ) : (
             <>
               {page.items.length === 0 && (
@@ -234,8 +236,8 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
               )}
               <div className="flex flex-col divide-y divide-border">
                 {page.items.map((item) => (
-                  <div key={item.id} className="flex flex-col gap-2 py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div key={item.id} className="flex min-w-0 flex-col gap-4 py-4">
+                    <div className="flex min-w-0 flex-col gap-3">
                       <div className="min-w-0">
                         <p className="break-words text-sm font-medium">{item.label}</p>
                         <p className="text-xs text-muted-foreground">
@@ -243,7 +245,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                           {item.state === "archived" ? " · Archived" : ""}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <LoomSettingsActions>
                         <Button
                           size="xs"
                           variant="ghost"
@@ -303,15 +305,23 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                         >
                           {item.state === "active" ? "Archive" : "Restore"}
                         </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          disabled={!canChange || busy}
-                          onClick={() => setDeleting(item)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
+                      </LoomSettingsActions>
+                      <LoomSettingsDetails title="Delete current value">
+                        <p className="max-w-prose text-xs text-muted-foreground">
+                          Deleting removes the current value after confirmation. Encrypted history
+                          follows the backend retention policy.
+                        </p>
+                        <LoomSettingsActions>
+                          <Button
+                            size="xs"
+                            variant="destructive-outline"
+                            disabled={!canChange || busy}
+                            onClick={() => setDeleting(item)}
+                          >
+                            Delete
+                          </Button>
+                        </LoomSettingsActions>
+                      </LoomSettingsDetails>
                     </div>
                     {revealed?.id === item.id && (
                       <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm">
@@ -321,7 +331,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                   </div>
                 ))}
               </div>
-              <div className="flex gap-2">
+              <LoomSettingsActions>
                 <Button
                   size="sm"
                   variant="outline"
@@ -344,7 +354,7 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
                 >
                   Next page
                 </Button>
-              </div>
+              </LoomSettingsActions>
             </>
           )}
         </>
@@ -507,14 +517,13 @@ function VaultEditor({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="flex flex-col gap-4 px-6 pb-4"
+          className="flex min-w-0 flex-col gap-5 px-6 pb-4"
           onSubmit={(event) => {
             event.preventDefault();
             void save();
           }}
         >
-          <label className="flex flex-col gap-2 text-sm" htmlFor={fieldId}>
-            <span>Name</span>
+          <LoomSettingsField label={<label htmlFor={fieldId}>Name</label>}>
             <Input
               id={fieldId}
               autoFocus
@@ -527,11 +536,8 @@ function VaultEditor({
                 changed();
               }}
             />
-          </label>
-          <div className="flex flex-col gap-2">
-            <span id={`${fieldId}-kind`} className="text-sm">
-              Kind
-            </span>
+          </LoomSettingsField>
+          <LoomSettingsField label={<span id={`${fieldId}-kind`}>Kind</span>}>
             <Select
               value={kind}
               onValueChange={(next) => {
@@ -557,9 +563,9 @@ function VaultEditor({
                 ))}
               </SelectPopup>
             </Select>
-          </div>
+          </LoomSettingsField>
           {item && (
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-start gap-2 text-sm leading-6">
               <input
                 type="checkbox"
                 checked={replace}
@@ -587,10 +593,7 @@ function VaultEditor({
                 {fileName && <span>{fileName}</span>}
               </label>
             ) : (
-              <div className="flex flex-col gap-2">
-                <label htmlFor={`${fieldId}-value`} className="text-sm">
-                  Value
-                </label>
+              <LoomSettingsField label={<label htmlFor={`${fieldId}-value`}>Value</label>}>
                 {multiline ? (
                   <Textarea
                     id={`${fieldId}-value`}
@@ -626,14 +629,10 @@ function VaultEditor({
                     {multiline ? "Use hidden single-line entry" : "Use visible multiline entry"}
                   </Button>
                 </div>
-              </div>
+              </LoomSettingsField>
             ))}
-          {error && (
-            <p role="alert" className="text-sm text-destructive-foreground">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
+          {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
+          <LoomSettingsActions>
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               Cancel
             </Button>
@@ -648,7 +647,7 @@ function VaultEditor({
             >
               {busy ? "Saving…" : "Save item"}
             </Button>
-          </div>
+          </LoomSettingsActions>
         </form>
       </DialogPopup>
     </Dialog>

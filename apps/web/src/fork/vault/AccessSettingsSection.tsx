@@ -1,3 +1,10 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsNotice,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { VaultApprovalInbox } from "./ApprovalInbox";
 import { useVaultTime } from "./useVaultTime";
 import { vaultAccessTarget } from "./access-navigation";
@@ -34,6 +41,13 @@ import * as Schema from "effect/Schema";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { Input } from "~/components/ui/input";
 import {
   Dialog,
@@ -151,16 +165,21 @@ function AccessManager({
         subject.principal.id === grant.definition.principal.id,
     )?.label ?? grant.definition.principal.id;
   return (
-    <div className="flex flex-col gap-5">
-      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
+    <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
+      <LoomSettingsPanel>
+        <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
+      </LoomSettingsPanel>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm">Choose who may inspect, manage or use development records.</p>
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-sm font-medium">Access grants</h3>
+          <p className="max-w-prose text-sm">
+            Choose who may inspect, manage or use development records.
+          </p>
           <p className="text-sm text-muted-foreground">
             Every thread starts without access. Project grants cover all threads in that project.
           </p>
         </div>
-        <div className="flex gap-2">
+        <LoomSettingsActions>
           <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
             Refresh access
           </Button>
@@ -171,17 +190,15 @@ function AccessManager({
           >
             Add grant
           </Button>
-        </div>
+        </LoomSettingsActions>
       </div>
       {error || failure(snapshotResult) || failure(catalogResult) ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
+        <LoomSettingsNotice role="alert">
           {error ?? failure(snapshotResult) ?? failure(catalogResult)}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {!snapshot ? (
-        <p role="status" className="text-sm">
-          Loading access policy…
-        </p>
+        <LoomSettingsNotice role="status">Loading access policy…</LoomSettingsNotice>
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
@@ -194,7 +211,7 @@ function AccessManager({
           ) : (
             <div className="flex flex-col divide-y divide-border">
               {snapshot.grants.map((grant) => (
-                <div key={grant.definition.id} className="flex flex-col gap-2 py-3">
+                <div key={grant.definition.id} className="flex min-w-0 flex-col gap-3 py-4">
                   <div className="flex flex-wrap justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium">{grant.definition.label}</p>
@@ -226,7 +243,7 @@ function AccessManager({
                       : ""}
                   </p>
                   {grant.state !== "revoked" ? (
-                    <div className="flex flex-wrap gap-2">
+                    <LoomSettingsActions>
                       <Button
                         size="xs"
                         variant="outline"
@@ -241,7 +258,7 @@ function AccessManager({
                         <Button
                           key={state}
                           size="xs"
-                          variant="ghost"
+                          variant={state === "revoked" ? "ghost-destructive" : "ghost"}
                           disabled={!canWrite || busy || pending !== null}
                           onClick={() =>
                             void preview({
@@ -258,7 +275,7 @@ function AccessManager({
                               : "Preview suspension"}
                         </Button>
                       ))}
-                    </div>
+                    </LoomSettingsActions>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Revocation is permanent. Create a new grant to restore access deliberately.
@@ -287,7 +304,7 @@ function AccessManager({
                   {text}
                 </p>
               ))}
-              <div className="flex gap-2">
+              <LoomSettingsActions>
                 <Button
                   size="sm"
                   variant="outline"
@@ -299,7 +316,7 @@ function AccessManager({
                 <Button size="sm" disabled={!canWrite || busy} onClick={() => void apply()}>
                   {busy ? "Applying…" : "Apply reviewed change"}
                 </Button>
-              </div>
+              </LoomSettingsActions>
             </div>
           )}
           <AccessCheck
@@ -310,10 +327,7 @@ function AccessManager({
             initialThreadId={initial?.threadId ?? ""}
             policyRevision={snapshot.revision}
           />
-          <details>
-            <summary className="cursor-pointer text-sm">
-              Recent access decisions and policy changes
-            </summary>
+          <LoomSettingsDetails title="Recent access decisions and policy changes">
             <div className="mt-3 flex flex-col gap-2">
               {snapshot.audit.length === 0 ? (
                 <p className="text-sm">No recorded decisions.</p>
@@ -330,7 +344,7 @@ function AccessManager({
                 authorization decisions, not successful external logins.
               </p>
             </div>
-          </details>
+          </LoomSettingsDetails>
         </>
       )}
       {editing !== null && catalog && snapshot ? (
@@ -444,15 +458,15 @@ function GrantEditor({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto px-6 pb-5"
+          className="flex max-h-[70vh] min-w-0 flex-col gap-5 overflow-y-auto px-6 pb-5"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
           }}
         >
-          <label className="flex flex-col gap-2 text-sm">
-            Grant name
+          <LoomSettingsField label="Grant name">
             <Input
+              aria-label="Grant name"
               autoFocus
               value={label}
               maxLength={200}
@@ -462,38 +476,49 @@ function GrantEditor({
                 changed();
               }}
             />
-          </label>
-          <label className="flex flex-col gap-2 text-sm">
-            Thread or project
-            <select
-              className="rounded-md border border-input bg-background p-2"
+          </LoomSettingsField>
+          <LoomSettingsField label="Thread or project">
+            <Select
               value={principal}
               disabled={disabled}
-              onChange={(event) => {
-                setPrincipal(event.target.value);
+              onValueChange={(nextValue) => {
+                if (nextValue === null) return;
+                setPrincipal(nextValue);
                 changed();
               }}
             >
-              <option value="">Select a workload</option>
-              {grant &&
-              !catalog.subjects.some(
-                (value) => `${value.principal.kind}:${value.principal.id}` === principal,
-              ) ? (
-                <option value={principal}>
-                  {grant.definition.principal.kind}: {grant.definition.principal.id}
-                </option>
-              ) : null}
-              {catalog.subjects.map((subject) => (
-                <option
-                  key={`${subject.principal.kind}:${subject.principal.id}`}
-                  value={`${subject.principal.kind}:${subject.principal.id}`}
-                >
-                  {subject.principal.kind === "project" ? "All project threads" : "Thread"}:{" "}
-                  {subject.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger aria-label="Thread or project">
+                <SelectValue>
+                  {principal
+                    ? (catalog.subjects.find(
+                        (subject) =>
+                          `${subject.principal.kind}:${subject.principal.id}` === principal,
+                      )?.label ?? principal)
+                    : "Select a workload"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="">Select a workload</SelectItem>
+                {grant &&
+                !catalog.subjects.some(
+                  (value) => `${value.principal.kind}:${value.principal.id}` === principal,
+                ) ? (
+                  <SelectItem value={principal}>
+                    {grant.definition.principal.kind}: {grant.definition.principal.id}
+                  </SelectItem>
+                ) : null}
+                {catalog.subjects.map((subject) => (
+                  <SelectItem
+                    key={`${subject.principal.kind}:${subject.principal.id}`}
+                    value={`${subject.principal.kind}:${subject.principal.id}`}
+                  >
+                    {subject.principal.kind === "project" ? "All project threads" : "Thread"}:{" "}
+                    {subject.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LoomSettingsField>
           {catalog.truncated ? (
             <p className="text-xs text-muted-foreground">
               The workload picker is limited to 250 projects and 250 threads. The CLI supports exact
@@ -503,9 +528,7 @@ function GrantEditor({
           <fieldset disabled={disabled} className="flex flex-col gap-2">
             <legend className="mb-2 text-sm">Selected items ({items.length}/32)</legend>
             {itemResult.waiting ? (
-              <p role="status" className="text-sm">
-                Loading items…
-              </p>
+              <LoomSettingsNotice role="status">Loading items…</LoomSettingsNotice>
             ) : null}
             {page?.items.length === 0 && !itemResult.waiting ? (
               <p className="text-sm">
@@ -523,6 +546,7 @@ function GrantEditor({
             {page?.items.map((item) => (
               <label key={item.id} className="flex items-start gap-2 text-sm">
                 <input
+                  className="mt-1 shrink-0"
                   type="checkbox"
                   checked={items.includes(item.id)}
                   disabled={!items.includes(item.id) && items.length >= 32}
@@ -540,11 +564,9 @@ function GrantEditor({
               </label>
             ))}
             {failure(itemResult) ? (
-              <p role="alert" className="text-sm">
-                {failure(itemResult)}
-              </p>
+              <LoomSettingsNotice role="alert">{failure(itemResult)}</LoomSettingsNotice>
             ) : null}
-            <div className="flex gap-2">
+            <LoomSettingsActions>
               <Button
                 type="button"
                 size="xs"
@@ -565,50 +587,53 @@ function GrantEditor({
               >
                 Next items
               </Button>
-            </div>
-            <p className="break-all text-xs text-muted-foreground">
-              Selected IDs: {items.join(", ") || "None"}
-            </p>
-            <div className="flex gap-2">
-              <Input
-                aria-label="Additional item ID"
-                placeholder="Existing or pre-authorized item ID"
-                value={futureItem}
-                onChange={(event) => setFutureItem(event.target.value)}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={!/^[a-f0-9]{32}$/.test(futureItem) || items.length >= 32}
-                onClick={() => {
-                  setItems((previous) => [...new Set([...previous, futureItem])]);
-                  setFutureItem("");
-                  changed();
-                }}
-              >
-                Add ID
-              </Button>
-            </div>
-            {items.some((id) => !page?.items.some((item) => item.id === id)) ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onClick={() => {
-                  setItems([]);
-                  changed();
-                }}
-              >
-                Clear selected items
-              </Button>
-            ) : null}
+            </LoomSettingsActions>
+            <LoomSettingsDetails title="Select items by exact ID">
+              <p className="break-all text-xs text-muted-foreground">
+                Selected IDs: {items.join(", ") || "None"}
+              </p>
+              <LoomSettingsActions>
+                <Input
+                  aria-label="Additional item ID"
+                  placeholder="Existing or pre-authorized item ID"
+                  value={futureItem}
+                  onChange={(event) => setFutureItem(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!/^[a-f0-9]{32}$/.test(futureItem) || items.length >= 32}
+                  onClick={() => {
+                    setItems((previous) => [...new Set([...previous, futureItem])]);
+                    setFutureItem("");
+                    changed();
+                  }}
+                >
+                  Add ID
+                </Button>
+              </LoomSettingsActions>
+              {items.some((id) => !page?.items.some((item) => item.id === id)) ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    setItems([]);
+                    changed();
+                  }}
+                >
+                  Clear selected items
+                </Button>
+              ) : null}
+            </LoomSettingsDetails>
           </fieldset>
           <fieldset disabled={disabled} className="flex flex-wrap gap-3">
             <legend className="mb-2 text-sm">Allowed actions</legend>
             {VaultAccessAction.literals.map((action) => (
-              <label key={action} className="flex items-center gap-2 text-sm">
+              <label key={action} className="flex items-start gap-2 text-sm leading-6">
                 <input
+                  className="mt-1 shrink-0"
                   type="checkbox"
                   checked={actions.includes(action)}
                   onChange={(event) => {
@@ -628,9 +653,9 @@ function GrantEditor({
             Use, reveal and export grants do not enable a delivery channel by themselves. Delegate
             lets this workload pass a narrower grant to a real subagent.
           </p>
-          <label className="flex flex-col gap-2 text-sm">
-            Exact destination, optional
+          <LoomSettingsField label="Exact destination, optional">
             <Input
+              aria-label="Exact destination, optional"
               placeholder="Leave empty for any destination in scope"
               value={destination}
               maxLength={2048}
@@ -640,60 +665,63 @@ function GrantEditor({
                 changed();
               }}
             />
-          </label>
-          <label className="flex flex-col gap-2 text-sm">
-            Starts
-            <Input
-              type="datetime-local"
-              step="0.001"
-              value={start}
-              disabled={disabled}
-              onChange={(event) => {
-                setStart(event.target.value);
-                changed();
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={noExpiry}
-              disabled={disabled}
-              onChange={(event) => {
-                setNoExpiry(event.target.checked);
-                changed();
-              }}
-            />
-            No expiry
-          </label>
-          {!noExpiry ? (
-            <label className="flex flex-col gap-2 text-sm">
-              Expires
+          </LoomSettingsField>
+          <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+            <LoomSettingsField label="Starts">
               <Input
+                aria-label="Starts"
                 type="datetime-local"
                 step="0.001"
-                value={expiry}
+                value={start}
                 disabled={disabled}
                 onChange={(event) => {
-                  setExpiry(event.target.value);
+                  setStart(event.target.value);
                   changed();
                 }}
               />
-            </label>
-          ) : null}
+            </LoomSettingsField>
+            <div className="flex min-w-0 flex-col gap-4">
+              <label className="flex items-start gap-2 text-sm leading-6">
+                <input
+                  className="mt-1 shrink-0"
+                  type="checkbox"
+                  checked={noExpiry}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    setNoExpiry(event.target.checked);
+                    changed();
+                  }}
+                />
+                No expiry
+              </label>
+              {!noExpiry ? (
+                <LoomSettingsField label="Expires">
+                  <Input
+                    aria-label="Expires"
+                    type="datetime-local"
+                    step="0.001"
+                    value={expiry}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      setExpiry(event.target.value);
+                      changed();
+                    }}
+                  />
+                </LoomSettingsField>
+              ) : null}
+            </div>
+          </div>
           {error || previewError ? (
-            <p role="alert" className="text-sm text-destructive-foreground">
-              {error ?? previewError}
-            </p>
+            <LoomSettingsNotice role="alert">{error ?? previewError}</LoomSettingsNotice>
           ) : null}
-          <div className="flex justify-end gap-2">
+          <LoomSettingsActions>
             <Button type="button" variant="outline" disabled={disabled} onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={disabled}>
               Preview grant
             </Button>
-          </div>
+          </LoomSettingsActions>
         </form>
       </DialogPopup>
     </Dialog>
@@ -790,53 +818,70 @@ function AccessCheck({
     }
   };
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-muted p-4">
-      <p className="text-sm font-medium">Why this access?</p>
-      <p className="text-sm text-muted-foreground">
-        Check the actual thread context. A grant alone does not prove an external service is
-        reachable.
-      </p>
-      <label className="flex flex-col gap-2 text-sm">
-        Thread
-        <select
-          className="rounded-md border border-input bg-background p-2"
-          value={thread}
-          disabled={busy}
-          onChange={(event) => {
-            setThread(event.target.value);
-            changed();
-          }}
-        >
-          <option value="">Select a thread</option>
-          {catalog?.subjects
-            .filter((subject) => subject.principal.kind === "thread")
-            .map((subject) => (
-              <option key={subject.principal.id} value={subject.principal.id}>
-                {subject.label}
-              </option>
-            ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-2 text-sm">
-        Item
-        <select
-          className="rounded-md border border-input bg-background p-2"
-          value={itemPage?.items.some((item) => item.id === itemId) ? itemId : ""}
-          disabled={busy}
-          onChange={(event) => {
-            setItemId(event.target.value);
-            changed();
-          }}
-        >
-          <option value="">Select an item on this page</option>
-          {itemPage?.items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="flex gap-2">
+    <LoomSettingsPanel
+      title="Why this access?"
+      description="Check the actual thread context. A grant alone does not prove an external service is reachable."
+    >
+      <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+        <LoomSettingsField label="Thread">
+          <Select
+            value={thread}
+            disabled={busy}
+            onValueChange={(nextValue) => {
+              if (nextValue === null) return;
+              setThread(nextValue);
+              changed();
+            }}
+          >
+            <SelectTrigger aria-label="Thread">
+              <SelectValue>
+                {catalog?.subjects.find(
+                  (subject) =>
+                    subject.principal.kind === "thread" && subject.principal.id === thread,
+                )?.label ??
+                  (thread || "Select a thread")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="">Select a thread</SelectItem>
+              {catalog?.subjects
+                .filter((subject) => subject.principal.kind === "thread")
+                .map((subject) => (
+                  <SelectItem key={subject.principal.id} value={subject.principal.id}>
+                    {subject.label}
+                  </SelectItem>
+                ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+        <LoomSettingsField label="Item">
+          <Select
+            value={itemPage?.items.some((item) => item.id === itemId) ? itemId : ""}
+            disabled={busy}
+            onValueChange={(nextValue) => {
+              if (nextValue === null) return;
+              setItemId(nextValue);
+              changed();
+            }}
+          >
+            <SelectTrigger aria-label="Item">
+              <SelectValue>
+                {itemPage?.items.find((item) => item.id === itemId)?.label ??
+                  "Select an item on this page"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="">Select an item on this page</SelectItem>
+              {itemPage?.items.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+      </div>
+      <LoomSettingsActions>
         <Button
           size="xs"
           variant="outline"
@@ -855,39 +900,45 @@ function AccessCheck({
         >
           Next items
         </Button>
+      </LoomSettingsActions>
+      <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+        <LoomSettingsField label="Item ID">
+          <Input
+            aria-label="Item ID"
+            value={itemId}
+            disabled={busy}
+            onChange={(event) => {
+              setItemId(event.target.value);
+              changed();
+            }}
+          />
+        </LoomSettingsField>
+        <LoomSettingsField label="Action">
+          <Select
+            value={action}
+            disabled={busy}
+            onValueChange={(nextValue) => {
+              if (nextValue === null) return;
+              setAction(nextValue as VaultAccessAction);
+              changed();
+            }}
+          >
+            <SelectTrigger aria-label="Action">
+              <SelectValue>{VAULT_ACTION_LABELS[action]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {VaultAccessAction.literals.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {VAULT_ACTION_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
       </div>
-      <label className="flex flex-col gap-2 text-sm">
-        Item ID
+      <LoomSettingsField label="Exact destination, optional">
         <Input
-          value={itemId}
-          disabled={busy}
-          onChange={(event) => {
-            setItemId(event.target.value);
-            changed();
-          }}
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm">
-        Action
-        <select
-          className="rounded-md border border-input bg-background p-2"
-          value={action}
-          disabled={busy}
-          onChange={(event) => {
-            setAction(event.target.value as VaultAccessAction);
-            changed();
-          }}
-        >
-          {VaultAccessAction.literals.map((value) => (
-            <option key={value} value={value}>
-              {VAULT_ACTION_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-2 text-sm">
-        Exact destination, optional
-        <Input
+          aria-label="Exact destination, optional"
           value={destination}
           disabled={busy}
           onChange={(event) => {
@@ -895,7 +946,7 @@ function AccessCheck({
             changed();
           }}
         />
-      </label>
+      </LoomSettingsField>
       <div>
         <Button
           size="sm"
@@ -912,15 +963,11 @@ function AccessCheck({
           </Button>
         </div>
       ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {policyChanged ? (
-        <p role="status" className="text-sm">
+        <LoomSettingsNotice role="status">
           Policy changed after this check. Run it again for the current decision.
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {explanation && !policyChanged ? (
         <div role="status" className="flex flex-col gap-2">
@@ -973,6 +1020,6 @@ function AccessCheck({
           ))}
         </div>
       ) : null}
-    </div>
+    </LoomSettingsPanel>
   );
 }

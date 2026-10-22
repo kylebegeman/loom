@@ -12,21 +12,18 @@ import {
 } from "@t3tools/contracts/fork";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsDetails,
+  LoomSettingsNotice,
+} from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
-import {
-  Alert,
-  CommandLine,
-  Muted,
-  failureOf,
-  formatBytes,
-  plural,
-  useAction,
-  valueOf,
-} from "./parts";
+import { CommandLine, Muted, failureOf, formatBytes, plural, useAction, valueOf } from "./parts";
 import { FEATURE } from "./panel";
 import { codeGraph, runCommand } from "./state";
 
@@ -58,11 +55,13 @@ function ProjectGraph({
     status.stale ? "Older commit" : null,
   ].filter(Boolean);
   return (
-    <li className="flex flex-col gap-2 border-t py-3 first:border-t-0">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm">{status.projectName}</span>
-          <span className="text-muted-foreground text-xs tabular-nums">{facts.join(", ")}</span>
+    <li className="flex min-w-0 flex-col gap-3 border-t py-3 first:border-t-0">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 basis-48 flex-col">
+          <span className="break-words text-sm">{status.projectName}</span>
+          <span className="break-words text-muted-foreground text-xs tabular-nums">
+            {facts.join(", ")}
+          </span>
         </div>
         <Button
           size="xs"
@@ -94,7 +93,7 @@ function ProjectGraph({
           }
         />
       </label>
-      {action.error && <Alert>{action.error}</Alert>}
+      {action.error && <LoomSettingsNotice role="alert">{action.error}</LoomSettingsNotice>}
     </li>
   );
 }
@@ -111,8 +110,18 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
   const save = useAction();
   const [commandText, setCommandText] = useState<string | null>(null);
   const failure = failureOf(result);
-  if (failure) return <Alert>{failure}</Alert>;
-  if (!settings) return <p>Loading code graph settings...</p>;
+  if (failure)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
+  if (!settings)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="status">Loading code graph settings...</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const disabled = !canEdit || save.busy;
 
   const update = (patch: CodeGraphSettingsPatch) =>
@@ -125,12 +134,12 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
   const availability = graphs?.[0]?.availability;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
       <SettingsRow
         title="Graphify command"
         description="How Loom starts Graphify on this environment's host. Loom never installs it."
       >
-        <div className="flex flex-col gap-2 pb-2">
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="Graphify command"
             font="mono"
@@ -152,10 +161,14 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
             {availability?._tag === "missing" && " Graphify was not found on this host."} Install it
             with one of these commands, or run it through uvx without installing.
           </Muted>
-          {graphifyInstallCommands().map((command) => (
-            <CommandLine key={command} command={command} />
-          ))}
-          <div className="flex flex-wrap gap-1.5">
+          <LoomSettingsDetails title="Install Graphify">
+            <div className="flex min-w-0 flex-col gap-2">
+              {graphifyInstallCommands().map((command) => (
+                <CommandLine key={command} command={command} />
+              ))}
+            </div>
+          </LoomSettingsDetails>
+          <LoomSettingsActions>
             <Button
               size="xs"
               variant="outline"
@@ -172,8 +185,8 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
             >
               Reset command
             </Button>
-          </div>
-          {save.error && <Alert>{save.error}</Alert>}
+          </LoomSettingsActions>
+          {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
         </div>
       </SettingsRow>
       <SettingsRow
@@ -196,23 +209,25 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
             : "Graphs this environment keeps, with their size."
         }
       >
-        {failureOf(listResult) ? (
-          <Alert>{failureOf(listResult)}</Alert>
-        ) : !graphs ? (
-          <Muted>Loading...</Muted>
-        ) : graphs.length === 0 ? null : (
-          <ul className="flex flex-col">
-            {graphs.map((status) => (
-              <ProjectGraph
-                key={status.projectId}
-                environmentId={environmentId}
-                status={status}
-                canOperate={canOperate}
-                onChanged={() => appAtomRegistry.refresh(listAtom)}
-              />
-            ))}
-          </ul>
-        )}
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
+          {failureOf(listResult) ? (
+            <LoomSettingsNotice role="alert">{failureOf(listResult)}</LoomSettingsNotice>
+          ) : !graphs ? (
+            <LoomSettingsNotice role="status">Loading project graphs...</LoomSettingsNotice>
+          ) : graphs.length === 0 ? null : (
+            <ul className="flex flex-col">
+              {graphs.map((status) => (
+                <ProjectGraph
+                  key={status.projectId}
+                  environmentId={environmentId}
+                  status={status}
+                  canOperate={canOperate}
+                  onChanged={() => appAtomRegistry.refresh(listAtom)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </SettingsRow>
     </div>
   );
@@ -221,13 +236,26 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
 export function CodeGraphSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to manage code graphs.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          Select a connected environment to manage code graphs.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       FEATURE,
     )
   )
-    return <p>This environment's server does not have the code graph.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          This environment's server does not have the code graph.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentCodeGraph
       key={environment.environmentId}

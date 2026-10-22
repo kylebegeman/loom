@@ -5,6 +5,21 @@ import type { PcbFabCapability, PcbFabCatalog } from "@t3tools/contracts/fork";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 import { pcb } from "./state";
 import { asyncValue, asyncError } from "./usePcbPreview";
 import { runModelCommand } from "../model-preview-3d/state";
@@ -91,274 +106,315 @@ export function FabCapabilitiesDialog({
         if (!next) close();
       }}
     >
-      <DialogPopup>
+      <DialogPopup className="max-w-2xl">
         <DialogTitle>Fab capabilities</DialogTitle>
         <DialogDescription>
           Built-in limits are references. Duplicate a profile to change it; edits are shared by this
           environment.
         </DialogDescription>
-        {loaded.waiting && !draft && <p role="status">Loading fab capabilities</p>}
-        {(asyncError(loaded) || write.error) && (
-          <p role="alert">{asyncError(loaded) ?? write.error}</p>
-        )}
-        {(draft?.skipped ?? []).map((id) => (
-          <p key={id} role="status">
-            Skipped unreadable profile: {id}
-          </p>
-        ))}
-        {!allowed && <p>Read only on this connection.</p>}
-        <div className="flex max-h-[60vh] flex-col gap-3 overflow-auto">
-          {all.map((fab) => (
-            <div key={fab.id} className="flex flex-wrap items-center gap-2">
-              <strong>{fab.name}</strong>
-              <small>
-                {draft?.builtIns.some((e) => e.id === fab.id) ? "Built-in" : "Custom"}
-                {draft?.defaultId === fab.id ? " · Default" : ""}
-              </small>
-              <Button
-                variant="outline"
-                size="xs"
-                disabled={!allowed || write.busy || (draft?.entries.length ?? 0) >= 24}
-                onClick={() => duplicate(fab)}
+        <div className="mt-4 flex min-w-0 flex-col gap-4">
+          {loaded.waiting && !draft && (
+            <LoomSettingsNotice role="status">Loading fab capabilities</LoomSettingsNotice>
+          )}
+          {(asyncError(loaded) || write.error) && (
+            <LoomSettingsNotice role="alert">
+              {asyncError(loaded) ?? write.error}
+            </LoomSettingsNotice>
+          )}
+          {(draft?.skipped ?? []).map((id) => (
+            <LoomSettingsNotice key={id} role="status">
+              Skipped unreadable profile: {id}
+            </LoomSettingsNotice>
+          ))}
+          {!allowed && <LoomSettingsNotice>Read only on this connection.</LoomSettingsNotice>}
+          <div className="flex max-h-[60vh] min-w-0 flex-col gap-4 overflow-y-auto">
+            {all.map((fab) => (
+              <div
+                key={fab.id}
+                className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 p-3"
               >
-                Duplicate
-              </Button>
-              {draft?.entries.some((e) => e.id === fab.id) && (
-                <>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+                  <strong className="text-sm wrap-anywhere">{fab.name}</strong>
+                  <small className="text-xs text-muted-foreground">
+                    {draft?.builtIns.some((e) => e.id === fab.id) ? "Built-in" : "Custom"}
+                    {draft?.defaultId === fab.id ? " · Default" : ""}
+                  </small>
+                </div>
+                <LoomSettingsActions>
                   <Button
                     variant="outline"
                     size="xs"
-                    disabled={!allowed || write.busy}
-                    onClick={() => setEditing(fab.id)}
+                    disabled={!allowed || write.busy || (draft?.entries.length ?? 0) >= 24}
+                    onClick={() => duplicate(fab)}
                   >
-                    Edit
+                    Duplicate
                   </Button>
+                  {draft?.entries.some((e) => e.id === fab.id) && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={!allowed || write.busy}
+                        onClick={() => setEditing(fab.id)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={!allowed || write.busy}
+                        onClick={() => {
+                          if (draft) {
+                            setDraft({ ...draft, ...removeCapability(draft, fab.id) });
+                            setDirty(true);
+                            if (editing === fab.id) setEditing(null);
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  )}
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="xs"
-                    disabled={!allowed || write.busy}
+                    disabled={!allowed || write.busy || draft?.defaultId === fab.id}
                     onClick={() => {
                       if (draft) {
-                        setDraft({ ...draft, ...removeCapability(draft, fab.id) });
+                        setDraft({ ...draft, defaultId: fab.id });
                         setDirty(true);
-                        if (editing === fab.id) setEditing(null);
                       }
                     }}
                   >
-                    Delete
+                    Set as default
                   </Button>
-                </>
-              )}
+                </LoomSettingsActions>
+              </div>
+            ))}
+            {entry && (
+              <LoomSettingsPanel title={<span className="wrap-anywhere">Edit {entry.name}</span>}>
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  <label className="flex min-w-0 flex-col gap-2 text-sm">
+                    Name
+                    <Input
+                      size="sm"
+                      value={entry.name}
+                      maxLength={80}
+                      disabled={!allowed || write.busy}
+                      onChange={(e) => change({ name: e.target.value })}
+                    />
+                  </label>
+                  <LoomSettingsField label="Tier">
+                    <Select
+                      value={entry.tier}
+                      items={[
+                        { value: "standard", label: "Standard" },
+                        { value: "advanced", label: "Advanced" },
+                      ]}
+                      disabled={!allowed || write.busy}
+                      onValueChange={(tier) => {
+                        if (tier) change({ tier });
+                      }}
+                    >
+                      <SelectTrigger size="sm" aria-label="Fab tier">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="standard">Standard</SelectItem>
+                        <SelectItem value="advanced">Advanced</SelectItem>
+                      </SelectPopup>
+                    </Select>
+                  </LoomSettingsField>
+                </div>
+                <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  <legend className="mb-3 text-sm font-medium">Minimum dimensions</legend>
+                  {LENGTH_FIELDS.map(([field, label]) => (
+                    <label key={field} className="flex min-w-0 flex-col gap-2 text-sm">
+                      {label} ({unit})
+                      {(field === "minEdgeClearanceMm" || field === "minHoleToHoleMm") &&
+                        "; blank means unpublished"}
+                      <Input
+                        size="sm"
+                        key={`${entry.id}:${field}:${unit}`}
+                        defaultValue={
+                          entry[field] === null
+                            ? ""
+                            : formatLength(entry[field]!, unit, {
+                                unit: false,
+                                digits: 5,
+                                trim: true,
+                              })
+                        }
+                        disabled={!allowed || write.busy}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          const value =
+                            text.trim() === "" &&
+                            (field === "minEdgeClearanceMm" || field === "minHoleToHoleMm")
+                              ? null
+                              : parseLength(text, unit);
+                          change({ [field]: value === null && text.trim() ? NaN : value });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </fieldset>
+                <LoomSettingsDetails title="Layers, thicknesses and finishes">
+                  <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                    <label className="flex min-w-0 flex-col gap-2 text-sm">
+                      Layer counts
+                      <Input
+                        key={`${entry.id}:layers`}
+                        size="sm"
+                        defaultValue={entry.layerCounts.join(", ")}
+                        disabled={!allowed || write.busy}
+                        onChange={(e) =>
+                          change({ layerCounts: parseLengthList(e.target.value) ?? [] })
+                        }
+                      />
+                    </label>
+                    <label className="flex min-w-0 flex-col gap-2 text-sm">
+                      Thicknesses (mm)
+                      <Input
+                        key={`${entry.id}:thicknesses`}
+                        size="sm"
+                        defaultValue={entry.thicknessesMm.join(", ")}
+                        disabled={!allowed || write.busy}
+                        onChange={(e) =>
+                          change({ thicknessesMm: parseLengthList(e.target.value) ?? [] })
+                        }
+                      />
+                    </label>
+                    <label className="flex min-w-0 flex-col gap-2 text-sm">
+                      Finishes
+                      <Input
+                        size="sm"
+                        value={entry.finishes.join(", ")}
+                        disabled={!allowed || write.busy}
+                        onChange={(e) =>
+                          change({
+                            finishes: e.target.value
+                              .split(",")
+                              .map((v) => v.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                </LoomSettingsDetails>
+                <LoomSettingsDetails title="Notes and source">
+                  <label className="flex min-w-0 flex-col gap-2 text-sm">
+                    Notes
+                    <Textarea
+                      size="sm"
+                      value={entry.notes}
+                      maxLength={2000}
+                      disabled={!allowed || write.busy}
+                      onChange={(e) => change({ notes: e.target.value })}
+                    />
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-2 text-sm">
+                    Source URL
+                    <Input
+                      size="sm"
+                      value={entry.sourceUrl}
+                      maxLength={500}
+                      disabled={!allowed || write.busy}
+                      onChange={(e) => change({ sourceUrl: e.target.value })}
+                    />
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-2 text-sm">
+                    Checked date
+                    <Input
+                      size="sm"
+                      type="date"
+                      value={entry.checkedOn}
+                      disabled={!allowed || write.busy}
+                      onChange={(e) => change({ checkedOn: e.target.value })}
+                    />
+                  </label>
+                </LoomSettingsDetails>
+                {errors.map((message) => (
+                  <LoomSettingsNotice key={message} role="alert">
+                    {message}
+                  </LoomSettingsNotice>
+                ))}
+              </LoomSettingsPanel>
+            )}
+          </div>
+          {discard ? (
+            <div className="flex min-w-0 flex-col gap-3">
+              <LoomSettingsNotice>Discard unsaved fab edits?</LoomSettingsNotice>
+              <LoomSettingsActions>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setDirty(false);
+                    onOpenChange(false);
+                  }}
+                >
+                  Discard edits
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setDiscard(false)}>
+                  Keep editing
+                </Button>
+              </LoomSettingsActions>
+            </div>
+          ) : (
+            <LoomSettingsActions>
+              <Button
+                size="sm"
+                disabled={
+                  !allowed ||
+                  write.busy ||
+                  !dirty ||
+                  !draft ||
+                  draft.entries.some((e) => capabilityErrors(e).length > 0)
+                }
+                onClick={() =>
+                  void write.run(async () => {
+                    if (!draft) return;
+                    await runModelCommand(pcb.updateFabCapabilities, {
+                      environmentId,
+                      input: {
+                        expectedVersion: draft.version,
+                        entries: draft.entries,
+                        defaultId: draft.defaultId,
+                      },
+                    });
+                    setDirty(false);
+                    onOpenChange(false);
+                  })
+                }
+              >
+                Save
+              </Button>
+              <Button variant="outline" size="sm" onClick={close}>
+                Close
+              </Button>
               <Button
                 variant="ghost"
-                size="xs"
-                disabled={!allowed || write.busy || draft?.defaultId === fab.id}
-                onClick={() => {
-                  if (draft) {
-                    setDraft({ ...draft, defaultId: fab.id });
-                    setDirty(true);
-                  }
-                }}
+                size="sm"
+                disabled={write.busy}
+                onClick={() =>
+                  void write.run(async () => {
+                    const next = await runModelCommand(pcb.loadFabCapabilities, {
+                      environmentId,
+                      input: {},
+                    });
+                    setDraft(next);
+                    setDirty(false);
+                    setEditing(null);
+                  })
+                }
               >
-                Set as default
+                Reload
               </Button>
-            </div>
-          ))}
-          {entry && (
-            <div className="flex flex-col gap-3">
-              <h3>Edit {entry.name}</h3>
-              <label>
-                Name
-                <Input
-                  size="sm"
-                  value={entry.name}
-                  maxLength={80}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ name: e.target.value })}
-                />
-              </label>
-              <label>
-                Tier
-                <select
-                  value={entry.tier}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) =>
-                    change({ tier: e.target.value === "advanced" ? "advanced" : "standard" })
-                  }
-                >
-                  <option value="standard">Standard</option>
-                  <option value="advanced">Advanced</option>
-                </select>
-              </label>
-              {LENGTH_FIELDS.map(([field, label]) => (
-                <label key={field}>
-                  {label} ({unit})
-                  {(field === "minEdgeClearanceMm" || field === "minHoleToHoleMm") &&
-                    "; blank means unpublished"}
-                  <Input
-                    size="sm"
-                    key={`${entry.id}:${field}:${unit}`}
-                    defaultValue={
-                      entry[field] === null
-                        ? ""
-                        : formatLength(entry[field]!, unit, { unit: false, digits: 5, trim: true })
-                    }
-                    disabled={!allowed || write.busy}
-                    onChange={(e) => {
-                      const text = e.target.value;
-                      const value =
-                        text.trim() === "" &&
-                        (field === "minEdgeClearanceMm" || field === "minHoleToHoleMm")
-                          ? null
-                          : parseLength(text, unit);
-                      change({ [field]: value === null && text.trim() ? NaN : value });
-                    }}
-                  />
-                </label>
-              ))}
-              <label>
-                Layer counts
-                <Input
-                  key={`${entry.id}:layers`}
-                  size="sm"
-                  defaultValue={entry.layerCounts.join(", ")}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ layerCounts: parseLengthList(e.target.value) ?? [] })}
-                />
-              </label>
-              <label>
-                Thicknesses (mm)
-                <Input
-                  key={`${entry.id}:thicknesses`}
-                  size="sm"
-                  defaultValue={entry.thicknessesMm.join(", ")}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ thicknessesMm: parseLengthList(e.target.value) ?? [] })}
-                />
-              </label>
-              <label>
-                Finishes
-                <Input
-                  size="sm"
-                  value={entry.finishes.join(", ")}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) =>
-                    change({
-                      finishes: e.target.value
-                        .split(",")
-                        .map((v) => v.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Notes
-                <Input
-                  size="sm"
-                  value={entry.notes}
-                  maxLength={2000}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ notes: e.target.value })}
-                />
-              </label>
-              <label>
-                Source URL
-                <Input
-                  size="sm"
-                  value={entry.sourceUrl}
-                  maxLength={500}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ sourceUrl: e.target.value })}
-                />
-              </label>
-              <label>
-                Checked date
-                <Input
-                  size="sm"
-                  type="date"
-                  value={entry.checkedOn}
-                  disabled={!allowed || write.busy}
-                  onChange={(e) => change({ checkedOn: e.target.value })}
-                />
-              </label>
-              {errors.map((message) => (
-                <p key={message} role="alert">
-                  {message}
-                </p>
-              ))}
-            </div>
+            </LoomSettingsActions>
           )}
         </div>
-        {discard ? (
-          <div>
-            <p>Discard unsaved fab edits?</p>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                setDirty(false);
-                onOpenChange(false);
-              }}
-            >
-              Discard edits
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDiscard(false)}>
-              Keep editing
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-3 flex gap-2">
-            <Button
-              size="sm"
-              disabled={
-                !allowed ||
-                write.busy ||
-                !dirty ||
-                !draft ||
-                draft.entries.some((e) => capabilityErrors(e).length > 0)
-              }
-              onClick={() =>
-                void write.run(async () => {
-                  if (!draft) return;
-                  await runModelCommand(pcb.updateFabCapabilities, {
-                    environmentId,
-                    input: {
-                      expectedVersion: draft.version,
-                      entries: draft.entries,
-                      defaultId: draft.defaultId,
-                    },
-                  });
-                  setDirty(false);
-                  onOpenChange(false);
-                })
-              }
-            >
-              Save
-            </Button>
-            <Button variant="outline" size="sm" onClick={close}>
-              Close
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={write.busy}
-              onClick={() =>
-                void write.run(async () => {
-                  const next = await runModelCommand(pcb.loadFabCapabilities, {
-                    environmentId,
-                    input: {},
-                  });
-                  setDraft(next);
-                  setDirty(false);
-                  setEditing(null);
-                })
-              }
-            >
-              Reload
-            </Button>
-          </div>
-        )}
       </DialogPopup>
     </Dialog>
   );

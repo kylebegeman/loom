@@ -4,6 +4,7 @@ import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { OperationStatus } from "./OperationStatus";
+import { LoomSettingsActions, LoomSettingsDetails, LoomSettingsNotice } from "../settings/parts";
 
 /** Host setup is explicit and governed by the environment's terminal permission. */
 export function PythonCadSettings({
@@ -38,9 +39,8 @@ export function PythonCadSettings({
     } catch (cause) {
       setFailed(true);
       setMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
   return (
     <>
@@ -48,21 +48,21 @@ export function PythonCadSettings({
         title="Python CAD interpreter"
         description="Leave blank to use Loom's managed environment. Python models use the .b3d.py file extension and a model() function."
       >
-        <div className="flex flex-col gap-2 pb-2">
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="Python CAD interpreter"
             value={pythonPath ?? ""}
             onChange={(event) => onPathChange(event.target.value || null)}
           />
-          <p className="text-sm text-muted-foreground">
+          <LoomSettingsNotice>
             {!info
               ? "Update this environment's Loom server to use Python CAD."
               : info.state === "ready"
                 ? `Python ${info.pythonVersion}, build123d ${info.build123dVersion}`
                 : (info.detail ?? "Python CAD is not set up on this host.")}
-          </p>
+          </LoomSettingsNotice>
           {info && !pythonPath && (
-            <div className="flex flex-wrap gap-2">
+            <LoomSettingsActions>
               <Button
                 variant="outline"
                 size="sm"
@@ -81,12 +81,11 @@ export function PythonCadSettings({
                   Remove
                 </Button>
               )}
-            </div>
+            </LoomSettingsActions>
           )}
           {info && !info.uv && !pythonPath && (
-            <details>
-              <summary className="text-sm">Manual setup commands</summary>
-              <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
+            <LoomSettingsDetails title="Manual setup commands">
+              <pre className="overflow-x-auto whitespace-pre-wrap text-xs wrap-anywhere">
                 {info.installCommands.join("\n")}
               </pre>
               <a
@@ -97,12 +96,12 @@ export function PythonCadSettings({
               >
                 Install uv
               </a>
-            </details>
+            </LoomSettingsDetails>
           )}
           {!canSetup && info && (
-            <p className="text-sm text-muted-foreground">
+            <LoomSettingsNotice>
               Terminal permission is required to set up or run Python CAD.
-            </p>
+            </LoomSettingsNotice>
           )}
           {busy && (
             <OperationStatus
@@ -110,9 +109,7 @@ export function PythonCadSettings({
             />
           )}
           {message && (
-            <p role={failed ? "alert" : "status"} className="text-sm">
-              {message}
-            </p>
+            <LoomSettingsNotice role={failed ? "alert" : "status"}>{message}</LoomSettingsNotice>
           )}
         </div>
       </SettingsRow>

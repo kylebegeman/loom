@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
@@ -20,6 +20,21 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import {
   Dialog,
   DialogPopup,
@@ -53,8 +68,17 @@ export function VaultTestAccountSettingsSection() {
       "vault-test-accounts",
     )
   )
-    return <p>Test account collections are unavailable on this computer.</p>;
-  if (!canRead) return <p>Your connection does not include test account inspection.</p>;
+    return (
+      <LoomSettingsNotice>
+        Test account collections are unavailable on this computer.
+      </LoomSettingsNotice>
+    );
+  if (!canRead)
+    return (
+      <LoomSettingsNotice>
+        Your connection does not include test account inspection.
+      </LoomSettingsNotice>
+    );
   return <Manager key={environment.environmentId} environmentId={environment.environmentId} />;
 }
 function Manager({ environmentId }: { environmentId: EnvironmentId }) {
@@ -85,7 +109,6 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
     onError: () =>
       setNotice("The destination could not be copied. Select and copy the displayed text."),
   });
-  const prefix = useId();
   const now = useVaultTime(
     vaultTestAccountDeadlines(snapshot?.accounts ?? []),
     snapshot?.checkedAt,
@@ -148,9 +171,8 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
       refresh();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const start = (kind: "collection" | "account") => {
     setEditor(kind);
@@ -178,101 +200,215 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
     setTarget(collection.target);
   };
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Keep dedicated test identities grouped by app and environment. Reservations are exclusive to
-        this Loom connection. Release or expiry quarantines the account until you check it clean.
+    <div className="flex min-w-0 flex-col gap-5">
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Group dedicated test identities by application and environment. Reservations are exclusive
+        to this Loom connection. Release or expiry quarantines an account until you check it clean.
       </p>
-      <p className="text-sm">
-        Provisioning, automatic reset and login delivery are not available yet.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy} onClick={refresh}>
-          Refresh accounts
-        </Button>
+      <LoomSettingsActions>
         <Button disabled={!canWrite || busy || !snapshot} onClick={() => start("collection")}>
           Create collection
         </Button>
-      </div>
-      {notice ? (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
+        <Button variant="outline" disabled={busy} onClick={refresh}>
+          Refresh accounts
+        </Button>
+      </LoomSettingsActions>
+      {!canWrite ? (
+        <LoomSettingsNotice>
+          Your connection can inspect test accounts but cannot change them.
+        </LoomSettingsNotice>
       ) : null}
+      <LoomSettingsNotice>
+        Provisioning, automatic reset and login delivery are not available yet.
+      </LoomSettingsNotice>
+      {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
       {error || result._tag === "Failure" ? (
-        <p role="alert">
+        <LoomSettingsNotice role="alert">
           {error ?? (result._tag === "Failure" ? message(Cause.squash(result.cause)) : "")}
-        </p>
+        </LoomSettingsNotice>
+      ) : null}
+      {editor ? (
+        <LoomSettingsPanel
+          title={
+            editor === "collection"
+              ? editingId
+                ? "Rename collection"
+                : "New test collection"
+              : editingId
+                ? "Edit account reference"
+                : "New test account"
+          }
+          description={
+            editor === "collection"
+              ? "Organize dedicated identities for one application and test environment."
+              : "Choose an existing Vault account. Added accounts start in quarantine and grant no login access."
+          }
+        >
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <LoomSettingsField label={editor === "collection" ? "Collection name" : "Account name"}>
+              <Input
+                aria-label={editor === "collection" ? "Collection name" : "Account name"}
+                value={name}
+                disabled={busy || !!review}
+                maxLength={120}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </LoomSettingsField>
+            {editor === "collection" ? (
+              <LoomSettingsField
+                label="Application"
+                description={
+                  editingId ? "The application cannot be changed after creation." : undefined
+                }
+              >
+                <Input
+                  aria-label="Application"
+                  value={app}
+                  disabled={busy || !!review || editingId !== null}
+                  maxLength={120}
+                  onChange={(e) => setApp(e.target.value)}
+                />
+              </LoomSettingsField>
+            ) : (
+              <LoomSettingsField label="Role">
+                <Input
+                  aria-label="Role"
+                  value={role}
+                  disabled={busy || !!review}
+                  maxLength={120}
+                  onChange={(e) => setRole(e.target.value)}
+                />
+              </LoomSettingsField>
+            )}
+          </div>
+          {editor === "collection" ? (
+            <LoomSettingsField
+              label="Test environment"
+              description={
+                editingId ? "The environment cannot be changed after creation." : undefined
+              }
+            >
+              <Select
+                value={target}
+                disabled={busy || !!review || editingId !== null}
+                onValueChange={(value) => {
+                  if (value === "test" || value === "development" || value === "staging")
+                    setTarget(value);
+                }}
+              >
+                <SelectTrigger aria-label="Test environment">
+                  <SelectValue>
+                    {target === "test"
+                      ? "Test"
+                      : target === "development"
+                        ? "Development"
+                        : "Staging"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="test">Test</SelectItem>
+                  <SelectItem value="development">Development</SelectItem>
+                  <SelectItem value="staging">Staging</SelectItem>
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          ) : (
+            <>
+              <fieldset className="flex min-w-0 flex-col gap-3">
+                <legend className="mb-2 text-sm font-medium">Vault account</legend>
+                <VaultReferencePicker
+                  environmentId={environmentId}
+                  kind="account"
+                  disabled={busy || !!review}
+                  onSelect={(reference) => {
+                    setItem(reference.item);
+                    if (!name) setName(reference.item.label);
+                  }}
+                />
+                {item ? (
+                  <LoomSettingsNotice role="status">
+                    Selected {item.label}, version {item.version}
+                  </LoomSettingsNotice>
+                ) : null}
+              </fieldset>
+              <label className="flex items-start gap-2 text-sm leading-relaxed">
+                <Checkbox
+                  checked={developmentOnly}
+                  disabled={busy || !!review}
+                  onCheckedChange={setDevelopmentOnly}
+                />
+                This is a dedicated test account, separate from personal and production accounts.
+              </label>
+            </>
+          )}
+          <LoomSettingsActions>
+            <Button disabled={busy || !canWrite || !!review} onClick={save}>
+              Review changes
+            </Button>
+            <Button variant="outline" disabled={busy || !!review} onClick={() => setEditor(null)}>
+              Cancel
+            </Button>
+          </LoomSettingsActions>
+        </LoomSettingsPanel>
       ) : null}
       {!snapshot ? (
-        <p role="status">
+        <LoomSettingsNotice role="status">
           {result._tag === "Failure"
-            ? "Account inspection is unavailable."
+            ? "Account inspection is unavailable. Refresh accounts to try again."
             : "Loading test accounts…"}
-        </p>
+        </LoomSettingsNotice>
       ) : (
         <>
           {!snapshot.collections.length ? (
-            <p>No test account collections. Create one for a dedicated test app.</p>
+            <LoomSettingsNotice>
+              No test account collections. Create one for a dedicated test app.
+            </LoomSettingsNotice>
           ) : (
             <>
-              <div
-                className="flex flex-wrap gap-2"
-                role="group"
-                aria-label="Test account collections"
-              >
-                {snapshot.collections.map((c) => (
-                  <Button
-                    key={c.id}
-                    variant={collection?.id === c.id ? "default" : "outline"}
-                    disabled={busy}
-                    aria-pressed={collection?.id === c.id}
-                    onClick={() => {
-                      setSelected(c.id);
-                      setEditor(null);
-                    }}
-                  >
-                    {c.label}
-                    {c.archived ? " (archived)" : ""}
-                  </Button>
-                ))}
-              </div>
+              <LoomSettingsField label="Collection">
+                <Select
+                  value={collection?.id ?? ""}
+                  disabled={busy}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setSelected(value);
+                    setEditor(null);
+                  }}
+                >
+                  <SelectTrigger aria-label="Test account collections">
+                    <SelectValue>
+                      {collection?.label ?? "Choose a collection"}
+                      {collection?.archived ? " (archived)" : ""}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {snapshot.collections.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.label}
+                        {c.archived ? " (archived)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
               {collection ? (
-                <section aria-label={collection.label} className="flex flex-col gap-3">
-                  <h3 className="text-sm font-medium">
-                    {collection.application} · {collection.target}
-                  </h3>
-                  <p className="break-all text-xs text-muted-foreground">
-                    Agent grant destination:{" "}
-                    <code>{vaultTestAccountDestination(collection.id)}</code>
-                  </p>
-                  <div>
+                <LoomSettingsPanel
+                  title={collection.label}
+                  description={`${collection.application} · ${collection.target}${collection.archived ? " · Archived" : ""}`}
+                >
+                  <LoomSettingsActions>
                     <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        copy.copyToClipboard(vaultTestAccountDestination(collection.id), undefined)
-                      }
+                      disabled={!canWrite || busy || collection.archived}
+                      onClick={() => start("account")}
                     >
-                      Copy agent grant destination
+                      Add account reference
                     </Button>
-                  </div>
-                  <div>
                     <Button
                       variant="outline"
                       disabled={!canWrite || busy}
                       onClick={renameCollection}
                     >
                       Rename collection
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={!canWrite || busy || collection.archived}
-                      onClick={() => start("account")}
-                    >
-                      Add account reference
                     </Button>
                     <Button
                       variant="outline"
@@ -291,33 +427,54 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                     >
                       {collection.archived ? "Restore collection" : "Archive collection"}
                     </Button>
-                  </div>
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        copy.copyToClipboard(vaultTestAccountDestination(collection.id), undefined)
+                      }
+                    >
+                      Copy agent grant destination
+                    </Button>
+                  </LoomSettingsActions>
+                  <LoomSettingsDetails title="Agent grant destination">
+                    <p className="wrap-anywhere text-sm leading-relaxed">
+                      <code>{vaultTestAccountDestination(collection.id)}</code>
+                    </p>
+                  </LoomSettingsDetails>
                   {!snapshot.accounts.some((a) => a.collectionId === collection.id) ? (
-                    <p>No accounts in this collection. Add an existing Vault account reference.</p>
+                    <LoomSettingsNotice>
+                      No accounts in this collection. Add an existing Vault account reference.
+                    </LoomSettingsNotice>
                   ) : null}
-                  <ul className="flex flex-col gap-3">
+                  <ul className="divide-y divide-border">
                     {snapshot.accounts
                       .filter((a) => a.collectionId === collection.id)
                       .map((account) => (
-                        <li key={account.id} className="flex flex-col gap-2 rounded-md border p-3">
-                          <p className="text-sm font-medium">
-                            {account.label} · {account.role}
-                          </p>
-                          <p className="text-sm capitalize">
-                            {vaultTestAccountState(account, now)}
-                          </p>
-                          <p className="break-all text-xs text-muted-foreground">
-                            Vault account {account.itemId} · Version {account.itemVersion}
-                          </p>
+                        <li
+                          key={account.id}
+                          className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 space-y-1">
+                              <h4 className="wrap-anywhere text-sm font-medium">{account.label}</h4>
+                              <p className="wrap-anywhere text-sm text-muted-foreground">
+                                {account.role}
+                              </p>
+                            </div>
+                            <span className="rounded-md bg-muted px-2 py-1 text-xs capitalize">
+                              {vaultTestAccountState(account, now)}
+                            </span>
+                          </div>
                           {account.lease && vaultTestAccountState(account, now) === "reserved" ? (
-                            <p className="text-sm">
+                            <p className="text-sm leading-relaxed">
                               {account.lease.owner === snapshot.actor
                                 ? "Reserved by this connection"
                                 : "Reserved by another connection"}{" "}
                               · Until {new Date(account.lease.expiresAt).toLocaleString()}
                             </p>
                           ) : null}
-                          <div className="flex flex-wrap gap-2">
+                          <LoomSettingsActions>
                             <Button
                               size="sm"
                               variant="outline"
@@ -354,104 +511,28 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
                                 {action.label}
                               </Button>
                             ))}
-                          </div>
+                          </LoomSettingsActions>
+                          <LoomSettingsDetails title="Vault account reference">
+                            <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                              <div className="min-w-0 space-y-1">
+                                <dt className="text-muted-foreground">Account ID</dt>
+                                <dd className="wrap-anywhere">{account.itemId}</dd>
+                              </div>
+                              <div className="space-y-1">
+                                <dt className="text-muted-foreground">Version</dt>
+                                <dd>{account.itemVersion}</dd>
+                              </div>
+                            </dl>
+                          </LoomSettingsDetails>
                         </li>
                       ))}
                   </ul>
-                </section>
+                </LoomSettingsPanel>
               ) : null}
             </>
           )}
         </>
       )}
-      {editor ? (
-        <div
-          className="flex flex-col gap-3 rounded-md border p-4"
-          aria-label={editor === "collection" ? "New test collection" : "New test account"}
-        >
-          <label htmlFor={`${prefix}-name`} className="flex flex-col gap-1 text-sm">
-            {editor === "collection" ? "Collection name" : "Account name"}
-            <Input
-              id={`${prefix}-name`}
-              value={name}
-              disabled={busy || !!review}
-              maxLength={120}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          {editor === "collection" ? (
-            <>
-              <label htmlFor={`${prefix}-app`} className="flex flex-col gap-1 text-sm">
-                Application
-                <Input
-                  id={`${prefix}-app`}
-                  value={app}
-                  disabled={busy || !!review || editingId !== null}
-                  maxLength={120}
-                  onChange={(e) => setApp(e.target.value)}
-                />
-              </label>
-              <label htmlFor={`${prefix}-target`} className="flex flex-col gap-1 text-sm">
-                Test environment
-                <select
-                  id={`${prefix}-target`}
-                  value={target}
-                  disabled={busy || !!review || editingId !== null}
-                  onChange={(e) => setTarget(e.target.value as typeof target)}
-                >
-                  <option value="test">Test</option>
-                  <option value="development">Development</option>
-                  <option value="staging">Staging</option>
-                </select>
-              </label>
-            </>
-          ) : (
-            <>
-              <label htmlFor={`${prefix}-role`} className="flex flex-col gap-1 text-sm">
-                Role
-                <Input
-                  id={`${prefix}-role`}
-                  value={role}
-                  disabled={busy || !!review}
-                  maxLength={120}
-                  onChange={(e) => setRole(e.target.value)}
-                />
-              </label>
-              <VaultReferencePicker
-                environmentId={environmentId}
-                kind="account"
-                disabled={busy || !!review}
-                onSelect={(reference) => {
-                  setItem(reference.item);
-                  if (!name) setName(reference.item.label);
-                }}
-              />
-              {item ? (
-                <p role="status">
-                  Selected {item.label}, version {item.version}
-                </p>
-              ) : null}
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={developmentOnly}
-                  disabled={busy || !!review}
-                  onChange={(e) => setDevelopmentOnly(e.target.checked)}
-                />
-                This is a dedicated test account, separate from personal and production accounts.
-              </label>
-            </>
-          )}
-          <div className="flex gap-2">
-            <Button disabled={busy || !canWrite || !!review} onClick={save}>
-              Review changes
-            </Button>
-            <Button variant="outline" disabled={busy || !!review} onClick={() => setEditor(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : null}
       <Dialog
         open={!!review}
         onOpenChange={(open) => {
@@ -463,18 +544,20 @@ function Manager({ environmentId }: { environmentId: EnvironmentId }) {
             <DialogTitle>{review?.title}</DialogTitle>
             <DialogDescription>{review?.description}</DialogDescription>
           </DialogHeader>
-          {error ? <p role="alert">{error}</p> : null}
-          <p className="text-sm">
-            After a conflict, cancel this review and refresh. Retrying a lost response reuses the
-            same operation.
-          </p>
-          <div className="flex gap-2">
-            <Button disabled={!canWrite || busy || !snapshot} onClick={apply}>
-              {busy ? "Saving…" : "Confirm"}
-            </Button>
-            <Button variant="outline" disabled={busy} onClick={() => setReview(null)}>
-              Cancel
-            </Button>
+          <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-6 pb-5">
+            {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              After a conflict, cancel this review and refresh. Retrying a lost response reuses the
+              same operation.
+            </p>
+            <LoomSettingsActions>
+              <Button disabled={!canWrite || busy || !snapshot} onClick={apply}>
+                {busy ? "Saving…" : "Confirm"}
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => setReview(null)}>
+                Cancel
+              </Button>
+            </LoomSettingsActions>
           </div>
         </DialogPopup>
       </Dialog>

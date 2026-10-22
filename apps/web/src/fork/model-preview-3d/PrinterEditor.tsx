@@ -3,6 +3,22 @@ import { useState } from "react";
 import * as Schema from "effect/Schema";
 import { Printer, libraryProblems, type PrinterLibrary } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "~/components/ui/checkbox";
+import { Textarea } from "~/components/ui/textarea";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "~/components/ui/dialog";
 import { useDisplayUnits, formatLengths } from "./units";
@@ -39,7 +55,10 @@ export function PrinterEditor({
         ...library,
         printers: [...library.printers.filter((p) => p.id !== decoded.id), decoded],
       });
-      if (problems.length) throw new Error(problems[0]);
+      if (problems.length) {
+        setError(new Error(problems[0]).message);
+        return;
+      }
       await onSave(decoded);
       onClose();
     } catch (cause) {
@@ -58,92 +77,111 @@ export function PrinterEditor({
         <DialogDescription>
           Printer dimensions, nozzle reach and materials. Dimensions are saved in millimetres.
         </DialogDescription>
-        <fieldset disabled={busy} className="mt-3 flex max-h-[65vh] flex-col gap-3 overflow-y-auto">
-          <label className="text-sm">
-            Name
-            <Input
-              aria-label="Printer name"
-              value={printer.name}
-              maxLength={60}
-              onChange={(e) => set("name", e.target.value)}
-            />
-          </label>
-          <label className="text-sm">
-            Kind
-            <select
-              aria-label="Printer kind"
-              value={printer.kind}
-              onChange={(e) => {
-                const kind = e.target.value === "surface" ? "surface" : "printer";
-                setPrinter((p) => ({
-                  ...p,
-                  kind,
-                  volumeMm: [
-                    p.volumeMm[0],
-                    p.volumeMm[1],
-                    kind === "surface" ? null : (p.volumeMm[2] ?? 250),
-                  ],
-                }));
-              }}
-            >
-              <option value="printer">Printer</option>
-              <option value="surface">Surface</option>
-            </select>
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            {["Width", "Depth", "Height"].map((axis, index) => (
-              <label key={axis} className="text-xs">
-                {axis} (mm)
-                <Input
-                  type="number"
-                  aria-label={`${axis} (mm)`}
-                  min={10}
-                  max={2000}
-                  disabled={index === 2 && printer.volumeMm[2] === null}
-                  value={printer.volumeMm[index] ?? ""}
-                  onChange={(e) =>
+        <fieldset
+          disabled={busy}
+          className="mt-4 flex max-h-[65vh] min-w-0 flex-col gap-4 overflow-y-auto"
+        >
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <label className="flex min-w-0 flex-col gap-2 text-sm">
+              Name
+              <Input
+                aria-label="Printer name"
+                value={printer.name}
+                maxLength={60}
+                onChange={(e) => set("name", e.target.value)}
+              />
+            </label>
+            <LoomSettingsField label="Kind">
+              <Select
+                disabled={busy}
+                value={printer.kind}
+                items={[
+                  { value: "printer", label: "Printer" },
+                  { value: "surface", label: "Surface" },
+                ]}
+                onValueChange={(kind) => {
+                  if (!kind) return;
+                  setPrinter((p) => ({
+                    ...p,
+                    kind,
+                    volumeMm: [
+                      p.volumeMm[0],
+                      p.volumeMm[1],
+                      kind === "surface" ? null : (p.volumeMm[2] ?? 250),
+                    ],
+                  }));
+                }}
+              >
+                <SelectTrigger aria-label="Printer kind">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="printer">Printer</SelectItem>
+                  <SelectItem value="surface">Surface</SelectItem>
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          </div>
+          <LoomSettingsPanel title="Build volume">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-3">
+              {["Width", "Depth", "Height"].map((axis, index) => (
+                <label key={axis} className="flex min-w-0 flex-col gap-2 text-sm">
+                  {axis} (mm)
+                  <Input
+                    type="number"
+                    aria-label={`${axis} (mm)`}
+                    min={10}
+                    max={2000}
+                    disabled={index === 2 && printer.volumeMm[2] === null}
+                    value={printer.volumeMm[index] ?? ""}
+                    onChange={(e) =>
+                      set("volumeMm", [
+                        index === 0 ? Number(e.target.value) : printer.volumeMm[0],
+                        index === 1 ? Number(e.target.value) : printer.volumeMm[1],
+                        index === 2 ? Number(e.target.value) : printer.volumeMm[2],
+                      ])
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatLengths(printer.volumeMm, units, { trim: true })}
+            </p>
+            {printer.kind === "surface" && (
+              <label className="flex min-w-0 items-center gap-2 text-sm">
+                <Checkbox
+                  disabled={busy}
+                  checked={printer.volumeMm[2] === null}
+                  onCheckedChange={(checked) =>
                     set("volumeMm", [
-                      index === 0 ? Number(e.target.value) : printer.volumeMm[0],
-                      index === 1 ? Number(e.target.value) : printer.volumeMm[1],
-                      index === 2 ? Number(e.target.value) : printer.volumeMm[2],
+                      printer.volumeMm[0],
+                      printer.volumeMm[1],
+                      checked ? null : 250,
                     ])
                   }
-                />
+                />{" "}
+                No height limit
               </label>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {formatLengths(printer.volumeMm, units, { trim: true })}
-          </p>
-          {printer.kind === "surface" && (
-            <label className="text-sm">
-              <input
-                type="checkbox"
-                checked={printer.volumeMm[2] === null}
-                onChange={(e) =>
-                  set("volumeMm", [
-                    printer.volumeMm[0],
-                    printer.volumeMm[1],
-                    e.target.checked ? null : 250,
-                  ])
-                }
+            )}
+            <label className="flex min-w-0 items-center gap-2 text-sm">
+              <Checkbox
+                disabled={busy}
+                checked={printer.bedShape === "round"}
+                onCheckedChange={(checked) => {
+                  set("bedShape", checked ? "round" : "rectangle");
+                  if (checked)
+                    set("volumeMm", [
+                      printer.volumeMm[0],
+                      printer.volumeMm[0],
+                      printer.volumeMm[2],
+                    ]);
+                }}
               />{" "}
-              No height limit
+              Round bed
             </label>
-          )}
-          <label className="text-sm">
-            <input
-              type="checkbox"
-              checked={printer.bedShape === "round"}
-              onChange={(e) => {
-                set("bedShape", e.target.checked ? "round" : "rectangle");
-                if (e.target.checked)
-                  set("volumeMm", [printer.volumeMm[0], printer.volumeMm[0], printer.volumeMm[2]]);
-              }}
-            />{" "}
-            Round bed
-          </label>
-          <label className="text-sm">
+          </LoomSettingsPanel>
+          <label className="flex min-w-0 flex-col gap-2 text-sm">
             Nozzles (mm, comma separated)
             <Input
               aria-label="Nozzle sizes"
@@ -151,71 +189,85 @@ export function PrinterEditor({
               onChange={(e) => setNozzles(e.target.value)}
             />
           </label>
-          <fieldset className="flex flex-col gap-1">
-            <legend className="text-sm">Materials</legend>
-            {library.materials.map((m) => (
-              <label key={m.id} className="text-xs">
-                <input
-                  type="checkbox"
-                  checked={printer.materialIds.includes(m.id)}
-                  onChange={(e) => {
-                    const ids = e.target.checked
-                      ? [...printer.materialIds, m.id]
-                      : printer.materialIds.filter((id) => id !== m.id);
-                    setPrinter((p) => ({
-                      ...p,
-                      materialIds: ids,
-                      defaultMaterialId:
-                        p.defaultMaterialId && ids.includes(p.defaultMaterialId)
-                          ? p.defaultMaterialId
-                          : null,
-                    }));
-                  }}
-                />{" "}
-                {m.name}
-              </label>
-            ))}
-          </fieldset>
-          <label className="text-sm">
-            Default material
-            <select
-              aria-label="Default material"
-              value={printer.defaultMaterialId ?? ""}
-              onChange={(e) => set("defaultMaterialId", e.target.value || null)}
-            >
-              <option value="">None</option>
-              {library.materials
-                .filter((m) => printer.materialIds.includes(m.id))
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm">Nozzle zones</legend>
+          <LoomSettingsPanel title="Materials">
+            <fieldset className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <legend className="sr-only">Compatible materials</legend>
+              {library.materials.map((m) => (
+                <label key={m.id} className="flex min-w-0 items-center gap-2 text-sm">
+                  <Checkbox
+                    disabled={busy}
+                    checked={printer.materialIds.includes(m.id)}
+                    onCheckedChange={(checked) => {
+                      const ids = checked
+                        ? [...printer.materialIds, m.id]
+                        : printer.materialIds.filter((id) => id !== m.id);
+                      setPrinter((p) => ({
+                        ...p,
+                        materialIds: ids,
+                        defaultMaterialId:
+                          p.defaultMaterialId && ids.includes(p.defaultMaterialId)
+                            ? p.defaultMaterialId
+                            : null,
+                      }));
+                    }}
+                  />{" "}
+                  {m.name}
+                </label>
+              ))}
+            </fieldset>
+            <LoomSettingsField label="Default material">
+              <Select
+                disabled={busy}
+                value={printer.defaultMaterialId ?? ""}
+                items={[
+                  { value: "", label: "None" },
+                  ...library.materials
+                    .filter((material) => printer.materialIds.includes(material.id))
+                    .map((material) => ({ value: material.id, label: material.name })),
+                ]}
+                onValueChange={(next) => set("defaultMaterialId", next || null)}
+              >
+                <SelectTrigger aria-label="Default material">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="">None</SelectItem>
+                  {library.materials
+                    .filter((m) => printer.materialIds.includes(m.id))
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          </LoomSettingsPanel>
+          <LoomSettingsDetails title="Nozzle zones">
             {printer.zones.map((zone, index) => (
               <div
                 key={zone.id}
-                className="flex flex-col gap-2 rounded-md border border-border p-2"
+                className="flex min-w-0 flex-col gap-4 rounded-md border border-border p-3"
               >
-                <Input
-                  aria-label={`Zone ${index + 1} label`}
-                  value={zone.label}
-                  onChange={(e) =>
-                    set(
-                      "zones",
-                      printer.zones.map((z, i) =>
-                        i === index ? { ...z, label: e.target.value } : z,
-                      ),
-                    )
-                  }
-                />
-                <div className="grid grid-cols-2 gap-2">
+                <label className="flex min-w-0 flex-col gap-2 text-sm">
+                  Zone name
+                  <Input
+                    aria-label={`Zone ${index + 1} label`}
+                    value={zone.label}
+                    onChange={(e) =>
+                      set(
+                        "zones",
+                        printer.zones.map((z, i) =>
+                          i === index ? { ...z, label: e.target.value } : z,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                   {(["offsetMm", "footprintMm"] as const).flatMap((key) =>
                     [0, 1].map((axis) => (
-                      <label key={`${key}-${axis}`} className="text-xs">
+                      <label key={`${key}-${axis}`} className="flex min-w-0 flex-col gap-2 text-sm">
                         {key === "offsetMm" ? "Offset" : "Size"} {axis === 0 ? "X" : "Y"} (mm)
                         <Input
                           type="number"
@@ -242,7 +294,7 @@ export function PrinterEditor({
                     )),
                   )}
                 </div>
-                <label className="text-xs">
+                <label className="flex min-w-0 flex-col gap-2 text-sm">
                   Height limit (mm, blank for full height)
                   <Input
                     type="number"
@@ -268,59 +320,59 @@ export function PrinterEditor({
                     }
                   />
                 </label>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    set(
-                      "zones",
-                      printer.zones.filter((_, i) => i !== index),
-                    )
-                  }
-                >
-                  Remove zone
-                </Button>
+                <LoomSettingsActions>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      set(
+                        "zones",
+                        printer.zones.filter((_, i) => i !== index),
+                      )
+                    }
+                  >
+                    Remove zone
+                  </Button>
+                </LoomSettingsActions>
               </div>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={printer.zones.length >= 8}
-              onClick={() =>
-                set("zones", [
-                  ...printer.zones,
-                  {
-                    id: `zone-${randomUUID().slice(0, 8)}`,
-                    label: `Nozzle ${printer.zones.length + 1}`,
-                    footprintMm: [printer.volumeMm[0], printer.volumeMm[1]],
-                    offsetMm: [0, 0],
-                  },
-                ])
-              }
-            >
-              Add zone
-            </Button>
-          </fieldset>
-          <label className="text-sm">
+            <LoomSettingsActions>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={printer.zones.length >= 8}
+                onClick={() =>
+                  set("zones", [
+                    ...printer.zones,
+                    {
+                      id: `zone-${randomUUID().slice(0, 8)}`,
+                      label: `Nozzle ${printer.zones.length + 1}`,
+                      footprintMm: [printer.volumeMm[0], printer.volumeMm[1]],
+                      offsetMm: [0, 0],
+                    },
+                  ])
+                }
+              >
+                Add zone
+              </Button>
+            </LoomSettingsActions>
+          </LoomSettingsDetails>
+          <label className="flex min-w-0 flex-col gap-2 text-sm">
             Notes
-            <textarea
+            <Textarea
               aria-label="Printer notes"
               value={printer.notes}
               maxLength={2000}
               onChange={(e) => set("notes", e.target.value)}
             />
           </label>
-          {error && (
-            <p role="alert" className="text-sm">
-              {error}
-            </p>
-          )}
-          <div className="flex gap-2">
+          {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
+          <LoomSettingsActions>
             <Button onClick={() => void save()}>Save printer</Button>
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-          </div>
+          </LoomSettingsActions>
         </fieldset>
       </DialogPopup>
     </Dialog>

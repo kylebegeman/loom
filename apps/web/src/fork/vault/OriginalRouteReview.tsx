@@ -1,3 +1,9 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+} from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -10,6 +16,13 @@ import { migrationInventory as atoms } from "./migrationState";
 import { useVaultTime } from "./useVaultTime";
 import * as Cause from "effect/Cause";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { randomUUID } from "~/lib/utils";
 import { vault, runVault } from "./state";
 const newId = () => randomUUID().replaceAll("-", "");
@@ -120,19 +133,23 @@ export function OriginalRouteReview({
   return (
     <section
       aria-label="Original route and recovery design"
-      className="flex min-w-0 flex-col gap-3 rounded-lg border p-3"
+      className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
     >
       <h4 className="font-medium">Original development route</h4>
-      <p>
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         Choose a separate original development SSH key already in Vault. The selected key must match
         the explicit user, host, port and exact repository path in the reviewed source. This cannot
         identify or use a personal SSH agent, default user, alias or surrounding shell identity.
       </p>
-      {loading ? <p>Refreshing route evidence…</p> : null}
-      {readError ? (
-        <p role="alert">Could not inspect route evidence. Refresh before continuing.</p>
+      {loading ? (
+        <LoomSettingsNotice role="status">Refreshing route evidence…</LoomSettingsNotice>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {readError ? (
+        <LoomSettingsNotice role="alert">
+          Could not inspect route evidence. Refresh before continuing.
+        </LoomSettingsNotice>
+      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!busy && !error && original ? (
         <>
           <p>
@@ -153,27 +170,35 @@ export function OriginalRouteReview({
           )}
         </>
       ) : null}
-      <label>
-        Original development key
-        <select
-          aria-label="Original development key"
+      <LoomSettingsField label="Original development key">
+        <Select
           value={selected}
           disabled={busy || !connected || !canWrite}
-          onChange={(e) => {
-            setSelected(e.target.value);
+          onValueChange={(nextValue) => {
+            if (nextValue === null) return;
+            setSelected(nextValue);
             setPending(null);
             setReviewed(false);
             setContact(false);
           }}
         >
-          <option value="">Choose a separate development key</option>
-          {items.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.label} · version {entry.version}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger aria-label="Original development key">
+            <SelectValue>
+              {item
+                ? `${item.label} · version ${item.version}`
+                : "Choose a separate development key"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value="">Choose a separate development key</SelectItem>
+            {items.map((entry) => (
+              <SelectItem key={entry.id} value={entry.id}>
+                {entry.label} · version {entry.version}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </LoomSettingsField>
       {page && items.length === 0 ? (
         <p>
           No separate active SSH key on this page. Import a dedicated original development key or
@@ -181,31 +206,44 @@ export function OriginalRouteReview({
           before verification can pass.
         </p>
       ) : null}
-      {itemsQuery._tag === "Failure" ? <p role="alert">Could not load development keys.</p> : null}
-      {itemsQuery.waiting ? <p role="status">Loading keys…</p> : null}
-      <Button variant="outline" onClick={refreshItems} disabled={busy || !connected}>
-        Refresh original keys
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => {
-          setCursor(null);
-          setSelected("");
-        }}
-        disabled={busy || !cursor}
-      >
-        First original keys
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => {
-          setCursor(page?.nextCursor ?? null);
-          setSelected("");
-        }}
-        disabled={busy || !page?.nextCursor}
-      >
-        More original keys
-      </Button>
+      {itemsQuery._tag === "Failure" ? (
+        <LoomSettingsNotice role="alert">Could not load development keys.</LoomSettingsNotice>
+      ) : null}
+      {itemsQuery.waiting ? (
+        <LoomSettingsNotice role="status">Loading keys…</LoomSettingsNotice>
+      ) : null}
+      <LoomSettingsActions>
+        <Button
+          size="sm-multiline"
+          variant="outline"
+          onClick={refreshItems}
+          disabled={busy || !connected}
+        >
+          Refresh original keys
+        </Button>
+        <Button
+          size="sm-multiline"
+          variant="outline"
+          onClick={() => {
+            setCursor(null);
+            setSelected("");
+          }}
+          disabled={busy || !cursor}
+        >
+          First original keys
+        </Button>
+        <Button
+          size="sm-multiline"
+          variant="outline"
+          onClick={() => {
+            setCursor(page?.nextCursor ?? null);
+            setSelected("");
+          }}
+          disabled={busy || !page?.nextCursor}
+        >
+          More original keys
+        </Button>
+      </LoomSettingsActions>
       <Confirm
         label="I reviewed this original key and route. It is dedicated to development, separate from personal and production credentials."
         value={reviewed}
@@ -218,27 +256,35 @@ export function OriginalRouteReview({
         change={setContact}
         disabled={busy || !connected || !canWrite || plan.state !== "reviewed"}
       />
-      <Button
-        variant="outline"
-        onClick={() => void verify()}
-        disabled={
-          busy ||
-          !connected ||
-          !canWrite ||
-          !reviewed ||
-          !contact ||
-          (!item && !pending) ||
-          plan.state !== "reviewed" ||
-          now >= plan.expiresAt ||
-          (!original && !pending) ||
-          originalFreshness === "running"
-        }
-      >
-        Verify original development route
-      </Button>
-      <Button variant="outline" onClick={refresh} disabled={busy || !connected}>
-        Refresh original route evidence
-      </Button>{" "}
+      <LoomSettingsActions>
+        <Button
+          size="sm-multiline"
+          variant="outline"
+          onClick={() => void verify()}
+          disabled={
+            busy ||
+            !connected ||
+            !canWrite ||
+            !reviewed ||
+            !contact ||
+            (!item && !pending) ||
+            plan.state !== "reviewed" ||
+            now >= plan.expiresAt ||
+            (!original && !pending) ||
+            originalFreshness === "running"
+          }
+        >
+          Verify original development route
+        </Button>
+        <Button
+          size="sm-multiline"
+          variant="outline"
+          onClick={refresh}
+          disabled={busy || !connected}
+        >
+          Refresh original route evidence
+        </Button>
+      </LoomSettingsActions>
       <p>
         These checks read repository refs only. Push access, workload grants and later provider
         revocation remain unknown. No configuration is captured or written. Cutover and rollback
@@ -273,8 +319,9 @@ function RecoveryDesign({
     atom = atoms.recoveryPreview({ environmentId, input }),
     refresh = useAtomRefresh(atom);
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-4">
       <Button
+        size="sm-multiline"
         variant="outline"
         onClick={() => {
           refresh();
@@ -286,7 +333,12 @@ function RecoveryDesign({
       </Button>
       {opened ? (
         <>
-          <Button variant="outline" onClick={() => setOpened(false)} disabled={false}>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            onClick={() => setOpened(false)}
+            disabled={false}
+          >
             Close snapshot design
           </Button>
           <Design environmentId={environmentId} connected={connected} input={input} />
@@ -319,12 +371,16 @@ function Design({
   return (
     <section
       aria-label="Recovery snapshot design"
-      className="flex min-w-0 flex-col gap-2 break-words rounded-lg border p-3"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 wrap-anywhere"
     >
-      {loading ? <p>Checking snapshot prerequisites…</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {loading ? (
+        <LoomSettingsNotice role="status">Checking snapshot prerequisites…</LoomSettingsNotice>
+      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {data && now >= data.validUntil ? (
-        <p>This design preview expired. Refresh both route receipts before continuing.</p>
+        <LoomSettingsNotice role="status">
+          This design preview expired. Refresh both route receipts before continuing.
+        </LoomSettingsNotice>
       ) : null}
       {data && now < data.validUntil ? (
         <>
@@ -338,26 +394,33 @@ function Design({
             {new Date(data.validUntil).toLocaleTimeString()}. The old shell's actual key remains
             unidentified.
           </p>
-          <p>
-            Proposed capture: only the selected nonsecret fetch entry and managed route manifest,
-            with explicit absence and multiple-value ordering. Private credentials remain
-            references. Personal and global SSH settings are excluded.
-          </p>
-          <p>
-            Proposed storage: the existing encrypted replacement ledger. Before a future write,
-            resolve repository identity, capture the exact relevant preimage and persist intent.
-            Record a postimage and reconcile interrupted outcomes against both hashes. Conflicts
-            stop recovery and preserve evidence.
-          </p>
-          <p>
+          <LoomSettingsDetails title="Proposed capture and storage">
+            <p>
+              Proposed capture: only the selected nonsecret fetch entry and managed route manifest,
+              with explicit absence and multiple-value ordering. Private credentials remain
+              references. Personal and global SSH settings are excluded.
+            </p>
+            <p>
+              Proposed storage: the existing encrypted replacement ledger. Before a future write,
+              resolve repository identity, capture the exact relevant preimage and persist intent.
+              Record a postimage and reconcile interrupted outcomes against both hashes. Conflicts
+              stop recovery and preserve evidence.
+            </p>
+          </LoomSettingsDetails>
+          <LoomSettingsNotice>
             No snapshot or restorable backup exists. The capture engine and protection against
             concurrent external writers are unresolved. Both routes and workload grants must be
             checked again before future execution. Cutover, rollback and configuration writes remain
             disabled.
-          </p>
+          </LoomSettingsNotice>
         </>
       ) : null}
-      <Button variant="outline" onClick={refresh} disabled={!connected || loading}>
+      <Button
+        size="sm-multiline"
+        variant="outline"
+        onClick={refresh}
+        disabled={!connected || loading}
+      >
         Refresh snapshot design
       </Button>
     </section>
@@ -375,15 +438,16 @@ function Confirm({
   disabled: boolean;
 }) {
   return (
-    <label>
+    <label className="flex items-start gap-2 text-sm leading-6">
       <input
+        className="mt-1 shrink-0"
         aria-label={label}
         type="checkbox"
         checked={value}
         onChange={(e) => change(e.target.checked)}
         disabled={disabled}
       />
-      {label}
+      <span>{label}</span>
     </label>
   );
 }

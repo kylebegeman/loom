@@ -23,8 +23,20 @@ import { blankPrinter, mergePrinterExport } from "./printers";
 import { PrinterEditor } from "./PrinterEditor";
 import { MaterialsSection } from "./MaterialsSection";
 import { formatLengths, useDisplayUnits } from "./units";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsDetails,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 
 const decodePrinterExport = Schema.decodeUnknownSync(Schema.fromJsonString(PrinterExport));
+
+function validateLibrary(value: PrinterLibrary) {
+  const problems = libraryProblems(value);
+  if (problems.length) throw new Error(problems[0]);
+}
 
 export function PrintersSection({ environmentId }: { environmentId: EnvironmentId }) {
   const result = useAtomValue(models.printers({ environmentId, input: {} }));
@@ -45,25 +57,29 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
   };
   if (!library)
     return (
-      <div className="px-3 sm:px-4">
+      <LoomSettingsContent className="flex flex-col gap-3">
         {result._tag === "Failure" ? (
           <>
-            <p role="alert">Could not load printers. {String(Cause.squash(result.cause))}</p>
-            <Button size="sm" variant="outline" onClick={refresh}>
-              Retry
-            </Button>
+            <LoomSettingsNotice role="alert">
+              Could not load printers. {String(Cause.squash(result.cause))}
+            </LoomSettingsNotice>
+            <LoomSettingsActions>
+              <Button size="sm" variant="outline" onClick={refresh}>
+                Retry
+              </Button>
+            </LoomSettingsActions>
           </>
         ) : (
-          <p className="text-sm">Loading printers...</p>
+          <LoomSettingsNotice role="status">Loading printers...</LoomSettingsNotice>
         )}
-      </div>
+      </LoomSettingsContent>
     );
-  const save = async (value: PrinterLibrary, expectedVersion = library.version): Promise<void> => {
+  const libraryVersion = library.version;
+  const save = async (value: PrinterLibrary, expectedVersion = libraryVersion): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      const problems = libraryProblems(value);
-      if (problems.length) throw new Error(problems[0]);
+      validateLibrary(value);
       const next = await runModelCommand(models.updatePrinters, {
         environmentId,
         input: {
@@ -78,10 +94,10 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "The library could not be saved.";
       setError(message);
-      throw cause;
-    } finally {
       setBusy(false);
+      throw cause;
     }
+    setBusy(false);
   };
   const action = (operation: Promise<void>) => {
     void operation.catch(() => undefined);
@@ -135,237 +151,247 @@ export function PrintersSection({ environmentId }: { environmentId: EnvironmentI
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The file could not be imported.");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const atLimit = library.printers.length >= USER_PRINTER_LIMIT;
   return (
-    <div className="flex min-w-0 flex-col gap-4 px-3 sm:px-4" id="printers">
-      <fieldset disabled={!canSave || busy} className="flex min-w-0 flex-col gap-3">
-        <legend className="text-sm font-medium">Printers</legend>
-        <p className="text-xs text-muted-foreground">
-          Printers and materials belong to this environment. Export the library to keep a portable
-          backup.
-        </p>
-        <h4 className="text-xs font-medium">Your printers</h4>
-        {!library.printers.length && (
-          <p className="text-xs text-muted-foreground">
-            No printers of your own yet. Add one or import a profile.
-          </p>
-        )}
-        {library.printers.map((printer) => (
-          <div
-            key={printer.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2"
-          >
-            <div className="min-w-0 text-xs">
-              <p>{printer.name}</p>
-              <p className="text-muted-foreground">
-                {formatLengths(printer.volumeMm, units, { trim: true })}
-                {printer.bedShape === "round" ? " · Round" : ""}
-                {printer.nozzlesMm.length ? ` · ${printer.nozzlesMm.join(", ")} mm nozzle` : ""}
-              </p>
-              {printer.source.kind === "imported" && (
-                <p className="text-muted-foreground">Imported from {printer.source.app}</p>
-              )}
-            </div>
-            <div className="flex gap-1">
+    <div className="min-w-0" id="printers">
+      <LoomSettingsContent className="flex flex-col gap-4">
+        <fieldset disabled={!canSave || busy} className="flex min-w-0 flex-col gap-4">
+          <legend className="mb-3 text-sm font-medium">Printers</legend>
+          <LoomSettingsNotice>
+            Printers and materials belong to this environment. Export the library to keep a portable
+            backup.
+          </LoomSettingsNotice>
+          <LoomSettingsPanel title="Your printers">
+            {!library.printers.length && (
+              <LoomSettingsNotice>
+                No printers of your own yet. Add one or import a profile.
+              </LoomSettingsNotice>
+            )}
+            {library.printers.map((printer) => (
+              <div
+                key={printer.id}
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
+              >
+                <div className="min-w-0 flex-1 basis-48 text-xs wrap-anywhere">
+                  <p className="text-sm font-medium">{printer.name}</p>
+                  <p className="text-muted-foreground">
+                    {formatLengths(printer.volumeMm, units, { trim: true })}
+                    {printer.bedShape === "round" ? " · Round" : ""}
+                    {printer.nozzlesMm.length ? ` · ${printer.nozzlesMm.join(", ")} mm nozzle` : ""}
+                  </p>
+                  {printer.source.kind === "imported" && (
+                    <p className="text-muted-foreground">Imported from {printer.source.app}</p>
+                  )}
+                </div>
+                <LoomSettingsActions>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setWarnings([]);
+                      setEditing(printer);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={atLimit}
+                    onClick={() =>
+                      setEditing({
+                        ...printer,
+                        id: `custom-${randomUUID()}`,
+                        name: `${printer.name} copy`.slice(0, 60),
+                      })
+                    }
+                  >
+                    Duplicate
+                  </Button>
+                  <Button size="xs" variant="ghost" onClick={() => action(remove(printer))}>
+                    Delete
+                  </Button>
+                </LoomSettingsActions>
+              </div>
+            ))}
+            <LoomSettingsActions>
               <Button
-                size="xs"
-                variant="ghost"
+                size="sm"
+                variant="outline"
+                disabled={atLimit}
+                onClick={() => setEditing(blankPrinter(`custom-${randomUUID()}`, "printer"))}
+              >
+                Add printer
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={atLimit}
+                onClick={() => setEditing(blankPrinter(`custom-${randomUUID()}`, "surface"))}
+              >
+                Add surface
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={atLimit}
+                onClick={() => profileInput.current?.click()}
+              >
+                Import printer profile
+              </Button>
+            </LoomSettingsActions>
+            {atLimit && <LoomSettingsNotice>Up to 64 printers and surfaces.</LoomSettingsNotice>}
+          </LoomSettingsPanel>
+          <LoomSettingsDetails title="Built-in printers and surfaces">
+            {(["printer", "surface"] as const).map((kind) => (
+              <div key={kind} className="flex min-w-0 flex-col gap-3">
+                <h4 className="text-xs font-medium">
+                  {kind === "printer" ? "Built-in printers" : "Surfaces"}
+                </h4>
+                {Object.entries(BUILT_IN_PRINTERS)
+                  .filter(([, p]) => p.kind === kind)
+                  .map(([id, entry]) => {
+                    const preset = id as keyof typeof BUILT_IN_PRINTERS;
+                    const hidden = library.hiddenBuiltIns.includes(preset);
+                    return (
+                      <div
+                        key={id}
+                        className={`flex min-w-0 flex-wrap items-center justify-between gap-3 text-xs ${hidden ? "opacity-60" : ""}`}
+                      >
+                        <div className="min-w-0 flex-1 basis-48 wrap-anywhere">
+                          {entry.label}
+                          <p className="text-muted-foreground">
+                            {formatLengths(entry.volumeMm, units, { trim: true })} · Built in
+                            {hidden ? " · Hidden" : ""}
+                          </p>
+                        </div>
+                        <LoomSettingsActions>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            disabled={atLimit}
+                            onClick={() => duplicate(preset)}
+                          >
+                            Duplicate
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() =>
+                              action(
+                                save({
+                                  ...library,
+                                  hiddenBuiltIns: hidden
+                                    ? library.hiddenBuiltIns.filter((value) => value !== preset)
+                                    : [...library.hiddenBuiltIns, preset],
+                                }),
+                              )
+                            }
+                          >
+                            {hidden ? "Show" : "Hide"}
+                          </Button>
+                        </LoomSettingsActions>
+                      </div>
+                    );
+                  })}
+              </div>
+            ))}
+          </LoomSettingsDetails>
+          <MaterialsSection library={library} disabled={!canSave || busy} save={save} />
+          <LoomSettingsActions>
+            <Button size="sm" variant="outline" onClick={() => libraryInput.current?.click()}>
+              Import library
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const value = {
+                  format: "loom.printers",
+                  version: 1,
+                  exportedAt: new Date().toISOString(),
+                  printers: library.printers,
+                  materials: library.materials,
+                };
+                saveImage(
+                  new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
+                  "loom-printers.json",
+                );
+              }}
+            >
+              Export library
+            </Button>
+          </LoomSettingsActions>
+          <input
+            hidden
+            type="file"
+            accept=".json,.ini"
+            ref={profileInput}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void importFile(file, true);
+            }}
+          />
+          <input
+            hidden
+            type="file"
+            accept=".json"
+            ref={libraryInput}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void importFile(file, false);
+            }}
+          />
+        </fieldset>
+        {error && (
+          <div className="flex min-w-0 flex-col gap-3">
+            <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>
+            <LoomSettingsActions>
+              <Button
+                size="sm"
+                variant="link"
                 onClick={() => {
-                  setWarnings([]);
-                  setEditing(printer);
+                  setSaved(null);
+                  refresh();
                 }}
               >
-                Edit
+                Reload
               </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={atLimit}
-                onClick={() =>
-                  setEditing({
-                    ...printer,
-                    id: `custom-${randomUUID()}`,
-                    name: `${printer.name} copy`.slice(0, 60),
-                  })
-                }
-              >
-                Duplicate
-              </Button>
-              <Button size="xs" variant="ghost" onClick={() => action(remove(printer))}>
-                Delete
-              </Button>
-            </div>
+            </LoomSettingsActions>
           </div>
-        ))}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={atLimit}
-            onClick={() => setEditing(blankPrinter(`custom-${randomUUID()}`, "printer"))}
-          >
-            Add printer
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={atLimit}
-            onClick={() => setEditing(blankPrinter(`custom-${randomUUID()}`, "surface"))}
-          >
-            Add surface
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={atLimit}
-            onClick={() => profileInput.current?.click()}
-          >
-            Import printer profile
-          </Button>
-        </div>
-        {atLimit && <p className="text-xs">Up to 64 printers and surfaces.</p>}
-        {(["printer", "surface"] as const).map((kind) => (
-          <div key={kind} className="flex flex-col gap-2">
-            <h4 className="text-xs font-medium">
-              {kind === "printer" ? "Built-in printers" : "Surfaces"}
-            </h4>
-            {Object.entries(BUILT_IN_PRINTERS)
-              .filter(([, p]) => p.kind === kind)
-              .map(([id, entry]) => {
-                const preset = id as keyof typeof BUILT_IN_PRINTERS;
-                const hidden = library.hiddenBuiltIns.includes(preset);
-                return (
-                  <div
-                    key={id}
-                    className={`flex flex-wrap items-center justify-between gap-2 text-xs ${hidden ? "opacity-60" : ""}`}
-                  >
-                    <div>
-                      {entry.label}
-                      <p className="text-muted-foreground">
-                        {formatLengths(entry.volumeMm, units, { trim: true })} · Built in
-                        {hidden ? " · Hidden" : ""}
-                      </p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        disabled={atLimit}
-                        onClick={() => duplicate(preset)}
-                      >
-                        Duplicate
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={() =>
-                          action(
-                            save({
-                              ...library,
-                              hiddenBuiltIns: hidden
-                                ? library.hiddenBuiltIns.filter((value) => value !== preset)
-                                : [...library.hiddenBuiltIns, preset],
-                            }),
-                          )
-                        }
-                      >
-                        {hidden ? "Show" : "Hide"}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        ))}
-        <MaterialsSection library={library} disabled={!canSave || busy} save={save} />
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => libraryInput.current?.click()}>
-            Import library
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              const value = {
-                format: "loom.printers",
-                version: 1,
-                exportedAt: new Date().toISOString(),
-                printers: library.printers,
-                materials: library.materials,
-              };
-              saveImage(
-                new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
-                "loom-printers.json",
-              );
-            }}
-          >
-            Export library
-          </Button>
-        </div>
-        <input
-          hidden
-          type="file"
-          accept=".json,.ini"
-          ref={profileInput}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void importFile(file, true);
-          }}
-        />
-        <input
-          hidden
-          type="file"
-          accept=".json"
-          ref={libraryInput}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void importFile(file, false);
-          }}
-        />
-      </fieldset>
-      {error && (
-        <div role="alert" className="text-sm">
-          {error}
-          <Button
-            size="sm"
-            variant="link"
-            onClick={() => {
-              setSaved(null);
-              refresh();
-            }}
-          >
-            Reload
-          </Button>
-        </div>
-      )}
-      {editing && (
-        <>
-          <div className="text-xs">
-            {warnings.map((warning) => (
-              <p key={warning}>{warning}</p>
-            ))}
-          </div>
-          <PrinterEditor
-            key={editing.id}
-            initial={editing}
-            library={library}
-            busy={busy}
-            onClose={() => setEditing(null)}
-            onSave={(printer) =>
-              save({
-                ...library,
-                printers: [...library.printers.filter((p) => p.id !== printer.id), printer],
-              })
-            }
-          />
-        </>
-      )}
+        )}
+        {editing && (
+          <>
+            {warnings.length > 0 && (
+              <LoomSettingsNotice>
+                <ul className="list-disc space-y-1 pl-4">
+                  {warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </LoomSettingsNotice>
+            )}
+            <PrinterEditor
+              key={editing.id}
+              initial={editing}
+              library={library}
+              busy={busy}
+              onClose={() => setEditing(null)}
+              onSave={(printer) =>
+                save({
+                  ...library,
+                  printers: [...library.printers.filter((p) => p.id !== printer.id), printer],
+                })
+              }
+            />
+          </>
+        )}
+      </LoomSettingsContent>
     </div>
   );
 }

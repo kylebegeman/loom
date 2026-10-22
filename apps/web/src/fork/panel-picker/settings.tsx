@@ -1,5 +1,6 @@
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Switch } from "~/components/ui/switch";
+import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
 import {
   setPanelPickerEnabled,
   setPanelPickerShortcut,
@@ -10,7 +11,12 @@ import {
 export function PanelPickerSettingsSection() {
   const { enabled, shortcut } = usePanelPickerPreferences();
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          These preferences apply on this device, across all connected environments.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
       <SettingsRow
         title="Use the compact panel picker"
         description="Search and recent panels in the right panel's launcher and + menu. Off shows the standard list."

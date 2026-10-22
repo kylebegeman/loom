@@ -22,6 +22,11 @@ import { useLengthUnit, usePcbPreferences } from "./preferences";
 import { asyncError, asyncValue } from "./usePcbPreview";
 import { electronicsDesignUrl } from "./summary";
 import { OperationStatus } from "./OperationStatus";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsNotice,
+} from "~/fork/settings/parts";
 function Tool({
   name,
   status,
@@ -35,16 +40,23 @@ function Tool({
     <SettingsRow
       title={name}
       description={
-        status?.problem === "tool-too-old"
-          ? "KiCad 9 or newer is required."
-          : status?.problem === "version-failed"
-            ? "The executable could not report its version."
-            : status?.found
-              ? `${status.version ?? "Detected"}${status.path ? ` · ${status.path}` : ""}`
-              : "Not detected on the environment host."
+        <span className="break-words">
+          {status?.problem === "tool-too-old"
+            ? "KiCad 9 or newer is required."
+            : status?.problem === "version-failed"
+              ? "The executable could not report its version."
+              : status?.found
+                ? `${status.version ?? "Detected"}${status.path ? ` · ${status.path}` : ""}`
+                : "Not detected on the environment host."}
+        </span>
       }
       control={
-        <a className="text-sm underline" href={url} target="_blank" rel="noreferrer">
+        <a
+          className="text-sm underline underline-offset-4"
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+        >
           Install instructions
         </a>
       }
@@ -65,17 +77,19 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
     [message, setMessage] = useState<string | null>(null);
   const valid = !url.trim() || electronicsDesignUrl(url, "/design.kicad_pro") !== null;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
-        <p className="text-sm text-muted-foreground">
+    <div className="flex min-w-0 flex-col">
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
           Tools run on this environment's host. Loom searches PATH, standard macOS KiCad
           installations, and each project's node_modules/.bin/tsci. tscircuit also needs Bun.
-        </p>
+        </LoomSettingsNotice>
         {(result.waiting || result._tag === "Initial") && (
           <OperationStatus label="Detecting PCB tools" />
         )}
-        {asyncError(result) && <p role="alert">{asyncError(result)}</p>}
-      </div>
+        {asyncError(result) && (
+          <LoomSettingsNotice role="alert">{asyncError(result)}</LoomSettingsNotice>
+        )}
+      </LoomSettingsContent>
       <FabSettings environmentId={environmentId} />
       <Tool name="KiCad CLI" status={info?.kicad} url="https://www.kicad.org/download/" />
       <Tool
@@ -88,12 +102,12 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
         status={info?.ngspice}
         url="https://ngspice.sourceforge.io/download.html"
       />
-      <div className="flex flex-col gap-3 px-3 sm:px-4">
-        <p className="text-xs text-muted-foreground">
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
           A project-local tscircuit installation is detected when you open that project's preview.
           Detection refreshes at most once per minute.
-        </p>
-        <div>
+        </LoomSettingsNotice>
+        <LoomSettingsActions>
           <Button
             variant="outline"
             size="sm"
@@ -102,28 +116,37 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
           >
             Check tools again
           </Button>
-        </div>
-      </div>
+        </LoomSettingsActions>
+      </LoomSettingsContent>
       <SettingsRow
         title="When an agent changes a design"
         description="Offer changed designs or open them in the PCB panel. Saved on this device."
         control={
-          <select
-            aria-label="When an agent changes a design"
+          <Select<"offer" | "open" | "off">
             value={mode}
-            onChange={(e) => setMode(e.target.value as "offer" | "open" | "off")}
+            onValueChange={(value) => value && setMode(value)}
+            items={[
+              { value: "offer", label: "Offer to open" },
+              { value: "open", label: "Open automatically" },
+              { value: "off", label: "Do nothing" },
+            ]}
           >
-            <option value="offer">Offer to open</option>
-            <option value="open">Open automatically</option>
-            <option value="off">Do nothing</option>
-          </select>
+            <SelectTrigger size="sm" aria-label="When an agent changes a design">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="offer">Offer to open</SelectItem>
+              <SelectItem value="open">Open automatically</SelectItem>
+              <SelectItem value="off">Do nothing</SelectItem>
+            </SelectPopup>
+          </Select>
         }
       />
       <SettingsRow
         title="Electronics app URL"
         description="Optional deep link for opening designs. Saved on this device."
       >
-        <div className="flex flex-col gap-2 pb-2">
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="Electronics app URL"
             type="url"
@@ -135,11 +158,11 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
             }}
           />
           {!valid && (
-            <p role="alert" className="text-sm">
+            <LoomSettingsNotice role="alert">
               Enter an HTTP or HTTPS URL without embedded credentials.
-            </p>
+            </LoomSettingsNotice>
           )}
-          <div>
+          <LoomSettingsActions>
             <Button
               size="sm"
               disabled={!valid}
@@ -150,12 +173,8 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
             >
               Save link
             </Button>
-          </div>
-          {message && (
-            <p role="status" className="text-sm">
-              {message}
-            </p>
-          )}
+          </LoomSettingsActions>
+          {message && <LoomSettingsNotice role="status">{message}</LoomSettingsNotice>}
         </div>
       </SettingsRow>
       <SettingsRow
@@ -188,13 +207,22 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
 export function PcbPreviewSettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to check PCB tools.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>Select a connected environment to check PCB tools.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       "pcb-preview",
     )
   )
-    return <p>Needs a Loom server with PCB preview.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>Needs a Loom server with PCB preview.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentSettings
       key={environment.environmentId}

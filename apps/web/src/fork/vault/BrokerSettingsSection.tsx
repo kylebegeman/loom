@@ -20,6 +20,21 @@ import { AsyncResult } from "effect/reactivity";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import {
   Dialog,
   DialogPopup,
@@ -63,9 +78,11 @@ export function VaultBrokerSettingsSection() {
       "vault-brokers",
     )
   )
-    return <p className="text-sm">Vault brokers are unavailable on this server.</p>;
+    return <LoomSettingsNotice>Vault brokers are unavailable on this server.</LoomSettingsNotice>;
   if (!canRead)
-    return <p className="text-sm">Your connection does not include broker inspection.</p>;
+    return (
+      <LoomSettingsNotice>Your connection does not include broker inspection.</LoomSettingsNotice>
+    );
   return (
     <BrokerManager key={environment.environmentId} environmentId={environment.environmentId} />
   );
@@ -118,9 +135,8 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
       setPendingBegin(null);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const apply = async () => {
     if (!review || busy) return;
@@ -132,9 +148,8 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
       refresh();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const download = () => {
     if (!invitation) return;
@@ -168,161 +183,198 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
     setError(null);
   };
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm">Machines trusted to run a Vault broker</p>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
-            Refresh brokers
-          </Button>
-          <Button
-            size="sm"
-            disabled={!canInvite || busy}
-            onClick={() => {
-              setAdding(true);
-              setError(null);
-            }}
-          >
-            Enroll broker
-          </Button>
-        </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Enrollment verifies machine identity. Credential delivery and SSH signing still need their
-        own supported channels and workload grants. No boot service is installed.
+    <div className="flex min-w-0 flex-col gap-5">
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Enroll the machines you trust to run a Vault broker. Enrollment verifies machine identity;
+        credential delivery and SSH signing still need supported channels and workload grants.
       </p>
+      <LoomSettingsActions>
+        <Button
+          size="sm"
+          disabled={!canInvite || busy}
+          onClick={() => {
+            setAdding(true);
+            setError(null);
+          }}
+        >
+          Enroll broker
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
+          Refresh brokers
+        </Button>
+      </LoomSettingsActions>
       {error || result._tag === "Failure" ? (
-        <p role="alert" className="text-sm">
+        <LoomSettingsNotice role="alert">
           {error ?? (result._tag === "Failure" ? message(Cause.squash(result.cause)) : "")}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {!snapshot ? (
-        <p role="status" className="text-sm">
+        <LoomSettingsNotice role="status">
           {result._tag === "Failure"
             ? "Broker inspection is unavailable. Refresh to try again."
             : "Loading brokers…"}
-        </p>
+        </LoomSettingsNotice>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">
-            Registry revision {snapshot.revision}. Heartbeats renew online every minute and lapse
-            after two minutes.
-          </p>
-          {snapshot.machines.length === 0 ? (
-            <p className="text-sm">
-              No enrolled brokers. Generate a broker identity, then create an invitation here.
-            </p>
-          ) : (
-            <div className="flex flex-col divide-y divide-border">
-              {snapshot.machines.map((machine) => (
-                <div key={machine.id} className="flex flex-col gap-2 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{machine.label}</p>
-                    <span className="text-sm">{vaultBrokerState(machine, now)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {machine.platform === "darwin" ? "macOS" : "Linux"} · Foreground service ·{" "}
-                    {machine.lastSeenAt === null
-                      ? "No heartbeat yet"
-                      : `Last seen ${new Date(machine.lastSeenAt).toLocaleString()}`}
-                  </p>
-                  <p className="break-all font-mono text-xs">{machine.fingerprint}</p>
-                  {machine.state === "active" ? (
-                    <div>
+          {snapshot.enrollments.length > 0 ? (
+            <LoomSettingsPanel
+              title="Enrollment invitations"
+              description="Claim the invitation on the intended host, then compare its fingerprint before approving."
+            >
+              <ul className="divide-y divide-border">
+                {snapshot.enrollments.map((enrollment) => (
+                  <li
+                    key={enrollment.id}
+                    className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="space-y-1">
+                      <h4 className="wrap-anywhere text-sm font-medium">{enrollment.label}</h4>
+                      <p className="text-sm leading-relaxed">
+                        {enrollment.state === "awaiting-approval"
+                          ? "Proof received. Compare fingerprints before approving."
+                          : "Waiting for the broker to claim its invitation."}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Expires {new Date(enrollment.expiresAt).toLocaleString()}.
+                      </p>
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-xs text-muted-foreground">Broker fingerprint</p>
+                      <p className="wrap-anywhere font-mono text-xs leading-relaxed">
+                        {enrollment.fingerprint}
+                      </p>
+                    </div>
+                    <LoomSettingsActions>
+                      {enrollment.state === "awaiting-approval" ? (
+                        <Button
+                          size="sm"
+                          disabled={!canApply || busy}
+                          onClick={() =>
+                            inspectChange(
+                              {
+                                type: "approve",
+                                enrollmentId: enrollment.id,
+                                fingerprint: enrollment.fingerprint,
+                              },
+                              enrollment.label,
+                              enrollment.fingerprint,
+                              "Approve this proven machine identity. Compare the full fingerprint with the broker identity output on the intended host. This grants no item access.",
+                            )
+                          }
+                        >
+                          Review approval
+                        </Button>
+                      ) : null}
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="outline"
                         disabled={!canApply || busy}
                         onClick={() =>
                           inspectChange(
-                            { type: "disable", machineId: machine.id },
-                            machine.label,
-                            machine.fingerprint,
-                            "Disable this identity permanently and reject new heartbeats. Re-enrollment requires a new broker key in a separate identity directory.",
-                          )
-                        }
-                      >
-                        Review disable
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Enroll a new identity to restore this machine. Previously copied credentials
-                      are outside this control.
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {snapshot.enrollments.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium">Enrollment invitations</p>
-              {snapshot.enrollments.map((enrollment) => (
-                <div key={enrollment.id} className="flex flex-col gap-2 rounded-lg bg-muted p-4">
-                  <p className="text-sm font-medium">{enrollment.label}</p>
-                  <p className="text-sm">
-                    {enrollment.state === "awaiting-approval"
-                      ? "Proof received. Compare fingerprints before approving."
-                      : "Waiting for the broker to claim its invitation."}{" "}
-                    Expires {new Date(enrollment.expiresAt).toLocaleString()}.
-                  </p>
-                  <p className="break-all font-mono text-xs">{enrollment.fingerprint}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {enrollment.state === "awaiting-approval" ? (
-                      <Button
-                        size="sm"
-                        disabled={!canApply || busy}
-                        onClick={() =>
-                          inspectChange(
-                            {
-                              type: "approve",
-                              enrollmentId: enrollment.id,
-                              fingerprint: enrollment.fingerprint,
-                            },
+                            { type: "cancel", enrollmentId: enrollment.id },
                             enrollment.label,
                             enrollment.fingerprint,
-                            "Approve this proven machine identity. Compare the full fingerprint with the broker identity output on the intended host. This grants no item access.",
+                            "Cancel this invitation. A new invitation is required to continue enrollment.",
                           )
                         }
                       >
-                        Review approval
+                        Review cancellation
                       </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canApply || busy}
-                      onClick={() =>
-                        inspectChange(
-                          { type: "cancel", enrollmentId: enrollment.id },
-                          enrollment.label,
-                          enrollment.fingerprint,
-                          "Cancel this invitation. A new invitation is required to continue enrollment.",
-                        )
-                      }
-                    >
-                      Review cancellation
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </LoomSettingsActions>
+                  </li>
+                ))}
+              </ul>
+            </LoomSettingsPanel>
           ) : null}
-          <details>
-            <summary className="cursor-pointer text-sm">Recent broker activity</summary>
-            <div className="mt-3 flex flex-col gap-2">
-              {snapshot.events.map((event) => (
-                <p key={event.id} className="text-xs text-muted-foreground">
-                  {new Date(event.at).toLocaleString()}: {event.kind} · {event.machineId}
-                </p>
-              ))}
-              <p className="text-xs text-muted-foreground">
-                {snapshot.omittedEvents} older events omitted. Heartbeats do not prove credential
-                use or successful SSH access.
-              </p>
-            </div>
-          </details>
+          <LoomSettingsPanel
+            title="Enrolled machines"
+            description="Brokers run as foreground services. Enrollment does not install a boot service."
+          >
+            {snapshot.machines.length === 0 ? (
+              <LoomSettingsNotice>
+                No enrolled brokers. Generate a broker identity on the host, then create an
+                invitation here.
+              </LoomSettingsNotice>
+            ) : (
+              <ul className="divide-y divide-border">
+                {snapshot.machines.map((machine) => (
+                  <li
+                    key={machine.id}
+                    className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <h4 className="wrap-anywhere text-sm font-medium">{machine.label}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {machine.platform === "darwin" ? "macOS" : "Linux"}
+                        </p>
+                      </div>
+                      <span className="rounded-md bg-muted px-2 py-1 text-xs capitalize">
+                        {vaultBrokerState(machine, now)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {machine.lastSeenAt === null
+                        ? "No heartbeat yet"
+                        : `Last seen ${new Date(machine.lastSeenAt).toLocaleString()}`}
+                    </p>
+                    {machine.state === "active" ? (
+                      <LoomSettingsActions>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canApply || busy}
+                          onClick={() =>
+                            inspectChange(
+                              { type: "disable", machineId: machine.id },
+                              machine.label,
+                              machine.fingerprint,
+                              "Disable this identity permanently and reject new heartbeats. Re-enrollment requires a new broker key in a separate identity directory.",
+                            )
+                          }
+                        >
+                          Review disable
+                        </Button>
+                      </LoomSettingsActions>
+                    ) : (
+                      <LoomSettingsNotice>
+                        Enroll a new identity to restore this machine. Previously copied credentials
+                        are outside this control.
+                      </LoomSettingsNotice>
+                    )}
+                    <LoomSettingsDetails title="Machine fingerprint">
+                      <p className="wrap-anywhere font-mono text-xs leading-relaxed">
+                        {machine.fingerprint}
+                      </p>
+                    </LoomSettingsDetails>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </LoomSettingsPanel>
+          <LoomSettingsDetails title="Recent broker activity">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Registry revision {snapshot.revision}. Heartbeats renew online every minute and lapse
+              after two minutes. A heartbeat does not prove credential use or successful SSH access.
+            </p>
+            {snapshot.events.length ? (
+              <ul className="divide-y divide-border">
+                {snapshot.events.map((event) => (
+                  <li key={event.id} className="space-y-1 py-2 text-xs">
+                    <p>
+                      {new Date(event.at).toLocaleString()} · {event.kind}
+                    </p>
+                    <p className="wrap-anywhere text-muted-foreground">{event.machineId}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent broker activity.</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {snapshot.omittedEvents} older events omitted.
+            </p>
+          </LoomSettingsDetails>
         </>
       )}
       <Dialog
@@ -346,22 +398,46 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               void begin();
             }}
           >
-            <label className="flex flex-col gap-2 text-sm">
-              Broker name
-              <Input
-                autoFocus
-                value={label}
-                maxLength={120}
-                disabled={busy}
-                onChange={(event) => {
-                  setLabel(event.target.value);
-                  changed();
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              Broker public key
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <LoomSettingsField label="Broker name">
+                <Input
+                  aria-label="Broker name"
+                  autoFocus
+                  value={label}
+                  maxLength={120}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setLabel(event.target.value);
+                    changed();
+                  }}
+                />
+              </LoomSettingsField>
+              <LoomSettingsField label="Platform">
+                <Select
+                  value={platform}
+                  disabled={busy}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setPlatform(value === "darwin" ? "darwin" : "linux");
+                    changed();
+                  }}
+                >
+                  <SelectTrigger aria-label="Broker platform">
+                    <SelectValue>{platform === "darwin" ? "macOS" : "Linux"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="linux">Linux</SelectItem>
+                    <SelectItem value="darwin">macOS</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
+            </div>
+            <LoomSettingsField
+              label="Broker public key"
+              description="Paste the public key printed by Loom's broker identity command."
+            >
               <Textarea
+                aria-label="Broker public key"
                 value={publicKey}
                 disabled={busy}
                 autoComplete="off"
@@ -370,28 +446,9 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
                   changed();
                 }}
               />
-            </label>
-            <label className="flex flex-col gap-2 text-sm">
-              Platform
-              <select
-                value={platform}
-                disabled={busy}
-                className="rounded-md border border-input bg-background p-2"
-                onChange={(event) => {
-                  setPlatform(event.target.value === "darwin" ? "darwin" : "linux");
-                  changed();
-                }}
-              >
-                <option value="linux">Linux</option>
-                <option value="darwin">macOS</option>
-              </select>
-            </label>
-            {error ? (
-              <p role="alert" className="text-sm">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex gap-2">
+            </LoomSettingsField>
+            {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+            <LoomSettingsActions>
               <Button
                 type="button"
                 variant="outline"
@@ -403,7 +460,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
               <Button type="submit" disabled={!canInvite || busy}>
                 {busy ? "Creating invitation…" : "Create invitation"}
               </Button>
-            </div>
+            </LoomSettingsActions>
           </form>
         </DialogPopup>
       </Dialog>
@@ -422,16 +479,21 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 px-6 pb-5">
-            <p className="break-all font-mono text-xs">{invitation?.fingerprint}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium">Broker fingerprint</p>
+              <p className="wrap-anywhere font-mono text-xs leading-relaxed">
+                {invitation?.fingerprint}
+              </p>
+            </div>
             <p className="text-sm">
               Expires {invitation ? new Date(invitation.expiresAt).toLocaleString() : ""}.
             </p>
-            <div className="flex gap-2">
+            <LoomSettingsActions>
               <Button onClick={download}>Download invitation</Button>
               <Button variant="outline" onClick={() => setInvitation(null)}>
                 Done
               </Button>
-            </div>
+            </LoomSettingsActions>
           </div>
         </DialogPopup>
       </Dialog>
@@ -447,31 +509,27 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
             <DialogDescription>{review?.description}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 px-6 pb-5">
-            <p className="break-all font-mono text-xs">{review?.fingerprint}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium">Broker fingerprint</p>
+              <p className="wrap-anywhere font-mono text-xs leading-relaxed">
+                {review?.fingerprint}
+              </p>
+            </div>
             <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                disabled={busy}
-                onChange={(event) => setConfirmed(event.target.checked)}
-              />
+              <Checkbox checked={confirmed} disabled={busy} onCheckedChange={setConfirmed} />
               {review?.input.change.type === "approve"
                 ? "I compared this fingerprint with the intended broker."
                 : "I reviewed this change and its recovery requirements."}
             </label>
-            {error ? (
-              <p role="alert" className="text-sm">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex gap-2">
+            {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+            <LoomSettingsActions>
               <Button variant="outline" disabled={busy} onClick={() => setReview(null)}>
                 Abandon review
               </Button>
               <Button disabled={!canApply || !confirmed || busy} onClick={() => void apply()}>
                 {busy ? "Applying…" : "Apply reviewed change"}
               </Button>
-            </div>
+            </LoomSettingsActions>
           </div>
         </DialogPopup>
       </Dialog>

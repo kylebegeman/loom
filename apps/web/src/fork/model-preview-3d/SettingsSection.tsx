@@ -26,6 +26,14 @@ import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { Button } from "~/components/ui/button";
 import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
+import {
   Select,
   SelectGroup,
   SelectGroupLabel,
@@ -96,9 +104,8 @@ function SettingsForm({
     } catch (error) {
       setFailed(true);
       setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
   const invalidBedName =
     !supportsPrinters &&
@@ -121,13 +128,13 @@ function SettingsForm({
         precision: settings.displayPrecision,
       }}
     >
-      <fieldset disabled={!canSave || busy !== null} className="flex min-w-0 flex-col gap-3">
-        <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
-          <p className="text-sm text-muted-foreground">
+      <fieldset disabled={!canSave || busy !== null} className="flex min-w-0 flex-col">
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsNotice>
             These settings apply to the selected environment. OpenSCAD runs on that host.
-          </p>
+          </LoomSettingsNotice>
           {!info && status.waiting && <OperationStatus label="Detecting OpenSCAD" />}
-          <p className="text-sm">
+          <p className="break-words text-sm leading-relaxed">
             {info?.openscad.path
               ? `OpenSCAD ${info.openscad.version ?? "unknown version"} · ${info.openscad.supportsManifold ? "Manifold available" : "CGAL"} · ${info.openscad.supportsSummary ? "Geometry summaries available" : "No geometry summaries"}`
               : "OpenSCAD was not detected. Mesh previews still work."}{" "}
@@ -140,12 +147,12 @@ function SettingsForm({
               Get a development snapshot
             </a>
           </p>
-        </div>
+        </LoomSettingsContent>
         <SettingsRow
           title="OpenSCAD executable"
           description="Leave blank to search PATH and macOS applications."
         >
-          <div className="flex flex-col gap-2 pb-2">
+          <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
             <Input
               aria-label="OpenSCAD executable"
               value={settings.openscadPath ?? ""}
@@ -185,123 +192,119 @@ function SettingsForm({
             {...(info?.slicers ? { status: info.slicers } : {})}
           />
         )}
-        <SettingsRow
-          title="Render backend"
-          control={
-            <Select
-              value={settings.backend}
-              onValueChange={(next) => {
-                if (next) set("backend", next);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Render backend">
-                <SelectValue>
-                  {BACKENDS.find(({ value }) => value === settings.backend)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {BACKENDS.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        <SettingsRow
-          title="Render timeout (seconds)"
-          control={
-            <Input
-              aria-label="Render timeout"
-              type="number"
-              size="sm"
-              className="w-full sm:w-24"
-              min={1}
-              max={600}
-              value={settings.renderTimeoutSeconds}
-              onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
-            />
-          }
-        />
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsDetails title="Render performance and limits">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <LoomSettingsField label="Render backend">
+                <Select
+                  value={settings.backend}
+                  onValueChange={(next) => {
+                    if (next) set("backend", next);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-full" aria-label="Render backend">
+                    <SelectValue>
+                      {BACKENDS.find(({ value }) => value === settings.backend)?.label}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {BACKENDS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
+              <LoomSettingsField label="Render timeout (seconds)">
+                <Input
+                  aria-label="Render timeout"
+                  type="number"
+                  size="sm"
+                  min={1}
+                  max={600}
+                  value={settings.renderTimeoutSeconds}
+                  onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
+                />
+              </LoomSettingsField>
+              <LoomSettingsField label="Maximum file size (MB)">
+                <Input
+                  aria-label="Maximum file size"
+                  type="number"
+                  size="sm"
+                  min={1}
+                  max={2048}
+                  value={settings.maxFileMegabytes}
+                  onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
+                />
+              </LoomSettingsField>
+            </div>
+          </LoomSettingsDetails>
+        </LoomSettingsContent>
+
         <SettingsRow
           title="Render colors"
           description="Export SCAD as 3MF to preserve model colors."
           control={
-            <input
+            <Switch
               aria-label="Render colors"
-              type="checkbox"
               checked={settings.renderColors}
-              onChange={(event) => set("renderColors", event.target.checked)}
+              onCheckedChange={(checked) => set("renderColors", checked)}
             />
           }
         />
-        <SettingsRow
-          title="Nozzle diameter (mm)"
-          description="Used for print checks unless the selected printer provides its nozzle diameter."
-          control={
-            <Input
-              aria-label="Nozzle diameter (mm)"
-              type="number"
-              size="sm"
-              className="w-full sm:w-24"
-              min={0.1}
-              max={2}
-              step={0.05}
-              value={settings.nozzleDiameterMm}
-              onChange={(event) => set("nozzleDiameterMm", Number(event.target.value))}
-            />
-          }
-        />
-        <SettingsRow
-          title="Overhang limit (degrees)"
-          description="Faces beyond this angle from vertical are flagged by print checks and overhang shading."
-          control={
-            <Input
-              aria-label="Overhang limit (degrees)"
-              type="number"
-              size="sm"
-              className="w-full sm:w-24"
-              min={30}
-              max={70}
-              step={1}
-              value={settings.overhangAngleDegrees}
-              onChange={(event) => set("overhangAngleDegrees", Number(event.target.value))}
-            />
-          }
-        />
-        <SettingsRow
-          title="First layer height (mm)"
-          description="Used to estimate contact with the bed in print checks."
-          control={
-            <Input
-              aria-label="First layer height (mm)"
-              type="number"
-              size="sm"
-              className="w-full sm:w-24"
-              min={0.04}
-              max={1}
-              step={0.01}
-              value={settings.firstLayerHeightMm}
-              onChange={(event) => set("firstLayerHeightMm", Number(event.target.value))}
-            />
-          }
-        />
-        <SettingsRow
-          title="Maximum file size (MB)"
-          control={
-            <Input
-              aria-label="Maximum file size"
-              type="number"
-              size="sm"
-              className="w-full sm:w-24"
-              min={1}
-              max={2048}
-              value={settings.maxFileMegabytes}
-              onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
-            />
-          }
-        />
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsPanel title="Print checks">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <LoomSettingsField
+                label="Nozzle diameter (mm)"
+                description="Used for print checks unless the selected printer provides its nozzle diameter."
+              >
+                <Input
+                  aria-label="Nozzle diameter (mm)"
+                  type="number"
+                  size="sm"
+                  min={0.1}
+                  max={2}
+                  step={0.05}
+                  value={settings.nozzleDiameterMm}
+                  onChange={(event) => set("nozzleDiameterMm", Number(event.target.value))}
+                />
+              </LoomSettingsField>
+              <LoomSettingsField
+                label="Overhang limit (degrees)"
+                description="Faces beyond this angle from vertical are flagged by print checks and overhang shading."
+              >
+                <Input
+                  aria-label="Overhang limit (degrees)"
+                  type="number"
+                  size="sm"
+                  min={30}
+                  max={70}
+                  step={1}
+                  value={settings.overhangAngleDegrees}
+                  onChange={(event) => set("overhangAngleDegrees", Number(event.target.value))}
+                />
+              </LoomSettingsField>
+              <LoomSettingsField
+                label="First layer height (mm)"
+                description="Used to estimate contact with the bed in print checks."
+              >
+                <Input
+                  aria-label="First layer height (mm)"
+                  type="number"
+                  size="sm"
+                  min={0.04}
+                  max={1}
+                  step={0.01}
+                  value={settings.firstLayerHeightMm}
+                  onChange={(event) => set("firstLayerHeightMm", Number(event.target.value))}
+                />
+              </LoomSettingsField>
+            </div>
+          </LoomSettingsPanel>
+        </LoomSettingsContent>
+
         <SettingsRow
           title="Units"
           description="Lengths shown in the 3D panel. Models and agent tools stay in millimetres."
@@ -368,8 +371,8 @@ function SettingsForm({
                     <SelectGroupLabel>{group.label}</SelectGroupLabel>
                     {group.options.map((option) => (
                       <SelectItem key={option.id} value={option.id}>
-                        <span className="flex w-full items-center gap-4">
-                          <span className="flex-1">{option.label}</span>
+                        <span className="flex min-w-0 w-full flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                          <span className="min-w-0 break-words">{option.label}</span>
                           <span className="text-muted-foreground text-xs tabular-nums">
                             {formatLengths(option.volumeMm, settings.displayUnits, { trim: true })}
                           </span>
@@ -392,9 +395,9 @@ function SettingsForm({
           />
         )}
         {buildPlateNote(settings.buildPlate, library) && (
-          <p className="px-3 text-xs text-muted-foreground sm:px-4">
-            {buildPlateNote(settings.buildPlate, library)}
-          </p>
+          <LoomSettingsContent className="flex flex-col gap-3">
+            <LoomSettingsNotice>{buildPlateNote(settings.buildPlate, library)}</LoomSettingsNotice>
+          </LoomSettingsContent>
         )}
         <SettingsRow
           title="Bed pattern"
@@ -465,7 +468,7 @@ function SettingsForm({
           }
         />
         <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
-          <div className="flex flex-col gap-2 pb-2">
+          <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
             <Input
               aria-label="Fabrication app URL"
               type="url"
@@ -478,11 +481,10 @@ function SettingsForm({
           title="Let agents render models and propose variants"
           description="Enable shared tools for model PNG views and parameter proposals in the variant workbench."
           control={
-            <input
+            <Switch
               aria-label="Let agents render models and propose variants"
-              type="checkbox"
               checked={settings.agentToolEnabled}
-              onChange={(event) => set("agentToolEnabled", event.target.checked)}
+              onCheckedChange={(checked) => set("agentToolEnabled", checked)}
             />
           }
         />
@@ -520,8 +522,8 @@ function SettingsForm({
             }
           />
         )}
-        <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
-          <div className="flex flex-wrap gap-2">
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsActions>
             <Button
               disabled={busy !== null || !canSave || invalidBedName}
               title={
@@ -561,38 +563,54 @@ function SettingsForm({
             >
               Clear render cache
             </Button>
-          </div>
+          </LoomSettingsActions>
           {busy && <OperationStatus label={busy} />}
           {message && (
-            <p role={failed ? "alert" : "status"} className="text-sm">
-              {message}
-            </p>
+            <LoomSettingsNotice role={failed ? "alert" : "status"}>{message}</LoomSettingsNotice>
           )}
-        </div>
+        </LoomSettingsContent>
       </fieldset>
     </DisplayUnitsProvider>
   );
 }
 function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const result = useAtomValue(models.settings({ environmentId, input: {} }));
-  if (result._tag === "Failure") return <p role="alert">{String(Cause.squash(result.cause))}</p>;
+  if (result._tag === "Failure")
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="alert">{String(Cause.squash(result.cause))}</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const settings = Option.getOrNull(AsyncResult.value(result));
   return settings ? (
     <SettingsForm key={JSON.stringify(settings)} environmentId={environmentId} initial={settings} />
   ) : (
-    <p>Loading 3D model settings...</p>
+    <LoomSettingsContent className="flex flex-col gap-3">
+      <LoomSettingsNotice role="status">Loading 3D model settings...</LoomSettingsNotice>
+    </LoomSettingsContent>
   );
 }
 export function ModelPreviewSettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to edit 3D model settings.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          Select a connected environment to edit 3D model settings.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       "model-preview-3d",
     )
   )
-    return <p>This environment does not support 3D model preview.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>This environment does not support 3D model preview.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentSettings
       key={environment.environmentId}

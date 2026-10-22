@@ -9,6 +9,20 @@ import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useEnvironmentScope } from "~/state/session";
@@ -32,8 +46,15 @@ export function VaultGitHubSettingsSection() {
       "vault-github",
     )
   )
-    return <p>Choose a computer with Vault GitHub connector support.</p>;
-  if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
+    return (
+      <LoomSettingsNotice>
+        Choose a computer with Vault GitHub connector support.
+      </LoomSettingsNotice>
+    );
+  if (!canRead)
+    return (
+      <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
   return (
     <Manager
       key={`${environment.environmentId}:${canWrite}`}
@@ -61,9 +82,8 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
       await work();
     } catch (e) {
       setError(message(e));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const edit = (info?: VaultGitHubInfo) => {
     setError(null);
@@ -80,17 +100,15 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
     });
   };
   return (
-    <div className="flex flex-col gap-4">
-      <p>
-        Dedicated GitHub identities for Loom agents. Use an App installation for short-lived tokens,
-        or a dedicated fine-grained token. Personal GitHub logins and SSH agents stay separate.
+    <div className="flex min-w-0 flex-col gap-5">
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Connect a dedicated GitHub identity for Loom agents. Use a GitHub App installation for
+        short-lived tokens or a dedicated fine-grained token.
       </p>
-      <p className="text-sm">
-        Connections are limited to named github.com repositories and still need an exact use grant
-        for the active run. API testing does not prove Git HTTPS or GH CLI availability. Use the
-        explicit Vault terminal command for supported gh and Git HTTPS operations.
-      </p>
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
+        <Button size="sm" disabled={locked || !!draft} onClick={() => edit()}>
+          Connect GitHub
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -99,73 +117,100 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         >
           Refresh GitHub connections
         </Button>
-        <Button size="sm" disabled={locked || !!draft} onClick={() => edit()}>
-          Connect GitHub
-        </Button>
-      </div>
-      {result.waiting ? <p role="status">Loading GitHub connections…</p> : null}
-      {error || result._tag === "Failure" ? (
-        <p role="alert">{error ?? "Could not load connections. Check Vault access and refresh."}</p>
+      </LoomSettingsActions>
+      {!canWrite ? (
+        <LoomSettingsNotice>
+          Your connection can inspect GitHub connections but cannot change them.
+        </LoomSettingsNotice>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      {page?.items.length === 0 ? <p>No GitHub connections in this page.</p> : null}
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Each connection is limited to named github.com repositories. Agents still need an exact use
+        grant for the active run. Personal GitHub logins and SSH agents stay separate.
+      </p>
+      {result.waiting ? (
+        <LoomSettingsNotice role="status">Loading GitHub connections…</LoomSettingsNotice>
+      ) : null}
+      {error || result._tag === "Failure" ? (
+        <LoomSettingsNotice role="alert">
+          {error ?? "Could not load connections. Check Vault access and refresh."}
+        </LoomSettingsNotice>
+      ) : null}
+      {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
+      {page?.items.length === 0 ? (
+        <LoomSettingsNotice>
+          No GitHub connections on this page. Connect an identity to get started.
+        </LoomSettingsNotice>
+      ) : null}
       {draft ? (
-        <section
-          aria-label="GitHub connection editor"
-          className="flex flex-col gap-3 rounded-md border p-4"
+        <LoomSettingsPanel
+          title={draft.expectedVersion ? "Replace GitHub credentials" : "New GitHub connection"}
+          description="Loom verifies the identity and API access to every allowed repository before saving."
         >
-          <label>
-            Connection label
-            <Input
-              aria-label="GitHub connection label"
-              value={draft.label}
-              maxLength={200}
-              disabled={locked}
-              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-            />
-          </label>
-          <label>
-            Authentication
-            <select
-              aria-label="GitHub authentication type"
-              disabled={locked}
-              value={draft.type}
-              onChange={(e) =>
-                setDraft({ ...draft, type: e.target.value === "app" ? "app" : "token", secret: "" })
-              }
+          <fieldset disabled={locked} className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <legend className="sr-only">GitHub connection</legend>
+            <LoomSettingsField
+              label="Connection label"
+              description="A name you will recognize when selecting a connection."
             >
-              <option value="app">GitHub App installation</option>
-              <option value="token">Dedicated token</option>
-            </select>
-          </label>
-          {draft.type === "app" ? (
-            <>
-              <label>
-                App ID
-                <Input
-                  aria-label="GitHub App ID"
-                  value={draft.appId}
-                  maxLength={20}
-                  disabled={locked}
-                  onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
-                />
-              </label>
-              <label>
-                Installation ID
-                <Input
-                  aria-label="GitHub installation ID"
-                  value={draft.installationId}
-                  maxLength={20}
-                  disabled={locked}
-                  onChange={(e) => setDraft({ ...draft, installationId: e.target.value })}
-                />
-              </label>
-            </>
-          ) : null}
-          <label>
-            {draft.type === "app"
-              ? "App private key (RSA PEM; escaped newlines accepted)"
-              : "Dedicated GitHub token"}
+              <Input
+                aria-label="GitHub connection label"
+                value={draft.label}
+                maxLength={200}
+                disabled={locked}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+              />
+            </LoomSettingsField>
+            <LoomSettingsField label="Authentication">
+              <Select
+                disabled={locked}
+                value={draft.type}
+                onValueChange={(value) => {
+                  if (value)
+                    setDraft({ ...draft, type: value === "app" ? "app" : "token", secret: "" });
+                }}
+              >
+                <SelectTrigger aria-label="GitHub authentication type">
+                  <SelectValue>
+                    {draft.type === "app" ? "GitHub App installation" : "Dedicated token"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="app">GitHub App installation</SelectItem>
+                  <SelectItem value="token">Dedicated token</SelectItem>
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+            {draft.type === "app" ? (
+              <>
+                <LoomSettingsField label="App ID">
+                  <Input
+                    aria-label="GitHub App ID"
+                    value={draft.appId}
+                    maxLength={20}
+                    disabled={locked}
+                    onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
+                  />
+                </LoomSettingsField>
+                <LoomSettingsField label="Installation ID">
+                  <Input
+                    aria-label="GitHub installation ID"
+                    value={draft.installationId}
+                    maxLength={20}
+                    disabled={locked}
+                    onChange={(e) => setDraft({ ...draft, installationId: e.target.value })}
+                  />
+                </LoomSettingsField>
+              </>
+            ) : null}
+          </fieldset>
+          <LoomSettingsField
+            label={draft.type === "app" ? "App private key" : "Dedicated GitHub token"}
+            description={
+              draft.type === "app"
+                ? "Use an RSA PEM key. Escaped newlines are accepted."
+                : "Use a dedicated fine-grained token with access to the repositories below."
+            }
+          >
             <Input
               aria-label="Private GitHub credential"
               type="password"
@@ -175,9 +220,11 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
               disabled={locked}
               onChange={(e) => setDraft({ ...draft, secret: e.target.value })}
             />
-          </label>
-          <label>
-            Allowed repositories
+          </LoomSettingsField>
+          <LoomSettingsField
+            label="Allowed repositories"
+            description="Enter 1 to 32 owner/repository names, separated by commas."
+          >
             <Input
               aria-label="Allowed GitHub repositories"
               placeholder="owner/repo, owner/other"
@@ -186,13 +233,14 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
               disabled={locked}
               onChange={(e) => setDraft({ ...draft, repositories: e.target.value })}
             />
-          </label>
-          <p className="text-sm">
-            Loom checks the identity and API access to every listed repository before saving. App
-            keys and tokens are stored in OpenBao. Replacing credentials uses a new item version;
-            existing operations may already have authenticated.
-          </p>
-          <div className="flex flex-wrap gap-2">
+          </LoomSettingsField>
+          <LoomSettingsDetails title="Credential storage and replacement">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              App keys and tokens are stored in OpenBao. Replacing credentials creates a new item
+              version. Existing operations may already have authenticated.
+            </p>
+          </LoomSettingsDetails>
+          <LoomSettingsActions>
             <Button
               disabled={locked}
               onClick={() =>
@@ -210,13 +258,13 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
                 })
               }
             >
-              Test and save GitHub connection
+              {busy ? "Testing and saving…" : "Test and save GitHub connection"}
             </Button>
             <Button variant="outline" disabled={busy} onClick={() => setDraft(null)}>
               Cancel GitHub connection
             </Button>
-          </div>
-        </section>
+          </LoomSettingsActions>
+        </LoomSettingsPanel>
       ) : null}
       {page?.items.map((info) => (
         <Connection
@@ -258,7 +306,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
           }
         />
       ))}
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -275,7 +323,7 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         >
           More GitHub connections
         </Button>
-      </div>
+      </LoomSettingsActions>
     </div>
   );
 }
@@ -297,31 +345,43 @@ function Connection({
   const [repo, setRepo] = useState(info.repositories[0]!),
     [confirm, setConfirm] = useState(false);
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3">
-      <p className="break-words font-medium">
-        {info.item.label} · {info.item.state}
-      </p>
-      <p>
-        {info.account} · {info.mechanism === "app" ? "App installation" : "Dedicated token"} ·
-        Version {info.item.version}
-      </p>
-      <p className="break-all text-sm">Connection {info.item.id}</p>
-      <label>
-        Repository
-        <select
-          aria-label={`Test repository for ${info.item.label}`}
+    <LoomSettingsPanel>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <h3 className="wrap-anywhere text-sm font-medium">{info.item.label}</h3>
+          <p className="wrap-anywhere text-sm text-muted-foreground">
+            {info.account} · {info.mechanism === "app" ? "App installation" : "Dedicated token"}
+          </p>
+        </div>
+        <span className="rounded-md bg-muted px-2 py-1 text-xs capitalize">{info.item.state}</span>
+      </div>
+      <LoomSettingsField
+        label="Repository"
+        description="Choose an allowed repository to test its access and readiness."
+      >
+        <Select
           value={repo}
-          onChange={(e) => setRepo(e.target.value)}
+          onValueChange={(value) => {
+            if (value) setRepo(value);
+          }}
         >
-          {info.repositories.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="break-all text-sm">Use-grant destination: https://github.com/{repo}</p>
-      <div className="flex flex-wrap gap-2">
+          <SelectTrigger aria-label={`Test repository for ${info.item.label}`}>
+            <SelectValue>{repo || "Choose a repository"}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            {info.repositories.map((r) => (
+              <SelectItem key={r} value={r}>
+                {r}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </LoomSettingsField>
+      <div className="min-w-0 space-y-1 text-sm">
+        <p className="text-muted-foreground">Use-grant destination</p>
+        <p className="wrap-anywhere">https://github.com/{repo}</p>
+      </div>
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -348,7 +408,23 @@ function Connection({
         >
           {info.item.state === "archived" ? "Restore" : "Disconnect"}
         </Button>
-      </div>
+      </LoomSettingsActions>
+      <LoomSettingsDetails title="Connection details">
+        <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+          <div className="min-w-0 space-y-1">
+            <dt className="text-muted-foreground">Connection ID</dt>
+            <dd className="wrap-anywhere">{info.item.id}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-muted-foreground">Version</dt>
+            <dd>{info.item.version}</dd>
+          </div>
+        </dl>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          API testing does not prove Git HTTPS or GH CLI availability. Use the explicit Vault
+          terminal command for supported gh and Git HTTPS operations.
+        </p>
+      </LoomSettingsDetails>
       <GitHubReadiness
         environmentId={environmentId}
         info={info}
@@ -356,23 +432,30 @@ function Connection({
         disabled={disabled}
       />
       {confirm ? (
-        <>
+        <LoomSettingsNotice>
           <p>Disconnect this connection locally? Provider-side revocation is separate.</p>
-          <Button
-            size="sm"
-            disabled={disabled}
-            onClick={() => {
-              setConfirm(false);
-              onChange("archive");
-            }}
-          >
-            Confirm local disconnect
-          </Button>
-          <Button size="sm" variant="outline" disabled={disabled} onClick={() => setConfirm(false)}>
-            Keep connected
-          </Button>
-        </>
+          <LoomSettingsActions>
+            <Button
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                setConfirm(false);
+                onChange("archive");
+              }}
+            >
+              Confirm local disconnect
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => setConfirm(false)}
+            >
+              Keep connected
+            </Button>
+          </LoomSettingsActions>
+        </LoomSettingsNotice>
       ) : null}
-    </div>
+    </LoomSettingsPanel>
   );
 }

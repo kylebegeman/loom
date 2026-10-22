@@ -1,3 +1,4 @@
+import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
 import { migrationInventory as atoms } from "./migrationState";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -28,25 +29,25 @@ export function ReplacementPreview({
     setKind(kind);
   };
   return (
-    <section aria-label="Repository route previews" className="flex flex-col gap-3">
+    <section aria-label="Repository route previews" className="flex min-w-0 flex-col gap-4">
       <h4 className="font-medium">Repository route previews</h4>
-      <p>
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         Inspect a read route and its conditional inverse. Neither preview can apply changes. Push
         and GitHub API evidence cannot establish Git transport eligibility.
       </p>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={() => open("cutover")}>
+      <LoomSettingsActions>
+        <Button size="sm-multiline" variant="outline" onClick={() => open("cutover")}>
           Preview read cutover
         </Button>
-        <Button variant="outline" onClick={() => open("rollback")}>
+        <Button size="sm-multiline" variant="outline" onClick={() => open("rollback")}>
           Preview rollback
         </Button>
         {kind ? (
-          <Button variant="outline" onClick={() => setKind(null)}>
+          <Button size="sm-multiline" variant="outline" onClick={() => setKind(null)}>
             Close route preview
           </Button>
         ) : null}
-      </div>
+      </LoomSettingsActions>
       {kind ? (
         <Preview
           key={kind}
@@ -71,19 +72,23 @@ function Preview({
   const failure = query._tag === "Failure" ? Cause.squash(query.cause) : null;
   return (
     <div
-      className="flex min-w-0 flex-col gap-2 rounded-md border p-3 break-words"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 wrap-anywhere"
       aria-label={`${input.kind} route preview`}
     >
-      {query.waiting ? <p role="status">Checking route preview…</p> : null}
+      {query.waiting ? (
+        <LoomSettingsNotice role="status">Checking route preview…</LoomSettingsNotice>
+      ) : null}
       {failure ? (
-        <p role="alert">
+        <LoomSettingsNotice role="alert">
           {failure instanceof Error
             ? failure.message
             : "Could not check this preview. Refresh the receipt and retry."}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {data && now >= data.validUntil ? (
-        <p role="status">This preview expired. Verify access again before previewing.</p>
+        <LoomSettingsNotice role="status">
+          This preview expired. Verify access again before previewing.
+        </LoomSettingsNotice>
       ) : null}
       {data && now < data.validUntil ? (
         <>
@@ -125,6 +130,7 @@ function Preview({
         </>
       ) : null}
       <Button
+        size="sm-multiline"
         variant="outline"
         disabled={query.waiting}
         onClick={() => appAtomRegistry.refresh(atom)}

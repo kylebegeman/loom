@@ -5,11 +5,12 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { DeviceQaSettingsPatch } from "@t3tools/contracts/fork";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
+import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
-import { Alert, failureOf, useAction, valueOf } from "./parts";
+import { failureOf, useAction, valueOf } from "./parts";
 import { FEATURE, deviceQa, runCommand } from "./state";
 
 const KEEP = { min: 5, max: 200 };
@@ -60,8 +61,18 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
   const save = useAction();
   const [argentPath, setArgentPath] = useState<string | null>(null);
   const failure = failureOf(result);
-  if (failure) return <Alert>{failure}</Alert>;
-  if (!settings) return <p>Loading Device QA settings...</p>;
+  if (failure)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
+  if (!settings)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="status">Loading Device QA settings...</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const disabled = !canEdit || save.busy;
 
   const update = (patch: DeviceQaSettingsPatch) =>
@@ -72,12 +83,12 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
   const pathValue = argentPath ?? settings.argentPath ?? "";
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
       <SettingsRow
         title="argent path"
         description="Leave empty to find argent on PATH and in npm's global folder."
       >
-        <div className="flex flex-col gap-2 pb-2">
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="argent path"
             placeholder="argent"
@@ -147,9 +158,9 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
         }
       />
       {save.error && (
-        <div className="px-3 pb-3 sm:px-4">
-          <Alert>{save.error}</Alert>
-        </div>
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>
+        </LoomSettingsContent>
       )}
     </div>
   );
@@ -158,13 +169,22 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
 export function DeviceQaSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to manage Device QA.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>Select a connected environment to manage Device QA.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       FEATURE,
     )
   )
-    return <p>This environment's server does not have Device QA.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>This environment's server does not have Device QA.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentDeviceQa
       key={environment.environmentId}

@@ -23,6 +23,12 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsField,
+  LoomSettingsNotice,
+} from "~/fork/settings/parts";
 import { ensureLocalApi } from "~/localApi";
 import { useServerConfigs } from "~/state/entities";
 import {
@@ -35,7 +41,7 @@ import {
   type SettingsDraft,
 } from "./links";
 import { EnvironmentPreviewPages } from "./pages";
-import { Alert, Muted, failureOf, useAction } from "./parts";
+import { failureOf, useAction } from "./parts";
 import { FEATURE, openPreviewLinksSheet, previewLinks, runCommand } from "./state";
 
 const LIFETIME_ITEMS = PREVIEW_LINK_LIFETIMES.map((value) => ({
@@ -154,12 +160,12 @@ function EnvironmentPreviewLinks({
     });
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
       <SettingsRow title="Status">
-        <div className="flex flex-col gap-1 pb-2 text-xs">
+        <div className="flex min-w-0 flex-col gap-2 pt-3 pb-2 text-xs">
           <span className="font-medium text-sm">{status.label}</span>
-          <span className="text-muted-foreground">Gateway: {gatewayStatus(setup)}</span>
-          <span className="text-muted-foreground">Tunnel: {tunnelStatus(setup)}</span>
+          <span className="break-words text-muted-foreground">Gateway: {gatewayStatus(setup)}</span>
+          <span className="break-words text-muted-foreground">Tunnel: {tunnelStatus(setup)}</span>
         </div>
       </SettingsRow>
       <SettingsRow
@@ -174,39 +180,39 @@ function EnvironmentPreviewLinks({
           />
         }
       />
-      <SettingsRow
-        title="Link domain"
-        description="A domain whose wildcard record points at this computer's Cloudflare tunnel."
-        control={
-          <Input
-            aria-label="Link domain"
-            size="sm"
-            className="w-full sm:w-48"
-            placeholder="example.com"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={disabled}
-            value={shown.suffix}
-            onChange={(event) => edit({ suffix: event.target.value })}
-          />
-        }
-      />
-      <SettingsRow
-        title="Computer name"
-        description="Part of every link address, so each computer gets its own links."
-        control={
-          <Input
-            aria-label="Computer name"
-            size="sm"
-            className="w-full sm:w-48"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={disabled}
-            value={shown.machine}
-            onChange={(event) => edit({ machine: event.target.value })}
-          />
-        }
-      />
+      <SettingsRow title="Link address">
+        <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
+          <LoomSettingsField
+            label="Link domain"
+            description="A domain whose wildcard record points at this computer's Cloudflare tunnel."
+          >
+            <Input
+              aria-label="Link domain"
+              size="sm"
+              placeholder="example.com"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={disabled}
+              value={shown.suffix}
+              onChange={(event) => edit({ suffix: event.target.value })}
+            />
+          </LoomSettingsField>
+          <LoomSettingsField
+            label="Computer name"
+            description="Part of every link address, so each computer gets its own links."
+          >
+            <Input
+              aria-label="Computer name"
+              size="sm"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={disabled}
+              value={shown.machine}
+              onChange={(event) => edit({ machine: event.target.value })}
+            />
+          </LoomSettingsField>
+        </div>
+      </SettingsRow>
       <SettingsRow
         title="Default lifetime"
         description="How long a new link stays open. You can extend or end it later."
@@ -251,8 +257,8 @@ function EnvironmentPreviewLinks({
         title="Connector token"
         description="The token from your Cloudflare tunnel. It stays on this computer and is never shown again."
       >
-        <div className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 pt-3 pb-2">
+          <div className="min-w-0 flex-1 basis-48">
             <SecretInput
               aria-label="Connector token"
               size="sm"
@@ -269,30 +275,32 @@ function EnvironmentPreviewLinks({
           )}
         </div>
       </SettingsRow>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {dirty && problem && <span className="text-destructive-foreground text-xs">{problem}</span>}
-        {draft !== null && (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        {dirty && problem && <LoomSettingsNotice role="alert">{problem}</LoomSettingsNotice>}
+        <LoomSettingsActions>
+          {draft !== null && (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={action.busy}
+              onClick={() => {
+                setDraft(null);
+                setToken("");
+              }}
+            >
+              Discard
+            </Button>
+          )}
           <Button
             size="xs"
-            variant="ghost"
-            disabled={action.busy}
-            onClick={() => {
-              setDraft(null);
-              setToken("");
-            }}
+            disabled={disabled || !dirty || problem !== null}
+            title={canSave ? undefined : NO_SETTINGS_ACCESS}
+            onClick={save}
           >
-            Discard
+            Save
           </Button>
-        )}
-        <Button
-          size="xs"
-          disabled={disabled || !dirty || problem !== null}
-          title={canSave ? undefined : NO_SETTINGS_ACCESS}
-          onClick={save}
-        >
-          Save
-        </Button>
-      </div>
+        </LoomSettingsActions>
+      </LoomSettingsContent>
       <SettingsRow
         title="Links"
         description={
@@ -301,28 +309,30 @@ function EnvironmentPreviewLinks({
             : `${openCount} ${openCount === 1 ? "link is" : "links are"} open on this computer.`
         }
       >
-        <div className="flex flex-wrap gap-1.5 pb-2">
-          <Button size="xs" variant="outline" onClick={openPreviewLinksSheet}>
-            Manage links
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={!canOperate || action.busy}
-            title={canOperate ? undefined : NO_PREVIEW_ACCESS}
-            onClick={signOutBrowsers}
-          >
-            Sign out preview browsers
-          </Button>
-          <Button
-            size="xs"
-            variant="destructive-outline"
-            disabled={!canOperate || action.busy || openCount === 0}
-            title={canOperate ? undefined : NO_PREVIEW_ACCESS}
-            onClick={endAll}
-          >
-            End all links
-          </Button>
+        <div className="pt-3 pb-2">
+          <LoomSettingsActions>
+            <Button size="xs" variant="outline" onClick={openPreviewLinksSheet}>
+              Manage links
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={!canOperate || action.busy}
+              title={canOperate ? undefined : NO_PREVIEW_ACCESS}
+              onClick={signOutBrowsers}
+            >
+              Sign out preview browsers
+            </Button>
+            <Button
+              size="xs"
+              variant="destructive-outline"
+              disabled={!canOperate || action.busy || openCount === 0}
+              title={canOperate ? undefined : NO_PREVIEW_ACCESS}
+              onClick={endAll}
+            >
+              End all links
+            </Button>
+          </LoomSettingsActions>
         </div>
       </SettingsRow>
     </div>
@@ -340,7 +350,15 @@ function EnvironmentPreviewLinksLoader({
   const snapshot = Option.getOrNull(AsyncResult.value(result));
   const failure = failureOf(result);
   if (!snapshot) {
-    return failure ? <Alert>{failure}</Alert> : <Muted>Loading preview link settings...</Muted>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        {failure ? (
+          <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+        ) : (
+          <LoomSettingsNotice role="status">Loading preview link settings...</LoomSettingsNotice>
+        )}
+      </LoomSettingsContent>
+    );
   }
   return (
     <EnvironmentPreviewLinks environmentId={environmentId} label={label} snapshot={snapshot} />
@@ -350,12 +368,25 @@ function EnvironmentPreviewLinksLoader({
 export function PreviewLinksSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to manage preview links.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          Select a connected environment to manage preview links.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const config = configs.get(environment.environmentId);
   if (!supportsLoomFeature(config?.environment.capabilities, FEATURE))
-    return <p>This environment's server does not have preview links.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          This environment's server does not have preview links.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
-    <div key={environment.environmentId} className="flex flex-col gap-3">
+    <div key={environment.environmentId} className="flex min-w-0 flex-col">
       <EnvironmentPreviewLinksLoader
         environmentId={environment.environmentId}
         label={config?.environment.label ?? "this computer"}

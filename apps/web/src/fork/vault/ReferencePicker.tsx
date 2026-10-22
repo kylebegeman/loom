@@ -12,6 +12,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 const references = createVaultReferenceAtoms(connectionAtomRuntime);
 export function VaultReferencePicker({
   environmentId,
@@ -42,9 +43,9 @@ export function VaultReferencePicker({
     onError: () => setNotice("The reference could not be copied. Try again."),
   });
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-4">
       <form
-        className="flex flex-wrap items-end gap-2"
+        className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
         onSubmit={(event) => {
           event.preventDefault();
           setSearch(query.trim());
@@ -52,8 +53,7 @@ export function VaultReferencePicker({
           setNotice(null);
         }}
       >
-        <label htmlFor={field} className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-          Search Vault references
+        <LoomSettingsField label={<label htmlFor={field}>Search Vault references</label>}>
           <Input
             id={field}
             value={query}
@@ -62,10 +62,12 @@ export function VaultReferencePicker({
             placeholder="Name or item ID"
             onChange={(event) => setQuery(event.target.value)}
           />
-        </label>
-        <Button type="submit" variant="outline" disabled={disabled || result.waiting}>
-          Search
-        </Button>
+        </LoomSettingsField>
+        <LoomSettingsActions>
+          <Button type="submit" variant="outline" disabled={disabled || result.waiting}>
+            Search
+          </Button>
+        </LoomSettingsActions>
       </form>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
@@ -79,80 +81,79 @@ export function VaultReferencePicker({
         Include archived references
       </label>
       {result.waiting ? (
-        <p role="status" className="text-sm">
-          Searching references…
-        </p>
+        <LoomSettingsNotice role="status">Searching references…</LoomSettingsNotice>
       ) : null}
       {result._tag === "Failure" ? (
-        <div role="alert">
-          <p className="text-sm">
-            {error instanceof Error ? error.message : "Vault search failed."}
-          </p>
-          <Button variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
-            Retry search
-          </Button>
-        </div>
+        <LoomSettingsNotice role="alert">
+          <div className="flex flex-col gap-3">
+            <p>{error instanceof Error ? error.message : "Vault search failed."}</p>
+            <LoomSettingsActions>
+              <Button variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+                Retry search
+              </Button>
+            </LoomSettingsActions>
+          </div>
+        </LoomSettingsNotice>
       ) : null}
       {page && !page.items.length && !result.waiting ? (
-        <p className="text-sm">
+        <LoomSettingsNotice>
           {page.nextCursor
-            ? "No matches in this page. Continue searching or narrow the name."
+            ? "No matches on this page. Continue searching or narrow the name."
             : "No matching Vault references."}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
-      <ul className="flex flex-col gap-3">
+      <ul className="flex min-w-0 flex-col gap-3">
         {page?.items.map((reference) => (
           <li
             key={reference.item.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"
+            className="flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-lg border border-border/60 p-3"
           >
-            <div className="min-w-0">
-              <p className="break-words text-sm font-medium">{reference.item.label}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="wrap-anywhere text-sm font-medium">{reference.item.label}</p>
               <p className="text-xs text-muted-foreground">
                 {VAULT_KIND_LABELS[reference.item.kind]} · Version {reference.item.version}
                 {reference.item.state === "archived" ? " · Archived" : ""}
               </p>
             </div>
-            {onSelect ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  disabled ||
-                  result.waiting ||
-                  result._tag === "Failure" ||
-                  reference.item.state !== "active"
-                }
-                onClick={() => onSelect(reference)}
-              >
-                Use {reference.item.label}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled || result.waiting || result._tag === "Failure"}
-                onClick={async () => {
-                  await copy.copyToClipboard(reference.reference, undefined);
-                }}
-              >
-                Copy reference
-              </Button>
-            )}
+            <LoomSettingsActions>
+              {onSelect ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    disabled ||
+                    result.waiting ||
+                    result._tag === "Failure" ||
+                    reference.item.state !== "active"
+                  }
+                  aria-label={`Use reference ${reference.item.label}`}
+                  onClick={() => onSelect(reference)}
+                >
+                  Use reference
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={disabled || result.waiting || result._tag === "Failure"}
+                  onClick={async () => {
+                    await copy.copyToClipboard(reference.reference, undefined);
+                  }}
+                >
+                  Copy reference
+                </Button>
+              )}
+            </LoomSettingsActions>
           </li>
         ))}
       </ul>
       {copy.isCopied ? (
-        <p role="status" className="text-sm">
+        <LoomSettingsNotice role="status">
           Reference copied. It contains no credential value.
-        </p>
+        </LoomSettingsNotice>
       ) : null}
-      {notice ? (
-        <p role="alert" className="text-sm">
-          {notice}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
+      {notice ? <LoomSettingsNotice role="alert">{notice}</LoomSettingsNotice> : null}
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -169,7 +170,7 @@ export function VaultReferencePicker({
         >
           More references
         </Button>
-      </div>
+      </LoomSettingsActions>
     </div>
   );
 }
@@ -183,7 +184,7 @@ export function VaultBoundReference({
   const result = useAtomValue(references.describe({ environmentId, input: { id } }));
   const item = Option.getOrNull(AsyncResult.value(result));
   return (
-    <span className="break-words">
+    <span className="wrap-anywhere">
       {result._tag === "Failure"
         ? "Reference unavailable; refresh to retry"
         : item

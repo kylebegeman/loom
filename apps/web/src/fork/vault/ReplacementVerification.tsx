@@ -1,3 +1,4 @@
+import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
 import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementPreview } from "./ReplacementPreview";
 import { useState } from "react";
@@ -73,22 +74,28 @@ export function ReplacementVerification({
   return (
     <section
       aria-label="Replacement verification"
-      className="flex flex-col gap-3 rounded-md border p-3"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 sm:p-4"
     >
       <h4 className="font-medium">Verify replacement access</h4>
-      <p>
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         {plan.replacement.scope === "ssh-git-transport"
           ? `Check read access to ${plan.dependency.gitPath} using the saved SSH key and pinned host. The check reads refs without fetching or changing Git configuration.`
           : "Check this repository through the dedicated GitHub connection's API. This does not test Git SSH/HTTPS transport or the local gh executable."}
       </p>
-      {busy || query.waiting ? <p role="status">Updating verification receipt…</p> : null}
-      {query._tag === "Failure" ? (
-        <p role="alert">Could not load verification evidence. Refresh before continuing.</p>
+      {busy || query.waiting ? (
+        <LoomSettingsNotice role="status">Updating verification receipt…</LoomSettingsNotice>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {query._tag === "Failure" ? (
+        <LoomSettingsNotice role="alert">
+          Could not load verification evidence. Refresh before continuing.
+        </LoomSettingsNotice>
+      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {status ? (
         <>
-          <p>Evidence: {freshness}. Cutover remains unavailable.</p>
+          <LoomSettingsNotice role="status">
+            Evidence: {freshness}. Cutover remains unavailable.
+          </LoomSettingsNotice>
           {status.receipt ? (
             <>
               <p>
@@ -99,15 +106,15 @@ export function ReplacementVerification({
                   : "GitHub repository API"}
               </p>
               {status.receipt.failure ? (
-                <p role="status">
+                <LoomSettingsNotice role="status">
                   Check failed: {status.receipt.failure.replaceAll("-", " ")}. Review the source,
                   record, trust and connection before retrying.
-                </p>
+                </LoomSettingsNotice>
               ) : null}
               {status.invalidatedBy && freshness === "invalidated" ? (
-                <p role="status">
+                <LoomSettingsNotice role="status">
                   Evidence is invalidated by {status.invalidatedBy.replaceAll("-", " ")}.
-                </p>
+                </LoomSettingsNotice>
               ) : null}
               {freshness === "current" && status.receipt.validUntil !== null ? (
                 <p>Evidence expires {new Date(status.receipt.validUntil).toLocaleTimeString()}.</p>
@@ -142,8 +149,9 @@ export function ReplacementVerification({
       ) : (
         <p>Route previews need a newer Vault server.</p>
       )}
-      <label>
+      <label className="flex items-start gap-2 text-sm leading-6">
         <input
+          className="mt-1 shrink-0"
           type="checkbox"
           aria-label="Allow replacement verification"
           checked={confirmed}
@@ -153,8 +161,9 @@ export function ReplacementVerification({
         Allow a verification attempt against the saved destination. Missing host trust will block
         it.
       </label>
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         <Button
+          size="sm-multiline"
           disabled={
             busy ||
             !canWrite ||
@@ -170,10 +179,10 @@ export function ReplacementVerification({
         >
           {pending ? "Retry verification request" : "Verify replacement access"}
         </Button>
-        <Button variant="outline" disabled={busy} onClick={refresh}>
+        <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
           Refresh verification receipt
         </Button>
-      </div>
+      </LoomSettingsActions>
     </section>
   );
 }

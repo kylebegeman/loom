@@ -1,3 +1,4 @@
+import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -82,29 +83,35 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
     }
   };
   return (
-    <section aria-label="Vault approvals" className="flex flex-col gap-3">
+    <section aria-label="Vault approvals" className="flex min-w-0 flex-col gap-4">
       <h3 className="font-medium">Remote approvals</h3>
       <p className="text-sm text-muted-foreground">
         Review temporary access for the exact thread, record, action and destination. Notification
         delivery is not connected. Approvals do not restart an operation.
       </p>
-      <div>
-        <Button variant="outline" onClick={refresh} disabled={busy}>
+      <LoomSettingsActions>
+        <Button size="sm-multiline" variant="outline" onClick={refresh} disabled={busy}>
           Refresh requests
         </Button>
-      </div>
-      {result._tag === "Initial" ? <p>Loading requests…</p> : null}
+      </LoomSettingsActions>
+      {result._tag === "Initial" ? (
+        <LoomSettingsNotice role="status">Loading requests…</LoomSettingsNotice>
+      ) : null}
       {error || result._tag === "Failure" ? (
-        <p role="alert">
+        <LoomSettingsNotice role="alert">
           {error ?? (result._tag === "Failure" ? String(Cause.squash(result.cause)) : null)}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {pending && error ? (
-        <div>
-          <Button onClick={() => void submit(pending)} disabled={busy || !canWrite}>
+        <LoomSettingsActions>
+          <Button
+            size="sm-multiline"
+            onClick={() => void submit(pending)}
+            disabled={busy || !canWrite}
+          >
             Retry decision
           </Button>
-        </div>
+        </LoomSettingsActions>
       ) : null}
       {data?.retention ? (
         <p className="text-sm text-muted-foreground">
@@ -114,10 +121,11 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
       ) : null}
       {data ? (
         <div className="flex flex-col items-start gap-2">
-          <p role="status" className="text-sm">
+          <LoomSettingsNotice role="status">
             {review.pendingCount} pending of {review.totalCount} retained requests.
-          </p>
+          </LoomSettingsNotice>
           <Button
+            size="sm-multiline"
             variant="outline"
             disabled={busy}
             onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
@@ -157,7 +165,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
             <article
               key={r.id}
               aria-labelledby={`vault-request-${r.id}`}
-              className="flex flex-col gap-2 rounded-md border p-3"
+              className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 text-sm leading-relaxed wrap-anywhere sm:p-4"
             >
               <h4 id={`vault-request-${r.id}`} className="break-words font-medium">
                 {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
@@ -166,17 +174,28 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 {labels.thread} · {labels.project}
               </p>
               {state === "pending" && labels.warning ? (
-                <p role="status" className="text-sm">
-                  {labels.warning}
-                </p>
+                <LoomSettingsNotice role="status">{labels.warning}</LoomSettingsNotice>
               ) : null}
-              <p className="break-all text-sm">
-                Thread {r.threadId} · Project {r.projectId}
-                <br />
-                Record {r.itemId} · version {r.itemVersion}
-                <br />
-                Destination {r.destination ?? "Any destination (unrestricted)"}
-              </p>
+              <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="min-w-0 space-y-1">
+                  <dt className="text-xs text-muted-foreground">Thread</dt>
+                  <dd>{r.threadId}</dd>
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <dt className="text-xs text-muted-foreground">Project</dt>
+                  <dd>{r.projectId}</dd>
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <dt className="text-xs text-muted-foreground">Record</dt>
+                  <dd>
+                    {r.itemId} · version {r.itemVersion}
+                  </dd>
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <dt className="text-xs text-muted-foreground">Destination</dt>
+                  <dd>{r.destination ?? "Any destination (unrestricted)"}</dd>
+                </div>
+              </dl>
               <p className="text-sm text-muted-foreground">
                 {vaultApprovalNotificationMessage(
                   data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
@@ -197,10 +216,11 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
                 Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
               </p>
-              <div className="flex flex-wrap gap-2">
+              <LoomSettingsActions>
                 {state === "pending" ? (
                   <>
                     <Button
+                      size="sm-multiline"
                       disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
                       aria-label={`Approve for 5 minutes: ${labels.accessibleContext}`}
                       onClick={() => decide("approve")}
@@ -208,6 +228,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                       Approve for 5 minutes
                     </Button>
                     <Button
+                      size="sm-multiline"
                       variant="outline"
                       disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
                       aria-label={`Approve for 15 minutes: ${labels.accessibleContext}`}
@@ -216,6 +237,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                       Approve for 15 minutes
                     </Button>
                     <Button
+                      size="sm-multiline"
                       variant="outline"
                       disabled={!canWrite || busy || pending !== null}
                       aria-label={`Deny for ${labels.accessibleContext}`}
@@ -224,6 +246,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                       Deny
                     </Button>
                     <Button
+                      size="sm-multiline"
                       variant="ghost"
                       disabled={!canWrite || busy || pending !== null}
                       aria-label={`Cancel request for ${labels.accessibleContext}`}
@@ -235,7 +258,8 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                 ) : null}
                 {r.grantId && (state === "approved" || state === "expired") ? (
                   <Button
-                    variant="outline"
+                    size="sm-multiline"
+                    variant="destructive-outline"
                     disabled={!canWrite || busy || pending !== null}
                     aria-label={`Revoke approval for ${labels.accessibleContext}`}
                     onClick={() => decide("revoke")}
@@ -243,7 +267,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                     Revoke approval
                   </Button>
                 ) : null}
-              </div>
+              </LoomSettingsActions>
             </article>
           );
         })}

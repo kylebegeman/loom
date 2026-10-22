@@ -1,3 +1,10 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsNotice,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { VaultHealthContext } from "./HealthContext";
 import { openVaultAccess } from "./access-navigation";
 import { useVaultTime } from "./useVaultTime";
@@ -15,6 +22,13 @@ import {
   vaultHealthInboxGroups,
 } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { Input } from "~/components/ui/input";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
@@ -121,12 +135,15 @@ function Inbox({
       }),
     );
   return (
-    <div className="flex flex-col gap-4">
-      <p>
-        Review expiry and failed development access. Provider outages do not revoke credentials.
-        Only explicitly enabled rules run in the background.
-      </p>
-      <div className="flex flex-wrap gap-2">
+    <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium">Maintenance inbox</h3>
+        <p className="max-w-prose text-muted-foreground">
+          Review expiry and failed development access. Provider outages do not revoke credentials.
+          Only explicitly enabled rules run in the background.
+        </p>
+      </div>
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -142,12 +159,16 @@ function Inbox({
         <Button size="sm" variant="outline" onClick={() => setHistory(!history)}>
           {history ? "Hide resolved and dismissed" : "Show resolved and dismissed"}
         </Button>
-      </div>
-      {result.waiting ? <p role="status">Loading Vault health…</p> : null}
-      {error || result._tag === "Failure" ? (
-        <p role="alert">{error ?? "Could not load Vault health. Check the backend and refresh."}</p>
+      </LoomSettingsActions>
+      {result.waiting ? (
+        <LoomSettingsNotice role="status">Loading Vault health…</LoomSettingsNotice>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {error || result._tag === "Failure" ? (
+        <LoomSettingsNotice role="alert">
+          {error ?? "Could not load Vault health. Check the backend and refresh."}
+        </LoomSettingsNotice>
+      ) : null}
+      {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
       {snapshot?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
         .length === 0 ? (
         <p>No active maintenance issues.</p>
@@ -167,29 +188,31 @@ function Inbox({
               {group.issues.map((issue) => (
                 <section
                   key={issue.id}
-                  className="flex flex-col gap-2 rounded-md border p-3"
+                  className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 sm:p-4"
                   aria-label={`${issue.itemLabel} ${issue.category}`}
                 >
                   <p className="font-medium">
                     {issue.itemLabel}: {issue.category}
                   </p>
                   <p>{vaultHealthMessage(issue)}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
-                  >
-                    Review access
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
-                  >
-                    {contextIssue === issue.id
-                      ? "Hide project references"
-                      : "Show project references"}
-                  </Button>
+                  <LoomSettingsActions>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
+                    >
+                      Review access
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
+                    >
+                      {contextIssue === issue.id
+                        ? "Hide project references"
+                        : "Show project references"}
+                    </Button>
+                  </LoomSettingsActions>
                   {contextIssue === issue.id ? (
                     <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
                   ) : null}
@@ -197,7 +220,7 @@ function Inbox({
                     {vaultHealthVisibleState(issue, now)} · {issue.occurrences} occurrences · Last
                     seen {new Date(issue.lastSeenAt).toLocaleString()}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <LoomSettingsActions>
                     <Button
                       size="sm"
                       variant="outline"
@@ -252,7 +275,7 @@ function Inbox({
                         Dismiss
                       </Button>
                     )}
-                  </div>
+                  </LoomSettingsActions>
                 </section>
               ))}
             </div>
@@ -261,154 +284,185 @@ function Inbox({
       {snapshot?.omittedIssues ? (
         <p>{snapshot.omittedIssues} older issues omitted by retention.</p>
       ) : null}
-      <form
-        className="flex flex-col gap-3 rounded-md border p-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void act(async () => {
-            const expiresAt = expires ? Date.parse(expires) : null;
-            if (expiresAt !== null && !Number.isFinite(expiresAt))
-              throw new Error("Enter a valid expiry date.");
-            await apply({
-              action: "configure",
-              rule: {
-                itemId,
-                expiresAt,
-                warningDays: 7,
-                githubRepository: repository.trim() || null,
-                ...(supportsSshValidation ? { sshValidation } : {}),
-                automatic,
-                nextCheckAt: 0,
-              },
-            });
-            setNotice("Health rule saved.");
-          });
-        }}
+      <LoomSettingsPanel
+        title="Expiry and validation rules"
+        description="Choose a record to review or update its rule. Expiry warnings start seven days before the declared date."
       >
-        <p className="font-medium">Expiry and validation rules</p>
-        {pageResult.waiting ? <p role="status">Loading Vault items…</p> : null}
-        {pageResult._tag === "Failure" ? (
-          <p role="alert">Could not load Vault items. Refresh and retry.</p>
-        ) : null}
-        {page?.items.length === 0 ? <p>No active items on this page.</p> : null}
-        <label>
-          Vault item
-          <select
-            aria-label="Health rule item"
-            value={itemId}
-            disabled={locked}
-            onChange={(e) => {
-              setItemId(e.target.value);
-              const rule = snapshot?.rules.find((r) => r.itemId === e.target.value);
-              setExpires(rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "");
-              setRepository(rule?.githubRepository ?? "");
-              setAutomatic(rule?.automatic ?? false);
-              setSshValidation(rule?.sshValidation ?? false);
-            }}
-          >
-            <option value="">Choose an item</option>
-            {page?.items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!cursor}
-            onClick={() => setCursor(null)}
-          >
-            First items
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!page?.nextCursor}
-            onClick={() => setCursor(page?.nextCursor ?? null)}
-          >
-            More items
-          </Button>
-        </div>
-        <label>
-          Declared expiry, ISO date (optional)
-          <Input
-            aria-label="Declared expiry"
-            value={expires}
-            onChange={(e) => setExpires(e.target.value)}
-            disabled={locked}
-            placeholder="2027-01-01T00:00:00Z"
-          />
-        </label>
-        {supportsSshValidation &&
-        (sshValidation || page?.items.find((item) => item.id === itemId)?.kind === "ssh-key") ? (
-          <label>
-            <input
-              type="checkbox"
-              aria-label="Validate SSH connection"
-              checked={sshValidation}
+        <form
+          className="flex min-w-0 flex-col gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void act(async () => {
+              const expiresAt = expires ? Date.parse(expires) : null;
+              if (expiresAt !== null && !Number.isFinite(expiresAt))
+                throw new Error("Enter a valid expiry date.");
+              await apply({
+                action: "configure",
+                rule: {
+                  itemId,
+                  expiresAt,
+                  warningDays: 7,
+                  githubRepository: repository.trim() || null,
+                  ...(supportsSshValidation ? { sshValidation } : {}),
+                  automatic,
+                  nextCheckAt: 0,
+                },
+              });
+              setNotice("Health rule saved.");
+            });
+          }}
+        >
+          {pageResult.waiting ? (
+            <LoomSettingsNotice role="status">Loading Vault items…</LoomSettingsNotice>
+          ) : null}
+          {pageResult._tag === "Failure" ? (
+            <LoomSettingsNotice role="alert">
+              Could not load Vault items. Refresh and retry.
+            </LoomSettingsNotice>
+          ) : null}
+          {page?.items.length === 0 ? <p>No active items on this page.</p> : null}
+          <LoomSettingsField label="Vault item">
+            <Select
+              value={itemId}
               disabled={locked}
-              onChange={(e) => {
-                setSshValidation(e.target.checked);
-                if (e.target.checked) setRepository("");
+              onValueChange={(nextValue) => {
+                if (nextValue === null) return;
+                setItemId(nextValue);
+                const rule = snapshot?.rules.find((r) => r.itemId === nextValue);
+                setExpires(rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "");
+                setRepository(rule?.githubRepository ?? "");
+                setAutomatic(rule?.automatic ?? false);
+                setSshValidation(rule?.sshValidation ?? false);
               }}
+            >
+              <SelectTrigger aria-label="Health rule item">
+                <SelectValue>
+                  {page?.items.find((item) => item.id === itemId)?.label ??
+                    (itemId || "Choose an item")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="">Choose an item</SelectItem>
+                {page?.items.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LoomSettingsField>
+          <LoomSettingsActions>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!cursor}
+              onClick={() => setCursor(null)}
+            >
+              First items
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!page?.nextCursor}
+              onClick={() => setCursor(page?.nextCursor ?? null)}
+            >
+              More items
+            </Button>
+          </LoomSettingsActions>
+          <LoomSettingsField label="Declared expiry, ISO date (optional)">
+            <Input
+              aria-label="Declared expiry"
+              value={expires}
+              onChange={(e) => setExpires(e.target.value)}
+              disabled={locked}
+              placeholder="2027-01-01T00:00:00Z"
+            />
+          </LoomSettingsField>
+          <p className="text-sm text-muted-foreground">
+            Connection validation:{" "}
+            {sshValidation
+              ? "saved SSH connection"
+              : repository.trim()
+                ? `GitHub repository ${repository.trim()}`
+                : "not configured"}
+            .
+          </p>
+          <LoomSettingsDetails title="Connection validation options">
+            {supportsSshValidation &&
+            (sshValidation ||
+              page?.items.find((item) => item.id === itemId)?.kind === "ssh-key") ? (
+              <label className="flex items-start gap-2 text-sm leading-6">
+                <input
+                  className="mt-1 shrink-0"
+                  type="checkbox"
+                  aria-label="Validate SSH connection"
+                  checked={sshValidation}
+                  disabled={locked}
+                  onChange={(e) => {
+                    setSshValidation(e.target.checked);
+                    if (e.target.checked) setRepository("");
+                  }}
+                />{" "}
+                Validate the saved SSH connection using its trusted host key and a fixed no-op
+                command
+              </label>
+            ) : null}
+            <LoomSettingsField label="GitHub repository to validate (optional)">
+              <Input
+                aria-label="Health GitHub repository"
+                value={repository}
+                onChange={(e) => setRepository(e.target.value)}
+                disabled={locked}
+                placeholder="owner/repo"
+                readOnly={sshValidation}
+              />
+            </LoomSettingsField>
+          </LoomSettingsDetails>
+          <label className="flex items-start gap-2 text-sm leading-6">
+            <input
+              className="mt-1 shrink-0"
+              type="checkbox"
+              checked={automatic}
+              disabled={locked}
+              onChange={(e) => setAutomatic(e.target.checked)}
             />{" "}
-            Validate the saved SSH connection using its trusted host key and a fixed no-op command
+            Run checks automatically, at most every 15 minutes
           </label>
-        ) : null}
-        <label>
-          GitHub repository to validate (optional)
-          <Input
-            aria-label="Health GitHub repository"
-            value={repository}
-            onChange={(e) => setRepository(e.target.value)}
-            disabled={locked}
-            placeholder="owner/repo"
-            readOnly={sshValidation}
-          />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={automatic}
-            disabled={locked}
-            onChange={(e) => setAutomatic(e.target.checked)}
-          />{" "}
-          Run checks automatically, at most every 15 minutes
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={locked || !itemId}>
-            Save health rule
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={locked || !itemId}
-            onClick={() =>
-              void act(async () => {
-                const result = await runVault(atoms.recheck, { environmentId, input: { itemId } });
-                setNotice(vaultHealthRecheckMessage(result.outcome));
-              })
-            }
-          >
-            Check selected item
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={locked || !itemId}
-            onClick={() => void act(() => apply({ action: "remove-rule", itemId }))}
-          >
-            Remove rule
-          </Button>
-        </div>
-      </form>
+          <LoomSettingsActions>
+            <Button type="submit" size="sm" disabled={locked || !itemId}>
+              Save health rule
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={locked || !itemId}
+              onClick={() =>
+                void act(async () => {
+                  const result = await runVault(atoms.recheck, {
+                    environmentId,
+                    input: { itemId },
+                  });
+                  setNotice(vaultHealthRecheckMessage(result.outcome));
+                })
+              }
+            >
+              Check selected item
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive-outline"
+              disabled={locked || !itemId}
+              onClick={() => void act(() => apply({ action: "remove-rule", itemId }))}
+            >
+              Remove rule
+            </Button>
+          </LoomSettingsActions>
+        </form>
+      </LoomSettingsPanel>
     </div>
   );
 }

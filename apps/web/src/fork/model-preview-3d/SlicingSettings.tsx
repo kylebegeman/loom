@@ -27,6 +27,12 @@ import {
 } from "~/components/ui/select";
 import { models, runModelCommand } from "./state";
 import { usePrinterLibrary } from "./printers";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+} from "../settings/parts";
 
 const NO_STATUS: readonly SlicerInfo[] = [];
 const reference = (entry: SlicerProfileEntry): SlicerProfileRef => ({
@@ -54,26 +60,28 @@ function ProfileSelect({
   if (value && !options.some((option) => option.value === current))
     options.unshift({ label: `${value.name} (not found)`, value: current });
   return (
-    <Select
-      disabled={disabled}
-      value={current}
-      items={options}
-      onValueChange={(next) => {
-        const entry = entries.find((item) => `${reference(item).source}:${item.name}` === next);
-        if (entry) onChange(reference(entry));
-      }}
-    >
-      <SelectTrigger size="sm" aria-label={label}>
-        <SelectValue placeholder={`Choose ${label.toLowerCase()}`} />
-      </SelectTrigger>
-      <SelectPopup>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectPopup>
-    </Select>
+    <LoomSettingsField label={label}>
+      <Select
+        disabled={disabled}
+        value={value ? current : null}
+        items={options}
+        onValueChange={(next) => {
+          const entry = entries.find((item) => `${reference(item).source}:${item.name}` === next);
+          if (entry) onChange(reference(entry));
+        }}
+      >
+        <SelectTrigger size="sm" aria-label={label}>
+          <SelectValue placeholder={`Choose ${label.toLowerCase()}`} />
+        </SelectTrigger>
+        <SelectPopup>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </LoomSettingsField>
   );
 }
 /** Profile imports are uploaded to the selected environment, including remote hosts. */
@@ -152,9 +160,11 @@ export function SlicingSettings({
     });
   const importFile = async (file: File) => {
     setError(null);
+    if (file.size > 2 * 1024 * 1024) {
+      setError("This profile is too large. Choose a file under 2 MiB.");
+      return;
+    }
     try {
-      if (file.size > 2 * 1024 * 1024)
-        throw new Error("This profile is too large. Choose a file under 2 MiB.");
       const kind = app === "prusa-slicer" ? "config" : importKind;
       const entry = await runModelCommand(models.importSlicerProfile, {
         environmentId,
@@ -191,37 +201,45 @@ export function SlicingSettings({
   };
   const suggestion = DEFAULT_BAMBU_MAPPINGS[bedId];
   const materialSelect = (slot: number) => (
-    <Select
-      value={mapping?.materialIds?.[slot] ?? "profile"}
-      items={[
-        { value: "profile", label: "Default material or profile price" },
-        ...(library?.materials ?? []).map((material) => ({
-          value: material.id,
-          label: material.name,
-        })),
-      ]}
-      onValueChange={(next) => {
-        if (mapping && next) {
-          const materialIds = mapping.filaments.map(
-            (_ref, index) => mapping.materialIds?.[index] ?? null,
-          );
-          materialIds[slot] = next === "profile" ? null : next;
-          setMapping({ ...mapping, materialIds });
-        }
-      }}
-    >
-      <SelectTrigger size="sm" aria-label={`Material for filament ${slot + 1}`}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectPopup>
-        <SelectItem value="profile">Default material or profile price</SelectItem>
-        {library?.materials.map((material) => (
-          <SelectItem key={material.id} value={material.id}>
-            {material.name}
-          </SelectItem>
-        ))}
-      </SelectPopup>
-    </Select>
+    <LoomSettingsField label={`Material for filament ${slot + 1}`}>
+      <Select
+        disabled={disabled}
+        value={mapping?.materialIds?.[slot] ?? "profile"}
+        items={[
+          { value: "profile", label: "Default material or profile price" },
+          ...(library?.materials ?? []).map((material) => ({
+            value: material.id,
+            label: material.name,
+          })),
+        ]}
+        onValueChange={(next) => {
+          if (mapping && next) {
+            const materialIds = mapping.filaments.map(
+              (_ref, index) => mapping.materialIds?.[index] ?? null,
+            );
+            materialIds[slot] = next === "profile" ? null : next;
+            setMapping({ ...mapping, materialIds });
+          }
+        }}
+      >
+        <SelectTrigger size="sm" aria-label={`Material for filament ${slot + 1}`}>
+          <SelectValue placeholder="Choose a material">
+            {mapping?.materialIds?.[slot]
+              ? (library?.materials.find((material) => material.id === mapping.materialIds?.[slot])
+                  ?.name ?? "Saved material (not found)")
+              : "Default material or profile price"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="profile">Default material or profile price</SelectItem>
+          {library?.materials.map((material) => (
+            <SelectItem key={material.id} value={material.id}>
+              {material.name}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </LoomSettingsField>
   );
   return (
     <>
@@ -229,15 +247,17 @@ export function SlicingSettings({
         title="Slicer applications"
         description="Slicing runs on this host. Loom estimates and exports projects; open them in the slicer to review and print."
       >
-        <div className="flex flex-col gap-3 py-2">
+        <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
           {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => {
             const info = status.find((item) => item.app === name);
             return (
-              <label key={name} className="flex flex-col gap-1 text-xs">
-                {SLICER_LABELS[name]}
-                {info?.path
-                  ? ` ${info.version ?? ""}${info.supported ? "" : " (unsupported version)"}`
-                  : " (not detected)"}
+              <label key={name} className="flex min-w-0 flex-col gap-2 text-sm">
+                <span className="font-medium">{SLICER_LABELS[name]}</span>
+                <span className="text-xs text-muted-foreground wrap-anywhere">
+                  {info?.path
+                    ? ` ${info.version ?? ""}${info.supported ? "" : " (unsupported version)"}`
+                    : "Not detected"}
+                </span>
                 <Input
                   size="sm"
                   aria-label={`${SLICER_LABELS[name]} executable`}
@@ -259,49 +279,59 @@ export function SlicingSettings({
         title="Slicer profile mapping"
         description="Choose the printer, process and filament presets used for its estimates."
       >
-        <div className="flex flex-col gap-2 py-2">
-          <Select
-            value={bedId}
-            items={beds.map((bed) => ({ value: bed.id, label: bed.label }))}
-            onValueChange={(next) => {
-              if (next) setChosenBed(next);
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Printer for slicer mapping">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              {beds.map((bed) => (
-                <SelectItem key={bed.id} value={bed.id}>
-                  {bed.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-          <Select
-            value={app}
-            items={(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => ({
-              value: name,
-              label: SLICER_LABELS[name],
-            }))}
-            onValueChange={(next) => {
-              if (next) {
-                setChosenApp(next);
-                setMapping(null);
-              }
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Slicer application">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => (
-                <SelectItem key={name} value={name}>
-                  {SLICER_LABELS[name]}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+        <div className="flex min-w-0 flex-col gap-4 pt-3 pb-2">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <LoomSettingsField label="Printer">
+              <Select
+                disabled={disabled}
+                value={bedId}
+                items={beds.map((bed) => ({ value: bed.id, label: bed.label }))}
+                onValueChange={(next) => {
+                  if (next) setChosenBed(next);
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Printer for slicer mapping">
+                  <SelectValue placeholder="Choose a printer">
+                    {beds.find((bed) => bed.id === bedId)?.label ?? "Choose a printer"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {beds.map((bed) => (
+                    <SelectItem key={bed.id} value={bed.id}>
+                      {bed.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+            <LoomSettingsField label="Slicer application">
+              <Select
+                disabled={disabled}
+                value={app}
+                items={(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => ({
+                  value: name,
+                  label: SLICER_LABELS[name],
+                }))}
+                onValueChange={(next) => {
+                  if (next) {
+                    setChosenApp(next);
+                    setMapping(null);
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Slicer application">
+                  <SelectValue>{SLICER_LABELS[app]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {SLICER_LABELS[name]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          </div>
           <ProfileSelect
             label={app === "prusa-slicer" ? "Config" : "Machine"}
             value={mapping?.machine ?? null}
@@ -322,8 +352,8 @@ export function SlicingSettings({
               />
               {/* oxlint-disable react/no-array-index-key -- Filament slots are fixed positional identities in the slicer contract. */}
               {(mapping?.filaments.length ? mapping.filaments : [null]).map((filament, slot) => (
-                <div key={slot} className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
+                <div key={slot} className="flex min-w-0 flex-wrap items-end gap-3">
+                  <div className="grid min-w-0 flex-1 basis-64 gap-4 sm:grid-cols-2">
                     <ProfileSelect
                       label={`Filament ${slot + 1}`}
                       value={filament}
@@ -363,89 +393,92 @@ export function SlicingSettings({
                 </div>
               ))}
               {mapping && mapping.filaments.length > 0 && mapping.filaments.length < 16 && (
-                <Button
-                  variant="ghost-muted"
-                  size="xs"
-                  onClick={() =>
-                    setMapping({
-                      ...mapping,
-                      filaments: [...mapping.filaments, mapping.filaments[0]!],
-                      materialIds: [
-                        ...mapping.filaments.map(
-                          (_ref, index) => mapping.materialIds?.[index] ?? null,
-                        ),
-                        null,
-                      ],
-                    })
-                  }
-                >
-                  Add filament slot
-                </Button>
+                <LoomSettingsActions>
+                  <Button
+                    variant="ghost-muted"
+                    size="xs"
+                    onClick={() =>
+                      setMapping({
+                        ...mapping,
+                        filaments: [...mapping.filaments, mapping.filaments[0]!],
+                        materialIds: [
+                          ...mapping.filaments.map(
+                            (_ref, index) => mapping.materialIds?.[index] ?? null,
+                          ),
+                          null,
+                        ],
+                      })
+                    }
+                  >
+                    Add filament slot
+                  </Button>
+                </LoomSettingsActions>
               )}
             </>
           )}
           {app === "prusa-slicer" && mapping && materialSelect(0)}
           {!mapping && suggestion && app === "bambu-studio" && (
-            <Button variant="outline" size="xs" onClick={() => setMapping(suggestion)}>
-              Use suggested Bambu profiles
-            </Button>
+            <LoomSettingsActions>
+              <Button variant="outline" size="xs" onClick={() => setMapping(suggestion)}>
+                Use suggested Bambu profiles
+              </Button>
+            </LoomSettingsActions>
           )}
           {mapping && (
-            <Button variant="ghost-muted" size="xs" onClick={() => setMapping(null)}>
-              Clear mapping
-            </Button>
+            <LoomSettingsActions>
+              <Button variant="ghost-muted" size="xs" onClick={() => setMapping(null)}>
+                Clear mapping
+              </Button>
+            </LoomSettingsActions>
           )}
-          {loading && (
-            <p role="status" className="text-xs">
-              Loading profiles...
-            </p>
-          )}
-          {app !== "prusa-slicer" && (
-            <Select
-              value={importKind}
-              items={[
-                { value: "machine", label: "Machine" },
-                { value: "process", label: "Process" },
-                { value: "filament", label: "Filament" },
-              ]}
-              onValueChange={(next) => {
-                if (next) setImportKind(next);
-              }}
-            >
-              <SelectTrigger size="sm" aria-label="Profile import kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup>
-                {(["machine", "process", "filament"] as const).map((kind) => (
-                  <SelectItem key={kind} value={kind}>
-                    {kind}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          )}
-          <label className="flex flex-col gap-1 text-xs">
-            {app === "prusa-slicer"
-              ? "Import exported Prusa config (INI)"
-              : "Import exported preset (JSON)"}
-            <Input
-              type="file"
-              size="sm"
-              aria-label="Import slicer profile"
-              accept={app === "prusa-slicer" ? ".ini" : ".json"}
-              disabled={disabled}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void importFile(file);
-                event.target.value = "";
-              }}
-            />
-          </label>
-          {error && (
-            <p role="alert" className="text-xs text-warning">
-              {error}
-            </p>
-          )}
+          {loading && <LoomSettingsNotice role="status">Loading profiles...</LoomSettingsNotice>}
+          <LoomSettingsDetails title="Import slicer profiles">
+            {app !== "prusa-slicer" && (
+              <LoomSettingsField label="Profile type">
+                <Select
+                  disabled={disabled}
+                  value={importKind}
+                  items={[
+                    { value: "machine", label: "Machine" },
+                    { value: "process", label: "Process" },
+                    { value: "filament", label: "Filament" },
+                  ]}
+                  onValueChange={(next) => {
+                    if (next) setImportKind(next);
+                  }}
+                >
+                  <SelectTrigger size="sm" aria-label="Profile import kind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {(["machine", "process", "filament"] as const).map((kind) => (
+                      <SelectItem key={kind} value={kind}>
+                        {{ machine: "Machine", process: "Process", filament: "Filament" }[kind]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
+            )}
+            <label className="flex min-w-0 flex-col gap-2 text-sm">
+              {app === "prusa-slicer"
+                ? "Import exported Prusa config (INI)"
+                : "Import exported preset (JSON)"}
+              <Input
+                type="file"
+                size="sm"
+                aria-label="Import slicer profile"
+                accept={app === "prusa-slicer" ? ".ini" : ".json"}
+                disabled={disabled}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void importFile(file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </LoomSettingsDetails>
+          {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
         </div>
       </SettingsRow>
       <SettingsRow

@@ -1,3 +1,10 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsNotice,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { OriginalRouteReview } from "./OriginalRouteReview";
 import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
@@ -12,6 +19,13 @@ import type {
 } from "@t3tools/contracts/fork";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useEnvironmentScope } from "~/state/session";
 import { useServerConfigs } from "~/state/entities";
@@ -110,22 +124,27 @@ function Inventory({
     );
   };
   return (
-    <div className="flex flex-col gap-4">
-      <p>
-        Selected computer: {computer}. Inspect registered projects before replacing development
-        access.
-      </p>
-      <p>
-        Only selected local Git configuration is inspected. Personal stores, global configuration,
-        included files, SSH aliases, environment overrides, account identity and external consumers
-        are not inspected. Endpoints are hints; access has not been verified.
-      </p>
-      <p>
+    <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium">Project dependency inventory</h3>
+        <p className="max-w-prose text-muted-foreground">
+          Inspect registered projects before replacing development access.
+        </p>
+      </div>
+      <LoomSettingsNotice>Selected computer: {computer}</LoomSettingsNotice>
+      <LoomSettingsDetails title="What the inventory inspects">
+        <p>
+          Only selected local Git configuration is inspected. Personal stores, global configuration,
+          included files, SSH aliases, environment overrides, account identity and external
+          consumers are not inspected. Endpoints are hints; access has not been verified.
+        </p>
+      </LoomSettingsDetails>
+      <LoomSettingsNotice>
         Reviewing a plan never changes repository settings or grants access. Verification is
         required before any cutover.
-      </p>
-      {error ? <p role="alert">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
+      </LoomSettingsNotice>
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+      <LoomSettingsActions>
         <Button disabled={busy} onClick={() => inspectInventory(null)}>
           Inspect project dependencies
         </Button>
@@ -138,8 +157,10 @@ function Inventory({
             Next projects
           </Button>
         ) : null}
-      </div>
-      {busy ? <p role="status">Updating migration planning…</p> : null}
+      </LoomSettingsActions>
+      {busy ? (
+        <LoomSettingsNotice role="status">Updating migration planning…</LoomSettingsNotice>
+      ) : null}
       {inventory ? (
         <>
           <p>
@@ -154,7 +175,7 @@ function Inventory({
             <section
               key={project.projectId}
               aria-label={`Dependencies for ${project.title}`}
-              className="flex flex-col gap-3 rounded-md border p-3"
+              className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
             >
               <h3 className="font-medium">{project.title}</h3>
               {project.state === "unavailable" ? (
@@ -164,15 +185,24 @@ function Inventory({
                 </p>
               ) : (
                 <>
-                  <p>
-                    Local SSH command: {project.localSshCommand ? "configured" : "not found"}.
-                    Credential helper: {project.localCredentialHelper ? "configured" : "not found"}.
-                    URL rewrite:{" "}
-                    {project.localUrlRewrite
-                      ? "configured; replacement needs separate review"
-                      : "not found"}
-                    .
-                  </p>
+                  <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-3">
+                    <div className="min-w-0 space-y-1">
+                      <dt className="text-xs text-muted-foreground">Local SSH command</dt>
+                      <dd>{project.localSshCommand ? "Configured" : "Not found"}</dd>
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <dt className="text-xs text-muted-foreground">Credential helper</dt>
+                      <dd>{project.localCredentialHelper ? "Configured" : "Not found"}</dd>
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <dt className="text-xs text-muted-foreground">URL rewrite</dt>
+                      <dd>
+                        {project.localUrlRewrite
+                          ? "Configured; replacement needs separate review"
+                          : "Not found"}
+                      </dd>
+                    </div>
+                  </dl>
                   {project.dependencies.length === 0 ? (
                     <p>
                       No remote URLs in the inspected local configuration. Included and global
@@ -182,50 +212,63 @@ function Inventory({
                   {project.dependencies.map((dep) => (
                     <div
                       key={`${dep.remote}:${dep.direction}:${dep.position}`}
-                      className="flex flex-col gap-2"
+                      className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/30 p-3"
                     >
-                      <p>
-                        {dep.remote} · {dep.direction} URL {dep.position + 1} · {dep.transport} ·{" "}
-                        {dep.hostname ?? "unrecognized endpoint"}
-                        {dep.port ? `:${dep.port}` : ""} ·{" "}
-                        {dep.repository ?? "repository path not reported"}
-                      </p>
+                      <h4 className="font-medium">
+                        {dep.remote}: {dep.direction} URL {dep.position + 1}
+                      </h4>
+                      <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+                        <div className="min-w-0 space-y-1">
+                          <dt className="text-xs text-muted-foreground">Transport and host</dt>
+                          <dd>
+                            {dep.transport}: {dep.hostname ?? "unrecognized endpoint"}
+                            {dep.port ? `:${dep.port}` : ""}
+                          </dd>
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <dt className="text-xs text-muted-foreground">Repository</dt>
+                          <dd>{dep.repository ?? "Repository path not reported"}</dd>
+                        </div>
+                      </dl>
                       {dep.embeddedAuthentication ? (
                         <p>
                           Embedded authentication or URL parameters were omitted. Review them
                           separately before cutover.
                         </p>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          busy ||
-                          !canWrite ||
-                          project.localUrlRewrite ||
-                          dep.transport === "other" ||
-                          !dep.repository
-                        }
-                        onClick={() => {
-                          setChoice({
-                            projectId: project.projectId,
-                            title: project.title,
-                            dependency: dep,
-                          });
-                          setResult(null);
-                          setConfirmed(false);
-                          setError(null);
-                        }}
-                      >
-                        Plan replacement for {dep.remote} {dep.direction} {dep.position + 1}
-                      </Button>
+                      <LoomSettingsActions>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`Plan replacement for ${dep.remote} ${dep.direction} ${dep.position + 1}`}
+                          disabled={
+                            busy ||
+                            !canWrite ||
+                            project.localUrlRewrite ||
+                            dep.transport === "other" ||
+                            !dep.repository
+                          }
+                          onClick={() => {
+                            setChoice({
+                              projectId: project.projectId,
+                              title: project.title,
+                              dependency: dep,
+                            });
+                            setResult(null);
+                            setConfirmed(false);
+                            setError(null);
+                          }}
+                        >
+                          Plan replacement
+                        </Button>
+                      </LoomSettingsActions>
                     </div>
                   ))}
                   {project.omittedDependencies > 0 ? (
-                    <p role="status">
+                    <LoomSettingsNotice role="status">
                       {project.omittedDependencies} additional or unsupported entries were omitted.
                       This inventory is incomplete.
-                    </p>
+                    </LoomSettingsNotice>
                   ) : null}
                 </>
               )}
@@ -259,11 +302,12 @@ function Inventory({
       {result ? (
         <section
           aria-label="Replacement plan review"
-          className="flex flex-col gap-3 rounded-md border p-3"
+          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
         >
-          <h3 className="font-medium">
-            {result.plan.projectTitle} · {result.plan.state}
-          </h3>
+          <div className="space-y-1">
+            <h3 className="font-medium">{result.plan.projectTitle}</h3>
+            <p className="text-muted-foreground">Replacement plan: {result.plan.state}</p>
+          </div>
           <p>
             {result.plan.dependency.remote} · {result.plan.dependency.direction} ·{" "}
             {result.plan.dependency.hostname}/{result.plan.dependency.repository}
@@ -288,14 +332,15 @@ function Inventory({
             Review expires {new Date(result.plan.expiresAt).toLocaleString()}.{" "}
             {now >= result.plan.expiresAt ? "This review expired." : ""}
           </p>
-          <p>
+          <LoomSettingsNotice>
             Access verification is required before cutover. Cutover is unavailable in this release.
             Existing grants, profiles and repository settings are preserved.
-          </p>
+          </LoomSettingsNotice>
           {result.plan.state === "prepared" ? (
             <>
-              <label>
+              <label className="flex items-start gap-2 text-sm leading-6">
                 <input
+                  className="mt-1 shrink-0"
                   type="checkbox"
                   checked={confirmed}
                   disabled={busy || !canWrite}
@@ -342,7 +387,7 @@ function Inventory({
               plan={result.plan}
             />
           ) : null}
-          <div className="flex flex-wrap gap-2">
+          <LoomSettingsActions>
             <Button
               variant="outline"
               disabled={busy}
@@ -379,63 +424,78 @@ function Inventory({
             >
               Close replacement review
             </Button>
-          </div>
+          </LoomSettingsActions>
         </section>
       ) : null}
-      <h3 className="font-medium">Recent replacement plans</h3>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={busy}
-        onClick={() => appAtomRegistry.refresh(listAtom)}
+      <LoomSettingsPanel
+        title="Recent replacement plans"
+        description="Open a plan to recheck source and item freshness."
       >
-        Refresh replacement plans
-      </Button>
-      <p>Listing plans does not recheck source or item freshness. Open a plan to check them.</p>
-      {list.waiting ? <p role="status">Loading replacement plans…</p> : null}
-      {list._tag === "Failure" ? (
-        <p role="alert">Could not load replacement plans. Check Vault access and refresh.</p>
-      ) : null}
-      {page?.items.length === 0 ? <p>No replacement plans on this page.</p> : null}
-      {page?.items.map((entry) => (
-        <div key={entry.plan.id} className="flex flex-wrap items-center gap-2">
-          <span>
-            {entry.plan.projectTitle} · {entry.plan.replacement.label} · {entry.plan.state}
-          </span>
+        <LoomSettingsActions>
           <Button
             variant="outline"
             size="sm"
             disabled={busy}
-            onClick={() => {
-              setChoice(null);
-              setResult(null);
-              void planAct(() =>
-                runVault(atoms.inspect, { environmentId, input: { id: entry.plan.id } }),
-              );
-            }}
+            onClick={() => appAtomRegistry.refresh(listAtom)}
           >
-            Open replacement plan
+            Refresh replacement plans
           </Button>
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={busy || list.waiting || !cursor}
-          onClick={() => setCursor(null)}
-        >
-          First replacement plans
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={busy || list.waiting || !page?.nextCursor}
-          onClick={() => setCursor(page?.nextCursor ?? null)}
-        >
-          More replacement plans
-        </Button>
-      </div>
+        </LoomSettingsActions>
+        <p className="text-xs text-muted-foreground">
+          Listing plans does not recheck source or item freshness. Open a plan to check them.
+        </p>
+        {list.waiting ? (
+          <LoomSettingsNotice role="status">Loading replacement plans…</LoomSettingsNotice>
+        ) : null}
+        {list._tag === "Failure" ? (
+          <LoomSettingsNotice role="alert">
+            Could not load replacement plans. Check Vault access and refresh.
+          </LoomSettingsNotice>
+        ) : null}
+        {page?.items.length === 0 ? <p>No replacement plans on this page.</p> : null}
+        {page?.items.map((entry) => (
+          <div
+            key={entry.plan.id}
+            className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0"
+          >
+            <span>
+              {entry.plan.projectTitle} · {entry.plan.replacement.label} · {entry.plan.state}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setChoice(null);
+                setResult(null);
+                void planAct(() =>
+                  runVault(atoms.inspect, { environmentId, input: { id: entry.plan.id } }),
+                );
+              }}
+            >
+              Open replacement plan
+            </Button>
+          </div>
+        ))}
+        <LoomSettingsActions>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || list.waiting || !cursor}
+            onClick={() => setCursor(null)}
+          >
+            First replacement plans
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || list.waiting || !page?.nextCursor}
+            onClick={() => setCursor(page?.nextCursor ?? null)}
+          >
+            More replacement plans
+          </Button>
+        </LoomSettingsActions>
+      </LoomSettingsPanel>
     </div>
   );
 }
@@ -469,7 +529,7 @@ function ReplacementDraft({
   return (
     <section
       aria-label="Choose development replacement"
-      className="flex flex-col gap-3 rounded-md border p-3"
+      className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
     >
       <h3 className="font-medium">
         Replacement for {choice.title} · {choice.dependency.remote}
@@ -478,33 +538,46 @@ function ReplacementDraft({
         Prefer a fresh key created in Vault or a dedicated GitHub App/token connection. The server
         checks the selected adapter and endpoint; usable access requires separate verification.
       </p>
-      <label>
-        Development replacement record
-        <select
-          aria-label="Development replacement record"
+      <LoomSettingsField label="Development replacement record">
+        <Select
           value={selected}
           disabled={locked || list.waiting}
-          onChange={(e) => setSelected(e.target.value)}
+          onValueChange={(nextValue) => {
+            if (nextValue !== null) {
+              setSelected(nextValue);
+            }
+          }}
         >
-          <option value="">Choose a record</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label} · {item.kind} · version {item.version}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger aria-label="Development replacement record">
+            <SelectValue>
+              {items.find((item) => item.id === selected)?.label ?? (selected || "Choose a record")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value="">Choose a record</SelectItem>
+            {items.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {item.label} · {item.kind} · version {item.version}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </LoomSettingsField>
       {list._tag === "Failure" ? (
-        <p role="alert">Could not load replacement records. Refresh and retry.</p>
+        <LoomSettingsNotice role="alert">
+          Could not load replacement records. Refresh and retry.
+        </LoomSettingsNotice>
       ) : null}
-      {list.waiting ? <p role="status">Loading replacement records…</p> : null}
+      {list.waiting ? (
+        <LoomSettingsNotice role="status">Loading replacement records…</LoomSettingsNotice>
+      ) : null}
       {page && items.length === 0 ? (
         <p>
           No compatible record on this page. Create a fresh SSH key in Vault or a dedicated GitHub
           connection, then refresh.
         </p>
       ) : null}
-      <label>
+      <label className="flex items-start gap-2 text-sm leading-6">
         <input
           type="checkbox"
           checked={dedicated}
@@ -513,7 +586,7 @@ function ReplacementDraft({
         />{" "}
         This replacement is dedicated to development and separate from personal accounts.
       </label>
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         <Button
           disabled={locked || !dedicated || !item}
           onClick={() => {
@@ -552,7 +625,7 @@ function ReplacementDraft({
         <Button variant="outline" disabled={locked} onClick={onCancel}>
           Cancel replacement selection
         </Button>
-      </div>
+      </LoomSettingsActions>
     </section>
   );
 }

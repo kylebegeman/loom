@@ -1,3 +1,4 @@
+import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ProjectId, type EnvironmentId } from "@t3tools/contracts";
@@ -9,6 +10,13 @@ import {
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
@@ -33,28 +41,33 @@ export function VaultHealthRetained({
   )
     return <p>Retained selection discovery needs a newer Vault server.</p>;
   return (
-    <section aria-label="Retained selections" className="flex flex-col gap-3">
+    <section aria-label="Retained selections" className="flex min-w-0 flex-col gap-4">
       <p className="font-medium">Retained run selections</p>
-      <p>
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         Check a project on this page, including projects without current references. A retained
         selection records earlier use, not current access. Retired snapshots and consumers outside
         Loom may be unknown.
       </p>
-      <label>
-        Project to inspect
-        <select
-          aria-label="Retained selection project"
+      <LoomSettingsField label="Project to inspect">
+        <Select
           value={projects.some((p) => p.id === projectId) ? (projectId ?? "") : ""}
-          onChange={(e) => setProjectId(e.target.value ? ProjectId.make(e.target.value) : null)}
+          onValueChange={(nextValue) => setProjectId(nextValue ? ProjectId.make(nextValue) : null)}
         >
-          <option value="">Choose a project</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.title}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger aria-label="Retained selection project">
+            <SelectValue>
+              {projects.find((p) => p.id === projectId)?.title ?? "Choose a project"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value="">Choose a project</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.title}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </LoomSettingsField>
       {projectId && projects.some((p) => p.id === projectId) ? (
         <SelectionPage
           key={projectId}
@@ -80,13 +93,19 @@ function SelectionPage({
   const result = useAtomValue(atom),
     page = Option.getOrNull(AsyncResult.value(result));
   return (
-    <div className="flex flex-col gap-3">
-      <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
-        Refresh retained selections
-      </Button>
-      {result.waiting ? <p role="status">Inspecting retained selections…</p> : null}
+    <div className="flex min-w-0 flex-col gap-4">
+      <LoomSettingsActions>
+        <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+          Refresh retained selections
+        </Button>
+      </LoomSettingsActions>
+      {result.waiting ? (
+        <LoomSettingsNotice role="status">Inspecting retained selections…</LoomSettingsNotice>
+      ) : null}
       {result._tag === "Failure" ? (
-        <p role="alert">Could not inspect retained selections. Refresh and retry.</p>
+        <LoomSettingsNotice role="alert">
+          Could not inspect retained selections. Refresh and retry.
+        </LoomSettingsNotice>
       ) : null}
       {page && !result.waiting && result._tag !== "Failure" ? (
         <>
@@ -109,7 +128,10 @@ function SelectionPage({
             </p>
           ) : null}
           {page.items.map((pin) => (
-            <div key={pin.id} className="flex flex-col gap-1 rounded-md border p-3">
+            <div
+              key={pin.id}
+              className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 p-3 text-sm wrap-anywhere"
+            >
               <p>
                 {pin.profileLabel} · Profile version {pin.profileVersion} · {pin.runState}
               </p>
@@ -126,16 +148,18 @@ function SelectionPage({
               </p>
             </div>
           ))}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openVaultProfiles({ environmentId, projectId, section: "profiles" })}
-          >
-            Review project run selections
-          </Button>
+          <LoomSettingsActions>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              onClick={() => openVaultProfiles({ environmentId, projectId, section: "profiles" })}
+            >
+              Review project run selections
+            </Button>
+          </LoomSettingsActions>
         </>
       ) : null}
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -152,7 +176,7 @@ function SelectionPage({
         >
           More retained selections
         </Button>
-      </div>
+      </LoomSettingsActions>
     </div>
   );
 }

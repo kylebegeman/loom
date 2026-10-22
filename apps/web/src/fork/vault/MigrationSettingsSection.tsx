@@ -1,3 +1,10 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsNotice,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { TypedImports } from "./TypedImports";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -6,6 +13,13 @@ import type { VaultMigrationResult } from "@t3tools/contracts/fork";
 import { createVaultMigrationAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import * as Redacted from "effect/Redacted";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
@@ -32,18 +46,20 @@ export function VaultMigrationSettingsSection() {
     return <p>Development import reviews need a newer Vault server.</p>;
   if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
   return (
-    <>
+    <div className="flex min-w-0 flex-col gap-6">
       <Imports key={environment.environmentId} environmentId={environment.environmentId} />
       {supportsLoomFeature(
         configs.get(environment.environmentId)?.environment.capabilities,
         "vault-migration-typed-imports",
       ) ? (
-        <TypedImports
-          key={`typed:${environment.environmentId}`}
-          environmentId={environment.environmentId}
-        />
+        <LoomSettingsPanel title="SSH and GitHub imports">
+          <TypedImports
+            key={`typed:${environment.environmentId}`}
+            environmentId={environment.environmentId}
+          />
+        </LoomSettingsPanel>
       ) : null}
-    </>
+    </div>
   );
 }
 function Imports({ environmentId }: { environmentId: EnvironmentId }) {
@@ -95,108 +111,128 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
     setError(null);
   };
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <p>
         Use a dedicated development identity. For SSH, create a fresh key in Vault. For GitHub,
         connect a dedicated App or token under Vault GitHub connections.
       </p>
-      <p>
-        This form imports one development secret or secure note into a new record. It does not read
-        1Password, exports or local credential files, change repository settings, grant workload
-        access or verify a provider login.
-      </p>
-      <p>Selected computer: {environmentId}</p>
-      {error ? <p role="alert">{error}</p> : null}
+      <LoomSettingsDetails title="What this import changes">
+        <p>
+          This form imports one development secret or secure note into a new record. It does not
+          read 1Password, exports or local credential files, change repository settings, grant
+          workload access or verify a provider login.
+        </p>
+      </LoomSettingsDetails>
+      <LoomSettingsNotice>Selected computer: {environmentId}</LoomSettingsNotice>
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!result ? (
-        <form
-          className="flex flex-col gap-3 rounded-md border p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (locked || !dedicated || !label.trim() || !value) return;
-            void act(() =>
-              runVault(atoms.prepare, {
-                environmentId,
-                input: {
-                  id,
-                  label: label.trim(),
-                  kind,
-                  developmentOnly: true,
-                  value: Redacted.make(value),
-                },
-              }),
-            );
-          }}
-        >
-          <label>
-            Development item label
-            <Input
-              aria-label="Development import label"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              maxLength={200}
-              disabled={locked}
-            />
-          </label>
-          <label>
-            Record type
-            <select
-              aria-label="Development import kind"
-              value={kind}
-              disabled={locked}
-              onChange={(e) => setKind(e.target.value === "secure-note" ? "secure-note" : "secret")}
-            >
-              <option value="secret">Development secret</option>
-              <option value="secure-note">Development secure note</option>
-            </select>
-          </label>
-          <label>
-            Private value
-            {kind === "secret" ? (
-              <Input
-                type="password"
-                aria-label="Development import value"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                maxLength={65536}
-                autoComplete="off"
+        <LoomSettingsPanel title="Import a development secret or note">
+          <form
+            className="flex min-w-0 flex-col gap-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (locked || !dedicated || !label.trim() || !value) return;
+              void act(() =>
+                runVault(atoms.prepare, {
+                  environmentId,
+                  input: {
+                    id,
+                    label: label.trim(),
+                    kind,
+                    developmentOnly: true,
+                    value: Redacted.make(value),
+                  },
+                }),
+              );
+            }}
+          >
+            <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+              <LoomSettingsField label="Development item label">
+                <Input
+                  aria-label="Development import label"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  maxLength={200}
+                  disabled={locked}
+                />
+              </LoomSettingsField>
+              <LoomSettingsField label="Record type">
+                <Select
+                  value={kind}
+                  disabled={locked}
+                  onValueChange={(nextValue) => {
+                    if (nextValue !== null) {
+                      setKind(nextValue === "secure-note" ? "secure-note" : "secret");
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="Development import kind">
+                    <SelectValue>
+                      {kind === "secure-note" ? "Development secure note" : "Development secret"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="secret">Development secret</SelectItem>
+                    <SelectItem value="secure-note">Development secure note</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
+            </div>
+            <LoomSettingsField label="Private value">
+              {kind === "secret" ? (
+                <Input
+                  type="password"
+                  aria-label="Development import value"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  maxLength={65536}
+                  autoComplete="off"
+                  disabled={locked}
+                />
+              ) : (
+                <Textarea
+                  aria-label="Development import value"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  maxLength={65536}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={locked}
+                />
+              )}
+            </LoomSettingsField>
+            <label className="flex items-start gap-2 text-sm leading-6">
+              <input
+                className="mt-1 shrink-0"
+                type="checkbox"
+                checked={dedicated}
                 disabled={locked}
-              />
-            ) : (
-              <Textarea
-                aria-label="Development import value"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                maxLength={65536}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={locked}
-              />
-            )}
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={dedicated}
-              disabled={locked}
-              onChange={(e) => setDedicated(e.target.checked)}
-            />{" "}
-            This credential is dedicated to development and is not shared with my personal accounts.
-          </label>
-          <Button type="submit" disabled={locked || !dedicated || !label.trim() || !value}>
-            Review development import
-          </Button>
-          <Button type="button" variant="outline" disabled={busy} onClick={reset}>
-            Clear private input
-          </Button>
-        </form>
+                onChange={(e) => setDedicated(e.target.checked)}
+              />{" "}
+              This credential is dedicated to development and is not shared with my personal
+              accounts.
+            </label>
+            <LoomSettingsActions>
+              <Button type="submit" disabled={locked || !dedicated || !label.trim() || !value}>
+                Review development import
+              </Button>
+              <Button type="button" variant="outline" disabled={busy} onClick={reset}>
+                Clear private input
+              </Button>
+            </LoomSettingsActions>
+          </form>
+        </LoomSettingsPanel>
       ) : (
         <section
           aria-label="Development import review"
-          className="flex flex-col gap-3 rounded-md border p-3"
+          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-3 sm:p-4"
         >
-          <p className="font-medium">
-            {result.plan.label} · {result.plan.kind} · {result.plan.state}
-          </p>
+          <div className="space-y-1">
+            <h3 className="font-medium">{result.plan.label}</h3>
+            <p className="text-muted-foreground">
+              {result.plan.kind} · {result.plan.state}
+            </p>
+          </div>
           <p>
             New Vault record: {result.plan.itemId}. Existing records, personal stores and project
             configuration are preserved.
@@ -210,8 +246,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           {pending ? (
             <>
               {enteringValue ? (
-                <label>
-                  Reenter the same private value to retry this review
+                <LoomSettingsField label="Reenter the same private value to retry this review">
                   {result.plan.kind === "secret" ? (
                     <Input
                       type="password"
@@ -233,12 +268,13 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                       disabled={locked}
                     />
                   )}
-                </label>
+                </LoomSettingsField>
               ) : (
                 <p>Private value is held only for this review and is hidden here.</p>
               )}
-              <label>
+              <label className="flex items-start gap-2 text-sm leading-6">
                 <input
+                  className="mt-1 shrink-0"
                   type="checkbox"
                   checked={reviewed}
                   disabled={locked}
@@ -247,7 +283,9 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                 I reviewed this new development record and selected computer.
               </label>
               {result.plan.state === "prepared" && now >= result.plan.expiresAt ? (
-                <p role="status">This review expired. Cancel it and prepare a new review.</p>
+                <LoomSettingsNotice role="status">
+                  This review expired. Cancel it and prepare a new review.
+                </LoomSettingsNotice>
               ) : null}
               <Button
                 disabled={
@@ -271,7 +309,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
               </Button>
             </>
           ) : null}
-          <div className="flex flex-wrap gap-2">
+          <LoomSettingsActions>
             <Button
               variant="outline"
               disabled={busy}
@@ -314,7 +352,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
                 Start another review
               </Button>
             ) : null}
-          </div>
+          </LoomSettingsActions>
           {result.plan.state === "imported" ? (
             <p>
               The record is stored. Configure and verify its dedicated adapter before any repository
@@ -323,61 +361,71 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           ) : null}
         </section>
       )}
-      {busy ? <p role="status">Updating import review…</p> : null}
-      <h3 className="font-medium">Recent import reviews</h3>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => appAtomRegistry.refresh(listAtom)}
-        disabled={busy}
-      >
-        Refresh import reviews
-      </Button>
-      {list.waiting ? <p role="status">Loading import reviews…</p> : null}
-      {list._tag === "Failure" ? (
-        <p role="alert">Could not load import reviews. Check Vault access and refresh.</p>
-      ) : null}
-      {page?.items.length === 0 ? <p>No import reviews on this page.</p> : null}
-      {page?.items.map((entry) => (
-        <div key={entry.plan.id} className="flex flex-wrap items-center gap-2">
-          <span>
-            {entry.plan.label} · {entry.plan.state}
-          </span>
+      {busy ? <LoomSettingsNotice role="status">Updating import review…</LoomSettingsNotice> : null}
+      <LoomSettingsPanel title="Recent import reviews">
+        <LoomSettingsActions>
           <Button
             size="sm"
             variant="outline"
+            onClick={() => appAtomRegistry.refresh(listAtom)}
             disabled={busy}
-            onClick={() => {
-              setValue("");
-              setEnteringValue(true);
-              setReviewed(false);
-              void act(() =>
-                runVault(atoms.inspect, { environmentId, input: { id: entry.plan.id } }),
-              );
-            }}
           >
-            Open import review
+            Refresh import reviews
           </Button>
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!cursor || list.waiting || busy}
-          onClick={() => setCursor(null)}
-        >
-          First import reviews
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!page?.nextCursor || list.waiting || busy}
-          onClick={() => setCursor(page?.nextCursor ?? null)}
-        >
-          More import reviews
-        </Button>
-      </div>
+        </LoomSettingsActions>
+        {list.waiting ? (
+          <LoomSettingsNotice role="status">Loading import reviews…</LoomSettingsNotice>
+        ) : null}
+        {list._tag === "Failure" ? (
+          <LoomSettingsNotice role="alert">
+            Could not load import reviews. Check Vault access and refresh.
+          </LoomSettingsNotice>
+        ) : null}
+        {page?.items.length === 0 ? <p>No import reviews on this page.</p> : null}
+        {page?.items.map((entry) => (
+          <div
+            key={entry.plan.id}
+            className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0"
+          >
+            <span>
+              {entry.plan.label} · {entry.plan.state}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setValue("");
+                setEnteringValue(true);
+                setReviewed(false);
+                void act(() =>
+                  runVault(atoms.inspect, { environmentId, input: { id: entry.plan.id } }),
+                );
+              }}
+            >
+              Open import review
+            </Button>
+          </div>
+        ))}
+        <LoomSettingsActions>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!cursor || list.waiting || busy}
+            onClick={() => setCursor(null)}
+          >
+            First import reviews
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!page?.nextCursor || list.waiting || busy}
+            onClick={() => setCursor(page?.nextCursor ?? null)}
+          >
+            More import reviews
+          </Button>
+        </LoomSettingsActions>
+      </LoomSettingsPanel>
     </div>
   );
 }

@@ -5,6 +5,11 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { AppleBuildSettingsPatch } from "@t3tools/contracts/fork";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsNotice,
+} from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -18,7 +23,7 @@ import { Switch } from "~/components/ui/switch";
 import { ensureLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
-import { Alert, failureOf, formatBytes, useAction, valueOf } from "./parts";
+import { failureOf, formatBytes, useAction, valueOf } from "./parts";
 import { FEATURE, apple, runAppleCommand } from "./state";
 
 const DERIVED_DATA = [
@@ -40,8 +45,18 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
   const [notice, setNotice] = useState<string | null>(null);
   const [keep, setKeep] = useState<string | null>(null);
   const failure = failureOf(result);
-  if (failure) return <Alert>{failure}</Alert>;
-  if (!view) return <p>Loading Apple build settings...</p>;
+  if (failure)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="alert">{failure}</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
+  if (!view)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="status">Loading Apple build settings...</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const { settings, storage } = view;
 
   const update = (patch: AppleBuildSettingsPatch) =>
@@ -88,7 +103,7 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
   const keepValue = keep ?? String(settings.keepRunsPerProject);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
       {toggle(
         "agentToolsEnabled",
         "Agent tools",
@@ -172,15 +187,15 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
         "After Build and run on a simulator, open it in the thread's Device panel.",
       )}
       {save.error && (
-        <div className="px-3 sm:px-4">
-          <Alert>{save.error}</Alert>
-        </div>
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>
+        </LoomSettingsContent>
       )}
       <SettingsRow
         title="Run history"
         description="Clearing is refused while a run is going."
         control={
-          <div className="flex flex-wrap gap-2">
+          <LoomSettingsActions>
             <Button
               size="sm"
               variant="outline"
@@ -197,18 +212,14 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
             >
               Delete derived data
             </Button>
-          </div>
+          </LoomSettingsActions>
         }
       />
       {(clear.error || notice) && (
-        <div className="flex flex-col gap-2 px-3 pb-3 sm:px-4">
-          {clear.error && <Alert>{clear.error}</Alert>}
-          {notice && (
-            <p role="status" className="text-sm">
-              {notice}
-            </p>
-          )}
-        </div>
+        <LoomSettingsContent className="flex flex-col gap-3">
+          {clear.error && <LoomSettingsNotice role="alert">{clear.error}</LoomSettingsNotice>}
+          {notice && <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice>}
+        </LoomSettingsContent>
       )}
     </div>
   );
@@ -217,13 +228,26 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
 export function AppleBuildToolingSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to manage Apple builds.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          Select a connected environment to manage Apple builds.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       FEATURE,
     )
   )
-    return <p>This environment's server does not have Apple build tooling.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>
+          This environment's server does not have Apple build tooling.
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentAppleBuild
       key={environment.environmentId}

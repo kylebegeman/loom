@@ -28,6 +28,20 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useEnvironmentScope } from "~/state/session";
 import { useServerConfigs } from "~/state/entities";
@@ -66,9 +80,15 @@ export function VaultProfileSettingsSection() {
       "vault-profiles",
     )
   )
-    return <p className="text-sm">Project profiles need a server with Vault profile support.</p>;
+    return (
+      <LoomSettingsNotice>
+        Project profiles need a server with Vault profile support.
+      </LoomSettingsNotice>
+    );
   if (!canRead)
-    return <p className="text-sm">Your connection does not include Vault inspection.</p>;
+    return (
+      <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
   return (
     <ProfileProjects
       key={`${environment.environmentId}:${initialProject}:${canWrite}`}
@@ -93,35 +113,54 @@ function ProfileProjects({
   const [selected, setSelected] = useState<ProjectId | null>(initialProject);
   const projects = catalog?.subjects.filter((s) => s.principal.kind === "project") ?? [];
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Give SSH, Git and GitHub requirements stable names. Profiles hold references and grant no
-        access. A run keeps the revision and key versions it first resolves; later edits and default
-        changes apply to later runs.
+    <div className="flex min-w-0 flex-col gap-5">
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        Give a project's SSH, Git and GitHub requirements stable names. Profiles hold references and
+        grant no access. Each run keeps the revision and key versions it first resolves; changes
+        apply to later runs.
       </p>
-      <label className="flex flex-col gap-1 text-sm">
-        Project
-        <select
-          aria-label="Vault profile project"
-          value={selected ?? ""}
-          onChange={(e) => setSelected(e.target.value ? ProjectId.make(e.target.value) : null)}
-        >
-          <option value="">Choose a project</option>
-          {projects.map((s) => (
-            <option key={s.principal.id} value={s.principal.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {result.waiting ? <p role="status">Loading projects…</p> : null}
-      {failure(result) ? <p role="alert">{failure(result)}</p> : null}
-      {catalog?.truncated ? (
-        <p className="text-sm">Only the first 250 projects and threads are available here.</p>
-      ) : null}
-      <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
-        Refresh projects
-      </Button>
+      <LoomSettingsPanel
+        title="Project profiles"
+        description="Choose a project to manage its development connections and default profile."
+      >
+        <LoomSettingsField label="Project">
+          <Select
+            value={selected ?? ""}
+            onValueChange={(value) => setSelected(value ? ProjectId.make(value) : null)}
+          >
+            <SelectTrigger aria-label="Vault profile project">
+              <SelectValue>
+                {projects.find((s) => s.principal.id === selected)?.label ??
+                  (selected ? `Unavailable project (${selected})` : "Choose a project")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="">Choose a project</SelectItem>
+              {projects.map((s) => (
+                <SelectItem key={s.principal.id} value={s.principal.id}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+        {result.waiting ? (
+          <LoomSettingsNotice role="status">Loading projects…</LoomSettingsNotice>
+        ) : null}
+        {failure(result) ? (
+          <LoomSettingsNotice role="alert">{failure(result)}</LoomSettingsNotice>
+        ) : null}
+        {catalog?.truncated ? (
+          <LoomSettingsNotice>
+            Only the first 250 projects and threads are available here.
+          </LoomSettingsNotice>
+        ) : null}
+        <LoomSettingsActions>
+          <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+            Refresh projects
+          </Button>
+        </LoomSettingsActions>
+      </LoomSettingsPanel>
       {selected ? (
         <ProfileManager
           key={selected}
@@ -135,7 +174,7 @@ function ProfileProjects({
           }
         />
       ) : (
-        <p className="text-sm">Choose a project to manage its profiles.</p>
+        <LoomSettingsNotice>Choose a project to manage its profiles.</LoomSettingsNotice>
       )}
     </div>
   );
@@ -172,9 +211,8 @@ function ProfileManager({
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const apply = (change: VaultProfileMutation["change"]) =>
     act(async () => {
@@ -212,19 +250,8 @@ function ProfileManager({
   const stale = result.waiting || result._tag === "Failure";
   const locked = !canWrite || busy || stale;
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            setReview(null);
-            appAtomRegistry.refresh(atom);
-          }}
-        >
-          Refresh profiles
-        </Button>
+    <div className="flex min-w-0 flex-col gap-5">
+      <LoomSettingsActions>
         <Button
           size="sm"
           disabled={locked || !snapshot || !!editing || snapshot.profiles.length >= 32}
@@ -238,45 +265,354 @@ function ProfileManager({
         >
           Create profile
         </Button>
-      </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setReview(null);
+            appAtomRegistry.refresh(atom);
+          }}
+        >
+          Refresh profiles
+        </Button>
+      </LoomSettingsActions>
+      {!canWrite ? (
+        <LoomSettingsNotice>
+          Your connection can inspect profiles but cannot change them.
+        </LoomSettingsNotice>
+      ) : null}
       <VaultRequirementImport
         supportsGitHub={supportsGitHub}
         disabled={locked || !!editing || !snapshot || snapshot.profiles.length >= 32}
         onImport={edit}
       />
       {error || failure(result) ? (
-        <p role="alert" className="text-sm">
-          {error ?? failure(result)}
-        </p>
+        <LoomSettingsNotice role="alert">{error ?? failure(result)}</LoomSettingsNotice>
       ) : null}
-      {result.waiting ? <p role="status">Loading profiles…</p> : null}
+      {result.waiting ? (
+        <LoomSettingsNotice role="status">Loading profiles…</LoomSettingsNotice>
+      ) : null}
+      {editing ? (
+        <section aria-label="Profile editor" className="min-w-0">
+          <LoomSettingsPanel
+            title="Profile editor"
+            description="Name each requirement, choose its operation and bind the key or connection it should use."
+          >
+            <LoomSettingsField label="Profile label">
+              <Input
+                aria-label="Profile label"
+                autoFocus
+                value={editing.label}
+                maxLength={120}
+                disabled={locked}
+                onChange={(e) => update({ ...editing, label: e.target.value })}
+              />
+            </LoomSettingsField>
+            {editing.bindings.map((b, i) => (
+              <fieldset
+                key={b.rowId}
+                className="flex min-w-0 flex-col gap-4 rounded-lg border border-border px-4 pb-4"
+              >
+                <legend className="px-1 text-sm font-medium">Requirement {i + 1}</legend>
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  <LoomSettingsField
+                    label="Requirement name"
+                    description="Use a unique lowercase name."
+                  >
+                    <Input
+                      aria-label={`Requirement ${i + 1} name`}
+                      value={b.name}
+                      maxLength={64}
+                      disabled={locked}
+                      onChange={(e) =>
+                        update({
+                          ...editing,
+                          bindings: editing.bindings.map((old, n) =>
+                            n === i ? { ...old, name: e.target.value } : old,
+                          ),
+                        })
+                      }
+                    />
+                  </LoomSettingsField>
+                  <LoomSettingsField label="Operation">
+                    <Select
+                      disabled={locked}
+                      value={b.kind}
+                      onValueChange={(value) =>
+                        value &&
+                        update({
+                          ...editing,
+                          bindings: editing.bindings.map((old, n) =>
+                            n === i
+                              ? {
+                                  ...old,
+                                  kind:
+                                    value === "github" ? "github" : value === "git" ? "git" : "ssh",
+                                  itemId: null,
+                                  repository: null,
+                                }
+                              : old,
+                          ),
+                        })
+                      }
+                    >
+                      <SelectTrigger aria-label={`Requirement ${i + 1} operation`}>
+                        <SelectValue>
+                          {b.kind === "github"
+                            ? "GitHub operations"
+                            : b.kind === "git"
+                              ? "Git repository over SSH"
+                              : "SSH command"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="ssh">SSH command</SelectItem>
+                        <SelectItem value="git">Git repository over SSH</SelectItem>
+                        {supportsGitHub ? (
+                          <SelectItem value="github">GitHub operations</SelectItem>
+                        ) : null}
+                      </SelectPopup>
+                    </Select>
+                  </LoomSettingsField>
+                </div>
+                {b.kind !== "ssh" ? (
+                  <LoomSettingsField
+                    label={b.kind === "github" ? "GitHub repository" : "Repository path"}
+                  >
+                    <Input
+                      value={b.repository ?? ""}
+                      aria-label={`Requirement ${i + 1} repository`}
+                      placeholder={b.kind === "github" ? "owner/repository" : "team/repo.git"}
+                      disabled={locked}
+                      onChange={(e) =>
+                        update({
+                          ...editing,
+                          bindings: editing.bindings.map((old, n) =>
+                            n === i ? { ...old, repository: e.target.value || null } : old,
+                          ),
+                        })
+                      }
+                    />
+                  </LoomSettingsField>
+                ) : null}
+                <p className="wrap-anywhere text-sm leading-relaxed">
+                  {b.kind === "github" ? "Selected connection: " : "Selected key: "}
+                  {b.itemId ? (
+                    <VaultBoundReference environmentId={environmentId} id={b.itemId} />
+                  ) : b.kind === "github" ? (
+                    "No connection bound"
+                  ) : (
+                    "No key bound"
+                  )}
+                </p>
+                <div className="flex min-w-0 flex-col gap-3">
+                  <h4 className="text-sm font-medium">
+                    {b.kind === "github"
+                      ? "Choose or replace GitHub connection"
+                      : "Choose or replace SSH key"}
+                  </h4>
+                  {b.kind === "github" ? (
+                    <VaultGitHubConnectionPicker
+                      environmentId={environmentId}
+                      disabled={locked}
+                      onSelect={(itemId, repository) =>
+                        update({
+                          ...editing,
+                          bindings: editing.bindings.map((old, n) =>
+                            n === i ? { ...old, itemId, repository } : old,
+                          ),
+                        })
+                      }
+                    />
+                  ) : (
+                    <VaultReferencePicker
+                      environmentId={environmentId}
+                      kind="ssh-key"
+                      disabled={locked}
+                      onSelect={(ref) =>
+                        update({
+                          ...editing,
+                          bindings: editing.bindings.map((old, n) =>
+                            n === i ? { ...old, itemId: ref.item.id } : old,
+                          ),
+                        })
+                      }
+                    />
+                  )}
+                </div>
+                <LoomSettingsActions>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={locked || !b.itemId}
+                    onClick={() =>
+                      update({
+                        ...editing,
+                        bindings: editing.bindings.map((old, n) =>
+                          n === i ? { ...old, itemId: null } : old,
+                        ),
+                      })
+                    }
+                  >
+                    {b.kind === "github" ? "Unbind connection" : "Unbind key"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={locked || editing.bindings.length === 1}
+                    onClick={() =>
+                      update({ ...editing, bindings: editing.bindings.filter((_, n) => n !== i) })
+                    }
+                  >
+                    Remove requirement {i + 1}
+                  </Button>
+                </LoomSettingsActions>
+              </fieldset>
+            ))}
+            <LoomSettingsActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={locked || editing.bindings.length >= 16}
+                onClick={() =>
+                  update({
+                    ...editing,
+                    bindings: [
+                      ...editing.bindings,
+                      {
+                        rowId: newId(),
+                        name: `requirement_${editing.bindings.length + 1}`,
+                        kind: "ssh",
+                        itemId: null,
+                        repository: null,
+                      },
+                    ],
+                  })
+                }
+              >
+                Add requirement
+              </Button>
+            </LoomSettingsActions>
+            <LoomSettingsField
+              label="Check access for thread"
+              description="Choose a thread to include its use grants in the review."
+            >
+              <Select
+                disabled={locked}
+                value={thread ?? ""}
+                onValueChange={(value) => {
+                  setThread(value ? ThreadId.make(value) : null);
+                  setReview(null);
+                }}
+              >
+                <SelectTrigger aria-label="Preview thread">
+                  <SelectValue>
+                    {threads.find((t) => t.id === thread)?.label ??
+                      (thread ? `Unavailable thread (${thread})` : "Host checks only")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="">Host checks only</SelectItem>
+                  {threads.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+            <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+              Review checks saved configuration and use grants. GitHub API health and GH CLI
+              availability are checked separately. Incomplete profiles can be saved for later
+              repair.
+            </p>
+            <LoomSettingsDetails title="Archiving and restoring profiles">
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Archiving blocks further profile use. Restoring does not restore the project
+                default.
+              </p>
+            </LoomSettingsDetails>
+            {review ? (
+              <div
+                role="region"
+                aria-label="Profile review"
+                className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-4"
+              >
+                <p className="wrap-anywhere text-sm font-medium">Review {editing.label}</p>
+                {review.bindings.map((b) => (
+                  <p key={b.name} className="wrap-anywhere text-sm leading-relaxed">
+                    {b.name}: {vaultProfileBindingMessage(b.state)}
+                    {b.destination ? ` · ${b.destination}` : ""}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            <LoomSettingsActions>
+              {review ? (
+                <Button
+                  disabled={locked}
+                  onClick={() => void apply({ type: "save", profile: editing })}
+                >
+                  Save reviewed profile
+                </Button>
+              ) : (
+                <Button disabled={locked} onClick={() => void preview()}>
+                  Review profile
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  setEditing(null);
+                  setReview(null);
+                }}
+              >
+                Cancel profile editing
+              </Button>
+            </LoomSettingsActions>
+          </LoomSettingsPanel>
+        </section>
+      ) : null}
       {snapshot?.profiles.length === 0 ? (
-        <p className="text-sm">
+        <LoomSettingsNotice>
           No profiles yet. Create one for this project's development environment.
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {snapshot?.activeProfileId ? (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={locked || !!editing}
-          onClick={() => void apply({ type: "activate", id: null })}
-        >
-          Clear default for new runs
-        </Button>
+        <LoomSettingsActions>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={locked || !!editing}
+            onClick={() => void apply({ type: "activate", id: null })}
+          >
+            Clear default for new runs
+          </Button>
+        </LoomSettingsActions>
       ) : null}
       {snapshot?.profiles.map((p) => (
-        <div key={p.id} className="flex flex-col gap-2 rounded-md border p-3">
-          <p className="break-words font-medium">
-            {p.label}
-            {snapshot.activeProfileId === p.id ? " · Default for new runs" : ""}
-            {p.state === "archived" ? " · Archived" : ""}
+        <LoomSettingsPanel key={p.id}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h3 className="min-w-0 wrap-anywhere text-sm font-medium">{p.label}</h3>
+            <div className="flex flex-wrap gap-2">
+              {snapshot.activeProfileId === p.id ? (
+                <span className="rounded-md bg-primary/10 px-2 py-1 text-xs text-primary">
+                  Default for new runs
+                </span>
+              ) : null}
+              {p.state === "archived" ? (
+                <span className="rounded-md bg-muted px-2 py-1 text-xs">Archived</span>
+              ) : null}
+            </div>
+          </div>
+          <p className="wrap-anywhere text-sm leading-relaxed text-muted-foreground">
+            {p.bindings.map((b) => b.name).join(", ")}
           </p>
-          <p className="text-sm">
-            Version {p.version} · {p.bindings.map((b) => b.name).join(", ")}
-          </p>
+          <p className="text-xs text-muted-foreground">Version {p.version}</p>
           <VaultRequirementExport profile={p} />
-          <div className="flex flex-wrap gap-2">
+          <LoomSettingsActions>
             <Button
               size="sm"
               variant="outline"
@@ -321,252 +657,14 @@ function ProfileManager({
             >
               {p.state === "active" ? "Archive" : "Restore"}
             </Button>
-          </div>
-        </div>
+          </LoomSettingsActions>
+        </LoomSettingsPanel>
       ))}
       <VaultProfileHistory
         environmentId={environmentId}
         projectId={projectId}
         canWrite={canWrite}
       />
-      {editing ? (
-        <section
-          aria-label="Profile editor"
-          className="flex flex-col gap-4 rounded-md bg-muted p-4"
-        >
-          <label className="flex flex-col gap-1 text-sm">
-            Profile label
-            <Input
-              autoFocus
-              value={editing.label}
-              maxLength={120}
-              disabled={locked}
-              onChange={(e) => update({ ...editing, label: e.target.value })}
-            />
-          </label>
-          {editing.bindings.map((b, i) => (
-            <div key={b.rowId} className="flex flex-col gap-3 rounded-md border p-3">
-              <label className="flex flex-col gap-1 text-sm">
-                Requirement name
-                <Input
-                  aria-label={`Requirement ${i + 1} name`}
-                  value={b.name}
-                  maxLength={64}
-                  disabled={locked}
-                  onChange={(e) =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i ? { ...old, name: e.target.value } : old,
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Operation
-                <select
-                  aria-label={`Requirement ${i + 1} operation`}
-                  disabled={locked}
-                  value={b.kind}
-                  onChange={(e) =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i
-                          ? {
-                              ...old,
-                              kind:
-                                e.target.value === "github"
-                                  ? "github"
-                                  : e.target.value === "git"
-                                    ? "git"
-                                    : "ssh",
-                              itemId: null,
-                              repository: null,
-                            }
-                          : old,
-                      ),
-                    })
-                  }
-                >
-                  <option value="ssh">SSH command</option>
-                  <option value="git">Git repository over SSH</option>
-                  {supportsGitHub ? <option value="github">GitHub operations</option> : null}
-                </select>
-              </label>
-              {b.kind !== "ssh" ? (
-                <label className="flex flex-col gap-1 text-sm">
-                  {b.kind === "github" ? "GitHub repository" : "Repository path"}
-                  <Input
-                    value={b.repository ?? ""}
-                    aria-label={`Requirement ${i + 1} repository`}
-                    placeholder={b.kind === "github" ? "owner/repository" : "team/repo.git"}
-                    disabled={locked}
-                    onChange={(e) =>
-                      update({
-                        ...editing,
-                        bindings: editing.bindings.map((old, n) =>
-                          n === i ? { ...old, repository: e.target.value || null } : old,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              <p className="text-sm">
-                {b.kind === "github" ? "Selected connection: " : "Selected key: "}
-                {b.itemId ? (
-                  <VaultBoundReference environmentId={environmentId} id={b.itemId} />
-                ) : b.kind === "github" ? (
-                  "No connection bound"
-                ) : (
-                  "No key bound"
-                )}
-              </p>
-              <details>
-                <summary className="cursor-pointer text-sm">
-                  {b.kind === "github"
-                    ? "Choose or replace GitHub connection"
-                    : "Choose or replace SSH key"}
-                </summary>
-                {b.kind === "github" ? (
-                  <VaultGitHubConnectionPicker
-                    environmentId={environmentId}
-                    disabled={locked}
-                    onSelect={(itemId, repository) =>
-                      update({
-                        ...editing,
-                        bindings: editing.bindings.map((old, n) =>
-                          n === i ? { ...old, itemId, repository } : old,
-                        ),
-                      })
-                    }
-                  />
-                ) : (
-                  <VaultReferencePicker
-                    environmentId={environmentId}
-                    kind="ssh-key"
-                    disabled={locked}
-                    onSelect={(ref) =>
-                      update({
-                        ...editing,
-                        bindings: editing.bindings.map((old, n) =>
-                          n === i ? { ...old, itemId: ref.item.id } : old,
-                        ),
-                      })
-                    }
-                  />
-                )}
-              </details>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked || !b.itemId}
-                  onClick={() =>
-                    update({
-                      ...editing,
-                      bindings: editing.bindings.map((old, n) =>
-                        n === i ? { ...old, itemId: null } : old,
-                      ),
-                    })
-                  }
-                >
-                  {b.kind === "github" ? "Unbind connection" : "Unbind key"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={locked || editing.bindings.length === 1}
-                  onClick={() =>
-                    update({ ...editing, bindings: editing.bindings.filter((_, n) => n !== i) })
-                  }
-                >
-                  Remove requirement {i + 1}
-                </Button>
-              </div>
-            </div>
-          ))}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={locked || editing.bindings.length >= 16}
-            onClick={() =>
-              update({
-                ...editing,
-                bindings: [
-                  ...editing.bindings,
-                  {
-                    rowId: newId(),
-                    name: `requirement_${editing.bindings.length + 1}`,
-                    kind: "ssh",
-                    itemId: null,
-                    repository: null,
-                  },
-                ],
-              })
-            }
-          >
-            Add requirement
-          </Button>
-          <label className="flex flex-col gap-1 text-sm">
-            Check access for thread
-            <select
-              aria-label="Preview thread"
-              disabled={locked}
-              value={thread ?? ""}
-              onChange={(e) => {
-                setThread(e.target.value ? ThreadId.make(e.target.value) : null);
-                setReview(null);
-              }}
-            >
-              <option value="">Host checks only</option>
-              {threads.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="text-sm">
-            Archiving blocks further profile use. Restoring does not restore the project default.
-            Review checks saved configuration and use grants. GitHub API health and GH CLI
-            availability are checked separately. Incomplete profiles can be saved for later repair.
-          </p>
-          {review ? (
-            <div role="region" aria-label="Profile review" className="flex flex-col gap-2">
-              <p className="break-words font-medium">Review {editing.label}</p>
-              {review.bindings.map((b) => (
-                <p key={b.name} className="break-words text-sm">
-                  {b.name}: {vaultProfileBindingMessage(b.state)}
-                  {b.destination ? ` · ${b.destination}` : ""}
-                </p>
-              ))}
-              <Button
-                disabled={locked}
-                onClick={() => void apply({ type: "save", profile: editing })}
-              >
-                Save reviewed profile
-              </Button>
-            </div>
-          ) : (
-            <Button disabled={locked} onClick={() => void preview()}>
-              Review profile
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              setEditing(null);
-              setReview(null);
-            }}
-          >
-            Cancel profile editing
-          </Button>
-        </section>
-      ) : null}
     </div>
   );
 }

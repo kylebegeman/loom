@@ -1,3 +1,9 @@
+import {
+  LoomSettingsActions,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -10,6 +16,13 @@ import { createVaultMigrationAtoms } from "@t3tools/client-runtime/fork";
 import * as Redacted from "effect/Redacted";
 import { useVaultTime } from "./useVaultTime";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -131,43 +144,58 @@ export function TypedImports({
           };
   const pending = result && ["prepared", "applying"].includes(result.plan.state);
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border  p-3">
+    <div className="flex min-w-0 flex-col gap-5 text-sm leading-relaxed wrap-anywhere">
       <h3 className="font-medium">Typed development imports</h3>
-      <p>
+      <p className="max-w-prose text-muted-foreground">
         Import one dedicated SSH key or GitHub identity into a new development record on this
         computer. Personal stores and Git configuration are not read or changed. Nothing is
         contacted or granted access.
       </p>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!result ? (
-        <>
-          <Field
-            label="Typed development label"
-            value={label}
-            change={setLabel}
-            disabled={locked}
-          />
-          <label>
-            Import type
-            <select
-              aria-label="Typed import type"
-              value={mode}
+        <div className="flex min-w-0 flex-col gap-5">
+          <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+            <Field
+              label="Typed development label"
+              value={label}
+              change={setLabel}
               disabled={locked}
-              onChange={(e) => {
-                setMode(e.target.value as Mode);
-                setValue("");
-              }}
-            >
-              <option value="ssh">SSH key</option>
-              <option value="token">GitHub token</option>
-              <option value="app">GitHub App</option>
-            </select>
-          </label>
+            />
+            <LoomSettingsField label="Import type">
+              <Select<Mode>
+                value={mode}
+                disabled={locked}
+                onValueChange={(nextValue) => {
+                  if (nextValue === null) return;
+                  setMode(nextValue);
+                  setValue("");
+                }}
+              >
+                <SelectTrigger aria-label="Typed import type">
+                  <SelectValue>
+                    {mode === "ssh" ? "SSH key" : mode === "token" ? "GitHub token" : "GitHub App"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="ssh">SSH key</SelectItem>
+                  <SelectItem value="token">GitHub token</SelectItem>
+                  <SelectItem value="app">GitHub App</SelectItem>
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          </div>
           {mode === "ssh" ? (
             <>
               <Field label="SSH hostname" value={hostname} change={setHostname} disabled={locked} />
-              <Field label="SSH username" value={username} change={setUsername} disabled={locked} />
-              <Field label="SSH port" value={port} change={setPort} disabled={locked} />
+              <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+                <Field
+                  label="SSH username"
+                  value={username}
+                  change={setUsername}
+                  disabled={locked}
+                />
+                <Field label="SSH port" value={port} change={setPort} disabled={locked} />
+              </div>
               <Field
                 label="Independently verified host Ed25519 key (optional)"
                 value={hostKey}
@@ -190,7 +218,7 @@ export function TypedImports({
                 disabled={locked}
               />
               {mode === "app" ? (
-                <>
+                <div className="grid min-w-0 gap-5 sm:grid-cols-2">
                   <Field label="GitHub App ID" value={appId} change={setAppId} disabled={locked} />
                   <Field
                     label="GitHub installation ID"
@@ -198,7 +226,7 @@ export function TypedImports({
                     change={setInstallationId}
                     disabled={locked}
                   />
-                </>
+                </div>
               ) : null}
             </>
           )}
@@ -210,7 +238,7 @@ export function TypedImports({
             secret={mode === "token"}
             multiline={mode !== "token"}
           />
-          <p>
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
             Use an unencrypted Ed25519 PEM/OpenSSH key, dedicated GitHub token, or unencrypted App
             RSA PEM key of at least 2048 bits. Paste only the selected development credential.
           </p>
@@ -220,34 +248,43 @@ export function TypedImports({
             change={setDedicated}
             disabled={locked}
           />
-          <Button
-            variant="outline"
-            onClick={() =>
-              void act(() =>
-                runVault(atoms.typedPrepare, {
-                  environmentId,
-                  input: {
-                    id,
-                    label: label.trim(),
-                    developmentOnly: true,
-                    credential: credential(),
-                  },
-                }),
-              )
-            }
-            disabled={locked || !dedicated || !label.trim() || !value}
-          >
-            Review typed development import
-          </Button>
-          <Button variant="outline" onClick={reset} disabled={busy}>
-            Clear typed private input
-          </Button>
-        </>
+          <LoomSettingsActions>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              onClick={() =>
+                void act(() =>
+                  runVault(atoms.typedPrepare, {
+                    environmentId,
+                    input: {
+                      id,
+                      label: label.trim(),
+                      developmentOnly: true,
+                      credential: credential(),
+                    },
+                  }),
+                )
+              }
+              disabled={locked || !dedicated || !label.trim() || !value}
+            >
+              Review typed development import
+            </Button>
+            <Button size="sm-multiline" variant="outline" onClick={reset} disabled={busy}>
+              Clear typed private input
+            </Button>
+          </LoomSettingsActions>
+        </div>
       ) : (
-        <>
-          <p>
-            {result.plan.label} · {result.plan.kind} · {result.plan.state}
-          </p>
+        <section
+          aria-label="Typed development import review"
+          className="flex min-w-0 flex-col gap-4"
+        >
+          <div className="space-y-1">
+            <h4 className="font-medium">{result.plan.label}</h4>
+            <p className="text-muted-foreground">
+              {result.plan.kind} · {result.plan.state}
+            </p>
+          </div>
           <p>
             Record reference: {result.plan.itemId}. Review expires{" "}
             {new Date(result.plan.expiresAt).toLocaleString()}.
@@ -315,6 +352,7 @@ export function TypedImports({
                 disabled={locked}
               />
               <Button
+                size="sm-multiline"
                 variant="outline"
                 onClick={() =>
                   void act(() =>
@@ -339,91 +377,123 @@ export function TypedImports({
                 Import reviewed typed development record
               </Button>
               {now >= result.plan.expiresAt && result.plan.state === "prepared" ? (
-                <p>This review expired. Cancel it and prepare a new review.</p>
+                <LoomSettingsNotice role="status">
+                  This review expired. Cancel it and prepare a new review.
+                </LoomSettingsNotice>
               ) : null}
             </>
           ) : null}
-          <Button
-            variant="outline"
-            onClick={() =>
-              void act(() =>
-                runVault(atoms.typedInspect, { environmentId, input: { id: result.plan.id } }),
-              )
-            }
-            disabled={busy || !connected}
-          >
-            Refresh typed import status
-          </Button>
-          {["prepared", "expired"].includes(result.plan.state) ? (
+          <LoomSettingsActions>
             <Button
+              size="sm-multiline"
               variant="outline"
               onClick={() =>
                 void act(() =>
-                  runVault(atoms.typedCancel, { environmentId, input: { id: result.plan.id } }),
+                  runVault(atoms.typedInspect, { environmentId, input: { id: result.plan.id } }),
                 )
               }
-              disabled={locked}
+              disabled={busy || !connected}
             >
-              Cancel typed review
+              Refresh typed import status
             </Button>
-          ) : null}
-          {result.canArchive ? (
-            <Button
-              variant="outline"
-              onClick={() =>
-                void act(() =>
-                  runVault(atoms.typedArchive, { environmentId, input: { id: result.plan.id } }),
-                )
-              }
-              disabled={locked}
-            >
-              Archive unchanged typed import
+            {["prepared", "expired"].includes(result.plan.state) ? (
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                onClick={() =>
+                  void act(() =>
+                    runVault(atoms.typedCancel, { environmentId, input: { id: result.plan.id } }),
+                  )
+                }
+                disabled={locked}
+              >
+                Cancel typed review
+              </Button>
+            ) : null}
+            {result.canArchive ? (
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                onClick={() =>
+                  void act(() =>
+                    runVault(atoms.typedArchive, { environmentId, input: { id: result.plan.id } }),
+                  )
+                }
+                disabled={locked}
+              >
+                Archive unchanged typed import
+              </Button>
+            ) : null}
+            <Button size="sm-multiline" variant="outline" onClick={reset} disabled={busy}>
+              Close typed review
             </Button>
-          ) : null}
-          <Button variant="outline" onClick={reset} disabled={busy}>
-            Close typed review
-          </Button>
-        </>
+          </LoomSettingsActions>
+        </section>
       )}
-      {query.waiting ? <p role="status">Loading typed reviews…</p> : null}
-      {query._tag === "Failure" ? (
-        <p role="alert">Could not load typed reviews. Refresh and retry.</p>
-      ) : null}
-      <Button variant="outline" onClick={refresh} disabled={busy || !connected}>
-        Refresh typed reviews
-      </Button>
-      {page?.items.length === 0 ? <p>No typed reviews on this page.</p> : null}
-      {page?.items.map((entry) => (
-        <div key={entry.plan.id}>
-          <p>
-            {entry.plan.label} · {entry.plan.kind} · {entry.plan.state}
-          </p>
+      <LoomSettingsPanel title="Recent typed import reviews">
+        {query.waiting ? (
+          <LoomSettingsNotice role="status">Loading typed reviews…</LoomSettingsNotice>
+        ) : null}
+        {query._tag === "Failure" ? (
+          <LoomSettingsNotice role="alert">
+            Could not load typed reviews. Refresh and retry.
+          </LoomSettingsNotice>
+        ) : null}
+        <LoomSettingsActions>
           <Button
+            size="sm-multiline"
             variant="outline"
-            onClick={() => {
-              setValue("");
-              setReviewed(false);
-              setEntering(true);
-              void act(() =>
-                runVault(atoms.typedInspect, { environmentId, input: { id: entry.plan.id } }),
-              );
-            }}
+            onClick={refresh}
             disabled={busy || !connected}
           >
-            Open typed review
+            Refresh typed reviews
           </Button>
-        </div>
-      ))}
-      <Button variant="outline" onClick={() => setCursor(null)} disabled={busy || !cursor}>
-        First typed reviews
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => setCursor(page?.nextCursor ?? null)}
-        disabled={busy || !page?.nextCursor}
-      >
-        More typed reviews
-      </Button>
+        </LoomSettingsActions>
+        {page?.items.length === 0 ? <p>No typed reviews on this page.</p> : null}
+        {page?.items.map((entry) => (
+          <div
+            key={entry.plan.id}
+            className="flex min-w-0 flex-wrap items-start justify-between gap-3"
+          >
+            <p>
+              {entry.plan.label} · {entry.plan.kind} · {entry.plan.state}
+            </p>
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              onClick={() => {
+                setValue("");
+                setReviewed(false);
+                setEntering(true);
+                void act(() =>
+                  runVault(atoms.typedInspect, { environmentId, input: { id: entry.plan.id } }),
+                );
+              }}
+              disabled={busy || !connected}
+            >
+              Open typed review
+            </Button>
+          </div>
+        ))}
+        <LoomSettingsActions>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            onClick={() => setCursor(null)}
+            disabled={busy || !cursor}
+          >
+            First typed reviews
+          </Button>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            onClick={() => setCursor(page?.nextCursor ?? null)}
+            disabled={busy || !page?.nextCursor}
+          >
+            More typed reviews
+          </Button>
+        </LoomSettingsActions>
+      </LoomSettingsPanel>
     </div>
   );
 }
@@ -443,8 +513,7 @@ function Field({
   multiline?: boolean;
 }) {
   return (
-    <label>
-      {label}
+    <LoomSettingsField label={label}>
       {multiline ? (
         <Textarea
           aria-label={label}
@@ -466,7 +535,7 @@ function Field({
           maxLength={65536}
         />
       )}
-    </label>
+    </LoomSettingsField>
   );
 }
 function Confirm({
@@ -481,15 +550,16 @@ function Confirm({
   disabled: boolean;
 }) {
   return (
-    <label>
+    <label className="flex items-start gap-2 text-sm leading-6">
       <input
+        className="mt-1 shrink-0"
         aria-label={label}
         type="checkbox"
         checked={value}
         onChange={(e) => change(e.target.checked)}
         disabled={disabled}
       />
-      {label}
+      <span>{label}</span>
     </label>
   );
 }

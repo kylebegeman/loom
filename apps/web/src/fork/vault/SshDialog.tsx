@@ -1,3 +1,4 @@
+import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
 import { useId, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -61,7 +62,7 @@ export function VaultSshDialog({
               : "Create a dedicated development key, then register its public key and verify the host."}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto px-6 pb-5">
+        <div className="flex max-h-[70vh] min-w-0 flex-col gap-5 overflow-y-auto px-6 pb-5">
           {id ? (
             <SshDetails
               key={id}
@@ -210,15 +211,11 @@ function SshCreator({
         The private key stays in Vault. Host trust starts empty, so this key cannot connect until
         you verify and save a host key.
       </p>
-      {error ? (
-        <p role="alert" className="text-sm">
-          {error}
-        </p>
-      ) : null}
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       {!allowed ? (
-        <p role="status" className="text-sm">
+        <LoomSettingsNotice role="status">
           Vault write access is required to create keys.
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       <Button type="submit" disabled={!allowed || busy}>
         {busy ? "Creating key…" : "Create key"}
@@ -323,9 +320,9 @@ function SshDetails({
   if (!info)
     return (
       <>
-        <p role={failure(result) ? "alert" : "status"} className="text-sm">
+        <LoomSettingsNotice role={failure(result) ? "alert" : "status"}>
           {failure(result) ?? "Loading SSH key…"}
-        </p>
+        </LoomSettingsNotice>
         <Button variant="outline" disabled={busy} onClick={refresh}>
           Retry loading key
         </Button>
@@ -342,11 +339,9 @@ function SshDetails({
         </p>
       </div>
       {failure(result) ? (
-        <p role="alert" className="text-sm">
-          {failure(result)}
-        </p>
+        <LoomSettingsNotice role="alert">{failure(result)}</LoomSettingsNotice>
       ) : null}
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-4">
         <p className="text-sm font-medium">Public key</p>
         <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">
           {info.publicKey}
@@ -364,7 +359,7 @@ function SshDetails({
           Register this public key on the intended host. Never register the private key.
         </p>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-4">
         <p className="text-sm font-medium">Host trust</p>
         <p className="text-sm">
           {info.target.hostKey
@@ -401,9 +396,9 @@ function SshDetails({
             {candidate ? (
               <p className="break-all text-xs">Proposed: {candidate.fingerprint}</p>
             ) : hostKey ? (
-              <p role="alert" className="text-sm">
+              <LoomSettingsNotice role="alert">
                 Enter a valid Ed25519 SSH public key.
-              </p>
+              </LoomSettingsNotice>
             ) : null}
           </>
         ) : (
@@ -424,9 +419,10 @@ function SshDetails({
               : "I verified the proposed fingerprint on the intended host."}
           </span>
         </label>
-        <div className="flex flex-wrap gap-2">
+        <LoomSettingsActions>
           <Button
             size="sm"
+            variant={removing ? "destructive" : "default"}
             disabled={!writable || busy || !confirmed || (!removing && !candidate)}
             onClick={() => void changeTrust()}
           >
@@ -439,7 +435,7 @@ function SshDetails({
           {info.target.hostKey ? (
             <Button
               size="sm"
-              variant="outline"
+              variant={removing ? "outline" : "destructive-outline"}
               disabled={!writable || busy}
               onClick={() => {
                 setRemoving(!removing);
@@ -451,20 +447,20 @@ function SshDetails({
               {removing ? "Keep host trust" : "Remove host trust"}
             </Button>
           ) : null}
-        </div>
+        </LoomSettingsActions>
         {!canTrust ? (
           <p className="text-sm text-muted-foreground">
             Vault write access is required to change host trust.
           </p>
         ) : null}
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-4">
         <p className="text-sm font-medium">Connection test</p>
         <p className="text-sm text-muted-foreground">
           Run a fixed, harmless command from the Loom server as {info.target.username}. This checks
           this key and pinned host; provider and Git setup are separate.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <LoomSettingsActions>
           <Button
             size="sm"
             disabled={
@@ -482,25 +478,17 @@ function SshDetails({
           <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
             Refresh key
           </Button>
-        </div>
+        </LoomSettingsActions>
       </div>
-      <div ref={feedback} tabIndex={-1}>
-        {notice ? (
-          <p role="status" className="text-sm">
-            {notice}
-          </p>
-        ) : null}
+      <div ref={feedback} tabIndex={-1} className="space-y-3">
+        {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
         {probe && probe.version === info.item.version ? (
-          <p role="status" className="text-sm">
+          <LoomSettingsNotice role="status">
             SSH connection succeeded at {new Date(probe.checkedAt).toLocaleTimeString()} using
             version {probe.version}.
-          </p>
+          </LoomSettingsNotice>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-sm">
-            {error}
-          </p>
-        ) : null}
+        {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       </div>
     </>
   );

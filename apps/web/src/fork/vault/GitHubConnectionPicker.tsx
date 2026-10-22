@@ -6,6 +6,19 @@ import { createVaultGitHubAtoms } from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+import {
+  LoomSettingsActions,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { connectionAtomRuntime } from "~/connection/runtime";
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime);
@@ -23,26 +36,34 @@ export function VaultGitHubConnectionPicker({
     result = useAtomValue(atom),
     page = Option.getOrNull(AsyncResult.value(result));
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm">
+    <div className="flex min-w-0 flex-col gap-4">
+      <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         Choose a dedicated GitHub connection and an allowed repository. Manage connections in Vault
         GitHub connections.
       </p>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={disabled}
-        aria-label="Refresh available GitHub connections"
-        onClick={() => appAtomRegistry.refresh(atom)}
-      >
-        Refresh connections
-      </Button>
-      {result.waiting ? <p role="status">Loading GitHub connections…</p> : null}
+      <LoomSettingsActions>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled}
+          aria-label="Refresh available GitHub connections"
+          onClick={() => appAtomRegistry.refresh(atom)}
+        >
+          Refresh connections
+        </Button>
+      </LoomSettingsActions>
+      {result.waiting ? (
+        <LoomSettingsNotice role="status">Loading GitHub connections…</LoomSettingsNotice>
+      ) : null}
       {result._tag === "Failure" ? (
-        <p role="alert">Could not load GitHub connections. Check Vault access and refresh.</p>
+        <LoomSettingsNotice role="alert">
+          Could not load GitHub connections. Check Vault access and refresh.
+        </LoomSettingsNotice>
       ) : null}
       {page?.items.length === 0 ? (
-        <p>No GitHub connections in this page. Continue if more pages are available.</p>
+        <LoomSettingsNotice>
+          No GitHub connections on this page. Continue if more pages are available.
+        </LoomSettingsNotice>
       ) : null}
       {page?.items.map((info) => (
         <Choice
@@ -52,7 +73,7 @@ export function VaultGitHubConnectionPicker({
           onSelect={onSelect}
         />
       ))}
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         <Button
           size="sm"
           variant="outline"
@@ -71,7 +92,7 @@ export function VaultGitHubConnectionPicker({
         >
           More connections
         </Button>
-      </div>
+      </LoomSettingsActions>
     </div>
   );
 }
@@ -86,32 +107,46 @@ function Choice({
 }) {
   const [repository, setRepository] = useState(info.repositories[0]!);
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3">
-      <p className="break-words">
-        {info.item.label} · {info.account} · {info.item.state}
-      </p>
-      <select
-        className="min-w-0 max-w-full"
-        aria-label={`Allowed repository for ${info.item.label}`}
-        value={repository}
-        disabled={disabled || info.item.state !== "active"}
-        onChange={(e) => setRepository(e.target.value)}
-      >
-        {info.repositories.map((repo) => (
-          <option key={repo} value={repo}>
-            {repo}
-          </option>
-        ))}
-      </select>
-      <Button
-        size="sm"
-        variant="outline"
-        aria-label={`Bind GitHub connection ${info.item.label}`}
-        disabled={disabled || info.item.state !== "active"}
-        onClick={() => onSelect(info.item.id, repository)}
-      >
-        Bind connection
-      </Button>
-    </div>
+    <LoomSettingsPanel>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <h4 className="wrap-anywhere text-sm font-medium">{info.item.label}</h4>
+          <p className="wrap-anywhere text-sm text-muted-foreground">{info.account}</p>
+        </div>
+        <span className="rounded-md bg-muted px-2 py-1 text-xs capitalize">{info.item.state}</span>
+      </div>
+      <LoomSettingsField label="Allowed repository">
+        <Select
+          value={repository}
+          disabled={disabled || info.item.state !== "active"}
+          onValueChange={(value) => {
+            if (value !== null) setRepository(value);
+          }}
+        >
+          <SelectTrigger aria-label={`Allowed repository for ${info.item.label}`}>
+            <SelectValue>{repository || "Choose a repository"}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            {info.repositories.map((repo) => (
+              <SelectItem key={repo} value={repo}>
+                {repo}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </LoomSettingsField>
+      <p className="wrap-anywhere text-sm text-muted-foreground">https://github.com/{repository}</p>
+      <LoomSettingsActions>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label={`Bind GitHub connection ${info.item.label}`}
+          disabled={disabled || info.item.state !== "active"}
+          onClick={() => onSelect(info.item.id, repository)}
+        >
+          Bind connection
+        </Button>
+      </LoomSettingsActions>
+    </LoomSettingsPanel>
   );
 }

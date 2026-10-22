@@ -18,6 +18,13 @@ import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
+import {
+  LoomSettingsActions,
+  LoomSettingsContent,
+  LoomSettingsField,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "~/fork/settings/parts";
 import { ensureLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
@@ -37,18 +44,17 @@ function useAction() {
       setMessage({ text: success, failed: false });
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : String(error), failed: true });
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return { busy, message, act };
 }
 
 function ActionMessage({ message }: { message: { text: string; failed: boolean } | null }) {
   return message ? (
-    <p role={message.failed ? "alert" : "status"} className="text-sm">
+    <LoomSettingsNotice role={message.failed ? "alert" : "status"}>
       {message.text}
-    </p>
+    </LoomSettingsNotice>
   ) : null;
 }
 
@@ -68,7 +74,6 @@ function GbInput({
       aria-label={label}
       type="number"
       size="sm"
-      className="w-full sm:w-24"
       min={min}
       max={4000}
       value={value}
@@ -105,7 +110,7 @@ function SettingsForm({
       appAtomRegistry.refresh(lanes.settings({ environmentId, input: {} }));
     }, "Settings saved.");
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col">
       <SettingsRow
         title="Give each checkout a lane"
         description="Agents get a capped space for temporary files and build output. Lanes are removed when their threads settle or are archived."
@@ -123,7 +128,7 @@ function SettingsForm({
           hasLanes ? "Discard every lane before moving the folder." : "Created when needed."
         }
       >
-        <div className="flex flex-col gap-2 pb-2">
+        <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
           <Input
             aria-label="Lanes folder"
             value={settings.lanesRoot}
@@ -132,42 +137,43 @@ function SettingsForm({
           />
         </div>
       </SettingsRow>
-      <SettingsRow
-        title="Lane cap (GB)"
-        description="Applies to new lanes."
-        control={
-          <GbInput
-            label="Lane cap"
-            min={1}
-            value={settings.defaultCapGb}
-            onChange={(value) => set("defaultCapGb", value)}
-          />
-        }
-      />
-      <SettingsRow
-        title="Xcode project lane cap (GB)"
-        description="Xcode builds keep DerivedData and packages in the lane."
-        control={
-          <GbInput
-            label="Xcode project lane cap"
-            min={1}
-            value={settings.appleCapGb}
-            onChange={(value) => set("appleCapGb", value)}
-          />
-        }
-      />
-      <SettingsRow
-        title="Keep free on this disk (GB)"
-        description="Below this, running agents are asked to free space and lanes stop growing."
-        control={
-          <GbInput
-            label="Keep free on this disk"
-            min={0}
-            value={settings.reserveGb}
-            onChange={(value) => set("reserveGb", value)}
-          />
-        }
-      />
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsPanel title="Storage limits">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <LoomSettingsField label="Lane cap (GB)" description="Applies to new lanes.">
+              <GbInput
+                label="Lane cap"
+                min={1}
+                value={settings.defaultCapGb}
+                onChange={(value) => set("defaultCapGb", value)}
+              />
+            </LoomSettingsField>
+            <LoomSettingsField
+              label="Xcode project lane cap (GB)"
+              description="Xcode builds keep DerivedData and packages in the lane."
+            >
+              <GbInput
+                label="Xcode project lane cap"
+                min={1}
+                value={settings.appleCapGb}
+                onChange={(value) => set("appleCapGb", value)}
+              />
+            </LoomSettingsField>
+            <LoomSettingsField
+              label="Keep free on this disk (GB)"
+              description="Below this, running agents are asked to free space and lanes stop growing."
+            >
+              <GbInput
+                label="Keep free on this disk"
+                min={0}
+                value={settings.reserveGb}
+                onChange={(value) => set("reserveGb", value)}
+              />
+            </LoomSettingsField>
+          </div>
+        </LoomSettingsPanel>
+      </LoomSettingsContent>
+
       <SettingsRow
         title="Build slots"
         description="Heavy builds this machine runs at once; others wait their turn. Leave blank for automatic."
@@ -187,8 +193,8 @@ function SettingsForm({
           />
         }
       />
-      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
-        <div>
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsActions>
           <Button
             disabled={busy || !canSave}
             title={canSave ? undefined : "This connection cannot edit storage settings."}
@@ -196,9 +202,9 @@ function SettingsForm({
           >
             Save settings
           </Button>
-        </div>
+        </LoomSettingsActions>
         <ActionMessage message={message} />
-      </div>
+      </LoomSettingsContent>
     </div>
   );
 }
@@ -239,9 +245,9 @@ function ShellRow({
         }
       />
       {message && (
-        <div className="px-3 sm:px-4">
+        <LoomSettingsContent className="flex flex-col gap-3">
           <ActionMessage message={message} />
-        </div>
+        </LoomSettingsContent>
       )}
     </div>
   );
@@ -265,9 +271,12 @@ function LeaseList({
 }) {
   if (lane.leases.length === 0) return null;
   return (
-    <ul className="flex flex-col gap-1 text-sm">
+    <ul className="flex min-w-0 flex-col gap-2 text-sm">
       {lane.leases.map((lease) => (
-        <li key={`${lease.kind}:${lease.ref}`} className="flex items-center justify-between gap-2">
+        <li
+          key={`${lease.kind}:${lease.ref}`}
+          className="flex min-w-0 flex-wrap items-start justify-between gap-2"
+        >
           <span className="min-w-0 break-all">
             {LEASE_KIND[lease.kind].name}: {lease.label}
             {lease.label === lease.ref ? null : (
@@ -309,9 +318,9 @@ function LaneRow({
     </Button>
   );
   return (
-    <li className="flex flex-col gap-2 rounded-md border p-3">
+    <li className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-medium">
+        <span className="min-w-0 break-words font-medium">
           {lane.projectName} / {lane.name}
         </span>
         <span className="text-sm text-muted-foreground">
@@ -325,7 +334,7 @@ function LaneRow({
         {lane.checkoutPath}
         {lane.ports && `. Ports ${lane.ports.first} to ${lane.ports.last}.`}
       </p>
-      {lane.message && <p className="text-xs text-muted-foreground">{lane.message}</p>}
+      {lane.message && <LoomSettingsNotice>{lane.message}</LoomSettingsNotice>}
       <LeaseList
         lane={lane}
         disabled={busy || !canEdit}
@@ -344,7 +353,7 @@ function LaneRow({
           );
         }}
       />
-      <div className="flex flex-wrap gap-2">
+      <LoomSettingsActions>
         {free("tmp", "tmp")}
         {free("build", "build")}
         <Button
@@ -392,7 +401,7 @@ function LaneRow({
         >
           Discard
         </Button>
-      </div>
+      </LoomSettingsActions>
       <ActionMessage message={message} />
     </li>
   );
@@ -405,7 +414,7 @@ function BuildSlots({ status }: { status: ProjectLifecycleStatus }) {
     return lane ? `${lane.projectName} / ${lane.name}` : "Outside lanes";
   };
   return (
-    <div className="flex flex-col gap-1 text-sm">
+    <div className="flex min-w-0 flex-col gap-2 text-sm">
       <p className="text-muted-foreground">
         {holders.length} of {count} build {count === 1 ? "slot" : "slots"} in use.
       </p>
@@ -431,9 +440,9 @@ function StatusView({
   status: ProjectLifecycleStatus;
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 px-3 sm:px-4">
-        <p className="text-sm text-muted-foreground">
+    <div className="flex min-w-0 flex-col">
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <p className="break-words text-sm leading-relaxed text-muted-foreground">
           {status.hostFreeBytes === null
             ? "Free space unknown."
             : `${formatGb(status.hostFreeBytes)} free of ${formatGb(status.hostTotalBytes)}.`}{" "}
@@ -443,26 +452,30 @@ function StatusView({
           {status.lanesRoot}
         </p>
         {status.belowReserve && (
-          <p role="alert" className="text-sm">
+          <LoomSettingsNotice role="alert">
             Free space is below the {formatGb(status.reserveBytes)} reserve.
-          </p>
+          </LoomSettingsNotice>
         )}
-      </div>
+      </LoomSettingsContent>
       <ShellRow environmentId={environmentId} shell={status.shell} />
-      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
-        <BuildSlots status={status} />
-        {status.lanes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No lanes yet. A lane is created when an agent starts working in a checkout.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {status.lanes.map((lane) => (
-              <LaneRow key={lane.id} environmentId={environmentId} lane={lane} />
-            ))}
-          </ul>
-        )}
-      </div>
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsPanel title="Build activity">
+          <BuildSlots status={status} />
+        </LoomSettingsPanel>
+        <LoomSettingsPanel title="Current lanes">
+          {status.lanes.length === 0 ? (
+            <LoomSettingsNotice>
+              No lanes yet. A lane is created when an agent starts working in a checkout.
+            </LoomSettingsNotice>
+          ) : (
+            <ul className="flex min-w-0 flex-col divide-y divide-border">
+              {status.lanes.map((lane) => (
+                <LaneRow key={lane.id} environmentId={environmentId} lane={lane} />
+              ))}
+            </ul>
+          )}
+        </LoomSettingsPanel>
+      </LoomSettingsContent>
     </div>
   );
 }
@@ -471,12 +484,23 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
   const settingsResult = useAtomValue(lanes.settings({ environmentId, input: {} }));
   const statusResult = useAtomValue(lanes.status({ environmentId, input: {} }));
   if (settingsResult._tag === "Failure")
-    return <p role="alert">{String(Cause.squash(settingsResult.cause))}</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="alert">
+          {String(Cause.squash(settingsResult.cause))}
+        </LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   const settings = Option.getOrNull(AsyncResult.value(settingsResult));
   const status = Option.getOrNull(AsyncResult.value(statusResult));
-  if (!settings) return <p>Loading storage settings...</p>;
+  if (!settings)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice role="status">Loading storage settings...</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 flex-col">
       <SettingsForm
         key={JSON.stringify(settings)}
         environmentId={environmentId}
@@ -484,6 +508,13 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
         hasLanes={(status?.lanes.length ?? 0) > 0}
         autoSlots={settings.buildSlots === null ? (status?.buildSlots.count ?? null) : null}
       />
+      {statusResult._tag === "Failure" && (
+        <LoomSettingsContent className="flex flex-col gap-3">
+          <LoomSettingsNotice role="alert">
+            {String(Cause.squash(statusResult.cause))}
+          </LoomSettingsNotice>
+        </LoomSettingsContent>
+      )}
       {status && <StatusView environmentId={environmentId} status={status} />}
     </div>
   );
@@ -492,13 +523,22 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
 export function ProjectLifecycleSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  if (!environment) return <p>Select a connected environment to manage storage.</p>;
+  if (!environment)
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>Select a connected environment to manage storage.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
       FEATURE,
     )
   )
-    return <p>This environment does not support lanes.</p>;
+    return (
+      <LoomSettingsContent className="flex flex-col gap-3">
+        <LoomSettingsNotice>This environment does not support lanes.</LoomSettingsNotice>
+      </LoomSettingsContent>
+    );
   return (
     <EnvironmentStorage key={environment.environmentId} environmentId={environment.environmentId} />
   );

@@ -3,54 +3,79 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
 import { pcb } from "./state";
-import { asyncValue } from "./usePcbPreview";
+import { asyncError, asyncValue } from "./usePcbPreview";
 import { useWrite } from "./InspectorKit";
 import { runModelCommand } from "../model-preview-3d/state";
 import { FabCapabilitiesDialog } from "./FabCapabilitiesDialog";
+
 export function FabSettings({ environmentId }: { environmentId: EnvironmentId }) {
-  const catalog = asyncValue(useAtomValue(pcb.fabCapabilities({ environmentId, input: {} }))),
-    allowed = useAtomValue(pcb.updateFabCapabilities.permissionAtom(environmentId));
-  const [open, setOpen] = useState(false),
-    write = useWrite();
+  const result = useAtomValue(pcb.fabCapabilities({ environmentId, input: {} }));
+  const catalog = asyncValue(result);
+  const allowed = useAtomValue(pcb.updateFabCapabilities.permissionAtom(environmentId));
+  const [open, setOpen] = useState(false);
+  const write = useWrite();
+  const profiles = [...(catalog?.builtIns ?? []), ...(catalog?.entries ?? [])];
+  const error = asyncError(result) ?? write.error;
   return (
     <>
       <SettingsRow
-        title="Fab"
-        description="Choose the default fabrication profile for this environment."
+        title="Fabrication profile"
+        description="Choose the default fabrication limits for this environment."
         control={
-          <div className="flex gap-2">
-            <select
-              aria-label="Default fab"
-              value={catalog?.defaultId ?? ""}
-              disabled={!allowed || !catalog || write.busy}
-              onChange={(e) =>
-                void write.run(async () => {
-                  if (catalog)
-                    await runModelCommand(pcb.updateFabCapabilities, {
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1 basis-40">
+              <Select
+                value={catalog?.defaultId ?? ""}
+                disabled={!allowed || !catalog || write.busy}
+                onValueChange={(value) => {
+                  if (!catalog || value === null) return;
+                  void write.run(() =>
+                    runModelCommand(pcb.updateFabCapabilities, {
                       environmentId,
                       input: {
                         expectedVersion: catalog.version,
                         entries: catalog.entries,
-                        defaultId: e.target.value,
+                        defaultId: value,
                       },
-                    });
-                })
-              }
-            >
-              {[...(catalog?.builtIns ?? []), ...(catalog?.entries ?? [])].map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+                    }),
+                  );
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Default fabrication profile">
+                  <SelectValue>
+                    {profiles.find((profile) => profile.id === catalog?.defaultId)?.name ??
+                      (result.waiting ? "Loading profiles…" : "Choose a profile")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {profiles.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
             <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-              Manage…
+              Manage profiles
             </Button>
           </div>
         }
       />
-      {write.error && <p role="alert">{write.error}</p>}
+      {error && (
+        <LoomSettingsContent>
+          <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>
+        </LoomSettingsContent>
+      )}
       <FabCapabilitiesDialog environmentId={environmentId} open={open} onOpenChange={setOpen} />
     </>
   );
