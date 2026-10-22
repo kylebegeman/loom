@@ -1,5 +1,6 @@
 import {
   DIRECTORY_FEATURE,
+  LIBRARY_DECISIONS_FEATURE,
   DIRECTORY_REPORTING_FEATURE,
   LIBRARY_SEMANTIC_SEARCH_FEATURE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
@@ -94,6 +95,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   "library-copy-health",
   "library-search",
+  LIBRARY_DECISIONS_FEATURE,
   "library-timeline",
   "library-brief-proposals",
   "library-copy-health-published",

@@ -40,6 +40,9 @@ const fixture = Effect.gen(function* () {
   const library = yield* Library.LibraryService.pipe(
     Effect.provide(
       Layer.mock(Library.LibraryService)({
+        publishDocuments: () =>
+          Ref.update(calls, (count) => count + 1).pipe(Effect.as({ published: 1, removed: 0 })),
+        decisions: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as({ hits: [] })),
         info: Effect.succeed({
           environmentId: source,
           authorityId: "authority",
@@ -122,6 +125,76 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
     return yield* use(yield* fixture);
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 describe("Library host HTTP publishing boundaries", () => {
+  it.effect(
+    "authenticates document publication against the enrolled source and authority fence",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const input = {
+            computerId: source,
+            projectId: "project",
+            resourceId: "api",
+            commit: "a".repeat(40),
+            documents: [],
+            removed: [],
+            authorityId: "authority",
+            authorityEpoch: 1,
+          };
+          expect((yield* f.request("documents/publish", yield* encodeJson(input))).status).toBe(
+            200,
+          );
+          expect(
+            (yield* f.request(
+              "documents/publish",
+              yield* encodeJson({ ...input, computerId: "other" }),
+            )).status,
+          ).toBe(403);
+          const { authorityId: _id, ...unfenced } = input;
+          expect((yield* f.request("documents/publish", yield* encodeJson(unfenced))).status).toBe(
+            400,
+          );
+          yield* Ref.update(f.session, (session) => ({
+            ...session,
+            subject: "operator",
+            scopes: [AuthOrchestrationOperateScope],
+          }));
+          expect((yield* f.request("documents/publish", yield* encodeJson(input))).status).toBe(
+            403,
+          );
+          expect(yield* Ref.get(f.calls)).toBe(1);
+        }),
+      ),
+  );
+  it.effect(
+    "allows authenticated decision reads and bounds the request before calling the service",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          expect(
+            (yield* f.request(
+              "documents/search",
+              yield* encodeJson({ query: "owner recovery", projectId: "project" }),
+            )).status,
+          ).toBe(200);
+          expect(
+            (yield* f.request("documents/publish", "{}", {
+              "content-length": String(25 * 1024 * 1024),
+            })).status,
+          ).toBe(413);
+          yield* Ref.update(f.session, (session) => ({
+            ...session,
+            subject: "mcp-client",
+            scopes: [AuthLibraryPublishScope],
+          }));
+          expect(
+            (yield* f.request("documents/search", yield* encodeJson({ query: "owner recovery" })))
+              .status,
+          ).toBe(403);
+          expect(yield* Ref.get(f.calls)).toBe(1);
+        }),
+      ),
+  );
+
   it.effect("allows a saved-file grant to identify the Library without publishing history", () =>
     run((f) =>
       Effect.gen(function* () {

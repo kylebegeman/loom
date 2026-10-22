@@ -5,6 +5,7 @@ import {
   LIBRARY_HEALTH_WS_METHODS as LH,
   LIBRARY_READINESS_WS_METHODS as LR,
   LIBRARY_SEARCH_WS_METHODS,
+  LIBRARY_DECISIONS_WS_METHODS,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
   LIBRARY_BRIEF_SUGGESTION_WS_METHODS as SUGGEST,
@@ -109,6 +110,8 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
       auth.effect(L.resolveBinding, workspace.resolveBinding(input)),
     [L.bindThread]: (input: Parameters<typeof workspace.bindThread>[0]) =>
       auth.effect(L.bindThread, workspace.bindThread(input)),
+    [LIBRARY_DECISIONS_WS_METHODS.search]: (input: Parameters<typeof library.decisions>[0]) =>
+      auth.effect(LIBRARY_DECISIONS_WS_METHODS.search, library.decisions(input)),
     [LIBRARY_SEARCH_WS_METHODS.search]: (input: Parameters<typeof library.search>[0]) =>
       auth.effect(LIBRARY_SEARCH_WS_METHODS.search, library.search(input)),
     [BRIEF.propose]: (input: Parameters<typeof library.proposeBrief>[0]) =>

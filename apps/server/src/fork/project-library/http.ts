@@ -6,6 +6,8 @@ import {
 } from "@t3tools/contracts";
 import {
   LibraryConversationBriefProposal,
+  LibraryDocumentsPublishRequest,
+  LibraryDecisionsSearchInput,
   LibraryId,
   LibraryRegisterComputerRequest,
   LibraryError,
@@ -15,10 +17,16 @@ import {
   LibraryRecordActivityRequest,
   LibraryRequestId,
 } from "@t3tools/contracts/fork";
+import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import {
+  HttpIncomingMessage,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { LIBRARY_HISTORY_MAX_BYTES, readLibraryJson } from "./transfer.ts";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
@@ -26,6 +34,9 @@ import * as LibraryService from "./LibraryService.ts";
 
 // Large established threads retain complete tool history. Clients browse bounded windows.
 
+const DOCUMENTS_MAX_REQUEST_BYTES = 24 * 1024 * 1024;
+const decodeDecisions = Schema.decodeUnknownEffect(LibraryDecisionsSearchInput);
+const decodeDocuments = Schema.decodeUnknownEffect(LibraryDocumentsPublishRequest);
 const decodeIngest = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryIngestHistoryRequest));
 const decodeCopy = Schema.decodeUnknownEffect(LibraryRegisterCopyRequest);
 const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: LibraryRequestId }));
@@ -37,6 +48,8 @@ const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefPropos
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
 const handler = (
   operation:
+    | "decisions"
+    | "documents"
     | "info"
     | "computer"
     | "ingest"
@@ -63,7 +76,7 @@ const handler = (
         session.subject === "mcp-client" ||
         ((operation === "import" || operation === "verify") && !operator) ||
         // A forwarded proposal names its conversation's computer by the session that sent it.
-        (operation === "propose" && !publisher)
+        ((operation === "propose" || operation === "documents") && !publisher)
       )
         return HttpServerResponse.text("Access denied", { status: 403 });
       const sourceAllowed = (
@@ -79,13 +92,25 @@ const handler = (
         return HttpServerResponse.jsonUnsafe(yield* library.info, {
           headers: { "cache-control": "no-store" },
         });
+      const documentRequest = operation === "documents" || operation === "decisions";
+      const maxBytes = documentRequest ? DOCUMENTS_MAX_REQUEST_BYTES : LIBRARY_HISTORY_MAX_BYTES;
       const length = request.headers["content-length"];
-      if (
-        length !== undefined &&
-        (!/^\d+$/.test(length) || Number(length) > LIBRARY_HISTORY_MAX_BYTES)
-      )
+      if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
         return HttpServerResponse.text("History request too large", { status: 413 });
-      const body = yield* readLibraryJson(request);
+      const body = yield* documentRequest
+        ? request.json.pipe(
+            Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
+            Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+          )
+        : readLibraryJson(request);
+      if (operation === "decisions") {
+        const input = yield* decodeDecisions(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.decisions(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
       if (operation === "verify") {
         const input = yield* decodeVerify(body).pipe(
           Effect.mapError(() => new LibraryError({ reason: "invalid" })),
@@ -121,6 +146,16 @@ const handler = (
         if (!sourceAllowed(input.computer.environmentId, input))
           return HttpServerResponse.text("Access denied", { status: 403 });
         return HttpServerResponse.jsonUnsafe(yield* library.registerComputer(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "documents") {
+        const input = yield* decodeDocuments(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        if (!sourceAllowed(input.computerId, input))
+          return HttpServerResponse.text("Access denied", { status: 403 });
+        return HttpServerResponse.jsonUnsafe(yield* library.publishDocuments(input), {
           headers: { "cache-control": "no-store" },
         });
       }
@@ -182,6 +217,16 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/documents/search",
+        handler("decisions").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/documents/publish",
+        handler("documents").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "GET",
         "/api/loom/library/info",

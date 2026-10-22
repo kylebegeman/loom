@@ -1,3 +1,4 @@
+import * as Stream from "effect/Stream";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
@@ -107,6 +108,9 @@ const fixture = Effect.gen(function* () {
   const sent = yield* Ref.make<LibraryRecordActivityRequest[]>([]);
   const recorded = yield* Ref.make<ReadonlyMap<string, LibraryRecordActivityRequest>>(new Map());
   const publisher = Publisher.LibraryPublisher.of({
+    copyRegistrations: Stream.empty,
+    publishDocuments: () => Effect.die("unused"),
+    decisions: () => Effect.die("unused"),
     enabled: true,
     project: () => Effect.die("unused"),
     proposeBrief: () => Effect.die("unused"),

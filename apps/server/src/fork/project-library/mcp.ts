@@ -14,6 +14,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import * as BriefSuggestions from "./LibraryBriefSuggestions.ts";
+import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
@@ -122,6 +123,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
       ),
     }),
     success: Library.LibraryThreadArchive,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_decisions", {
+    description:
+      "Search committed default-branch decisions and catalogued ideas from Library project repositories. Returns source repository, path, anchor, date and status. Superseded records are hidden unless includeRetired is true. Scope by projectId or kind. Keyword search works without the semantic model.",
+    parameters: Library.LibraryDecisionsSearchInput,
+    success: Library.LibraryDecisionsSearchResult,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_search", {
@@ -372,6 +380,9 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
             service.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
           ),
         ),
+      ),
+      loom_library_decisions: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Publisher.LibraryPublisher, (service) => service.decisions(input))),
       ),
       loom_library_search: McpToolAccess.reads((input) =>
         onHost(

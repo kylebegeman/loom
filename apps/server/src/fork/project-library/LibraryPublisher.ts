@@ -4,6 +4,10 @@ import * as Assets from "./assets/LibraryAssetService.ts";
 import { EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import {
   LibraryBriefProposal,
+  LibraryDocumentsPublishRequest,
+  LibraryDocumentsPublishResult,
+  LibraryDecisionsSearchInput,
+  LibraryDecisionsSearchResult,
   LibraryConversationBriefProposal,
   LibraryProject,
   type LibraryProposeBriefRequest,
@@ -36,6 +40,8 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import {
@@ -60,6 +66,13 @@ export class LibraryPublisher extends Context.Service<
   LibraryPublisher,
   {
     readonly enabled: boolean;
+    readonly decisions: (
+      input: LibraryDecisionsSearchInput,
+    ) => Effect.Effect<LibraryDecisionsSearchResult, LibraryError>;
+    readonly copyRegistrations: Stream.Stream<LibraryWorkingCopy>;
+    readonly publishDocuments: (
+      input: LibraryDocumentsPublishRequest,
+    ) => Effect.Effect<LibraryDocumentsPublishResult, LibraryError>;
     readonly info: Effect.Effect<LibraryInfo, LibraryError>;
     readonly ingest: (
       input: LibraryIngestHistoryRequest,
@@ -164,7 +177,14 @@ const decodePageRefusal = Schema.decodeUnknownEffect(
     message: Schema.optional(Schema.String),
   }),
 );
+const encodeDecisions = Schema.encodeEffect(Schema.fromJsonString(LibraryDecisionsSearchInput));
+const decodeDecisions = Schema.decodeUnknownEffect(LibraryDecisionsSearchResult);
+const encodeDocuments = Schema.encodeEffect(Schema.fromJsonString(LibraryDocumentsPublishRequest));
+const decodeDocuments = Schema.decodeUnknownEffect(LibraryDocumentsPublishResult);
 const make = Effect.gen(function* () {
+  const registrations = yield* PubSub.unbounded<LibraryWorkingCopy>();
+  const copyRegistrations = Stream.fromPubSub(registrations);
+  const registered = (copy: LibraryWorkingCopy) => PubSub.publish(registrations, copy);
   const connection = yield* resolveLibraryConnection;
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
@@ -175,6 +195,9 @@ const make = Effect.gen(function* () {
     const blocked = Effect.fail(new LibraryError({ reason: "blocked" }));
     return LibraryPublisher.of({
       enabled,
+      copyRegistrations,
+      publishDocuments: () => blocked,
+      decisions: () => blocked,
       info: blocked,
       ingest: () => blocked,
       registerCopy: () => blocked,
@@ -231,9 +254,12 @@ const make = Effect.gen(function* () {
     });
     return LibraryPublisher.of({
       enabled: true,
+      copyRegistrations,
+      publishDocuments: localLibrary.publishDocuments,
+      decisions: localLibrary.decisions,
       info: localLibrary.info,
       ingest: localLibrary.ingestHistory,
-      registerCopy: localLibrary.registerCopy,
+      registerCopy: (input) => localLibrary.registerCopy(input).pipe(Effect.tap(registered)),
       publishAttachments: publishLocalAttachments,
       recordActivity: localLibrary.recordActivity,
       project: (projectId) => localLibrary.project({ projectId }),
@@ -376,6 +402,45 @@ const make = Effect.gen(function* () {
     );
     return yield* response.json.pipe(
       Effect.flatMap(decodeCopy),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+      Effect.tap(registered),
+    );
+  });
+  const decisions = Effect.fn("LibraryPublisher.decisions")(function* (
+    input: LibraryDecisionsSearchInput,
+  ) {
+    const body = yield* encodeDecisions(input).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/documents/search")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+      true,
+      true,
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeDecisions),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+    );
+  });
+  const publishDocuments = Effect.fn("LibraryPublisher.publishDocuments")(function* (
+    input: LibraryDocumentsPublishRequest,
+  ) {
+    if (input.computerId !== sourceEnvironmentId)
+      return yield* new LibraryError({ reason: "blocked" });
+    const body = yield* encodeDocuments(input).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/documents/publish")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+      true,
+      true,
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeDocuments),
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
   });
@@ -549,6 +614,9 @@ const make = Effect.gen(function* () {
   });
   return LibraryPublisher.of({
     enabled: true,
+    copyRegistrations,
+    publishDocuments,
+    decisions,
     info,
     ingest,
     registerCopy,

@@ -1,3 +1,4 @@
+import { LIBRARY_DECISIONS_WS_METHODS as LD } from "@t3tools/contracts/fork";
 import { VAULT_TEST_ACCOUNT_WS_METHODS as VT } from "@t3tools/contracts/fork";
 import { VAULT_MIGRATION_INVENTORY_WS_METHODS as VI } from "@t3tools/contracts/fork";
 import { VAULT_MIGRATION_WS_METHODS as VM } from "@t3tools/contracts/fork";
@@ -176,6 +177,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [LIB.ingestHistory]: AuthOrchestrationOperateScope,
   [LIB.importShadow]: AuthEnvironmentMaintainScope,
   [LS.search]: AuthOrchestrationReadScope,
+  [LD.search]: AuthOrchestrationReadScope,
   [LIBT.timeline]: AuthOrchestrationReadScope,
   [BRIEF.propose]: AuthOrchestrationOperateScope,
   [BRIEF.proposals]: AuthOrchestrationReadScope,

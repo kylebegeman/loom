@@ -1,5 +1,9 @@
 import {
   LibraryComputer,
+  LibraryDocumentsPublishRequest,
+  LibraryDocumentsPublishResult,
+  LibraryDecisionsSearchInput,
+  LibraryDecisionsSearchResult,
   LibraryAuthorizeRecoveryRequest,
   LibraryRecoveryGrant,
   LibraryRegisterComputerRequest,
@@ -68,6 +72,7 @@ import { libraryComputerDirectory, readLibraryDestination } from "./enrollment.t
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
+import { makeLibraryDocuments } from "./LibraryDocuments.ts";
 import { makeLibrarySearch } from "./LibrarySearch.ts";
 import { warnIfLibraryEmbeddingsUnusable } from "./LibraryEmbedder.ts";
 import * as ServerActivation from "../../serverActivation.ts";
@@ -82,6 +87,12 @@ import { readRecoveryGrantClaims, recoveryGrantSubject } from "./recoveryGrant.t
 export class LibraryService extends Context.Service<
   LibraryService,
   {
+    readonly publishDocuments: (
+      input: LibraryDocumentsPublishRequest,
+    ) => Effect.Effect<LibraryDocumentsPublishResult, LibraryError>;
+    readonly decisions: (
+      input: LibraryDecisionsSearchInput,
+    ) => Effect.Effect<LibraryDecisionsSearchResult, LibraryError>;
     readonly registerComputer: (
       input: LibraryRegisterComputerRequest,
     ) => Effect.Effect<LibraryComputer, LibraryError>;
@@ -249,6 +260,8 @@ const make = Effect.gen(function* () {
   const sessions = yield* Effect.serviceOption(SessionStore.SessionStore);
   const recovery = yield* Effect.serviceOption(Recovery.LibraryRecoveryStore);
   const historySearch = yield* makeLibrarySearch;
+  const documents = yield* makeLibraryDocuments;
+  if (isAuthority) yield* ServerActivation.forkParked(documents.backfill);
   const lock = yield* Semaphore.make(1);
   const refreshes = yield* SubscriptionRef.make(0);
   if (isAuthority && historySearch.semantic !== null)
@@ -1170,6 +1183,15 @@ const make = Effect.gen(function* () {
   const catalogRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     isAuthority ? effect : Effect.fail(new LibraryError({ reason: "not-authority" }));
   return LibraryService.of({
+    publishDocuments: (input) =>
+      transact(
+        Effect.gen(function* () {
+          if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+          yield* validateAuthority(input);
+          return yield* documents.publish(input);
+        }),
+      ),
+    decisions: (input) => catalogRead(documents.search(input)),
     info,
     authorizeRecovery,
     readRecoveryGrant,
