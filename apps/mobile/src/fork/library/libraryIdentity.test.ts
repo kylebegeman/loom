@@ -6,6 +6,8 @@ import {
   libraryIdentityAddress,
   libraryIdentityResourceParameters,
   loadLibraryIdentity,
+  loadNativeIdentityDiscovery,
+  assertNativeIdentityUnchanged,
 } from "./libraryIdentity";
 const environmentId = EnvironmentId.make("selected-library");
 const metadata: LoomIdentityMetadata = {
@@ -46,7 +48,7 @@ describe("native library identity", () => {
         EnvironmentId.make("different-library"),
         request,
       ),
-    ).rejects.toThrow("another library server");
+    ).rejects.toThrow("another computer");
   });
   it("requires native PKCE configuration and rejects embedded credentials", async () => {
     expect(() => libraryIdentityAddress("https://user:password@library.example")).toThrow(
@@ -57,7 +59,7 @@ describe("native library identity", () => {
     );
     await expect(
       loadLibraryIdentity("https://library.example", environmentId, request),
-    ).rejects.toThrow("Native library sign-in is not configured");
+    ).rejects.toThrow("Native Identity sign-in is not configured");
   });
   it("exchanges the identity access token for a bearer on the exact library address", async () => {
     const request = vi.fn<typeof fetch>(async () =>
@@ -113,5 +115,132 @@ describe("native library identity", () => {
     await expect(
       exchangeLibraryIdentityToken("https://library.example", "test-identity", request),
     ).rejects.toThrow("unsupported or expired");
+  });
+});
+
+describe("ordinary computer Identity", () => {
+  const modern = { ...metadata, sessionExchangeEnabled: true };
+  const identity = { issuer: metadata.issuer!, subject: "owner" };
+  const session = {
+    access_token: "computer-session",
+    issued_token_type: AuthAccessTokenType,
+    token_type: "Bearer",
+    expires_in: 600,
+    scope: "orchestration:read",
+    environmentId,
+    identity,
+  };
+  it("pins the saved issuer and requires a host that returns verified account provenance", async () => {
+    const request = vi.fn<typeof fetch>(async () => response(metadata));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        requireSessionExchange: true,
+      }),
+    ).rejects.toThrow("Update this computer");
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        expectedIdentity: { ...identity, issuer: "https://other-id.test" },
+      }),
+    ).rejects.toThrow("provider changed");
+    for (const tokenEndpoint of [
+      "http://identity.example/token",
+      "https://user:secret@identity.example/token",
+    ]) {
+      request.mockResolvedValueOnce(response({ ...modern, tokenEndpoint }));
+      await expect(
+        loadLibraryIdentity("https://computer.example", environmentId, request),
+      ).rejects.toThrow("insecure Identity");
+    }
+  });
+  it("checks discovery against the configured issuer and detects host changes after account sign-in", async () => {
+    const discovery = {
+      issuer: metadata.issuer,
+      authorization_endpoint: metadata.authorizationEndpoint,
+      token_endpoint: metadata.tokenEndpoint,
+    };
+    const request = vi.fn<typeof fetch>(async () => response(discovery));
+    await expect(loadNativeIdentityDiscovery(modern, request)).resolves.toEqual({
+      authorizationEndpoint: metadata.authorizationEndpoint,
+      tokenEndpoint: metadata.tokenEndpoint,
+    });
+    request.mockResolvedValueOnce(response({ ...discovery, issuer: "https://attacker.test" }));
+    await expect(loadNativeIdentityDiscovery(modern, request)).rejects.toThrow(
+      "configuration changed",
+    );
+    for (const changed of [
+      { ...modern, environmentId: EnvironmentId.make("other") },
+      { ...modern, nativeClientId: "other" },
+      { ...modern, audience: "library-only" },
+      { ...modern, resource: "https://other-computer.test" },
+      { ...modern, tokenEndpoint: "https://other-id.test/token" },
+    ]) {
+      expect(() => assertNativeIdentityUnchanged(modern, changed)).toThrow("configuration changed");
+    }
+    expect(() => assertNativeIdentityUnchanged(modern, modern)).not.toThrow();
+  });
+  it("exchanges in JSON at the selected computer and binds the result to the saved account", async () => {
+    const request = vi.fn<typeof fetch>(async () => response(session));
+    const abort = new AbortController();
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "provider-access", request, {
+        metadata: modern,
+        expectedIdentity: identity,
+        signal: abort.signal,
+      }),
+    ).resolves.toMatchObject({ environmentId, identity });
+    const [url, init] = request.mock.calls[0]!;
+    expect(String(url)).toBe("https://computer.example/api/loom/identity/session");
+    expect(String(url)).not.toContain("provider-access");
+    expect(init).toMatchObject({
+      method: "POST",
+      redirect: "error",
+      signal: abort.signal,
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      type: "native",
+      accessToken: "provider-access",
+      environmentId,
+      expectedIdentity: identity,
+    });
+    for (const changed of [
+      { ...session, environmentId: "other" },
+      { ...session, identity: { ...identity, subject: "other-owner" } },
+      { ...session, identity: { ...identity, issuer: "https://other-id.test" } },
+    ]) {
+      request.mockResolvedValueOnce(response(changed));
+      await expect(
+        exchangeLibraryIdentityToken("https://computer.example", "provider-access", request, {
+          metadata: modern,
+          expectedIdentity: identity,
+        }),
+      ).rejects.toThrow("another computer or Identity account");
+    }
+    request.mockResolvedValueOnce(response({ ...session, expires_in: 3601 }));
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "provider-access", request, {
+        metadata: modern,
+      }),
+    ).rejects.toThrow("unsupported or expired");
+  });
+  it("passes cancellation to metadata and token requests", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    const request = vi.fn<typeof fetch>(async (_url, init) => {
+      if (init?.signal?.aborted) throw new Error("cancelled");
+      return response(modern);
+    });
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        signal: abort.signal,
+      }),
+    ).rejects.toThrow("cancelled");
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "access", request, {
+        metadata: modern,
+        signal: abort.signal,
+      }),
+    ).rejects.toThrow("cancelled");
   });
 });

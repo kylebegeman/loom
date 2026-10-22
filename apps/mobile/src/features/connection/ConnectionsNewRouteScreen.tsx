@@ -291,6 +291,23 @@ export function ConnectionsNewRouteScreen({
             </Text>
           </View>
 
+          <View className="gap-2 px-4">
+            <Text className="text-sm text-foreground-muted">
+              If this computer has Identity configured, use its address to sign in without a pairing
+              code.
+            </Text>
+            <Button
+              label="Sign in with Identity"
+              tone="text"
+              disabled={isSubmitting}
+              onPress={() =>
+                navigation.navigate("IdentitySignIn", {
+                  ...(hostInput.trim() ? { address: hostInput.trim() } : {}),
+                  ...(params.routeFor ? { environmentId: params.routeFor } : {}),
+                })
+              }
+            />
+          </View>
           <Button
             label={params.routeFor ? "Add connection address" : "Connect computer"}
             tone="primary"

@@ -1,4 +1,5 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import type { LoomIdentityAccount } from "@t3tools/contracts/fork";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 
 export interface SavedRemoteConnection {
@@ -12,6 +13,8 @@ export interface SavedRemoteConnection {
   readonly authenticationMethod?: "bearer" | "dpop";
   readonly dpopAccessToken?: string;
   readonly relayManaged?: true;
+  readonly identity?: LoomIdentityAccount;
+  readonly identityHttpBaseUrl?: string;
 }
 
 export type RemoteClientConnectionState = EnvironmentConnectionPhase;

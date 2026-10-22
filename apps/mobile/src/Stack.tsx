@@ -14,7 +14,10 @@ import { LibraryHistoryRouteScreen } from "./fork/library/LibraryHistoryScreen";
 import { LibrarySearchRouteScreen } from "./fork/library/LibraryHistorySearch";
 import { LibraryTimelineRouteScreen } from "./fork/library/LibraryTimeline";
 import { LibraryBriefReviewRouteScreen } from "./fork/library/LibraryBriefProposals";
-import { LibraryIdentityRouteScreen } from "./fork/library/LibraryIdentityScreen";
+import {
+  LibraryIdentityRouteScreen,
+  ComputerIdentityRouteScreen,
+} from "./fork/library/LibraryIdentityScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
 import { LibraryTidyRouteScreen } from "./fork/library/LibraryTidy";
 import { APP_LINKING_CONFIG } from "./lib/appLinking"; // fork: project-navigation
@@ -740,6 +743,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibrarySettings: createNativeStackScreen({
       screen: LibraryAuthorityScreen,
       linking: "library/settings",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    IdentitySignIn: createNativeStackScreen({
+      screen: ComputerIdentityRouteScreen,
+      linking: "identity/sign-in",
       options: SOLID_HEADER_OPTIONS,
     }),
     LibrarySignIn: createNativeStackScreen({
