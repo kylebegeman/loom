@@ -18,6 +18,9 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { TestClock } from "effect/testing";
 import { expect } from "vite-plus/test";
 import * as PocketId from "./PocketId.ts";
+import { identitySessionPrefix } from "./identityPolicy.ts";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Crypto from "effect/Crypto";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerConfig from "../config.ts";
@@ -141,7 +144,9 @@ it.effect(
       const token = yield* test.access();
       yield* Effect.gen(function* () {
         const identity = yield* PocketId.PocketId;
-        expect((yield* identity.verifyAccessToken(token)).subject).toBe("pocket-id:owner-id");
+        expect((yield* identity.verifyAccessToken(token)).subject).toBe(
+          `${identitySessionPrefix(test.env)}b3duZXItaWQ`,
+        );
         expect(test.requests.some((url) => url.endsWith("/userinfo"))).toBe(true);
         test.userInfo.sub = "different-owner";
         expect((yield* identity.verifyAccessToken(token).pipe(Effect.flip)).reason).toBe("token");
@@ -166,7 +171,7 @@ it.effect(
           expires_in: 120,
         });
         expect(test.issued[0]).toMatchObject({
-          subject: "pocket-id:owner-id",
+          subject: `${identitySessionPrefix(test.env)}b3duZXItaWQ`,
           scopes: PocketId.PocketIdStandardScopes,
           client: CLIENT,
           method: "bearer-access-token",
@@ -361,7 +366,7 @@ it.effect("identity sessions remain locally revocable and expire with their acce
       const second = yield* identity.exchangeAccessToken({ token, client: CLIENT });
       yield* TestClock.adjust(Duration.seconds(119));
       const verified = yield* local.verify(first.access_token);
-      expect(verified.subject).toBe("pocket-id:owner-id");
+      expect(verified.subject).toBe(`${identitySessionPrefix(test.env)}b3duZXItaWQ`);
       expect(yield* local.revoke(verified.sessionId)).toBe(true);
       expect((yield* Effect.result(local.verify(first.access_token)))._tag).toBe("Failure");
       yield* local.verify(second.access_token);
@@ -402,6 +407,143 @@ it.effect("binds safe return paths to the single-use login state", () =>
         });
         expect(session.returnTo).toBe(requested.startsWith("/sites?") ? requested : "/");
       }
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+const browserRequest = {
+  origin: "https://app.example.test",
+  environmentId: EnvironmentId.make("host-id"),
+  state: "s".repeat(43),
+  challenge: "",
+};
+
+it.effect(
+  "binds browser handoff to an enrolled origin, environment and PKCE verifier, and spends it once",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      test.env.LOOM_IDENTITY_BROWSER_ORIGINS = browserRequest.origin;
+      const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeServices.layer));
+      const verifier = "v".repeat(43);
+      const browser = {
+        ...browserRequest,
+        challenge: Base64Url.encode(
+          yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)),
+        ),
+      };
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        for (const invalid of [
+          { ...browser, origin: "https://attacker.test" },
+          { ...browser, environmentId: EnvironmentId.make("another-host") },
+          { ...browser, challenge: "plain" },
+        ])
+          expect((yield* identity.beginLogin("/", invalid).pipe(Effect.flip)).reason).toBe("state");
+        const login = yield* identity.beginLogin("/", browser);
+        const authorization = new URL(login.authorizationUrl);
+        test.tokenReply.access = yield* test.access();
+        test.tokenReply.id = yield* test.signed(
+          { nonce: authorization.searchParams.get("nonce")! },
+          CLIENT_ID,
+          "JWT",
+        );
+        const completed = yield* identity.completeLogin({
+          state: authorization.searchParams.get("state")!,
+          code: "idp-code",
+          cookieValue: login.cookieValue,
+          client: CLIENT,
+        });
+        const handoff = completed.handoff!;
+        expect(handoff).toMatchObject({
+          state: browser.state,
+          origin: browser.origin,
+          environmentId: browser.environmentId,
+        });
+        expect(handoff.code).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(login.authorizationUrl).not.toContain(handoff.code);
+        const redeem = {
+          type: "browser" as const,
+          code: handoff.code,
+          verifier,
+          environmentId: browser.environmentId,
+        };
+        expect(
+          (yield* identity.createSession(redeem, CLIENT, "https://attacker.test").pipe(Effect.flip))
+            .reason,
+        ).toBe("state");
+        expect(
+          (yield* identity
+            .createSession({ ...redeem, verifier: "x".repeat(43) }, CLIENT, browser.origin)
+            .pipe(Effect.flip)).reason,
+        ).toBe("state");
+        expect(
+          (yield* identity
+            .createSession(
+              { ...redeem, environmentId: EnvironmentId.make("other") },
+              CLIENT,
+              browser.origin,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("state");
+        const session = yield* identity.createSession(redeem, CLIENT, browser.origin);
+        expect(session).toMatchObject({
+          environmentId: browser.environmentId,
+          identity: { issuer: ISSUER, subject: "owner-id" },
+          expires_in: 120,
+          token_type: "Bearer",
+        });
+        expect(
+          (yield* identity.createSession(redeem, CLIENT, browser.origin).pipe(Effect.flip)).reason,
+        ).toBe("state");
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+
+it.effect("expires an unredeemed browser handoff without issuing a bearer session", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    test.env.LOOM_IDENTITY_BROWSER_ORIGINS = browserRequest.origin;
+    const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeServices.layer));
+    const verifier = "v".repeat(43);
+    const browser = {
+      ...browserRequest,
+      challenge: Base64Url.encode(
+        yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)),
+      ),
+    };
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const login = yield* identity.beginLogin("/", browser);
+      const authorization = new URL(login.authorizationUrl);
+      test.tokenReply.access = yield* test.access();
+      test.tokenReply.id = yield* test.signed(
+        { nonce: authorization.searchParams.get("nonce")! },
+        CLIENT_ID,
+        "JWT",
+      );
+      const completed = yield* identity.completeLogin({
+        state: authorization.searchParams.get("state")!,
+        code: "idp-code",
+        cookieValue: login.cookieValue,
+        client: CLIENT,
+      });
+      yield* TestClock.adjust(Duration.seconds(61));
+      expect(
+        (yield* identity
+          .createSession(
+            {
+              type: "browser",
+              code: completed.handoff!.code,
+              verifier,
+              environmentId: browser.environmentId,
+            },
+            CLIENT,
+            browser.origin,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("state");
+      expect(test.issued).toHaveLength(1);
     }).pipe(Effect.provide(test.layer));
   }),
 );

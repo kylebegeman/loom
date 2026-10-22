@@ -1,3 +1,5 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identitySessionPrefix } from "./identityPolicy.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -880,5 +882,61 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       yield* sessions.recordClientConnection(issued.sessionId, {});
       expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.3.0" });
     }).pipe(Effect.provide(Layer.mergeAll(layerSessionStore(), SqlitePersistence.layerMemory))),
+  );
+  it.effect(
+    "invalidates Identity sessions and websocket tickets when host enrollment changes",
+    () =>
+      Effect.gen(function* () {
+        const environment = {
+          LOOM_IDENTITY_ISSUER: "https://identity.test",
+          LOOM_IDENTITY_AUDIENCE: "this-host",
+          LOOM_IDENTITY_CLIENT_ID: "host-client",
+          LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner",
+        };
+        const original = yield* SessionStore.make.pipe(
+          Effect.provideService(HostProcess.Environment, environment),
+        );
+        const issued = yield* original.issue({
+          subject: `${identitySessionPrefix(environment)}b3duZXI`,
+          method: "bearer-access-token",
+        });
+        const ticket = yield* original.issueWebSocketToken(issued.sessionId);
+        expect((yield* original.verify(issued.token)).subject).toContain("identity:");
+        for (const next of [
+          { ...environment, LOOM_IDENTITY_ISSUER: "https://another-identity.test" },
+          { ...environment, LOOM_IDENTITY_ALLOWED_SUBJECTS: "different-owner" },
+          { ...environment, LOOM_IDENTITY_AUDIENCE: "different-host" },
+          {},
+        ]) {
+          const restarted = yield* SessionStore.make.pipe(
+            Effect.provideService(HostProcess.Environment, next),
+          );
+          expect((yield* Effect.result(restarted.verify(issued.token)))._tag).toBe("Failure");
+          expect((yield* Effect.result(restarted.verifyWebSocketToken(ticket.token)))._tag).toBe(
+            "Failure",
+          );
+        }
+        const recovered = yield* SessionStore.make.pipe(
+          Effect.provideService(HostProcess.Environment, environment),
+        );
+        yield* recovered.verify(issued.token);
+        yield* recovered.verifyWebSocketToken(ticket.token);
+        const manual = yield* recovered.issue({ subject: "manual-pairing" });
+        const disabled = yield* SessionStore.make.pipe(
+          Effect.provideService(HostProcess.Environment, {}),
+        );
+        yield* disabled.verify(manual.token);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AuthSessions.layer,
+            ServerSecretStore.layer,
+            layerServerEnvironment(EnvironmentId.make("host")),
+          ).pipe(
+            Layer.provideMerge(SqlitePersistence.layerMemory),
+            Layer.provideMerge(layerServerConfig()),
+          ),
+        ),
+      ),
   );
 });

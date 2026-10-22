@@ -59,6 +59,16 @@ const pocket = Layer.mock(PocketId.PocketId)({
         scopes: ["orchestration:read" as const],
         client: { deviceType: "desktop" as const },
         expiresAt: DateTime.add(yield* DateTime.now, { minutes: 10 }),
+        ...(input.code === "handoff"
+          ? {
+              handoff: {
+                code: "c".repeat(43),
+                state: "s".repeat(43),
+                environmentId: "host",
+                origin: "https://app.example.test",
+              },
+            }
+          : {}),
       };
     }),
   exchangeAccessToken: (input) =>
@@ -142,6 +152,23 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
               expect(callback.headers.getSetCookie()).toContainEqual(
                 expect.stringContaining("identity-state=;"),
               );
+              const handoff = await web.handler(
+                new Request(
+                  "https://host.example.test/api/loom/identity/callback?state=verified&code=handoff",
+                  { headers: { cookie: "identity-state=signed-state" } },
+                ),
+                context,
+              );
+              expect(handoff.status).toBe(200);
+              expect(handoff.headers.has("location")).toBe(false);
+              expect(handoff.headers.get("content-security-policy")).toContain(
+                "script-src 'sha256-",
+              );
+              expect(handoff.headers.get("cache-control")).toBe("no-store");
+              const html = await handoff.text();
+              expect(html).toContain("window.opener.postMessage(");
+              expect(html).toContain('"https://app.example.test"');
+              expect(html).not.toContain("host-browser-token");
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
