@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import * as ProcessRunner from "../../processRunner.ts";
@@ -153,6 +154,87 @@ describe("document publication", () => {
       }),
     ),
   );
+  it.effect.each(["edit", "delete"] as const)(
+    "replays a lost acknowledgement before %s after restarting",
+    (change) =>
+      run(({ options, rows, requests, fail }) =>
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const remote = new Map<string, LibraryDocument>();
+          const durableOptions = {
+            ...options,
+            publisher: {
+              ...options.publisher,
+              publishDocuments: (request: LibraryDocumentsPublishRequest) =>
+                Effect.gen(function* () {
+                  const pending = yield* sql<{
+                    payload_json: string;
+                  }>`SELECT payload_json FROM fork_library_document_pending_batches`.pipe(
+                    Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+                  );
+                  expect(pending).toHaveLength(1);
+                  expect(JSON.parse(pending[0]!.payload_json)).toEqual(request);
+                  for (const row of request.documents) remote.set(row.path, row);
+                  for (const row of request.removed) remote.delete(row.path);
+                  return yield* options.publisher.publishDocuments(request);
+                }),
+            },
+          };
+          const original = (yield* Ref.get(rows))[0]!;
+          const publication = yield* Publication.makeDocumentPublication(durableOptions);
+          yield* Ref.set(fail, true);
+          expect((yield* publication.report.pipe(Effect.result))._tag).toBe("Failure");
+          expect(remote.get(original.path)).toEqual(original);
+          const changed = {
+            ...original,
+            text: "# Revised recovery\nStatus: Accepted\nUse a revised key.",
+          };
+          const updated = { ...changed, digest: yield* documentDigest(changed) };
+          yield* Ref.set(rows, change === "delete" ? [] : [updated]);
+          yield* Ref.set(fail, false);
+          const restarted = yield* Publication.makeDocumentPublication({
+            ...durableOptions,
+            source: {
+              read: () =>
+                Effect.gen(function* () {
+                  expect(yield* Ref.get(requests)).toHaveLength(2);
+                  return { commit: "b".repeat(40), documents: yield* Ref.get(rows) };
+                }),
+            },
+          });
+          yield* restarted.report;
+          const sent = yield* Ref.get(requests);
+          expect(sent).toHaveLength(3);
+          expect(sent[1]).toEqual(sent[0]);
+          expect(remote.get(original.path)).toEqual(change === "delete" ? undefined : updated);
+          const settled = yield* Publication.makeDocumentPublication(durableOptions);
+          yield* settled.report;
+          expect(yield* Ref.get(requests)).toHaveLength(3);
+        }),
+      ),
+  );
+
+  it.effect("replays a lost removal acknowledgement before publishing recreated content", () =>
+    run(({ options, rows, requests, fail }) =>
+      Effect.gen(function* () {
+        const publication = yield* Publication.makeDocumentPublication(options);
+        yield* publication.report;
+        const original = (yield* Ref.get(rows))[0]!;
+        yield* Ref.set(rows, []);
+        yield* Ref.set(fail, true);
+        expect((yield* publication.report.pipe(Effect.result))._tag).toBe("Failure");
+        yield* Ref.set(rows, [original]);
+        yield* Ref.set(fail, false);
+        const restarted = yield* Publication.makeDocumentPublication(options);
+        yield* restarted.report;
+        const sent = yield* Ref.get(requests);
+        expect(sent).toHaveLength(4);
+        expect(sent[2]).toEqual(sent[1]);
+        expect(sent[3]!.documents).toEqual([original]);
+      }),
+    ),
+  );
+
   it.effect("only reads this computer's registered copies and current repository resources", () =>
     run(({ publication, options, copies }) =>
       Effect.gen(function* () {

@@ -105,6 +105,53 @@ const run = <A, E, R>(
   );
 
 describe("Library documents", () => {
+  it.effect("upgrades applied migration 12 while preserving indexed documents and vectors", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet({
+        ...ProjectLibraryMigrations,
+        migrations: ProjectLibraryMigrations.migrations.filter(([id]) => id <= 12),
+      });
+      const sql = yield* SqlClient.SqlClient;
+      const value = {
+        ...parseDecisionDocument(
+          "docs/adr/0001.md",
+          "# Upgrade recovery\nStatus: Accepted\nUpgrade fixture.",
+        ),
+        projectId: "upgrade",
+        resourceId: resource.id,
+      };
+      const row = { ...value, digest: yield* documentDigest(value) };
+      const payload = JSON.stringify(row);
+      yield* sql`INSERT INTO fork_library_documents (id, project_id, resource_id, path, anchor, computer_id, commit_id, digest, kind, status, title, text, payload_json) VALUES (7, ${row.projectId}, ${row.resourceId}, ${row.path}, ${row.anchor}, ${source}, ${"a".repeat(40)}, ${row.digest}, ${row.kind}, ${row.status}, ${row.title}, ${row.text}, ${payload})`;
+      const vector = new Uint8Array([1, 2, 3]);
+      yield* sql`INSERT INTO fork_library_document_vectors (id, model, scale, vector) VALUES (7, 'fixture', 1, ${vector})`;
+      yield* sql`INSERT INTO fork_library_document_publications (computer_id, authority_id, authority_epoch, project_id, resource_id, path, anchor, digest) VALUES (${source}, 'authority', 1, ${row.projectId}, ${row.resourceId}, ${row.path}, ${row.anchor}, ${row.digest})`;
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      expect(
+        yield* sql`SELECT id, computer_id, payload_json, publication_order FROM fork_library_documents`,
+      ).toEqual([{ id: 7, computer_id: source, payload_json: payload, publication_order: 7 }]);
+      expect(
+        yield* sql`SELECT id, model, scale, vector FROM fork_library_document_vectors`,
+      ).toEqual([{ id: 7, model: "fixture", scale: 1, vector }]);
+      expect(
+        yield* sql`SELECT rowid FROM fork_library_documents_fts WHERE fork_library_documents_fts MATCH 'upgrade'`,
+      ).toEqual([{ rowid: 7 }]);
+      expect(yield* sql`SELECT * FROM fork_library_document_publications`).toEqual([]);
+      expect(yield* sql`SELECT * FROM fork_library_document_pending_batches`).toEqual([]);
+      yield* sql`INSERT INTO fork_library_documents (project_id, resource_id, path, anchor, computer_id, commit_id, digest, kind, status, title, text, payload_json, publication_order) SELECT project_id, resource_id, path, anchor, 'other', commit_id, digest, kind, status, title, text, payload_json, 8 FROM fork_library_documents WHERE id = 7`;
+      expect(yield* sql`SELECT count(*) AS count FROM fork_library_documents`).toEqual([
+        { count: 2 },
+      ]);
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      expect(
+        yield* sql`SELECT count(*) AS count FROM fork_library_documents_fts WHERE fork_library_documents_fts MATCH 'upgrade'`,
+      ).toEqual([{ count: 2 }]);
+    }).pipe(
+      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.scoped,
+    ),
+  );
+
   it.effect("publishes idempotently, ranks owner recovery, and filters retired/project/kind", () =>
     run(({ service, document, request, project }) =>
       Effect.gen(function* () {
@@ -266,6 +313,87 @@ describe("Library documents", () => {
         embedder,
       );
     },
+  );
+
+  it.effect(
+    "retains each source across restart and selects an authorized version after withdrawal",
+    () =>
+      run(
+        ({ service, document, request, copy, info }) =>
+          Effect.gen(function* () {
+            const other = EnvironmentId.make("other");
+            const otherCopy = { ...copy, id: "other-copy", environmentId: other };
+            yield* service.registerComputer({
+              authorityId: info.authorityId,
+              authorityEpoch: info.authorityEpoch,
+              computer: {
+                environmentId: other,
+                label: "Other",
+                platform: { os: "darwin", arch: "arm64" },
+                appVersion: "1",
+                supportsExecution: true,
+                endpoints: [],
+              },
+            });
+            yield* service.registerCopy({ requestId: "other-copy", copy: otherCopy });
+            const row = yield* document(
+              "docs/adr/0001.md",
+              "# Recovery\nStatus: Accepted\nOwner recovery using a spare key.",
+            );
+            yield* service.publishDocuments(request([row]));
+            yield* service.publishDocuments({
+              ...request([row]),
+              computerId: other,
+              commit: "b".repeat(40),
+            });
+            const restarted = yield* makeLibraryDocuments;
+            yield* restarted.embedPending();
+            expect((yield* restarted.search({ query: "owner recovery" })).hits).toHaveLength(1);
+            yield* service.registerCopy({
+              requestId: "unregister-other",
+              copy: { ...otherCopy, registered: false },
+            });
+            const recovered = yield* makeLibraryDocuments;
+            expect((yield* recovered.search({ query: "owner recovery" })).hits).toMatchObject([
+              { digest: row.digest, commit: "a".repeat(40) },
+            ]);
+            expect((yield* recovered.search({ query: '"spare key"' })).hits).toHaveLength(1);
+            expect((yield* recovered.search({ query: "administrator rescue" })).hits).toMatchObject(
+              [{ digest: row.digest, match: "semantic" }],
+            );
+            yield* service.registerCopy({ requestId: "register-other", copy: otherCopy });
+            const revised = yield* document(
+              row.path,
+              "# Recovery\nStatus: Accepted\nOwner recovery with revised instructions.",
+            );
+            yield* service.publishDocuments({
+              ...request([revised]),
+              computerId: other,
+              commit: "c".repeat(40),
+            });
+            expect((yield* recovered.search({ query: '"spare key"' })).hits).toEqual([]);
+            expect((yield* recovered.search({ query: "owner recovery" })).hits).toMatchObject([
+              { digest: revised.digest },
+            ]);
+            expect(
+              yield* service.publishDocuments({
+                ...request([]),
+                computerId: other,
+                removed: [{ path: row.path, anchor: row.anchor }],
+              }),
+            ).toEqual({ published: 0, removed: 1 });
+            const withdrawn = yield* makeLibraryDocuments;
+            expect((yield* withdrawn.search({ query: "owner recovery" })).hits).toMatchObject([
+              { digest: row.digest },
+            ]);
+            yield* service.publishDocuments({
+              ...request([]),
+              removed: [{ path: row.path, anchor: row.anchor }],
+            });
+            expect((yield* withdrawn.search({ query: "owner recovery" })).hits).toEqual([]);
+          }),
+        { model: "test", embed: () => Effect.succeed(new Float32Array([1, 0])) },
+      ),
   );
 
   it.effect("an enrolled computer cannot remove another computer's publication", () =>

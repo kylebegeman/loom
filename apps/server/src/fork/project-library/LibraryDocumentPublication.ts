@@ -4,7 +4,7 @@ import {
   LIBRARY_DOCUMENT_BATCH_SIZE,
   LibraryError,
   type LibraryDocument,
-  type LibraryDocumentsPublishRequest,
+  LibraryDocumentsPublishRequest,
   type LibraryProject,
   type LibraryResource,
 } from "@t3tools/contracts/fork";
@@ -34,6 +34,10 @@ const MAX_TREE_BYTES = 2 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENTS = 10_000;
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const encodeBatch = Schema.encodeSync(Schema.fromJsonString(LibraryDocumentsPublishRequest));
+const decodeBatch = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(LibraryDocumentsPublishRequest),
+);
 const invalid = () => new LibraryError({ reason: "invalid" });
 const io = (cause: unknown) => new LibraryError({ reason: "io", cause });
 
@@ -183,6 +187,23 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
   }) {
     const sql = yield* SqlClient.SqlClient;
     const lock = yield* Semaphore.make(1);
+    const deliver = Effect.fn("LibraryDocumentPublication.deliver")(function* (
+      request: LibraryDocumentsPublishRequest,
+      payload: string,
+    ) {
+      yield* input.publisher.publishDocuments(request);
+      yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            for (const row of request.documents)
+              yield* sql`INSERT OR REPLACE INTO fork_library_document_publications (computer_id, authority_id, authority_epoch, project_id, resource_id, path, anchor, digest) VALUES (${request.computerId}, ${request.authorityId}, ${request.authorityEpoch}, ${request.projectId}, ${request.resourceId}, ${row.path}, ${row.anchor}, ${row.digest})`;
+            for (const row of request.removed)
+              yield* sql`DELETE FROM fork_library_document_publications WHERE computer_id = ${request.computerId} AND authority_id = ${request.authorityId} AND authority_epoch = ${request.authorityEpoch} AND project_id = ${request.projectId} AND resource_id = ${request.resourceId} AND path = ${row.path} AND anchor = ${row.anchor}`;
+            yield* sql`DELETE FROM fork_library_document_pending_batches WHERE computer_id = ${request.computerId} AND authority_id = ${request.authorityId} AND authority_epoch = ${request.authorityEpoch} AND project_id = ${request.projectId} AND resource_id = ${request.resourceId} AND payload_json = ${payload}`;
+          }),
+        )
+        .pipe(Effect.mapError(io));
+    });
     const report = Effect.fn("LibraryDocumentPublication.report")(function* () {
       const info = yield* input.publisher.info;
       if (!info.features?.includes(LIBRARY_DECISIONS_FEATURE)) return;
@@ -214,6 +235,25 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
             const key = encodeJson([project.id, resource.id]);
             if (seen.has(key)) continue;
             const resourceResult = yield* Effect.gen(function* () {
+              // A response can be lost after acceptance. Replay the immutable request before
+              // reading new bytes so a later deletion still produces a tombstone from its baseline.
+              const pending = yield* sql<{
+                payload_json: string;
+              }>`SELECT payload_json FROM fork_library_document_pending_batches WHERE computer_id = ${input.environmentId} AND authority_id = ${info.authorityId} AND authority_epoch = ${info.authorityEpoch} AND project_id = ${project.id} AND resource_id = ${resource.id}`.pipe(
+                Effect.mapError(io),
+              );
+              for (const batch of pending) {
+                const request = yield* decodeBatch(batch.payload_json).pipe(Effect.mapError(io));
+                if (
+                  request.computerId !== input.environmentId ||
+                  request.authorityId !== info.authorityId ||
+                  request.authorityEpoch !== info.authorityEpoch ||
+                  request.projectId !== project.id ||
+                  request.resourceId !== resource.id
+                )
+                  return yield* invalid();
+                yield* deliver(request, batch.payload_json);
+              }
               const snapshot = yield* input.source.read({
                 projectId: project.id,
                 resource,
@@ -254,17 +294,11 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
                   documents: batch.flatMap((item) => ("document" in item ? [item.document] : [])),
                   removed: batch.flatMap((item) => ("removed" in item ? [item.removed] : [])),
                 };
-                yield* input.publisher.publishDocuments(request);
-                yield* sql
-                  .withTransaction(
-                    Effect.gen(function* () {
-                      for (const row of request.documents)
-                        yield* sql`INSERT OR REPLACE INTO fork_library_document_publications (computer_id, authority_id, authority_epoch, project_id, resource_id, path, anchor, digest) VALUES (${input.environmentId}, ${info.authorityId}, ${info.authorityEpoch}, ${project.id}, ${resource.id}, ${row.path}, ${row.anchor}, ${row.digest})`;
-                      for (const row of request.removed)
-                        yield* sql`DELETE FROM fork_library_document_publications WHERE computer_id = ${input.environmentId} AND authority_id = ${info.authorityId} AND authority_epoch = ${info.authorityEpoch} AND project_id = ${project.id} AND resource_id = ${resource.id} AND path = ${row.path} AND anchor = ${row.anchor}`;
-                    }),
-                  )
-                  .pipe(Effect.mapError(io));
+                const payload = encodeBatch(request);
+                yield* sql`INSERT INTO fork_library_document_pending_batches (computer_id, authority_id, authority_epoch, project_id, resource_id, payload_json) VALUES (${request.computerId}, ${request.authorityId}, ${request.authorityEpoch}, ${request.projectId}, ${request.resourceId}, ${payload})`.pipe(
+                  Effect.mapError(io),
+                );
+                yield* deliver(request, payload);
               }
               seen.add(key);
             }).pipe(Effect.result);

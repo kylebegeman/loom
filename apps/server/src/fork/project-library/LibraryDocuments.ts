@@ -40,6 +40,20 @@ export const LIBRARY_DOCUMENTS_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS fork_library_document_publications (computer_id TEXT NOT NULL, authority_id TEXT NOT NULL, authority_epoch INTEGER NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL, path TEXT NOT NULL, anchor TEXT NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(computer_id, authority_id, authority_epoch, project_id, resource_id, path, anchor))`,
 ] as const;
 
+// Keep migration 12 intact: existing previews already applied its single-source schema.
+export const LIBRARY_DOCUMENT_DURABILITY_SCHEMA = [
+  `CREATE TABLE fork_library_document_sources_upgrade (id INTEGER PRIMARY KEY, project_id TEXT NOT NULL, resource_id TEXT NOT NULL, path TEXT NOT NULL, anchor TEXT NOT NULL, computer_id TEXT NOT NULL, commit_id TEXT NOT NULL, digest TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, payload_json TEXT NOT NULL, publication_order INTEGER NOT NULL, UNIQUE(project_id, resource_id, path, anchor, computer_id))`,
+  `INSERT INTO fork_library_document_sources_upgrade SELECT id, project_id, resource_id, path, anchor, computer_id, commit_id, digest, kind, status, title, text, payload_json, id FROM fork_library_documents`,
+  `DROP TABLE fork_library_documents`,
+  `ALTER TABLE fork_library_document_sources_upgrade RENAME TO fork_library_documents`,
+  ...LIBRARY_DOCUMENTS_SCHEMA,
+  `INSERT INTO fork_library_documents_fts(fork_library_documents_fts) VALUES ('rebuild')`,
+  `CREATE INDEX IF NOT EXISTS fork_library_document_publication_order ON fork_library_documents(publication_order)`,
+  // Sources must republish once to restore provenance that the old last-publisher row discarded.
+  `DELETE FROM fork_library_document_publications`,
+  `CREATE TABLE IF NOT EXISTS fork_library_document_pending_batches (computer_id TEXT NOT NULL, authority_id TEXT NOT NULL, authority_epoch INTEGER NOT NULL, project_id TEXT NOT NULL, resource_id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(computer_id, authority_id, authority_epoch, project_id, resource_id))`,
+] as const;
+
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const encodeDocument = Schema.encodeSync(Schema.fromJsonString(LibraryDocument));
 const decodeDocument = Schema.decodeUnknownSync(Schema.fromJsonString(LibraryDocument));
@@ -94,6 +108,17 @@ export const makeLibraryDocuments = Effect.gen(function* () {
     WHERE c.project_id = d.project_id AND c.environment_id = d.computer_id
       AND c.state IN ('ready', 'missing') AND coalesce(json_extract(c.payload_json, '$.registered'), 1) <> 0
       AND json_extract(r.value, '$.resourceId') = d.resource_id
+  )`;
+
+  // Select the newest authorized source before applying query/status filters. An older source
+  // must not surface stale matching text while a newer authorized version supersedes its content.
+  const selected = sql`d.id IN (
+    SELECT id FROM (
+      SELECT d.id, row_number() OVER (
+        PARTITION BY d.project_id, d.resource_id, d.path, d.anchor
+        ORDER BY d.publication_order DESC, d.computer_id
+      ) AS source_rank FROM fork_library_documents AS d WHERE ${authorized}
+    ) WHERE source_rank = 1
   )`;
 
   const publish = Effect.fn("LibraryDocuments.publish")(function* (
@@ -161,10 +186,10 @@ export const makeLibraryDocuments = Effect.gen(function* () {
           }
           for (const document of input.documents) {
             const rows =
-              yield* sql`INSERT INTO fork_library_documents (project_id, resource_id, path, anchor, computer_id, commit_id, digest, kind, status, title, text, payload_json)
-          VALUES (${input.projectId}, ${input.resourceId}, ${document.path}, ${document.anchor}, ${input.computerId}, ${input.commit}, ${document.digest}, ${document.kind}, ${document.status}, ${document.title}, ${document.text}, ${encodeDocument(document)})
-          ON CONFLICT(project_id, resource_id, path, anchor) DO UPDATE SET computer_id = excluded.computer_id, commit_id = excluded.commit_id, digest = excluded.digest, kind = excluded.kind, status = excluded.status, title = excluded.title, text = excluded.text, payload_json = excluded.payload_json
-          WHERE fork_library_documents.digest <> excluded.digest OR fork_library_documents.computer_id <> excluded.computer_id RETURNING id`;
+              yield* sql`INSERT INTO fork_library_documents (project_id, resource_id, path, anchor, computer_id, commit_id, digest, kind, status, title, text, payload_json, publication_order)
+          VALUES (${input.projectId}, ${input.resourceId}, ${document.path}, ${document.anchor}, ${input.computerId}, ${input.commit}, ${document.digest}, ${document.kind}, ${document.status}, ${document.title}, ${document.text}, ${encodeDocument(document)}, (SELECT coalesce(max(publication_order), 0) + 1 FROM fork_library_documents))
+          ON CONFLICT(project_id, resource_id, path, anchor, computer_id) DO UPDATE SET commit_id = excluded.commit_id, digest = excluded.digest, kind = excluded.kind, status = excluded.status, title = excluded.title, text = excluded.text, payload_json = excluded.payload_json, publication_order = excluded.publication_order
+          WHERE fork_library_documents.digest <> excluded.digest RETURNING id`;
             published += rows.length;
           }
           return { published, removed };
@@ -204,7 +229,7 @@ export const makeLibraryDocuments = Effect.gen(function* () {
       const input = yield* decodeSearch(untrusted).pipe(Effect.mapError(invalid));
       const match = libraryMatchQuery(input.query);
       if (!match) return { hits: [] };
-      const scope = sql`${authorized} AND (${input.projectId ?? null} IS NULL OR d.project_id = ${input.projectId ?? null}) AND (${input.kind ?? null} IS NULL OR d.kind = ${input.kind ?? null}) AND (${input.includeRetired === true ? 1 : 0} = 1 OR d.status <> 'superseded')`;
+      const scope = sql`${selected} AND (${input.projectId ?? null} IS NULL OR d.project_id = ${input.projectId ?? null}) AND (${input.kind ?? null} IS NULL OR d.kind = ${input.kind ?? null}) AND (${input.includeRetired === true ? 1 : 0} = 1 OR d.status <> 'superseded')`;
       const words = yield* sql<{
         id: number;
       }>`SELECT d.id FROM fork_library_documents_fts JOIN fork_library_documents AS d ON d.id = fork_library_documents_fts.rowid WHERE fork_library_documents_fts MATCH ${match} AND ${scope} ORDER BY CASE WHEN instr(lower(d.title || char(10) || d.text), lower(${input.query.trim()})) > 0 THEN 0 ELSE 1 END, bm25(fork_library_documents_fts, 2.0, 1.0), d.id LIMIT 100`;
