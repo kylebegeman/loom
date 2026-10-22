@@ -4,7 +4,6 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   isTerminalBotRunStatus,
   type BotRun,
-  type BotRunRating,
   type BotRunStatus,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
@@ -13,6 +12,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { BotFindings, RawReply } from "./BotFindings";
+import { BotRunFeedback } from "./BotRunFeedback";
 import { bots } from "./state";
 import { VERDICT_LABELS, VerdictChip } from "./VerdictChip";
 
@@ -52,7 +52,6 @@ function RunRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useAtomCommand(bots.cancel, { reportFailure: false });
-  const rateRun = useAtomCommand(bots.rateRun, { reportFailure: false });
   const status = RUN_STATUS[run.status];
   const active = !isTerminalBotRunStatus(run.status);
   const summary = runInputSummary(run);
@@ -61,35 +60,12 @@ function RunRow({
   const stop = async () => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await cancel({ environmentId, input: { runId: run.id } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
+    const result = await cancel({ environmentId, input: { runId: run.id } });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not cancel the run.");
-    } finally {
-      setBusy(false);
     }
-  };
-
-  // Pressing the current rating again clears it.
-  const rate = async (rating: BotRunRating) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await rateRun({
-        environmentId,
-        input: {
-          runId: run.id,
-          rating: run.rating === rating ? null : rating,
-          note: run.note ?? null,
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not rate the run.");
-    } finally {
-      setBusy(false);
-    }
+    setBusy(false);
   };
 
   return (
@@ -137,28 +113,6 @@ function RunRow({
                   : "Show reply"}
             </Button>
           ) : null}
-          {canRate && !active ? (
-            <>
-              <Button
-                size="xs"
-                variant={run.rating === "up" ? "secondary" : "ghost"}
-                aria-pressed={run.rating === "up"}
-                disabled={busy}
-                onClick={() => void rate("up")}
-              >
-                Good
-              </Button>
-              <Button
-                size="xs"
-                variant={run.rating === "down" ? "secondary" : "ghost"}
-                aria-pressed={run.rating === "down"}
-                disabled={busy}
-                onClick={() => void rate("down")}
-              >
-                Bad
-              </Button>
-            </>
-          ) : null}
           {active ? (
             <Button
               size="xs"
@@ -178,6 +132,9 @@ function RunRow({
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}
         </p>
+      ) : null}
+      {!active && (canRate || run.rating != null || run.note) ? (
+        <BotRunFeedback environmentId={environmentId} run={run} canRate={canRate} />
       ) : null}
       {expanded && verdict ? (
         <BotFindings run={run} verdict={verdict} />

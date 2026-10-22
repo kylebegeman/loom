@@ -233,11 +233,15 @@ export const dismissRunIdBatches = (
 export type WaitingBotRunThread = Pick<
   EnvironmentThreadShell,
   "environmentId" | "id" | "title" | "hasPendingApprovals" | "hasPendingUserInput" | "updatedAt"
->;
+> & { readonly waitingSince?: string | null };
+
+type WaitingBotRunShell = EnvironmentThreadShell & {
+  readonly pendingRuntimeRequestAt?: string | null;
+};
 
 /** Bot run threads stopped on an approval or a question; nobody sees a hidden run ask. */
 export const waitingBotRunThreads = (
-  shells: ReadonlyArray<EnvironmentThreadShell>,
+  shells: ReadonlyArray<WaitingBotRunShell>,
 ): ReadonlyArray<WaitingBotRunThread> =>
   shells
     .filter(
@@ -246,14 +250,25 @@ export const waitingBotRunThreads = (
         shell.archivedAt === null &&
         (shell.hasPendingApprovals || shell.hasPendingUserInput),
     )
-    .map(({ environmentId, id, title, hasPendingApprovals, hasPendingUserInput, updatedAt }) => ({
-      environmentId,
-      id,
-      title,
-      hasPendingApprovals,
-      hasPendingUserInput,
-      updatedAt,
-    }))
+    .map(
+      ({
+        environmentId,
+        id,
+        title,
+        hasPendingApprovals,
+        hasPendingUserInput,
+        updatedAt,
+        pendingRuntimeRequestAt,
+      }) => ({
+        environmentId,
+        id,
+        title,
+        hasPendingApprovals,
+        hasPendingUserInput,
+        updatedAt,
+        waitingSince: pendingRuntimeRequestAt ?? null,
+      }),
+    )
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
 const sameWaiting = (
@@ -264,6 +279,9 @@ const sameWaiting = (
   left.every(
     (thread, index) =>
       thread.id === right[index]!.id &&
+      thread.environmentId === right[index]!.environmentId &&
+      thread.updatedAt === right[index]!.updatedAt &&
+      thread.waitingSince === right[index]!.waitingSince &&
       thread.title === right[index]!.title &&
       thread.hasPendingApprovals === right[index]!.hasPendingApprovals &&
       thread.hasPendingUserInput === right[index]!.hasPendingUserInput,

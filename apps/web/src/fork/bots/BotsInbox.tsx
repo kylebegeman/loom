@@ -11,6 +11,8 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useNowMinute } from "~/hooks/useNowMinute";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
@@ -18,6 +20,7 @@ import { BotModelPicker } from "./BotModelPicker";
 import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
 import { bots, inboxQueryInput, useRefreshWhenBotsChangesPruned } from "./state";
 import { VerdictChip } from "./VerdictChip";
+import { runDurationLabel, waitingAgeLabel } from "./runMetrics";
 
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
@@ -40,18 +43,14 @@ function RetryDialog({
     if (model === null) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await retry({
-        environmentId,
-        input: { runId: run.id, modelSelection: model },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      onClose();
-    } catch (cause) {
-      setError(failureMessage(cause, "Could not retry the run."));
-    } finally {
-      setBusy(false);
-    }
+    const result = await retry({
+      environmentId,
+      input: { runId: run.id, modelSelection: model },
+    });
+    setBusy(false);
+    if (result._tag === "Failure")
+      setError(failureMessage(squashAtomCommandFailure(result), "Could not retry the run."));
+    else onClose();
   };
 
   return (
@@ -108,29 +107,21 @@ function InboxRow({
   const act = async (kind: "retry" | "dismiss" | "open", fallback: string) => {
     setBusy(kind);
     setError(null);
-    try {
-      if (kind === "retry") {
-        const result = await retry({ environmentId, input: { runId: run.id } });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      } else if (kind === "dismiss") {
-        const result = await dismiss({
-          environmentId,
-          input: { runIds: [run.id], dismissed: !dismissed },
-        });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      } else {
-        const result = await promote({ environmentId, input: { runId: run.id } });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        await navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId, threadId: result.value.threadId },
-        });
-      }
-    } catch (cause) {
-      setError(failureMessage(cause, fallback));
-    } finally {
-      setBusy(null);
+    const result =
+      kind === "retry"
+        ? await retry({ environmentId, input: { runId: run.id } })
+        : kind === "dismiss"
+          ? await dismiss({ environmentId, input: { runIds: [run.id], dismissed: !dismissed } })
+          : await promote({ environmentId, input: { runId: run.id } });
+    if (result._tag === "Failure")
+      setError(failureMessage(squashAtomCommandFailure(result), fallback));
+    else if (kind === "open" && "threadId" in result.value) {
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId: result.value.threadId },
+      }).catch((cause: unknown) => setError(failureMessage(cause, fallback)));
     }
+    setBusy(null);
   };
 
   return (
@@ -143,12 +134,22 @@ function InboxRow({
             <Badge variant={status.variant}>{status.label}</Badge>
           )}
           <span className="font-medium">{run.botName}</span>
+          <span className="text-xs text-muted-foreground">{runDurationLabel(run)}</span>
           <span className="text-xs text-muted-foreground">
             {runTime(run.finishedAt) ?? runTime(run.createdAt)}
             {run.modelSelection ? ` · ${run.modelSelection.model}` : ""}
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
+          {run.batchId ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              render={<Link to="/loom/bots" search={{ tab: "batches", batch: run.batchId }} />}
+            >
+              Open batch
+            </Button>
+          ) : null}
           {dismissed ? null : run.pipelineRunId != null ? (
             // The server refuses to retry a pipeline's run; resuming the pipeline reruns it.
             <Button
@@ -226,6 +227,8 @@ function InboxRow({
 }
 
 function WaitingRuns({ waiting }: { readonly waiting: ReadonlyArray<WaitingBotRunThread> }) {
+  const minute = useNowMinute();
+  const now = Date.parse(`${minute}:00Z`);
   if (waiting.length === 0) return null;
   return (
     <section className="space-y-2" aria-label="Waiting for you">
@@ -240,7 +243,21 @@ function WaitingRuns({ waiting }: { readonly waiting: ReadonlyArray<WaitingBotRu
               <Badge variant="warning">
                 {thread.hasPendingApprovals ? "Needs approval" : "Has a question"}
               </Badge>
-              <span className="truncate">{thread.title}</span>
+              <span className="min-w-0">
+                <span className="block truncate">{thread.title}</span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<span tabIndex={0} className="block text-xs text-muted-foreground" />}
+                  >
+                    {thread.waitingSince
+                      ? `Waiting ${waitingAgeLabel(thread.waitingSince, now) ?? "since an unknown time"}`
+                      : `Last activity ${waitingAgeLabel(thread.updatedAt, now) ?? "an unknown time"} ago`}
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {runTime(thread.waitingSince ?? thread.updatedAt) ?? "Time unavailable"}
+                  </TooltipPopup>
+                </Tooltip>
+              </span>
             </div>
             <Button
               size="xs"
@@ -252,7 +269,7 @@ function WaitingRuns({ waiting }: { readonly waiting: ReadonlyArray<WaitingBotRu
                 />
               }
             >
-              Answer
+              Open thread
             </Button>
           </li>
         ))}
@@ -297,16 +314,14 @@ export function BotsInbox({
   const dismissAll = async (runs: ReadonlyArray<BotRun>) => {
     setDismissing(true);
     setError(null);
-    try {
-      for (const runIds of dismissRunIdBatches(runs)) {
-        const result = await dismiss({ environmentId, input: { runIds, dismissed: true } });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    for (const runIds of dismissRunIdBatches(runs)) {
+      const result = await dismiss({ environmentId, input: { runIds, dismissed: true } });
+      if (result._tag === "Failure") {
+        setError(failureMessage(squashAtomCommandFailure(result), "Could not dismiss these runs."));
+        break;
       }
-    } catch (cause) {
-      setError(failureMessage(cause, "Could not dismiss these runs."));
-    } finally {
-      setDismissing(false);
     }
+    setDismissing(false);
   };
 
   return (
