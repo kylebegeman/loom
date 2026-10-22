@@ -6,6 +6,7 @@ import {
 } from "~/fork/settings/parts";
 import { VaultQueryFeedback } from "./SettingsFeedback";
 import { Checkbox } from "~/components/ui/checkbox";
+import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
@@ -83,10 +84,32 @@ export function VaultSettingsSection() {
       </LoomSettingsNotice>
     );
   return (
-    <VaultItems
-      key={`${environment.environmentId}:${canWrite}`}
-      environmentId={environment.environmentId}
-    />
+    <div className="flex flex-col gap-5">
+      <VaultOwnerSettings
+        key={environment.environmentId}
+        environmentId={environment.environmentId}
+      />
+      {loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
+        "vault-owner-trusted",
+      ) ? (
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">
+            Vault records and advanced controls
+          </summary>
+          <div className="mt-4">
+            <VaultItems
+              key={`${environment.environmentId}:${canWrite}`}
+              environmentId={environment.environmentId}
+            />
+          </div>
+        </details>
+      ) : (
+        <VaultItems
+          key={`${environment.environmentId}:${canWrite}`}
+          environmentId={environment.environmentId}
+        />
+      )}
+    </div>
   );
 }
 function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {

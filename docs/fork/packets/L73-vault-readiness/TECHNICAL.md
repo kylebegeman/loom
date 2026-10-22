@@ -2,14 +2,19 @@
 
 ## Implemented boundary
 
-The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
-16 explicit item/action/destination requirements through the execution evaluator. Results name
-the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
-mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
+General readiness checks OpenBao connectivity, authenticated run liveness and up to 16
+item/action/destination requirements through the shared execution evaluator. Empty requirements
+inspect the current run's retained profile and pinned versions, then the project default only
+when no pin exists. Profiles are optional; no profile means no connection has been selected,
+not a missing setup requirement. SSH/Git requirements inspect enrolled-broker presence.
+Results name the Loom server context, include repair guidance and expire after 60 seconds.
+Web/desktop and mobile can cancel a pending check; RPC, CLI and MCP share the bounded service.
 
-Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
-The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
-GitHub authentication, host trust, provider tools or unattended launch readiness.
+Use/reveal/export requests and empty requirements retain an unsupported live-delivery check.
+Configuration and broker presence never prove selected-host execution or upstream login.
+An allowed personal-mode or grant decision does not prove item-write privileges, SSH/GitHub
+authentication, host trust, provider tools or unattended launch readiness. Dedicated GitHub
+API/GH CLI/Git HTTPS probes remain a separate connector operation.
 
 Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implementation is
 `apps/server/src/fork/vault/VaultAccess.ts` and `VaultPolicy.ts`. The active contract is in
@@ -18,9 +23,10 @@ Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implement
 Policy is one OpenBao KV v2 CAS document at
 `environments/<sha256(environmentId)>/access-policy`, separate from item records. It caps grants
 at 128, resources per grant at 32, audit retention at 256 and mutation receipts at 32. Policy
-revision changes only on grant edits; audit writes still CAS against the backend version.
-Decisions must persist before authorizing a gated action. Four contention attempts fail closed.
-This is a bounded operational history, not an immutable audit service.
+revision changes on authorization-policy edits, including owner-mode changes; audit writes still
+CAS against the backend version. Decisions must persist before authorizing a gated action. Four
+contention attempts fail closed. This is a bounded operational history, not an immutable audit
+service.
 
 RPC tags are `loom.vault-grants.catalog`, `.snapshot`, `.apply`,
 `loom.vault-access-inspector.preview`, `.explain` and `loom.vault-readiness.check`. Inspection
@@ -30,16 +36,21 @@ uses access:read and mutation uses access:write. MCP names are `loom_vault_grant
 
 ## Remaining target design
 
-Implement enrolled broker/runner context probes, profile requirement discovery, harmless
-SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
-preflight with project launches and schedules. Durable long-running check operations are not
-needed by the current bounded server check, but remain required for future external probes.
+Selected-host broker/runner execution, live SSH/additional provider checks, broader failure
+classification and integrated remote/platform acceptance remain. Profile discovery, retained-pin
+revalidation, observational broker presence and launch/schedule configuration guards are
+implemented. Dedicated GitHub probes use the connector readiness service. Future external
+checks may need durable long-running operation records; the current bounded observations do not.
 
 The following sections retain the complete target design where it exceeds this milestone.
 
 ## Overview
 
-Run bounded checks inside the actual broker or runner context. Resolve profile requirements, verify unlock and grant state, and exercise harmless provider-specific operations such as repository reads. Classify authentication, authorization, network, host-trust and missing-tool failures separately; record check time and environment identity.
+Run bounded checks inside the actual broker or runner context. Resolve selected resources or
+optional profile requirements, verify unlock and access policy, and exercise harmless
+provider-specific operations such as repository reads. Classify authentication, authorization,
+network, host-trust and missing-tool failures separately; record check time and environment
+identity.
 
 ## Contracts and authorization
 
@@ -85,7 +96,7 @@ another packet's UI/service internals.
 ## GitHub execution checks
 
 The connector now owns bounded, cancellable API/GH CLI/Git HTTPS probes, an optional active
-thread/run/use-grant check, provider identification and 60-second freshness. Host-only checks
+thread/run/use-policy check, provider identification and 60-second freshness. Host-only checks
 leave run access unchecked; denied runs skip external probes. This does not change the earlier
 general readiness endpoint's conservative broker/delivery conclusions or certify a separate
 runner/provider-terminal environment. The shared execution/cleanup contract is in
@@ -96,10 +107,12 @@ runner/provider-terminal environment. The shared execution/cleanup contract is i
 `VaultReadiness` composes the existing execution evaluator, project profile configuration and
 terminal enrollment-presence observation. The RPC and MCP paths use it, including the existing
 CLI alias and web/native readiness views. Explicit requirements stay authoritative; only an
-empty set discovers the active project profile. Discovery never activates a profile, writes a
-run pin, sends SSH traffic or contacts GitHub. Configuration previews use no-thread mode to
-avoid access-audit writes; the existing readiness evaluator separately checks each derived use
-scope. Missing/untrusted bindings remain blocked with repair guidance.
+empty set inspects the current run pin or, when none exists, the project default. No profile is
+required; an absent optional selection does not authorize any connection. Discovery never
+activates a profile, writes a run pin, sends SSH traffic or contacts GitHub. Configuration
+previews use no-thread mode to avoid access-audit writes; the existing readiness evaluator
+separately checks each derived use scope. Missing/untrusted bindings remain blocked with repair
+guidance.
 
 Use checks report current provider/run permission mode. SSH/Git use additionally reports whether
 any approved broker has current presence; that is not a proof of the selected execution machine,

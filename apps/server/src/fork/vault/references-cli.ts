@@ -20,7 +20,7 @@ class ReferenceCompletionError extends Schema.TaggedError<ReferenceCompletionErr
     return this.reason === "input"
       ? "Use a query of at most 100 characters and a supported Vault kind."
       : this.reason === "tool"
-        ? "Vault reference completion was refused. Check the authenticated connection and inspect grants."
+        ? "Vault reference completion was refused. Check the authenticated connection and Vault access policy."
         : "The Loom server returned an unsupported reference completion result.";
   }
 }
@@ -33,7 +33,7 @@ class ReferenceCompletionExit extends Schema.TaggedError<ReferenceCompletionExit
 }
 const reportCompletionFailure = () =>
   Console.error(
-    "Vault reference completion failed. Check the Loom connection and inspect grants.",
+    "Vault reference completion failed. Check the Loom connection and Vault access policy.",
   ).pipe(Effect.andThen(Effect.fail(new ReferenceCompletionExit({}))));
 const envelope = Schema.decodeUnknownOption(
   Schema.Struct({

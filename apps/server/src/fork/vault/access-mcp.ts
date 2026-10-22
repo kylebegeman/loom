@@ -9,6 +9,9 @@ import {
   VaultApprovalCreate,
   VaultApprovalRequest,
   VaultError,
+  VaultOwnerPolicy,
+  VaultConnectionRequest,
+  VaultConnectionReport,
   VaultPolicySnapshot,
   VaultGrantMutation,
   VaultGrant,
@@ -28,6 +31,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultAccessInspector from "./VaultAccessInspector.ts";
 import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+import * as VaultConnections from "./VaultConnections.ts";
 import * as OperationJournal from "./OperationJournal.ts";
 const failure = Schema.Union([VaultError, OrchestratorMcpFailure]);
 const explainInput = Schema.Struct({
@@ -40,6 +44,21 @@ const ownReadiness = Schema.Struct({
 });
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultAccessToolkit = Toolkit.make(
+  Tool.make("loom_vault_owner_policy", {
+    description:
+      "Read this environment's durable Vault access mode. Owner-trusted mode makes metadata and brokered credential use available to authenticated owner agents without individual grants or profiles. It grants no task authority, raw reveal, export or policy administration. Only the human owner can enable or disable it in Vault settings.",
+    success: VaultOwnerPolicy,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_vault_connections_resolve", {
+    description:
+      "Find a Vault SSH, Git-over-SSH or GitHub connection by resource name, host, repository or safe account metadata. Use connection:{resource:personal-vps}, kind:ssh for a saved VPS, or kind:github with a repository. No project profile is required. A unique compatible connection is selected automatically; ambiguity returns meaningful safe choices. The selected item/version/destination is an operation pin, not permission. Execution rechecks current policy, lifecycle and host trust. Returns specific setup or repair states without secret values. Broker availability and upstream authentication are verified by execution/readiness separately.",
+    parameters: VaultConnectionRequest,
+    success: VaultConnectionReport,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_access_recovery_status", {
     description:
       "Read only your authenticated thread's retained Vault request and safe operation-journal recovery summary. Reservations and uncertain outcomes require external review, never replay. Missing journal evidence does not prove an operation never ran. This read never writes, reconciles, dispatches or resumes anything. All execution, automatic-resumption and allow-once gates stay closed. Corrupt or unavailable journal evidence fails closed without blocking ordinary approvals.",
@@ -116,7 +135,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_readiness", {
     description:
-      "Check declared requirements, or inspect the current run's pinned profile when none are supplied, falling back to the project default only when no pin exists (an unreadable or retired pin blocks), with current provider/run and relevant enrolled-broker presence in the Loom server context. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
+      "Check declared requirements or optional profile preferences with current provider/run and relevant enrolled-broker presence. A missing optional project profile never blocks access; resolve a resource to check a connection. A configured unreadable or retired run pin still blocks reuse of that pin. Full-access administrator clients must supply threadId; a calling thread always uses its own identity. The result expires after 60 seconds. Missing brokers or delivery adapters are unsupported, never evidence that SSH or GitHub is ready.",
     parameters: ownReadiness,
     success: VaultReadinessReport,
     failure,
@@ -144,6 +163,42 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       return `client:${caller.client.sessionId}`;
     });
     return {
+      loom_vault_owner_policy: McpToolAccess.reads(() =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) yield* administrator;
+          else {
+            const threads = yield* ThreadManagementService;
+            const thread = yield* threads
+              .getThreadShell(caller.thread.threadId)
+              .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })));
+            if (!thread || thread.archivedAt !== null || thread.deletedAt !== null)
+              return yield* new VaultError({ reason: "denied" });
+          }
+          return yield* onHost(
+            Effect.flatMap(VaultAccess.VaultAccess, (access) =>
+              access.snapshot.pipe(
+                Effect.flatMap((snapshot) =>
+                  snapshot.ownerPolicy
+                    ? Effect.succeed(snapshot.ownerPolicy)
+                    : Effect.fail(new VaultError({ reason: "unavailable" })),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+      loom_vault_connections_resolve: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const caller = yield* McpInvocationContext;
+          if (!caller.thread) return yield* new VaultError({ reason: "denied" });
+          return yield* onHost(
+            Effect.flatMap(VaultConnections.VaultConnections, (connections) =>
+              connections.resolve(input, caller.thread!.threadId),
+            ),
+          );
+        }),
+      ),
       loom_vault_access_recovery_status: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const caller = yield* McpInvocationContext;

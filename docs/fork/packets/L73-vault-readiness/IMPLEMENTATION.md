@@ -13,7 +13,8 @@ the Loom server context, include repair guidance and expire after 60 seconds. We
 mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
 
 Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
-The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
+Profiles are optional; absence does not require a profile setup or grant. The backend check
+does not prove item-write privileges. An allowed policy decision does not prove SSH,
 GitHub authentication, host trust, provider tools or unattended launch readiness.
 
 ## Remaining

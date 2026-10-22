@@ -11,21 +11,22 @@ V13 | Major system | Complexity: Large | Impact: Transformational
 An authenticated active Loom thread can open, list and close a five-minute session bound to its
 current run, provider instance, project, enrolled host, item and exact destination. The host and
 workload each prove a separate Ed25519 identity through single-use HTTP challenges. CLI checks
-revalidate current use grants, host presence and thread permissions. They return safe metadata
+revalidate current use policy, host presence and thread permissions. They return safe metadata
 with credential delivery explicitly unsupported. No secret material, SSH signature or provider
 login is returned. Control-plane restart invalidates sessions.
 
 See [user help](../../user/vault.md#check-an-authenticated-workload-channel) and
 [TESTING.md](./TESTING.md). Existing provider launches also attach authenticated tools that
-create, sign and release a workload automatically for SSH commands or Git ref listing/fetch.
-The operator must configure an enrolled broker for the server first. No workload key/session
-file transfer is required for these operations. Git uses the current thread checkout and an
-exact repository grant. See [use from an agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run).
-Explicit terminal SSH-agent routing now runs a single local SSH/Git child with host SSH grants
-and server-side signing, including clone/fetch/push. Codex/Claude receive automatic per-session
+create, sign and release a workload automatically for SSH commands or Git ref listing/fetch. The
+operator must configure an enrolled broker for the server first. No workload key/session file
+transfer is required for these operations. Git uses the current thread checkout and an exact
+repository authorization; restricted mode requires a matching grant. See [use from an
+agent](../../user/vault.md#use-vault-from-an-agent-or-scheduled-run). Explicit terminal
+SSH-agent routing now runs a single local SSH/Git child with host SSH authorization and
+server-side signing, including clone/fetch/push. Codex/Claude receive automatic per-session
 connection descriptors; Pi/ACP retain their existing connection variables. Other native
-harnesses use hosted tools or explicit connection setup. Persistent shell activation, general shell
-exec, SDK delivery modes and per-workload OS isolation remain pending.
+harnesses use hosted tools or explicit connection setup. Persistent shell activation, general
+shell exec, SDK delivery modes and per-workload OS isolation remain pending.
 
 ## Scope
 

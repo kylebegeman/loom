@@ -6,6 +6,7 @@ import {
   type VaultWorkloadProof,
   type VaultWorkloadSession,
   VaultError,
+  VaultConnectionError,
   VaultSshError,
   VaultWorkloadError,
   VaultSshTarget,
@@ -43,6 +44,7 @@ import * as SshCrypto from "./SshCrypto.ts";
 import * as SshTransport from "./SshTransport.ts";
 
 type Failure = VaultError | VaultSshError | VaultWorkloadError;
+type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultSsh extends Context.Service<
   VaultSsh,
   {
@@ -83,12 +85,12 @@ export class VaultSsh extends Context.Service<
     ) => Effect.Effect<VaultSshProbeResult, Failure>;
     readonly git: (
       input: VaultGitExecute,
-      guard?: Effect.Effect<void, Failure>,
-    ) => Effect.Effect<VaultGitResult, Failure>;
+      guard?: Effect.Effect<void, ConnectionFailure>,
+    ) => Effect.Effect<VaultGitResult, ConnectionFailure>;
     readonly execute: (
       input: VaultSshExecute,
-      guard?: Effect.Effect<void, Failure>,
-    ) => Effect.Effect<VaultSshResult, Failure>;
+      guard?: Effect.Effect<void, ConnectionFailure>,
+    ) => Effect.Effect<VaultSshResult, ConnectionFailure>;
   }
 >()("t3/fork/vault/VaultSsh") {}
 export const StoredKey = Schema.Struct({
@@ -322,7 +324,11 @@ const make = Effect.gen(function* () {
           timeoutMs: 8000,
         },
         authorize: revalidate,
-      });
+      }).pipe(
+        Effect.catchTags({
+          VaultConnectionError: () => Effect.fail(new VaultError({ reason: "denied" })),
+        }),
+      );
       if (result.exitCode !== 0) return yield* new VaultSshError({ reason: "failed" });
       yield* revalidate;
       return {
@@ -359,7 +365,11 @@ const make = Effect.gen(function* () {
           timeoutMs: 8000,
         },
         authorize: revalidate,
-      });
+      }).pipe(
+        Effect.catchTags({
+          VaultConnectionError: () => Effect.fail(new VaultError({ reason: "denied" })),
+        }),
+      );
       if (result.exitCode !== 0) return yield* new VaultSshError({ reason: "failed" });
       yield* revalidate;
       return {

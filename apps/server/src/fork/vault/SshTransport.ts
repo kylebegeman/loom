@@ -7,6 +7,7 @@ import * as NodeProcess from "node:process";
 import * as NodeChildProcess from "node:child_process";
 import {
   VaultError,
+  VaultConnectionError,
   VaultSshError,
   VaultWorkloadError,
   type VaultSshTarget,
@@ -22,7 +23,7 @@ import * as Redacted from "effect/Redacted";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as SshCrypto from "./SshCrypto.ts";
 
-type Failure = VaultError | VaultSshError | VaultWorkloadError;
+type Failure = VaultError | VaultSshError | VaultWorkloadError | VaultConnectionError;
 export class SshTransport extends Context.Service<
   SshTransport,
   {

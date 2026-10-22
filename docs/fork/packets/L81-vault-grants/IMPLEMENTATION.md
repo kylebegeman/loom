@@ -1,20 +1,17 @@
 # L81 implementation
 
 Status: **In progress**. Kyle authorized the complete packet. This local milestone implements
-thread/project grants; it does not deploy a service or migrate personal credentials.
+personal owner-trusted and restricted thread/project policy; it does not deploy a service or
+migrate personal credentials.
 
 ## Delivered
 
-The local milestone provides environment-owned thread/project grants, one default-deny
-evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
-attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
-survive restart and OpenBao restore. UI changes require an explicit preview and apply;
-suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
-
-Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
-permission ceiling. Human environment administration remains governed by access:read/write;
-agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but enrollment, workload leases and external runner attestation are not delivered.
+The local policy supports explicit personal owner-trusted inspect/brokered use and restricted
+thread/project grants. Active-run, runtime, item, destination and protected-credential checks
+remain shared across tools. Manage/private-ingress still requires grants; agents cannot change
+owner policy or administer their own root grants. The declaration is environment/human-bound,
+not a verified platform multi-owner identity. See the current
+[policy and compatibility boundary](./TECHNICAL.md#implemented-boundary).
 
 ## Remaining
 

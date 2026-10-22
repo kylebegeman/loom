@@ -4,7 +4,11 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { VaultGitHubError, type VaultGitHubOperation } from "@t3tools/contracts/fork";
+import {
+  VaultConnectionError,
+  VaultGitHubError,
+  type VaultGitHubOperation,
+} from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -16,8 +20,11 @@ export class GitHubCli extends Context.Service<
       token: Redacted.Redacted<string>;
       repository: string;
       operation: VaultGitHubOperation;
-      authorize: Effect.Effect<void, VaultGitHubError>;
-    }) => Effect.Effect<{ exitCode: number; stdout: string }, VaultGitHubError>;
+      authorize: Effect.Effect<void, VaultGitHubError | VaultConnectionError>;
+    }) => Effect.Effect<
+      { exitCode: number; stdout: string },
+      VaultGitHubError | VaultConnectionError
+    >;
   }
 >()("t3/fork/vault/GitHubCli") {}
 export const githubArgs = (repository: string, op: VaultGitHubOperation): string[] => {

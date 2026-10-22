@@ -14,6 +14,7 @@ import {
   VaultError,
   VAULT_CORE_WS_METHODS as V,
   type VaultApprovalRetryInput,
+  type VaultOwnerPolicyChange,
   type VaultItemKind,
   type VaultGrantDefinition,
   type VaultGrantMutation,
@@ -27,6 +28,8 @@ import * as Option from "effect/Option";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as AccessPolicy from "./AccessPolicy.ts";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -36,6 +39,15 @@ import * as VaultAccess from "./VaultAccess.ts";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import { makeVaultCoreRpcHandlers } from "./rpc.ts";
 
+const isLegacyPolicy = Schema.is(AccessPolicy.LegacyPolicy);
+const isProtectedPolicy = Schema.is(AccessPolicy.ProtectedPolicy);
+const decodeEnvelopeSummary = Schema.decodeUnknownSync(
+  Schema.Struct({
+    environmentId: Schema.String,
+    ownerPolicy: Schema.Unknown,
+    policy: Schema.Unknown,
+  }),
+);
 const threadId = ThreadId.make("grant-thread");
 const childId = ThreadId.make("child-thread");
 const projectId = ProjectId.make("grant-project");
@@ -84,6 +96,8 @@ const fixture = () => {
     projectAvailable: true,
     projectDeleted: false,
     approvalRequired: false,
+    runStatus: "running" as "running" | "completed" | "cancelled",
+    interactionMode: "default" as "default" | "plan",
   };
   const store = OpenBaoStore.OpenBaoStore.of({
     status: Effect.succeed({
@@ -159,6 +173,21 @@ const fixture = () => {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("grants-test")),
     }),
     Layer.mock(ThreadManagementService)({
+      getThreadRecords: (id) =>
+        Effect.sync(
+          () =>
+            ({
+              thread: { id, projectId },
+              runs: [
+                {
+                  id: state.runId,
+                  threadId: id,
+                  providerInstanceId: "codex",
+                  status: state.runStatus,
+                },
+              ],
+            }) as never,
+        ),
       getThreadShell: (id) =>
         Effect.sync(() =>
           id === ThreadId.make("missing")
@@ -171,7 +200,8 @@ const fixture = () => {
                 archivedAt: null,
                 activeRunId: state.active ? state.runId : null,
                 runtimeMode: state.approvalRequired ? "approval-required" : "full-access",
-                interactionMode: "default",
+                interactionMode: state.interactionMode,
+                providerInstanceId: "codex",
                 lineage: {
                   parentThreadId: id === childId ? threadId : null,
                   relationshipToParent: id === childId ? "subagent" : null,
@@ -2222,6 +2252,404 @@ it.effect(
           (yield* access.applyBatch(batchSave, "human", denied).pipe(Effect.flip)).reason,
         ).toBe("denied");
         expect(fixture.state.policyWriteAttempts).toBe(1);
+      }),
+    ),
+);
+
+const ownerChange = (
+  expectedRevision: number,
+  mode: VaultOwnerPolicyChange["mode"],
+  digit = "1",
+): VaultOwnerPolicyChange => ({
+  operationId: digit.repeat(32),
+  expectedRevision,
+  mode,
+});
+it.effect("keeps legacy restricted without writes and binds explicit owner setup durably", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const before = [...fixture.records.entries()];
+      expect((yield* access.snapshot).ownerPolicy).toMatchObject({
+        environmentId: "grants-test",
+        ownerId: null,
+        mode: "restricted",
+        revision: 0,
+        updatedAt: null,
+        updatedBy: null,
+      });
+      expect([...fixture.records.entries()]).toEqual(before);
+      const enabled = yield* access.setOwnerPolicy(
+        ownerChange(0, "owner-trusted"),
+        "human",
+        Effect.void,
+      );
+      expect(enabled.ownerPolicy).toMatchObject({
+        mode: "owner-trusted",
+        revision: 1,
+        updatedAt: 0,
+        updatedBy: "human",
+      });
+      expect(enabled.ownerPolicy?.ownerId).toMatch(/^[a-f0-9]{32}$/);
+      const restarted = yield* VaultAccess.VaultAccess.pipe(
+        Effect.provide(Layer.fresh(fixture.layer)),
+      );
+      expect(yield* restarted.snapshot).toEqual(enabled);
+      const policyRecord = [...fixture.records.entries()].find(([path]) =>
+        path.endsWith("/access-policy"),
+      )![1];
+      const stored = Redacted.value(policyRecord.value);
+      expect(stored).toMatchObject({
+        schemaVersion: 5,
+        environmentId: "grants-test",
+        policy: { schemaVersion: 1 },
+      });
+      expect(isLegacyPolicy(stored)).toBe(false);
+      expect(isProtectedPolicy(stored)).toBe(false);
+      expect(JSON.stringify(enabled)).not.toContain("ownerSubject");
+    }),
+  ),
+);
+it.effect(
+  "allows owner metadata and brokered use without grants, including listing and restricted explain",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        yield* access.require(threadId, itemId, "inspect", null);
+        yield* access.require(childId, itemId, "use", "ssh://git@example.test:22");
+        expect(
+          (yield* access.listForThread(
+            { cursor: null, includeArchived: false },
+            threadId,
+          )).items.map((item) => item.id),
+        ).toEqual([itemId]);
+        const explanation = yield* access.explain(
+          { threadId, itemId, action: "use", destination: "ssh://git@example.test:22" },
+          true,
+        );
+        expect(explanation.item?.id).toBe(itemId);
+        expect(explanation.decision).toMatchObject({
+          allowed: true,
+          basis: "owner-trusted",
+          grantId: null,
+          lineage: [],
+        });
+        for (const action of ["manage", "reveal", "export", "delegate"] as const)
+          expect(
+            (yield* access.explain({ threadId, itemId, action, destination: null })).decision
+              .allowed,
+          ).toBe(false);
+        const readiness = yield* access.readiness({
+          threadId,
+          requirements: [{ itemId, action: "inspect", destination: null }],
+        });
+        expect(readiness.checks.find((check) => check.id === "owner-policy")?.state).toBe("passed");
+        expect(readiness.decisions[0]?.allowed).toBe(true);
+        expect(readiness.ready).toBe(true);
+      }),
+    ),
+);
+it.effect(
+  "ignores and preserves restricted grants under owner trust and restores them on disable",
+  () =>
+    withAccess(({ access }) =>
+      Effect.gen(function* () {
+        yield* access.apply(
+          {
+            ...save,
+            change: {
+              type: "save",
+              grant: {
+                ...definition,
+                actions: ["inspect", "use"],
+                destination: "ssh://git@allowed.test:22",
+              },
+            },
+          },
+          "human",
+        );
+        const original = (yield* access.snapshot).grants;
+        yield* access.setOwnerPolicy(ownerChange(1, "owner-trusted"), "human", Effect.void);
+        yield* access.require(threadId, itemId, "use", "ssh://git@other.test:22");
+        const disabled = yield* access.setOwnerPolicy(
+          ownerChange(2, "restricted", "2"),
+          "human",
+          Effect.void,
+        );
+        expect(disabled.grants).toEqual(original);
+        yield* access.require(threadId, itemId, "use", "ssh://git@allowed.test:22");
+        expect(
+          (yield* access
+            .require(threadId, itemId, "use", "ssh://git@other.test:22")
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* access.require(childId, itemId, "inspect", null).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+it.effect(
+  "requires authenticated owner administration before save and retry, and refuses other actors",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        for (const actor of [
+          `thread:${threadId}`,
+          "mcp-client",
+          "client:shared",
+          "broker:host",
+          "host:source",
+          "library:source",
+          "loom-host:source",
+        ])
+          expect(
+            (yield* access
+              .setOwnerPolicy(ownerChange(0, "owner-trusted"), actor, Effect.void)
+              .pipe(Effect.flip)).reason,
+          ).toBe("denied");
+        expect(fixture.state.policyWrites).toBe(0);
+        let checks = 0;
+        const revoked = Effect.suspend(() =>
+          ++checks === 2 ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+        );
+        expect(
+          (yield* access
+            .setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", revoked)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(fixture.state.policyWrites).toBe(0);
+        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        expect(
+          (yield* access
+            .setOwnerPolicy(ownerChange(1, "restricted", "2"), "another-human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* access
+            .setOwnerPolicy(
+              ownerChange(0, "owner-trusted"),
+              "human",
+              Effect.fail(new VaultError({ reason: "denied" })),
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(fixture.state.policyWrites).toBe(1);
+      }),
+    ),
+);
+it.effect(
+  "replays lost owner replies once, rejects reused IDs and stale edits, and never re-enables on replay",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        fixture.state.loseNextReply = true;
+        const input = ownerChange(0, "owner-trusted");
+        expect(
+          (yield* access.setOwnerPolicy(input, "human", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+        const first = yield* access.setOwnerPolicy(input, "human", Effect.void);
+        expect(first.revision).toBe(1);
+        expect(fixture.state.policyWrites).toBe(1);
+        expect(
+          (yield* access
+            .setOwnerPolicy({ ...input, mode: "restricted" }, "human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(
+          (yield* access
+            .setOwnerPolicy(ownerChange(0, "restricted", "2"), "human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        const disabled = yield* access.setOwnerPolicy(
+          ownerChange(1, "restricted", "2"),
+          "human",
+          Effect.void,
+        );
+        expect(yield* access.setOwnerPolicy(input, "human", Effect.void)).toEqual(disabled);
+        expect(disabled.audit.filter((event) => event.type === "owner-policy-change")).toHaveLength(
+          2,
+        );
+        expect(fixture.state.policyWrites).toBe(2);
+      }),
+    ),
+);
+it.effect("retries owner CAS when audit traffic races without repeating policy changes", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      yield* access.apply(save, "human");
+      fixture.state.conflictNextPolicyWrite = true;
+      const enabled = yield* access.setOwnerPolicy(
+        ownerChange(1, "owner-trusted"),
+        "human",
+        Effect.void,
+      );
+      expect(enabled.revision).toBe(2);
+      expect(enabled.audit.filter((event) => event.type === "owner-policy-change")).toHaveLength(1);
+      expect(fixture.state.policyWriteAttempts).toBe(3);
+    }),
+  ),
+);
+it.effect(
+  "keeps owner use behind item lifecycle, real active runs and full-access/default modes",
+  () =>
+    withAccess(({ access, core, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        const explain = () =>
+          access.explain({ threadId, itemId, action: "use", destination: null });
+        fixture.state.approvalRequired = true;
+        expect((yield* explain()).decision.reason).toBe("caller-permission");
+        fixture.state.approvalRequired = false;
+        fixture.state.interactionMode = "plan";
+        expect((yield* explain()).decision.reason).toBe("caller-permission");
+        fixture.state.interactionMode = "default";
+        fixture.state.runStatus = "completed";
+        expect((yield* explain()).decision.reason).toBe("workload-inactive");
+        expect(
+          (yield* access.listForThread({ cursor: null, includeArchived: false }, threadId)).items,
+        ).toEqual([]);
+        fixture.state.runStatus = "running";
+        fixture.state.active = false;
+        expect((yield* explain()).decision.reason).toBe("workload-inactive");
+        fixture.state.active = true;
+        yield* core.change(
+          { id: itemId, operationId: "3".repeat(32), expectedVersion: 1, action: "archive" },
+          "human",
+        );
+        expect((yield* explain()).decision.reason).toBe("item-unavailable");
+        yield* access.require(threadId, itemId, "inspect", null);
+        fixture.state.deleted = true;
+        expect(
+          (yield* access.require(threadId, itemId, "inspect", null).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);
+it.effect(
+  "writes safe owner audit with environment, owner, thread, run and hashed destination and fails closed",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const enabled = yield* access.setOwnerPolicy(
+          ownerChange(0, "owner-trusted"),
+          "human",
+          Effect.void,
+        );
+        const destination = "https://sensitive:password@example.test/path?token=do-not-log";
+        yield* access.require(threadId, itemId, "use", destination);
+        const snapshot = yield* access.snapshot;
+        expect(snapshot.audit[0]?.authorization).toMatchObject({
+          category: "owner-trusted",
+          environmentId: "grants-test",
+          ownerId: enabled.ownerPolicy?.ownerId,
+          threadId,
+          runId: fixture.state.runId,
+          itemKind: "secret",
+        });
+        expect(snapshot.audit[0]?.authorization?.destinationDigest).toMatch(/^[a-f0-9]{64}$/);
+        expect(JSON.stringify(snapshot)).not.toContain("password");
+        expect(JSON.stringify(snapshot)).not.toContain("do-not-log");
+        expect(JSON.stringify(snapshot)).not.toContain("synthetic-never-in-audit");
+        fixture.state.failWrites = true;
+        expect(
+          (yield* access.require(threadId, itemId, "use", destination).pipe(Effect.flip)).reason,
+        ).toBe("unavailable");
+      }),
+    ),
+);
+it.effect(
+  "preserves v4 mandatory classification and one-time protections inside the owner envelope",
+  () =>
+    withAccess(({ access, fixture, core }) =>
+      Effect.gen(function* () {
+        yield* access.apply(save, "human");
+        const preview = yield* access.protectionMigrationPreview(
+          { expectedPolicyRevision: 1, selections: [{ itemId, itemVersion: 1, mode: "one-time" }] },
+          "human",
+          Effect.void,
+        );
+        const [path, record] = [...fixture.records.entries()].find(([key]) =>
+          key.endsWith("/access-policy"),
+        )!;
+        fixture.records.set(path, {
+          value: Redacted.make(preview.proposal),
+          version: record.version + 1,
+        });
+        const enabled = yield* access.setOwnerPolicy(
+          ownerChange(2, "owner-trusted"),
+          "human",
+          Effect.void,
+        );
+        expect(enabled.ownerPolicy?.mode).toBe("owner-trusted");
+        const current = fixture.records.get(path)!;
+        const parsed = AccessPolicy.decodePolicy(Redacted.value(current.value));
+        expect(Option.isSome(parsed)).toBe(true);
+        if (Option.isNone(parsed)) return;
+        expect(parsed.value).toMatchObject({
+          schemaVersion: 4,
+          credentialModes: preview.proposal.credentialModes,
+          intents: preview.proposal.intents,
+        });
+        yield* access.require(threadId, itemId, "inspect", null);
+        expect(
+          (yield* access.explain({ threadId, itemId, action: "use", destination: null })).decision
+            .reason,
+        ).toBe("approval-required");
+        expect(
+          (yield* core.reveal({ id: itemId, expectedVersion: 1 }).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const unclassified = { ...parsed.value, credentialModes: [] };
+        fixture.records.set(path, {
+          value: Redacted.make(yield* AccessPolicy.encodePolicy(unclassified)),
+          version: current.version + 2,
+        });
+        expect(
+          (yield* access.explain({ threadId, itemId, action: "use", destination: null })).decision
+            .reason,
+        ).toBe("classification-required");
+        expect(
+          (yield* core.reveal({ id: itemId, expectedVersion: 1 }).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        yield* access.setOwnerPolicy(ownerChange(3, "restricted", "2"), "human", Effect.void);
+        expect(
+          (yield* access.explain({ threadId, itemId, action: "use", destination: null })).decision
+            .reason,
+        ).toBe("classification-required");
+      }),
+    ),
+);
+it.effect(
+  "rejects foreign or malformed owner envelopes instead of falling back to legacy grants",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        const [path, record] = [...fixture.records.entries()].find(([key]) =>
+          key.endsWith("/access-policy"),
+        )!;
+        const original = Redacted.value(record.value);
+        const envelope = decodeEnvelopeSummary(original);
+        fixture.records.set(path, {
+          ...record,
+          value: Redacted.make({
+            ...envelope,
+            schemaVersion: 5,
+            environmentId: "foreign",
+            ownerReceipts: [],
+          }),
+        });
+        expect((yield* access.snapshot.pipe(Effect.flip)).reason).toBe("invalid-response");
+        fixture.records.set(path, {
+          ...record,
+          value: Redacted.make({
+            ...envelope,
+            schemaVersion: 5,
+            ownerPolicy: null,
+            ownerReceipts: [],
+          }),
+        });
+        expect((yield* access.snapshot.pipe(Effect.flip)).reason).toBe("invalid-response");
       }),
     ),
 );

@@ -23,11 +23,13 @@ export function GitHubReadiness({
   info,
   repository,
   disabled,
+  ownerMode = false,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode?: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-github-terminal")) return null;
@@ -38,6 +40,7 @@ export function GitHubReadiness({
       info={info}
       repository={repository}
       disabled={disabled}
+      ownerMode={ownerMode}
     />
   );
 }
@@ -46,11 +49,13 @@ function Checks({
   info,
   repository,
   disabled,
+  ownerMode,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode: boolean;
 }) {
   const registry = useContext(RegistryContext),
     catalog = useEnvironmentQuery(access.catalog({ environmentId, input: {} }));
@@ -119,8 +124,9 @@ function Checks({
     <View className="gap-2">
       <Text>GitHub readiness</Text>
       <Text>
-        Checks use the selected identity on the Loom server. A thread also needs an active
-        full-access run and its repository use grant. Results expire after 60 seconds.
+        {ownerMode
+          ? "Checks use this GitHub connection on the Loom server. Choose an active full-access thread to check agent tools too. Results expire after 60 seconds."
+          : "Checks use the selected identity on the Loom server. A thread also needs an active full-access run and its repository use grant. Results expire after 60 seconds."}
       </Text>
       <Button
         label={
@@ -168,7 +174,7 @@ function Checks({
             {expired ? "Report expired. Run the check again." : "Current readiness result"}
           </Text>
           <Text>
-            Execution: Loom server · Run access:{" "}
+            Execution: Loom server · Agent access:{" "}
             {report.grant === "unchecked" ? "not checked" : report.grant}
             {report.providerInstanceId ? ` · Provider: ${report.providerInstanceId}` : ""}
           </Text>
@@ -186,24 +192,28 @@ function Checks({
           <Text>Check again after credentials, policy or tools change.</Text>
         </View>
       ) : null}
-      <Text>
-        Explicit terminal routing uses the authenticated agent run. Each command selects a
-        connection and repository; the surrounding shell is unchanged.
-      </Text>
-      <Text selectable className="text-xs">
-        {example}
-      </Text>
-      <Button
-        label="Copy terminal command"
-        onPress={() => {
-          void Clipboard.setStringAsync(example).then(
-            () => setCopied(true),
-            () => setError("Could not copy the command."),
-          );
-        }}
-      />
-      {copied ? (
-        <Text accessibilityRole="summary">Command copied. It contains references only.</Text>
+      {!ownerMode ? (
+        <>
+          <Text>
+            Explicit terminal routing uses the authenticated agent run. Each command selects a
+            connection and repository; the surrounding shell is unchanged.
+          </Text>
+          <Text selectable className="text-xs">
+            {example}
+          </Text>
+          <Button
+            label="Copy terminal command"
+            onPress={() => {
+              void Clipboard.setStringAsync(example).then(
+                () => setCopied(true),
+                () => setError("Could not copy the command."),
+              );
+            }}
+          />
+          {copied ? (
+            <Text accessibilityRole="summary">Command copied. It contains references only.</Text>
+          ) : null}
+        </>
       ) : null}
     </View>
   );

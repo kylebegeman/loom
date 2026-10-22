@@ -1,4 +1,5 @@
 import { isVaultRunRunning } from "./active-run.ts";
+import { Registry, Pin, encodeRunKey } from "./profile-records.ts";
 import {
   VaultProfilePinList,
   VaultProfilePinRetire,
@@ -17,10 +18,9 @@ import {
   VaultError,
   VaultSshError,
   VaultWorkloadError,
-  VaultProfile,
   VaultProfileMutation,
   VaultProfileDefinition,
-  VaultProfileResolution,
+  type VaultProfileResolution,
   type VaultProfileSnapshot,
   type VaultProfilePreview,
   type VaultProfilePreviewInput,
@@ -83,22 +83,6 @@ export class VaultProfiles extends Context.Service<
     ) => Effect.Effect<VaultProfileResolution, Failure>;
   }
 >()("t3/fork/vault/VaultProfiles") {}
-const Registry = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
-  activeProfileId: Schema.NullOr(Schema.String),
-  profiles: Schema.Array(VaultProfile).check(Schema.isMaxLength(32)),
-  receipts: Schema.Array(Schema.Struct({ id: Schema.String, fingerprint: Schema.String })).check(
-    Schema.isMaxLength(32),
-  ),
-});
-const Pin = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
-  environmentId: Schema.String,
-  threadId: Schema.String,
-  runId: Schema.String,
-  resolution: VaultProfileResolution,
-  createdAt: Schema.optional(Schema.String),
-});
 const RetiredPin = Schema.Struct({
   schemaVersion: Schema.Literal(2),
   environmentId: Schema.String,
@@ -120,11 +104,6 @@ const decodePin = Schema.decodeUnknownOption(Pin),
   encodePin = Schema.encodeEffect(Pin);
 const encodeMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ actor: Schema.String, input: VaultProfileMutation })),
-);
-const encodeRunKey = Schema.encodeEffect(
-  Schema.fromJsonString(
-    Schema.Struct({ threadId: Schema.String, runId: Schema.NullOr(Schema.String) }),
-  ),
 );
 const isPinList = Schema.is(VaultProfilePinList),
   isPinRetire = Schema.is(VaultProfilePinRetire);

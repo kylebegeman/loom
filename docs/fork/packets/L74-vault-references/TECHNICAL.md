@@ -8,7 +8,7 @@ Renames, archive and item version changes preserve that identifier. References g
 The current environment selects the inventory; clients cannot substitute another environment ID.
 
 Human RPC inspection requires access:read. Agent search uses `VaultAccess.listForThread` and
-returns only inspect-granted metadata. Describe requires the same inspect decision; forbidden
+returns only inspect-authorized metadata. Describe requires the same inspect decision; forbidden
 and unknown valid IDs both return null. Backend failures propagate as typed errors. Responses
 contain item summaries, never values or private-key material.
 
@@ -56,8 +56,9 @@ bindings block with a safe failed-run timeline item. A profile is pinned to that
 run before delivery; current checks at SSH/Git use remain authoritative. Steering rechecks
 the same guard and cannot switch a pinned profile. Metadata labels never confer authority.
 
-Scheduled agent prompts use the same guard. New scheduled threads need project grants;
-host-only preview does not prove those grants. The current schedule status records dispatch
+Scheduled agent prompts use the same guard. In restricted mode, new scheduled threads need
+project grants; personal owner-trusted use needs no recurring grant. Host-only preview does
+not prove run access. The current schedule status records dispatch
 acceptance, not provider completion; inspect the thread's run timeline for a preflight failure.
 End-to-end schedule-to-run completion status remains a tracked scheduler integration gap.
 This is not an SSH reachability/broker-presence probe and does not configure ordinary terminals.

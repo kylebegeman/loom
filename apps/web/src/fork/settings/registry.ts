@@ -173,7 +173,7 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     scope: "computer",
     related: ["vault-github", "vault-profiles", "vault-access"],
     title: "Vault",
-    description: "View Vault availability and manage development records.",
+    description: "Connect Vault and manage agent access in this environment.",
     group: "connections",
     keywords: "openbao status secrets credentials records unlock environment",
     Component: VaultSettingsSection,

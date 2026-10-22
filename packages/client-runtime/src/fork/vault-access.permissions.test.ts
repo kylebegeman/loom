@@ -3,6 +3,7 @@ import { vi } from "vite-plus/test";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthEnvironmentMaintainScope,
   EnvironmentId,
   type AuthSessionState,
 } from "@t3tools/contracts";
@@ -105,4 +106,42 @@ it.effect("batch preview requires access:read on the destination and observes re
       });
     }),
   ),
+);
+
+it.effect(
+  "owner policy requires maintenance access on its destination and observes revocation",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        registry.mount(sessions(destination));
+        registry.mount(sessions(other));
+        const command = createVaultAccessAtoms(runtime).setOwnerPolicy;
+        const policy = createCommandPermissions(runtime, VAULT_ACCESS_WS_METHODS.setOwnerPolicy);
+        registry.mount(command.permissionAtom(destination));
+        registry.mount(command.permissionAtom(other));
+        expect(policy.requiredScopes()).toEqual([AuthEnvironmentMaintainScope]);
+        const owner: AuthSessionState = {
+          ...grant(true),
+          scopes: [AuthEnvironmentMaintainScope],
+          permissions: [AuthEnvironmentMaintainScope],
+        };
+        registry.set(sessions(destination), AsyncResult.success(grant(true)));
+        registry.set(sessions(other), AsyncResult.success(owner));
+        expect(registry.get(command.permissionAtom(destination))).toBe(false);
+        expect(registry.get(command.permissionAtom(other))).toBe(true);
+        expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+          requiredPermission: AuthEnvironmentMaintainScope,
+        });
+        registry.set(sessions(destination), AsyncResult.success(owner));
+        expect(registry.get(command.permissionAtom(destination))).toBe(true);
+        yield* policy.authorize(registry, destination);
+        registry.set(sessions(destination), AsyncResult.success(grant(true)));
+        expect(registry.get(command.permissionAtom(destination))).toBe(false);
+        expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+          requiredPermission: AuthEnvironmentMaintainScope,
+        });
+      }),
+    ),
 );

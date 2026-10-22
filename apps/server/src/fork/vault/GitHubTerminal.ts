@@ -5,7 +5,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { VaultGitHubError, type VaultGitHubTerminalCommand } from "@t3tools/contracts/fork";
+import {
+  VaultConnectionError,
+  VaultGitHubError,
+  type VaultGitHubTerminalCommand,
+} from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -21,8 +25,8 @@ export class GitHubTerminal extends Context.Service<
       repository: string;
       command: VaultGitHubTerminalCommand;
       cwd: string | null;
-      authorize: Effect.Effect<void, VaultGitHubError>;
-    }) => Effect.Effect<Output, VaultGitHubError>;
+      authorize: Effect.Effect<void, VaultGitHubError | VaultConnectionError>;
+    }) => Effect.Effect<Output, VaultGitHubError | VaultConnectionError>;
   }
 >()("t3/fork/vault/GitHubTerminal") {}
 const helper = `#!/bin/sh

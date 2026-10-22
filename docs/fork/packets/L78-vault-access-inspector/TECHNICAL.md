@@ -20,9 +20,10 @@ Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implement
 Policy is one OpenBao KV v2 CAS document at
 `environments/<sha256(environmentId)>/access-policy`, separate from item records. It caps grants
 at 128, resources per grant at 32, audit retention at 256 and mutation receipts at 32. Policy
-revision changes only on grant edits; audit writes still CAS against the backend version.
-Decisions must persist before authorizing a gated action. Four contention attempts fail closed.
-This is a bounded operational history, not an immutable audit service.
+revision changes on authorization-policy edits, including owner-mode changes; audit writes still
+CAS against the backend version. Decisions must persist before authorizing a gated action. Four
+contention attempts fail closed. This is a bounded operational history, not an immutable audit
+service.
 
 RPC tags are `loom.vault-grants.catalog`, `.snapshot`, `.apply`,
 `loom.vault-access-inspector.preview`, `.explain` and `loom.vault-readiness.check`. Inspection

@@ -29,7 +29,14 @@ it.effect.each(["pi", "codex"])(
   (provider) =>
     Effect.gen(function* () {
       const f = yield* launchFixture(transport);
-      f.state.thread = { ...f.state.thread, providerInstanceId: ProviderInstanceId.make(provider) };
+      f.state.thread = {
+        ...f.state.thread,
+        providerInstanceId: ProviderInstanceId.make(provider),
+        modelSelection: {
+          ...f.state.thread.modelSelection,
+          instanceId: ProviderInstanceId.make(provider),
+        },
+      };
       yield* f.grant(f.key.destination);
       const context = Context.add(f.context, VaultLaunch.VaultLaunch, f.launch);
       const toolkit = yield* VaultSshToolkit.pipe(
@@ -105,15 +112,15 @@ it.effect.each(["pi", "codex"])(
           ...scope,
           thread: undefined,
           client: { sessionId: "reader", access: "read-only", label: "reader" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({ isFailure: true, result: { _tag: "OrchestratorMcpFailure" } });
       expect(
         (yield* invoke({
           ...scope,
           thread: undefined,
           client: { sessionId: "admin", access: "full-access", label: "admin" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("VaultError");
+        }))[0],
+      ).toMatchObject({ isFailure: true, result: { _tag: "VaultError", reason: "denied" } });
       expect(
         (yield* invoke({
           ...scope,
@@ -121,10 +128,13 @@ it.effect.each(["pi", "codex"])(
             ...scope.thread!,
             providerInstanceId: ProviderInstanceId.make("other-provider"),
           },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({ isFailure: true, result: { _tag: "OrchestratorMcpFailure" } });
       f.state.thread = { ...f.state.thread, runtimeMode: "approval-required" };
-      expect((yield* invoke().pipe(Effect.flip))._tag).toBe("OrchestratorMcpFailure");
+      expect((yield* invoke())[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure" },
+      });
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 

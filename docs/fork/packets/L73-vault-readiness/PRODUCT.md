@@ -2,19 +2,26 @@
 
 ## Current delivery boundary
 
-The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
-16 explicit item/action/destination requirements through the execution evaluator. Results name
-the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
-mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
+General readiness checks OpenBao connectivity, authenticated run liveness and up to 16
+item/action/destination requirements through the shared execution evaluator. Empty requirements
+inspect the current run's retained profile and pinned versions, then the project default only
+when no pin exists. Profiles are optional; no profile means no connection has been selected,
+not a missing setup requirement. SSH/Git requirements inspect enrolled-broker presence.
+Results name the Loom server context, include repair guidance and expire after 60 seconds.
+Web/desktop and mobile can cancel a pending check; RPC, CLI and MCP share the bounded service.
 
-Use/reveal/export requests and empty requirement sets report missing broker/delivery support.
-The backend check does not prove item-write privileges. An allowed grant does not prove SSH,
-GitHub authentication, host trust, provider tools or unattended launch readiness.
+Use/reveal/export requests and empty requirements retain an unsupported live-delivery check.
+Configuration and broker presence never prove selected-host execution or upstream login.
+An allowed personal-mode or grant decision does not prove item-write privileges, SSH/GitHub
+authentication, host trust, provider tools or unattended launch readiness. Dedicated GitHub
+API/GH CLI/Git HTTPS probes remain a separate connector operation.
 
-The complete selected product below remains the acceptance target. Implement enrolled broker/runner context probes, profile requirement discovery, harmless
-SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
-preflight with project launches and schedules. Durable long-running check operations are not
-needed by the current bounded server check, but remain required for future external probes.
+The complete selected product below remains the acceptance target. Selected-host broker/runner
+execution, live SSH/additional provider checks, broader failure classification and integrated
+remote/platform acceptance remain. Profile discovery, retained-pin revalidation, observational
+broker presence and launch/schedule configuration guards are implemented. Dedicated GitHub
+probes use the connector readiness service. Future external checks may need durable long-running
+operation records; the current bounded observations do not.
 
 ## Summary
 
@@ -22,7 +29,11 @@ Prove an environment can perform its configured unattended work before launching
 
 ## How it works
 
-Run bounded checks inside the actual broker or runner context. Resolve profile requirements, verify unlock and grant state, and exercise harmless provider-specific operations such as repository reads. Classify authentication, authorization, network, host-trust and missing-tool failures separately; record check time and environment identity.
+Run bounded checks inside the actual broker or runner context. Resolve a resource or optional
+profile requirements, verify unlock and current access policy, and exercise harmless
+provider-specific operations such as repository reads. Classify authentication, authorization,
+network, host-trust and missing-tool failures separately; record check time and environment
+identity.
 
 ## User experience
 

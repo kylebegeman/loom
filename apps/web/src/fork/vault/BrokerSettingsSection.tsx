@@ -187,7 +187,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
     <div className="flex min-w-0 flex-col gap-5">
       <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
         Enroll the machines you trust to run a Vault broker. Enrollment verifies machine identity;
-        credential delivery and SSH signing still need supported channels and workload grants.
+        credential delivery and SSH signing still need supported channels and Vault use permission.
       </p>
       <LoomSettingsActions>
         <Button

@@ -3009,19 +3009,36 @@ The active shared boundary lives outside the feature packet folders:
   provide thin authenticated adapters. Client-runtime exposes protected commands shared by
   web/desktop and mobile. No global replacement of ServerSecretStore/provider auth occurs.
 
-Shared `vault-access.ts` contracts and `VaultAccess`/`VaultPolicy` add thread/project grants,
-ancestry attenuation, permanent revocation, bounded audited decisions, previews and 60-second
-server-context readiness. These services share the same environment namespace and OpenBao
-adapter as records. Policy uses a separate CAS document; policy revisions change only on edits.
-Grant state, receipts and decision history persist across restart and restore. No new upstream
-seams are needed; services and transports register through existing fork-owned extension points.
+Shared `vault-access.ts` contracts and `VaultAccess`/`VaultPolicy` provide explicit personal
+owner-trusted inspect/brokered use and restricted thread/project grants, ancestry attenuation,
+permanent revocation, bounded audited decisions, previews and 60-second server-context
+readiness. These services share the same environment namespace and OpenBao adapter as records.
+Policy uses a separate CAS document; revisions change on grant or owner-mode edits. Grant state,
+receipts and decision history persist across restart and restore. No new upstream seams are
+needed; services and transports register through existing fork-owned extension points.
 
 Human management uses environment access:read for inspection and access:write for changes and
-explicit reveal. Threads need item inspect/manage grants on the existing metadata, private
-input and lifecycle paths, while full-access/default requirements still apply to mutations.
+explicit reveal. Active full-access/default runs can inspect/use under personal owner trust;
+restricted mode requires matching grants. Private input and lifecycle mutations retain manage
+grants. Plan/runtime permissions, current run and protected credential checks are unchanged.
 MCP threads cannot administer root grants or reveal raw values. Direct-child delegation is
 attested through ThreadManagement and never increases the existing T3 permission ceiling.
-These checks do not isolate same-user full-access processes from host credential files.
+The durable owner binding is an explicit personal environment declaration, not verified
+platform multi-owner identity. Shared environments remain restricted. Only authenticated human
+owner administration may change the mode. A version-5 policy envelope preserves legacy/protected
+policy and receipts; older evaluators reject it even after disabling personal access. These checks
+do not isolate same-user full-access processes from host credential files. See
+[L81](./L81-vault-grants/TECHNICAL.md#durable-owner-policy-and-compatibility).
+
+`vault-owner-trusted` advertises the human-only personal environment setup; agent MCP/CLI can
+read its state through `loom_vault_owner_policy` / `loom vault owner-policy`, but cannot set it.
+`vault-connection-resolution` exposes shared metadata-only `VaultConnections` selection across
+SSH, Git-over-SSH and GitHub. `loom_vault_connections_resolve` / `loom vault connections-resolve`
+accept a kind and named-resource or explicit item/version selector. Direct execution accepts
+both selectors while retaining the legacy item/version inputs. The selected identity/version
+and destination are pinned for the operation and current authorization is rechecked at use.
+Profiles remain optional. A missing visible match may be inspect-hidden; a `ready` selection
+is not a broker or upstream-authentication probe.
 
 Limits: 128 grants, 32 item IDs per grant, 256 operational history events, 32 mutation receipts,
 50 history entries in the management snapshot and 10 recent decisions in an item explanation.
@@ -3047,27 +3064,30 @@ capability. No raw values or reusable use tokens are returned. Actual delivery m
 its own operation payload and current policy, rather than trusting a prior check result.
 
 Shared `vault-ssh.ts`, `VaultSsh`, `SshCrypto` and `SshTransport` add the `vault-ssh-mediated`
-capability. Full-access administrator clients manage generated Ed25519 keys and independent
-host pins using MCP; existing Vault core actions archive/restore/delete items. Agent public
-inspection requires an inspect grant. Signed `ssh-exec` HTTP/runner requests bind exact argv,
-key version and timeout to a fresh single-use workload challenge. Current policy, host/run
-state and item version are rechecked before spawn and agent signing. The server mediates the
-connection using a scoped POSIX socket, verified OpenSSH session-bind and host-bound user
-authentication; generic signing and forwarding are unsupported. Private key bytes never leave
-the server/OpenBao through this operation. Only public temporary files are written. The target
-must be reachable from the Loom server. Commands are bounded to four concurrent executions,
-eight seconds and 2 KiB stdout. Cancellation/timeout closes local resources but cannot promise
-remote rollback. Already-issued signatures cannot be recalled. The explicit terminal agent below extends this operation boundary. Windows, persistent shell
-attachment and other runner-side transports remain unfinished.
+capability. Full-access administrator clients manage generated Ed25519 keys and independent host
+pins using MCP; existing Vault core actions archive/restore/delete items. Agent public
+inspection requires current inspect authorization under the selected access mode. Signed
+`ssh-exec` HTTP/runner requests bind exact argv, key version and timeout to a fresh single-use
+workload challenge. Current policy, host/run state and item version are rechecked before spawn
+and agent signing. The server mediates the connection using a scoped POSIX socket, verified
+OpenSSH session-bind and host-bound user authentication; generic signing and forwarding are
+unsupported. Private key bytes never leave the server/OpenBao through this operation. Only
+public temporary files are written. The target must be reachable from the Loom server. Commands
+are bounded to four concurrent executions, eight seconds and 2 KiB stdout. Cancellation/timeout
+closes local resources but cannot promise remote rollback. Already-issued signatures cannot be
+recalled. The explicit terminal agent below extends this operation boundary. Windows, persistent
+shell attachment and other runner-side transports remain unfinished.
 
 `vault-ssh-agent` advertises fork-owned activation and ordered frame/list/close MCP tools.
 `VaultLaunch` proves and retains a five-minute workload check; `VaultSsh` keeps current-run,
-host, grant and item-version authority on every frame. A command-scoped POSIX relay forwards
-only host-bound agent requests and never receives a private key. The terminal wrapper validates
-its destination, isolates SSH/Git configuration and preserves child streams/exit status. Host SSH
-grants are required because authentication signatures cannot enforce repository paths. Pi/ACP
-terminal connections are recognized; remaining native-harness setup is explicit. No new
-upstream seam or client RPC is added. See [L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
+host, access-policy and item-version authority on every frame. A command-scoped POSIX relay
+forwards only host-bound agent requests and never receives a private key. The terminal wrapper
+validates its destination, isolates SSH/Git configuration and preserves child streams/exit
+status. Host SSH authorization is required because authentication signatures cannot enforce
+repository paths. In restricted mode this requires a host grant; repository-only grants use
+mediated Git. Pi/ACP terminal connections are recognized; remaining native-harness setup is
+explicit. No new upstream seam or client RPC is added. See
+[L82](./L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent).
 
 `vault-ssh-management` separately advertises public-info and key/trust/probe RPCs, protected by
 environment access:read/access:write. Web/desktop and mobile use the shared client-runtime
@@ -3075,8 +3095,9 @@ commands and item-change signal so core lifecycle and SSH edits refresh one anot
 administrator probe runs only `/usr/bin/true`, rechecking current authority and item version
 before, during and after transport. It returns safe evidence without stdout. MCP allows this
 probe only for human full-access administrators; arbitrary agent commands keep the signed
-workload/use-grant boundary. Older servers without this capability hide management entry points.
-The server registers the SSH handler layer separately to bound TypeScript RPC-union inference.
+workload/current-use-policy boundary. Older servers without this capability hide management
+entry points. The server registers the SSH handler layer separately to bound TypeScript
+RPC-union inference.
 
 `VaultLaunch` now uses the provider's existing authenticated MCP connection to create a
 memory-only workload identity and fresh signed operation, then closes the session on every

@@ -363,3 +363,103 @@ it.live.skipIf(!configured)(
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
   30000,
 );
+
+it.live.skipIf(!configured)(
+  "executes owner-trusted resource-name SSH without a profile or grant against encrypted storage and pinned host trust",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* sshFixture();
+      const key = yield* f.ssh.generate(
+        {
+          id: f.itemId,
+          operationId: yield* f.id,
+          label: "Disposable owner deployment",
+          target: {
+            hostname: "127.0.0.1",
+            username: process.env.LOOM_VAULT_TEST_SSH_USER!,
+            port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
+            hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+          },
+        },
+        "fixture-admin",
+        Effect.void,
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
+          mode: 0o600,
+        }),
+      );
+      yield* f.access.setOwnerPolicy(
+        { operationId: yield* f.id, expectedRevision: 0, mode: "owner-trusted" },
+        "fixture-admin",
+        Effect.void,
+      );
+      expect((yield* f.access.snapshot).grants).toEqual([]);
+      expect((yield* f.profiles.list(f.state.thread.projectId)).profiles).toEqual([]);
+      const temporaryRoot =
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => NodeFSP.mkdtemp(temporaryRoot + "/loom-owner-broker-")),
+        (directory) =>
+          Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+      );
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(
+          directory + "/identity.json",
+          JSON.stringify({
+            protocol: 1,
+            privateKey: Redacted.value(f.machine.privateKey),
+            publicKey: f.machine.publicKey,
+            fingerprint: f.machine.fingerprint,
+          }),
+          { mode: 0o600 },
+        ),
+      );
+      const identity = yield* BrokerIdentity.BrokerIdentity.pipe(
+        Effect.provide(BrokerIdentity.layer),
+        Effect.provide(f.context),
+      );
+      yield* identity.connect(directory, {
+        protocol: 1,
+        machineId: f.machineId,
+        environmentId: f.environmentId,
+        origin: "http://127.0.0.1:1",
+      });
+      const launch = yield* VaultLaunch.VaultLaunch.pipe(
+        Effect.provide(VaultLaunch.layer),
+        Effect.provide(f.context),
+        Effect.provideService(BrokerIdentity.BrokerIdentity, identity),
+        Effect.provideService(HostProcess.Environment, {
+          LOOM_VAULT_EXECUTION_BROKER_DIR: directory,
+        }),
+      );
+      const result = yield* launch.ssh(
+        {
+          connection: { resource: "Disposable owner deployment" },
+          command: { argv: ["/usr/bin/true"], timeoutMs: 8000 },
+        },
+        f.threadId,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+      const current = yield* f.access.snapshot;
+      yield* f.access.setOwnerPolicy(
+        { operationId: yield* f.id, expectedRevision: current.revision, mode: "restricted" },
+        "fixture-admin",
+        Effect.void,
+      );
+      expect(
+        (yield* launch
+          .ssh(
+            {
+              connection: { resource: "Disposable owner deployment" },
+              command: { argv: ["/usr/bin/true"], timeoutMs: 8000 },
+            },
+            f.threadId,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("policy-denied");
+    }).pipe(Effect.provide(dependencies), Effect.scoped),
+  30000,
+);

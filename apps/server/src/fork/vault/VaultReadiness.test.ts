@@ -108,7 +108,7 @@ it.effect("keeps explicit inspect checks independent of project defaults and bro
   ),
 );
 it.effect(
-  "reports no default and missing bindings with repair guidance instead of selecting a credential",
+  "treats no profile as optional and reports configured missing bindings with repair guidance",
   () =>
     withFixture((f) =>
       Effect.gen(function* () {
@@ -123,7 +123,7 @@ it.effect(
         );
         expect(
           (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,
-        ).toContainEqual(expect.objectContaining({ id: "profile-default", state: "blocked" }));
+        ).toContainEqual(expect.objectContaining({ id: "profile-default", state: "passed" }));
         yield* f.save([{ ...f.profile.bindings[0]!, itemId: null } as never]);
         yield* f.profiles.apply(
           {

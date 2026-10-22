@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { PositiveInt } from "../baseSchemas.ts";
 import { VaultItemId, VaultItemSummary } from "./vault-core.ts";
 import { VaultWorkloadProof } from "./vault-workloads.ts";
+import { VaultConnectionSelector } from "./vault-connections.ts";
 
 const reasons = {
   unsupported:
@@ -214,3 +215,25 @@ export const vaultGitCommandMessage = (command: VaultGitCommand) =>
   ]);
 export const vaultGitDestination = (target: VaultSshTarget, repository: string) =>
   `git+${vaultSshDestination(target)}/${repository.startsWith("/") ? ":absolute/" + repository.slice(1) : repository}`;
+
+export const VaultSshRunInput = Schema.Union([
+  VaultSshRun,
+  Schema.Struct({
+    connection: VaultConnectionSelector,
+    command: Schema.Struct({
+      argv: VaultSshCommand.fields.argv,
+      timeoutMs: VaultSshCommand.fields.timeoutMs,
+    }),
+  }),
+]);
+export type VaultSshRunInput = typeof VaultSshRunInput.Type;
+export const VaultGitRunInput = Schema.Union([
+  VaultGitRun,
+  Schema.Struct({
+    connection: VaultConnectionSelector,
+    action: VaultGitRun.fields.action,
+    repository: VaultGitRun.fields.repository,
+    timeoutMs: VaultGitRun.fields.timeoutMs,
+  }),
+]);
+export type VaultGitRunInput = typeof VaultGitRunInput.Type;

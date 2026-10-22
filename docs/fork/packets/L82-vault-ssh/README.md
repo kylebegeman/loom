@@ -18,18 +18,20 @@ using a private operation-scoped SSH agent, strict host verification and host-bo
 authentication. Private key material stays in server memory and OpenBao.
 
 An explicit administrator connection test runs only `/usr/bin/true` with the current item
-version and pin, returning safe authentication evidence. It requires Vault write access and
-does not give workloads a use grant. The target must be reachable from the Loom server.
-Existing provider launches now expose authenticated SSH/Git tools with automatic workload
-setup/release. Git supports ref listing and fetch into the thread checkout using an exact
-repository grant. Explicit `loom vault ssh-agent-exec` activation now runs ordinary terminal SSH/Git, including
-clone/fetch/push, through a temporary POSIX agent and the authenticated current run. A host SSH
-use grant is required; repository-only grants continue using the narrower hosted Git tool.
-The private key remains on the control plane. Codex and Claude terminal connections are
-prepared automatically per native session; Pi and ACP use their existing connection variables.
-Other native harnesses use hosted tools or need explicit terminal MCP configuration. Imports, additional key formats,
-Windows, persistent shell activation and stronger OS isolation remain open.
-See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and [TESTING.md](./TESTING.md).
+version and pin, returning safe authentication evidence. It requires Vault write access and does
+not give workloads a use grant. The target must be reachable from the Loom server. Existing
+provider launches now expose authenticated SSH/Git tools with automatic workload setup/release.
+Git supports ref listing and fetch into the thread checkout using an exact repository
+authorization (a matching grant in restricted mode). Explicit `loom vault ssh-agent-exec`
+activation now runs ordinary terminal SSH/Git, including clone/fetch/push, through a temporary
+POSIX agent and the authenticated current run. A host SSH use authorization is required (a host
+grant in restricted mode); repository-only grants continue using the narrower hosted Git tool.
+The private key remains on the control plane. Codex and Claude terminal connections are prepared
+automatically per native session; Pi and ACP use their existing connection variables. Other
+native harnesses use hosted tools or need explicit terminal MCP configuration. Imports,
+additional key formats, Windows, persistent shell activation and stronger OS isolation remain
+open. See [user help](../../user/vault.md#manage-ssh-keys-and-test-a-connection) and
+[TESTING.md](./TESTING.md).
 
 ## Scope
 

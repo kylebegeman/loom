@@ -10,7 +10,7 @@ permission ceilings and retry semantics; these constraints are not reimplemented
 `vault-workloads.ts` defines public session bindings and canonical dual-signature requests.
 `VaultWorkloads` captures active run/provider/project identity from ThreadManagement; MCP takes
 only the authenticated caller's thread ID. It enforces full-access/default mode, one exact
-item/destination use grant, approved host state and a live heartbeat. Every channel check
+item/destination use authorization, approved host state and a live heartbeat. Every channel check
 rechecks these boundaries after challenge issuance. `VaultAccess.require` persists the policy
 decision before success; backend/audit failure prevents an allowed result.
 
@@ -45,10 +45,10 @@ attestation and restricted sockets remain selected work, not a completed securit
 
 `vault-run-access` advertises `loom_vault_ssh_exec` and `loom_vault_git`, also available as
 `loom vault ssh-exec` and `loom vault git` through the authenticated MCP CLI. Existing
-provider-session setup supplies the thread-bound connection. `VaultLaunch` derives the
-principal from that connection; it does not accept a thread ID, machine ID, private key,
-working directory or arbitrary remote URL from tool input. Scheduled agent runs use the
-same path, including new threads under project grants. Command-only scheduled jobs do not.
+provider-session setup supplies the thread-bound connection. `VaultLaunch` derives the principal
+from that connection; it does not accept a thread ID, machine ID, private key, working directory
+or arbitrary remote URL from tool input. Scheduled agent runs use the same path; restricted mode
+can cover new threads through project grants. Command-only scheduled jobs do not.
 
 An operator configures `LOOM_VAULT_EXECUTION_BROKER_DIR` on the Loom server after enrolling
 and approving that server's broker identity. Its existing foreground broker keeps heartbeats
@@ -63,7 +63,7 @@ The existing standalone runner remains supported separately.
 This is on-demand attachment through the MCP channel established at launch. It does not
 install a generic agent socket, set `SSH_AUTH_SOCK` or `GIT_SSH_COMMAND` in a provider's shell,
 or make ordinary shell Git commands use Vault. Full-access/default mode, online host state,
-current use grants and item version remain authoritative; old check results grant no use.
+current access policy and item version remain authoritative; old check results grant no use.
 A missing/unconfigured directory or offline broker fails explicitly. Control-plane restart
 invalidates sessions; the next authorized operation obtains a fresh one.
 
@@ -77,13 +77,13 @@ No secret environment variable is added to provider processes.
 
 ## Explicit terminal agent delivery
 
-L82 adds `loom vault ssh-agent-exec` and run-owned agent open/frame/list/close tools. A successful
-signed workload check retains the five-minute session until explicit close or expiry; failed
-activation releases it. The terminal gets public metadata and signatures, never private key
-material. New frame requests revalidate the active run, provider, host, item version and grant.
-The temporary local socket and ordinary SSH/Git child run on the invoking host. Host SSH grants
-are required because generic SSH authentication contains no repository path. The hosted Git
-operation below remains the repository-scoped option. See
+L82 adds `loom vault ssh-agent-exec` and run-owned agent open/frame/list/close tools. A
+successful signed workload check retains the five-minute session until explicit close or expiry;
+failed activation releases it. The terminal gets public metadata and signatures, never private
+key material. New frame requests revalidate the active run, provider, host, item version and
+access policy. The temporary local socket and ordinary SSH/Git child run on the invoking host.
+Host SSH authorization is required because generic SSH authentication contains no repository
+path. The hosted Git operation below remains the repository-scoped option. See
 [L82](../L82-vault-ssh/TECHNICAL.md#explicit-terminal-ssh-agent) for client setup, transport and
 revocation limits. Existing provider processes receive no new credential environment variables.
 
@@ -93,9 +93,10 @@ Git supports `ls-remote` and `fetch` from the thread's current server checkout. 
 resolves that checkout from thread/project records. Repository paths are bounded, exclude
 shell/options, empty components and dot traversal, and are bound into a `git-exec` proof with
 action, checkout, timeout and exact item version. Check/release/SSH proofs cannot authorize Git.
-The grant destination is `git+ssh://user@host:port/team/repo.git`. Absolute repository paths
-use `git+ssh://user@host:port/:absolute/path/to/repo.git`. A host-scoped SSH grant alone does
-not match that destination; an unrestricted destination grant still intentionally covers it.
+In restricted mode, the grant destination is `git+ssh://user@host:port/team/repo.git`. Absolute
+repository paths use `git+ssh://user@host:port/:absolute/path/to/repo.git`. A host-scoped SSH
+grant alone does not match that destination; an unrestricted destination grant still
+intentionally covers it.
 
 `SshTransport` runs `/usr/bin/git` with a canonical SSH URL and the same private scoped agent,
 host-bound authentication and pinned host key. Git uses an isolated HOME, no global/system
@@ -162,7 +163,7 @@ another packet's UI/service internals.
 
 The existing authenticated MCP boundary now supports explicit gh and Git HTTPS argv, including
 fetch/push/clone, in the active thread checkout. A private child environment and exact-repository
-Git helper carry credentials; the CLI preserves streams/exit status. Current run/version/grant
+Git helper carry credentials; the CLI preserves streams/exit status. Current run/version/policy
 checks, process cleanup and token release remain authoritative, independently of readiness.
 This does not install a persistent shell environment, migrate SSH remotes or certify every
 provider's terminal MCP environment. The shared contract and limits are in
@@ -185,5 +186,7 @@ shell, install a global `loom` executable or change personal SSH/1Password setti
 
 `loom vault terminal-readiness` calls `VaultWorkloads.terminalReadiness` through authenticated
 MCP. It identifies the current provider/run, online enrolled-broker presence and 60-second
-freshness. It does not assert configured execution-broker custody, selected-item access,
-network reachability or successful GitHub/SSH login. Current resource grants remain mandatory.
+freshness. It does not assert configured execution-broker custody, selected-item access, network
+reachability or successful GitHub/SSH login. Current resource authorization remains mandatory;
+personal owner-trusted inspect/use does not require recurring grants. Restricted mode retains
+its item/destination grants.

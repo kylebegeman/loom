@@ -162,7 +162,9 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),
     VaultAccessRpcGroup.toLayer(
-      withForkRuntime(makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
+      ),
     ),
     VaultCoreRpcGroup.toLayer(
       withForkRuntime(makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject)),

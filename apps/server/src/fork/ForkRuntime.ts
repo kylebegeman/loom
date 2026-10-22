@@ -1,4 +1,5 @@
 import type { ProjectProfileService } from "./project-profiles/ProjectProfileService.ts";
+import type { VaultConnections } from "./vault/VaultConnections.ts";
 import type { VaultAccessInspector } from "./vault/VaultAccessInspector.ts";
 import type { VaultReadiness } from "./vault/VaultReadiness.ts";
 import type { VaultTestAccountWorkloads } from "./vault/VaultTestAccountWorkloads.ts";
@@ -64,6 +65,7 @@ import * as Effect from "effect/Effect";
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
   | ProjectProfileService
+  | VaultConnections
   | VaultAccessInspector
   | VaultReadiness
   | VaultTestAccountWorkloads

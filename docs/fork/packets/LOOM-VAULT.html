@@ -240,6 +240,19 @@
         implemented milestones; full delivery and the platform remain in progress. No deployment is
         authorized.
       </p>
+      <p>
+        Personal environments can explicitly enable owner-trusted metadata inspection and supported
+        brokered use once. Shared and existing environments keep restricted grants by default. This
+        is a personal-environment declaration, not verified platform multi-owner identity. Only
+        authenticated human owner administration can enable or disable it.
+      </p>
+      <p>
+        Select SSH, Git or GitHub connections by resource name; project profiles are optional saved
+        selections. Current item versions, runtime permissions, host trust, brokers and upstream
+        authentication still apply. Credential availability does not authorize a task, expose raw
+        values or bypass protected one-time credentials. Disabling affects new authorization;
+        already authenticated remote sessions may continue.
+      </p>
       <nav aria-label="Document links">
         <a href="./LOOM-VAULT.md">Product index</a
         ><a href="./LOOM-VAULT-FOUNDATION.md">Shared foundation</a
@@ -298,10 +311,10 @@
             <h4>How it works</h4>
             <p>
               Run bounded checks inside the actual broker or runner context. Resolve profile
-              requirements, verify unlock and grant state, and exercise harmless provider-specific
-              operations such as repository reads. Classify authentication, authorization, network,
-              host-trust and missing-tool failures separately; record check time and environment
-              identity.
+              requirements or a resource selection, verify unlock and current access policy, and
+              exercise harmless provider-specific operations such as repository reads. Classify
+              authentication, authorization, network, host-trust and missing-tool failures
+              separately; record check time and environment identity.
             </p>
             <h4>User experience</h4>
             <p>
@@ -446,8 +459,8 @@
             inspection and explicit terminal-run retirement with durable tombstones.
           </p>
           <p>
-            Bind a complete set of development accounts, credentials and endpoints to a named
-            project environment.
+            Optionally bind development accounts, credentials and endpoints to a named project
+            environment.
           </p>
           <details>
             <summary>Product details and design questions</summary>
@@ -622,8 +635,9 @@
                 unattended unlock recovered?
               </li>
               <li>
-                D3: How does the existing platform identify a human Vault owner without assuming
-                unverified production auth contracts?
+                D3: Personal access uses an explicit environment declaration. Verified platform
+                multi-owner identity remains open; do not infer ownership from unverified production
+                auth contracts.
               </li>
             </ul>
             <p><a href="./L79-vault-core/README.md">Read the seven-document packet</a></p>
@@ -697,16 +711,16 @@
             <summary>Product details and design questions</summary>
             <h4>How it works</h4>
             <p>
-              Authenticate machine and workload principals separately. Evaluate grants against
-              immutable item IDs, actions, intended destinations, project identity and time bounds.
-              Child tasks receive a provable subset; human approval creates a specific grant or
-              single-use decision rather than a blanket bypass.
+              Authenticate machine and workload principals separately. Personal environments can
+              enable owner-trusted inspect and brokered use. Restricted environments evaluate grants
+              against item IDs, actions, destinations, project identity and time. Delegated grants
+              remain narrower than their parent; task authorization stays separate.
             </p>
             <h4>User experience</h4>
             <p>
-              Grant a runner access to selected repositories or hosts, inspect inherited
-              permissions, suspend a grant, shorten it or revoke it. A request outside the grant
-              yields one clear explanation.
+              Enable owner access once for a personal environment, or grant selected repositories
+              and hosts in restricted mode. Inspect effective access, disable personal access or
+              suspend/revoke a grant. A refused request identifies the required repair.
             </p>
             <h4>Product value</h4>
             <p>
@@ -722,8 +736,8 @@
             <h4>Open decisions</h4>
             <ul>
               <li>
-                D6: What are the initial grant scopes and conflict precedence, and are deny rules
-                necessary?
+                D6: Explicit personal owner trust and restricted allow-grant union are selected.
+                Platform role mapping and explicit deny rules remain open.
               </li>
               <li>
                 Which workloads need OS-user or container isolation beyond broker authorization?
@@ -794,9 +808,9 @@
             <strong>In progress:</strong> dedicated github.com App/token connections, verified
             repository API access and scoped headless GH operations work locally. Web and native
             management keep personal credentials separate. Named project bindings, version 2
-            portable requirements and configuration/grant launch checks are implemented. Explicit
-            terminal gh/Git HTTPS routing and cancellable live readiness work locally. Persistent
-            shell activation, broader onboarding and provider revocation remain selected.
+            portable requirements and configuration/access-policy launch checks are implemented.
+            Explicit terminal gh/Git HTTPS routing and cancellable live readiness work locally.
+            Persistent shell activation, broader onboarding and provider revocation remain selected.
           </p>
           <p>
             Manage GitHub and other developer service identities as tested, renewable connections.
@@ -897,8 +911,8 @@
           <h3>Credential delivery API, CLI, and runner integrations</h3>
           <p>
             <strong>In progress:</strong> active-run-bound workload check sessions now require
-            machine and workload proofs and current use grants. Actual SSH/Git delivery and
-            automatic launch attachment remain pending.
+            machine and workload proofs and current use-policy authorization. Actual SSH/Git
+            delivery and automatic launch attachment remain pending.
           </p>
           <p>
             Give agents, developer tools and automation one consistent way to consume Vault access.
@@ -914,8 +928,8 @@
             </p>
             <h4>User experience</h4>
             <p>
-              Attach a profile to a Loom task or run a CLI command under a selected profile. See
-              which account and delivery method are in use. Cancel the command and clean up its
+              Select a resource by name, or use an optional saved profile for a task or CLI command.
+              See which account and delivery method are in use. Cancel the command and clean up its
               temporary material. Pi and other runners use the same bindings.
             </p>
             <h4>Product value</h4>

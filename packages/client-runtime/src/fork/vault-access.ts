@@ -8,13 +8,18 @@ import {
   type VaultAccessContext,
   type VaultReadinessReport,
   type VaultGrant,
+  type VaultOwnerPolicy,
 } from "@t3tools/contracts/fork";
-import type { Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
+import type { EnvironmentId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
+const vaultPolicyChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+
 export function createVaultAccessAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -34,6 +39,16 @@ export function createVaultAccessAtoms<R, E>(
     snapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:grants",
       tag: V.snapshot,
+      refreshTrigger: ({ environmentId }) => vaultPolicyChanges(environmentId),
+    }),
+    setOwnerPolicy: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:owner-policy-set",
+      tag: V.setOwnerPolicy,
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          const signal = vaultPolicyChanges(environmentId);
+          registry.set(signal, registry.get(signal) + 1);
+        }),
     }),
     catalog: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:subjects",
@@ -59,6 +74,49 @@ export function createVaultAccessAtoms<R, E>(
     }),
   };
 }
+export const vaultOwnerAccessSummary = (
+  policy: Pick<VaultOwnerPolicy, "mode" | "ownerId"> | null | undefined,
+) => {
+  const enabled = policy?.mode === "owner-trusted" && !!policy.ownerId;
+  return {
+    enabled,
+    title: enabled ? "Owner access enabled" : "Restricted access",
+    description: enabled
+      ? "Agents in this personal environment can inspect and use connected Vault access. Saved project grants are kept for restricted mode."
+      : policy
+        ? "Agents need saved project access. Enable owner access only for a personal environment you control."
+        : "This server has not reported owner access. Existing project grants still apply.",
+    actionLabel: enabled ? "Use restricted access" : "Enable owner access",
+  };
+};
+
+export const VAULT_OWNER_SETUP_HELP = [
+  {
+    id: "ssh-enrollment",
+    title: "SSH public key enrollment",
+    description:
+      "Open the SSH key, copy its public key, and add it to the destination account's authorized_keys. Then test the connection in Loom.",
+  },
+  {
+    id: "ssh-host-trust",
+    title: "SSH host trust",
+    description:
+      "Verify the destination's Ed25519 host key through a trusted channel, then save it in the SSH key's Host trust settings.",
+  },
+  {
+    id: "broker",
+    title: "Execution broker",
+    description:
+      "Enroll the computer running this Loom server in Vault brokers, keep its broker running, and configure the server to use its private broker directory. Reconnect the agent after setup.",
+  },
+  {
+    id: "github-upstream",
+    title: "GitHub permissions",
+    description:
+      "Connect a dedicated GitHub token or App with access to the repositories you need. If GitHub rejects it, renew the credential or approve its organization access, then test the connection again.",
+  },
+] as const;
+
 export const VAULT_ACTION_LABELS: Record<VaultAccessAction, string> = {
   inspect: "Inspect metadata",
   manage: "Manage item",
@@ -81,7 +139,9 @@ export const vaultReadinessIsStale = (report: VaultReadinessReport, now: number)
   now >= report.freshUntil;
 
 const decisionMessages: Readonly<Record<string, string>> = {
-  allowed: "An active grant permits this action.",
+  allowed: "Vault policy permits this action.",
+  "owner-trusted":
+    "Owner access permits agents in this personal environment to inspect and use connected Vault access.",
   "no-grant": "No grant matches this thread, item and action.",
   scope: "The grant does not cover this project or exact destination.",
   "not-active": "This grant or an inherited grant is suspended or revoked.",

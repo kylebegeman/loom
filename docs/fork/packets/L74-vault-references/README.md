@@ -16,13 +16,14 @@ credential imports or changes to the personal vault.
 ## Delivered milestone
 
 Environment-scoped search and stable reference copying work in web/desktop Settings, native
-mobile computer settings, palette navigation, MCP and CLI. The project profile editor reuses
-the picker to bind, replace and unbind SSH keys. Agent search/describe requires inspect grants;
-forbidden and unknown IDs both describe as null. No credential values are returned.
+mobile computer settings, palette navigation, MCP and CLI. The project profile editor reuses the
+picker to bind, replace and unbind SSH keys. Agent search/describe requires current inspect
+authorization; forbidden and unknown IDs both describe as null. No credential values are
+returned.
 
 Composer and scheduled prompts accept safe standalone links. Kyle removed the attachment
 buttons and selectors without a replacement. Bounded CLI completion and account-kind discovery
-are implemented through authenticated inspect-granted metadata. Explicit multi-environment
+are implemented through authenticated inspect-authorized metadata. Explicit multi-environment
 discovery and additional connector consumers remain selected.
 
 ## Surfaces

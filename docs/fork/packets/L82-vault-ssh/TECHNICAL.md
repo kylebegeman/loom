@@ -51,11 +51,12 @@ separate design gates.
 
 The HTTP endpoint is `/api/loom/vault-brokers/workloads/ssh-exec`. Administrator MCP generation
 and trust require a human full-access client; threads can inspect public metadata only with an
-inspect grant. Existing signed runner/CLI transport makes execution available to authenticated
-Loom agent terminals without an administrator/backend token. Existing provider/task launches
-also expose hosted tools that create/release the operation's session automatically. Explicit per-command terminal attachment is described below; persistent shell attachment and
-remaining native-harness environment setup remain unfinished. General readiness stays conservative and does not perform this probe
-automatically.
+inspect authorization under the selected access mode. Existing signed runner/CLI transport makes
+execution available to authenticated Loom agent terminals without an administrator/backend
+token. Existing provider/task launches also expose hosted tools that create/release the
+operation's session automatically. Explicit per-command terminal attachment is described below;
+persistent shell attachment and remaining native-harness environment setup remain unfinished.
+General readiness stays conservative and does not perform this probe automatically.
 
 The separate `vault-ssh-management` capability advertises `loom.vault-ssh.info`, `generate`,
 `trust` and `probe` RPCs. Public inspection requires environment access:read; mutations and
@@ -70,15 +71,17 @@ limit, but fixes argv to `/usr/bin/true` and timeout to eight seconds. It rechec
 authority and exact active item version before transport, while signing and after completion.
 Only destination, fingerprints, version, timestamp and authentication evidence are returned.
 This is an explicit human administration operation; arbitrary workload execution continues to
-require its signed session and persisted use grant. MCP rejects agent callers for the probe.
-Separate RPC handler layers avoid TypeScript recursion limits without weakening handler types.
+require its signed session and current use-policy authorization. MCP rejects agent callers for
+the probe. Separate RPC handler layers avoid TypeScript recursion limits without weakening
+handler types.
 
 ## Hosted Git and automatic workload access
 
-[L85's implemented boundary](../L85-vault-delivery/TECHNICAL.md#automatic-access-through-provider-launches)
-owns session setup using the existing authenticated provider connection. `VaultSsh.git` consumes
-an independent `git-exec` proof binding repository, action, server checkout, timeout and key
-version. It verifies the exact repository grant and rechecks active policy/item state at
+[L85's implemented
+boundary](../L85-vault-delivery/TECHNICAL.md#automatic-access-through-provider-launches) owns
+session setup using the existing authenticated provider connection. `VaultSsh.git` consumes an
+independent `git-exec` proof binding repository, action, server checkout, timeout and key
+version. It verifies exact repository authorization and rechecks active policy/item state at
 transport/signing and after completion. The shared transport runs Git ref listing/fetch through
 the scoped pinned agent, with 30-second/64-KiB limits and process-group cleanup. SSH remains
 8-second/2-KiB. Neither operation installs a persistent socket or changes the personal vault.
@@ -101,8 +104,9 @@ with the workload limit of eight per thread; each retains at most 32 channels an
 channel. Frames are canonical base64 with at most 16 KiB decoded bytes. Private key material is
 loaded behind the service boundary and is never returned to the local terminal.
 
-OpenSSH authentication does not sign a Git repository path. Agent activation therefore needs a
-use grant covering the SSH host destination, rather than treating a repository-specific grant
+OpenSSH authentication does not sign a Git repository path. Agent activation therefore needs
+authorization covering the SSH host destination. In restricted mode this needs a host use
+grant, rather than treating a repository-specific grant
 as general signing authority. The existing mediated Git proof still enforces exact repository
 scope. Session binding proves the pinned host key and username, not network hostname/port.
 The local launcher's argument validation enforces the configured hostname/port, while the

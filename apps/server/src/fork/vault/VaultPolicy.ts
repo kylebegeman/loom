@@ -1,4 +1,9 @@
-import type { VaultAccessAction, VaultAccessDecision, VaultGrant } from "@t3tools/contracts/fork";
+import type {
+  VaultAccessAction,
+  VaultAccessDecision,
+  VaultGrant,
+  VaultOwnerPolicy,
+} from "@t3tools/contracts/fork";
 
 export interface VaultWorkload {
   readonly threadId: string;
@@ -44,7 +49,24 @@ export function evaluateVaultPolicy(
   },
   now: number,
   revision: number,
+  ownerPolicy?: VaultOwnerPolicy,
 ): VaultAccessDecision {
+  if (
+    ownerPolicy?.mode === "owner-trusted" &&
+    ownerPolicy.ownerId !== null &&
+    (request.action === "inspect" || request.action === "use")
+  ) {
+    return {
+      allowed: true,
+      reason: "allowed",
+      policyRevision: revision,
+      grantId: null,
+      grantRevision: null,
+      expiresAt: null,
+      lineage: [],
+      basis: "owner-trusted",
+    };
+  }
   const byId = new Map(grants.map((grant) => [grant.definition.id, grant]));
   let result = denial("no-grant", revision);
   for (const grant of grants) {

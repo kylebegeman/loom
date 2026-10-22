@@ -1,6 +1,8 @@
 import { expect, it } from "@effect/vitest";
 import {
   AuthAccessReadScope,
+  AuthStandardClientScopes,
+  AuthEnvironmentMaintainScope,
   AuthAccessWriteScope,
   AuthSessionId,
   ThreadId,
@@ -171,5 +173,137 @@ it.effect("rechecks live write authorization through the batch service callback"
       }).pipe(Effect.flip),
     ).toMatchObject({ reason: "denied" });
     expect(checks).toBe(1);
+  }),
+);
+
+it.effect(
+  "personal policy setup requires the authenticated human administrator, never a scoped or workload identity",
+  () =>
+    Effect.gen(function* () {
+      let mutations = 0;
+      const layers = Layer.mergeAll(
+        Layer.mock(VaultAccess)({
+          setOwnerPolicy: (_input, _actor, authorize) =>
+            Effect.gen(function* () {
+              yield* authorize;
+              mutations++;
+              return yield* new VaultError({ reason: "unavailable" });
+            }),
+        }),
+        Layer.mock(VaultReadiness)({}),
+        Layer.mock(VaultAccessInspector)({}),
+      );
+      const input = {
+        operationId: "a".repeat(32),
+        expectedRevision: 0,
+        mode: "owner-trusted" as const,
+      };
+      for (const subject of [
+        "thread:agent",
+        "mcp-client",
+        "client:agent",
+        "broker:host",
+        "host:replica",
+        "library:replica",
+      ]) {
+        const session = {
+          sessionId: AuthSessionId.make("setup"),
+          subject,
+          method: "bearer-access-token" as const,
+          scopes: [...AuthStandardClientScopes],
+        };
+        const handlers = yield* makeVaultAccessRpcHandlers(
+          makeForkRpcAuth(session),
+          subject,
+          session,
+        ).pipe(Effect.provide(layers));
+        expect(yield* handlers[V.setOwnerPolicy](input).pipe(Effect.flip)).toMatchObject({
+          reason: "denied",
+        });
+      }
+      for (const scopes of [
+        [AuthAccessWriteScope],
+        [AuthAccessWriteScope, AuthEnvironmentMaintainScope],
+      ]) {
+        const session = {
+          sessionId: AuthSessionId.make("scoped"),
+          subject: "human",
+          method: "browser-session-cookie" as const,
+          scopes,
+        };
+        const handlers = yield* makeVaultAccessRpcHandlers(
+          makeForkRpcAuth(session),
+          session.subject,
+          session,
+        ).pipe(Effect.provide(layers));
+        yield* handlers[V.setOwnerPolicy](input).pipe(Effect.flip);
+      }
+      const owner = {
+        sessionId: AuthSessionId.make("owner"),
+        subject: "human",
+        method: "browser-session-cookie" as const,
+        scopes: [...AuthStandardClientScopes],
+      };
+      const forged = yield* makeVaultAccessRpcHandlers(
+        makeForkRpcAuth(owner),
+        "someone-else",
+        owner,
+      ).pipe(Effect.provide(layers));
+      expect(yield* forged[V.setOwnerPolicy](input).pipe(Effect.flip)).toMatchObject({
+        reason: "denied",
+      });
+      expect(mutations).toBe(0);
+      const handlers = yield* makeVaultAccessRpcHandlers(
+        makeForkRpcAuth(owner),
+        owner.subject,
+        owner,
+      ).pipe(Effect.provide(layers));
+      expect(yield* handlers[V.setOwnerPolicy](input).pipe(Effect.flip)).toMatchObject({
+        reason: "unavailable",
+      });
+      expect(mutations).toBe(1);
+    }),
+);
+
+it.effect("personal policy commit rechecks human authorization after an awaited boundary", () =>
+  Effect.gen(function* () {
+    const scopes = [...AuthStandardClientScopes];
+    const session = {
+      sessionId: AuthSessionId.make("owner"),
+      subject: "human",
+      method: "browser-session-cookie" as const,
+      scopes,
+    };
+    let committed = false;
+    const handlers = yield* makeVaultAccessRpcHandlers(
+      makeForkRpcAuth(session),
+      session.subject,
+      session,
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(VaultAccess)({
+            setOwnerPolicy: (_input, _actor, authorize) =>
+              Effect.gen(function* () {
+                yield* authorize;
+                scopes.splice(scopes.indexOf(AuthAccessWriteScope), 1);
+                yield* authorize;
+                committed = true;
+                return yield* new VaultError({ reason: "unavailable" });
+              }),
+          }),
+          Layer.mock(VaultReadiness)({}),
+          Layer.mock(VaultAccessInspector)({}),
+        ),
+      ),
+    );
+    expect(
+      yield* handlers[V.setOwnerPolicy]({
+        operationId: "a".repeat(32),
+        expectedRevision: 0,
+        mode: "owner-trusted",
+      }).pipe(Effect.flip),
+    ).toMatchObject({ reason: "denied" });
+    expect(committed).toBe(false);
   }),
 );

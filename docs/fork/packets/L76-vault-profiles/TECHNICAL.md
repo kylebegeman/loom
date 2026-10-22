@@ -1,5 +1,8 @@
 # L76 technical design
 
+Profiles are optional saved connection selections. Direct resource-name selection uses the
+shared resolver without a profile; either path rechecks the environment access policy.
+
 ## Implemented contract
 
 The shared `vault-profiles.ts` contract defines named SSH/Git/GitHub requirements and the
@@ -25,10 +28,11 @@ winner. Changing the profile in the same run conflicts; later registry edits/def
 do not switch an existing pin. A new run may resolve a new profile or key version.
 
 Every resolve rechecks current profile archive state, live run/provider/project, key version,
-host trust and exact use grants. `VaultLaunch.profile` executes a named binding through the
-existing signed workload SSH/Git path, preserving its cleanup and output bounds. Archive is
-checked again before transport/signing. Revocation prevents new authorized use but cannot
-recall an issued signature or roll back a remote command. Same-user processes are not isolated.
+host trust and current use authorization under the environment access mode.
+`VaultLaunch.profile` executes a named binding through the existing signed workload SSH/Git
+path, preserving its cleanup and output bounds. Archive is checked again before
+transport/signing. Revocation prevents new authorized use but cannot recall an issued signature
+or roll back a remote command. Same-user processes are not isolated.
 
 ## Storage and failure behavior
 
@@ -78,9 +82,10 @@ bindings block with a safe failed-run timeline item. A profile is pinned to that
 run before delivery; current checks at SSH/Git/GitHub use remain authoritative. Steering rechecks
 the same guard and cannot switch a pinned profile. Metadata labels never confer authority.
 
-Scheduled agent prompts use the same guard. New scheduled threads need project grants;
-host-only preview does not prove those grants. This is not an SSH reachability/broker-presence
-probe and does not configure ordinary terminals.
+Scheduled agent prompts use the same guard. Restricted mode requires project grants for new
+scheduled threads; personal owner-trusted use does not. Host-only preview does not prove run
+access. This is not an SSH reachability/broker-presence probe and does not configure ordinary
+terminals.
 
 ## Scheduled outcomes and recovery
 
@@ -122,7 +127,7 @@ the existing preview/save flow. Existing local profiles and defaults remain inta
 also accepts a create-only import mutation through the authorized profile API/MCP, with the same
 CAS, idempotency and administrator checks as other profile mutations. Reusing a profile ID
 conflicts rather than clearing its bindings. Local binding repair uses the existing profile edit
-flow and current grants at resolution. No portable declaration grants use rights or selects a
+flow and current authorization at resolution. No portable declaration grants use rights or selects a
 run automatically.
 
 `loom_vault_profile_requirements` and `loom vault profile-requirements` export declarations.
@@ -153,19 +158,21 @@ OpenBao older versions remain: this is neither secure erasure nor credential/pro
 
 Kind `github` binds a dedicated connection item ID plus an allowlisted `owner/repository`.
 Preview reads saved active connection metadata, checks the normalized repository allowlist and,
-when a target thread is supplied, its exact `https://github.com/owner/repo` use grant. With no
-thread it reports unchecked. This performs no live provider call, CLI probe or token issuance.
-Missing bindings are repairable, unsupported/wrong-kind/archived records are unavailable and
-repository/grant denial blocks resolution. The original SSH host-trust checks still apply to SSH/Git.
+when a target thread is supplied, its current `https://github.com/owner/repo` use authorization.
+With no thread it reports unchecked. This performs no live provider call, CLI probe or token
+issuance. Missing bindings are repairable, unsupported/wrong-kind/archived records are
+unavailable and repository/access denial blocks resolution. The original SSH host-trust checks
+still apply to SSH/Git.
 
 Run resolution pins the connection version and repository alongside the profile revision. Later
 profile edits apply to new runs; replacing connection credentials invalidates existing pins.
 Named execution accepts `operation:{kind:"github",operation:{action:"pr-list"}}` and delegates
-to VaultGitHub using the pinned connection/repository. It needs no SSH broker enrollment.
-The launch guard preserves the originating run/provider/project identity and current profile
-archive state through token acquisition and the final CLI authorization. Current connection
-state/version, repository allowlist and grants remain live checks. Token release and unknown
-write-outcome rules are inherited from the GitHub service; secrets never enter profiles.
+to VaultGitHub using the pinned connection/repository. It needs no SSH broker enrollment. The
+launch guard preserves the originating run/provider/project identity and current profile archive
+state through token acquisition and the final CLI authorization. Current connection
+state/version, repository allowlist and current access policy remain live checks. Token release
+and unknown write-outcome rules are inherited from the GitHub service; secrets never enter
+profiles.
 
 `vault-profile-github` enables GitHub choices and imports in web/native clients. Existing SSH/Git
 profiles and version 1 declarations remain readable. A client paired with an older server hides

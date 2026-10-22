@@ -122,6 +122,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [VS.probe]: AuthAccessWriteScope,
   [VB.begin]: AuthAccessWriteScope,
   [VB.apply]: AuthAccessWriteScope,
+  [VA.setOwnerPolicy]: AuthEnvironmentMaintainScope,
   [VA.approvalInbox]: AuthAccessReadScope,
   [VA.catalog]: AuthAccessReadScope,
   [VA.snapshot]: AuthAccessReadScope,

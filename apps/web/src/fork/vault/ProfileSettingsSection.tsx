@@ -116,9 +116,9 @@ function ProfileProjects({
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-        Give a project's SSH, Git and GitHub requirements stable names. Profiles hold references and
-        grant no access. Each run keeps the revision and key versions it first resolves; changes
-        apply to later runs.
+        Profiles are optional shortcuts that give SSH, Git and GitHub connections stable names.
+        Owner access works without a profile. Profiles hold references and grant no access. Each run
+        keeps the revision and key versions it first resolves; changes apply to later runs.
       </p>
       <LoomSettingsPanel
         title="Project profiles"

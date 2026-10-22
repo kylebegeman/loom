@@ -1,6 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Local MCP fixture verifies terminal output and exit-status propagation without GitHub access.
 import * as NodeHttp from "node:http";
 import { expect, it } from "@effect/vitest";
+import {
+  VaultConnectionError,
+  VaultError,
+  VaultGitHubError,
+  type VaultConnectionChoice,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Runtime from "effect/Runtime";
 import { runGitHubTerminalCli } from "./terminal-cli.ts";
@@ -113,5 +119,136 @@ it.effect("does not print tool errors or malformed responses as successful child
     expect(yield* runGitHubTerminalCli(JSON.stringify(args), {}).pipe(Effect.flip)).toMatchObject({
       reason: "connection",
     });
+  }).pipe(Effect.scoped),
+);
+
+it.effect.each([
+  { resource: "development-github", preferredItemIds: [args.id] },
+  { id: args.id, expectedVersion: args.expectedVersion },
+])(
+  "forwards a GitHub selector and exact repository through the existing terminal tool: %j",
+  (connection) =>
+    Effect.gen(function* () {
+      const f = yield* server({
+        structuredContent: {
+          account: "bot",
+          repository: args.repository,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        },
+      });
+      const input = { connection, repository: args.repository, command: args.command };
+      yield* runGitHubTerminalCli(JSON.stringify(input), f.environment);
+      expect(f.calls).toEqual([{ name: "loom_vault_github_exec", arguments: input }]);
+    }).pipe(Effect.scoped),
+);
+const choice: VaultConnectionChoice = {
+  item: {
+    id: args.id,
+    label: "Development GitHub",
+    kind: "service-connection",
+    state: "active",
+    version: 1,
+    createdAt: "2026-10-22T00:00:00.000Z",
+    updatedAt: "2026-10-22T00:00:00.000Z",
+  },
+  kind: "github",
+  hostname: "github.com",
+  account: "bot",
+  repositories: [args.repository],
+};
+it.effect.each(["structured", "wrapped", "text"] as const)(
+  "preserves typed ambiguity and choices without printing command output (%s)",
+  (encoding) =>
+    Effect.gen(function* () {
+      const failure = new VaultConnectionError({
+        state: "ambiguous",
+        choices: [choice],
+        repair: "select-connection",
+      });
+      const f = yield* server({
+        isError: true,
+        ...(encoding === "text"
+          ? { content: [{ type: "text", text: JSON.stringify(failure) }] }
+          : { structuredContent: encoding === "wrapped" ? { error: failure } : failure }),
+      });
+      let output = "";
+      const error = yield* runGitHubTerminalCli(
+        JSON.stringify({
+          connection: { resource: "github.com" },
+          repository: args.repository,
+          command: args.command,
+        }),
+        f.environment,
+        {
+          stdout: (text) => {
+            output += text;
+          },
+          stderr: (text) => {
+            output += text;
+          },
+        },
+      ).pipe(Effect.flip);
+      expect(error).toBeInstanceOf(VaultConnectionError);
+      expect(error).toEqual(failure);
+      expect(output).toBe("");
+    }).pipe(Effect.scoped),
+);
+it.effect.each([
+  { state: "policy-denied", repair: "repair-policy" },
+  { state: "backend-unavailable", repair: "check-backend" },
+  { state: "untrusted-host", repair: "trust-host" },
+] as const)("keeps typed connection repair state %j", (report) =>
+  Effect.gen(function* () {
+    const failure = new VaultConnectionError({ ...report, choices: [] });
+    const f = yield* server({ isError: true, structuredContent: failure });
+    expect(
+      yield* runGitHubTerminalCli(JSON.stringify(args), f.environment).pipe(Effect.flip),
+    ).toEqual(failure);
+  }).pipe(Effect.scoped),
+);
+it.effect("keeps malformed resolver failures on the existing tool-error path", () =>
+  Effect.gen(function* () {
+    const f = yield* server({
+      isError: true,
+      structuredContent: {
+        _tag: "VaultConnectionError",
+        state: "ambiguous",
+      },
+    });
+    expect(
+      yield* runGitHubTerminalCli(JSON.stringify(args), f.environment).pipe(Effect.flip),
+    ).toMatchObject({ reason: "tool" });
+  }).pipe(Effect.scoped),
+);
+
+it.effect.each([
+  { failure: new VaultGitHubError({ reason: "cli-unavailable" }), encoding: "structured" },
+  { failure: new VaultGitHubError({ reason: "unauthorized" }), encoding: "text" },
+  { failure: new VaultError({ reason: "locked" }), encoding: "wrapped" },
+  { failure: new VaultError({ reason: "unavailable" }), encoding: "text" },
+])("preserves safe execution diagnoses without child output: %j", ({ failure, encoding }) =>
+  Effect.gen(function* () {
+    const wireFailure = { ...failure, unsafeDetail: "synthetic-sensitive-detail" };
+    const f = yield* server({
+      isError: true,
+      ...(encoding === "text"
+        ? { content: [{ type: "text", text: JSON.stringify(wireFailure) }] }
+        : { structuredContent: encoding === "wrapped" ? { error: wireFailure } : wireFailure }),
+    });
+    let output = "";
+    const error = yield* runGitHubTerminalCli(JSON.stringify(args), f.environment, {
+      stdout: (text) => {
+        output += text;
+      },
+      stderr: (text) => {
+        output += text;
+      },
+    }).pipe(Effect.flip);
+    expect(error).toEqual(failure);
+    expect(error.message).toBe(failure.message);
+    expect(JSON.stringify(error)).not.toContain("synthetic-sensitive-detail");
+    expect(output).toBe("");
   }).pipe(Effect.scoped),
 );

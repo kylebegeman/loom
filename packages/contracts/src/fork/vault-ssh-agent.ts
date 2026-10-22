@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { VaultConnectionSelector } from "./vault-connections.ts";
 import { PositiveInt, NonNegativeInt } from "../baseSchemas.ts";
 import { VaultItemId } from "./vault-core.ts";
 import { VaultSshTarget, VaultSshPublicKey } from "./vault-ssh.ts";
@@ -43,3 +44,18 @@ export const VaultSshAgentRun = Schema.Struct({
   timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 300_000 })),
 });
 export type VaultSshAgentRun = typeof VaultSshAgentRun.Type;
+
+export const VaultSshAgentOpenInput = Schema.Union([
+  VaultSshAgentOpen,
+  Schema.Struct({ connection: VaultConnectionSelector }),
+]);
+export type VaultSshAgentOpenInput = typeof VaultSshAgentOpenInput.Type;
+export const VaultSshAgentRunInput = Schema.Union([
+  VaultSshAgentRun,
+  Schema.Struct({
+    connection: VaultConnectionSelector,
+    command: VaultSshAgentRun.fields.command,
+    timeoutMs: VaultSshAgentRun.fields.timeoutMs,
+  }),
+]);
+export type VaultSshAgentRunInput = typeof VaultSshAgentRunInput.Type;

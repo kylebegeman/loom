@@ -3,7 +3,11 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import { expect, it } from "@effect/vitest";
-import { type VaultSshAgentSession } from "@t3tools/contracts/fork";
+import {
+  type VaultSshAgentSession,
+  type VaultSshAgentOpenInput,
+  type VaultSshAgentFrame,
+} from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -34,12 +38,20 @@ const fixture = Effect.gen(function* () {
   };
   const entered = yield* Deferred.make<void>();
   const state = { closed: 0, frames: 0, reject: false, hold: false };
+  const opened: VaultSshAgentOpenInput[] = [],
+    relayed: VaultSshAgentFrame[] = [],
+    closedSessions: string[] = [];
   const report = NodePath.join(root, "environment");
   const client = SshAgentClient.SshAgentClient.of({
-    open: () => Effect.succeed(metadata),
-    frame: () =>
+    open: (input) =>
+      Effect.sync(() => {
+        opened.push(input);
+        return metadata;
+      }),
+    frame: (input) =>
       Effect.gen(function* () {
         state.frames++;
+        relayed.push(input);
         yield* Deferred.succeed(entered, undefined);
         if (state.hold) return yield* Effect.never;
         if (state.reject)
@@ -48,9 +60,10 @@ const fixture = Effect.gen(function* () {
           response: Buffer.concat([Buffer.from([12]), SshCrypto.sshUint32(0)]).toString("base64"),
         };
       }),
-    close: () =>
+    close: (sessionId) =>
       Effect.sync(() => {
         state.closed++;
+        closedSessions.push(sessionId);
       }),
   });
   const terminal = yield* SshAgentTerminal.SshAgentTerminal.pipe(
@@ -79,7 +92,18 @@ const fixture = Effect.gen(function* () {
   };
   const read = () =>
     Effect.promise(async () => (await NodeFSP.readFile(report, "utf8")).trim().split("\n"));
-  return { root, metadata, terminal, state, command, entered, read };
+  return {
+    root,
+    metadata,
+    terminal,
+    state,
+    command,
+    entered,
+    read,
+    opened,
+    relayed,
+    closedSessions,
+  };
 }).pipe(Effect.provide(SshCrypto.layer));
 it.live(
   "real Git child gets only its temporary agent/configuration and preserves exit status",
@@ -108,7 +132,9 @@ it.live("revoked signing fails the activation and cleans its socket and child", 
   Effect.gen(function* () {
     const f = yield* fixture;
     f.state.reject = true;
-    expect((yield* f.terminal.execute(f.command).pipe(Effect.flip)).reason).toBe("denied");
+    expect(yield* f.terminal.execute(f.command).pipe(Effect.flip)).toMatchObject({
+      reason: "denied",
+    });
     expect(f.state.closed).toBe(1);
     const [socket] = yield* f.read();
     expect(
@@ -128,7 +154,7 @@ it.effect("cancellation and expiration release the activation after a real child
     const child = yield* f.terminal.execute(f.command).pipe(Effect.forkChild);
     yield* Deferred.await(f.entered);
     yield* TestClock.adjust(10000);
-    expect((yield* Fiber.join(child).pipe(Effect.flip)).reason).toBe("timeout");
+    expect(yield* Fiber.join(child).pipe(Effect.flip)).toMatchObject({ reason: "timeout" });
     expect(f.state.closed).toBe(1);
     const [socket] = yield* f.read();
     expect(
@@ -166,5 +192,60 @@ it.live(
       ).toBe(64);
       expect(f.state.frames).toBe(0);
       expect(f.state.closed).toBe(2);
+    }).pipe(Effect.scoped),
+);
+
+it.live.each(["resource", "explicit"] as const)(
+  "opens a %s selector once and pins all frames and cleanup to its returned session",
+  (kind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const connection =
+        kind === "resource"
+          ? { resource: "development-host", preferredItemIds: [f.metadata.id] }
+          : { id: f.metadata.id, expectedVersion: f.metadata.version };
+      expect(
+        yield* f.terminal.execute({
+          connection,
+          command: f.command.command,
+          timeoutMs: f.command.timeoutMs,
+        }),
+      ).toBe(7);
+      expect(f.opened).toEqual([{ connection }]);
+      expect(f.relayed).toHaveLength(1);
+      expect(f.relayed[0]?.sessionId).toBe(f.metadata.sessionId);
+      expect(f.closedSessions).toEqual([f.metadata.sessionId]);
+      const [socket, home, authorization, inheritedCommand] = yield* f.read();
+      expect(authorization).toBe("unset");
+      expect(inheritedCommand).toBe("unset");
+      expect(socket).not.toBe("/personal-agent");
+      expect(home).not.toBe("/personal-home");
+    }).pipe(Effect.scoped),
+);
+it.effect.each([
+  { nested: false, mismatch: "id" },
+  { nested: false, mismatch: "version" },
+  { nested: true, mismatch: "id" },
+  { nested: true, mismatch: "version" },
+] as const)(
+  "rejects mismatched explicit returned pins before launching a child: %j",
+  ({ nested, mismatch }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const pin = {
+        id: mismatch === "id" ? "c".repeat(32) : f.metadata.id,
+        expectedVersion: mismatch === "version" ? f.metadata.version + 1 : f.metadata.version,
+      };
+      const input = {
+        ...(nested ? { connection: pin } : pin),
+        command: f.command.command,
+        timeoutMs: f.command.timeoutMs,
+      };
+      expect(yield* f.terminal.execute(input).pipe(Effect.flip)).toMatchObject({
+        reason: "configuration",
+      });
+      expect(f.opened).toEqual([nested ? { connection: pin } : pin]);
+      expect(f.relayed).toEqual([]);
+      expect(f.closedSessions).toEqual([f.metadata.sessionId]);
     }).pipe(Effect.scoped),
 );

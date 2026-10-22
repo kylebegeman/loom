@@ -12,6 +12,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { VaultAccessInspector } from "./VaultAccessInspector.ts";
 import { VaultAccess } from "./VaultAccess.ts";
+import { VaultConnections } from "./VaultConnections.ts";
 import * as OperationJournal from "./OperationJournal.ts";
 import { VaultAccessToolkit, vaultAccessHandlers } from "./access-mcp.ts";
 const threadId = ThreadId.make("authenticated-vault-thread");
@@ -384,6 +385,65 @@ it.effect(
       expect(
         Object.keys(VaultAccessToolkit.tools).some((name) =>
           /journal.*(reserve|finish|reconcile|cancel|prepare)/.test(name),
+        ),
+      ).toBe(false);
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "resource resolution binds the authenticated agent identity and refuses an unbound client",
+  () =>
+    Effect.gen(function* () {
+      let resolutions = 0;
+      const serviceContext = yield* Layer.build(
+        Layer.mock(VaultConnections)({
+          resolve: (request, caller) =>
+            Effect.sync(() => {
+              expect(caller).toBe(threadId);
+              expect(request.connection).toEqual({ resource: "personal-vps" });
+              resolutions++;
+              return {
+                state: "missing" as const,
+                selected: null,
+                choices: [],
+                repair: "create-connection" as const,
+              };
+            }),
+        }),
+      );
+      const toolkit = yield* VaultAccessToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(vaultAccessHandlers).pipe(
+            Layer.provide(
+              Layer.succeed(ForkRuntime, serviceContext as Context.Context<ForkServices>),
+            ),
+          ),
+        ),
+      );
+      const invoke = (caller: McpInvocationScope) =>
+        toolkit
+          .handle("loom_vault_connections_resolve", {
+            kind: "ssh",
+            connection: { resource: "personal-vps" },
+          })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, caller),
+            Effect.provide(Layer.mock(ThreadManagementService)({})),
+          );
+      expect((yield* invoke(scope))[0]?.result).toMatchObject({
+        state: "missing",
+        repair: "create-connection",
+      });
+      yield* invoke({
+        ...scope,
+        thread: undefined,
+        client: { sessionId: "unbound", label: "Unbound", access: "full-access" },
+      }).pipe(Effect.flip);
+      expect(resolutions).toBe(1);
+      expect(
+        Object.keys(VaultAccessToolkit.tools).some((name) =>
+          /owner_policy_(set|change)/.test(name),
         ),
       ).toBe(false);
     }).pipe(Effect.scoped),

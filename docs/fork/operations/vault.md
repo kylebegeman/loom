@@ -39,6 +39,61 @@ Status checks health and KV v2 configuration, not all path privileges. A ready c
 still receive a denied item operation if its policy is incomplete. A sealed backend reports
 locked. Loom neither auto-unseals it nor asks an SSH key manager to unlock it.
 
+## Personal environment access
+
+After backend and connection setup, an authenticated human administrator can open **Vault**,
+confirm **This is my personal environment** and choose **Enable owner access**. Use **Use
+restricted access** to disable it. This is a durable environment policy choice;
+it is not inferred from localhost, a project path, a provider name, runtime full access or an
+existing grant. Existing and shared environments remain restricted by default. Disable personal
+access to return to the existing grant evaluator. Keep encrypted records, grants, backend
+configuration and recovery material in place; do not rebootstrap OpenBao or reimport keys.
+
+This declaration is the boundary for a personally controlled environment. Loom has no verified
+platform multi-owner identity/membership model. It cannot safely distinguish an owner's agents
+from another person's agents merely because both can launch work on the same server. Do not
+enable this mode for shared tenants. The first declaration binds the authenticated human
+subject; later changes require that same subject. Human policy administration stays separate
+from agent MCP and provider-terminal access.
+
+Personal access covers metadata inspection and supported brokered use for authenticated active
+full-access/default agent runs. Item and connection scope, current versions, host pins, broker
+requirements, active-run identity and runtime/plan permissions still apply. Item management,
+trust administration, raw reveal/export and one-time protection retain their existing
+restrictions. Credential availability never constitutes authorization for a deployment, write or
+other task.
+
+A resource name selects a connection; it is not an access token. Execution must pin the selected
+item/version and revalidate its current policy and destination before credential use. Profiles
+are optional reusable bindings, not an enrollment or access prerequisite. A lookup without a
+visible match cannot prove that an inspect-hidden connection is absent. Keep missing selection,
+policy denial, untrusted host, unavailable broker and upstream authentication failures distinct.
+
+Disabling personal access affects new online decisions; independent restricted grants can still
+allow use. Existing authenticated SSH sessions, GitHub tokens and completed remote effects are
+not recalled. Provider revocation remains separate. A stale snapshot can restore an older access
+mode as well as older grants. Reconcile both before reconnecting any restored environment.
+
+## Owner policy compatibility
+
+The first mode change stores a version-5 outer envelope on the existing environment
+`access-policy` path. It preserves the complete legacy format-1/2/3 or protected format-4 policy,
+owner binding and bounded change receipts. Grant, approval and audit writes retain those fields.
+No new backend path, SQL migration or infrastructure setup is required. Existing environments
+without an owner declaration continue to use restricted grants.
+
+Older runtimes reject format 5. Disabling personal access retains the envelope and owner binding;
+it does not make downgrade safe. Do not strip owner policy or protected classifications/intents,
+reset the backend, or restore older access records to work around compatibility. Use a compatible
+runtime and an isolated, reviewed recovery that reconciles later mode changes and revocations.
+An enable retry returns current state; it must not re-enable a subsequently disabled environment.
+
+`loom vault owner-policy` and `loom_vault_owner_policy` report the current mode. They are reads,
+not setup commands. Agent or generic CLI/MCP clients cannot enable personal access. Named
+selection uses `loom vault connections-resolve` / `loom_vault_connections_resolve`; direct tools
+keep supporting explicit item ID/current version. A resolver `ready` report covers selection,
+policy and saved host trust, not a broker probe or successful external login.
+
 ## Payload compatibility
 
 New writes use a versioned serialized JSON envelope inside KV v2. This avoids OpenBao's JSON
@@ -107,10 +162,10 @@ staging files using the storage owner's approved procedure.
 `authenticated: true` verifies the archive, not OpenBao consistency or authorization freshness.
 Receipts always say `backendRestoreVerified: false` and `canPromote: false`. Restore only into
 an isolated backend with compatible OpenBao/Loom readers, then reconcile post-snapshot revoked
-machines, grants, sessions and upstream credentials before any workloads can reconnect. An
-archive can correctly contain identities that were revoked later. Do not promote an older
-snapshot when independent revocation evidence is unavailable. Production restoration and trust
-promotion remain a host-owner action behind the L79 gates.
+machines, access mode, grants, sessions and upstream credentials before any workloads can
+reconnect. An archive can correctly contain identities that were revoked later. Do not promote
+an older snapshot when independent revocation evidence is unavailable. Production restoration
+and trust promotion remain a host-owner action behind the L79 gates.
 
 With installed dependencies and a verified OpenBao 2.7.1 binary, reproduce the isolated drill:
 
@@ -219,8 +274,9 @@ recovery/revocation process remains L88 work. This activity history is not an im
 
 `vault-workload-checks` adds process-local, five-minute sessions for active full-access/default
 Loom runs. Sessions require distinct machine/workload proofs, a current host heartbeat, and a
-current item/destination use grant. Signed checks use the existing encrypted policy/audit path;
-no additional OpenBao policy path or backend token is needed. No credential payload is delivered.
+current item/destination authorization under the selected access mode. Signed checks use the
+existing encrypted policy/audit path; no additional OpenBao policy path or backend token is
+needed. No credential payload is delivered.
 
 A control-plane restart deliberately invalidates all sessions and challenges. Open a new
 session from the current authenticated thread after reconnecting. Durable grants and enrolled
@@ -291,12 +347,14 @@ Provider launches already attach an authenticated thread-bound MCP connection. H
 `loom_vault_ssh_exec` and `loom_vault_git` operations use it to acquire an in-memory workload
 identity/session, sign a fresh operation proof with both identities and release the session on
 completion, error or cancellation. The machine's service identity is never passed to a provider.
-An active full-access/default thread and matching use grant are required. Fresh scheduled
+An active full-access/default thread and current access-policy authorization are required.
+Personal owner-trusted mode does not need recurring grants. In restricted mode, fresh scheduled
 agent threads can use project grants; command-only tasks and administrator MCP clients cannot
 impersonate a thread through these tools. The CLI dispatches through the same connection.
 
 Git ref listing/fetch runs in the thread's current server checkout with a canonical SSH URL,
-verified host-bound key and a separate repository destination grant. Relative repository
+verified host-bound key and repository-scoped authorization. Restricted mode requires a
+matching repository destination grant. Relative repository
 `team/repo.git` uses `git+ssh://git@host.example:22/team/repo.git`; absolute `/srv/repo.git`
 uses `git+ssh://git@host.example:22/:absolute/srv/repo.git`. The stored key's SSH destination
 alone does not match this repository scope. Grants with no destination are deliberately broader.
@@ -399,7 +457,8 @@ backups or logs. Other agents running as the same OS user are not isolated from 
 Run `loom vault terminal-readiness` in the actual agent terminal. A connection error calls for
 restarting that provider session or using hosted tools; it is not a request to sign into a
 personal password manager. An inactive run or offline enrolled broker is reported separately.
-Selected-item/version/destination grants and actual upstream readiness remain separate checks.
+Selected-item/version/destination authorization and actual upstream readiness remain separate
+checks.
 
 ## Production rollout procedure
 
@@ -450,10 +509,10 @@ No Library deployment is required for the implemented environment-local Vault se
    to the reviewed private identity directory. Do not enroll or approve a machine on its behalf
    from an agent prompt.
 8. Generate a **dedicated development** SSH key or register a dedicated GitHub App/token.
-   Register only its public key upstream. Independently verify SSH host trust. Create exact
-   item/action/destination grants and a project profile. From an actual Codex/Claude/Pi run,
+   Register only its public key upstream. Independently verify SSH host trust. Enable
+   personal access or create restricted item/action/destination grants. A project profile is optional. From an actual Codex/Claude/Pi run,
    check terminal and selected-credential readiness, perform a synthetic read operation, then
-   revoke and prove the next use fails. Test broker restart, sealed backend and network outage.
+   withdraw all applicable access and prove the next use fails. Test broker restart, sealed backend and network outage.
    Keep personal 1Password/SSH configuration separate; no implicit remote migration occurs.
 9. Before entrusting real credentials, use an operator credential separate from Loom's token
    to run `bao operator raft snapshot save <protected-snapshot>`. Transfer the encrypted
@@ -679,11 +738,12 @@ older runtime rewrites may omit fields they do not recognize.
 
 ## Temporary approval policy compatibility
 
-The first approval milestone introduced access-policy format 2. Requester lifecycle and retention
-writes use format 3 whenever an approval ledger is present, unless the policy already uses
-format 4. Current readers accept formats 1/2/3/4; 0.0.97 and earlier cannot read format 3.
-Format-4 readers preserve required credential classifications and operation intents in every
-policy write. Existing format-3 policies are not automatically migrated.
+The first approval milestone introduced access-policy format 2. Requester lifecycle and
+retention writes use format 3 whenever an approval ledger is present, unless the policy already
+uses format 4. Current readers accept formats 1/2/3/4 directly or inside the format-5 owner
+envelope; 0.0.97 and earlier cannot read format 3. Required credential classifications and
+operation intents must survive every policy write. Personal access does not bypass format-4
+one-time protection. Existing format-3 policies are not automatically migrated.
 
 Older runtimes that accept only formats 1/2/3 reject format 4 and cannot operate that
 environment's Vault. Never lower the version, strip classifications/intents or restore a legacy
@@ -714,17 +774,18 @@ destroy or additional policy capability is needed. The isolated policy proof is 
 No production policy was inspected or modified. Service construction does not open the record;
 no public operation or background dispatcher currently writes it.
 
-The version-1 journal body is separate from access-policy format 3 and uses the same json-v1
-store envelope and CAS. It retains at most 128 entries for 24 hours from original request
-creation; current-value pruning does not erase KV version history or snapshots. Older runtimes
-continue reading format 3 and ignore the reserved journal path safely. They cannot resume a
-journal-bound operation. Current MCP retry preparation includes an optional read-only recovery
-observation; older preparation tools omit it and do not inspect the journal. A downgrade must
-not be used to bypass durable outcome review. Re-upgrade must reconcile journal state with current access, item and
-run state; never remove journal evidence to make a request retryable. Restoring an old snapshot
-also needs revocation and outcome reconciliation. A reserved entry with uncertain dispatch becomes
-unknown and is not automatically repeated. Notification observations are still process memory.
-Execution, resumption and allow-once gates remain closed; enabling them requires Kyle's approval.
+The version-1 journal body is separate from the inner access-policy format and uses the same
+json-v1 store envelope and CAS. It retains at most 128 entries for 24 hours from original
+request creation; current-value pruning does not erase KV version history or snapshots. Older
+runtimes can read legacy format-3 policies and ignore the reserved journal path, but reject the
+owner-mode format-5 envelope. They cannot resume a journal-bound operation. Current MCP retry
+preparation includes an optional read-only recovery observation; older preparation tools omit it
+and do not inspect the journal. A downgrade must not be used to bypass durable outcome review.
+Re-upgrade must reconcile journal state with current access, item and run state; never remove
+journal evidence to make a request retryable. Restoring an old snapshot also needs revocation
+and outcome reconciliation. A reserved entry with uncertain dispatch becomes unknown and is not
+automatically repeated. Notification observations are still process memory. Execution,
+resumption and allow-once gates remain closed; enabling them requires Kyle's approval.
 
 ## Test account registry compatibility
 
@@ -737,8 +798,9 @@ profiles-root project enumeration. Project cleanup remains under its exact hashe
 Older runtimes ignore this independent version-1 registry and retain their normal Vault item
 behavior. They cannot coordinate pool leases. Reservation/quarantine are pool-management state,
 not a restriction on all generic credential use, revocation of external logins or a replacement
-for item grants. Do not promote generic access to a protected worker-login claim. Access-policy
-format 3 and the operation journal version 1 are unchanged.
+for item grants. Do not promote generic access to a protected worker-login claim. The inner
+access-policy format and operation journal version 1 are unchanged; owner mode retains its
+format-5 envelope.
 
 Human leases bind to authenticated client session IDs, not pairing subject labels. Re-pairing cannot
 renew/release a prior session's lease; an authorized manager must explicitly quarantine or retire
@@ -748,20 +810,21 @@ collections and 128 references, including archived/retired entries; receipts ret
 and prune entries older than 24 hours on mutation. No production accounts are auto-discovered,
 provisioned or migrated. Use only separately approved dedicated test identities.
 
-Agent pool ownership is a `run-v1:` binding inside the same registry-1 owner string. Authenticated
-MCP callers cannot choose it. Discovery and reserve/renew require inspect/use grants for
-`loom:test-accounts:<collectionId>`; this is a metadata pool scope and does not authorize provider
-login. Release requires the exact owned lease even after grant withdrawal. The cleanup reactor
-runs at startup and every minute, quarantining expired or invalid run leases via the existing
-ledger CAS. Outages/corruption refuse and retry later; reads cannot grant login while waiting.
-A cleanup conflict never clears a newer lease. Clean review remains a separate manager action.
+Agent pool ownership is a `run-v1:` binding inside the same registry-1 owner string.
+Authenticated MCP callers cannot choose it. Discovery and reserve/renew require current
+inspect/use authority for `loom:test-accounts:<collectionId>` (matching grants in restricted
+mode); this is a metadata pool scope and does not authorize provider login. Release requires the
+exact owned lease even after grant withdrawal. The cleanup reactor runs at startup and every
+minute, quarantining expired or invalid run leases via the existing ledger CAS.
+Outages/corruption refuse and retry later; reads cannot grant login while waiting. A cleanup
+conflict never clears a newer lease. Clean review remains a separate manager action.
 
 Runtimes predating workload cleanup can still decode registry 1 and preserve run owner strings,
 but cannot reconcile run termination or grant withdrawal. Keep pool workers on a runtime with
-this support or explicitly quarantine affected leases before downgrading. Access-policy 3 and
-journal 1 remain unchanged. No new host policy, path, mount or Library rollout is needed for
-this slice. This is pool coordination only; generic credential use and external sessions are
-not governed or revoked by it.
+this support or explicitly quarantine affected leases before downgrading. The inner
+access-policy and journal 1 remain unchanged; owner mode retains its format-5 envelope. No new
+host policy, path, mount or Library rollout is needed for this slice. This is pool coordination
+only; generic credential use and external sessions are not governed or revoked by it.
 
 ## Isolated Loom account test target
 

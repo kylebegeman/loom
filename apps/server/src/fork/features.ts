@@ -14,6 +14,8 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-profiles",
   "core",
   "vault-core",
+  "vault-owner-trusted",
+  "vault-connection-resolution",
   "vault-test-accounts",
   "vault-migration-recovery-design",
   "vault-migration-previews",

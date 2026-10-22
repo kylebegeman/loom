@@ -41,11 +41,13 @@ export function GitHubReadiness({
   info,
   repository,
   disabled,
+  ownerMode = false,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode?: boolean;
 }) {
   const configs = useServerConfigs();
   if (
@@ -63,6 +65,7 @@ export function GitHubReadiness({
         info={info}
         repository={repository}
         disabled={disabled}
+        ownerMode={ownerMode}
       />
     </LoomSettingsDetails>
   );
@@ -72,11 +75,13 @@ function Checks({
   info,
   repository,
   disabled,
+  ownerMode,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode: boolean;
 }) {
   const catalogAtom = access.catalog({ environmentId, input: {} });
   const catalog = useAtomValue(catalogAtom);
@@ -152,7 +157,11 @@ function Checks({
       </div>
       <LoomSettingsField
         label="Readiness context"
-        description="A thread also needs an active full-access run and its repository use grant."
+        description={
+          ownerMode
+            ? "Choose an active full-access thread to check agent tools too. Owner access supplies Vault use permission."
+            : "A thread also needs an active full-access run and its repository use grant."
+        }
       >
         <Select
           disabled={disabled || !!controller}

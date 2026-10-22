@@ -1,6 +1,7 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
   VaultError,
+  type VaultOwnerPolicyChange,
   type VaultApprovalCreate,
   type VaultApprovalChange,
   type VaultGrantMutation,
@@ -9,6 +10,8 @@ import {
   type VaultReadinessInput,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import { AuthStandardClientScopes } from "@t3tools/contracts";
+import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import * as VaultAccessInspector from "./VaultAccessInspector.ts";
 import * as VaultReadiness from "./VaultReadiness.ts";
@@ -16,6 +19,7 @@ import * as VaultAccess from "./VaultAccess.ts";
 export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers")(function* (
   auth: ForkRpcAuth,
   actor: string,
+  session?: AuthenticatedSession,
 ) {
   const access = yield* VaultAccess.VaultAccess;
   const readiness = yield* VaultReadiness.VaultReadiness;
@@ -28,7 +32,27 @@ export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers
             .effect(method, Effect.void)
             .pipe(Effect.mapError(() => new VaultError({ reason: "denied" }))),
     );
+  // Declaring an environment personal requires its human administrator, not a scoped
+  // client, provider workload, broker or Library replication identity.
+  const authorizeOwner = Effect.suspend(() =>
+    !session ||
+    session.subject !== actor ||
+    /^(thread:|client:|broker:|host:|library:|mcp-client$)/.test(actor) ||
+    !AuthStandardClientScopes.every((scope) => session.scopes.includes(scope))
+      ? Effect.fail(new VaultError({ reason: "denied" }))
+      : auth.effect(V.setOwnerPolicy, Effect.void).pipe(
+          Effect.andThen(auth.effect(V.apply, Effect.void)),
+          Effect.mapError(() => new VaultError({ reason: "denied" })),
+        ),
+  );
   return {
+    [V.setOwnerPolicy]: (input: VaultOwnerPolicyChange) =>
+      auth.effect(
+        V.setOwnerPolicy,
+        authorizeOwner.pipe(
+          Effect.andThen(() => access.setOwnerPolicy(input, actor, authorizeOwner)),
+        ),
+      ),
     [V.approvalInbox]: () => auth.effect(V.approvalInbox, access.approvalInbox),
     [V.approvalCreate]: (input: VaultApprovalCreate) =>
       auth.effect(

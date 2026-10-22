@@ -41,6 +41,7 @@ vi.mock("~/components/settings/SettingsScopeContext", () => ({
 vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh } }));
+vi.mock("./OwnerSettingsSection", () => ({ VaultOwnerSettings: () => null }));
 vi.mock("./SshDialog", () => ({ VaultSshDialog: () => null }));
 vi.mock("./access-navigation", () => ({ openVaultAccess: vi.fn() }));
 vi.mock("./state", () => ({

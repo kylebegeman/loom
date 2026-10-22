@@ -162,7 +162,9 @@ const make = Effect.gen(function* () {
         const policy = decodePolicy(Redacted.value(storedPolicy.value));
         if (
           Option.isNone(policy) ||
-          (policy.value.schemaVersion === 4 && policy.value.environmentId !== environmentId)
+          (policy.value.schemaVersion === 4 && policy.value.environmentId !== environmentId) ||
+          (policy.value.ownerPolicy !== undefined &&
+            policy.value.ownerPolicy.environmentId !== environmentId)
         )
           return yield* new VaultError({ reason: "invalid-response" });
         if (credentialUseRefusal(policy.value, decoded.value.id))

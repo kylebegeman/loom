@@ -246,7 +246,7 @@ const make = Effect.gen(function* () {
             snapshot.machines.some(
               (machine) => machine.state === "active" && machine.leaseUntil > checkedAt,
             ),
-          credentialUse: "requires-selection-and-current-grant",
+          credentialUse: "requires-selection-and-current-policy",
         };
       },
     ),

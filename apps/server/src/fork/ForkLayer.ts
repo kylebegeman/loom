@@ -3,6 +3,7 @@ import * as ProfileEnvInspector from "./project-profiles/EnvInspectorLive.ts";
 import * as ProfileVarlock from "./project-profiles/VarlockRunner.ts";
 import * as ProfileBudgets from "./project-profiles/BudgetReactor.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
+import * as VaultConnections from "./vault/VaultConnections.ts";
 import * as VaultAccessInspector from "./vault/VaultAccessInspector.ts";
 import * as VaultReadiness from "./vault/VaultReadiness.ts";
 import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
@@ -127,6 +128,9 @@ const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
   ),
 );
 
+const layerVaultConnections = VaultConnections.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultAccess, layerVaultStore)),
+);
 const layerVaultBrokers = VaultBrokers.layer.pipe(
   Layer.provide(Layer.merge(layerVaultStore, BrokerCrypto.layer)),
 );
@@ -155,6 +159,7 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       layerVaultCore,
       layerVaultHealth,
       layerVaultAccess,
+      layerVaultConnections,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
       GitHubCli.layer,
       GitHubTerminal.layer,
@@ -254,6 +259,7 @@ const layerVaultLaunch = VaultLaunch.layer.pipe(
       layerVaultProfiles,
       layerVaultGitHub,
       layerVaultSsh,
+      layerVaultConnections,
       layerVaultWorkloads,
       BrokerCrypto.layer,
       BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
@@ -311,6 +317,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),
   layerVaultAccessInspector,
+  layerVaultConnections,
   layerVaultReadiness,
   layerVaultProfiles,
   layerVaultReferences,

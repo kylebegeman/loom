@@ -20,14 +20,14 @@ const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultWorkloadToolkit = Toolkit.make(
   Tool.make("loom_vault_terminal_readiness", {
     description:
-      "Check this authenticated terminal connection against its current provider and run, plus online broker presence. Does not prove a selected account, destination, grant or upstream login. Results expire in 60 seconds.",
+      "Check this authenticated terminal connection against its current provider and run, plus online broker presence. Does not prove selected-connection policy permission, destination compatibility or upstream login. Results expire in 60 seconds.",
     success: VaultTerminalReadiness,
     failure,
     dependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_workload_open", {
     description:
-      "Open a five-minute public-key-bound authorization-check session for this authenticated active thread/run, one enrolled host, one item and exact destination. Requires a current use grant and full-access/default runtime. Supply a fresh workload public identity generated outside the project. This is a channel check, not secret delivery or SSH access. Never send private keys.",
+      "Open a five-minute public-key-bound authorization-check session for this authenticated active thread/run, one enrolled host, one item and exact destination. Requires current Vault use permission and full-access/default runtime. Owner-trusted environments need no individual grant. Supply a fresh workload public identity generated outside the project. This is a channel check, not secret delivery or SSH access. Never send private keys.",
     parameters: VaultWorkloadOpen,
     success: VaultWorkloadSession,
     failure,
