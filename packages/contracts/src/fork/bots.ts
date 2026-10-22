@@ -1678,6 +1678,8 @@ export const DEFAULT_BOT_REMOTE_SETTINGS: BotRemoteSettings = {
   runtimeModeCeiling: "auto",
 };
 
+const BotTargetAvailability = Schema.Literals(["ready", "busy", "offline", "blocked", "unknown"]);
+
 export const BotTargetReadiness = Schema.Struct({
   environmentId: EnvironmentId,
   label: Schema.String,
@@ -1685,6 +1687,9 @@ export const BotTargetReadiness = Schema.Struct({
   online: Schema.Boolean,
   ready: Schema.Boolean,
   freeSlots: Schema.Int,
+  /** Absent on older servers; `unknown` means readiness could not be verified. */
+  availability: Schema.optionalKey(BotTargetAvailability),
+  reportedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Why the computer cannot run the bot now, such as "Remote runs are off". */
   reasons: Schema.Array(Schema.String),
 });
@@ -1798,6 +1803,9 @@ export const BotLibraryStatusReport = Schema.Struct({
       revision: Schema.Int,
       ready: Schema.Boolean,
       reasons: Schema.Array(Schema.String),
+      availability: Schema.optionalKey(BotTargetAvailability),
+      /** Includes both this bot's limit and the computer's shared capacity. */
+      freeSlots: Schema.optionalKey(Schema.Int),
     }),
   ).check(Schema.isMaxLength(500)),
 });

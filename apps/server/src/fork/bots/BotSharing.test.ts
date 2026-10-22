@@ -5,6 +5,8 @@ import {
   botRunThreadId,
   type BotLibraryStatusReport,
   type BotRemoteRunRequest,
+  type VaultCoreStatus,
+  type DirectoryListing,
 } from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -50,18 +52,35 @@ const setup = (
     const library = Context.get(built, BotLibraryService);
     const bots = yield* harness.service;
     const enabled = { models: [model.model] as Array<string> };
+    const readiness = {
+      provider: [] as Array<{ availability: "blocked" | "unknown"; message: string }>,
+      project: [] as Array<{ availability: "blocked" | "unknown"; message: string }>,
+      directory: null as DirectoryListing | null,
+      vaultState: "ready" as VaultCoreStatus["state"],
+      items: new Map<string, { environmentId: typeof laptop; label: string }>(),
+    };
     const sharing = yield* makeSharing({
       bots,
       client: wrap(inProcessClient(library, laptop, Effect.succeed("Laptop"))),
       projects: {
         toLibrary: (id) => Effect.succeed(id === projectId ? libraryProject : null),
         toLocal: (id) => Effect.succeed(id === libraryProject ? projectId : null),
+        readiness: () => Effect.sync(() => readiness.project),
       },
-      vault: { describe: () => Effect.succeed(null) },
+      vault: {
+        describe: (id) => Effect.sync(() => readiness.items.get(id) ?? null),
+        status: Effect.sync(() => ({
+          backend: "openbao",
+          state: readiness.vaultState,
+          origin: null,
+        })),
+      },
+      computers: Effect.sync(() => readiness.directory),
+      modelReadiness: () => Effect.sync(() => readiness.provider),
       modelEnabled: (selection) => Effect.succeed(enabled.models.includes(selection.model)),
     });
     yield* bots.setAnywhereHooks(sharing.hooks);
-    return { library, bots, sharing, enabled };
+    return { library, bots, sharing, enabled, readiness };
   });
 
 const studioPublishes = (
@@ -87,6 +106,181 @@ const studioRequest = (requestId: string): BotRemoteRunRequest => ({
 });
 
 describe("BotSharing", () => {
+  it.effect(
+    "reports provider authentication and failed tool checks instead of configured readiness",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots, sharing, readiness } = yield* setup(harness);
+          yield* bots.save(reviewer(), USER_CALLER);
+          readiness.provider = [
+            { availability: "blocked", message: "Its provider is not signed in on this computer." },
+          ];
+          readiness.project = [
+            { availability: "unknown", message: "The required Node.js tool could not be checked." },
+          ];
+          const [target] = (yield* sharing.targets("reviewer", projectId)).targets;
+          expect(target).toMatchObject({ ready: false, availability: "blocked" });
+          expect(target?.reasons).toEqual([
+            readiness.provider[0]!.message,
+            readiness.project[0]!.message,
+          ]);
+          readiness.provider = [];
+          expect((yield* sharing.targets("reviewer", projectId)).targets[0]).toMatchObject({
+            ready: false,
+            availability: "unknown",
+          });
+        }),
+      ),
+  );
+
+  it.effect("checks the live Vault backend and bound item before declaring a target ready", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, sharing, readiness } = yield* setup(harness);
+        yield* bots.save(
+          reviewer({ vaultSlots: [{ name: "github", label: "GitHub", action: "use" }] }),
+          USER_CALLER,
+        );
+        readiness.items.set("item", { environmentId: laptop, label: "Local GitHub" });
+        yield* sharing.bindVaultSlot("reviewer", "github", "item");
+        expect((yield* sharing.targets("reviewer")).targets[0]?.ready).toBe(true);
+        readiness.vaultState = "locked";
+        expect((yield* sharing.targets("reviewer")).targets[0]).toMatchObject({
+          ready: false,
+          availability: "blocked",
+          reasons: ["The Vault backend is locked on this computer."],
+        });
+        readiness.vaultState = "unavailable";
+        expect((yield* sharing.targets("reviewer")).targets[0]?.availability).toBe("unknown");
+        readiness.vaultState = "ready";
+        readiness.items.delete("item");
+        expect((yield* sharing.targets("reviewer")).targets[0]).toMatchObject({
+          ready: false,
+          reasons: ['Its Vault slot "GitHub" is no longer readable on this computer.'],
+        });
+      }),
+    ),
+  );
+
+  it.effect("reports busy targets with zero slots and excludes them from Best available", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        const local = yield* bots.run(
+          { botId: "reviewer", projectId, inputs: { file: "local.ts" } },
+          USER_CALLER,
+        );
+        yield* harness.nextLaunch;
+        yield* library.reportStatus(studio, studioReport({ freeSlots: 0 }));
+        const result = yield* sharing.targets("reviewer");
+        expect(
+          result.targets.map((target) => [target.ready, target.availability, target.freeSlots]),
+        ).toEqual([
+          [false, "busy", 0],
+          [false, "busy", 0],
+        ]);
+        const refused = yield* sharing
+          .resolveTarget(yield* bots.get("reviewer"), { type: "best" }, projectId)
+          .pipe(Effect.flip);
+        expect(refused.message).toContain("No computer is ready");
+        yield* bots.cancel(local.id);
+      }),
+    ),
+  );
+
+  it.effect("distinguishes offline reports from unreadable target status", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const fails = { value: false };
+        const { library, bots, sharing } = yield* setup(harness, (client) => ({
+          ...client,
+          targets: Effect.suspend(() =>
+            fails.value
+              ? Effect.fail(new BotLibraryError({ reason: "io", message: "Unreachable" }))
+              : client.targets,
+          ),
+        }));
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        yield* library.reportStatus(studio, studioReport());
+        expect((yield* sharing.targets("reviewer")).targets[1]?.availability).toBe("ready");
+        fails.value = true;
+        expect((yield* sharing.targets("reviewer")).targets[1]).toMatchObject({
+          environmentId: studio,
+          online: true,
+          ready: false,
+          availability: "unknown",
+          freeSlots: 0,
+        });
+        fails.value = false;
+        yield* TestClock.adjust("3 minutes");
+        expect((yield* sharing.targets("reviewer")).targets[1]).toMatchObject({
+          online: false,
+          ready: false,
+          availability: "offline",
+          freeSlots: 0,
+        });
+      }),
+    ),
+  );
+
+  it.effect(
+    "lists directory computers without inventing bot readiness from directory presence",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots, sharing, readiness, library } = yield* setup(harness);
+          yield* bots.save(reviewer(), USER_CALLER);
+          yield* sharing.share("reviewer");
+          readiness.directory = {
+            generatedAt: "1970-01-01T00:00:00.000Z",
+            machines: [],
+            environments: [
+              {
+                environmentId: studio,
+                label: "Studio",
+                supportsExecution: true,
+                loomFeatures: [],
+                routes: [],
+                providers: [],
+                serverVersion: "test",
+                platform: { os: "darwin", arch: "arm64" },
+                sequence: 1,
+                reportedAt: "1970-01-01T00:00:00.000Z",
+                receivedAt: "1970-01-01T00:00:00.000Z",
+                firstSeenAt: "1970-01-01T00:00:00.000Z",
+                keyFingerprint: "a".repeat(64),
+              },
+            ],
+          };
+          expect((yield* sharing.targets("reviewer")).targets[1]).toMatchObject({
+            environmentId: studio,
+            online: true,
+            ready: false,
+            availability: "unknown",
+            freeSlots: 0,
+          });
+          yield* library.reportStatus(studio, studioReport());
+          expect((yield* sharing.targets("reviewer")).targets[1]?.ready).toBe(true);
+          readiness.directory = {
+            ...readiness.directory,
+            environments: readiness.directory.environments.map((environment) => ({
+              ...environment,
+              supportsExecution: false,
+            })),
+          };
+          expect((yield* sharing.targets("reviewer")).targets[1]).toMatchObject({
+            ready: false,
+            availability: "blocked",
+            reasons: ["That computer does not run agents."],
+          });
+        }),
+      ),
+  );
+
   it.effect("shares a project bot under its Library project and refuses one outside it", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -284,6 +478,8 @@ describe("BotSharing", () => {
         yield* sharing.sync();
         yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
         yield* sharing.setRemoteSettings({ acceptRemote: true, runtimeModeCeiling: "auto" });
+        // A stale report must not bypass the target's own ceiling check.
+        yield* library.reportStatus(laptop, studioReport({ label: "Laptop" }));
         yield* library.submit(studio, {
           targetEnvironmentId: laptop,
           request: studioRequest("wide"),
@@ -399,7 +595,9 @@ describe("BotSharing", () => {
           ...client,
           postResult: (input) =>
             postFails.value
-              ? Effect.fail(new BotLibraryError({ reason: "io", message: "The Library timed out." }))
+              ? Effect.fail(
+                  new BotLibraryError({ reason: "io", message: "The Library timed out." }),
+                )
               : client.postResult(input),
         }));
         yield* studioPublishes(library);
@@ -551,7 +749,7 @@ describe("BotSharing", () => {
     ),
   );
 
-  it.effect("records a pinned remote run as the revision the other computer runs", () =>
+  it.effect("refuses a pinned remote run when the target has a different revision", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
         const { library, bots, sharing } = yield* setup(harness);
@@ -578,9 +776,9 @@ describe("BotSharing", () => {
           {},
         );
         const [delivery] = yield* library.nextRequests(studio, 0);
-        expect(delivery?.message).toMatchObject({ _tag: "run", request: { revision: 2 } });
-        expect(run.botVersion).toBe((yield* bots.get("reviewer")).version);
-        expect(run.botVersion).not.toBe(pinned.version);
+        expect(delivery).toBeUndefined();
+        expect(run).toMatchObject({ status: "failed", botVersion: pinned.version });
+        expect(run.error).toContain("requested revision");
       }),
     ),
   );

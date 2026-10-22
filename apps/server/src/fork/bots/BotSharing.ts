@@ -11,6 +11,9 @@ import {
   type BotLibraryError,
   type BotLibraryLink,
   type BotLibraryStatusReport,
+  type BotLibraryTargetStatus,
+  type DirectoryListing,
+  type VaultCoreStatus,
   type BotRemoteSettings,
   type BotRun,
   type BotRunComputer,
@@ -32,6 +35,16 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
+import * as Directory from "../directory/DirectoryService.ts";
+import * as LibraryWorkspace from "../project-library/LibraryWorkspace.ts";
+import * as VaultCore from "../vault/VaultCore.ts";
+import {
+  problemAvailability,
+  providerProblems,
+  toolProblems,
+  type ReadinessProblem,
+} from "./readiness.ts";
 import * as LibraryWorkspaceStore from "../project-library/LibraryWorkspaceStore.ts";
 import * as VaultReferences from "../vault/VaultReferences.ts";
 import { BotLibraryClient } from "./BotLibraryClient.ts";
@@ -61,9 +74,14 @@ const FALLBACK_TIMEOUT_MINUTES = 30;
 export interface BotProjectMap {
   readonly toLibrary: (projectId: ProjectId) => Effect.Effect<string | null>;
   readonly toLocal: (libraryProjectId: string) => Effect.Effect<ProjectId | null>;
+  readonly readiness: (
+    projectId: ProjectId | null,
+    libraryProjectId: string | null,
+  ) => Effect.Effect<ReadonlyArray<ReadinessProblem>>;
 }
 
 export interface BotVaultLookup {
+  readonly status: Effect.Effect<VaultCoreStatus>;
   readonly describe: (
     itemId: string,
   ) => Effect.Effect<{ readonly environmentId: EnvironmentId; readonly label: string } | null>;
@@ -75,6 +93,10 @@ export interface BotSharingDeps {
   readonly projects: BotProjectMap;
   readonly vault: BotVaultLookup;
   readonly modelEnabled: (model: ModelSelection) => Effect.Effect<boolean>;
+  readonly modelReadiness: (
+    model: ModelSelection,
+  ) => Effect.Effect<ReadonlyArray<ReadinessProblem>>;
+  readonly computers?: Effect.Effect<DirectoryListing | null>;
 }
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
@@ -129,20 +151,39 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     );
   });
 
-  /** Why this computer cannot run `bot` now; empty when it can. */
-  const readiness = Effect.fnUntraced(function* (bot: BotDefinition) {
-    const reasons: Array<string> = [];
-    if (bot.archivedAt !== null) reasons.push("It is archived on this computer.");
+  const readiness = Effect.fn("BotSharing.readiness")(function* (
+    bot: BotDefinition,
+    projectId: ProjectId | null = definitionProject(bot),
+  ) {
+    const problems: Array<ReadinessProblem> = [];
+    const blocked = (message: string) => problems.push({ availability: "blocked", message });
+    if (bot.archivedAt !== null) blocked("It is archived on this computer.");
     if (!(yield* deps.modelEnabled(bot.modelSelection)))
-      reasons.push("Its model's provider is not set up on this computer.");
+      blocked("Its model's provider is not set up on this computer.");
+    else problems.push(...(yield* deps.modelReadiness(bot.modelSelection)));
     const libraryProjectId = bot.library?.libraryProjectId ?? null;
     if (libraryProjectId !== null && (yield* projects.toLocal(libraryProjectId)) === null)
-      reasons.push("This computer has no copy of its project.");
+      blocked("This computer has no ready copy of its project.");
+    else problems.push(...(yield* projects.readiness(projectId, libraryProjectId)));
+    const slots = bot.vaultSlots ?? [];
+    if (slots.length === 0) return problems;
+    const backend = yield* vault.status;
+    if (backend.state !== "ready") {
+      problems.push({
+        availability: backend.state === "unavailable" ? "unknown" : "blocked",
+        message: `The Vault backend is ${backend.state} on this computer.`,
+      });
+      return problems;
+    }
     const bindings = yield* storage(store.vaultBindings(bot.id));
-    for (const slot of bot.vaultSlots ?? [])
-      if (!bindings.has(slot.name))
-        reasons.push(`Its Vault slot "${slot.label}" is not bound on this computer.`);
-    return reasons;
+    for (const slot of slots) {
+      const itemId = bindings.get(slot.name);
+      if (itemId === undefined)
+        blocked(`Its Vault slot "${slot.label}" is not bound on this computer.`);
+      else if ((yield* vault.describe(itemId)) === null)
+        blocked(`Its Vault slot "${slot.label}" is no longer readable on this computer.`);
+    }
+    return problems;
   });
 
   const freeSlots = bots.activeRuns.pipe(
@@ -154,12 +195,25 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     const shared = (yield* bots.list()).filter((bot) => bot.library != null);
     const entries: Array<BotLibraryStatusReport["bots"][number]> = [];
     for (const bot of shared.slice(0, 500)) {
-      const reasons = yield* readiness(bot);
+      const problems = yield* readiness(bot);
+      if (outranks(bot.runtimeMode, settings.runtimeModeCeiling))
+        problems.push({
+          availability: "blocked",
+          message: `Remote runs allow ${settings.runtimeModeCeiling} mode at most; this bot needs ${bot.runtimeMode}.`,
+        });
+      const slots = Math.min(
+        yield* freeSlots,
+        Math.max(0, bot.maxConcurrentRuns - bots.activeRunCount(bot.id)),
+      );
+      const availability =
+        problems.length > 0 ? problemAvailability(problems) : slots === 0 ? "busy" : "ready";
       entries.push({
         libraryBotId: bot.library!.libraryBotId,
         revision: bot.library!.revision,
-        ready: reasons.length === 0,
-        reasons,
+        ready: problems.length === 0,
+        reasons: problems.map((problem) => problem.message),
+        availability,
+        freeSlots: slots,
       });
     }
     return {
@@ -323,69 +377,140 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     return yield* syncLock.withPermit(syncNow);
   });
 
+  let lastStatuses: ReadonlyArray<BotLibraryTargetStatus> = [];
   const remoteTargets = client.targets.pipe(
-    Effect.map((statuses) =>
-      statuses.filter((status) => status.environmentId !== client.environmentId),
-    ),
-    Effect.orElseSucceed(() => []),
+    Effect.map((statuses) => {
+      lastStatuses = statuses.filter((status) => status.environmentId !== client.environmentId);
+      return { statuses: lastStatuses, verified: true };
+    }),
+    Effect.orElseSucceed(() => ({ statuses: lastStatuses, verified: false })),
   );
 
-  const targets = Effect.fn("BotSharing.targets")(function* (
-    botId: string,
+  const targetsFor = Effect.fn("BotSharing.targetsFor")(function* (
+    bot: BotDefinition,
     projectId: ProjectId | null = null,
   ) {
-    const bot = yield* bots.get(botId);
-    // Other computers find a run's project through the Library, so it must be there.
     const runProject = projectId ?? definitionProject(bot);
     const unshared =
       runProject !== null && (yield* projects.toLibrary(runProject)) === null
         ? "Add this project to the Library to run it on other computers."
         : null;
     const library = yield* client.availability();
-    const own = yield* readiness(bot);
+    const own = yield* readiness(bot, runProject);
+    const ownSlots = Math.min(
+      yield* freeSlots,
+      Math.max(0, bot.maxConcurrentRuns - bots.activeRunCount(bot.id)),
+    );
     const here: BotTargetReadiness = {
       environmentId: client.environmentId,
       label: yield* client.label,
       isThisComputer: true,
       online: true,
-      ready: own.length === 0,
-      freeSlots: yield* freeSlots,
-      reasons: own,
+      ready: own.length === 0 && ownSlots > 0,
+      availability: own.length > 0 ? problemAvailability(own) : ownSlots === 0 ? "busy" : "ready",
+      freeSlots: own.length === 0 ? ownSlots : 0,
+      reasons:
+        own.length > 0
+          ? own.map((problem) => problem.message)
+          : ownSlots === 0
+            ? ["It is busy. No bot slots are free."]
+            : [],
+      reportedAt: yield* nowIso,
     };
     if (library !== "available") return { library, targets: [here] } satisfies BotTargetsResult;
     const now = yield* nowMs;
-    const others = (yield* remoteTargets).map((status): BotTargetReadiness => {
-      const online = now - Date.parse(status.reportedAt) <= BOT_LIBRARY_STATUS_FRESH_MS;
+    const { statuses, verified } = yield* remoteTargets;
+    const directory = yield* deps.computers ?? Effect.succeed(null);
+    const known = new Map(
+      directory?.environments
+        .filter((environment) => environment.environmentId !== client.environmentId)
+        .map((environment) => [environment.environmentId, environment]),
+    );
+    const ids = new Set([...statuses.map((status) => status.environmentId), ...known.keys()]);
+    const fresh = (at: string) => {
+      const age = now - Date.parse(at);
+      return (
+        Number.isFinite(age) &&
+        age >= -BOT_LIBRARY_STATUS_FRESH_MS &&
+        age <= BOT_LIBRARY_STATUS_FRESH_MS
+      );
+    };
+    const others = [...ids].map((environmentId): BotTargetReadiness => {
+      const status = statuses.find((candidate) => candidate.environmentId === environmentId);
+      const environment = known.get(environmentId);
+      const botReportFresh = status !== undefined && fresh(status.reportedAt);
+      const online = botReportFresh || (environment !== undefined && fresh(environment.receivedAt));
       const entry =
         bot.library == null
           ? undefined
-          : status.report.bots.find(
+          : status?.report.bots.find(
               (candidate) => candidate.libraryBotId === bot.library!.libraryBotId,
             );
-      const reasons = !online
-        ? ["It is offline."]
-        : unshared !== null
-          ? [unshared]
-          : !status.report.acceptRemote
-            ? ["Remote runs are off on that computer."]
-            : bot.library == null
-              ? ["Share this bot to run it on other computers."]
-              : entry === undefined
-                ? ["It does not have this bot yet."]
-                : entry.ready
-                  ? []
-                  : [...entry.reasons];
+      let availability: NonNullable<BotTargetReadiness["availability"]> = "blocked";
+      let reasons: Array<string> = [];
+      if (!verified) {
+        availability = "unknown";
+        reasons = ["Its bot readiness could not be checked. The Library could not be reached."];
+      } else if (!online) {
+        availability = "offline";
+        reasons = ["It is offline."];
+      } else if (environment?.supportsExecution === false) {
+        reasons = ["That computer does not run agents."];
+      } else if (!botReportFresh) {
+        availability = "unknown";
+        reasons = ["It has not reported current bot readiness."];
+      } else if (unshared !== null) reasons = [unshared];
+      else if (!status!.report.acceptRemote) reasons = ["Remote runs are off on that computer."];
+      else if (bot.library == null) reasons = ["Share this bot to run it on other computers."];
+      else if (entry === undefined) reasons = ["It does not have this bot yet."];
+      else if (entry.revision !== bot.library.revision)
+        reasons = [
+          "It does not have this bot's requested revision. Sync the bot before running it there.",
+        ];
+      else if (outranks(bot.runtimeMode, status!.report.runtimeModeCeiling))
+        reasons = [
+          `Remote runs allow ${status!.report.runtimeModeCeiling} mode at most; this bot needs ${bot.runtimeMode}.`,
+        ];
+      else if (!entry.ready) {
+        availability = entry.availability === "unknown" ? "unknown" : "blocked";
+        reasons =
+          entry.reasons.length > 0
+            ? [...entry.reasons]
+            : ["Its bot readiness could not be verified."];
+        if (entry.reasons.length === 0) availability = "unknown";
+      } else availability = "ready";
+      const slots = Math.max(
+        0,
+        Math.min(
+          BOTS_MAX_ACTIVE_RUNS,
+          status?.report.freeSlots ?? 0,
+          entry?.freeSlots ?? bot.maxConcurrentRuns,
+        ),
+      );
+      if (availability === "ready" && slots === 0) {
+        availability = "busy";
+        reasons = ["It is busy. No bot slots are free."];
+      }
       return {
-        environmentId: status.environmentId,
-        label: status.report.label,
+        environmentId,
+        label: status?.report.label ?? environment!.label,
         isThisComputer: false,
         online,
-        ready: reasons.length === 0,
-        freeSlots: status.report.freeSlots,
+        ready: availability === "ready",
+        availability,
+        freeSlots: availability === "ready" ? slots : 0,
         reasons,
+        reportedAt: status?.reportedAt ?? null,
       };
     });
     return { library, targets: [here, ...others] } satisfies BotTargetsResult;
+  });
+
+  const targets = Effect.fn("BotSharing.targets")(function* (
+    botId: string,
+    projectId: ProjectId | null = null,
+  ) {
+    return yield* targetsFor(yield* bots.get(botId), projectId);
   });
 
   const resolveTarget = Effect.fnUntraced(function* (
@@ -396,15 +521,20 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     if (target.type === "here") return null;
     if (target.type === "environment") {
       if (target.environmentId === client.environmentId) return null;
-      const status = (yield* remoteTargets).find(
+      const candidate = (yield* targetsFor(bot, projectId)).targets.find(
         (candidate) => candidate.environmentId === target.environmentId,
       );
+      if (candidate === undefined || !candidate.ready)
+        return yield* fail(
+          "invalid",
+          candidate?.reasons.join(" ") ?? "That computer's bot readiness is unknown.",
+        );
       return {
-        environmentId: target.environmentId,
-        label: status?.report.label ?? "Another computer",
+        environmentId: candidate.environmentId,
+        label: candidate.label,
       } satisfies BotRunComputer;
     }
-    const ready = (yield* targets(bot.id, projectId)).targets.filter(
+    const ready = (yield* targetsFor(bot, projectId)).targets.filter(
       (candidate) => candidate.ready,
     );
     // Most free slots wins; this computer is listed first, so it keeps a tie.
@@ -493,6 +623,9 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
   });
 
   const vaultLines = Effect.fnUntraced(function* (bot: BotDefinition) {
+    const backend = yield* vault.status;
+    if (backend.state !== "ready")
+      return yield* fail("invalid", `The Vault backend is ${backend.state} on this computer.`);
     const bound = yield* storage(store.vaultBindings(bot.id));
     const lines: Array<string> = [];
     for (const slot of bot.vaultSlots ?? []) {
@@ -613,6 +746,9 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
       request.libraryProjectId == null ? null : yield* projects.toLocal(request.libraryProjectId);
     if (request.libraryProjectId != null && projectId === null)
       return yield* ack(`${label} has no copy of this run's project.`);
+    const problems = yield* readiness(bot, projectId ?? definitionProject(bot));
+    if (problems.length > 0)
+      return yield* ack(problems.map((problem) => problem.message).join(" "));
     // A run that cannot start is recorded under the request's id and reported back as failed.
     return yield* bots
       .startRunWith(
@@ -728,13 +864,15 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     resolveTarget,
     submit,
     cancel: (run) =>
-      client.cancel(run.id).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Could not cancel a bot run on another computer", { cause }).pipe(
-            Effect.as(false),
+      client
+        .cancel(run.id)
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Could not cancel a bot run on another computer", { cause }).pipe(
+              Effect.as(false),
+            ),
           ),
         ),
-      ),
     vaultLines,
   };
 
@@ -797,28 +935,68 @@ const make = Effect.gen(function* () {
   const workspace = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const references = yield* VaultReferences.VaultReferences;
   const settings = yield* ServerSettings.ServerSettingsService;
+  const providers = yield* ProviderRegistry.ProviderRegistry;
+  const vaultCore = yield* VaultCore.VaultCore;
+  const projectWorkspace = yield* LibraryWorkspace.LibraryWorkspace;
+  const directory = yield* Directory.DirectoryService;
+  const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
   const receipts = workspace.receipts.pipe(Effect.orElseSucceed(() => []));
   const sharing = yield* makeSharing({
     bots,
     client,
     projects: {
+      readiness: Effect.fn("BotSharing.projectReadiness")(function* (projectId, libraryProjectId) {
+        const all = yield* workspace.receipts.pipe(Effect.option);
+        if (Option.isNone(all))
+          return [
+            {
+              availability: "unknown" as const,
+              message: "Its project's required tools could not be checked.",
+            },
+          ];
+        const libraryId =
+          libraryProjectId ??
+          all.value.find(
+            (receipt) =>
+              receipt.rootLocalProjectId === projectId ||
+              receipt.copy.repositories.some(
+                (repository) => repository.localProjectId === projectId,
+              ),
+          )?.project.id;
+        if (libraryId == null) return [];
+        const report = yield* projectWorkspace
+          .readiness({ projectId: libraryId })
+          .pipe(Effect.option);
+        return Option.isNone(report)
+          ? [
+              {
+                availability: "unknown" as const,
+                message: "Its project's required tools could not be checked.",
+              },
+            ]
+          : toolProblems(report.value.checks);
+      }),
       toLibrary: (projectId) =>
         receipts.pipe(
           Effect.map(
             (all) =>
               all.find(
                 (receipt) =>
-                  receipt.rootLocalProjectId === projectId ||
-                  receipt.copy.repositories.some(
-                    (repository) => repository.localProjectId === projectId,
-                  ),
+                  receipt.copy.state === "ready" &&
+                  (receipt.rootLocalProjectId === projectId ||
+                    receipt.copy.repositories.some(
+                      (repository) => repository.localProjectId === projectId,
+                    )),
               )?.project.id ?? null,
           ),
         ),
       toLocal: (libraryProjectId) =>
         receipts.pipe(
           Effect.map((all) => {
-            const receipt = all.find((candidate) => candidate.project.id === libraryProjectId);
+            const receipt = all.find(
+              (candidate) =>
+                candidate.project.id === libraryProjectId && candidate.copy.state === "ready",
+            );
             return (
               receipt?.rootLocalProjectId ?? receipt?.copy.repositories[0]?.localProjectId ?? null
             );
@@ -826,6 +1004,7 @@ const make = Effect.gen(function* () {
         ),
     },
     vault: {
+      status: vaultCore.status,
       describe: (itemId) =>
         references.describe(itemId).pipe(
           Effect.map((reference) =>
@@ -836,6 +1015,14 @@ const make = Effect.gen(function* () {
           Effect.orElseSucceed(() => null),
         ),
     },
+    computers: directory.computers.pipe(Effect.orElseSucceed(() => null)),
+    modelReadiness: Effect.fn("BotSharing.modelReadiness")(function* (model) {
+      const snapshots = yield* providers.refreshInstance(model.instanceId);
+      return providerProblems(
+        snapshots.find((provider) => provider.instanceId === model.instanceId),
+        yield* nowMillis,
+      );
+    }),
     modelEnabled: (model) =>
       settings.getSettings.pipe(
         Effect.map((current) => isModelSelectionProviderEnabled(current, model)),
