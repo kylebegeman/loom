@@ -507,6 +507,10 @@
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
     },
+    "./fork/library-decisions": {
+      "types": "./src/fork/library-decisions.ts",
+      "import": "./src/fork/library-decisions.ts"
+    },
     "./fork/library-launch": {
       "types": "./src/fork/library-launch.ts",
       "import": "./src/fork/library-launch.ts"

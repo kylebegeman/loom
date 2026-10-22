@@ -1,3 +1,4 @@
+import { LibraryDecisionsRpcGroup } from "./project-library-decisions.ts";
 import { VaultTestAccountRpcGroup } from "./vault-test-accounts.ts";
 import { VaultMigrationInventoryRpcGroup } from "./vault-migration-inventory.ts";
 import { VaultMigrationRpcGroup } from "./vault-migration.ts";
@@ -89,6 +90,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   ProjectLibraryRpcGroup,
   ProjectLibraryHealthRpcGroup,
   LibrarySearchRpcGroup,
+  LibraryDecisionsRpcGroup,
   ProjectLibraryTimelineRpcGroup,
   ProjectLibraryBriefRpcGroup,
   ProjectLibraryReadinessRpcGroup,
