@@ -207,6 +207,15 @@
   ],
   "packageOverrides": [
     {
+      "name": "@env-spec/parser",
+      "version": "0.6.0",
+      "sourceUrl": "https://github.com/dmno-dev/varlock/blob/674fdcf31c73aede88573efdee24488bd18af879/LICENSE",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2026 DMNO Inc."]
+      }
+    },
+    {
       "name": "remark-math",
       "version": "6.0.0",
       "sourceUrl": "https://github.com/remarkjs/remark-math/blob/main/license",
