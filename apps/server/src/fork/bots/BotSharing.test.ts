@@ -195,6 +195,82 @@ describe("BotSharing", () => {
     ),
   );
 
+  it.effect("reserves unreported outgoing runs against target slots across concurrent starts", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        yield* library.reportStatus(
+          studio,
+          studioReport({
+            freeSlots: 2,
+            bots: [
+              { libraryBotId: "reviewer", revision: 1, ready: true, reasons: [], freeSlots: 2 },
+            ],
+          }),
+        );
+        const attempts = yield* Effect.forEach(
+          ["a", "b", "c"],
+          (file) =>
+            bots
+              .run(
+                {
+                  botId: "reviewer",
+                  projectId,
+                  inputs: { file },
+                  target: { type: "environment", environmentId: studio },
+                },
+                USER_CALLER,
+              )
+              .pipe(Effect.result),
+          { concurrency: "unbounded" },
+        );
+        expect(attempts.filter((attempt) => attempt._tag === "Success")).toHaveLength(2);
+        expect(attempts.filter((attempt) => attempt._tag === "Failure")).toHaveLength(1);
+        expect((yield* sharing.targets("reviewer", projectId)).targets[1]).toMatchObject({
+          availability: "busy",
+          freeSlots: 0,
+        });
+        expect(yield* bots.activeRuns).toBe(0);
+        expect(harness.launches).toHaveLength(0);
+      }),
+    ),
+  );
+
+  it.effect("does not subtract reservations already included in the target's report", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { library, bots, sharing } = yield* setup(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sharing.share("reviewer");
+        const report = studioReport({
+          freeSlots: 3,
+          bots: [{ libraryBotId: "reviewer", revision: 1, ready: true, reasons: [], freeSlots: 3 }],
+        });
+        yield* library.reportStatus(studio, report);
+        const run = yield* bots.run(
+          {
+            botId: "reviewer",
+            projectId,
+            inputs: { file: "a" },
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+        );
+        yield* library.reportStatus(studio, {
+          ...report,
+          freeSlots: 2,
+          activeRequestIds: [run.id],
+        });
+        expect((yield* sharing.targets("reviewer", projectId)).targets[1]?.freeSlots).toBe(2);
+        // An older target cannot identify reservations; keeping them is conservative.
+        yield* library.reportStatus(studio, { ...report, freeSlots: 2 });
+        expect((yield* sharing.targets("reviewer", projectId)).targets[1]?.freeSlots).toBe(1);
+      }),
+    ),
+  );
+
   it.effect("distinguishes offline reports from unreadable target status", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -453,6 +529,12 @@ describe("BotSharing", () => {
         const run = yield* bots.getRun("open");
         expect(run.requestedBy).toEqual({ environmentId: studio, label: "Studio" });
         expect(run.projectId).toBe(projectId);
+        yield* sharing.reportStatus;
+        const ownReport = (yield* library.targets).find(
+          (target) => target.environmentId === laptop,
+        );
+        expect(ownReport?.report.activeRequestIds).toEqual(["open"]);
+        expect(ownReport?.report.bots[0]?.freeSlots).toBe(0);
 
         yield* sharing.reportRuns;
         yield* harness.end(launch.threadId!, { status: "completed", reply: "Clean." });

@@ -28,6 +28,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -46,6 +47,7 @@ import { cutLabel, makeBatchSources, type SourceCheckout } from "./batchSources.
 import { validateInputs } from "./render.ts";
 
 const PREVIEW_ITEMS = 20;
+const CAPACITY_RECHECK_INTERVAL = Duration.seconds(5);
 /** A fan-out step's items come from an earlier step's output, so every input is framed. */
 export const PIPELINE_ITEM_ORIGIN = "an earlier step of this run's pipeline";
 const PREVIEW_INVALID = 5;
@@ -87,6 +89,7 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const serviceScope = yield* Effect.scope;
   const changes = yield* PubSub.unbounded<BotBatchChange>();
+  const capacityChanges = yield* PubSub.unbounded<void>();
   const feeders = new Map<string, Fiber.Fiber<void>>();
   /** Batches their bot's budget holds back, until when; only a running feeder sets one. */
   const pausedUntil = new Map<string, string>();
@@ -278,7 +281,11 @@ export const make = Effect.gen(function* () {
    * While the bot's budget refuses, the item stays pending and the batch waits until the budget
    * allows a run, then asks again; a restart in between starts a feeder that asks again.
    */
-  const feedItem = Effect.fnUntraced(function* (stored: StoredBatch, item: BotBatchItem) {
+  const feedItem = Effect.fnUntraced(function* (
+    stored: StoredBatch,
+    item: BotBatchItem,
+    startPermit: Semaphore.Semaphore,
+  ) {
     const batchId = stored.batch.id;
     const start = bots
       .startRunWith(
@@ -306,26 +313,44 @@ export const make = Effect.gen(function* () {
         },
       )
       .pipe(Effect.uninterruptible);
-    while (true) {
-      const started = yield* start.pipe(
-        Effect.map((run) => ({ run, retryAt: undefined })),
-        Effect.catchIf(
-          (error) => error.retryAt !== undefined,
-          (error) => Effect.succeed({ run: null, retryAt: error.retryAt }),
-        ),
-      );
-      if (started.run !== null) {
-        if (pausedUntil.delete(batchId)) yield* publishSummary(batchId);
-        return yield* bots.awaitRun(started.run.id).pipe(Effect.ignore({ log: true }));
-      }
-      const retryAt = started.retryAt ?? (yield* nowIso);
-      if (pausedUntil.get(batchId) !== retryAt) {
-        pausedUntil.set(batchId, retryAt);
-        yield* publishSummary(batchId);
-      }
-      const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
-      yield* Effect.sleep(Duration.millis(Math.max(0, Date.parse(retryAt) - nowMs)));
-    }
+    // One pending item probes capacity per batch; running items wait outside this permit.
+    const run = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const capacity = yield* PubSub.subscribe(capacityChanges);
+        while (true) {
+          const started = yield* start.pipe(
+            Effect.map((run) => ({ run, retryAt: undefined, waitingForCapacity: false })),
+            Effect.catchIf(
+              (error) => error.retryAt !== undefined || error.waitingForCapacity === true,
+              (error) =>
+                Effect.succeed({
+                  run: null,
+                  retryAt: error.retryAt,
+                  waitingForCapacity: error.waitingForCapacity === true,
+                }),
+            ),
+          );
+          if (started.run !== null) {
+            if (pausedUntil.delete(batchId)) yield* publishSummary(batchId);
+            return started.run;
+          }
+          if (started.waitingForCapacity) {
+            if (pausedUntil.delete(batchId)) yield* publishSummary(batchId);
+            // Local completions wake immediately. Remote reports may change independently.
+            yield* Effect.raceFirst(PubSub.take(capacity), Effect.sleep(CAPACITY_RECHECK_INTERVAL));
+            continue;
+          }
+          const retryAt = started.retryAt ?? (yield* nowIso);
+          if (pausedUntil.get(batchId) !== retryAt) {
+            pausedUntil.set(batchId, retryAt);
+            yield* publishSummary(batchId);
+          }
+          const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+          yield* Effect.sleep(Duration.millis(Math.max(0, Date.parse(retryAt) - nowMs)));
+        }
+      }),
+    ).pipe(startPermit.withPermits(1));
+    yield* bots.awaitRun(run.id).pipe(Effect.ignore({ log: true }));
   });
 
   /**
@@ -358,8 +383,12 @@ export const make = Effect.gen(function* () {
     if (stored.batch.status !== "running") return;
     const current = yield* bots.get(stored.batch.botId);
     if (current.archivedAt !== null) return yield* fail("archived", "The bot was archived.");
-    // The live limit, so lowering it slows a batch already under way.
-    const window = Math.min(current.maxConcurrentRuns, BOTS_MAX_ACTIVE_RUNS);
+    // Targeted starts select and reserve capacity per item instead of using requester permits.
+    const window =
+      stored.target !== null && stored.target.type !== "here"
+        ? "unbounded"
+        : Math.min(current.maxConcurrentRuns, BOTS_MAX_ACTIVE_RUNS);
+    const startPermit = yield* Semaphore.make(1);
     const items = yield* store.getItems(batchId).pipe(Effect.catch(storageError));
     yield* Effect.all(
       [
@@ -370,7 +399,7 @@ export const make = Effect.gen(function* () {
         ),
         Effect.forEach(
           items.filter((item) => item.state === "pending"),
-          (item) => feedItem(stored, item),
+          (item) => feedItem(stored, item, startPermit),
           { concurrency: window, discard: true },
         ),
       ],
@@ -550,10 +579,12 @@ export const make = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           for (const item of retried)
-            yield* store.requeueItem(batchId, item.index, [
-              ...item.previousRunIds,
-              ...(item.runId === null ? [] : [item.runId]),
-            ], item.runId);
+            yield* store.requeueItem(
+              batchId,
+              item.index,
+              [...item.previousRunIds, ...(item.runId === null ? [] : [item.runId])],
+              item.runId,
+            );
           if (input.useLatest === true) yield* store.setDefinition(batchId, current);
           yield* store.setStatus(batchId, "running", null, null);
         }),
@@ -628,6 +659,7 @@ export const make = Effect.gen(function* () {
   /** Keeps batch views current from run changes, and stops batches whose bot goes away. */
   const onBotsChange = Effect.fn("BotBatches.onBotsChange")(
     function* (change: BotsChange) {
+      yield* PubSub.publish(capacityChanges, undefined);
       switch (change._tag) {
         case "run": {
           const batchId = change.run.batchId;

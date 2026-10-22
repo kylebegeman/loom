@@ -399,6 +399,8 @@ export class BotsError extends Schema.TaggedError<BotsError>()("BotsError", {
    * budgets still decode the error and show its message.
    */
   retryAt: Schema.optionalKey(Schema.String),
+  /** The target is ready but full; batches keep the item pending until capacity changes. */
+  waitingForCapacity: Schema.optionalKey(Schema.Literal(true)),
 }) {}
 
 export const BotsSaveInput = Schema.Struct({
@@ -1809,6 +1811,8 @@ export const BotLibraryStatusReport = Schema.Struct({
   acceptRemote: Schema.Boolean,
   runtimeModeCeiling: RuntimeMode,
   freeSlots: Schema.Int,
+  /** Requests already included in this computer's occupied slots. Absent on older targets. */
+  activeRequestIds: Schema.optionalKey(Schema.Array(BotRunId).check(Schema.isMaxLength(500))),
   /** Readiness for the caller-selected project of a global bot. Absent on older targets. */
   projects: Schema.optionalKey(
     Schema.Array(BotLibraryProjectReadiness).check(Schema.isMaxLength(500)),

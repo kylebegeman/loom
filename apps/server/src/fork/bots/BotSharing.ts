@@ -193,6 +193,9 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
 
   const statusReport = Effect.gen(function* () {
     const settings = yield* storage(store.remoteSettings());
+    // Counts and request IDs come from one snapshot so an ID never acknowledges an uncounted run.
+    const active = yield* storage(store.listUnfinishedRuns());
+    const available = Math.max(0, BOTS_MAX_ACTIVE_RUNS - active.length);
     const shared = (yield* bots.list()).filter((bot) => bot.library != null);
     const projectReports: NonNullable<BotLibraryStatusReport["projects"]>[number][] = [];
     for (const libraryProjectId of (yield* projects.libraryProjects).slice(0, 500)) {
@@ -213,8 +216,8 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
           message: `Remote runs allow ${settings.runtimeModeCeiling} mode at most; this bot needs ${bot.runtimeMode}.`,
         });
       const slots = Math.min(
-        yield* freeSlots,
-        Math.max(0, bot.maxConcurrentRuns - bots.activeRunCount(bot.id)),
+        available,
+        Math.max(0, bot.maxConcurrentRuns - active.filter((run) => run.botId === bot.id).length),
       );
       const availability =
         problems.length > 0 ? problemAvailability(problems) : slots === 0 ? "busy" : "ready";
@@ -231,9 +234,13 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
       label: yield* client.label,
       acceptRemote: settings.acceptRemote,
       runtimeModeCeiling: settings.runtimeModeCeiling,
-      freeSlots: yield* freeSlots,
+      freeSlots: available,
       bots: entries,
       projects: projectReports,
+      activeRequestIds: active
+        .filter((run) => run.requestedBy != null)
+        .slice(0, 500)
+        .map((run) => run.id),
     } satisfies BotLibraryStatusReport;
   });
 
@@ -410,9 +417,10 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
         : null;
     const library = yield* client.availability();
     const own = yield* readiness(bot, runProject);
+    const current = yield* bots.get(bot.id);
     const ownSlots = Math.min(
       yield* freeSlots,
-      Math.max(0, bot.maxConcurrentRuns - bots.activeRunCount(bot.id)),
+      Math.max(0, current.maxConcurrentRuns - bots.activeRunCount(bot.id)),
     );
     const here: BotTargetReadiness = {
       environmentId: client.environmentId,
@@ -433,6 +441,7 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
     if (library !== "available") return { library, targets: [here] } satisfies BotTargetsResult;
     const now = yield* nowMs;
     const { statuses, verified } = yield* remoteTargets;
+    const outstanding = yield* storage(store.listOpenRemoteRuns());
     const directory = yield* deps.computers ?? Effect.succeed(null);
     const known = new Map(
       directory?.environments
@@ -514,12 +523,19 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
           if (project.reasons.length === 0) availability = "unknown";
         }
       }
+      // A report may predate requests we have just sent. Older targets retain every reservation.
+      const unreported = outstanding.filter(
+        (run) =>
+          run.ranOn?.environmentId === environmentId &&
+          !status?.report.activeRequestIds?.includes(run.id),
+      );
       const slots = Math.max(
         0,
         Math.min(
           BOTS_MAX_ACTIVE_RUNS,
-          status?.report.freeSlots ?? 0,
-          entry?.freeSlots ?? bot.maxConcurrentRuns,
+          (status?.report.freeSlots ?? 0) - unreported.length,
+          (entry?.freeSlots ?? bot.maxConcurrentRuns) -
+            unreported.filter((run) => run.botId === bot.id).length,
         ),
       );
       if (availability === "ready" && slots === 0) {
@@ -555,30 +571,37 @@ export const makeSharing = Effect.fnUntraced(function* (deps: BotSharingDeps) {
   ) {
     if (target.type === "here") return null;
     if (target.type === "environment") {
-      if (target.environmentId === client.environmentId) return null;
       const candidate = (yield* targetsFor(bot, projectId)).targets.find(
         (candidate) => candidate.environmentId === target.environmentId,
       );
       if (candidate === undefined || !candidate.ready)
-        return yield* fail(
-          "invalid",
-          candidate?.reasons.join(" ") ?? "That computer's bot readiness is unknown.",
-        );
+        return yield* new BotsError({
+          reason: "invalid",
+          message: candidate?.reasons.join(" ") ?? "That computer's bot readiness is unknown.",
+          ...(candidate?.availability === "busy" ? { waitingForCapacity: true } : {}),
+        });
+      if (candidate.isThisComputer) return null;
       return {
         environmentId: candidate.environmentId,
         label: candidate.label,
       } satisfies BotRunComputer;
     }
-    const ready = (yield* targetsFor(bot, projectId)).targets.filter(
-      (candidate) => candidate.ready,
-    );
+    const candidates = (yield* targetsFor(bot, projectId)).targets;
+    const ready = candidates.filter((candidate) => candidate.ready);
     // Most free slots wins; this computer is listed first, so it keeps a tie.
     const best = ready.reduce<BotTargetReadiness | null>(
       (winner, candidate) =>
         winner === null || candidate.freeSlots > winner.freeSlots ? candidate : winner,
       null,
     );
-    if (best === null) return yield* fail("invalid", `No computer is ready to run ${bot.name}.`);
+    if (best === null)
+      return yield* new BotsError({
+        reason: "invalid",
+        message: `No computer is ready to run ${bot.name}.`,
+        ...(candidates.some((candidate) => candidate.availability === "busy")
+          ? { waitingForCapacity: true }
+          : {}),
+      });
     return best.isThisComputer ? null : { environmentId: best.environmentId, label: best.label };
   });
 
