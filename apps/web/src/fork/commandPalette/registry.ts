@@ -1,3 +1,8 @@
+import {
+  projectProfilesPaletteSource,
+  useProfilePaletteContext,
+  type ProfilePaletteContext,
+} from "../project-profiles/palette";
 import { vaultTestAccountsPaletteSource } from "../vault/test-accounts-palette";
 import { vaultMigrationPaletteSource } from "../vault/migration-palette";
 import { vaultHealthPaletteSource } from "../vault/health-palette";
@@ -51,6 +56,7 @@ export interface ForkCommandPaletteContext {
   readonly loomFeatures: ReadonlyArray<string>;
   readonly library?: LibraryPaletteContext | null;
   readonly bots?: BotsPaletteContext | null;
+  readonly projectProfile?: ProfilePaletteContext | null;
 }
 
 export interface ForkCommandPaletteSource {
@@ -67,6 +73,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  projectProfilesPaletteSource,
   vaultProfilePaletteSource,
   vaultSshPaletteSource,
   vaultMigrationPaletteSource,
@@ -134,7 +141,8 @@ export function useForkCommandPaletteItems(): {
     Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
   const library = useLibraryPaletteContext(activeThreadRef);
   const bots = useBotsPaletteContext();
-  const context = { activeThreadRef, loomFeatures, modelFiles, library, bots };
+  const projectProfile = useProfilePaletteContext(activeThreadRef);
+  const context = { activeThreadRef, loomFeatures, modelFiles, library, bots, projectProfile };
   return {
     items: forkCommandPaletteItems(context),
     searchItems: forkCommandPaletteSearchItems(context),

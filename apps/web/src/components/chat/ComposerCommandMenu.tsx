@@ -1,3 +1,4 @@
+import { forkComposerTriggerLabel } from "../../fork/composer/triggers"; // fork: ext-composer-menu
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import {
@@ -120,7 +121,12 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         {props.items.length > 0 ? (
           <CommandList
             id={props.listId}
-            aria-label={props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined}
+            aria-label={
+              props.triggerKind
+                ? (LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] ??
+                  forkComposerTriggerLabel(props.triggerKind))
+                : undefined
+            } // fork: ext-composer-menu
             className="max-h-72 min-h-0 scroll-pb-6"
           >
             <CommandGroup>
@@ -184,6 +190,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       value={props.item.id}
       data-composer-item-id={props.item.id}
       active={props.isActive}
+      disabled={props.item.type === "loom" && props.item.disabled} // fork: ext-composer-menu
       onMouseMove={() => {
         if (!props.isActive) props.onHighlight(props.item.id);
       }}
@@ -241,7 +248,7 @@ export function composerSuggestionOptionId(listId: string, itemId: string): stri
   return `${listId}-${encodeURIComponent(JSON.stringify(itemId))}`;
 }
 
-const LISTBOX_LABEL_BY_TRIGGER: Record<ComposerTriggerKind, string> = {
+const LISTBOX_LABEL_BY_TRIGGER: Partial<Record<ComposerTriggerKind, string>> = {
   path: "Files and folders",
   "pull-request": "Pull requests",
   "slash-command": "Commands",

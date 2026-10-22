@@ -1,3 +1,4 @@
+import { detectForkComposerTrigger } from "./fork/composer/triggers"; // fork: ext-composer-menu
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import type {
   AssistantCitation,
@@ -17,7 +18,13 @@ import {
 
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
-export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
+// fork: ext-composer-menu
+export type ComposerTriggerKind =
+  | "path"
+  | "pull-request"
+  | "slash-command"
+  | "skill"
+  | `loom:${string}`;
 export type ComposerSlashCommand = "model" | "plan" | "default";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
@@ -280,6 +287,9 @@ export function isCollapsedCursorAdjacentToInlineToken(
 
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
+  // fork: ext-composer-menu
+  const forkTrigger = detectForkComposerTrigger(text, cursor);
+  if (forkTrigger) return forkTrigger;
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
   if (token.startsWith("/")) {

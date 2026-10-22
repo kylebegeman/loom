@@ -414,8 +414,10 @@ apps/web/src/hooks/useThreadActionMenu.ts	bots	3
 apps/web/src/components/Sidebar.tsx	bots	3
 apps/server/src/scheduledTasks/webhookRoute.ts	bots	2
 apps/web/src/components/chat/ChatComposer.tsx	ext-composer	4
-apps/web/src/components/chat/ChatComposer.tsx	ext-composer-menu	4
-apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	2
+apps/web/src/components/chat/ChatComposer.tsx	ext-composer-menu	7
+apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	5
 apps/web/src/components/CommandPalette.logic.ts	bots	1
 apps/mobile/src/features/cloud/dpop.ts	secure-native-random	1
 apps/mobile/src/features/cloud/dpop.test.ts	secure-native-random	2
+apps/server/package.json	-	"@env-spec/parser": "0.6.0"
+apps/web/src/composer-logic.ts	ext-composer-menu	3

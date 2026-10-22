@@ -17,7 +17,10 @@ commit so later packets copy the same bytes, as L01's SEAMS.md describes.
 
 ## Packet seams
 
-None.
+None. The existing composer-menu extension now also detects custom triggers through
+`fork/composer/triggers.ts` in `composer-logic.ts`, offers source items in `ChatComposer`,
+and supports disabled loading items in `ComposerCommandMenu`. The marked upstream seams
+remain generic; L18 owns the `%` detector and selection behavior in its feature directory.
 
 Everything the packet needs is reachable without editing upstream files:
 
