@@ -108,6 +108,7 @@ export interface EnvironmentThreadShell {
   readonly latestUserAuthoredMessageAt?: string | null;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
+  readonly pendingRuntimeRequestAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   readonly hasActionableProposedPlan: boolean;
   readonly pendingBackgroundTasks: ReadonlyArray<
@@ -261,6 +262,7 @@ export function presentThreadShell(
     hasPendingUserInput:
       thread.pendingRuntimeRequest?.kind === "user_input" &&
       (thread.pendingRuntimeRequest.blocking !== false || !runtimeIsWorking),
+    pendingRuntimeRequestAt: nullableIso(thread.pendingRuntimeRequest?.createdAt ?? null),
     pendingSubagentRequest,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
     pendingBackgroundTasks: thread.pendingBackgroundTasks ?? [],

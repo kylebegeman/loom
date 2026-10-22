@@ -113,6 +113,26 @@ describe("V2 client presentation", () => {
     });
   });
 
+  it("keeps the pending request clock stable across unrelated thread updates", () => {
+    const requestedAt = DateTime.makeUnsafe("2026-06-20T00:01:00.000Z");
+    const shell = presentThreadShell(environmentId, {
+      ...v2ThreadShell,
+      updatedAt: DateTime.makeUnsafe("2026-06-20T00:05:00.000Z"),
+      pendingRuntimeRequest: {
+        id: RuntimeRequestId.make("request-clock"),
+        kind: "user_input",
+        createdAt: requestedAt,
+      },
+    });
+    expect(shell.pendingRuntimeRequestAt).toBe("2026-06-20T00:01:00.000Z");
+    expect(
+      presentThreadShell(environmentId, {
+        ...v2ThreadShell,
+        pendingRuntimeRequest: null,
+      }).pendingRuntimeRequestAt,
+    ).toBeNull();
+  });
+
   it("keeps async questions in Working until the run completes", () => {
     const runId = RunId.make("run-async-question");
     const running = {
