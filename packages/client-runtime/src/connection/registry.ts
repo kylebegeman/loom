@@ -587,11 +587,30 @@ export const make = Effect.gen(function* () {
           const route: ConnectionRoute = { target: registered.target, profile: registered.profile };
           const existing = connectionRoutes(previous);
           const sameAddress = findRouteToSameAddress(existing, route);
-          const routes = existing.filter(
-            (existing) =>
-              existing !== sameAddress ||
-              connectionRouteId(existing.target) === connectionRouteId(route.target),
-          );
+          const routeId = connectionRouteId(route.target);
+          const sameAddressId = sameAddress && connectionRouteId(sameAddress.target);
+          const profile = Option.getOrNull(route.profile);
+          const identity =
+            profile?._tag === "BearerConnectionProfile" ? profile.identity : undefined;
+          const remaining =
+            sameAddressId !== undefined && sameAddressId !== routeId
+              ? routesAfterRemoving(existing, sameAddressId)
+              : existing;
+          // Borrowers must relearn whenever their binding no longer matches the source credential.
+          const routes = remaining.filter((candidate) => {
+            const profile = Option.getOrNull(candidate.profile);
+            if (
+              profile?._tag !== "BearerConnectionProfile" ||
+              profile.learned !== true ||
+              credentialConnectionId(connectionRouteId(candidate.target)) !== routeId
+            ) {
+              return true;
+            }
+            return (
+              profile.identity?.issuer === identity?.issuer &&
+              profile.identity?.subject === identity?.subject
+            );
+          });
           const next = withRoutes(previous, upsertRoute(routes, route));
           if (next.addressesChanged) {
             yield* forgetRoutingTrust(environmentId, "register-connection");

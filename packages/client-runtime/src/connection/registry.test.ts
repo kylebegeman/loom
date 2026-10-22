@@ -26,6 +26,8 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as TokenStore from "../authorization/tokenStore.ts";
+import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import * as ConnectionResolver from "./resolver.ts";
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -44,7 +46,7 @@ import * as Connectivity from "./connectivity.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import * as ConnectionDriver from "./driver.ts";
 import type { RouteCheck } from "./driver.ts";
-import { connectionRouteId, connectionRouteKind } from "./routes.ts";
+import { connectionRouteId, connectionRouteKind, connectionRoutes, routeEntry } from "./routes.ts";
 import {
   ConnectionTransientError,
   ConnectionBlockedError,
@@ -483,6 +485,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedProfiles,
     profileReadCount,
     storedCredentials,
+    credentialStore,
+    profileStore,
+    sshGateway,
     storedRemoteTokens,
     storedDisabled,
     disconnectedSshTargets,
@@ -2337,6 +2342,231 @@ describe("EnvironmentRegistry routes", () => {
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
+  it.effect(
+    "relearns a usable fallback after upgrading a paired credential to Identity and restarting",
+    () =>
+      Effect.gen(function* () {
+        const identity = { issuer: "https://identity.test", subject: "owner" };
+        const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+        const credential = new BearerConnectionCredential({
+          token: "identity-token",
+          identity: {
+            ...identity,
+            environmentId: BEARER_TARGET.environmentId,
+            expiresAt: (yield* Clock.currentTimeMillis) + 3600_000,
+          },
+        });
+        const independent = new BearerConnectionTarget({
+          ...BEARER_TARGET,
+          connectionId: "independent",
+        });
+        const independentProfile = new BearerConnectionProfile({
+          ...BEARER_PROFILE,
+          connectionId: independent.connectionId,
+          httpBaseUrl: "https://independent.example.test/",
+          wsBaseUrl: "wss://independent.example.test/",
+        });
+        const httpBaseUrl = "http://100.101.102.103:3773/";
+        const learnedId = `learned:${BEARER_TARGET.environmentId}:http://100.101.102.103:3773@${BEARER_TARGET.connectionId}`;
+        const harness = yield* makeHarness(
+          [BEARER_TARGET, independent],
+          [BEARER_PROFILE, independentProfile],
+          [
+            [BEARER_TARGET.connectionId, BEARER_CREDENTIAL],
+            [
+              independent.connectionId,
+              new BearerConnectionCredential({ token: "independent-token" }),
+            ],
+          ],
+          { directEndpoints: [{ kind: "tailnet", httpBaseUrl }] },
+        );
+        const awaitLearned = (registry: EnvironmentRegistry.EnvironmentRegistry["Service"]) =>
+          SubscriptionRef.changes(registry.entries).pipe(
+            Stream.map((entries) => entries.get(BEARER_TARGET.environmentId)),
+            Stream.filter(
+              (entry): entry is ConnectionCatalogEntry =>
+                entry !== undefined &&
+                connectionRoutes(entry).some(
+                  (route) => connectionRouteId(route.target) === learnedId,
+                ),
+            ),
+            Stream.runHead,
+            Effect.map(Option.getOrThrow),
+          );
+
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* registry.start;
+          const paired = yield* awaitLearned(registry);
+          expect(Option.getOrThrow(paired.profile)).toMatchObject({ learned: true });
+          yield* registry.setEnabled(BEARER_TARGET.environmentId, false);
+          yield* registry.register(
+            new BearerConnectionRegistration({ target: BEARER_TARGET, profile, credential }),
+          );
+          expect(yield* Ref.get(harness.storedTargets)).toEqual([BEARER_TARGET, independent]);
+          expect((yield* Ref.get(harness.storedProfiles)).get(independent.connectionId)).toEqual(
+            independentProfile,
+          );
+          expect(
+            (yield* Ref.get(harness.storedCredentials)).get(independent.connectionId)?.token,
+          ).toBe("independent-token");
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const restarted = (yield* SubscriptionRef.get(registry.entries)).get(
+            BEARER_TARGET.environmentId,
+          )!;
+          expect(connectionRoutes(restarted).map((route) => route.target)).toEqual([
+            BEARER_TARGET,
+            independent,
+          ]);
+          yield* registry.start;
+          yield* registry.setEnabled(BEARER_TARGET.environmentId, true);
+          const entry = yield* awaitLearned(registry);
+          const fallback = connectionRoutes(entry).find(
+            (route) => connectionRouteId(route.target) === learnedId,
+          )!;
+          expect(Option.getOrThrow(fallback.profile)).toMatchObject({
+            identity,
+            learned: true,
+            network: "tailscale",
+          });
+          expect((yield* Ref.get(harness.storedProfiles)).get(learnedId)).toMatchObject({
+            identity,
+          });
+
+          yield* registry.setEnabled(BEARER_TARGET.environmentId, false);
+          const renewed = new BearerConnectionCredential({
+            ...credential,
+            token: "renewed-identity-token",
+          });
+          yield* registry.register(
+            new BearerConnectionRegistration({
+              target: BEARER_TARGET,
+              profile,
+              credential: renewed,
+            }),
+          );
+          const renewedEntry = (yield* SubscriptionRef.get(registry.entries)).get(
+            BEARER_TARGET.environmentId,
+          )!;
+          expect(
+            connectionRoutes(renewedEntry).find(
+              (route) => connectionRouteId(route.target) === learnedId,
+            ),
+          ).toEqual(fallback);
+
+          const resolver = yield* ConnectionResolver.make.pipe(
+            Effect.provideService(
+              ConnectionCredentialStore.ConnectionCredentialStore,
+              harness.credentialStore,
+            ),
+            Effect.provideService(
+              ConnectionProfileStore.ConnectionProfileStore,
+              harness.profileStore,
+            ),
+            Effect.provideService(ClientCapabilities.SshEnvironmentGateway, harness.sshGateway),
+            Effect.provideService(ClientCapabilities.PrimaryEnvironmentAuth, {
+              bearerToken: Effect.succeedNone,
+            }),
+            Effect.provideService(ClientCapabilities.ClientPresentation, {
+              metadata: { label: "Test Client", deviceType: "desktop", surface: "web" },
+            }),
+            Effect.provideService(RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization, {
+              authorizeBearer: (input) =>
+                Effect.succeed({
+                  environmentId: input.expectedEnvironmentId,
+                  label: BEARER_TARGET.label,
+                  httpBaseUrl: input.httpBaseUrl,
+                  socketUrl: `${input.wsBaseUrl}ws`,
+                  httpAuthorization: { _tag: "Bearer", token: input.bearerToken },
+                }),
+              authorizeDpop: () => Effect.die("unused"),
+              authorizeDpopHttp: () => Effect.die("unused"),
+            }),
+            Effect.provideService(
+              HttpClient.HttpClient,
+              HttpClient.make((request) =>
+                Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    Response.json({
+                      environmentId: BEARER_TARGET.environmentId,
+                      label: BEARER_TARGET.label,
+                      platform: { os: "linux", arch: "x64" },
+                      serverVersion: "0.0.0-test",
+                      orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+                      capabilities: { repositoryIdentity: true },
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          );
+          const prepared = yield* resolver.prepare(routeEntry(renewedEntry, fallback));
+          expect(prepared.httpBaseUrl).toBe(httpBaseUrl);
+          expect(prepared.httpAuthorization).toEqual({ _tag: "Bearer", token: renewed.token });
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
+  it.effect.each(["repair-renewal", "paired", "replacement-id"] as const)(
+    "discards obsolete credential borrowers during %s",
+    (transition) =>
+      Effect.gen(function* () {
+        const identity = { issuer: "https://identity.test", subject: "owner" };
+        const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+        const credential = new BearerConnectionCredential({
+          token: "identity-token",
+          identity: {
+            ...identity,
+            environmentId: BEARER_TARGET.environmentId,
+            expiresAt: (yield* Clock.currentTimeMillis) + 3600_000,
+          },
+        });
+        const learnedId = `learned:${BEARER_TARGET.environmentId}:https://desk.ts.net@${BEARER_TARGET.connectionId}`;
+        const learned = new BearerConnectionTarget({ ...BEARER_TARGET, connectionId: learnedId });
+        const learnedProfile = new BearerConnectionProfile({
+          ...BEARER_PROFILE,
+          connectionId: learnedId,
+          httpBaseUrl: "https://desk.ts.net/",
+          wsBaseUrl: "wss://desk.ts.net/",
+          learned: true,
+          ...(transition === "repair-renewal" ? {} : { identity }),
+        });
+        const harness = yield* makeHarness(
+          [BEARER_TARGET, learned],
+          [profile, learnedProfile],
+          [[BEARER_TARGET.connectionId, credential]],
+          { initialDisabled: [BEARER_TARGET.environmentId] },
+        );
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const target =
+            transition === "replacement-id"
+              ? new BearerConnectionTarget({
+                  ...BEARER_TARGET,
+                  connectionId: "identity-replacement",
+                })
+              : BEARER_TARGET;
+          yield* registry.register(
+            new BearerConnectionRegistration({
+              target,
+              profile:
+                transition === "paired"
+                  ? BEARER_PROFILE
+                  : new BearerConnectionProfile({ ...profile, connectionId: target.connectionId }),
+              credential: transition === "paired" ? BEARER_CREDENTIAL : credential,
+            }),
+          );
+          expect(yield* Ref.get(harness.storedTargets)).toEqual([target]);
+          const entry = (yield* SubscriptionRef.get(registry.entries)).get(target.environmentId)!;
+          expect(connectionRoutes(entry).map((route) => route.target)).toEqual([target]);
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
   it.effect(
     "rejects a different Identity account even when reconnecting through the generic add-computer flow",
     () =>
