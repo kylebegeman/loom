@@ -50,7 +50,7 @@ export interface ForkSettingsSection {
   readonly group: LoomSettingsGroupId;
   readonly keywords: string;
   readonly icon: LucideIcon;
-  readonly scope: "computer" | "device" | "mixed";
+  readonly scope: "computer" | "device" | "mixed" | "project";
   readonly related: readonly string[];
   readonly Component: ComponentType;
 }
@@ -63,7 +63,7 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     group: "work",
     keywords: "notes commands budgets tokens env schema varlock private",
     icon: KeyRoundIcon,
-    scope: "mixed",
+    scope: "project",
     related: ["project-lifecycle"],
     Component: ProfileSettingsSection,
   },

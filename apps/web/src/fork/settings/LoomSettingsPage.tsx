@@ -51,7 +51,9 @@ export function LoomSettingsPage() {
   return (
     <SettingsPageContainer
       width="expanded"
-      scopePresentation={selected.scope === "device" ? "none" : "computer"}
+      scopePresentation={
+        selected.scope === "device" ? "none" : selected.scope === "project" ? "full" : "computer"
+      }
       className="@container/loom-settings"
     >
       <div className="flex min-w-0 flex-col gap-5 border-b border-border/60 pb-6 @min-[40rem]/loom-settings:flex-row @min-[40rem]/loom-settings:items-center @min-[40rem]/loom-settings:justify-between">
