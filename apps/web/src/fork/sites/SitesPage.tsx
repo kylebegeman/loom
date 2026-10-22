@@ -146,7 +146,7 @@ export function SitesPage() {
           {snapshot ? (
             <>
               <p className="text-xs text-muted-foreground">
-                From api.begam.in through {authority.environment?.label ?? "your Library"}. Updated{" "}
+                From {authority.environment?.label ?? "your Library"}. Updated{" "}
                 {date(snapshot.observedAt)}.
               </p>
               {snapshot.sites.length === 0 ? (
