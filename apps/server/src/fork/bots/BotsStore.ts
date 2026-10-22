@@ -104,6 +104,14 @@ const StoredDefinition = Schema.Struct({
 type StoredDefinition = typeof StoredDefinition.Type;
 
 const definitionJson = Schema.fromJsonString(StoredDefinition);
+const versionDefinitionJson = Schema.fromJsonString(
+  Schema.Struct({
+    ...StoredDefinition.fields,
+    library: Schema.optionalKey(BotLibraryLink),
+  }),
+);
+const decodeVersionDefinition = Schema.decodeUnknownOption(versionDefinitionJson);
+const encodeVersionDefinition = Schema.encodeSync(versionDefinitionJson);
 const inputsJson = Schema.fromJsonString(BotInputs);
 const decodeDefinition = Schema.decodeUnknownOption(definitionJson);
 const decodeInputs = Schema.decodeUnknownOption(inputsJson);
@@ -174,11 +182,11 @@ const versionFields = (row: VersionRow) => ({
 });
 
 const toVersion = (row: VersionRow): BotVersion | null => {
-  const decoded = decodeDefinition(row.definition_json);
+  const decoded = decodeVersionDefinition(row.definition_json);
   if (Option.isNone(decoded)) return null;
-  // The origin belongs to the bot, not to one of its versions.
-  const { origin: _origin, ...definition } = decoded.value;
-  return { ...versionFields(row), definition };
+  // The origin belongs to the bot; a version keeps its own shared revision.
+  const { origin: _origin, library, ...definition } = decoded.value;
+  return { ...versionFields(row), definition, ...(library === undefined ? {} : { library }) };
 };
 
 const median = (values: ReadonlyArray<number>) => {
@@ -307,6 +315,19 @@ export const makeBotsStore = Effect.gen(function* () {
       yield* sql`UPDATE fork_bots_definitions SET library_json = ${link === null ? null : encodeLibrary(link)} WHERE id = ${id}`;
     }),
 
+    stampVersionLibrary: Effect.fn("BotsStore.stampVersionLibrary")(function* (
+      bot: BotDefinition,
+      library: BotLibraryLink,
+    ) {
+      const rows =
+        yield* sql<VersionRow>`SELECT * FROM fork_bots_versions WHERE bot_id = ${bot.id} AND version = ${bot.version}`;
+      const row = rows[0];
+      if (row === undefined) return;
+      const definition = decodeVersionDefinition(row.definition_json);
+      if (Option.isNone(definition)) return;
+      yield* sql`UPDATE fork_bots_versions SET definition_json = ${encodeVersionDefinition({ ...definition.value, library })} WHERE bot_id = ${bot.id} AND version = ${bot.version}`;
+    }),
+
     /** The highest version any run recorded, so a recreated bot never reuses a version. */
     maxRunVersion: Effect.fn("BotsStore.maxRunVersion")(function* (botId: string) {
       const rows = yield* sql<{
@@ -327,7 +348,7 @@ export const makeBotsStore = Effect.gen(function* () {
       bot: BotDefinition,
       saved: Pick<BotVersion, "savedBy" | "savedAt" | "changed" | "restoredFrom">,
     ) {
-      yield* sql`INSERT INTO fork_bots_versions (bot_id, version, definition_json, saved_by, saved_at, changed_json, restored_from) VALUES (${bot.id}, ${bot.version}, ${encodeDefinition(definitionFields(bot))}, ${saved.savedBy}, ${saved.savedAt}, ${encodeChanged(saved.changed)}, ${saved.restoredFrom})`;
+      yield* sql`INSERT INTO fork_bots_versions (bot_id, version, definition_json, saved_by, saved_at, changed_json, restored_from) VALUES (${bot.id}, ${bot.version}, ${encodeVersionDefinition({ ...definitionFields(bot), ...(bot.library == null ? {} : { library: bot.library }) })}, ${saved.savedBy}, ${saved.savedAt}, ${encodeChanged(saved.changed)}, ${saved.restoredFrom})`;
     }),
 
     getVersion: Effect.fn("BotsStore.getVersion")(function* (botId: string, version: number) {

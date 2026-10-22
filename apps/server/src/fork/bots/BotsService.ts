@@ -636,7 +636,13 @@ export const make = Effect.gen(function* () {
     if (version === current.version) return current;
     const stored = yield* store.getVersion(botId, version).pipe(Effect.catch(storageError));
     if (stored === null) return yield* missingVersion(current, version);
-    return { ...current, ...stored.definition, version } satisfies BotDefinition;
+    const { library: _currentLibrary, ...state } = current;
+    return {
+      ...state,
+      ...stored.definition,
+      version,
+      ...(stored.library === undefined ? {} : { library: stored.library }),
+    } satisfies BotDefinition;
   });
 
   const versions = (input: BotsVersionsInput) =>
@@ -1060,9 +1066,8 @@ export const make = Effect.gen(function* () {
 
   /**
    * Records a run for another computer and hands it to the Library. It takes no permit here; the
-   * other computer applies its own limits, and this bot's budget still counts the run. That
-   * computer runs only the Library revision sent, not a pinned version, so the run is recorded and
-   * sent as `permitBot`, the bot as it stands now.
+   * other computer applies its own limits, and the current bot's budget still counts the run.
+   * The request keeps the pinned definition's shared revision; an unavailable revision is refused.
    */
   const startRemote = Effect.fnUntraced(function* (
     bot: BotDefinition,
@@ -1073,7 +1078,7 @@ export const make = Effect.gen(function* () {
     options: StartOptions,
     ranOn: BotRunComputer,
   ) {
-    if (permitBot.library == null)
+    if (permitBot.library == null || bot.library == null)
       return yield* fail(
         "invalid",
         `Share ${bot.name} through the Library to run it on another computer.`,
@@ -1093,7 +1098,7 @@ export const make = Effect.gen(function* () {
     const run: BotRun = {
       id: runId,
       botId: bot.id,
-      botVersion: permitBot.version,
+      botVersion: bot.version,
       botName: bot.name,
       threadId: botRunThreadId(runId),
       projectId: remoteProject(bot, input, caller),
@@ -1123,7 +1128,7 @@ export const make = Effect.gen(function* () {
           budgetPermit.withPermits(1),
         );
     yield* publish({ _tag: "run", run });
-    return yield* hooks.submit(run, permitBot, untrustedInputs(options, values)).pipe(
+    return yield* hooks.submit(run, bot, untrustedInputs(options, values)).pipe(
       Effect.as(run),
       Effect.catch((error) =>
         settleRemote(run, { status: "failed", finishedAt: run.createdAt, error: error.message }),
@@ -1161,7 +1166,13 @@ export const make = Effect.gen(function* () {
     link: BotLibraryLink | null,
   ) {
     const bot = yield* requireBot(botId);
-    yield* store.setLibraryLink(botId, link).pipe(Effect.catch(storageError));
+    yield* store
+      .withTransaction(
+        store
+          .setLibraryLink(botId, link)
+          .pipe(Effect.andThen(link === null ? Effect.void : store.stampVersionLibrary(bot, link))),
+      )
+      .pipe(Effect.catch(storageError));
     const { library: _library, ...rest } = bot;
     const next: BotDefinition = link === null ? rest : { ...rest, library: link };
     yield* publish({ _tag: "bot", bot: next });
