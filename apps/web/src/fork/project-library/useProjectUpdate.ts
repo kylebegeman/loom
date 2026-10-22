@@ -51,7 +51,7 @@ export function useProjectUpdate({
     }
     setBusy(true);
     setError(null);
-    try {
+    const saveProject = async () => {
       const result = await update({
         environmentId: authorityId,
         input: {
@@ -66,13 +66,16 @@ export function useProjectUpdate({
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onSaved();
       return true;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save this change. Try again.");
-      onSaved();
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    };
+    return saveProject()
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Could not save this change. Try again.");
+        onSaved();
+        return false;
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   return {
     save,

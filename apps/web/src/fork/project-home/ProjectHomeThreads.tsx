@@ -303,7 +303,7 @@ function ProjectThreadRow({
     pendingRef.current = true;
     setPending(true);
     setError(null);
-    try {
+    const updateThread = async () => {
       const result = await onThreadAction(action.action, threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const failure = squashAtomCommandFailure(result);
@@ -313,16 +313,19 @@ function ProjectThreadRow({
             : "This computer could not update the conversation. Try again.",
         );
       }
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "This computer could not update the conversation. Try again.",
-      );
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    };
+    await updateThread()
+      .catch((failure) => {
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "This computer could not update the conversation. Try again.",
+        );
+      })
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
+      });
   };
   return (
     <li className="group rounded-lg [content-visibility:auto] [contain-intrinsic-size:auto_68px]">

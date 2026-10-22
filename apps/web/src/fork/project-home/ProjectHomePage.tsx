@@ -189,20 +189,23 @@ function ProjectHomeContent({
     startingRef.current = true;
     setStarting(true);
     setStartError(null);
-    try {
+    const startThread = async () => {
       await handleNewThread(scopeProjectRef(destination.environmentId, destination.id), {
         environmentSelection: "manual",
       });
-    } catch (error) {
-      setStartError(
-        error instanceof Error
-          ? error.message
-          : "Could not start a conversation on this computer. Try again.",
-      );
-    } finally {
-      startingRef.current = false;
-      setStarting(false);
-    }
+    };
+    await startThread()
+      .catch((error) => {
+        setStartError(
+          error instanceof Error
+            ? error.message
+            : "Could not start a conversation on this computer. Try again.",
+        );
+      })
+      .finally(() => {
+        startingRef.current = false;
+        setStarting(false);
+      });
   };
   useProjectHomeNewThreadShortcuts(newThread);
   const openThread = useCallback(

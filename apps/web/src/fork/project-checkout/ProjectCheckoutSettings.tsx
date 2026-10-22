@@ -200,7 +200,7 @@ function ManagedCheckoutSetting({
     setSaving(true);
     setMessage(null);
     const input = { projectId: project.id, reviewToken: preview.reviewToken! };
-    try {
+    const savePreference = async () => {
       const saved = external
         ? await adopt({
             environmentId: project.environmentId,
@@ -234,10 +234,11 @@ function ManagedCheckoutSetting({
         });
         refresh();
       }
-    } finally {
+    };
+    await savePreference().finally(() => {
       savingRef.current = false;
       if (mounted.current) setSaving(false);
-    }
+    });
   };
 
   return (

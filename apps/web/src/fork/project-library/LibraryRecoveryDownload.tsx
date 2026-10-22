@@ -30,7 +30,7 @@ export function LibraryRecoveryDownload({
     if (target) target.opener = null;
     setBusy(true);
     setError(null);
-    try {
+    const downloadArchive = async () => {
       const result = await access({
         environmentId: authorityId,
         input: {
@@ -45,12 +45,17 @@ export function LibraryRecoveryDownload({
           throw new Error("Could not download the recovery archive in your browser.");
       } else if (target) target.location.replace(result.value);
       else throw new Error("Allow this site's pop-ups, then try downloading the archive again.");
-    } catch (cause) {
-      target?.close();
-      setError(cause instanceof Error ? cause.message : "Could not download the recovery archive.");
-    } finally {
-      setBusy(false);
-    }
+    };
+    await downloadArchive()
+      .catch((cause) => {
+        target?.close();
+        setError(
+          cause instanceof Error ? cause.message : "Could not download the recovery archive.",
+        );
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   return (
     <div className="space-y-2">

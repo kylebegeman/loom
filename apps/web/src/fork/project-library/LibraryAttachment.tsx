@@ -31,7 +31,7 @@ export function LibraryAttachment({
     if (target) target.opener = null;
     setBusy(true);
     setError(null);
-    try {
+    const openAttachment = async () => {
       const result = await access({
         environmentId: authorityId,
         input: { sourceEnvironmentId, attachmentId: attachment.id },
@@ -42,12 +42,15 @@ export function LibraryAttachment({
           throw new Error("Could not open the attachment in your browser.");
       } else if (target) target.location.replace(result.value);
       else throw new Error("Allow this site's pop-ups, then try opening the attachment again.");
-    } catch (cause) {
-      target?.close();
-      setError(cause instanceof Error ? cause.message : "Could not open this saved attachment.");
-    } finally {
-      setBusy(false);
-    }
+    };
+    await openAttachment()
+      .catch((cause) => {
+        target?.close();
+        setError(cause instanceof Error ? cause.message : "Could not open this saved attachment.");
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   const previewImage = async () => {
     setBusy(true);

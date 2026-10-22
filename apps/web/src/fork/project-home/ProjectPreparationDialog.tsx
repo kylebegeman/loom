@@ -369,7 +369,7 @@ function PreparationOnComputer({
     pendingRef.current = true;
     setPending(true);
     setError(null);
-    try {
+    const updatePreparation = async () => {
       let command;
       if (action === "start" && plan.kind === "create") {
         saveAttempt({
@@ -396,16 +396,19 @@ function PreparationOnComputer({
             : "The computer could not complete this request. Refresh its saved progress before trying again.",
         );
       }
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "The response was lost. Refresh progress before continuing.",
-      );
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    };
+    await updatePreparation()
+      .catch((failure) => {
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "The response was lost. Refresh progress before continuing.",
+        );
+      })
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
+      });
   };
   return (
     <div className="space-y-3">
