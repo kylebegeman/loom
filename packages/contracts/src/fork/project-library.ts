@@ -18,6 +18,7 @@ import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-lib
 export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
+export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -328,6 +329,29 @@ export const LibraryRegisterCopyRequest = Schema.Struct({
   copy: LibraryWorkingCopy,
 });
 export type LibraryRegisterCopyRequest = typeof LibraryRegisterCopyRequest.Type;
+/** Each projection collection retains an unchanged prefix and replaces the remaining tail. */
+export const LibraryHistoryDelta = Schema.Struct({
+  baseSequence: NonNegativeInt,
+  prefixes: Schema.Struct({
+    runs: NonNegativeInt,
+    attempts: NonNegativeInt,
+    nodes: NonNegativeInt,
+    subagents: NonNegativeInt,
+    providerSessions: NonNegativeInt,
+    providerThreads: NonNegativeInt,
+    providerTurns: NonNegativeInt,
+    runtimeRequests: NonNegativeInt,
+    messages: NonNegativeInt,
+    plans: NonNegativeInt,
+    turnItems: NonNegativeInt,
+    checkpointScopes: NonNegativeInt,
+    checkpoints: NonNegativeInt,
+    contextHandoffs: NonNegativeInt,
+    contextTransfers: NonNegativeInt,
+    visibleTurnItems: NonNegativeInt,
+  }),
+});
+export type LibraryHistoryDelta = typeof LibraryHistoryDelta.Type;
 export const LibraryIngestHistoryRequest = Schema.Struct({
   authorityId: Schema.optional(LibraryId),
   authorityEpoch: Schema.optional(PositiveInt),
@@ -336,7 +360,12 @@ export const LibraryIngestHistoryRequest = Schema.Struct({
   journalId: LibraryId,
   fromSequence: NonNegativeInt,
   entries: Schema.Array(
-    Schema.Struct({ sequence: PositiveInt, thread: LibraryThreadArchive }),
+    Schema.Struct({
+      sequence: PositiveInt,
+      thread: LibraryThreadArchive,
+      /** When present, projection collections in `thread` contain replacement tails. */
+      delta: Schema.optionalKey(LibraryHistoryDelta),
+    }),
   ).check(Schema.isMaxLength(100)),
 });
 export type LibraryIngestHistoryRequest = typeof LibraryIngestHistoryRequest.Type;

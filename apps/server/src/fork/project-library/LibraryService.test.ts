@@ -28,6 +28,7 @@ import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as LibraryService from "./LibraryService.ts";
+import { createHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as LibraryStore from "./LibraryStore.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
@@ -1488,6 +1489,71 @@ describe("independent Library catalog and durable history", () => {
 });
 
 describe("Library history ingest", () => {
+  it.effect(
+    "reconstructs deltas atomically and recognizes replay after the base has advanced",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+          const before = yield* archiveFor(project, 1);
+          const next = yield* archiveFor(project, 2);
+          const after = {
+            ...next,
+            projection: {
+              ...next.projection,
+              messages: [
+                ...before.projection.messages,
+                {
+                  ...next.projection.messages[0]!,
+                  id: MessageId.make("reply"),
+                  text: "Added reply",
+                },
+              ],
+            },
+          };
+          const common = { sourceEnvironmentId: source, journalId: "delta-journal" };
+          yield* service.ingestHistory({
+            ...common,
+            requestId: "initial",
+            fromSequence: 0,
+            entries: [{ sequence: 1, thread: before }],
+          });
+          const entry = createHistoryDelta(before, after);
+          const input = {
+            ...common,
+            requestId: "delta",
+            fromSequence: 1,
+            entries: [{ sequence: 2, ...entry }],
+          };
+          expect(yield* service.ingestHistory(input)).toMatchObject({
+            applied: 1,
+            lastSequence: 2,
+          });
+          const saved = yield* service.history({ id: before.summary.id });
+          expect(saved.projection).toEqual(after.projection);
+          expect(yield* service.ingestHistory({ ...input, requestId: "retry" })).toMatchObject({
+            applied: 0,
+            lastSequence: 2,
+          });
+          const bad = { ...entry, delta: { ...entry.delta, baseSequence: 0 } };
+          expect(
+            (yield* service
+              .ingestHistory({
+                ...common,
+                requestId: "bad-base",
+                fromSequence: 2,
+                entries: [{ sequence: 3, ...bad }],
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("sequence-conflict");
+          expect((yield* service.history({ id: before.summary.id })).projection).toEqual(
+            after.projection,
+          );
+        }),
+      ),
+  );
+
   const historyRows = Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     return {

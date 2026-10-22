@@ -1,6 +1,8 @@
 import { ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
+  LibraryHistoryDelta,
+  LIBRARY_HISTORY_DELTAS_FEATURE,
   LibraryThreadArchive,
   LibraryWorkingCopy,
   type LibraryInfo,
@@ -8,6 +10,8 @@ import {
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as NodeBuffer from "node:buffer";
+import * as NodeZlib from "node:zlib";
+import * as NodeUtil from "node:util";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
@@ -25,6 +29,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import * as ServerActivation from "../../serverActivation.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
+import { createHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
@@ -63,6 +68,18 @@ export class LibraryReplication extends Context.Service<
 >()("t3/fork/project-library/LibraryReplication") {}
 
 const archiveJson = Schema.toCodecJson(LibraryThreadArchive);
+const wireCodec = Schema.fromJsonString(
+  Schema.toCodecJson(
+    Schema.Struct({
+      thread: LibraryThreadArchive,
+      delta: Schema.optionalKey(LibraryHistoryDelta),
+    }),
+  ),
+);
+const encodeWire = Schema.encodeEffect(wireCodec);
+const decodeWire = Schema.decodeEffect(wireCodec);
+const compress = NodeUtil.promisify(NodeZlib.gzip);
+const decompress = NodeUtil.promisify(NodeZlib.gunzip);
 const encodeCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryWorkingCopy));
 // Encoding stringifies separately: the schema's JSON step reports V8's string limit as an
 // invalid value, which would hide an oversized conversation behind a generic failure.
@@ -133,10 +150,11 @@ const make = Effect.gen(function* () {
   // storage limit reported while they wait, and retry as soon as that size fits.
   const oversized = new Map<ThreadId, number>();
   let reconciled = false;
+  let supportsDeltas = false;
   // octet_length reads each payload's size from its record header, not its pages.
   const outboxBytes = sql<{
     bytes: number;
-  }>`SELECT COALESCE(SUM(octet_length(payload_json)),0) AS bytes FROM fork_library_source_outbox`.pipe(
+  }>`SELECT COALESCE(SUM(octet_length(payload_json) + COALESCE(octet_length(wire_json),0)),0) AS bytes FROM fork_library_source_outbox`.pipe(
     Effect.map((rows) => rows[0]?.bytes ?? 0),
   );
   const readState = sql<{
@@ -159,6 +177,7 @@ const make = Effect.gen(function* () {
       sql.withTransaction(
         Effect.gen(function* () {
           const current = (yield* readState)[0];
+          supportsDeltas = authority.features?.includes(LIBRARY_HISTORY_DELTAS_FEATURE) ?? false;
           if (current !== undefined) {
             if (
               current.environment_id !== environmentId ||
@@ -220,12 +239,35 @@ const make = Effect.gen(function* () {
         ) *
           1000,
     );
-    if (payload === null || (yield* outboxBytes) + bytes > maxPendingBytes) {
+    const pendingBytes = yield* outboxBytes;
+    if (payload === null || pendingBytes + bytes > maxPendingBytes) {
       oversized.set(threadId, bytes);
       return "waiting" as const;
     }
+    let wire: string | null = null;
+    if (supportsDeltas) {
+      const baseline = (yield* sql<{
+        bytes: Uint8Array;
+      }>`SELECT bytes FROM fork_library_source_baselines WHERE thread_id=${threadId}`)[0];
+      if (baseline !== undefined) {
+        const previous = yield* Effect.tryPromise(() => decompress(baseline.bytes)).pipe(
+          Effect.flatMap((bytes) => decodeArchive(bytes.toString("utf8"))),
+          Effect.orElseSucceed(() => null),
+        );
+        if (
+          previous !== null &&
+          previous.summary.id === snapshot.summary.id &&
+          previous.summary.sequence < snapshot.summary.sequence
+        )
+          wire = yield* encodeWire(createHistoryDelta(previous, snapshot));
+      }
+    }
+    if (wire !== null) {
+      const wireBytes = NodeBuffer.Buffer.byteLength(wire);
+      if (wireBytes >= bytes || pendingBytes + bytes + wireBytes > maxPendingBytes) wire = null;
+    }
     oversized.delete(threadId);
-    yield* sql`INSERT INTO fork_library_source_outbox (thread_id,source_sequence,payload_json) VALUES (${threadId},${snapshot.summary.sequence},${payload})`;
+    yield* sql`INSERT INTO fork_library_source_outbox (thread_id,source_sequence,payload_json,wire_json) VALUES (${threadId},${snapshot.summary.sequence},${payload},${wire})`;
     yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence) VALUES (${threadId},${snapshot.summary.sequence}) ON CONFLICT(thread_id) DO UPDATE SET queued_sequence=excluded.queued_sequence`;
     return "queued" as const;
   });
@@ -347,23 +389,35 @@ const make = Effect.gen(function* () {
         thread_id: string;
         source_sequence: number;
         payload_json: string;
-      }>`SELECT sequence,thread_id,source_sequence,payload_json FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} ORDER BY sequence LIMIT ${PUBLISH_BATCH_LIMIT}`;
+        wire_json: string | null;
+      }>`SELECT sequence,thread_id,source_sequence,payload_json,wire_json FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} ORDER BY sequence LIMIT ${PUBLISH_BATCH_LIMIT}`;
+      if (!supportsDeltas) {
+        yield* sql`UPDATE fork_library_source_outbox SET wire_json=NULL WHERE wire_json IS NOT NULL`;
+        for (const row of rows) row.wire_json = null;
+      }
       const batch: (typeof rows)[number][] = [];
       let bytes = 0;
       for (const row of rows) {
-        const size = NodeBuffer.Buffer.byteLength(row.payload_json);
+        const size = NodeBuffer.Buffer.byteLength(row.wire_json ?? row.payload_json);
         if (batch.length > 0 && bytes + size > PUBLISH_BATCH_BYTES) break;
         batch.push(row);
         bytes += size;
       }
       if (batch.length === 0) return false;
-      const entries = yield* Effect.forEach(batch, (row) =>
+      const fullEntries = yield* Effect.forEach(batch, (row) =>
         decodeArchive(row.payload_json).pipe(
           Effect.map((thread) => ({ sequence: row.sequence, thread })),
         ),
       );
+      const entries = yield* Effect.forEach(batch, (row, index) =>
+        row.wire_json === null
+          ? Effect.succeed(fullEntries[index]!)
+          : decodeWire(row.wire_json).pipe(
+              Effect.map((wire) => ({ sequence: row.sequence, ...wire })),
+            ),
+      );
       const copies = new Set<string>();
-      for (const entry of entries) {
+      for (const entry of fullEntries) {
         const copyId = entry.thread.summary.workingCopyId;
         if (copyId !== null && !copies.has(copyId)) {
           const { copy } = yield* workspaces.get(copyId);
@@ -391,18 +445,32 @@ const make = Effect.gen(function* () {
         fromSequence: current.acknowledged_sequence,
         entries,
       };
-      const response = yield* publisher.ingest(request);
+      const response = yield* publisher.ingest(request).pipe(
+        Effect.tapError((error) =>
+          (error.reason === "sequence-gap" || error.reason === "sequence-conflict") &&
+          batch.some((row) => row.wire_json !== null)
+            ? // A conclusive rejection applied nothing. Retry the retained full snapshot next time;
+              // transport failures keep the exact saved delta for an idempotent retry.
+              sql`UPDATE fork_library_source_outbox SET wire_json=NULL WHERE sequence>${current.acknowledged_sequence} AND sequence<=${through}`
+            : Effect.void,
+        ),
+      );
       if (
         response.sourceEnvironmentId !== environmentId ||
         response.journalId !== current.journal_id ||
         response.lastSequence < through
       )
         return yield* new LibraryError({ reason: "sequence-conflict" });
+      const baselines = yield* Effect.forEach(batch, (row) =>
+        Effect.tryPromise(() => compress(row.payload_json)),
+      );
       // A cursor beyond this batch does not prove any later local entry was uploaded.
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          for (const row of batch)
+          for (const [index, row] of batch.entries()) {
             yield* sql`UPDATE fork_library_source_threads SET acknowledged_sequence=MAX(acknowledged_sequence,${row.source_sequence}) WHERE thread_id=${row.thread_id}`;
+            yield* sql`INSERT INTO fork_library_source_baselines(thread_id,bytes) VALUES (${row.thread_id},${new Uint8Array(baselines[index]!)}) ON CONFLICT(thread_id) DO UPDATE SET bytes=excluded.bytes`;
+          }
           yield* sql`UPDATE fork_library_source_state SET acknowledged_sequence=${through} WHERE key='host'`;
           yield* sql`DELETE FROM fork_library_source_outbox WHERE sequence<=${through}`;
         }),

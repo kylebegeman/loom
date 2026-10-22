@@ -57,6 +57,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryStore from "./LibraryStore.ts";
+import { applyHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -929,8 +930,15 @@ const make = Effect.gen(function* () {
     input: LibraryIngestHistoryRequest,
   ) {
     yield* Effect.annotateCurrentSpan({ "library.entries": input.entries.length });
-    const ingestDigest = (thread: LibraryThreadArchive) =>
-      encode(codecs.archive, thread).pipe(Effect.flatMap(digest));
+    const ingestDigest = (entry: LibraryIngestHistoryRequest["entries"][number]) =>
+      (entry.delta === undefined
+        ? encode(codecs.archive, entry.thread)
+        : encode(codecs.archive, entry.thread).pipe(
+            Effect.map((thread) =>
+              encodeUnknownJson({ thread: decodeUnknownJson(thread), delta: entry.delta }),
+            ),
+          )
+      ).pipe(Effect.flatMap(digest));
     // A computer resends a batch whose response it lost, and the receipt answers it without the
     // entries, so their digests are skipped once one exists. The check uses the reader, so it does
     // not wait behind a write. Skipped digests are taken in the transaction if it needs them.
@@ -945,14 +953,17 @@ const make = Effect.gen(function* () {
     const entries = replayed
       ? input.entries.map((entry) => ({
           entry,
-          ingested: ingestDigest(entry.thread),
+          ingested: ingestDigest(entry),
           version: undefined,
         }))
       : yield* Effect.forEach(input.entries, (entry) =>
           Effect.all({
             entry: Effect.succeed(entry),
-            ingested: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(ingestDigest(entry.thread)))),
-            version: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread)))),
+            ingested: Effect.exit(Effect.yieldNow.pipe(Effect.andThen(ingestDigest(entry)))),
+            version:
+              entry.delta === undefined
+                ? Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread))))
+                : Effect.succeed(undefined),
           }),
         ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
     return yield* mutation(
@@ -982,7 +993,23 @@ const make = Effect.gen(function* () {
           }
           if (entry.sequence !== cursor + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          yield* saveThread(entry.thread, input.sourceEnvironmentId, version);
+          const delta = entry.delta;
+          const thread =
+            delta === undefined
+              ? entry.thread
+              : yield* Effect.gen(function* () {
+                  const previous = yield* store.thread(
+                    input.sourceEnvironmentId,
+                    entry.thread.summary.threadId,
+                  );
+                  if (previous === null) return yield* new LibraryError({ reason: "sequence-gap" });
+                  return yield* applyHistoryDelta(
+                    yield* decode(codecs.archive, previous),
+                    entry.thread,
+                    delta,
+                  );
+                });
+          yield* saveThread(thread, input.sourceEnvironmentId, version);
           yield* store.putIngestedDigest(
             input.sourceEnvironmentId,
             input.journalId,

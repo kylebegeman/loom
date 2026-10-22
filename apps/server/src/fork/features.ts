@@ -48,6 +48,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "sites",
   "sites-management",
   "project-library",
+  "library-history-deltas",
   "library-project-profile",
   "computer-naming",
   "mini-offload",

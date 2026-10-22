@@ -1,9 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
+import * as NodeZlib from "node:zlib";
+import { MessageId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryCopyHealth,
+  type LibraryInfo,
   type LibraryIngestHistoryRequest,
   type LibraryProject,
   type LibraryRegisterCopyRequest,
@@ -27,6 +29,7 @@ import * as Publisher from "./LibraryPublisher.ts";
 import * as Replication from "./LibraryReplication.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
+import { LibraryHistoryMigrations } from "./history-migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
   source,
@@ -107,6 +110,7 @@ const healthSource = CopyHealth.LibraryCopyHealthSource.of({
 });
 const fixture = Effect.gen(function* () {
   yield* runForkMigrationSet(ProjectLibraryMigrations);
+  yield* runForkMigrationSet(LibraryHistoryMigrations);
   const sql = yield* SqlClient.SqlClient;
   const archive = yield* Ref.make<LibraryThreadArchive>(yield* archiveFor(project, 1));
   const snapshots = yield* Ref.make(0);
@@ -114,10 +118,11 @@ const fixture = Effect.gen(function* () {
   const order = yield* Ref.make<string[]>([]);
   const registered = yield* Ref.make<LibraryRegisterCopyRequest[]>([]);
   const failAck = yield* Ref.make(false);
+  const rejectDeltas = yield* Ref.make(false);
   const failAssets = yield* Ref.make(false);
   const failSnapshot = yield* Ref.make(false);
   const claimedCursor = yield* Ref.make<number | null>(null);
-  const authority = yield* Ref.make({
+  const authority = yield* Ref.make<LibraryInfo>({
     environmentId: source,
     authorityId: "authority",
     authorityEpoch: 1,
@@ -151,6 +156,11 @@ const fixture = Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "history"]);
         yield* Ref.update(requests, (saved) => [...saved, input]);
         if (yield* Ref.get(failAck)) return yield* new LibraryError({ reason: "io" });
+        if (
+          (yield* Ref.get(rejectDeltas)) &&
+          input.entries.some((entry) => entry.delta !== undefined)
+        )
+          return yield* new LibraryError({ reason: "sequence-conflict" });
         return {
           sourceEnvironmentId: source,
           journalId: input.journalId,
@@ -191,6 +201,7 @@ const fixture = Effect.gen(function* () {
     order,
     registered,
     failAck,
+    rejectDeltas,
     failAssets,
     failSnapshot,
     claimedCursor,
@@ -245,6 +256,144 @@ const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Eff
   );
 
 describe("durable Library history replication", () => {
+  it.effect(
+    "sends a complete archive if the Library loses delta support while an upload is pending",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* Ref.update(f.authority, (info) => ({
+            ...info,
+            features: ["library-history-deltas"],
+          }));
+          const initial = withText(yield* Ref.get(f.archive), "existing transcript ".repeat(500));
+          yield* Ref.set(f.archive, initial);
+          yield* f.event(1, "thread.created", "{}");
+          yield* f.service.flush;
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 2 },
+          }));
+          yield* f.event(2, "checkpoint.captured", "{}");
+          yield* Ref.set(f.failAck, true);
+          yield* f.service.flush.pipe(Effect.flip);
+          expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
+          yield* Ref.update(f.authority, (info) => ({ ...info, features: [] }));
+          yield* Ref.set(f.failAck, false);
+          yield* f.service.flush;
+          const request = (yield* Ref.get(f.requests)).at(-1)!;
+          expect(request.entries[0]!.delta).toBeUndefined();
+          expect(request.entries[0]!.thread.projection.messages).toEqual(
+            initial.projection.messages,
+          );
+        }),
+      ),
+  );
+
+  it.effect(
+    "falls back to the retained full snapshot after a conclusive delta-base rejection",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* Ref.update(f.authority, (info) => ({
+            ...info,
+            features: ["library-history-deltas"],
+          }));
+          yield* f.event(1, "thread.created", "{}");
+          const initial = withText(yield* Ref.get(f.archive), "unchanged transcript ".repeat(500));
+          yield* Ref.set(f.archive, initial);
+          yield* f.service.flush;
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 2 },
+          }));
+          yield* f.event(2, "checkpoint.captured", "{}");
+          yield* Ref.set(f.rejectDeltas, true);
+          expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("sequence-conflict");
+          expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
+          yield* f.service.flush;
+          const complete = (yield* Ref.get(f.requests)).at(-1)!.entries[0]!;
+          expect(complete.delta).toBeUndefined();
+          expect(complete.thread.projection.messages).toEqual(initial.projection.messages);
+          expect((yield* f.service.status).pendingEntries).toBe(0);
+        }),
+      ),
+  );
+
+  it.effect(
+    "uploads only changed tails and retries the saved delta after a lost acknowledgment and restart",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* Ref.update(f.authority, (info) => ({
+            ...info,
+            features: ["library-history-deltas"],
+          }));
+          const initial = withText(
+            yield* Ref.get(f.archive),
+            "long unchanged transcript ".repeat(5000),
+          );
+          yield* Ref.set(f.archive, initial);
+          yield* f.event(1, "thread.created", "{}");
+          yield* f.service.flush;
+          expect((yield* Ref.get(f.requests))[0]!.entries[0]!.delta).toBeUndefined();
+          const after = {
+            ...initial,
+            summary: { ...initial.summary, sequence: 2 },
+            projection: {
+              ...initial.projection,
+              messages: [
+                ...initial.projection.messages,
+                {
+                  ...initial.projection.messages[0]!,
+                  id: MessageId.make("second"),
+                  text: "A short reply.",
+                },
+              ],
+            },
+          };
+          yield* Ref.set(f.archive, after);
+          yield* f.event(2, "message.updated", '{"streaming":false}');
+          yield* Ref.set(f.failAck, true);
+          expect((yield* f.service.flush.pipe(Effect.flip)).reason).toBe("io");
+          const pending = (yield* Ref.get(f.requests)).at(-1)!;
+          expect(pending.entries[0]!.delta?.baseSequence).toBe(1);
+          expect(pending.entries[0]!.delta?.prefixes.messages).toBe(1);
+          expect(
+            pending.entries[0]!.thread.projection.messages.map((message) => message.text),
+          ).toEqual(["A short reply."]);
+          expect(JSON.stringify(pending).length).toBeLessThan(JSON.stringify(after).length / 10);
+          yield* Ref.set(f.failAck, false);
+          const restarted = yield* f.restart;
+          yield* restarted.flush;
+          expect((yield* Ref.get(f.requests)).at(-1)).toEqual(pending);
+          expect((yield* restarted.status).pendingEntries).toBe(0);
+          const baseline = (yield* f.sql<{
+            bytes: Uint8Array;
+          }>`SELECT bytes FROM fork_library_source_baselines WHERE thread_id=${threadId}`)[0]!;
+          expect(
+            JSON.parse(NodeZlib.gunzipSync(baseline.bytes).toString("utf8")).summary.sequence,
+          ).toBe(2);
+        }),
+      ),
+  );
+  it.effect("keeps full uploads compatible with Libraries that do not advertise deltas", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.service.flush;
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* f.event(2, "checkpoint.captured", "{}");
+        yield* f.service.flush;
+        const request = (yield* Ref.get(f.requests)).at(-1)!;
+        expect(request.entries[0]!.delta).toBeUndefined();
+        expect(request.entries[0]!.thread.projection.messages).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect(
     "seeds verified imported watermarks without uploading old history and catches later milestones",
     () =>
