@@ -7,6 +7,9 @@ import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
 import { bots } from "./state";
 import { rollingWindow } from "./usageWindow";
+import { formatDuration } from "./runMetrics";
+
+export { formatDuration } from "./runMetrics";
 
 const WINDOWS = [
   { days: 1, label: "24 hours", phrase: "in 24 hours" },
@@ -19,15 +22,6 @@ type WindowDays = (typeof WINDOWS)[number]["days"];
 const REFETCH_INTERVAL_MS = 5_000;
 
 const windowEndingNow = (days: WindowDays) => rollingWindow(days, Date.now());
-
-export const formatDuration = (ms: number) => {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
-};
 
 const runsText = (count: number) => `${formatCount(count)} ${count === 1 ? "run" : "runs"}`;
 
