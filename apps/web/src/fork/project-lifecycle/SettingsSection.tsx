@@ -87,15 +87,17 @@ function SettingsForm({
   initial,
   hasLanes,
   autoSlots,
+  saveAction,
 }: {
   environmentId: EnvironmentId;
   initial: ProjectLifecycleSettings;
   hasLanes: boolean;
   /** Shown while the setting is automatic; null until the status arrives. */
   autoSlots: number | null;
+  saveAction: ReturnType<typeof useAction>;
 }) {
   const [settings, setSettings] = useState(initial);
-  const { busy, message, act } = useAction();
+  const { busy, message, act } = saveAction;
   const canSave = useAtomValue(lanes.updateSettings.permissionAtom(environmentId));
   const set = <K extends keyof ProjectLifecycleSettings>(
     key: K,
@@ -481,6 +483,7 @@ function StatusView({
 }
 
 function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId }) {
+  const saveAction = useAction();
   const settingsResult = useAtomValue(lanes.settings({ environmentId, input: {} }));
   const statusResult = useAtomValue(lanes.status({ environmentId, input: {} }));
   if (settingsResult._tag === "Failure")
@@ -505,6 +508,7 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
         key={JSON.stringify(settings)}
         environmentId={environmentId}
         initial={settings}
+        saveAction={saveAction}
         hasLanes={(status?.lanes.length ?? 0) > 0}
         autoSlots={settings.buildSlots === null ? (status?.buildSlots.count ?? null) : null}
       />
