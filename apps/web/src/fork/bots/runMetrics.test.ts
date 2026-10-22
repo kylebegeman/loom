@@ -17,6 +17,12 @@ describe("bot run metrics", () => {
     expect(runDurationLabel({ startedAt: run.startedAt, finishedAt: null })).toBe("In progress");
     expect(runDurationMs({ startedAt: run.finishedAt, finishedAt: run.startedAt })).toBeNull();
     expect(runDurationMs({ startedAt: "invalid", finishedAt: run.finishedAt })).toBeNull();
+    expect(runDurationLabel({ ...run, startedAt: null })).toBe("Duration unavailable");
+    expect(runDurationLabel({ ...run, finishedAt: null })).toBe("Duration unavailable");
+    expect(runDurationLabel({ ...run, status: "queued", startedAt: null, finishedAt: null })).toBe(
+      "Not started",
+    );
+    expect(runDurationLabel({ ...run, status: "running", finishedAt: null })).toBe("In progress");
   });
 
   it("counts cached input only once and marks partial or unavailable tokens", () => {

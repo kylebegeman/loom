@@ -1,4 +1,4 @@
-import type { BotRun } from "@t3tools/contracts/fork";
+import { isTerminalBotRunStatus, type BotRun } from "@t3tools/contracts/fork";
 
 export const formatDuration = (ms: number) => {
   const seconds = Math.round(ms / 1000);
@@ -16,15 +16,27 @@ export const runDurationMs = (run: Pick<BotRun, "startedAt" | "finishedAt">): nu
   return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null;
 };
 
-export const runDurationLabel = (run: Pick<BotRun, "startedAt" | "finishedAt">) => {
+export const runDurationLabel = (
+  run: Pick<BotRun, "startedAt" | "finishedAt"> & Partial<Pick<BotRun, "status">>,
+) => {
   const duration = runDurationMs(run);
-  return duration === null
-    ? run.startedAt === null
-      ? "Did not start"
-      : run.finishedAt === null
-        ? "In progress"
-        : "Duration unavailable"
-    : `Ran for ${formatDuration(duration)}`;
+  if (duration !== null) return `Ran for ${formatDuration(duration)}`;
+  if (run.startedAt === null) {
+    switch (run.status) {
+      case "completed":
+        return "Duration unavailable";
+      case "queued":
+        return "Not started";
+      case "running":
+        return "Starting";
+      default:
+        return "Did not start";
+    }
+  }
+  return run.finishedAt === null &&
+    (run.status === undefined || !isTerminalBotRunStatus(run.status))
+    ? "In progress"
+    : "Duration unavailable";
 };
 
 export const waitingAgeLabel = (since: string, now: number) => {
