@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -37,7 +37,17 @@ export function LoomSignIn({
   const [checkAttempt, setCheckAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const ownedSignIn = useRef<string | null>(null);
   const connect = useAtomCommand(connectLoomIdentity, { reportFailure: false });
+  useEffect(
+    () => () => {
+      const target = ownedSignIn.current;
+      if (!target || (baseUrl !== undefined && target !== baseUrl)) return;
+      if (isElectron) void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: target });
+      else cancelLoomBrowserSignIn(target);
+    },
+    [baseUrl],
+  );
   useEffect(() => {
     let target = baseUrl;
     try {
@@ -50,7 +60,7 @@ export function LoomSignIn({
       .then((metadata) => {
         if (!abort.signal.aborted) {
           setChecked(target);
-          if (metadata) setIdentity({ baseUrl: target, metadata });
+          setIdentity(metadata ? { baseUrl: target, metadata } : null);
           onAvailabilityChange?.(
             Boolean(
               metadata?.enabled &&
@@ -64,6 +74,7 @@ export function LoomSignIn({
       .catch(() => {
         if (!abort.signal.aborted) {
           setChecked(target);
+          setIdentity(null);
           onAvailabilityChange?.(false);
         }
       });
@@ -105,6 +116,13 @@ export function LoomSignIn({
       </div>
     ) : null;
   const signIn = async () => {
+    if (
+      (expectedEnvironmentId && expectedEnvironmentId !== active.metadata.environmentId) ||
+      (expectedIdentity && expectedIdentity.issuer !== active.metadata.issuer)
+    ) {
+      setError("This address or Identity provider changed. Review the saved computer connection.");
+      return;
+    }
     if (!isElectron && new URL(active.baseUrl).origin === window.location.origin) {
       if (browserUrl) window.location.assign(browserUrl);
       return;
@@ -116,6 +134,7 @@ export function LoomSignIn({
       setError("Allow the sign-in window and try again.");
       return;
     }
+    ownedSignIn.current = active.baseUrl;
     setBusy(true);
     setError(null);
     setConnected(false);
@@ -125,6 +144,7 @@ export function LoomSignIn({
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
     });
+    ownedSignIn.current = null;
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not sign in to Loom.");

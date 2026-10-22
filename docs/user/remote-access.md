@@ -32,6 +32,24 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
+## Identity sign-in
+
+An administrator can configure Identity sign-in for a computer you can reach directly
+or over a tailnet. In **Settings → Connections**, add the computer's address and choose
+**Check Identity sign-in** on web or desktop, or **Sign in with Identity** on mobile.
+You can use this without a pairing code once that computer has authorized your account.
+A computer appearing in your Library does not itself grant access.
+
+Identity access lasts up to one hour. Open the saved computer's connection details and
+sign in again to reconnect. Removing the connection revokes this device's active
+Identity access; if the computer is unreachable, retry when it is available or remove
+the connection after access expires. When using a computer's own web address, **Sign
+out of this computer** revokes the browser session. These actions affect that computer's
+session; your Identity provider and T3 Connect account have their own sign-in state.
+
+T3 Connect continues to use its own account. Pairing links remain available for local
+and remote recovery, including **Use a pairing link instead** on the browser sign-in page.
+
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.

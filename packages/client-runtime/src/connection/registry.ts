@@ -550,6 +550,38 @@ export const make = Effect.gen(function* () {
           return false;
         }
         const previous = (yield* SubscriptionRef.get(entries)).get(environmentId);
+        if (registration._tag === "BearerConnectionRegistration") {
+          const identity = registration.profile.identity;
+          const binding = registration.credential.identity;
+          if (
+            (identity && !binding) ||
+            (binding &&
+              (!identity ||
+                binding.environmentId !== environmentId ||
+                binding.issuer !== identity.issuer ||
+                binding.subject !== identity.subject))
+          )
+            return yield* new Persistence.ConnectionPersistenceError({
+              operation: "register-connection",
+              message: "Identity access does not match this computer and account. Sign in again.",
+            });
+          if (identity && previous) {
+            for (const route of connectionRoutes(previous)) {
+              const profile = Option.getOrNull(route.profile);
+              if (
+                profile?._tag === "BearerConnectionProfile" &&
+                profile.identity &&
+                (profile.identity.issuer !== identity.issuer ||
+                  profile.identity.subject !== identity.subject)
+              )
+                return yield* new Persistence.ConnectionPersistenceError({
+                  operation: "register-connection",
+                  message:
+                    "Remove the saved Identity connection before choosing a different account or provider.",
+                });
+            }
+          }
+        }
         let entry = registered;
         if (previous !== undefined) {
           const route: ConnectionRoute = { target: registered.target, profile: registered.profile };

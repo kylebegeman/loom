@@ -2337,6 +2337,79 @@ describe("EnvironmentRegistry routes", () => {
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
+  it.effect(
+    "rejects a different Identity account even when reconnecting through the generic add-computer flow",
+    () =>
+      Effect.gen(function* () {
+        const identity = { issuer: "https://identity.test", subject: "owner" };
+        const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+        const credential = new BearerConnectionCredential({
+          token: "existing-token",
+          identity: {
+            ...identity,
+            environmentId: BEARER_TARGET.environmentId,
+            expiresAt: (yield* Clock.currentTimeMillis) + 3600_000,
+          },
+        });
+        const harness = yield* makeHarness(
+          [BEARER_TARGET],
+          [profile],
+          [[BEARER_TARGET.connectionId, credential]],
+        );
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          for (const account of [
+            { ...identity, subject: "other" },
+            { ...identity, issuer: "https://other-id.test" },
+          ]) {
+            const next = new BearerConnectionRegistration({
+              target: BEARER_TARGET,
+              profile: new BearerConnectionProfile({ ...profile, identity: account }),
+              credential: new BearerConnectionCredential({
+                token: "new-token",
+                identity: {
+                  ...account,
+                  environmentId: BEARER_TARGET.environmentId,
+                  expiresAt: credential.identity!.expiresAt,
+                },
+              }),
+            });
+            expect((yield* registry.register(next).pipe(Effect.flip)).message).toContain(
+              "Remove the saved Identity connection",
+            );
+            expect(
+              (yield* Ref.get(harness.storedCredentials)).get(BEARER_TARGET.connectionId),
+            ).toEqual(credential);
+          }
+          const invalid = new BearerConnectionRegistration({
+            target: BEARER_TARGET,
+            profile,
+            credential: new BearerConnectionCredential({
+              token: "mismatched",
+              identity: {
+                ...identity,
+                environmentId: EnvironmentId.make("other-host"),
+                expiresAt: credential.identity!.expiresAt,
+              },
+            }),
+          });
+          expect((yield* registry.register(invalid).pipe(Effect.flip)).message).toContain(
+            "does not match",
+          );
+          yield* registry.register(
+            new BearerConnectionRegistration({
+              target: BEARER_TARGET,
+              profile,
+              credential: new BearerConnectionCredential({ ...credential, token: "renewed" }),
+            }),
+          );
+          expect(
+            (yield* Ref.get(harness.storedCredentials)).get(BEARER_TARGET.connectionId)?.token,
+          ).toBe("renewed");
+        }).pipe(Effect.provide(harness.layer));
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("revokes an active Identity session before removing its saved credentials", () =>
     Effect.gen(function* () {
       const identity = { issuer: "https://identity.test", subject: "owner" };

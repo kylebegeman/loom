@@ -118,6 +118,22 @@ it("accepts only the selected popup, host origin, state and environment, then re
   expect(test.popup.close).toHaveBeenCalled();
 });
 
+it("pins the saved account before host cookie issuance and rejects a different returned account", async () => {
+  const test = setup();
+  const expectedIdentity = { issuer: metadata.issuer!, subject: "saved-owner" };
+  const result = signInToLoomBrowser(
+    { httpBaseUrl: origin, expectedIdentity },
+    test.popup as unknown as Window,
+  );
+  const rejected = expect(result).rejects.toThrow("account or computer changed");
+  const login = await test.navigation.promise;
+  expect(new URL(login).searchParams.get("issuer")).toBe(expectedIdentity.issuer);
+  expect(new URL(login).searchParams.get("subject")).toBe(expectedIdentity.subject);
+  test.send(login);
+  await rejected;
+  expect(JSON.parse(test.request.mock.calls[1]![1]!.body)).toMatchObject({ expectedIdentity });
+});
+
 it("cancels a pending login, closes its popup and removes its listener without issuing a session", async () => {
   const test = setup();
   const result = signInToLoomBrowser({ httpBaseUrl: origin }, test.popup as unknown as Window);
