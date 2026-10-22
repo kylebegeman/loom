@@ -751,3 +751,34 @@ it.effect(
       expect(f.calls()).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(deps)),
 );
+
+it.effect.each([
+  { argv: ["release", "create", "v1", "--notes", "fixed", "--draft"] },
+  { argv: ["release", "upload", "v1", "dist/app.zip"] },
+  { argv: ["workflow", "run", "release.yml", "-f", "version=v1"] },
+  { argv: ["run", "view", "39835152512", "--json", "conclusion"] },
+])("publication commands preserve the exact current-run repository grant: %j", ({ argv }) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.service.save(f.input, "admin", Effect.void);
+    const input = {
+      id: f.input.id,
+      expectedVersion: 1,
+      repository: "owner/repo",
+      command: { tool: "gh" as const, argv },
+    };
+    expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+    expect(f.terminalCalls()).toBe(0);
+    yield* allowTerminal(f);
+    expect((yield* f.service.terminal(input, f.threadId)).exitCode).toBe(0);
+    expect(f.terminalCalls()).toBe(1);
+    expect(
+      (yield* f.service
+        .terminal({ ...input, repository: "other/repo" }, f.threadId)
+        .pipe(Effect.flip)).reason,
+    ).toBe("denied");
+    f.state.thread = { ...f.state.thread, providerInstanceId: ProviderInstanceId.make("changed") };
+    expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+    expect(f.terminalCalls()).toBe(1);
+  }).pipe(Effect.scoped, Effect.provide(deps)),
+);

@@ -138,3 +138,330 @@ it.effect("rejects repository credential rewrites, denied execution and oversize
     ).toBe("failed");
   }).pipe(Effect.scoped),
 );
+
+const releaseFixture = Effect.gen(function* () {
+  const f = yield* fixture;
+  yield* Effect.promise(() =>
+    Promise.all([
+      NodeFSP.mkdir(NodePath.join(f.dir, "checkout")),
+      NodeFSP.mkdir(NodePath.join(f.dir, "outside")),
+    ]),
+  );
+  const checkout = yield* Effect.promise(() => NodeFSP.realpath(NodePath.join(f.dir, "checkout")));
+  const outside = yield* Effect.promise(() => NodeFSP.realpath(NodePath.join(f.dir, "outside")));
+  const invoked = NodePath.join(f.dir, "gh-invoked");
+  // Config inspection must run without either command credential in its environment.
+  yield* f.write("git", `process.exit(process.env.GH_TOKEN||process.env.LOOM_GITHUB_TOKEN?91:0)`);
+  yield* f.write(
+    "gh",
+    `require('node:fs').writeFileSync(${JSON.stringify(invoked)},'started');console.log(JSON.stringify({args:process.argv.slice(2),token:process.env.GH_TOKEN}));`,
+  );
+  const execute = (
+    argv: string[],
+    cwd: string | null = checkout,
+    authorize: Effect.Effect<void, VaultGitHubError> = Effect.void,
+  ) =>
+    f.service.execute({
+      token: Redacted.make("synthetic-terminal-token"),
+      repository: "owner/repo",
+      command: { tool: "gh", argv },
+      cwd,
+      authorize,
+    });
+  return { ...f, checkout, outside, invoked, execute };
+});
+
+it.effect("release assets and notes resolve inside the checkout and preserve asset labels", () =>
+  Effect.gen(function* () {
+    const f = yield* releaseFixture;
+    const asset = NodePath.join(f.checkout, "artifact.tgz");
+    const notes = NodePath.join(f.checkout, "notes#draft.md");
+    yield* Effect.promise(async () => {
+      await NodeFSP.writeFile(asset, "asset");
+      await NodeFSP.writeFile(notes, "notes");
+      await NodeFSP.symlink(asset, NodePath.join(f.checkout, "asset-link.tgz"));
+    });
+    const result = yield* f.execute([
+      "release",
+      "create",
+      "v1.2.3",
+      "asset-link.tgz#Binary #1",
+      "--draft=false",
+      "-p",
+      "--title",
+      "--notes-file",
+      "-F",
+      "notes#draft.md",
+    ]);
+    expect(JSON.parse(result.stdout)).toEqual({
+      args: [
+        "release",
+        "create",
+        "v1.2.3",
+        `${asset}#Binary #1`,
+        "--repo",
+        "owner/repo",
+        "--draft=false",
+        "-p",
+        "--title",
+        "--notes-file",
+        "--notes-file",
+        notes,
+        "--verify-tag",
+      ],
+      token: "[redacted]",
+    });
+    const textOnly = yield* f.execute(
+      ["release", "edit", "v1.2.3", "--notes", "--notes-file"],
+      null,
+    );
+    expect(JSON.parse(textOnly.stdout).args).toEqual([
+      "release",
+      "edit",
+      "v1.2.3",
+      "--repo",
+      "owner/repo",
+      "--notes",
+      "--notes-file",
+    ]);
+    const upload = yield* f.execute(["release", "upload", "v1.2.3", "artifact.tgz"]);
+    expect(JSON.parse(upload.stdout).args).toEqual([
+      "release",
+      "upload",
+      "v1.2.3",
+      asset,
+      "--repo",
+      "owner/repo",
+    ]);
+    const edit = yield* f.execute(["release", "edit", "v1.2.3", "--notes-file", "notes#draft.md"]);
+    expect(JSON.parse(edit.stdout).args).toEqual([
+      "release",
+      "edit",
+      "v1.2.3",
+      "--repo",
+      "owner/repo",
+      "--notes-file",
+      notes,
+    ]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "release file inputs reject outside paths, escaping links, directories, globs and stdin",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* releaseFixture;
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(NodePath.join(f.outside, "artifact.tgz"), "outside");
+        await NodeFSP.writeFile(NodePath.join(f.checkout, "artifact.tgz"), "inside");
+        await NodeFSP.writeFile(NodePath.join(f.checkout, "literal*.tgz"), "literal glob");
+        await NodeFSP.writeFile(NodePath.join(f.checkout, "literal#target.tgz"), "hash");
+        await NodeFSP.symlink(
+          NodePath.join(f.checkout, "literal#target.tgz"),
+          NodePath.join(f.checkout, "hash-target.tgz"),
+        );
+        await NodeFSP.symlink(f.outside, NodePath.join(f.checkout, "escape"));
+        await NodeFSP.symlink(
+          NodePath.join(f.outside, "artifact.tgz"),
+          NodePath.join(f.checkout, "escaped.tgz"),
+        );
+      });
+      for (const filename of [
+        NodePath.join(f.outside, "artifact.tgz"),
+        "../outside/artifact.tgz",
+        "escape/artifact.tgz",
+        "escaped.tgz",
+        ".",
+        "literal*.tgz",
+        "-",
+        "missing.tgz",
+      ]) {
+        expect(
+          (yield* f.execute(["release", "upload", "v1.2.3", filename]).pipe(Effect.flip)).reason,
+        ).toBe("invalid-command");
+        expect(
+          (yield* f
+            .execute(["release", "edit", "v1.2.3", "--notes-file", filename])
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-command");
+      }
+      expect(
+        (yield* f.execute(["release", "upload", "v1.2.3", "hash-target.tgz"]).pipe(Effect.flip))
+          .reason,
+      ).toBe("invalid-command");
+      expect(
+        (yield* f
+          .execute(["release", "upload", "v1.2.3", "artifact.tgz", "../outside/artifact.tgz"])
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+      expect(
+        (yield* f.execute(["release", "upload", "v1.2.3", "artifact.tgz"], null).pipe(Effect.flip))
+          .reason,
+      ).toBe("invalid-command");
+      expect(
+        (yield* f
+          .execute(["release", "edit", "v1.2.3", "--notes-file", "artifact.tgz"], null)
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+      expect(yield* Effect.promise(() => NodeFSP.readdir(f.dir))).not.toContain("gh-invoked");
+    }).pipe(Effect.scoped),
+);
+
+it.effect("release download accepts an explicit existing empty directory within the checkout", () =>
+  Effect.gen(function* () {
+    const f = yield* releaseFixture;
+    const destination = NodePath.join(f.checkout, "downloads");
+    yield* Effect.promise(() => NodeFSP.mkdir(destination));
+    const result = yield* f.execute([
+      "release",
+      "download",
+      "v1.2.3",
+      "--pattern",
+      "--dir",
+      "-D",
+      "downloads",
+    ]);
+    expect(JSON.parse(result.stdout).args).toEqual([
+      "release",
+      "download",
+      "v1.2.3",
+      "--repo",
+      "owner/repo",
+      "--pattern",
+      "--dir",
+      "--dir",
+      destination,
+    ]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("release download rejects missing, occupied, outside and escaping destinations", () =>
+  Effect.gen(function* () {
+    const f = yield* releaseFixture;
+    yield* Effect.promise(async () => {
+      await NodeFSP.mkdir(NodePath.join(f.checkout, "occupied"));
+      await NodeFSP.writeFile(NodePath.join(f.checkout, "occupied", "existing.tgz"), "existing");
+      await NodeFSP.mkdir(NodePath.join(f.checkout, "symlink-child"));
+      await NodeFSP.symlink(f.outside, NodePath.join(f.checkout, "symlink-child", "asset.tgz"));
+      await NodeFSP.symlink(f.outside, NodePath.join(f.checkout, "escape"));
+      await NodeFSP.writeFile(NodePath.join(f.checkout, "file"), "file");
+    });
+    for (const destination of [
+      "missing",
+      "occupied",
+      "symlink-child",
+      "escape",
+      "escape/.",
+      "file",
+      "../outside",
+      f.outside,
+      "-",
+      "*",
+    ]) {
+      expect(
+        (yield* f
+          .execute(["release", "download", "v1.2.3", "--dir", destination])
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+    }
+    expect((yield* f.execute(["release", "download", "v1.2.3"]).pipe(Effect.flip)).reason).toBe(
+      "invalid-command",
+    );
+    expect(
+      (yield* f
+        .execute(["release", "download", "v1.2.3", "--dir", f.outside], null)
+        .pipe(Effect.flip)).reason,
+    ).toBe("invalid-command");
+    expect(yield* Effect.promise(() => NodeFSP.readdir(f.dir))).not.toContain("gh-invoked");
+    expect(yield* Effect.promise(() => NodeFSP.readdir(f.outside))).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("validates every duplicate notes-file and download-dir occurrence", () =>
+  Effect.gen(function* () {
+    const f = yield* releaseFixture;
+    yield* Effect.promise(async () => {
+      await NodeFSP.writeFile(NodePath.join(f.checkout, "notes.md"), "inside");
+      await NodeFSP.writeFile(NodePath.join(f.outside, "notes.md"), "outside");
+      await NodeFSP.mkdir(NodePath.join(f.checkout, "downloads"));
+    });
+    for (const filenames of [
+      ["notes.md", "../outside/notes.md"],
+      ["../outside/notes.md", "notes.md"],
+    ]) {
+      expect(
+        (yield* f
+          .execute([
+            "release",
+            "edit",
+            "v1.2.3",
+            "--notes-file",
+            filenames[0]!,
+            "-F",
+            filenames[1]!,
+          ])
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+    }
+    expect(
+      (yield* f
+        .execute([
+          "release",
+          "create",
+          "v1.2.3",
+          "notes.md",
+          "--notes-from-tag",
+          "-F",
+          "../outside/notes.md",
+        ])
+        .pipe(Effect.flip)).reason,
+    ).toBe("invalid-command");
+    for (const destinations of [
+      ["downloads", "../outside"],
+      ["../outside", "downloads"],
+    ]) {
+      expect(
+        (yield* f
+          .execute([
+            "release",
+            "download",
+            "v1.2.3",
+            "--dir",
+            destinations[0]!,
+            "-D",
+            destinations[1]!,
+          ])
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+    }
+    expect(yield* Effect.promise(() => NodeFSP.readdir(f.dir))).not.toContain("gh-invoked");
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "release file validation precedes authorization and denied authorization prevents gh",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* releaseFixture;
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(NodePath.join(f.checkout, "artifact.tgz"), "asset"),
+      );
+      let authorizations = 0;
+      const denied = Effect.sync(() => {
+        authorizations++;
+      }).pipe(Effect.andThen(Effect.fail(new VaultGitHubError({ reason: "unauthorized" }))));
+      expect(
+        (yield* f
+          .execute(["release", "upload", "v1.2.3", "../outside/missing.tgz"], f.checkout, denied)
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-command");
+      expect(authorizations).toBe(0);
+      expect(
+        (yield* f
+          .execute(["release", "upload", "v1.2.3", "artifact.tgz"], f.checkout, denied)
+          .pipe(Effect.flip)).reason,
+      ).toBe("unauthorized");
+      expect(authorizations).toBe(1);
+      expect(yield* Effect.promise(() => NodeFSP.readdir(f.dir))).not.toContain("gh-invoked");
+    }).pipe(Effect.scoped),
+);

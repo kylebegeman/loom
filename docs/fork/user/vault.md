@@ -609,8 +609,15 @@ loom vault github-exec '{"id":"<connection-id>","expectedVersion":1,"repository"
 ```
 
 Supported GH families are `repo view`, PR list/view/checks/diff/create/comment/close/reopen/
-merge/ready/review, and issue list/view/create/comment/close/reopen. Use numeric PR/issue
-references and explicit flags for noninteractive writes. Git supports `ls-remote`, `fetch`,
+merge/ready/review, issue list/view/create/comment/close/reopen, release
+list/view/create/edit/upload/download, workflow list/view/run, and run
+list/view/watch/rerun/cancel. Use numeric PR/issue/run references and explicit release tags
+or workflow filenames. For workflow inputs, use `-f key=value` or `--raw-field key=value`.
+Release creation requires explicit notes or a notes-generation option and verifies that the
+source tag already exists. Release assets and notes files must be literal paths inside the
+active checkout. Release downloads require `--dir` naming an existing empty directory inside
+that checkout. File patterns for uploads, stdin, tag replacement and file-based workflow
+inputs are unavailable. Git supports `ls-remote`, `fetch`,
 `push` and `clone`, with the selected HTTPS URL or `origin`. For clone, use the selected URL
 and optionally a new directory name under the checkout. `origin` means the selected Vault
 repository for this command; fetching it without refspecs updates its remote-tracking branches.

@@ -29,7 +29,7 @@ const failure = Schema.Union([VaultError, VaultGitHubError, OrchestratorMcpFailu
 export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github_exec", {
     description:
-      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Active full-access/default thread only with exact use grant. gh supports repo view and PR/issue operations; git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
+      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Active full-access/default thread only with exact use grant. gh supports repo view, PR/issue operations, release list/view/create/edit/upload/download, workflow list/view/run and run list/view/watch/rerun/cancel. Release files must be literal paths inside the active checkout; downloads require an empty checkout directory. Git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
     parameters: VaultGitHubTerminalRun,
     success: VaultGitHubTerminalResult,
     failure,

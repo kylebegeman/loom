@@ -43,6 +43,72 @@ const fail = (reason: VaultGitHubError["reason"]) => new VaultGitHubError({ reas
 const forbiddenConfig =
   /^(include\.|includeif\.|credential\.|http\.|https\.|url\.|filter\.|alias\.|protocol\.|core\.(sshcommand|gitproxy|hookspath|fsmonitor)|remote\..*\.(uploadpack|receivepack|proxy|vcs|pushoption)|push\.pushoption)/i;
 const OUTPUT_LIMIT = 65536;
+// Skip consumed values so flag-shaped titles, notes and patterns stay text.
+const releaseFileValues = new Set([
+  "--target",
+  "--title",
+  "-t",
+  "--notes",
+  "-n",
+  "--notes-file",
+  "--notes-start-tag",
+]);
+const releaseDownloadValues = new Set(["--dir", "--pattern", "-p", "--archive", "-A"]);
+const literalPath = (value: string) =>
+  value.length > 0 && value !== "-" && !/[\0*?[\]{}\\]/.test(value);
+const validateReleaseFiles = async (args: string[], cwd: string | null) => {
+  const action = args[1];
+  if (!action || !["create", "edit", "upload", "download"].includes(action)) return;
+  const positionalEnd = args.indexOf("--repo", 2);
+  if (positionalEnd < 0) throw fail("invalid-command");
+  const paths: { index: number; asset: boolean; directory: boolean }[] = [];
+  if (action === "create" || action === "upload") {
+    for (let index = 3; index < positionalEnd; index++)
+      paths.push({ index, asset: true, directory: false });
+  }
+  const valueFlags = action === "download" ? releaseDownloadValues : releaseFileValues;
+  for (let index = positionalEnd + 2; index < args.length;) {
+    const flag = args[index]!;
+    const name = flag.split("=", 1)[0]!;
+    if (action === "download" && (name === "--output" || name === "--clobber"))
+      throw fail("invalid-command");
+    if (flag === "--notes-file" || (action === "download" && flag === "--dir")) {
+      paths.push({ index: index + 1, asset: false, directory: flag === "--dir" });
+    }
+    index += valueFlags.has(flag) ? 2 : 1;
+  }
+  if (action === "download" && !paths.some((path) => path.directory)) throw fail("invalid-command");
+  if (paths.length === 0) return;
+  if (cwd === null) throw fail("invalid-command");
+  const root = await NodeFSP.realpath(cwd);
+  if (!(await NodeFSP.stat(root)).isDirectory()) throw fail("invalid-command");
+  for (const path of paths) {
+    const value = args[path.index];
+    if (!value) throw fail("invalid-command");
+    const labelIndex = path.asset ? value.indexOf("#") : -1;
+    const filename = labelIndex < 0 ? value : value.slice(0, labelIndex);
+    if (!literalPath(filename)) throw fail("invalid-command");
+    const resolved = await NodeFSP.realpath(NodePath.resolve(root, filename));
+    // gh treats the first # as an asset label separator even in a canonical path.
+    if (path.asset && resolved.includes("#")) throw fail("invalid-command");
+    const relative = NodePath.relative(root, resolved);
+    if (
+      relative === ".." ||
+      relative.startsWith(`..${NodePath.sep}`) ||
+      NodePath.isAbsolute(relative) ||
+      !literalPath(resolved)
+    )
+      throw fail("invalid-command");
+    const stat = await NodeFSP.stat(resolved);
+    if (path.directory) {
+      // No pre-existing child, including a symlink, may receive downloaded content.
+      if (!stat.isDirectory() || (await NodeFSP.readdir(resolved)).length !== 0)
+        throw fail("invalid-command");
+    } else if (!stat.isFile()) throw fail("invalid-command");
+    // Pass the canonical path to gh so it uses the checked parent directory.
+    args[path.index] = resolved + (labelIndex < 0 ? "" : value.slice(labelIndex));
+  }
+};
 export const layer = Layer.effect(
   GitHubTerminal,
   Effect.gen(function* () {
@@ -105,6 +171,12 @@ export const layer = Layer.effect(
         if (platform !== "darwin" && platform !== "linux") return yield* fail("unsupported");
         const args = githubTerminalArgs(input.repository, input.command);
         if (!args) return yield* fail("invalid-command");
+        if (input.command.tool === "gh" && args[0] === "release") {
+          yield* Effect.tryPromise({
+            try: () => validateReleaseFiles(args, input.cwd),
+            catch: () => fail("invalid-command"),
+          });
+        }
         const directory = yield* Effect.acquireRelease(
           Effect.tryPromise({
             try: () => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-github-command-")),
