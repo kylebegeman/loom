@@ -13,11 +13,12 @@ export function beforeLoomSettingsLoad({
   location,
 }: {
   search: SettingsScopeSearch & { section?: string };
-  location: { hash: string };
+  location: { hash: string; search: { section?: unknown } };
 }) {
   const target = loomSettingsSectionForHash(FORK_SETTINGS_SECTIONS, location.hash);
-  // Existing settings links use hashes. Keep the selected topic after the search target clears.
-  if (target !== null && search.section !== target) {
+  // Legacy hashes select a topic. Preloads can reuse stale match search after
+  // redirects, so compare the requested location to stop redirect loops.
+  if (target !== null && location.search.section !== target) {
     throw redirect({
       to: "/settings/loom",
       search: { ...search, section: target },

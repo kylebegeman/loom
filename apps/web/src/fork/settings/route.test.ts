@@ -12,7 +12,10 @@ import {
 } from "~/components/settings/settingsScopeNavigation";
 import { beforeLoomSettingsLoad, validateLoomSettingsSearch } from "../../routes/settings.loom";
 
-function settingsRouter(initialEntry: string) {
+function settingsRouter(
+  initialEntry: string,
+  beforeLoad: typeof beforeLoomSettingsLoad = beforeLoomSettingsLoad,
+) {
   const root = createRootRoute();
   const settings = createRoute({
     getParentRoute: () => root,
@@ -25,7 +28,7 @@ function settingsRouter(initialEntry: string) {
     path: "loom",
     validateSearch: validateLoomSettingsSearch,
     search: { middlewares: [retainSearchParams(["section"])] },
-    beforeLoad: beforeLoomSettingsLoad,
+    beforeLoad,
   });
   return createRouter({
     routeTree: root.addChildren([settings.addChildren([loom])]),
@@ -34,6 +37,35 @@ function settingsRouter(initialEntry: string) {
 }
 
 describe("Loom topic navigation", () => {
+  it("canonicalizes topic preloads without looping or changing the selected topic", async () => {
+    let loads = 0;
+    const router = settingsRouter("/settings/loom?section=vault-health", (input) => {
+      loads += 1;
+      if (loads > 4) throw new Error("Repeated topic preload redirect");
+      return beforeLoomSettingsLoad(input);
+    });
+    await router.load();
+    loads = 0;
+    await router.preloadRoute({
+      to: "/settings/loom",
+      search: { section: "vault-health" },
+      hash: "loom-vault-profiles",
+    });
+    expect(loads).toBeLessThanOrEqual(2);
+    expect(router.state.location.search.section).toBe("vault-health");
+    expect(router.state.location.hash).toBe("");
+    loads = 0;
+    await router.navigate({
+      to: "/settings/loom",
+      search: { section: "vault-health" },
+      hash: "loom-vault-profiles",
+    });
+    expect(router.state.redirect).toBeDefined();
+    await router.navigate(router.state.redirect!.options);
+    expect(router.state.location.search.section).toBe("vault-profiles");
+    expect(router.state.matches.at(-1)?.status).toBe("success");
+  });
+
   it("converts an existing section link without dropping its computer or project", async () => {
     const router = settingsRouter(
       "/settings/loom?machine=computer&project=project#loom-vault-github",
