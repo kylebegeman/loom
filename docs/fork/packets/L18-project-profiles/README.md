@@ -1,6 +1,10 @@
 # L18: Project profiles and env panel
 
-Status: Ready to build.
+Status: Implemented locally; integrated client acceptance and release are owned by the primary.
+
+See [user help](../../user/project-profiles.md) for privacy, command execution and budget behavior.
+The implementation uses v2 processed-token turn updates and durable system notices in
+place of the older activity/command names below.
 
 Per-project knowledge that T3 Code's project settings do not cover, plus a view of the
 project's environment variables. A **project profile** holds private agent notes (preferences

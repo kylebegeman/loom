@@ -1,3 +1,4 @@
+import { ProfileSettingsSection } from "../project-profiles/ProfileSettingsSection";
 import {
   AppWindowIcon,
   ArrowRightLeftIcon,
@@ -55,6 +56,17 @@ export interface ForkSettingsSection {
 }
 
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "project-profiles",
+    title: "Project profile",
+    description: "Keep private notes, command mappings, env metadata and advisory token budgets.",
+    group: "work",
+    keywords: "notes commands budgets tokens env schema varlock private",
+    icon: KeyRoundIcon,
+    scope: "mixed",
+    related: ["project-lifecycle"],
+    Component: ProfileSettingsSection,
+  },
   {
     id: "project-lifecycle",
     icon: HardDriveIcon,

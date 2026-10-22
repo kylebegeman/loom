@@ -1,3 +1,4 @@
+import { useForkTriggerMenuItems } from "../../fork/composer/menu"; // fork: ext-composer-menu
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -2669,8 +2670,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forkComposer.context,
     composerTrigger?.kind === "slash-command",
   );
+  // fork: ext-composer-menu
+  const forkTriggerItems = useForkTriggerMenuItems(forkComposer.context, composerTrigger);
   const composerMenuItems = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
+    // fork: ext-composer-menu
+    if (composerTrigger.kind.startsWith("loom:")) return [...forkTriggerItems];
     if (composerTrigger.kind === "path") {
       return [
         ...matchComposerThreadItems({

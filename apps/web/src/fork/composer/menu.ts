@@ -1,3 +1,4 @@
+import { selectProjectNotes, useProjectNotesMenuItems } from "../project-profiles/composerMenu";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
@@ -16,6 +17,14 @@ export interface ForkComposerCommandItem {
   readonly label: string;
   readonly description: string;
   readonly value: string;
+  readonly disabled?: boolean;
+}
+
+export function useForkTriggerMenuItems(
+  context: ForkComposerContext,
+  trigger: ComposerTrigger | null,
+): readonly ForkComposerCommandItem[] {
+  return useProjectNotesMenuItems(context, trigger);
 }
 
 /** Acts on a chosen slash item. The `/` token has already been removed from the prompt. */
@@ -89,6 +98,7 @@ export function selectForkComposerItem(
     readonly context: ForkComposerContext;
   },
 ): boolean {
+  if (item.source === "project-profiles") return selectProjectNotes(item, options);
   const source = FORK_SLASH_SOURCES.find((candidate) => candidate.id === item.source);
   if (source === undefined) return false;
   const { trigger, snapshot } = options;
