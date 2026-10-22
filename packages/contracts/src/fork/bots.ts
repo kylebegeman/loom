@@ -1797,11 +1797,22 @@ export const BotLibraryListResult = Schema.Struct({
 });
 export type BotLibraryListResult = typeof BotLibraryListResult.Type;
 
+const BotLibraryProjectReadiness = Schema.Struct({
+  libraryProjectId: LibraryId,
+  ready: Schema.Boolean,
+  reasons: Schema.Array(Schema.String),
+  availability: Schema.optionalKey(BotTargetAvailability),
+});
+
 export const BotLibraryStatusReport = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(160)),
   acceptRemote: Schema.Boolean,
   runtimeModeCeiling: RuntimeMode,
   freeSlots: Schema.Int,
+  /** Readiness for the caller-selected project of a global bot. Absent on older targets. */
+  projects: Schema.optionalKey(
+    Schema.Array(BotLibraryProjectReadiness).check(Schema.isMaxLength(500)),
+  ),
   bots: Schema.Array(
     Schema.Struct({
       libraryBotId: BotId,
