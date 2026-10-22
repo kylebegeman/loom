@@ -326,7 +326,7 @@ export function BotsInbox({
 
   return (
     <div className="space-y-4">
-      {showDismissed ? null : <WaitingRuns waiting={waiting} />}
+      {showDismissed || waiting.length === 0 ? null : <WaitingRuns waiting={waiting} />}
       <section className="space-y-3" aria-label="Needs attention">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-medium">{showDismissed ? "Dismissed" : "Needs attention"}</h3>
