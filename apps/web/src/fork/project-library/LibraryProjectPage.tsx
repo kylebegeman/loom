@@ -866,9 +866,8 @@ function ProjectSetup({
       <div className="max-w-xl space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">Ready when you are</h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          {hasCopy
-            ? "Your files are ready. Start a conversation to work on this project."
-            : "Start a conversation and Loom prepares the files you need. Your project and conversations stay available when files are removed."}
+          Choose where to work when you start a conversation. Loom checks existing files or prepares
+          the files you need. Your project and conversations stay available when files are removed.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
