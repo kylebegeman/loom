@@ -7,6 +7,9 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -149,6 +152,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialProfiles: ReadonlyArray<ConnectionProfile> = [],
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
+    readonly identityLogoutStatus?: number;
     readonly prepareError?: ConnectionBlockedError;
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly beforeRegistrationRegister?: (
@@ -434,10 +438,21 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       checkRoute(route).pipe(Effect.map((check) => check === "answered")),
   });
 
+  const identityRevocations: string[] = [];
+  const identityHttp = HttpClient.make((request) =>
+    Effect.sync(() => {
+      identityRevocations.push(request.url);
+      return HttpClientResponse.fromWeb(
+        request,
+        new Response(null, { status: options?.identityLogoutStatus ?? 200 }),
+      );
+    }),
+  );
   const layerCache = Layer.succeed(Persistence.EnvironmentCacheStore, cacheStore);
   const layer = EnvironmentRegistry.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.succeed(HttpClient.HttpClient, identityHttp),
         Layer.succeed(Persistence.ConnectionTargetStore, targetStore),
         Layer.succeed(Persistence.ConnectionRegistrationStore, registrationStore),
         Layer.succeed(ConnectionProfileStore.ConnectionProfileStore, profileStore),
@@ -459,6 +474,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   return {
     layer,
     storedTargets,
+    identityRevocations,
     shellCache,
     cacheClears,
     ownedDataClears,
@@ -2320,5 +2336,87 @@ describe("EnvironmentRegistry routes", () => {
         expect(entry?.alternateRoutes ?? []).toEqual([]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
+  );
+  it.effect("revokes an active Identity session before removing its saved credentials", () =>
+    Effect.gen(function* () {
+      const identity = { issuer: "https://identity.test", subject: "owner" };
+      const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+      const credential = new BearerConnectionCredential({
+        token: "identity-token",
+        identity: {
+          ...identity,
+          environmentId: BEARER_TARGET.environmentId,
+          expiresAt: (yield* Clock.currentTimeMillis) + 3600_000,
+        },
+      });
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [profile],
+        [[BEARER_TARGET.connectionId, credential]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.remove(BEARER_TARGET.environmentId);
+        expect(harness.identityRevocations).toEqual([
+          "https://bearer.example.test/api/loom/identity/logout",
+        ]);
+        expect(hasRoutes(yield* Ref.get(harness.storedTargets), BEARER_TARGET.environmentId)).toBe(
+          false,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.scoped),
+  );
+  it.effect("keeps a saved Identity connection when its host cannot confirm logout", () =>
+    Effect.gen(function* () {
+      const identity = { issuer: "https://identity.test", subject: "owner" };
+      const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+      const credential = new BearerConnectionCredential({
+        token: "identity-token",
+        identity: {
+          ...identity,
+          environmentId: BEARER_TARGET.environmentId,
+          expiresAt: (yield* Clock.currentTimeMillis) + 3600_000,
+        },
+      });
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [profile],
+        [[BEARER_TARGET.connectionId, credential]],
+        { identityLogoutStatus: 503 },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect((yield* Effect.result(registry.remove(BEARER_TARGET.environmentId)))._tag).toBe(
+          "Failure",
+        );
+        expect(hasRoutes(yield* Ref.get(harness.storedTargets), BEARER_TARGET.environmentId)).toBe(
+          true,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.scoped),
+  );
+  it.effect("forgets expired Identity access without requiring a reachable host", () =>
+    Effect.gen(function* () {
+      const identity = { issuer: "https://identity.test", subject: "owner" };
+      const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
+      const credential = new BearerConnectionCredential({
+        token: "identity-token",
+        identity: {
+          ...identity,
+          environmentId: BEARER_TARGET.environmentId,
+          expiresAt: (yield* Clock.currentTimeMillis) - 1,
+        },
+      });
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [profile],
+        [[BEARER_TARGET.connectionId, credential]],
+        { identityLogoutStatus: 503 },
+      );
+      yield* Effect.gen(function* () {
+        yield* (yield* EnvironmentRegistry.EnvironmentRegistry).remove(BEARER_TARGET.environmentId);
+        expect(harness.identityRevocations).toEqual([]);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.scoped),
   );
 });

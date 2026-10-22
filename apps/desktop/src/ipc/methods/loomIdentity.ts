@@ -26,7 +26,7 @@ export const signInToLoom = DesktopIpc.makeIpcMethod({
     const runPromise = Effect.runPromiseWith(context);
     const result = yield* Effect.tryPromise({
       try: (signal) =>
-        enroll(input.httpBaseUrl, (url) => runPromise(shell.openExternal(url)), signal),
+        enroll(input.httpBaseUrl, (url) => runPromise(shell.openExternal(url)), signal, input),
       catch: (cause) =>
         new LoomIdentityError({
           detail: cause instanceof Error ? cause.message : "Could not sign in to Loom. Try again.",
@@ -44,6 +44,6 @@ export const cancelLoomSignIn = DesktopIpc.makeIpcMethod({
   handler: (input) =>
     Effect.try({
       try: () => cancel(input.httpBaseUrl),
-      catch: () => new LoomIdentityError({ detail: "The Library address is invalid." }),
+      catch: () => new LoomIdentityError({ detail: "The computer address is invalid." }),
     }),
 });
