@@ -1,10 +1,13 @@
 # Loom Bots product and packet index
 
-Status: **Implementation authorized**. Kyle selected all twelve brainstorm items as the Bots V1
-on 2026-10-20 and chose the Loom library (fork SQLite tables) for storage. Surfaces are the Bots
-page on web and desktop, agents through MCP, and the command palette. Mobile comes later. L100's
-Library and VPS side stays local: nothing is deployed without Kyle's approval. The B01 to B12
-identifiers remain stable from the brainstorm; L89 to L100 are their repository packet IDs.
+Status: **Implemented on `main`**, including fixes for follow-up omissions across L89 to L100.
+Kyle selected all twelve brainstorm items as the Bots V1 on 2026-10-20 and chose the Loom
+library (fork SQLite tables) for storage. Browser acceptance passed for run notes, inbox
+and replay interactions. Remaining real-client checks and remote multi-computer production
+rollout are still pending. Surfaces are the Bots page on web and desktop, agents through
+MCP, and the command palette; mobile remains deferred. L100's Library and VPS implementation
+stays local and does not establish production rollout. The B01 to B12 identifiers remain
+stable from the brainstorm; L89 to L100 are their repository packet IDs.
 
 A bot is a named, reusable job with a fixed brief, typed inputs and pinned settings. A bot run is
 an ordinary thread under those caps. The goal is not deterministic output. The goal is that every

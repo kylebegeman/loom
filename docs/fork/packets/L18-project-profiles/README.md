@@ -1,6 +1,11 @@
 # L18: Project profiles and env panel
 
-Status: Implemented locally; integrated client acceptance and release are owned by the primary.
+Status: Implemented on `main`; focused browser acceptance passed for project scope and
+persistence, `%` notes insertion, Env/palette access, direct terminal commands, and real
+varlock cancellation, validation errors/success and wrapped terminal commands. Native
+desktop and remote acceptance, and release, are not established by these browser checks.
+Mobile UI remains out of scope. See [TESTING.md](./TESTING.md) for the full verification
+scope.
 
 See [user help](../../user/project-profiles.md) for privacy, command execution and budget behavior.
 The implementation uses v2 processed-token turn updates and durable system notices in
