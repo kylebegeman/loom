@@ -213,6 +213,104 @@ describe("publisher CLI pins", () => {
   );
 });
 
+describe("published release history lookup", () => {
+  it.each([false, true])(
+    "generates notes only after a successful published-release lookup (API failure: %s)",
+    async (apiFailure) => {
+      const stats = await NodeFSP.stat(import.meta.filename);
+      const tag = "loom-v0.0.112-nightly.20261022.1";
+      const published = "0.0.110-nightly.20261022.1";
+      const reserved = "0.0.111-nightly.20261022.1";
+      const draft = "0.0.111-nightly.20261022.2";
+      const stable = "0.0.111";
+      const previousCommit = "a".repeat(40);
+      vi.resetAllMocks();
+      const spawn = vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command, rawArgs) => {
+        const args = [...rawArgs!];
+        let stdout = "";
+        if (command === "git") {
+          if (args[0] === "remote") stdout = "https://github.com/kylebegeman/loom.git";
+          else if (args[0] === "for-each-ref") {
+            stdout =
+              args.at(-1) === "refs/tags/loom-v*"
+                ? tag
+                : [published, reserved, draft, stable]
+                    .map(
+                      (name) =>
+                        `${name}\tcommit\t${name === published ? previousCommit : "b".repeat(40)}`,
+                    )
+                    .join("\n");
+          } else if (args[0] === "rev-parse") stdout = COMMIT;
+          else if (args[0] === "cat-file") stdout = "commit";
+          else if (args[0] === "log") {
+            expect(args.at(-1)).toBe(`${previousCommit}..${COMMIT}`);
+            stdout = "feat(library): integrated feature work\nfix(desktop): include parser license";
+          } else if (!["fetch", "tag", "push"].includes(args[0]!)) {
+            throw new Error(`Unexpected Git command: ${args.join(" ")}`);
+          }
+        } else if (command === "gh") {
+          if (args[0] === "api") {
+            expect(args).toEqual([
+              "api",
+              "--paginate",
+              "repos/kylebegeman/loom/releases?per_page=100",
+              "--jq",
+              ".[] | select(.draft == false) | .tag_name",
+            ]);
+            if (apiFailure)
+              return {
+                pid: 1,
+                output: [null, "", "API unavailable"],
+                stdout: "",
+                stderr: "API unavailable",
+                status: 1,
+                signal: null,
+              };
+            stdout = `${published}\n${stable}`;
+          } else if (args[0] === "release" && args[1] === "create") {
+            throw new Error("Publication boundary reached");
+          } else if (args[0] !== "release" || args[1] !== "list") {
+            throw new Error(`Unexpected release command: ${args.join(" ")}`);
+          }
+        } else throw new Error(`Unexpected command: ${command}`);
+        return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
+      });
+      try {
+        vi.mocked(NodeFS.existsSync).mockReturnValue(false);
+        vi.mocked(NodeFSP.mkdir).mockResolvedValue(undefined);
+        vi.mocked(NodeFSP.stat).mockImplementation(async (path) => {
+          if (String(path).endsWith("connect-config.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return stats;
+        });
+        vi.mocked(NodeFSP.writeFile).mockResolvedValue();
+        vi.mocked(NodeFSP.rm).mockResolvedValue();
+        await expect(main("publish")).rejects.toThrow(
+          apiFailure ? "API unavailable" : "Publication boundary reached",
+        );
+        expect(
+          spawn.mock.calls.filter(([command, args]) => command === "gh" && args?.[0] === "api"),
+        ).toHaveLength(1);
+        const notes = vi
+          .mocked(NodeFSP.writeFile)
+          .mock.calls.find(([path]) => String(path).endsWith("release-notes.md"))?.[1];
+        if (apiFailure) {
+          expect(notes).toBeUndefined();
+          expect(
+            spawn.mock.calls.some(([, args]) => args?.[0] === "release" && args[1] === "create"),
+          ).toBe(false);
+        } else {
+          expect(notes).toContain("Library: integrated feature work");
+          expect(notes).toContain("Desktop: include parser license");
+          expect(notes).toContain(`${published}...0.0.112-nightly.20261022.1`);
+        }
+      } finally {
+        vi.resetAllMocks();
+      }
+    },
+  );
+});
+
 describe("Loom update publishing", () => {
   it("distinguishes an ad hoc installed app from an update-compatible signing requirement", () => {
     expect(
@@ -689,13 +787,41 @@ describe("Loom update publishing", () => {
     }
   });
 
+  it("includes feature work covered by a failed build reservation in the next release", async () => {
+    const fixture = await publicationFixture();
+    try {
+      fixture.commit("feat(web): published work");
+      const published = "0.0.110-nightly.20261022.1";
+      fixture.git("tag", published);
+      fixture.commit("feat(library): integrated feature work");
+      fixture.git("tag", "0.0.111-nightly.20261022.1");
+      fixture.commit("fix(desktop): include parser license");
+      const integration = "loom-v0.0.112-nightly.20261022.1";
+      fixture.git("tag", integration);
+      const release = releaseFromRepository(fixture.source, integration);
+      expect(release.version).toBe("0.0.112-nightly.20261022.1");
+
+      const history = releaseHistory(release, [published], fixture.source);
+      expect(history.previous).toBe(published);
+      expect(history.subjects).toEqual([
+        "feat(library): integrated feature work",
+        "fix(desktop): include parser license",
+      ]);
+      const notes = releaseNotes(release, history.previous, history.subjects);
+      expect(notes).toContain("Library: integrated feature work");
+      expect(notes).toContain(`${published}...${release.version}`);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   it("lists the commits since the previous publication as the popover's changes", async () => {
     const fixture = await publicationFixture();
     try {
       fixture.commit("feat(web): earlier work");
       fixture.git("tag", "0.0.64-nightly.20261015.3158");
       fixture.commit("fix(mobile): stable-only fix");
-      fixture.git("tag", "0.0.70");
+      fixture.git("tag", "0.0.64");
       fixture.commit("feat(library): let projects carry a chosen color");
       fixture.commit("docs(plans): claim LP-01");
       fixture.commit("fix(web): give the computer chip a subtle hover surface");
@@ -706,7 +832,11 @@ describe("Loom update publishing", () => {
           upstreamTags: ["v0.0.46-nightly.20261015.3158"],
         },
       );
-      const history = releaseHistory(release, fixture.source);
+      const history = releaseHistory(
+        release,
+        ["0.0.64-nightly.20261015.3158", "0.0.64"],
+        fixture.source,
+      );
       expect(history.previous).toBe("0.0.64-nightly.20261015.3158");
 
       const notes = releaseNotes(release, history.previous, history.subjects);

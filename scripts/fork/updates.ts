@@ -727,11 +727,17 @@ Use Loom's update button to download, then restart and install when ready.
 `;
 }
 
-/** The newest earlier publication on the release's channel and the commit subjects since it. */
-export function releaseHistory(release: Release, sourceDir = SOURCE_DIR) {
+/** The newest earlier published release on this channel and the commit subjects since it. */
+export function releaseHistory(
+  release: Release,
+  publishedTags: readonly string[],
+  sourceDir = SOURCE_DIR,
+) {
+  const published = new Set(publishedTags);
   const previous = publicationTags(sourceDir)
     .filter(
       (item) =>
+        published.has(item.tag) &&
         item.tag.includes("-nightly.") === (release.channel === "nightly") &&
         compareVersions(item.tag, release.version) < 0,
     )
@@ -749,7 +755,14 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
   const state = await releaseState(release);
   if (state === "published") return;
   const notes = NodePath.join(prepared.record, "updates/release-notes.md");
-  const history = releaseHistory(release);
+  const publishedTags = run("gh", [
+    "api",
+    "--paginate",
+    `repos/${REPOSITORY}/releases?per_page=100`,
+    "--jq",
+    ".[] | select(.draft == false) | .tag_name",
+  ]).split("\n");
+  const history = releaseHistory(release, publishedTags);
   await NodeFSP.writeFile(notes, releaseNotes(release, history.previous, history.subjects));
   if (state === "missing") {
     run(
