@@ -304,6 +304,8 @@ export const make = Effect.gen(function* () {
   const retryPermit = yield* Semaphore.make(1);
   // Serializes a budget check with the run row it admits, so two starts cannot both take the last run.
   const budgetPermit = yield* Semaphore.make(1);
+  // Selection and insertion share a lock so concurrent starts reserve the same report atomically.
+  const targetPermit = yield* Semaphore.make(1);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -1180,126 +1182,132 @@ export const make = Effect.gen(function* () {
   });
 
   /** Validates the inputs, writes the queued run and starts it under `permitBot`'s limits. */
-  const start = Effect.fnUntraced(function* (
-    bot: BotDefinition,
-    input: BotsRunInput,
-    caller: BotCaller,
-    permitBot: BotDefinition,
-    options: StartOptions,
-  ) {
-    const checked = validateInputs(bot, input.inputs);
-    if (!checked.ok) return yield* fail("invalid", checked.message);
-    const target = input.target ?? { type: "here" };
-    const ranOn =
-      target.type === "here"
-        ? null
-        : yield* requireHooks("Running on another computer needs a connected Library.").pipe(
-            Effect.flatMap((hooks) =>
-              hooks.resolveTarget(bot, target, remoteProject(bot, input, caller)),
-            ),
-          );
-    if (ranOn !== null)
-      return yield* startRemote(bot, checked.values, input, caller, permitBot, options, ranOn);
-    const checkout = yield* resolveCheckout(bot, input, caller);
-    const projectId = checkout?.projectId ?? (yield* resolveProject(bot, input, caller));
-    const vaultLines =
-      (bot.vaultSlots?.length ?? 0) === 0
-        ? []
-        : yield* requireHooks("Loom is still loading Vault bindings. Try again shortly.").pipe(
-            Effect.flatMap((hooks) => hooks.vaultLines(bot)),
-          );
-    const runId = options.remote?.runId ?? (yield* randomUuidV4);
-    const modelSelection = options.modelSelection ?? bot.modelSelection;
-    const untrusted = untrustedInputs(options, checked.values);
+  const start = Effect.fnUntraced(
+    function* (
+      bot: BotDefinition,
+      input: BotsRunInput,
+      caller: BotCaller,
+      permitBot: BotDefinition,
+      options: StartOptions,
+    ) {
+      const checked = validateInputs(bot, input.inputs);
+      if (!checked.ok) return yield* fail("invalid", checked.message);
+      const target = input.target ?? { type: "here" };
+      const ranOn =
+        target.type === "here"
+          ? null
+          : yield* requireHooks("Running on another computer needs a connected Library.").pipe(
+              Effect.flatMap((hooks) =>
+                hooks.resolveTarget(bot, target, remoteProject(bot, input, caller)),
+              ),
+            );
+      if (ranOn !== null)
+        return yield* startRemote(bot, checked.values, input, caller, permitBot, options, ranOn);
+      const checkout = yield* resolveCheckout(bot, input, caller);
+      const projectId = checkout?.projectId ?? (yield* resolveProject(bot, input, caller));
+      const vaultLines =
+        (bot.vaultSlots?.length ?? 0) === 0
+          ? []
+          : yield* requireHooks("Loom is still loading Vault bindings. Try again shortly.").pipe(
+              Effect.flatMap((hooks) => hooks.vaultLines(bot)),
+            );
+      const runId = options.remote?.runId ?? (yield* randomUuidV4);
+      const modelSelection = options.modelSelection ?? bot.modelSelection;
+      const untrusted = untrustedInputs(options, checked.values);
 
-    const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
-      checkout !== null
-        ? checkout.strategy
-        : bot.workspace.type === "project" && bot.workspace.worktree
-          ? { type: "worktree", baseRef: bot.workspace.baseRef ?? "HEAD" }
-          : { type: "root" };
-    if (workspaceStrategy.type === "worktree")
-      yield* launches
-        .checkWorktreeBase({ projectId, workspaceStrategy })
-        .pipe(Effect.mapError((error) => fail("invalid", error.message)));
+      const workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy =
+        checkout !== null
+          ? checkout.strategy
+          : bot.workspace.type === "project" && bot.workspace.worktree
+            ? { type: "worktree", baseRef: bot.workspace.baseRef ?? "HEAD" }
+            : { type: "root" };
+      if (workspaceStrategy.type === "worktree")
+        yield* launches
+          .checkWorktreeBase({ projectId, workspaceStrategy })
+          .pipe(Effect.mapError((error) => fail("invalid", error.message)));
 
-    const entry: LiveRun = {
-      run: {
-        id: runId,
-        botId: bot.id,
-        botVersion: bot.version,
-        botName: bot.name,
-        threadId: botRunThreadId(runId),
-        projectId,
-        inputs: checked.values,
-        status: "queued",
-        startedBy: caller.actor,
-        callerThreadId: caller.threadId,
-        createdAt: yield* nowIso,
-        startedAt: null,
-        finishedAt: null,
-        result: null,
-        resultTruncated: false,
-        error: null,
-        ...(input.notify === true ? { notify: true } : {}),
-        ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
-        ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
-        ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
-        ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
-        ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
-        modelSelection,
-        checkoutThreadId: checkout?.threadId ?? null,
-        ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
-      },
-      fiber: null,
-      started: false,
-      cancelRequested: false,
-      launched: false,
-      threadRunId: null,
-      output: bot.output ?? "text",
-    };
-    // The stored definition's budget, so a batch pinned to an older version still honours it.
-    yield* permitBot.budget === undefined
-      ? insertRun(entry.run, options)
-      : checkBudget(permitBot).pipe(
-          Effect.andThen(insertRun(entry.run, options)),
-          budgetPermit.withPermits(1),
-        );
-    live.set(runId, entry);
-    yield* publish({ _tag: "run", run: entry.run });
-    entry.fiber = yield* execute(
-      entry,
-      bot,
-      {
-        projectId,
-        title: bot.name,
-        generateTitle: false,
-        modelSelection,
-        runtimeMode: bot.runtimeMode,
-        interactionMode: bot.interactionMode,
-        workspaceStrategy,
-        initialMessage: {
-          text: [
-            renderPrompt(
-              bot,
-              checked.values,
-              untrusted === undefined
-                ? undefined
-                : { ...untrusted, frameId: runId.replaceAll("-", "") },
-            ),
-            // Standalone lines, the form Vault reads as a launch requirement.
-            ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),
-          ].join("\n\n"),
-          attachments: [],
-          ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
+      const entry: LiveRun = {
+        run: {
+          id: runId,
+          botId: bot.id,
+          botVersion: bot.version,
+          botName: bot.name,
+          threadId: botRunThreadId(runId),
+          projectId,
+          inputs: checked.values,
+          status: "queued",
+          startedBy: caller.actor,
+          callerThreadId: caller.threadId,
+          createdAt: yield* nowIso,
+          startedAt: null,
+          finishedAt: null,
+          result: null,
+          resultTruncated: false,
+          error: null,
+          ...(input.notify === true ? { notify: true } : {}),
+          ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
+          ...(options.retryOf === undefined ? {} : { retryOf: options.retryOf }),
+          ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+          ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
+          ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
+          modelSelection,
+          checkoutThreadId: checkout?.threadId ?? null,
+          ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
         },
-        createdBy: caller.actor,
-        creationSource: "server",
-      },
-      permitBot,
-    ).pipe(Effect.forkIn(serviceScope));
-    return entry.run;
-  });
+        fiber: null,
+        started: false,
+        cancelRequested: false,
+        launched: false,
+        threadRunId: null,
+        output: bot.output ?? "text",
+      };
+      // The stored definition's budget, so a batch pinned to an older version still honours it.
+      yield* permitBot.budget === undefined
+        ? insertRun(entry.run, options)
+        : checkBudget(permitBot).pipe(
+            Effect.andThen(insertRun(entry.run, options)),
+            budgetPermit.withPermits(1),
+          );
+      live.set(runId, entry);
+      yield* publish({ _tag: "run", run: entry.run });
+      entry.fiber = yield* execute(
+        entry,
+        bot,
+        {
+          projectId,
+          title: bot.name,
+          generateTitle: false,
+          modelSelection,
+          runtimeMode: bot.runtimeMode,
+          interactionMode: bot.interactionMode,
+          workspaceStrategy,
+          initialMessage: {
+            text: [
+              renderPrompt(
+                bot,
+                checked.values,
+                untrusted === undefined
+                  ? undefined
+                  : { ...untrusted, frameId: runId.replaceAll("-", "") },
+              ),
+              // Standalone lines, the form Vault reads as a launch requirement.
+              ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),
+            ].join("\n\n"),
+            attachments: [],
+            ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
+          },
+          createdBy: caller.actor,
+          creationSource: "server",
+        },
+        permitBot,
+      ).pipe(Effect.forkIn(serviceScope));
+      return entry.run;
+    },
+    (effect, _bot, input) =>
+      input.target === undefined || input.target.type === "here"
+        ? effect
+        : effect.pipe(targetPermit.withPermits(1)),
+  );
 
   const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
     yield* checkCaller(input, caller);
@@ -1367,7 +1375,8 @@ export const make = Effect.gen(function* () {
     return yield* start(definition, input, caller, current, options).pipe(
       // A budget refusal is not recorded: the batch waits for the budget instead.
       Effect.catchIf(
-        (error) => error.reason === "invalid" && error.retryAt === undefined,
+        (error) =>
+          error.reason === "invalid" && error.retryAt === undefined && !error.waitingForCapacity,
         (error) => recordUnstarted(definition, input, caller, error.message, options),
       ),
     );

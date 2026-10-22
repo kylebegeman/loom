@@ -1,7 +1,17 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
-import type { BotDefinition, BotRun, BotsBatchInput } from "@t3tools/contracts/fork";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  BotDefinition,
+  BotRun,
+  BotsBatchInput,
+  BotLibraryStatusReport,
+  BotsSaveInput,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -11,6 +21,9 @@ import { PullRequestService } from "../../pullRequest/PullRequestService.ts";
 import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { make } from "./BotBatches.ts";
+import { inProcessClient } from "./BotLibraryClient.ts";
+import { BotLibraryService, layer as libraryLayer } from "./BotLibraryService.ts";
+import { makeSharing } from "./BotSharing.ts";
 import { BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotBatchesStore, type StoredBatch } from "./BotBatchesStore.ts";
 import { BotsService, RESTARTED_BEFORE_START, USER_CALLER } from "./BotsService.ts";
@@ -39,6 +52,75 @@ const makeBatches = (harness: Harness, conflicted: ReadonlyArray<string> = []) =
         Effect.provideService(WorkspaceEntries, {} as WorkspaceEntries["Service"]),
       );
     return { bots, batches };
+  });
+
+const laptop = EnvironmentId.make("env-laptop");
+const studio = EnvironmentId.make("env-studio");
+const libraryProject = "library-project-a";
+
+const makeRemoteBatches = (harness: Harness, fields: Partial<BotsSaveInput> = {}) =>
+  Effect.gen(function* () {
+    const { bots, batches } = yield* makeBatches(harness);
+    const built = yield* Layer.build(
+      libraryLayer.pipe(
+        Layer.provide(
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
+        ),
+      ),
+    );
+    const library = Context.get(built, BotLibraryService);
+    const submitted = yield* Queue.unbounded<string>();
+    const client = inProcessClient(library, laptop, Effect.succeed("Laptop"));
+    const sharing = yield* makeSharing({
+      bots,
+      client: {
+        ...client,
+        submit: (input) =>
+          client
+            .submit(input)
+            .pipe(Effect.andThen(Queue.offer(submitted, input.request.requestId)), Effect.asVoid),
+      },
+      projects: {
+        toLibrary: () => Effect.succeed(libraryProject),
+        toLocal: () => Effect.succeed(projectId),
+        libraryProjects: Effect.succeed([libraryProject]),
+        readiness: () => Effect.succeed([]),
+      },
+      vault: {
+        status: Effect.succeed({ backend: "openbao", state: "ready", origin: null }),
+        describe: () => Effect.succeed(null),
+      },
+      modelEnabled: () => Effect.succeed(true),
+      modelReadiness: () => Effect.succeed([]),
+    });
+    yield* bots.setAnywhereHooks(sharing.hooks);
+    yield* bots.save(reviewer(fields), USER_CALLER);
+    yield* sharing.share("reviewer");
+    const report = (freeSlots: number, activeRequestIds: readonly string[] = []) =>
+      library.reportStatus(studio, {
+        label: "Studio",
+        acceptRemote: true,
+        runtimeModeCeiling: "auto",
+        freeSlots,
+        activeRequestIds,
+        projects: [{ libraryProjectId: libraryProject, ready: true, reasons: [] }],
+        bots: [{ libraryBotId: "reviewer", revision: 1, ready: true, reasons: [], freeSlots }],
+      } satisfies BotLibraryStatusReport);
+    const finish = (id: string) =>
+      bots.applyRemoteUpdate(id, {
+        _tag: "terminal",
+        label: "Studio",
+        status: "completed",
+        startedAt: null,
+        finishedAt: "1970-01-01T00:00:00.000Z",
+        result: "Reviewed.",
+        resultTruncated: false,
+        error: null,
+        verdict: null,
+        usage: null,
+        modelSelection: null,
+      });
+    return { bots, batches, library, sharing, report, finish, next: Queue.take(submitted) };
   });
 
 const lines = (text: string): BotsBatchInput => ({
@@ -114,6 +196,185 @@ describe("BotBatches", () => {
         expect((yield* batches.report(batch.id)).markdown).toContain(
           "## Passed\n\n- a.ts\n- b.ts\n- c.ts",
         );
+      }),
+    ),
+  );
+
+  it.effect("adapts a remote batch to changing target slots without requester permits", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches, report, finish, next } = yield* makeRemoteBatches(harness);
+        yield* report(1);
+        const batch = yield* batches.runBatch(
+          {
+            ...lines("a.ts\nb.ts\nc.ts\nd.ts"),
+            target: { type: "environment", environmentId: studio },
+          },
+          USER_CALLER,
+        );
+        const first = yield* next;
+        expect((yield* batches.get(batch.id)).items.map((item) => item.state)).toEqual([
+          "started",
+          "pending",
+          "pending",
+          "pending",
+        ]);
+        expect(yield* bots.activeRuns).toBe(0);
+        // The target can expand the window while the first remote run is still in flight.
+        yield* report(2, [first]);
+        yield* TestClock.adjust("5 seconds");
+        const second = yield* next;
+        const third = yield* next;
+        expect((yield* batches.get(batch.id)).items.map((item) => item.state)).toEqual([
+          "started",
+          "started",
+          "started",
+          "pending",
+        ]);
+        // A lower capacity holds the remaining item even when a previous run finishes.
+        yield* report(0, [second, third]);
+        yield* finish(first);
+        yield* TestClock.adjust("5 seconds");
+        expect((yield* batches.get(batch.id)).items[3]?.state).toBe("pending");
+        expect((yield* batches.get(batch.id)).batch.counts.failed).toBe(0);
+        yield* report(1, [second, third]);
+        yield* TestClock.adjust("5 seconds");
+        const fourth = yield* next;
+        yield* finish(second);
+        yield* finish(third);
+        yield* finish(fourth);
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { completed: 4, failed: 0 },
+        });
+        expect(harness.launches).toHaveLength(0);
+      }),
+    ),
+  );
+
+  it.effect("reselects Best for each pending item as local and remote slots change", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { batches, report, finish, next } = yield* makeRemoteBatches(harness);
+        yield* report(1);
+        const batch = yield* batches.runBatch(
+          { ...lines("a.ts\nb.ts\nc.ts"), target: { type: "best" } },
+          USER_CALLER,
+        );
+        const local = yield* harness.nextLaunch;
+        const remote = yield* next;
+        const { items } = yield* batches.get(batch.id);
+        expect(items.map((item) => item.state)).toEqual(["started", "started", "pending"]);
+        expect(items[0]?.run?.ranOn).toBeUndefined();
+        expect(items[1]?.run?.ranOn?.environmentId).toBe(studio);
+        yield* harness.end(local.threadId!, { status: "completed", reply: "Local review." });
+        yield* endNext(harness, "completed", "Another local review.");
+        yield* finish(remote);
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { completed: 3 },
+        });
+      }),
+    ),
+  );
+
+  it.effect("keeps remote items pending at the requester's budget despite spare target slots", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches, report, next } = yield* makeRemoteBatches(harness, {
+          budget: { runsPerDay: 1 },
+        });
+        yield* report(3);
+        const paused = yield* batches.changes.pipe(
+          Stream.filter((change) => change._tag === "batch" && change.batch.pausedUntil != null),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        const batch = yield* batches.runBatch(
+          { ...lines("a.ts\nb.ts"), target: { type: "environment", environmentId: studio } },
+          USER_CALLER,
+        );
+        const remote = yield* next;
+        yield* Fiber.join(paused);
+        const { batch: waiting, items } = yield* batches.get(batch.id);
+        expect(waiting.pausedUntil).toBe(
+          isoAt(Date.parse((yield* bots.getRun(remote)).createdAt) + BUDGET_WINDOW_MS),
+        );
+        expect(items.map((item) => item.state)).toEqual(["started", "pending"]);
+        expect((yield* batches.cancel(batch.id)).status).toBe("cancelled");
+      }),
+    ),
+  );
+
+  it.effect("recovers a remote batch without resubmitting its in-flight item", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches, report, finish, next } = yield* makeRemoteBatches(harness);
+        yield* report(1);
+        const definition = yield* bots.get("reviewer");
+        const store = yield* makeBotBatchesStore;
+        const stored = {
+          ...storedBatch(definition, "remote-recovery", "running", 0),
+          target: { type: "environment" as const, environmentId: studio },
+        };
+        yield* store.insertBatch(stored, [
+          { label: "a.ts", inputs: { file: "a.ts" } },
+          { label: "b.ts", inputs: { file: "b.ts" } },
+        ]);
+        yield* bots.startRunWith(
+          definition,
+          { botId: "reviewer", projectId, inputs: { file: "a.ts" }, target: stored.target },
+          USER_CALLER,
+          {
+            batchId: stored.batch.id,
+            onInserted: (run) => store.setItemState(stored.batch.id, 0, "started", run.id),
+          },
+        );
+        const first = yield* next;
+        yield* bots.markRecovered;
+        yield* batches.recover();
+        yield* TestClock.adjust("5 seconds");
+        expect((yield* batches.get(stored.batch.id)).items.map((item) => item.state)).toEqual([
+          "started",
+          "pending",
+        ]);
+        yield* finish(first);
+        const second = yield* next;
+        yield* finish(second);
+        expect(yield* batches.awaitBatch(stored.batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { completed: 2 },
+        });
+        expect(
+          (yield* bots.listRuns({ botId: "reviewer", limit: 10 })).runs.map((run) => run.id).sort(),
+        ).toEqual([first, second].sort());
+      }),
+    ),
+  );
+
+  it.effect("cancels a remote batch waiting for a busy target without creating runs", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches, report } = yield* makeRemoteBatches(harness);
+        yield* report(0);
+        const batch = yield* batches.runBatch(
+          { ...lines("a.ts\nb.ts"), target: { type: "environment", environmentId: studio } },
+          USER_CALLER,
+        );
+        yield* TestClock.adjust("5 seconds");
+        expect((yield* batches.get(batch.id)).items.map((item) => item.state)).toEqual([
+          "pending",
+          "pending",
+        ]);
+        expect(yield* batches.cancel(batch.id)).toMatchObject({
+          status: "cancelled",
+          counts: { skipped: 2 },
+        });
+        yield* report(2);
+        yield* TestClock.adjust("5 seconds");
+        expect((yield* bots.listRuns({ botId: "reviewer", limit: 10 })).runs).toHaveLength(0);
+        expect(harness.launches).toHaveLength(0);
       }),
     ),
   );
@@ -335,45 +596,47 @@ describe("BotBatches", () => {
     ),
   );
 
-  it.effect("retries an inbox run whose batch is gone, and keeps a retry its batch did not requeue", () =>
-    withHarness((harness) =>
-      Effect.gen(function* () {
-        const { bots } = yield* makeBatches(harness);
-        const bot = yield* bots.save(reviewer(), USER_CALLER);
-        const batchStore = yield* makeBotBatchesStore;
-        const failedRun = (id: string, batchId: string): BotRun => ({
-          id,
-          botId: bot.id,
-          botVersion: 1,
-          botName: bot.name,
-          threadId: ThreadId.make(`bot-run-${id}`),
-          projectId,
-          inputs: { file: "a.ts" },
-          status: "failed",
-          startedBy: "user",
-          callerThreadId: null,
-          createdAt: "2026-10-20T10:00:01.000Z",
-          startedAt: "2026-10-20T10:00:02.000Z",
-          finishedAt: "2026-10-20T10:00:03.000Z",
-          result: null,
-          resultTruncated: false,
-          error: "It broke.",
-          batchId,
-        });
-        // A pruned batch took its items with it; nothing else reruns the run.
-        yield* (yield* makeBotsStore).insertRun(failedRun("pruned-run", "pruned-batch"));
-        const retried = yield* bots.retry({ runId: "pruned-run" }, USER_CALLER);
-        expect(retried).toMatchObject({ retryOf: "pruned-run", batchId: "pruned-batch" });
+  it.effect(
+    "retries an inbox run whose batch is gone, and keeps a retry its batch did not requeue",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots } = yield* makeBatches(harness);
+          const bot = yield* bots.save(reviewer(), USER_CALLER);
+          const batchStore = yield* makeBotBatchesStore;
+          const failedRun = (id: string, batchId: string): BotRun => ({
+            id,
+            botId: bot.id,
+            botVersion: 1,
+            botName: bot.name,
+            threadId: ThreadId.make(`bot-run-${id}`),
+            projectId,
+            inputs: { file: "a.ts" },
+            status: "failed",
+            startedBy: "user",
+            callerThreadId: null,
+            createdAt: "2026-10-20T10:00:01.000Z",
+            startedAt: "2026-10-20T10:00:02.000Z",
+            finishedAt: "2026-10-20T10:00:03.000Z",
+            result: null,
+            resultTruncated: false,
+            error: "It broke.",
+            batchId,
+          });
+          // A pruned batch took its items with it; nothing else reruns the run.
+          yield* (yield* makeBotsStore).insertRun(failedRun("pruned-run", "pruned-batch"));
+          const retried = yield* bots.retry({ runId: "pruned-run" }, USER_CALLER);
+          expect(retried).toMatchObject({ retryOf: "pruned-run", batchId: "pruned-batch" });
 
-        // A requeue for a run the item no longer holds leaves the item on its newer run.
-        yield* batchStore.insertBatch(storedBatch(bot, "batch-1", "running", 0), [
-          { label: "a.ts", inputs: { file: "a.ts" } },
-        ]);
-        yield* batchStore.setItemState("batch-1", 0, "started", "newer-run");
-        yield* batchStore.requeueItem("batch-1", 0, [], "older-run");
-        expect((yield* batchStore.getItems("batch-1"))[0]).toMatchObject({ state: "started" });
-      }),
-    ),
+          // A requeue for a run the item no longer holds leaves the item on its newer run.
+          yield* batchStore.insertBatch(storedBatch(bot, "batch-1", "running", 0), [
+            { label: "a.ts", inputs: { file: "a.ts" } },
+          ]);
+          yield* batchStore.setItemState("batch-1", 0, "started", "newer-run");
+          yield* batchStore.requeueItem("batch-1", 0, [], "older-run");
+          expect((yield* batchStore.getItems("batch-1"))[0]).toMatchObject({ state: "started" });
+        }),
+      ),
   );
 
   it.effect("keeps the newest batches of a bot and every running one", () =>
