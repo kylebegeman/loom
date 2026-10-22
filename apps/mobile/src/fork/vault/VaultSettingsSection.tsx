@@ -1,12 +1,6 @@
-import { VaultTestAccountSettingsSection } from "./TestAccountSettingsSection";
-import { VaultMigrationInventorySettingsSection } from "./MigrationInventorySettingsSection";
-import { VaultMigrationSettingsSection } from "./MigrationSettingsSection";
-import { VaultHealthSettingsSection } from "./HealthSettingsSection";
-import { VaultGitHubSettingsSection } from "./GitHubSettingsSection";
-import { VaultProfileSettingsSection } from "./ProfileSettingsSection";
+import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshSheet } from "./SshSheet";
-import { VaultBrokerSettingsSection } from "./BrokerSettingsSection";
-import { VaultAccessSettingsSection, VaultAccessCheckSheet } from "./AccessSettingsSection";
+import { VaultAccessCheckSheet } from "./AccessSettingsSection";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -56,30 +50,24 @@ export function VaultSettingsSection({
   const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-core")) return null;
-  return (
-    <>
-      <SettingsSection title="Vault">
-        {canRead ? (
-          <VaultItems
-            key={`${environmentId}:${canWrite}:${connected}`}
-            environmentId={environmentId}
-            connected={connected}
-          />
-        ) : (
-          <Text>Your access to this computer does not include Vault inspection.</Text>
-        )}
-      </SettingsSection>
-      <VaultTestAccountSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultMigrationInventorySettingsSection environmentId={environmentId} connected={connected} />
-      <VaultMigrationSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultHealthSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultBrokerSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultGitHubSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultProfileSettingsSection environmentId={environmentId} connected={connected} />
-    </>
+  return canRead ? (
+    <VaultOwnerSettings
+      key={`${environmentId}:${canWrite}:${connected}:${supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted")}`}
+      environmentId={environmentId}
+      connected={connected}
+      advancedItems={
+        <SettingsSection title="Vault items">
+          <VaultItems environmentId={environmentId} connected={connected} />
+        </SettingsSection>
+      }
+    />
+  ) : (
+    <SettingsSection title="Vault">
+      <Text>Your access to this computer does not include Vault inspection.</Text>
+    </SettingsSection>
   );
 }
+
 function VaultItems({
   environmentId,
   connected,

@@ -24,6 +24,7 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "vault", title: "Vault", Component: VaultSettingsSection },
   {
     id: "vault-test-accounts",
     title: "Vault test accounts",
@@ -48,7 +49,6 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
   { id: "vault-profiles", title: "Vault project profiles", Component: VaultProfileSettingsSection },
   { id: "vault-references", title: "Vault references", Component: VaultReferenceSettingsSection },
   { id: "vault-brokers", title: "Vault brokers", Component: VaultBrokerSettingsSection },
-  { id: "vault", title: "Vault", Component: VaultSettingsSection },
   {
     id: "vault-access",
     title: "Vault project access & approvals",

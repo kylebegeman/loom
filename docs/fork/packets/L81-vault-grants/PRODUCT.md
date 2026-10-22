@@ -2,16 +2,28 @@
 
 ## Current delivery boundary
 
-The local milestone provides environment-owned thread/project grants, one default-deny
-evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
-attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
-survive restart and OpenBao restore. UI changes require an explicit preview and apply;
-suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
+The policy supports two environment access modes. Existing and shared environments retain
+restricted default-deny thread/project grants. An authenticated human owner can explicitly
+declare a personal environment owner-trusted once, enabling metadata inspection and supported
+brokered use for authenticated active full-access/default agent runs without recurring
+thread/project/provider grants. Profiles are optional connection selections. Both modes use
+the same evaluator and current item, run, destination and adapter checks.
 
-Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
-permission ceiling. Human environment administration remains governed by access:read/write;
-agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but enrollment, workload leases and external runner attestation are not delivered.
+The declaration is bound durably to the environment and the human subject that first sets it.
+There is no verified platform multi-owner identity or membership model. Another person who can
+launch agents in that environment is not distinguished from its owner by a prompt or provider
+label; shared environments must keep restricted mode. Owner trust does not authorize a task,
+elevate plan/runtime permissions, administer policy/trust, reveal/export values or bypass
+format-4 one-time protection. Disabling returns to restricted evaluation without deleting
+records, grants or recovery material. Existing authenticated sessions may continue.
+
+Restricted grants retain exact item/action/project/destination scopes, bounded validity,
+parent attenuation, authenticated direct-child delegation and permanent revocation. UI grant
+changes require preview/apply; suspension is reversible. Workload identity comes from
+ThreadManagement, never prompt text. Manage/private-ingress actions remain grant-controlled.
+Human environment administration remains governed by access:read/write; agents cannot set
+owner policy or administer their own root grants. Signed workload checks, hosted SSH/Git and
+GitHub operations consume the same policy rather than a provider-specific bypass.
 
 The complete selected product below remains the acceptance target. Finish enrolled machine/runner identities, schedule attestation beyond T3 thread identity,
 platform membership and role mapping, external-use leases and broker revocation propagation.
@@ -25,11 +37,16 @@ Authorize recurring agent work at a useful scope without granting access to the 
 
 ## How it works
 
-Authenticate machine and workload principals separately. Evaluate grants against immutable item IDs, actions, intended destinations, project identity and time bounds. Child tasks receive a provable subset; human approval creates a specific grant or single-use decision rather than a blanket bypass.
+Authenticate machine and workload principals separately. Personal environments can explicitly
+enable owner-trusted inspect and brokered use; restricted environments evaluate grants against
+item IDs, actions, destinations, project identity and time. Delegated grants remain narrower
+than their parent. Credential availability never authorizes the task itself.
 
 ## User experience
 
-Grant a runner access to selected repositories or hosts, inspect inherited permissions, suspend a grant, shorten it or revoke it. A request outside the grant yields one clear explanation.
+Enable owner access once for a personal environment, or grant selected repositories/hosts in
+restricted mode. Inspect the effective authorization, disable personal access or suspend/revoke
+a grant. A refused request explains the specific repair without substituting personal credentials.
 
 ## Why it improves the product
 
@@ -71,9 +88,10 @@ Implements ext-vault policy and principal interfaces. Metadata readers, SSH and 
 Confirmed: Kyle selected this complete idea for implementation. The personal/development Vault
 separation and self-hosting option are product requirements. The delivered decisions are recorded in TECHNICAL.md; these broader choices remain:
 
-- D6 is resolved for the local milestone: default deny, union of allow grants, exact scopes,
-  parent attenuation, online evaluation and permanent revocation. Explicit deny rules and
-  platform role mapping remain open.
+- D6: Explicit personal owner trust covers active-run inspect/brokered use. Legacy/shared
+  environments keep default deny, union of allow grants, exact scopes, parent attenuation,
+  online evaluation and permanent revocation. Explicit deny rules and platform role mapping
+  remain open. A personal environment declaration is not a verified multi-owner identity.
 - Which workloads need OS-user or container isolation beyond broker authorization?
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

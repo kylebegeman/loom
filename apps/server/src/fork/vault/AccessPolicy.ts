@@ -6,6 +6,7 @@ import {
   VaultGrant,
   VaultGrantBatchResult,
   VaultItemId,
+  VaultOwnerPolicyMode,
 } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -126,23 +127,79 @@ export const ProtectedPolicy = Schema.Struct({
   ),
 );
 export type ProtectedPolicy = typeof ProtectedPolicy.Type;
-export type Policy = typeof LegacyPolicy.Type | ProtectedPolicy;
-const legacy = Schema.decodeUnknownOption(LegacyPolicy);
-const protectedPolicy = Schema.decodeUnknownOption(ProtectedPolicy, { onExcessProperty: "error" });
+const OwnerBinding = Schema.Struct({
+  environmentId: Actor,
+  ownerId: VaultItemId,
+  ownerSubject: OperationIntent.fields.reviewedBy,
+  mode: VaultOwnerPolicyMode,
+  updatedBy: OperationIntent.fields.reviewedBy,
+  updatedAt: Counter,
+});
+const OwnerReceipts = Schema.Array(
+  Schema.Struct({
+    id: VaultItemId,
+    fingerprint: Digest,
+    revision: Revision,
+  }),
+).check(Schema.isMaxLength(32));
+const BasePolicy = Schema.Union([LegacyPolicy, ProtectedPolicy]);
+// A new outer version makes older evaluators refuse owner policy instead of silently dropping it.
+// The inner policy keeps mandatory credential protection independent of environment trust.
+const OwnerEnvelope = Schema.Struct({
+  schemaVersion: Schema.Literal(5),
+  environmentId: Actor,
+  ownerPolicy: OwnerBinding,
+  ownerReceipts: OwnerReceipts,
+  policy: BasePolicy,
+}).check(
+  Schema.makeFilter(
+    (value) =>
+      value.policy.revision > 0 &&
+      value.ownerPolicy.environmentId === value.environmentId &&
+      value.ownerPolicy.ownerSubject === value.ownerPolicy.updatedBy &&
+      (value.policy.schemaVersion !== 4 || value.policy.environmentId === value.environmentId) &&
+      new Set(value.ownerReceipts.map((entry) => entry.id)).size === value.ownerReceipts.length &&
+      value.ownerReceipts.every((entry) => entry.revision <= value.policy.revision),
+  ),
+);
+export type Policy = typeof BasePolicy.Type & {
+  readonly ownerPolicy?: typeof OwnerBinding.Type;
+  readonly ownerReceipts?: typeof OwnerReceipts.Type;
+};
+const decodeStored = Schema.decodeUnknownOption(Schema.Union([BasePolicy, OwnerEnvelope]), {
+  onExcessProperty: "error",
+});
 export const decodePolicy = (input: unknown): Option.Option<Policy> => {
-  const modern = protectedPolicy(input);
-  const decoded: Option.Option<Policy> = Option.isSome(modern) ? modern : legacy(input);
-  if (Option.isNone(decoded)) return decoded;
-  const policy = decoded.value;
+  const decoded = decodeStored(input);
+  if (Option.isNone(decoded)) return Option.none();
+  const stored = decoded.value;
+  const policy: Policy =
+    stored.schemaVersion === 5
+      ? { ...stored.policy, ownerPolicy: stored.ownerPolicy, ownerReceipts: stored.ownerReceipts }
+      : stored;
   if (
     new Set(policy.grants.map((grant) => grant.definition.id)).size !== policy.grants.length ||
     new Set(policy.approvals?.map((entry) => entry.request.id)).size !==
       (policy.approvals?.length ?? 0)
   )
     return Option.none();
-  return decoded;
+  return Option.some(policy);
 };
-export const encodePolicy = Schema.encodeEffect(Schema.Union([LegacyPolicy, ProtectedPolicy]));
+const encodeStored = Schema.encodeEffect(Schema.Union([BasePolicy, OwnerEnvelope]));
+export const encodePolicy = (policy: Policy) => {
+  const { ownerPolicy, ownerReceipts, ...base } = policy;
+  return encodeStored(
+    ownerPolicy
+      ? {
+          schemaVersion: 5,
+          environmentId: ownerPolicy.environmentId,
+          ownerPolicy,
+          ownerReceipts: ownerReceipts ?? [],
+          policy: base,
+        }
+      : base,
+  );
+};
 export const credentialUseRefusal = (policy: Policy, itemId: string) => {
   if (policy.schemaVersion !== 4) return null;
   const mode = policy.credentialModes.find((entry) => entry.itemId === itemId);

@@ -28,11 +28,13 @@ export function VaultSshSheet({
   environmentId,
   itemId,
   connected,
+  ownerMode = false,
   onClose,
 }: {
   environmentId: EnvironmentId;
   itemId: string | null;
   connected: boolean;
+  ownerMode?: boolean;
   onClose: () => void;
 }) {
   const [id, setId] = useState(itemId),
@@ -51,6 +53,7 @@ export function VaultSshSheet({
             environmentId={environmentId}
             connected={connected}
             id={id}
+            ownerMode={ownerMode}
             busy={busy}
             setBusy={setBusy}
           />
@@ -204,12 +207,14 @@ function SshDetails({
   environmentId,
   connected,
   id,
+  ownerMode,
   busy,
   setBusy,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   id: string;
+  ownerMode: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
 }) {
@@ -305,10 +310,14 @@ function SshDetails({
       <View className="gap-1">
         <Text className="font-t3-semibold">{info.item.label}</Text>
         <Text selectable>{info.destination}</Text>
-        <Text className="text-foreground-muted">
-          Version {info.item.version}
-          {info.item.state !== "active" ? " · Archived" : ""}
-        </Text>
+        {!ownerMode ? (
+          <Text className="text-foreground-muted">
+            Version {info.item.version}
+            {info.item.state !== "active" ? " · Archived" : ""}
+          </Text>
+        ) : info.item.state !== "active" ? (
+          <Text>Archived</Text>
+        ) : null}
       </View>
       {query.error ? <Text accessibilityRole="alert">{query.error}</Text> : null}
       <View className="gap-2">
@@ -320,7 +329,9 @@ function SshDetails({
           onPress={() => void copy()}
         />
         <Text className="text-foreground-muted">
-          Register this public key on the intended host. Never register the private key.
+          Add this public key to the destination user's ~/.ssh/authorized_keys, or to the Git
+          provider's SSH key settings. The private key stays in Vault. A successful SSH test
+          confirms the destination accepts this key.
         </Text>
       </View>
       <View className="gap-2">
@@ -438,8 +449,8 @@ function SshDetails({
         </View>
         {probe && probe.version === info.item.version ? (
           <Text accessibilityRole="status">
-            SSH connection succeeded at {new Date(probe.checkedAt).toLocaleTimeString()} using
-            version {probe.version}.
+            SSH connection succeeded at {new Date(probe.checkedAt).toLocaleTimeString()}.
+            {!ownerMode ? ` Key version ${probe.version}.` : ""}
           </Text>
         ) : null}
       </View>

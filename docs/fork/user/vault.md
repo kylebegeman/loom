@@ -8,6 +8,33 @@ On mobile, open that computer's settings and find **Vault**. The computer owns t
 your phone or browser does not need OpenBao credentials. Servers without Vault support hide or
 disable the controls.
 
+## Choose personal or restricted access
+
+For a computer you own and control, open **Vault**, confirm **This is my personal environment**
+and choose **Enable owner access**. This is one setup action for that environment: authenticated
+agents in active full-access/default runs can inspect metadata and use supported brokered
+development connections without recurring thread, project or provider grants. New threads and
+scheduled agent runs use the same policy. Profiles are optional saved selections.
+
+The declaration applies to the selected environment, not your other computers. Loom does not
+currently verify a separate platform owner for each person who can start an agent there. Keep
+restricted access on a shared environment. Existing environments remain restricted until an
+authenticated human administrator explicitly enables personal access. Choose **Use restricted
+access** to disable it and return to grants. Later mode changes require the same human owner
+identity that established the declaration. Enabling or disabling preserves encrypted items,
+existing grants and recovery history; you do not need to recreate the Vault or import its
+credentials again.
+
+Credential availability does not authorize a task. Agents still follow your request and their
+plan/runtime permissions. Personal access does not let an agent change access policy, approve
+host trust, reveal or export stored values, or bypass one-time credential protection. It also
+does not prove that a broker is online or that GitHub or an SSH host will accept a credential.
+Disabling blocks new personal-mode authorization; an already authenticated connection may
+continue, and completed remote effects cannot be recalled. Restricted grants can still allow
+access after personal access is disabled.
+
+## Manage records
+
 Choose **Add item**, give it a name and kind, and enter its value. Secret values are hidden by
 default. Multiline entry is explicitly visible, for keys and notes. File imports support files
 up to 512 KB. Choose **Edit** to rename an item; enable **Replace value** only when changing its
@@ -29,7 +56,7 @@ credentials into chat. Normal agent tools return metadata, not stored values. Th
 lifecycle operations through an existing Loom connection.
 
 Agents can now use the authenticated Vault SSH/Git tools described below after an administrator
-configures this computer's execution broker and grants access. Adding a key alone does not route
+configures this computer's execution broker and access policy. Adding a key alone does not route
 ordinary terminal commands through Vault or remove their existing 1Password approvals.
 Authentication connectors and general credential delivery remain selected work.
 
@@ -85,11 +112,11 @@ least 2048 bits, plus App and installation IDs. Personal stores and files are ne
 
 Confirm development-only ownership, review the public scope and selected computer, then confirm
 again to create one new item. Format checks are local; no host or provider is contacted. Account
-ownership and access still need separate verification and workload grants. GitHub API evidence
-cannot authorize Git transport changes. Closing clears private input; reopen the review to
-reenter the same material. Cancel before commit, inspect an uncertain result before retrying,
-or archive the unchanged imported item. Restore archived items through Vault management.
-Cutover, rollback and configuration changes remain unavailable.
+ownership and access still need separate verification and current workload authorization. GitHub
+API evidence cannot authorize Git transport changes. Closing clears private input; reopen the
+review to reenter the same material. Cancel before commit, inspect an uncertain result before
+retrying, or archive the unchanged imported item. Restore archived items through Vault
+management. Cutover, rollback and configuration changes remain unavailable.
 
 ## Plan development replacements
 
@@ -114,13 +141,13 @@ not prove Git transport or local `gh` readiness. Missing SSH host trust blocks t
 
 Refresh the verification receipt to inspect its evidence without contacting the provider.
 Evidence expires within one minute, or earlier when the plan/token expires. Source/item changes,
-cancellation or loss of permission during a check prevent usable success. Provider access can
-be revoked after a successful check, and workloads still need their own current grants.
-A lost response can be refreshed or retried without repeating an accepted check. An interrupted
-receipt needs a fresh, explicitly confirmed attempt. Cancel the plan to stop further credential
-use; an already started read may finish. **Cutover remains unavailable even after verification.** Administrator CLI commands
-`loom vault migration-inventory`, `migration-replacements`, `migration-replacement-status`
-and `migration-verification-status`
+cancellation or loss of permission during a check prevent usable success. Provider access can be
+revoked after a successful check, and workloads still need current authorization under the
+selected access mode. A lost response can be refreshed or retried without repeating an accepted
+check. An interrupted receipt needs a fresh, explicitly confirmed attempt. Cancel the plan to
+stop further credential use; an already started read may finish. **Cutover remains unavailable
+even after verification.** Administrator CLI commands `loom vault migration-inventory`,
+`migration-replacements`, `migration-replacement-status` and `migration-verification-status`
 return the same safe reports; lists do not recheck source freshness until a plan is opened.
 
 After a fresh successful SSH repository-read check, choose **Preview read cutover** or
@@ -144,7 +171,7 @@ access. Refresh inspects its receipt without contacting the provider again.
 
 This verifies the selected development key. It does not identify the key an old terminal used,
 resolve SSH aliases/defaults or contact a personal key manager. Do not supply personal or
-production credentials. Workloads still need current grants, and provider access can change
+production credentials. Workloads still need current access, and provider access can change
 after a check. GitHub API evidence cannot substitute for Git transport evidence.
 
 With fresh successful original and replacement receipts, choose **Preview recovery snapshot
@@ -154,18 +181,22 @@ cutover and rollback execution remain unavailable.
 
 ## Grant recurring access
 
+Use recurring grants for shared or restricted environments, or for actions personal access does
+not include. Personal owner-trusted inspect and brokered use do not need these grants.
+
 Open **Vault access** in the selected computer's settings. Add a grant for one thread or all
 threads in a project, choose exact items and actions, and set its access window. A project grant
 covers future threads in that project. Inspecting metadata, managing an item and using its
-credential are separate permissions. Threads begin without item access; their grants cannot
-increase the computer connection or runner permissions.
+credential are separate permissions. In restricted mode, threads begin without item access;
+grants cannot increase the computer connection or runner permissions.
 
 Review the preview before applying a change. You can abandon it without changing access.
 Suspend a grant to pause it and resume it later. Revocation is permanent; restoring access
 requires a new grant. Changes affect new online authorization. They do not erase values already
 copied elsewhere or revoke provider credentials.
 
-In an environment migrated to mandatory credential protection, ordinary grants cannot bypass
+In an environment migrated to mandatory credential protection, neither personal access nor
+ordinary grants can bypass
 one-time protection. Protected or unclassified credentials currently refuse use, including
 manual reveal and probes, while exact-operation review and execution remain unavailable.
 Existing environments keep their current timed-access behavior until a reviewed migration.
@@ -174,8 +205,9 @@ Choose **Why this access?** from an item, or **Vault grants and readiness** in a
 palette. Select the thread, item, action and optional exact destination, then run the check.
 The result explains the matching rule or denial and identifies unknown external consumers.
 Readiness is checked in the Loom server context, expires after a minute, and must be repeated
-after policy changes. It does not yet test SSH or GitHub; credential delivery reports unsupported
-until a supported workload delivery channel is implemented. Pending checks can be cancelled.
+after policy changes. It can report current run access and relevant enrolled-broker presence,
+but does not perform an upstream SSH or GitHub login. Use the supported connection-specific
+check or signed operation to verify that destination. Pending checks can be cancelled.
 
 The access inspector also shows related project profiles, the current provider/run, observed
 workload and broker sessions, and retained requests for the selected item and thread. Context can
@@ -243,8 +275,9 @@ An agent in an active full-access/default Loom run can use `loom_vault_workload_
 enrolled machine ID, item reference, exact destination and a separate workload public key.
 Generate that key outside your project with `loom vault broker identity --state-dir
 /absolute/private/workload-directory`. Use a different directory from the machine identity.
-Never send private keys through tools or chat. An existing use grant is required; the tool
-cannot grant access or choose another thread from a supplied ID.
+Never send private keys through tools or chat. Current use authorization is required: personal
+owner-trusted access or a matching restricted grant. The tool cannot grant access or choose
+another thread from a supplied ID.
 
 Save the returned public session binding as JSON on the execution host, then check it with:
 
@@ -254,7 +287,7 @@ loom vault broker workload-check --state-dir /absolute/private/machine-directory
 ```
 
 Keep the machine broker running so its heartbeat stays current. Both identities must match the
-session. The check rechecks the current active run, runtime permissions and use grant; it
+session. The check rechecks the current active run, runtime permissions and access policy; it
 returns metadata with credential delivery unsupported. It does not log in to SSH or GitHub,
 expose the stored value or grant a reusable token for a later operation.
 
@@ -297,23 +330,52 @@ item ID and current `expectedVersion`. Agent threads cannot invoke this administ
 It does not configure Git, attach credentials to Pi or grant an agent access. General
 readiness stays separate. Existing 1Password prompts continue until those consumers are wired.
 
+## Select a connection by resource name
+
+Ask the agent to use a saved resource, such as “use personal-vps” or “use this repository's
+GitHub connection.” A project profile is optional. The agent can resolve the saved item by
+name, host, repository or account metadata, then use its selected identity and current version.
+If several compatible connections match, choose the intended account or key before proceeding.
+Execution checks the selected version, destination and current access again; it does not switch
+to another credential after a failure.
+
+From an authenticated agent terminal, the same lookup is available through:
+
+```sh
+loom vault connections-resolve '{"kind":"ssh","connection":{"resource":"personal-vps"}}'
+loom vault connections-resolve '{"kind":"github","connection":{"resource":"owner/repo"},"repository":"owner/repo"}'
+```
+
+Agents can use `loom_vault_connections_resolve` with that input, then call the direct SSH/Git/
+GitHub tools with the returned item ID/version. Supported direct execution tools also accept
+`connection:{"resource":"personal-vps"}` in place of the explicit item/version. A Git operation
+still needs its repository; GitHub still enforces the connection's repository allowlist.
+
+A result with no visible match can mean the record is absent or hidden by restricted policy.
+Check the selected computer and inspection access before creating a duplicate. A policy denial
+needs the matching restricted grant or a review of personal setup. An untrusted SSH host needs
+independent host verification; a missing/offline broker needs broker setup. Backend lock or
+outage and an upstream login failure are separate repairs. Resolution checks configuration and
+policy; it does not contact the host or prove current broker or upstream readiness.
+
 ## Use Vault from an agent or scheduled run
 
-Ask an active Loom agent to use `loom_vault_ssh_exec` with the key item ID and current version,
-or `loom_vault_git` to list remote refs or fetch a development repository. The computer's
-administrator first enrolls and configures its execution broker, keeps it online, and grants
-the thread or project permission to use the selected item at the exact destination. The agent
-cannot approve its own key, host trust or root grant. Full-access/default mode is required.
+Ask an active Loom agent to use the selected resource with `loom_vault_ssh_exec`, or
+`loom_vault_git` to list remote refs or fetch a development repository. Explicit item ID and
+current-version inputs remain supported. The computer's administrator first enrolls and
+configures its execution broker, keeps it online, and authorizes personal owner access or
+restricted permission for the selected item and exact destination. The agent cannot approve its
+own key, host trust or root grant. Full-access/default mode is required.
 
-Loom automatically creates, signs and releases the workload for each operation. No session
-file or workload-key transfer is needed. It executes on the selected Loom server. Pi, Codex
-and other providers use their existing authenticated Loom tools; web, desktop and mobile
-agents reach the same service. Scheduled agent runs use the same permissions. A project grant
-can cover new scheduled threads; a thread grant covers only that thread. Command-only jobs
-do not inherit this agent access.
+Loom automatically creates, signs and releases the workload for each operation. No session file
+or workload-key transfer is needed. It executes on the selected Loom server. Pi, Codex and other
+providers use their existing authenticated Loom tools; web, desktop and mobile agents reach the
+same service. Scheduled agent runs use the same permissions. In restricted mode, a project grant
+can cover new scheduled threads; a thread grant covers only that thread. Command-only jobs do
+not inherit this agent access.
 
 For Git, supply a repository path on the key's host, such as `team/repo.git`, with action
-`ls-remote` or `fetch`. Use its exact Git destination when granting access, for example
+`ls-remote` or `fetch`. In restricted mode, grant its exact Git destination, for example
 `git+ssh://git@dev.example.test:22/team/repo.git`. An absolute `/srv/repo.git` uses
 `git+ssh://git@dev.example.test:22/:absolute/srv/repo.git`. The ordinary SSH destination grant
 does not automatically grant these Git destinations. Git runs in the current thread checkout.
@@ -362,16 +424,16 @@ public metadata. Copy the public key for registration on the development host. V
 host's Ed25519 public key independently, then use `ssh-trust` with the item ID, current
 `expectedVersion`, a new `operationId` and that public `hostKey`. Unverified key scans are not
 trust approval. `ssh-info` with `{"id":"your-item-id"}` returns public identity, destination,
-fingerprints and the current item version. Threads need a separate inspect grant to use it.
+fingerprints and the current item version. Threads need inspect access under the selected mode.
 
 Set `hostKey:null` through `ssh-trust` to remove trust without replacing the user key. You can
 restore a verified pin later. Archive/restore/delete use the ordinary Vault item actions.
 These actions stop future authorized use; removing a public key from the remote host and
 revoking external copies remain separate work.
 
-Grant the active thread `use` access to this item and its exact returned destination. Enroll
-its machine, keep its heartbeat running and open a workload session as described above. Save
-that public session JSON on the runner. Create a command file containing the current key
+In restricted mode, grant the active thread `use` access to this item and its exact destination.
+Enroll its machine, keep its heartbeat running and open a workload session as described above.
+Save that public session JSON on the runner. Create a command file containing the current key
 version, a harmless argv and a timeout, for example:
 
 ```json
@@ -402,9 +464,9 @@ it cannot undo an already authenticated command. Release the workload session wh
 ## Use SSH and Git from an agent terminal
 
 Use explicit terminal activation when ordinary SSH/Git output or commands are needed on the
-invoking host. The administrator must grant the selected key for its SSH host destination,
-such as `ssh://git@dev.example.test:22`, and pin that host's Ed25519 key. A repository-only Git
-grant uses the hosted `loom vault git` path instead.
+invoking host. Pin the host's verified Ed25519 key. In restricted mode, the administrator must
+grant the selected key for its SSH host destination, such as `ssh://git@dev.example.test:22`. A
+repository-only Git grant uses the hosted `loom vault git` path instead.
 
 From an active full-access/default agent terminal, replace the item ID, version and host with
 the managed key's current details:
@@ -444,18 +506,20 @@ switching computers clears the current search. This does not move credentials or
 References contain no credential values and grant no access. Use **More references** when a sparse search page has no matches but more records remain.
 
 Open **Vault project profiles**, choose the destination computer and project, and create a
-profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for
-Git, its exact repository path. For GitHub operations, choose a dedicated connection and one
-of its allowed repositories. Switching operation kinds clears the previous binding. Review with a project thread to check its current use grants;
-**Host checks only** does not prove that a thread can use the key or connection. You may save an incomplete
-profile for later repair. Edit to replace/unbind keys or remove requirements; clone to start
-another profile without copying secret values.
+profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for Git,
+its exact repository path. For GitHub operations, choose a dedicated connection and one of its
+allowed repositories. Switching operation kinds clears the previous binding. Review with a
+project thread to check its current access; **Host checks only** does not prove that a thread
+can use the key or connection. You may save an incomplete profile for later repair. Edit to
+replace/unbind keys or remove requirements; clone to start another profile without copying
+secret values.
 
 Set a profile as the default for new run resolutions, or clear the default. A run keeps the
-profile revision and key versions it first resolves. Later edits/default changes apply to
-later runs. A changed key or connection version requires a new run. Current grants, host trust and item state
-still apply. Archiving blocks further profile use and clears its default; restoring does not
-select it again. Profile selection grants no access and never changes your personal SSH agent.
+profile revision and key versions it first resolves. Later edits/default changes apply to later
+runs. A changed key or connection version requires a new run. Current policy, host trust and
+item state still apply. Archiving blocks further profile use and clears its default; restoring
+does not select it again. Profile selection grants no access and never changes your personal SSH
+agent.
 
 Agents use `loom_vault_profiles`, `loom_vault_profile_resolve` and `loom_vault_profile_run` for
 their own project. A named SSH/Git operation automatically uses the configured server broker
@@ -474,13 +538,14 @@ Existing prompts and scheduled tasks can contain readable Vault reference or ver
 links with no credential values. Edit or delete their lines directly in the prompt. Keep
 attachment links on their own lines; inline or quoted examples are not requirements.
 
-A profile requires a full-access/default agent run. Every required SSH/Git binding must have
-an active key, verified host trust and a matching use grant. GitHub bindings need an active connection and exact repository use
-grant within its allowlist. A reference alone requires active
-metadata and inspect access; it grants no credential use. Host-only review for a new scheduled
-thread does not prove its grants. Grant the project deliberately when future scheduled threads
-need access. Editing a profile requires reviewing and attaching its new version before a later
-run can start. Existing runs retain their pinned configuration; current grants still apply.
+A profile requires a full-access/default agent run. Every required SSH/Git binding must have an
+active key, verified host trust and current use authorization. GitHub bindings need an active
+connection and repository access within its allowlist. Restricted mode requires matching grants.
+A reference alone requires active metadata and inspect access; it grants no credential use.
+Host-only review for a new scheduled thread does not prove its access. In restricted mode, grant
+the project deliberately when future scheduled threads need access. Editing a profile requires
+reviewing and attaching its new version before a later run can start. Existing runs retain their
+pinned configuration; current access policy still applies.
 
 Invalid, missing, changed or denied requirements produce **Vault launch blocked** in the thread
 before the provider opens. Repair the binding/grant or edit the prompt, then retry. Steering
@@ -537,11 +602,12 @@ For development, set **Contents** and **Pull requests** to read and write, and *
 **Commit statuses** to read-only. Metadata is included automatically. Organizations may require
 separate approval. App setup needs its App ID, installation ID and RSA private key.
 
-Choose **Configure project access** on the saved connection, then **Find matching projects**
-to suggest repositories from registered projects' local Git metadata. Review the detected set;
-a project name can differ from its repository name. Search for additional projects and choose
-their repositories from this connection's allowlist. Matching never authenticates or changes
-Git configuration. If metadata is unavailable or incomplete, select missing projects manually.
+In restricted mode, choose **Configure project access** on the saved connection, then **Find
+matching projects** to suggest repositories from registered projects' local Git metadata. Review
+the detected set; a project name can differ from its repository name. Search for additional
+projects and choose their repositories from this connection's allowlist. Matching never
+authenticates or changes Git configuration. If metadata is unavailable or incomplete, select
+missing projects manually.
 
 Review and approve all selected projects together. The default is recurring access until revoked;
 the web form also offers a fixed duration. This authorizes every thread in each selected project
@@ -556,18 +622,19 @@ does not undo completed GitHub operations or revoke credentials already issued b
 Temporary run-bound requests remain separate and are not needed for recurring project setup.
 
 Open the saved connection's advanced tools to replace credentials, test repository API access,
-or inspect runtime readiness. A saved connection and an approved project are separate from a
-successful current-run check: API, GH CLI and Git HTTPS must each pass for that run. Disconnect
-blocks new Loom use; revoke the token or App installation at GitHub separately to stop issued
-credentials. Older computers without bulk-access support prompt for an update.
+or inspect runtime readiness. A saved connection and current policy authorization are separate
+from a successful current-run check: API, GH CLI and Git HTTPS must each pass for that run.
+Disconnect blocks new Loom use; revoke the token or App installation at GitHub separately to
+stop issued credentials. Older computers without bulk-access support prompt for an update.
 
 Agents use `loom_vault_github` with the connection ID/version, repository and a documented
-operation. An active full-access/default run and exact use grant for
-`https://github.com/owner/repo` are required. Available actions read repositories, PRs, issues
-and PR checks, add comments or create issues. Inspect `exitCode`; after a timeout or uncertain
-write, check GitHub before retrying. Administrators can use `github-connections`, `github-info`,
-`github-test` and `github-change` through the authenticated CLI. Agent execution requires a
-running thread. No command accepts raw GitHub tokens from chat.
+operation. An active full-access/default run and current use authorization are required. In
+restricted mode, use requires an exact grant for `https://github.com/owner/repo`. Available
+actions read repositories, PRs, issues and PR checks, add comments or create issues. Inspect
+`exitCode`; after a timeout or uncertain write, check GitHub before retrying. Administrators can
+use `github-connections`, `github-info`, `github-test` and `github-change` through the
+authenticated CLI. Agent execution requires a running thread. No command accepts raw GitHub
+tokens from chat.
 
 These mediated GH operations use temporary private configuration on the Loom server. They do
 not log into your personal account, configure ordinary terminal gh/Git HTTPS or change SSH
@@ -576,13 +643,14 @@ available in this milestone. Project profiles can bind a GitHub connection/repos
 
 ## Use a named GitHub profile binding
 
-Choose **GitHub operations** for a profile requirement, then select a dedicated connection
-and an allowed repository. You can unbind or replace it later. Review checks saved configuration
-and the selected thread's grants. Host checks alone do not prove a thread can use the connection;
-neither review nor launch preflight tests live GitHub API health or GH CLI installation.
+Choose **GitHub operations** for a profile requirement, then select a dedicated connection and
+an allowed repository. You can unbind or replace it later. Review checks saved configuration and
+the selected thread's current access policy. Host checks alone do not prove a thread can use the
+connection; neither review nor launch preflight tests live GitHub API health or GH CLI
+installation.
 
 Attach the reviewed profile in the composer or scheduled prompt. A new run pins its connection
-version and repository. Current use grants, repository allowlist and connection/profile state
+version and repository. Current access policy, repository allowlist and connection/profile state
 still apply. Replacing credentials requires a new run; changing a profile requires reviewing its
 new version before attaching it to later runs. Configuration or access failures block launch.
 
@@ -619,19 +687,20 @@ interactive flags, extensions, other destinations and custom executable transpor
 with guidance. A repository with custom credential, HTTP, URL-rewrite or executable settings
 must have those settings reviewed and removed before routed execution.
 
-Each invocation needs a current connection version and exact repository use grant for the
-active full-access/default thread. The CLI uses its authenticated MCP connection through
-`LOOM_MCP_ENDPOINT`/`LOOM_MCP_AUTHORIZATION`, or the existing ACP MCP environment. Native agent
-MCP callers can use `loom_vault_github_exec` directly when terminal connection variables are
-not supplied by their harness. Never transfer that authorization through chat. There is no
-persistent shell activation, personal-login fallback or automatic SSH remote conversion.
-After a timeout, cancellation or an uncertain write outcome, inspect GitHub before retrying.
+Each invocation needs a current connection version and authorized repository access for the
+active full-access/default thread. Restricted mode requires a matching use grant. The CLI uses
+its authenticated MCP connection through `LOOM_MCP_ENDPOINT`/`LOOM_MCP_AUTHORIZATION`, or the
+existing ACP MCP environment. Native agent MCP callers can use `loom_vault_github_exec` directly
+when terminal connection variables are not supplied by their harness. Never transfer that
+authorization through chat. There is no persistent shell activation, personal-login fallback or
+automatic SSH remote conversion. After a timeout, cancellation or an uncertain write outcome,
+inspect GitHub before retrying.
 
 ## Check GitHub execution readiness
 
 Choose **Check GitHub readiness** in the same connection section on web/desktop or mobile.
 The default checks the selected identity's API access, GH CLI repository read and Git HTTPS
-ref read on the Loom server. Select a thread to check its current run and repository use grant;
+ref read on the Loom server. Select a thread to check its current run and repository access;
 a denied/inactive thread skips provider probes. A result names the server execution context,
 separates each check, and expires after 60 seconds. Cancel a pending check or run it again after
 repairing credentials, tool installation, permissions or network access.
@@ -747,30 +816,32 @@ worker in, or revoke existing application sessions. Reserving grants no extra Va
 Agents need an active full-access/default Loom root run, including queued follow-ups and pending
 approval/user-input requests while that run remains active. Leases end when the root run ends,
 including a waiting thread with only background subagents. Those subagents cannot retain or
-renew the old lease; use a new root run or a separate manager-owned reservation. Supervised and plan-mode runs cannot discover or mutate account reservations.
-Use `loom_vault_test_accounts_discover` to find available
-accounts and their own run's reservations. Grant both inspect and use for the relevant Account
-items, scoped to the copyable **Agent grant destination** shown for each collection in web and mobile
-(`loom:test-accounts:<collectionId>`) when access should cover only that pool.
-They can reserve, renew or release with `loom_vault_test_accounts_apply`; they cannot mark an
-account clean or grant themselves access. Reservations belong to that run. Stopping or replacing
-it, or withdrawing access, causes cleanup to quarantine its accounts. Expiry remains enforced
-while cleanup is unavailable. A manager must independently check/reset and mark them clean again.
+renew the old lease; use a new root run or a separate manager-owned reservation. Supervised and
+plan-mode runs cannot discover or mutate account reservations. Use
+`loom_vault_test_accounts_discover` to find available accounts and their own run's reservations.
+In restricted mode, grant both inspect and use for the relevant Account items, scoped to the
+copyable **Agent grant destination** shown for each collection in web and mobile
+(`loom:test-accounts:<collectionId>`) when access should cover only that pool. They can reserve,
+renew or release with `loom_vault_test_accounts_apply`; they cannot mark an account clean or
+grant themselves access. Reservations belong to that run. Stopping or replacing it, or
+withdrawing access, causes cleanup to quarantine its accounts. Expiry remains enforced while
+cleanup is unavailable. A manager must independently check/reset and mark them clean again.
 
 These agent tools return account references and leases, not passwords or a logged-in browser.
-Login delivery remains unavailable. Other runs' reservations and accounts without the required
-grants do not appear in discovery.
+Login delivery remains unavailable. Other runs' reservations and accounts without current
+inspect/use authorization do not appear in discovery.
 
 ## Find references from an authenticated terminal
 
 Run `loom vault references-complete --kind account -- editor` to get active reference candidates
 for a terminal picker or completion function. It prints up to 20 canonical references, one per
-line, without labels or values. Put `--` before a shell-supplied query so leading dashes stay literal.
-Parse errors and help use stderr for this command. Both label queries and partial canonical references are supported.
-A shell completion wrapper must replace the current word with the returned references rather than
-filtering them again against a label fragment. Searches use the terminal's current Loom connection and the
-calling thread's inspect grants; they never combine environments. Use `references-search` with
-its continuation cursor when you need a complete large-vault search.
+line, without labels or values. Put `--` before a shell-supplied query so leading dashes stay
+literal. Parse errors and help use stderr for this command. Both label queries and partial
+canonical references are supported. A shell completion wrapper must replace the current word
+with the returned references rather than filtering them again against a label fragment. Searches
+use the terminal's current Loom connection and the calling thread's inspect access under the
+selected mode; they never combine environments. Use `references-search` with its continuation
+cursor when you need a complete large-vault search.
 
 `loom vault test-accounts` shows eligible dedicated accounts and your run's leases. Use
 `test-account-apply` with the same JSON operation as the authenticated account tool to reserve,
@@ -781,7 +852,9 @@ renew or release one. For waiting access requests, the CLI also exposes `access-
 none approve access or execute a prepared retry.
 
 An empty readiness request checks the current run's pinned profile and credential versions when
-present, otherwise the active project default. Missing bindings, stale broker
+present, otherwise the active project default when one exists. Profiles are optional; no
+profile means no connection has been selected for that check. Resolve the intended resource
+instead. Missing bindings, stale broker
 presence and a permission-limited or changed provider run include repair guidance. Supplying
 explicit requirements checks those instead. Profile configuration and broker presence do not
 prove an upstream login; use a supported explicit connection check for that destination.

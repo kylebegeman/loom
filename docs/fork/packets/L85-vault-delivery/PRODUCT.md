@@ -6,7 +6,7 @@ Give agents, developer tools and automation one consistent way to consume Vault 
 
 ## Available authorization-check milestone
 
-Use a fresh workload public key and an existing use grant to open a session from the active
+Use a fresh workload public key and current use authorization to open a session from the active
 thread. The calling thread is established by Loom's authenticated MCP context; supplied thread
 IDs, project paths or prompt text cannot select another principal. Checks need both that
 workload key and the approved machine key. Close through MCP or release through signed HTTP;
@@ -16,10 +16,12 @@ bearer token or proof of successful SSH/GitHub login.
 The supported execution mode is an active full-access/default Loom run with a current broker
 heartbeat. Hosted SSH and Git operations now set up, sign and release the workload automatically
 through the provider's existing authenticated tools. The operator enrolls the server's broker
-once. Git ref listing/fetch uses the thread checkout and its exact repository destination grant.
-Standalone checks retain explicit key/session files. Same-user processes can read owner-only
-machine identity files; OS isolation and general delivery remain unfinished. Authorization-check
-results still cannot authorize a later operation. Unprefixed terminal Git/SSH remains separate; explicit GitHub routing is described below.
+once. Git ref listing/fetch uses the thread checkout and current repository authorization (a
+matching grant in restricted mode). Standalone checks retain explicit key/session files.
+Same-user processes can read owner-only machine identity files; OS isolation and general
+delivery remain unfinished. Authorization-check results still cannot authorize a later
+operation. Unprefixed terminal Git/SSH remains separate; explicit GitHub routing is described
+below.
 
 ## How it works
 
@@ -27,7 +29,9 @@ Provide a broker-backed CLI, SDK and MCP facade over shared use requests. Prefer
 
 ## User experience
 
-Attach a profile to a Loom task or run a CLI command under a selected profile. See which account and delivery method are in use. Cancel the command and clean up its temporary material. Pi and other runners use the same bindings.
+Select a resource by name, or attach an optional saved profile to a Loom task or CLI command.
+See which account and delivery method are in use. Cancel the command and clean up its temporary
+material. Pi and other runners use the same bindings.
 
 ## Why it improves the product
 
@@ -81,5 +85,5 @@ Connection management now offers cancellable API/GH CLI/Git HTTPS readiness, opt
 selected thread, and a reference-only terminal command to copy. Use the explicit Vault wrapper
 for supported gh and Git HTTPS commands without a personal key-manager prompt. It acts on the
 execution computer's checkout and preserves output/exit status. A host-only success does not
-authorize a thread; stale results, run/grant denials and provider failures remain distinct.
+authorize a thread; stale results, run/policy denials and provider failures remain distinct.
 Existing shell logins, SSH remotes and independently launched runners are not migrated.

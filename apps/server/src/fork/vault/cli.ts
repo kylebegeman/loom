@@ -8,6 +8,8 @@ import * as NodeProcess from "node:process";
 import { Argument, Command } from "effect/cli";
 import { callForkTool } from "../cli/callTool.ts";
 const actions = {
+  "connections-resolve": "loom_vault_connections_resolve",
+  "owner-policy": "loom_vault_owner_policy",
   "test-accounts": "loom_vault_test_accounts_discover",
   "test-account-apply": "loom_vault_test_accounts_apply",
   "access-request": "loom_vault_access_request",

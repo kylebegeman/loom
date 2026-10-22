@@ -5,6 +5,34 @@ implemented in `ext-vault`. Broker, platform identity and delivery portions belo
 target and must not be mistaken for implemented guarantees. This work creates no live infrastructure. Product intent and decision
 owners are in [LOOM-VAULT.md](./LOOM-VAULT.md).
 
+## Personal and restricted access boundary
+
+Owner-trusted access is an explicit, durable declaration that one environment is personally
+controlled. It allows authenticated active full-access/default agents to inspect metadata and
+use supported brokered connections without recurring thread/project/provider grants. Existing
+environments and shared use remain restricted by default. Only an authenticated human
+administrator can enable or disable the declaration. An agent, full-access runtime, resource
+name or profile cannot opt in.
+
+There is no verified platform multi-owner identity or membership model. The declaration is an
+environment boundary, not proof that each caller represents a separately verified owner. An
+environment where other people can launch agents must retain restricted access. This choice
+preserves the encrypted records, existing grants and recovery mechanisms; it requires no Vault
+rebootstrap or credential migration.
+
+Credential availability and task authorization are independent. Personal access changes only
+inspect and supported brokered-use policy. It cannot elevate plan/runtime permissions, manage
+policy or host trust, reveal/export raw values, or bypass protected one-time credentials. Runs,
+items, connection scopes, host pins, relevant brokers and upstream authentication remain live
+checks. Disabling affects new authorizations; already authenticated remote sessions and completed
+effects cannot be recalled, and independent restricted grants can still allow access.
+
+Resource-name resolution is shared across SSH, Git-over-SSH and GitHub. Discovery returns safe
+metadata, not credentials; an empty visible result is not proof that no hidden connection exists.
+The selected item/version and destination must be pinned before execution and revalidated at
+use. Ambiguity requires selection rather than silently trying a different credential. Profiles
+remain optional durable project bindings, with their existing per-run revision pinning.
+
 ## Implemented reference and profile boundary
 
 L74/L76 now provide metadata search, stable environment/item references and project-local
@@ -32,20 +60,22 @@ human reveal, CAS lifecycle changes and request fingerprints. Private input goes
 be returned after its one-use input is consumed. This transfer extends the existing private
 input store, which remains owner-only plaintext until the value reaches OpenBao.
 
-Human management uses environment access:read/access:write. Authenticated threads now need
-per-item grants for metadata, private ingress and lifecycle operations, under T3's permission
-ceiling. The shared VaultAccess service provides online policy, bounded safe decision history,
-previews and server-context readiness. There is no raw-value MCP tool. Reviewed hosts and process-local workload checks are
-implemented below; full delivery leases, immutable audit and platform-account integration remain unfinished.
+Human management uses environment access:read/access:write. Authenticated threads use the
+selected inspect/use policy. Private ingress and lifecycle operations still require manage
+grants under T3's permission ceiling. The shared VaultAccess service provides online policy,
+bounded safe decision history, previews and server-context readiness. There is no raw-value MCP
+tool. Reviewed hosts and process-local workload checks are implemented below; full delivery
+leases, immutable audit and platform-account integration remain unfinished.
 
 ## Implemented policy boundary
 
-Policy is encrypted in an environment-scoped OpenBao CAS record. Thread/project allow grants
-are unioned under default deny and specify exact item IDs, actions, optional project and exact
-destination, start/expiry and parent lineage. Delegation requires an attested direct subagent
-in the same project and cannot broaden actions, resources, scope or lifetime. An ancestor's
-suspension, expiry or revocation invalidates descendants. Revocation is permanent; create a
-new grant to restore access. There is no offline policy cache or new credential-delivery path.
+Policy is encrypted in an environment-scoped OpenBao CAS record. In restricted mode,
+thread/project allow grants are unioned under default deny and specify exact item IDs, actions,
+optional project and exact destination, start/expiry and parent lineage. Delegation requires an
+attested direct subagent in the same project and cannot broaden actions, resources, scope or
+lifetime. An ancestor's suspension, expiry or revocation invalidates descendants. Revocation is
+permanent; create a new grant to restore access. There is no offline policy cache or new
+credential-delivery path.
 
 Grant mutation receipts retain 32 results; a matching operation/actor/request retries safely.
 Audit retains 256 events and exposes omitted counts; this is operational history, not the final
@@ -53,10 +83,10 @@ immutable ledger. Decision audit persistence fails closed. Item writes and polic
 separate backend operations, so this is not an OS isolation boundary or a distributed lease.
 Same-user full-access agents can access host files and are not contained by these grants.
 
-Readiness covers at most 16 declared requirements and expires after 60 seconds. It explicitly
-names the Loom server context, does not probe SSH/GitHub, and reports missing broker/delivery
-support for use/reveal/export. Profile discovery, launch preflight and external probes remain
-in the complete packet targets.
+General readiness covers at most 16 declared requirements and expires after 60 seconds. It
+explicitly names the Loom server context and distinguishes current run access from broker and
+delivery support. Profiles are optional. Dedicated connection probes remain separate and do
+not prove every upstream write permission or an independently configured provider terminal.
 
 The exact active extension contract and existence checks are in
 [EXTENSION-POINTS.md](./EXTENSION-POINTS.md#loom-vault-foundation-ext-vault).
@@ -201,16 +231,18 @@ exchange signature and signs only the assigned host-bound user-authentication pa
 not expose a generic workload signing API or private-key files. See [L82](./L82-vault-ssh/).
 
 This milestone requires online policy/backend availability and a reachable target. Revocation
-prevents new signatures at subsequent checks; remote effects and already-issued signatures
-are not recalled. Web/desktop/mobile management now includes key creation, public copying,
-reviewed trust replacement/removal and a fixed authenticated administrator probe. That probe
-uses the same transport with Vault write rights; agent arbitrary commands still need a signed
-workload and use grant. General readiness does not invoke it. Existing provider/task launches
+prevents new signatures at subsequent checks; remote effects and already-issued signatures are
+not recalled. Web/desktop/mobile management now includes key creation, public copying, reviewed
+trust replacement/removal and a fixed authenticated administrator probe. That probe uses the
+same transport with Vault write rights; agent arbitrary commands still need a signed workload
+and current access policy. General readiness does not invoke it. Existing provider/task launches
 now attach authenticated SSH/Git tools with on-demand workload setup/release. Git ref listing
-and fetch are mediated on the Loom server using a repository-specific grant and current thread
-checkout. The operator enrolls/configures the server broker once; its private identity remains
-owner-only plaintext and the workload key is memory-only. Ordinary shell Git/SSH, clone/push,
-imports and general runner sockets remain pending. No real account migration, service deployment or global SSH configuration changed.
+and fetch are mediated on the Loom server using repository-specific authorization and current
+thread checkout. The operator enrolls/configures the server broker once; its private identity
+remains owner-only plaintext and the workload key is memory-only. The explicit terminal wrappers
+described above support ordinary SSH/Git commands; this hosted Git tool remains ref-list/fetch
+only. Imports and general runner sockets have separate boundaries. No real account migration,
+service deployment or global SSH configuration changed.
 
 ## Key custody and headless unlock
 
@@ -312,10 +344,11 @@ consumer rather than the owner of that evidence. Select retention, administrator
 backup coverage and behavior when audit persistence fails. Do not claim an audit trail is
 immutable against an administrator controlling its storage unless a selected mechanism proves it.
 
-Restoring an older backup can resurrect old grants and machine credentials. Promotion requires
-an authoritative revocation reconciliation or deliberate invalidation/re-enrollment of restored
-principals. Define that behavior even if the old server and latest log are unavailable. A local
-Vault delete is not proof that a provider token was revoked or that an old backup was erased.
+Restoring an older backup can resurrect an older access mode, grants and machine credentials.
+Promotion requires an authoritative revocation reconciliation or deliberate
+invalidation/re-enrollment of restored principals. Define that behavior even if the old server
+and latest log are unavailable. A local Vault delete is not proof that a provider token was
+revoked or that an old backup was erased.
 
 A later operating runbook covers isolated staging, upgrades, monitoring, TLS/auth routing,
 capacity, rate limits, rollback and recovery. Reuse the existing VPS/platform deployment system
@@ -352,11 +385,12 @@ the relevant design review before reusing code, adding dependencies or promising
 ## Dedicated GitHub milestone
 
 L83 now adapts github.com App installations and dedicated tokens through encrypted core records.
-Mediated GH uses exact repository grants, stable current run/version checks and isolated temporary
-CLI configuration. It does not give ordinary terminals GitHub credentials or isolate same-user
-full-access processes. App session tokens are repository-limited and released best effort; local
-disconnection, provider revocation and OpenBao history are distinct outcomes. The [L83 design](./L83-vault-connectors/TECHNICAL.md)
-records implementation limits and the selected onboarding/connector work still to do. GitHub project bindings now reuse the
-profile/run-pin boundary, with configuration/grant preflight and named mediated GH execution.
-Version 2 declarations omit all local connection/repository bindings; SSH/Git exports retain
-version 1. Configuration review is distinct from live provider/API or CLI readiness.
+Mediated GH uses exact repository authorization, stable current run/version checks and isolated
+temporary CLI configuration. It does not give ordinary terminals GitHub credentials or isolate
+same-user full-access processes. App session tokens are repository-limited and released best
+effort; local disconnection, provider revocation and OpenBao history are distinct outcomes. The
+[L83 design](./L83-vault-connectors/TECHNICAL.md) records implementation limits and the selected
+onboarding/connector work still to do. GitHub project bindings now reuse the profile/run-pin
+boundary, with configuration/grant preflight and named mediated GH execution. Version 2
+declarations omit all local connection/repository bindings; SSH/Git exports retain version 1.
+Configuration review is distinct from live provider/API or CLI readiness.

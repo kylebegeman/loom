@@ -134,9 +134,8 @@ function SshCreator({
       onCreated(result.item.id);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
     <form
@@ -292,10 +291,9 @@ function SshDetails({
       setOperationId(newId());
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setAction(null);
-      setBusy(false);
     }
+    setAction(null);
+    setBusy(false);
   };
   const test = async () => {
     if (!info || busy || !canProbe) return;
@@ -315,10 +313,9 @@ function SshDetails({
       );
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setAction(null);
-      setBusy(false);
     }
+    setAction(null);
+    setBusy(false);
   };
   if (!info)
     return (
@@ -336,10 +333,13 @@ function SshDetails({
       <div className="flex flex-col gap-1">
         <h3 className="break-words text-sm font-medium">{info.item.label}</h3>
         <p className="break-all text-sm">{info.destination}</p>
-        <p className="text-xs text-muted-foreground">
-          Version {info.item.version}
-          {info.item.state !== "active" ? " · Archived" : ""}
-        </p>
+        {info.item.state !== "active" ? (
+          <p className="text-xs text-muted-foreground">Archived</p>
+        ) : null}
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Record details</summary>
+          <p className="mt-1">Version {info.item.version}</p>
+        </details>
       </div>
       {failure(result) ? (
         <p role="alert" className="text-sm">

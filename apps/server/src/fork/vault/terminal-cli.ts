@@ -1,7 +1,8 @@
 import { readTerminalConnection } from "./TerminalConnection.ts";
+import { decodeVaultTerminalError } from "./terminal-errors.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI boundary forwards scrubbed child output and preserves its exit code.
 import * as NodeProcess from "node:process";
-import { VaultGitHubTerminalRun, VaultGitHubTerminalResult } from "@t3tools/contracts/fork";
+import { VaultGitHubTerminalRunInput, VaultGitHubTerminalResult } from "@t3tools/contracts/fork";
 import { Argument, Command } from "effect/cli";
 import * as Effect from "effect/Effect";
 import * as Runtime from "effect/Runtime";
@@ -15,7 +16,7 @@ class TerminalCliError extends Schema.TaggedError<TerminalCliError>()("TerminalC
     return this.reason === "connection"
       ? "Run from an authenticated Loom agent terminal or configure its MCP endpoint and authorization."
       : this.reason === "tool"
-        ? "Vault could not execute this command. Check the connection, current run and repository use grant."
+        ? "Vault could not execute this command. Check the connection, current run and current Vault repository policy. Owner-trusted mode needs no individual grant."
         : "The Loom server returned an unsupported terminal result.";
   }
 }
@@ -37,7 +38,7 @@ const ResultEnvelope = Schema.Struct({
     Schema.Array(Schema.Struct({ type: Schema.String, text: Schema.optionalKey(Schema.String) })),
   ),
 });
-const decodeRun = Schema.decodeEffect(Schema.fromJsonString(VaultGitHubTerminalRun));
+const decodeRun = Schema.decodeEffect(Schema.fromJsonString(VaultGitHubTerminalRunInput));
 const decodeEnvelope = Schema.decodeUnknownOption(ResultEnvelope),
   decodeResult = Schema.decodeUnknownOption(VaultGitHubTerminalResult),
   decodeTextResult = Schema.decodeUnknownOption(Schema.fromJsonString(VaultGitHubTerminalResult));
@@ -66,7 +67,11 @@ export const runGitHubTerminalCli = Effect.fn("runGitHubTerminalCli")(function* 
     }),
   );
   if (Option.isNone(envelope)) return yield* new TerminalCliError({ reason: "response" });
-  if (envelope.value.isError) return yield* new TerminalCliError({ reason: "tool" });
+  if (envelope.value.isError) {
+    const failure = decodeVaultTerminalError(envelope.value);
+    if (Option.isSome(failure)) return yield* failure.value;
+    return yield* new TerminalCliError({ reason: "tool" });
+  }
   const parsed = decodeResult(envelope.value.structuredContent).pipe(
     Option.orElse(() => {
       for (const content of envelope.value.content ?? []) {

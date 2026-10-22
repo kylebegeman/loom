@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { VaultConnectionError, VaultConnectionSelector } from "./vault-connections.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
@@ -183,7 +184,12 @@ export const VAULT_GITHUB_WS_METHODS = {
   change: "loom.vault-connectors.githubChange",
   readiness: "loom.vault-connectors.githubReadiness",
 } as const;
-const error = Schema.Union([VaultError, VaultGitHubError, EnvironmentAuthorizationError]);
+const error = Schema.Union([
+  VaultError,
+  VaultGitHubError,
+  VaultConnectionError,
+  EnvironmentAuthorizationError,
+]);
 export const VaultGitHubRpcGroup = RpcGroup.make(
   Rpc.make(VAULT_GITHUB_WS_METHODS.readiness, {
     payload: VaultGitHubReadinessInput,
@@ -219,3 +225,22 @@ export const VaultGitHubRpcGroup = RpcGroup.make(
     error,
   }),
 );
+
+export const VaultGitHubRunInput = Schema.Union([
+  VaultGitHubRun,
+  Schema.Struct({
+    connection: VaultConnectionSelector,
+    repository: VaultGitHubRepository,
+    operation: VaultGitHubOperation,
+  }),
+]);
+export type VaultGitHubRunInput = typeof VaultGitHubRunInput.Type;
+export const VaultGitHubTerminalRunInput = Schema.Union([
+  VaultGitHubTerminalRun,
+  Schema.Struct({
+    connection: VaultConnectionSelector,
+    repository: VaultGitHubRepository,
+    command: VaultGitHubTerminalCommand,
+  }),
+]);
+export type VaultGitHubTerminalRunInput = typeof VaultGitHubTerminalRunInput.Type;

@@ -134,6 +134,9 @@ export const VaultTerminalReadiness = Schema.Struct({
   expiresAt: Time,
   activeRun: Schema.Boolean,
   brokerOnline: Schema.Boolean,
-  credentialUse: Schema.Literal("requires-selection-and-current-grant"),
+  credentialUse: Schema.Literals([
+    "requires-selection-and-current-grant",
+    "requires-selection-and-current-policy",
+  ]),
 });
 export type VaultTerminalReadiness = typeof VaultTerminalReadiness.Type;

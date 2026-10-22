@@ -29,7 +29,14 @@ it.effect.each(["pi", "codex"])(
   (provider) =>
     Effect.gen(function* () {
       const f = yield* launchFixture(transport);
-      f.state.thread = { ...f.state.thread, providerInstanceId: ProviderInstanceId.make(provider) };
+      f.state.thread = {
+        ...f.state.thread,
+        providerInstanceId: ProviderInstanceId.make(provider),
+        modelSelection: {
+          ...f.state.thread.modelSelection,
+          instanceId: ProviderInstanceId.make(provider),
+        },
+      };
       yield* f.grant(f.key.destination);
       const context = Context.add(f.context, VaultLaunch.VaultLaunch, f.launch);
       const toolkit = yield* VaultSshToolkit.pipe(

@@ -84,9 +84,10 @@ const make = Effect.gen(function* () {
         if (!selected && !pinFailed)
           checks.push({
             id: "profile-default",
-            state: "blocked",
-            reason: "No active project Vault profile is selected.",
-            repair: "Choose a project profile or supply explicit requirements.",
+            state: "passed",
+            reason: "Project profiles are optional. Resolve a resource name to check a connection.",
+            repair:
+              "No profile setup is needed. Use connection resolution for a saved host or repository.",
           });
         else if (selected) {
           observedProfile = {

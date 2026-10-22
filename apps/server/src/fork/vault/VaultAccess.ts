@@ -14,6 +14,8 @@ import {
   VaultApprovalChange,
   type VaultApprovalInbox,
   VaultError,
+  VaultOwnerPolicyChange,
+  type VaultOwnerPolicy,
   VaultGrant,
   VaultGrantMutation,
   VaultGrantBatchMutation,
@@ -51,9 +53,21 @@ import * as VaultCore from "./VaultCore.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import { evaluateVaultPolicy, grantAttenuates, grantMatchesWorkload } from "./VaultPolicy.ts";
 
+import { isVaultRunRunning } from "./active-run.ts";
 import * as AccessPolicy from "./AccessPolicy.ts";
 import { decodePolicy, encodePolicy, type Policy } from "./AccessPolicy.ts";
 
+const decodeOwnerPolicyChange = Schema.decodeUnknownEffect(VaultOwnerPolicyChange, {
+  onExcessProperty: "error",
+});
+const encodeOwnerPolicyChange = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      input: VaultOwnerPolicyChange,
+      actor: Schema.String,
+    }),
+  ),
+);
 const isAdministrator = Schema.is(AccessPolicy.OperationIntent.fields.reviewedBy);
 const decodeModeChange = Schema.decodeUnknownEffect(AccessPolicy.ModeChange, {
   onExcessProperty: "error",
@@ -231,6 +245,11 @@ export class VaultAccess extends Context.Service<
     ) => Effect.Effect<VaultApprovalRequest, VaultError>;
     readonly catalog: Effect.Effect<VaultAccessCatalog, VaultError>;
     readonly snapshot: Effect.Effect<VaultPolicySnapshot, VaultError>;
+    readonly setOwnerPolicy: (
+      input: VaultOwnerPolicyChange,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultPolicySnapshot, VaultError>;
     readonly apply: (
       input: VaultGrantMutation,
       actor: string,
@@ -303,7 +322,9 @@ const make = Effect.gen(function* () {
         value.value.grants.length ||
       new Set(value.value.approvals?.map((r) => r.request.id)).size !==
         (value.value.approvals?.length ?? 0) ||
-      (value.value.schemaVersion === 4 && value.value.environmentId !== environmentId)
+      (value.value.schemaVersion === 4 && value.value.environmentId !== environmentId) ||
+      (value.value.ownerPolicy !== undefined &&
+        value.value.ownerPolicy.environmentId !== environmentId)
     )
       return yield* new VaultError({ reason: "invalid-response" });
     return { policy: value.value, version: record.version };
@@ -320,6 +341,22 @@ const make = Effect.gen(function* () {
     ...policy,
     audit: [...policy.audit, event].slice(-256),
     omittedAuditEvents: policy.omittedAuditEvents + (policy.audit.length === 256 ? 1 : 0),
+  });
+  const ownerPolicyView = (policy: Policy): VaultOwnerPolicy => ({
+    environmentId,
+    ownerId: policy.ownerPolicy?.ownerId ?? null,
+    mode: policy.ownerPolicy?.mode ?? "restricted",
+    revision: policy.revision,
+    updatedAt: policy.ownerPolicy?.updatedAt ?? null,
+    updatedBy: policy.ownerPolicy?.updatedBy ?? null,
+  });
+  const snapshotView = (policy: Policy): VaultPolicySnapshot => ({
+    environmentId,
+    revision: policy.revision,
+    ownerPolicy: ownerPolicyView(policy),
+    grants: policy.grants,
+    audit: policy.audit.toReversed().slice(0, 50),
+    omittedAuditEvents: policy.omittedAuditEvents + Math.max(0, policy.audit.length - 50),
   });
   const subject = Effect.fnUntraced(function* (threadId: ThreadId) {
     const thread = yield* threads
@@ -418,6 +455,8 @@ const make = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
       yield* authorize ?? Effect.void;
+      if (policy.ownerReceipts?.some((value) => value.id === input.operationId))
+        return yield* new VaultError({ reason: "conflict" });
       if (policy.batchReceipts?.some((value) => value.id === input.operationId))
         return yield* new VaultError({ reason: "conflict" });
       const receipt = policy.receipts.find((value) => value.id === input.operationId);
@@ -501,6 +540,8 @@ const make = Effect.gen(function* () {
       yield* authorize ?? Effect.void;
       if (policy.receipts.some((value) => value.id === input.operationId))
         return yield* new VaultError({ reason: "conflict" });
+      if (policy.ownerReceipts?.some((value) => value.id === input.operationId))
+        return yield* new VaultError({ reason: "conflict" });
       const receipt = policy.batchReceipts?.find((value) => value.id === input.operationId);
       if (receipt) {
         if (receipt.fingerprint !== fingerprint)
@@ -553,19 +594,37 @@ const make = Effect.gen(function* () {
         )
         .map((r) => r.request.grantId),
     );
+    const currentGrants = policy.grants.filter((g) => !staleApprovals.has(g.definition.id));
+    const now = yield* Clock.currentTimeMillis;
+    const ordinary = evaluateVaultPolicy(currentGrants, workload, input, now, policy.revision);
     const evaluated = evaluateVaultPolicy(
-      policy.grants.filter((g) => !staleApprovals.has(g.definition.id)),
+      currentGrants,
       workload,
       input,
-      yield* Clock.currentTimeMillis,
+      now,
       policy.revision,
+      ownerPolicyView(policy),
     );
     let result: VaultAccessDecision =
       input.action !== "manage" &&
       (item === null || (input.action !== "inspect" && item.state !== "active"))
         ? { ...evaluated, allowed: false, reason: "item-unavailable" }
         : evaluated;
-    const ordinaryResult = result;
+    // Reviewed operation intents still require their exact real grant and revision.
+    const ordinaryResult =
+      input.action !== "manage" &&
+      (item === null || (input.action !== "inspect" && item.state !== "active"))
+        ? { ...ordinary, allowed: false, reason: "item-unavailable" as const }
+        : ordinary;
+    if (evaluated.basis === "owner-trusted") {
+      if (
+        workload.thread.runtimeMode !== "full-access" ||
+        workload.thread.interactionMode !== "default"
+      )
+        result = { ...result, allowed: false, reason: "caller-permission" };
+      else if (!(yield* isVaultRunRunning(threads, workload.thread)))
+        result = { ...result, allowed: false, reason: "workload-inactive" };
+    }
     const protection = AccessPolicy.credentialUseRefusal(policy, input.itemId);
     if (input.action !== "inspect" && protection)
       result = {
@@ -595,7 +654,12 @@ const make = Effect.gen(function* () {
   ) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
-      const { result } = yield* decision(policy, { threadId, itemId, action, destination });
+      const { result, workload, item } = yield* decision(policy, {
+        threadId,
+        itemId,
+        action,
+        destination,
+      });
       const next = withAudit(policy, {
         id: yield* eventId,
         at: yield* Clock.currentTimeMillis,
@@ -606,6 +670,15 @@ const make = Effect.gen(function* () {
         action,
         reason: result.reason,
         policyRevision: policy.revision,
+        authorization: {
+          category: result.basis ?? "grant",
+          environmentId,
+          ownerId: policy.ownerPolicy?.ownerId ?? null,
+          threadId,
+          runId: workload.thread.activeRunId,
+          destinationDigest: destination === null ? null : yield* hash(destination),
+          itemKind: item?.kind ?? null,
+        },
       });
       const persisted = yield* persist(next, version).pipe(Effect.result);
       if (persisted._tag === "Failure") {
@@ -1680,15 +1753,95 @@ const make = Effect.gen(function* () {
         truncated: projectList.length > 250 || available.length > 250,
       };
     }),
-    snapshot: Effect.gen(function* () {
-      const { policy } = yield* load();
-      return {
-        environmentId,
-        revision: policy.revision,
-        grants: policy.grants,
-        audit: policy.audit.toReversed().slice(0, 50),
-        omittedAuditEvents: policy.omittedAuditEvents + Math.max(0, policy.audit.length - 50),
-      };
+    snapshot: Effect.map(load(), ({ policy }) => snapshotView(policy)),
+    setOwnerPolicy: Effect.fn("VaultAccess.setOwnerPolicy")(function* (raw, actor, authorize) {
+      const input = yield* decodeOwnerPolicyChange(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      // This is a declaration of a single-owner environment, not a global identity directory.
+      // The transport proves human owner administration; agents cannot make this declaration.
+      if (
+        !isAdministrator(actor) ||
+        actor === "mcp-client" ||
+        ["client:", "broker:", "host:", "library:", "loom-host:"].some((prefix) =>
+          actor.startsWith(prefix),
+        )
+      )
+        return yield* new VaultError({ reason: "denied" });
+      const fingerprint = yield* hash(
+        yield* encodeOwnerPolicyChange({ input, actor }).pipe(
+          Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+        ),
+      );
+      for (let attempt = 0; attempt < 4; attempt++) {
+        yield* authorize;
+        const { policy, version } = yield* load();
+        if (policy.ownerPolicy && policy.ownerPolicy.ownerSubject !== actor)
+          return yield* new VaultError({ reason: "denied" });
+        if (
+          policy.receipts.some((entry) => entry.id === input.operationId) ||
+          policy.batchReceipts?.some((entry) => entry.id === input.operationId)
+        )
+          return yield* new VaultError({ reason: "conflict" });
+        const receipt = policy.ownerReceipts?.find((entry) => entry.id === input.operationId);
+        if (receipt) {
+          if (receipt.fingerprint !== fingerprint)
+            return yield* new VaultError({ reason: "conflict" });
+          yield* authorize;
+          // A replay observes current state and never re-enables a subsequently disabled policy.
+          return snapshotView(policy);
+        }
+        if (policy.revision !== input.expectedRevision)
+          return yield* new VaultError({ reason: "conflict" });
+        const now = yield* Clock.currentTimeMillis;
+        if (policy.ownerPolicy && now < policy.ownerPolicy.updatedAt)
+          return yield* new VaultError({ reason: "unavailable" });
+        const ownerId = policy.ownerPolicy?.ownerId ?? (yield* eventId);
+        const revision = policy.revision + 1;
+        const next = withAudit(
+          {
+            ...policy,
+            revision,
+            ownerPolicy: {
+              environmentId,
+              ownerId,
+              ownerSubject: actor,
+              mode: input.mode,
+              updatedAt: now,
+              updatedBy: actor,
+            },
+            ownerReceipts: [
+              ...(policy.ownerReceipts ?? []),
+              { id: input.operationId, fingerprint, revision },
+            ].slice(-32),
+          },
+          {
+            id: yield* eventId,
+            at: now,
+            actor,
+            type: "owner-policy-change",
+            itemId: null,
+            grantId: null,
+            action: null,
+            reason: input.mode,
+            policyRevision: revision,
+            authorization: {
+              category: "owner-policy-change",
+              environmentId,
+              ownerId,
+              threadId: null,
+              runId: null,
+              destinationDigest: null,
+              itemKind: null,
+            },
+          },
+        );
+        yield* authorize;
+        const saved = yield* persist(next, version).pipe(Effect.result);
+        if (saved._tag === "Success") return snapshotView(next);
+        if (saved.failure.reason !== "conflict") return yield* saved.failure;
+      }
+      return yield* new VaultError({ reason: "conflict" });
     }),
     apply,
     applyBatch,
@@ -1748,13 +1901,7 @@ const make = Effect.gen(function* () {
         projectId: workload.projectId,
         item:
           restrictMetadata &&
-          !evaluateVaultPolicy(
-            policy.grants,
-            workload,
-            { ...input, action: "inspect" },
-            yield* Clock.currentTimeMillis,
-            policy.revision,
-          ).allowed
+          !(yield* decision(policy, { ...input, action: "inspect" })).result.allowed
             ? null
             : item,
         decision: result,
@@ -1774,6 +1921,13 @@ const make = Effect.gen(function* () {
       const { policy } = yield* load();
       const workload = yield* subject(threadId);
       const page = yield* core.list(input);
+      if (
+        policy.ownerPolicy?.mode === "owner-trusted" &&
+        (workload.thread.runtimeMode !== "full-access" ||
+          workload.thread.interactionMode !== "default" ||
+          !(yield* isVaultRunRunning(threads, workload.thread)))
+      )
+        return { ...page, items: [] };
       const now = yield* Clock.currentTimeMillis;
       return {
         ...page,
@@ -1785,6 +1939,7 @@ const make = Effect.gen(function* () {
               { itemId: item.id, action: "inspect", destination: null },
               now,
               policy.revision,
+              ownerPolicyView(policy),
             ).allowed,
         ),
       };
@@ -1876,6 +2031,23 @@ const make = Effect.gen(function* () {
       const decisions: VaultAccessDecision[] = [];
       if (backend.state === "ready") {
         const { policy } = yield* load();
+        const trusted = policy.ownerPolicy?.mode === "owner-trusted";
+        const ownerWorkload =
+          trusted &&
+          workload.thread.runtimeMode === "full-access" &&
+          workload.thread.interactionMode === "default" &&
+          (yield* isVaultRunRunning(threads, workload.thread));
+        checks.push({
+          id: "owner-policy",
+          state: !trusted || ownerWorkload ? "passed" : "blocked",
+          reason: trusted
+            ? "Owner-trusted environment policy covers routine metadata inspection and brokered use."
+            : "Restricted environment policy requires current grants.",
+          repair:
+            !trusted || ownerWorkload
+              ? "No repair needed."
+              : "Restore this environment's active full-access/default run and refresh.",
+        });
         for (const [index, requirement] of input.requirements.entries()) {
           const result = yield* decision(policy, { ...requirement, threadId: input.threadId });
           decisions.push(result.result);
@@ -1885,7 +2057,9 @@ const make = Effect.gen(function* () {
             reason: result.result.reason,
             repair: result.result.allowed
               ? "No repair needed."
-              : "Inspect the item and grant; restore or request access from an administrator.",
+              : trusted && (requirement.action === "inspect" || requirement.action === "use")
+                ? "Inspect current item lifecycle, credential protection and live workload; owner trust does not bypass these checks."
+                : "Inspect the item and grant; restore or request access from an administrator.",
           });
         }
       }

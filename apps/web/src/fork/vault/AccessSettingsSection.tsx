@@ -95,6 +95,77 @@ function AccessManager({
   environmentId: EnvironmentId;
   canWrite: boolean;
 }) {
+  const configs = useServerConfigs();
+  const supported = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    "vault-owner-trusted",
+  );
+  return supported ? (
+    <OwnerRestrictedAccess environmentId={environmentId} canWrite={canWrite} />
+  ) : (
+    <GrantManager environmentId={environmentId} canWrite={canWrite} />
+  );
+}
+function OwnerRestrictedAccess({
+  environmentId,
+  canWrite,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+}) {
+  const atom = access.snapshot({ environmentId, input: {} });
+  const result = useAtomValue(atom);
+  const snapshot = result._tag === "Success" && !result.waiting ? result.value : null;
+  const requested = useAtomValue(vaultAccessTarget);
+  const [showRestricted, setShowRestricted] = useState(false);
+  const ownerEnabled = snapshot?.ownerPolicy?.mode === "owner-trusted";
+  const openedForItem = requested?.environmentId === environmentId && !!requested.itemId;
+  if (!snapshot)
+    return (
+      <div className="flex flex-col gap-3 text-sm">
+        <p role={result._tag === "Failure" ? "alert" : "status"}>
+          {failure(result) ?? "Loading access policy…"}
+        </p>
+        <div>
+          <Button size="sm" variant="outline" onClick={() => appAtomRegistry.refresh(atom)}>
+            Refresh access
+          </Button>
+        </div>
+      </div>
+    );
+  return (
+    <div className="flex flex-col gap-4">
+      {ownerEnabled ? (
+        <>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Owner access already allows agents in this personal environment to inspect and use
+            connected Vault access. Your restricted-mode grants and pending requests are kept here.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <a href="#loom-vault" className="text-sm text-primary underline underline-offset-4">
+              Manage owner access
+            </a>
+            <Button size="sm" variant="outline" onClick={() => setShowRestricted(!showRestricted)}>
+              {showRestricted
+                ? "Hide restricted access controls"
+                : "Restricted access and approvals"}
+            </Button>
+          </div>
+        </>
+      ) : null}
+      {!ownerEnabled || showRestricted || openedForItem ? (
+        <GrantManager environmentId={environmentId} canWrite={canWrite} />
+      ) : null}
+    </div>
+  );
+}
+function GrantManager({
+  environmentId,
+  canWrite,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+}) {
   const target = useAtomValue(vaultAccessTarget);
   const initial = target?.environmentId === environmentId ? target : null;
   const snapshotAtom = access.snapshot({ environmentId, input: {} });
@@ -128,9 +199,8 @@ function AccessManager({
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const preview = (input: VaultGrantMutation) =>
     act(async () => {
@@ -808,31 +878,42 @@ function AccessCheck({
         access.explain.resultAtom({ environmentId, input }),
         options,
       );
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setExplanation(result.value);
-      const readiness = await executeAtomQuery(
-        appAtomRegistry,
-        access.readiness.resultAtom({
-          environmentId,
-          input: {
-            threadId: input.threadId,
-            requirements: [{ itemId, action, destination: input.destination }],
-          },
-        }),
-        options,
-      );
-      if (readiness._tag === "Failure") throw squashAtomCommandFailure(readiness);
-      setReport(readiness.value);
+      if (result._tag === "Failure") {
+        setError(
+          cancellation.signal.aborted
+            ? "Check cancelled. Run it again for a fresh result."
+            : message(squashAtomCommandFailure(result)),
+        );
+      } else {
+        setExplanation(result.value);
+        const readiness = await executeAtomQuery(
+          appAtomRegistry,
+          access.readiness.resultAtom({
+            environmentId,
+            input: {
+              threadId: input.threadId,
+              requirements: [{ itemId, action, destination: input.destination }],
+            },
+          }),
+          options,
+        );
+        if (readiness._tag === "Failure") {
+          setError(
+            cancellation.signal.aborted
+              ? "Check cancelled. Run it again for a fresh result."
+              : message(squashAtomCommandFailure(readiness)),
+          );
+        } else setReport(readiness.value);
+      }
     } catch (cause) {
       setError(
         cancellation.signal.aborted
           ? "Check cancelled. Run it again for a fresh result."
           : message(cause),
       );
-    } finally {
-      setController(null);
-      setBusy(false);
     }
+    setController(null);
+    setBusy(false);
   };
   return (
     <div className="flex flex-col gap-3 rounded-lg bg-muted p-4">

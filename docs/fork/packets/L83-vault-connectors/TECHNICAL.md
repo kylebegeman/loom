@@ -53,36 +53,40 @@ remote operation completed. Inspect before retrying; no exactly-once provider cl
 ## Surfaces and remaining integration
 
 The `vault-github` capability gates web/desktop/native management. Shared protected commands
-check the destination environment's grants and refresh mounted metadata after changes. CLI/MCP
-call the same service. Common provider instructions expose the capability only through existing
-tool availability. No adapter-specific model changes are required; command-only scheduled jobs
-do not acquire it. Agent runs on any exposed provider can call the tool under the same policy.
+check the destination environment's current access policy and refresh mounted metadata after
+changes. CLI/MCP call the same service. Common provider instructions expose the capability only
+through existing tool availability. No adapter-specific model changes are required; command-only
+scheduled jobs do not acquire it. Agent runs on any exposed provider can call the tool under the
+same policy.
 
 Existing GitHubHostSetup, GitHubCredentials, persistent shell login, personal login and SSH
-remote behavior remain outside this path. Project profiles bind the explicit connection/repository,
-with portable declarations, current configuration/grant checks, version-pinned launch and named GH
-execution. Profile archive and originating run identity are rechecked through token acquisition
-and before spawn using the service guard. Profile use still inherits exact item use permission.
-Command-scoped routing below is opt-in; persistent migration must remain a separately reviewed action.
-OAuth/device flows, Enterprise, reusable connector registration, additional providers, provider
-revocation management and broader operations remain full selected scope.
+remote behavior remain outside this path. Project profiles bind the explicit
+connection/repository, with portable declarations, current configuration/access-policy checks,
+version-pinned launch and named GH execution. Profile archive and originating run identity are
+rechecked through token acquisition and before spawn using the service guard. Profile use still
+inherits exact item use permission. Command-scoped routing below is opt-in; persistent migration
+must remain a separately reviewed action. OAuth/device flows, Enterprise, reusable connector
+registration, additional providers, provider revocation management and broader operations remain
+full selected scope.
 
 ## GitHub terminal routing and readiness
 
 Explicit `loom vault github-exec` / `loom_vault_github_exec` requests now run supported gh or
 Git HTTPS argv on the Loom server with the chosen connection/version/repository. They require
-an authenticated active full-access/default thread and its exact repository use grant. The
+an authenticated active full-access/default thread and current repository use authorization.
+Restricted/shared mode requires a matching grant; personal owner-trusted use does not. The
 server infers the thread checkout, rechecks authority after token acquisition and before spawn,
 scopes credentials/configuration to the child and releases the provider session afterward.
 The CLI forwards stdout/stderr and the child exit status. Arbitrary shells, account login,
 extensions, alternate repositories and executable transport overrides are rejected.
 
 The `vault-github-terminal` capability also enables explicit, cancellable GitHub readiness in
-web/desktop/native connection management, RPC and authenticated MCP/CLI. Checks separate API,
-GH CLI and Git HTTPS reads. Selecting a thread adds current run/grant checks and identifies its
-provider; host-only checks leave run access unchecked. Denied runs skip external probes. Results
-expire after 60 seconds and clients visibly mark them stale. These are server-context results,
-not proof of an independently configured provider terminal, external runner or future write.
+web/desktop/native connection management, RPC and authenticated MCP/CLI. Checks separate API, GH
+CLI and Git HTTPS reads. Selecting a thread adds current run/access-policy checks and identifies
+its provider; host-only checks leave run access unchecked. Denied runs skip external probes.
+Results expire after 60 seconds and clients visibly mark them stale. These are server-context
+results, not proof of an independently configured provider terminal, external runner or future
+write.
 
 Git uses an exact host/path credential helper, disables personal config sources and prompts,
 and rejects repository configuration that can redirect authentication or launch custom

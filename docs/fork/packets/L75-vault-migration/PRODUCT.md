@@ -111,7 +111,7 @@ Results record their scope, source/item binding, outcome and expiry. Read-only r
 contacts a provider. Evidence lasts at most one minute and is bounded by plan/token expiry;
 source/item changes, cancellation and lost permissions during the check prevent usable success.
 A successful historical receipt cannot promise that a provider has not revoked access since.
-Workloads still need their own current grants. No receipt authorizes a repository change.
+Workloads still need current use authorization. No receipt authorizes a repository change.
 
 A lost response can be inspected or retried with the same request, without repeating an
 accepted provider check. If the final outcome could not be recorded, the receipt becomes

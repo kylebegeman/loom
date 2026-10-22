@@ -1,11 +1,16 @@
 import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
+import * as VaultConnections from "./VaultConnections.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   type VaultApprovalRetryInput,
   vaultSshDestination,
   VaultSshAgentOpen,
+  VaultSshAgentOpenInput,
+  VaultSshRunInput,
+  VaultGitRunInput,
+  VaultConnectionError,
   type VaultSshAgentSession,
   VaultError,
   VaultWorkloadError,
@@ -41,7 +46,8 @@ import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
 
-type HostedFailure = VaultError | VaultSshError | VaultWorkloadError;
+type ExecutionFailure = VaultError | VaultSshError | VaultWorkloadError | VaultConnectionError;
+type HostedFailure = ExecutionFailure | VaultConnectionError;
 type Failure = HostedFailure | VaultGitHubError;
 export class VaultLaunch extends Context.Service<
   VaultLaunch,
@@ -49,9 +55,9 @@ export class VaultLaunch extends Context.Service<
     readonly admission: (
       operation: Exclude<VaultApprovalRetryInput["operation"], { readonly kind: "github-api" }>,
       threadId: ThreadId,
-    ) => Effect.Effect<string, HostedFailure>;
+    ) => Effect.Effect<string, VaultError | VaultSshError | VaultWorkloadError>;
     readonly agent: (
-      input: VaultSshAgentOpen,
+      input: VaultSshAgentOpenInput,
       threadId: ThreadId,
     ) => Effect.Effect<VaultSshAgentSession, HostedFailure>;
     readonly profile: (
@@ -59,11 +65,11 @@ export class VaultLaunch extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<typeof VaultProfileRunResult.Type, Failure>;
     readonly ssh: (
-      input: VaultSshRun,
+      input: VaultSshRunInput,
       threadId: ThreadId,
     ) => Effect.Effect<VaultSshResult, HostedFailure>;
     readonly git: (
-      input: VaultGitRun,
+      input: VaultGitRunInput,
       threadId: ThreadId,
     ) => Effect.Effect<VaultGitResult, HostedFailure>;
   }
@@ -71,7 +77,10 @@ export class VaultLaunch extends Context.Service<
 const denied = () => new VaultError({ reason: "denied" });
 const isSsh = Schema.is(VaultSshRun),
   isGit = Schema.is(VaultGitRun);
-const isAgentOpen = Schema.is(VaultSshAgentOpen);
+const isAgentOpen = Schema.is(VaultSshAgentOpen),
+  isAgentOpenInput = Schema.is(VaultSshAgentOpenInput),
+  isSshInput = Schema.is(VaultSshRunInput),
+  isGitInput = Schema.is(VaultGitRunInput);
 const isProfileRun = Schema.is(VaultProfileRun);
 const make = Effect.gen(function* () {
   const identities = yield* BrokerIdentity.BrokerIdentity,
@@ -83,6 +92,7 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment,
     path = yield* Path.Path,
     crypto = yield* Crypto.Crypto;
+  const connections = yield* VaultConnections.VaultConnections;
   const profiles = yield* VaultProfiles.VaultProfiles,
     github = yield* VaultGitHub.VaultGitHub;
   const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR;
@@ -106,7 +116,7 @@ const make = Effect.gen(function* () {
     message: string,
     execute: (
       proof: Parameters<VaultSsh.VaultSsh["Service"]["execute"]>[0]["proof"],
-    ) => Effect.Effect<A, HostedFailure>,
+    ) => Effect.Effect<A, ExecutionFailure>,
     retainSession = false,
   ) =>
     Effect.scoped(
@@ -164,7 +174,7 @@ const make = Effect.gen(function* () {
     ssh: Effect.fn("VaultLaunch.ssh")(function* (
       input: VaultSshRun,
       threadId: ThreadId,
-      guard: Effect.Effect<void, HostedFailure> = Effect.void,
+      guard: Effect.Effect<void, ExecutionFailure> = Effect.void,
     ) {
       if (!isSsh(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
@@ -185,7 +195,7 @@ const make = Effect.gen(function* () {
     git: Effect.fn("VaultLaunch.git")(function* (
       input: VaultGitRun,
       threadId: ThreadId,
-      guard: Effect.Effect<void, HostedFailure> = Effect.void,
+      guard: Effect.Effect<void, ExecutionFailure> = Effect.void,
     ) {
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
@@ -269,8 +279,42 @@ const make = Effect.gen(function* () {
         cwd,
       ]);
     }),
-    ...operations,
-    agent: Effect.fn("VaultLaunch.agent")(function* (input, threadId) {
+    ssh: Effect.fn("VaultLaunch.sshConnection")(function* (input, threadId) {
+      if (!isSshInput(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if ("id" in input) return yield* operations.ssh(input, threadId);
+      const pin = yield* connections.require(
+        { kind: "ssh", connection: input.connection },
+        threadId,
+      );
+      return yield* operations.ssh(
+        { id: pin.item.id, command: { ...input.command, expectedVersion: pin.item.version } },
+        threadId,
+        connections.revalidate(pin, threadId),
+      );
+    }),
+    git: Effect.fn("VaultLaunch.gitConnection")(function* (input, threadId) {
+      if (!isGitInput(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if ("id" in input) return yield* operations.git(input, threadId);
+      const pin = yield* connections.require(
+        { kind: "git-ssh", connection: input.connection, repository: input.repository },
+        threadId,
+      );
+      return yield* operations.git(
+        { ...input, id: pin.item.id, expectedVersion: pin.item.version },
+        threadId,
+        connections.revalidate(pin, threadId),
+      );
+    }),
+    agent: Effect.fn("VaultLaunch.agent")(function* (raw, threadId) {
+      if (!isAgentOpenInput(raw)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      const pin =
+        !("id" in raw) && "connection" in raw
+          ? yield* connections.require({ kind: "ssh", connection: raw.connection }, threadId)
+          : null;
+      const input = pin
+        ? { id: pin.item.id, expectedVersion: pin.item.version }
+        : (raw as VaultSshAgentOpen);
+      if (pin) yield* connections.revalidate(pin, threadId);
       if (!isAgentOpen(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const info = yield* ssh.info(input.id);
       return yield* run(

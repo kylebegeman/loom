@@ -3,6 +3,7 @@ import {
   VaultApprovalRetryInput,
   VaultError,
   type VaultSshError,
+  type VaultConnectionError,
   type VaultWorkloadError,
   type VaultGitHubError,
 } from "@t3tools/contracts/fork";
@@ -17,7 +18,12 @@ import * as VaultLaunch from "./VaultLaunch.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 
 type Acquisition = Parameters<OperationJournal.OperationJournal["Service"]["checkAcquisition"]>[0];
-type Failure = VaultError | VaultSshError | VaultWorkloadError | VaultGitHubError;
+type Failure =
+  | VaultError
+  | VaultSshError
+  | VaultWorkloadError
+  | VaultGitHubError
+  | VaultConnectionError;
 type Observation = {
   readonly adapter: VaultApprovalRetryInput["operation"]["kind"];
   readonly operationDigest: string;

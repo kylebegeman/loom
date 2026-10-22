@@ -2,16 +2,28 @@
 
 ## Implemented boundary
 
-The local milestone provides environment-owned thread/project grants, one default-deny
-evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
-attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
-survive restart and OpenBao restore. UI changes require an explicit preview and apply;
-suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
+The policy supports two environment access modes. Existing and shared environments retain
+restricted default-deny thread/project grants. An authenticated human owner can explicitly
+declare a personal environment owner-trusted once, enabling metadata inspection and supported
+brokered use for authenticated active full-access/default agent runs without recurring
+thread/project/provider grants. Profiles are optional connection selections. Both modes use
+the same evaluator and current item, run, destination and adapter checks.
 
-Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
-permission ceiling. Human environment administration remains governed by access:read/write;
-agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but enrollment, workload leases and external runner attestation are not delivered.
+The declaration is bound durably to the environment and the human subject that first sets it.
+There is no verified platform multi-owner identity or membership model. Another person who can
+launch agents in that environment is not distinguished from its owner by a prompt or provider
+label; shared environments must keep restricted mode. Owner trust does not authorize a task,
+elevate plan/runtime permissions, administer policy/trust, reveal/export values or bypass
+format-4 one-time protection. Disabling returns to restricted evaluation without deleting
+records, grants or recovery material. Existing authenticated sessions may continue.
+
+Restricted grants retain exact item/action/project/destination scopes, bounded validity,
+parent attenuation, authenticated direct-child delegation and permanent revocation. UI grant
+changes require preview/apply; suspension is reversible. Workload identity comes from
+ThreadManagement, never prompt text. Manage/private-ingress actions remain grant-controlled.
+Human environment administration remains governed by access:read/write; agents cannot set
+owner policy or administer their own root grants. Signed workload checks, hosted SSH/Git and
+GitHub operations consume the same policy rather than a provider-specific bypass.
 
 Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implementation is
 `apps/server/src/fork/vault/VaultAccess.ts` and `VaultPolicy.ts`. The active contract is in
@@ -20,7 +32,7 @@ Shared contracts are in `packages/contracts/src/fork/vault-access.ts`; implement
 Policy is one OpenBao KV v2 CAS document at
 `environments/<sha256(environmentId)>/access-policy`, separate from item records. It caps grants
 at 128, resources per grant at 32, audit retention at 256 and mutation receipts at 32. Policy
-revision changes only on grant edits; audit writes still CAS against the backend version.
+revision changes on grant or owner-mode edits; audit writes still CAS against the backend version.
 Decisions must persist before authorizing a gated action. Four contention attempts fail closed.
 This is a bounded operational history, not an immutable audit service.
 
@@ -29,6 +41,27 @@ RPC tags are `loom.vault-grants.catalog`, `.snapshot`, `.apply`,
 uses access:read and mutation uses access:write. MCP names are `loom_vault_grants`,
 `loom_vault_grants_apply`, `loom_vault_grants_preview`, `loom_vault_access_explain`,
 `loom_vault_readiness` and `loom_vault_grants_delegate`. There is no raw-value agent tool.
+
+## Durable owner policy and compatibility
+
+The existing environment access-policy path stores a version-5 outer envelope once owner
+policy is first changed. It retains the complete legacy policy (formats 1/2/3) or protected
+format-4 policy inside it, plus the environment/owner binding and bounded idempotent receipts.
+Grant edits, approval cleanup and audit writes preserve the owner envelope and protected
+classifications/intents. The mode has no expiry; current authorization is still evaluated online.
+
+Only authenticated human owner RPC administration can call `setOwnerPolicy`; agent MCP,
+broker/host and generic CLI clients cannot establish the owner. First setup binds the human
+subject; later changes require that same subject and a current policy revision. Matching retries
+observe current state rather than replaying an earlier enable after a later disable. Decisions
+retain their grant or owner-trusted basis without secret values.
+
+Older runtimes reject the version-5 envelope. Disabling personal mode keeps the envelope and
+owner binding; it does not make a downgrade safe. Never strip it, drop format-4 protection or
+restore stale policy just to run an older evaluator. Restore in isolation and reconcile later
+mode changes, grants and revocations before permitting work. No item/schema rebootstrap or new
+OpenBao path is required. See the [operating
+limits](../../operations/vault.md#personal-environment-access).
 
 ## Remaining target design
 
@@ -59,7 +92,9 @@ Implement services in fork-owned paths and keep HTTP/RPC/MCP handlers thin. All 
 access goes through the shared backend/broker adapter; the feature never reads a personal
 password manager as a fallback.
 
-Persist principal identity, grants, revocations and policy revisions centrally. Audit grant decisions without credential values. Define matching semantics and precedence before schema; display effective expiry and outstanding leases.
+Persist principal identity, access mode, grants, revocations and policy revisions centrally.
+Audit grant decisions without credential values. Define matching semantics and precedence before
+schema; display effective expiry and outstanding leases.
 
 ## Clients and agent-facing tools
 

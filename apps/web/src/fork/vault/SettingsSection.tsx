@@ -1,3 +1,4 @@
+import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
 import { useId, useState } from "react";
@@ -75,10 +76,32 @@ export function VaultSettingsSection() {
       </p>
     );
   return (
-    <VaultItems
-      key={`${environment.environmentId}:${canWrite}`}
-      environmentId={environment.environmentId}
-    />
+    <div className="flex flex-col gap-5">
+      <VaultOwnerSettings
+        key={environment.environmentId}
+        environmentId={environment.environmentId}
+      />
+      {loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
+        "vault-owner-trusted",
+      ) ? (
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">
+            Vault records and advanced controls
+          </summary>
+          <div className="mt-4">
+            <VaultItems
+              key={`${environment.environmentId}:${canWrite}`}
+              environmentId={environment.environmentId}
+            />
+          </div>
+        </details>
+      ) : (
+        <VaultItems
+          key={`${environment.environmentId}:${canWrite}`}
+          environmentId={environment.environmentId}
+        />
+      )}
+    </div>
   );
 }
 function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
@@ -119,9 +142,8 @@ function VaultItems({ environmentId }: { environmentId: EnvironmentId }) {
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const change = (item: VaultItemSummary, action: "archive" | "restore" | "delete") =>
     act(async () => {
@@ -462,9 +484,8 @@ function VaultEditor({
       setError(null);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const save = async () => {
     if (busy || !allowed) return;
@@ -486,9 +507,8 @@ function VaultEditor({
       onSaved();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   return (
     <Dialog

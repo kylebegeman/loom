@@ -211,7 +211,7 @@ it.effect(
         );
         expect(result.activeRun).toBe(true);
         expect(result.runId).toBe(f.state.thread.activeRunId);
-        expect(result.credentialUse).toBe("requires-selection-and-current-grant");
+        expect(result.credentialUse).toBe("requires-selection-and-current-policy");
         expect(result.expiresAt - result.checkedAt).toBe(60_000);
         expect(f.state.decisions).toHaveLength(0);
         expect(

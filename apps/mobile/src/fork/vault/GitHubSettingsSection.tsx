@@ -27,9 +27,11 @@ const atoms = createVaultGitHubAtoms(connectionAtomRuntime),
 export function VaultGitHubSettingsSection({
   environmentId,
   connected,
+  ownerMode = false,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
+  ownerMode?: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
     canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
@@ -39,9 +41,10 @@ export function VaultGitHubSettingsSection({
     <SettingsSection title="GitHub access">
       {canRead ? (
         <Manager
-          key={`${environmentId}:${canWrite}`}
+          key={`${environmentId}:${canWrite}:${ownerMode}:${connected}`}
           environmentId={environmentId}
           connected={connected}
+          ownerMode={ownerMode}
           canWrite={canWrite}
         />
       ) : (
@@ -53,10 +56,12 @@ export function VaultGitHubSettingsSection({
 function Manager({
   environmentId,
   connected,
+  ownerMode,
   canWrite,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
+  ownerMode: boolean;
   canWrite: boolean;
 }) {
   const [cursor, setCursor] = useState<string | null>(null),
@@ -110,8 +115,9 @@ function Manager({
   return (
     <View className="gap-3">
       <Text>
-        Save a GitHub connection, then choose the projects and repositories it can use. Approve
-        recurring project access once; it lasts until you revoke it.
+        {ownerMode
+          ? "Connect GitHub once. Agents in this owner's environment can use the saved connection for its listed repositories. GitHub permissions still apply."
+          : "Save a GitHub connection, then choose the projects and repositories it can use. Approve recurring project access once; it lasts until you revoke it."}
       </Text>
       {!connected ? <Text>Reconnect this computer to manage GitHub connections.</Text> : null}
       <Button
@@ -142,6 +148,7 @@ function Manager({
           info={info}
           environmentId={environmentId}
           connected={connected}
+          ownerMode={ownerMode}
           canWrite={canWrite}
           canTest={canTest}
           canChange={canChange}
@@ -201,12 +208,17 @@ function Manager({
             <Text>
               {draft.expectedVersion === 0
                 ? "Use a dedicated fine-grained GitHub token. Your saved connections can be reused without entering credentials again."
-                : "Replace this connection's credential. Existing project access stays in place; review it after changing the repository allowlist."}
+                : ownerMode
+                  ? "Replace this connection's credential. Agents can use the repositories allowed by the replacement."
+                  : "Replace this connection's credential. Existing project access stays in place; review it after changing the repository allowlist."}
             </Text>
             {draft.type === "token" ? (
               <View className="gap-2 rounded-2xl bg-subtle p-3">
                 <Text className="font-t3-semibold">GitHub token permissions</Text>
-                <Text>Select only the repositories you want Loom to use.</Text>
+                <Text>
+                  Sign in to GitHub to create or renew a dedicated fine-grained token. Select only
+                  the repositories you want Loom to use.
+                </Text>
                 <Text>Metadata: read access. Contents: read and write for Git pushes.</Text>
                 <Text>
                   Pull requests and Issues: read and write when agents should create or update them.
@@ -311,7 +323,10 @@ function Manager({
             <Text>
               Paste GitHub repository URLs or owner/repository names, separated by commas or
               newlines. Select up to 32 repositories allowed by the token or App. Loom verifies API
-              access before saving. Saving this connection does not authorize any project.
+              access before saving.{" "}
+              {ownerMode
+                ? "Owner access allows agents to use this saved connection without separate project approvals."
+                : "Saving this connection does not authorize any project."}
             </Text>
             {error ? <Text accessibilityRole="alert">{error}</Text> : null}
             <Button
@@ -328,7 +343,9 @@ function Manager({
                   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
                   setDraft(null);
                   setNotice(
-                    "Identity and repository API access verified. Connection saved. Choose projects below to authorize access.",
+                    ownerMode
+                      ? "GitHub connected. Agents can use this connection for its allowed repositories."
+                      : "Identity and repository API access verified. Connection saved. Choose projects below to authorize access.",
                   );
                 })
               }
@@ -348,6 +365,7 @@ function Connection({
   environmentId,
   info,
   connected,
+  ownerMode,
   canWrite,
   canTest,
   canChange,
@@ -360,6 +378,7 @@ function Connection({
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   connected: boolean;
+  ownerMode: boolean;
   canWrite: boolean;
   canTest: boolean;
   canChange: boolean;
@@ -371,7 +390,8 @@ function Connection({
 }) {
   const [index, setIndex] = useState(0),
     [confirm, setConfirm] = useState(false),
-    [details, setDetails] = useState(false);
+    [details, setDetails] = useState(false),
+    [restricted, setRestricted] = useState(false);
   const repo = info.repositories[index]!;
   return (
     <View className="gap-3 rounded-2xl bg-subtle p-3">
@@ -383,12 +403,32 @@ function Connection({
       </Text>
       <Text>{info.repositories.join(", ")}</Text>
       {info.item.state === "active" ? (
-        <GitHubProjectAccess
-          environmentId={environmentId}
-          connected={connected}
-          connection={info}
-          disabled={disabled || !canWrite}
-        />
+        ownerMode ? (
+          <>
+            <Text>
+              Agents can use this connection through owner access. Test GitHub to verify its current
+              login and repository permissions.
+            </Text>
+            <Button
+              label="Test GitHub connection"
+              disabled={disabled || !canWrite || !canTest}
+              onPress={() => onTest(repo)}
+            />
+            <Button
+              label={`Repair login for ${info.item.label}`}
+              tone="text"
+              disabled={disabled || !canWrite || !canSave}
+              onPress={onEdit}
+            />
+          </>
+        ) : (
+          <GitHubProjectAccess
+            environmentId={environmentId}
+            connected={connected}
+            connection={info}
+            disabled={disabled || !canWrite}
+          />
+        )
       ) : (
         <Button
           label={`Restore ${info.item.label}`}
@@ -405,13 +445,14 @@ function Connection({
       {details ? (
         <View className="gap-2">
           <Text>
-            {info.mechanism === "app" ? "GitHub App installation" : "Dedicated token"} · Version{" "}
-            {info.item.version}
+            {info.mechanism === "app" ? "GitHub App installation" : "Dedicated token"}
+            {!ownerMode ? ` · Version ${info.item.version}` : ""}
           </Text>
-          <Text selectable>Connection {info.item.id}</Text>
+          {!ownerMode ? <Text selectable>Connection {info.item.id}</Text> : null}
           <Text>
-            Saving a connection, authorizing projects and checking an active run's tools are
-            separate steps. Project access does not prove the current run can reach GitHub.
+            {ownerMode
+              ? "GitHub API, GH CLI and Git HTTPS are checked separately. A saved connection does not prove the execution computer has every required tool."
+              : "Saving a connection, authorizing projects and checking an active run's tools are separate steps. Project access does not prove the current run can reach GitHub."}
           </Text>
           {info.repositories.length > 1 ? (
             <Button
@@ -435,7 +476,33 @@ function Connection({
             info={info}
             repository={repo}
             disabled={disabled || !canWrite || info.item.state !== "active"}
+            ownerMode={ownerMode}
           />
+          {ownerMode && info.item.state === "active" ? (
+            <>
+              <Button
+                label={
+                  restricted
+                    ? "Hide restricted project access"
+                    : "Advanced: restricted project access"
+                }
+                tone="text"
+                disabled={disabled}
+                onPress={() => setRestricted(!restricted)}
+              />
+              {restricted ? (
+                <>
+                  <Text>These rules apply again when you switch back to restricted access.</Text>
+                  <GitHubProjectAccess
+                    environmentId={environmentId}
+                    connected={connected}
+                    connection={info}
+                    disabled={disabled || !canWrite}
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
           <Text>
             App installations mint short-lived tokens. Dedicated tokens follow their GitHub expiry.
             Local disconnect does not revoke credentials on GitHub, and authenticated operations may
@@ -454,8 +521,9 @@ function Connection({
       {confirm ? (
         <>
           <Text>
-            Disconnect locally? Project grants remain saved. Revoke project access first if you do
-            not want it restored when reconnecting. Provider revocation is separate.
+            {ownerMode
+              ? "Disconnect this GitHub connection? Agents cannot start new operations with it until you restore it. Revoke or rotate the credential on GitHub to end upstream access."
+              : "Disconnect locally? Project grants remain saved. Revoke project access first if you do not want it restored when reconnecting. Provider revocation is separate."}
           </Text>
           <Button
             label="Confirm local disconnect"

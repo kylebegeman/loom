@@ -69,7 +69,8 @@ and authentication-type switching clear private form values. No personal login f
 
 For authenticated full-access/default agent runs, mediated GH supports repository/PR/issue
 reads, PR checks, PR/issue comments and issue creation. Each call names the connection version,
-repository and a typed operation. An exact `https://github.com/owner/repo` use grant is required.
+repository and a typed operation. Current repository use authorization is required; restricted
+mode needs a matching `https://github.com/owner/repo` grant. The connection allowlist still applies.
 An API test does not prove GH CLI installation or Git transport access. Unknown write outcomes
 require inspection before retrying; Loom does not silently replay writes.
 
@@ -90,5 +91,5 @@ Connection management now offers cancellable API/GH CLI/Git HTTPS readiness, opt
 selected thread, and a reference-only terminal command to copy. Use the explicit Vault wrapper
 for supported gh and Git HTTPS commands without a personal key-manager prompt. It acts on the
 execution computer's checkout and preserves output/exit status. A host-only success does not
-authorize a thread; stale results, run/grant denials and provider failures remain distinct.
+authorize a thread; stale results, run/policy denials and provider failures remain distinct.
 Existing shell logins, SSH remotes and independently launched runners are not migrated.

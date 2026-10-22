@@ -1,6 +1,7 @@
 import { readTerminalConnection } from "./TerminalConnection.ts";
+import { decodeVaultTerminalError, type VaultTerminalError } from "./terminal-errors.ts";
 import {
-  VaultSshAgentOpen,
+  VaultSshAgentOpenInput,
   VaultSshAgentSession,
   VaultSshAgentFrame,
   VaultSshAgentResponse,
@@ -24,7 +25,7 @@ export class SshAgentClientError extends Schema.TaggedError<SshAgentClientError>
     return this.reason === "connection"
       ? "Configure an authenticated Loom MCP connection in this agent terminal before activating Vault SSH."
       : this.reason === "denied"
-        ? "Vault SSH agent access was denied. Check the active run, SSH host use grant, broker, key version and host trust."
+        ? "Vault SSH agent access was denied. Check the active run, current Vault host policy, broker, key version and host trust."
         : "The Loom server returned an unsupported SSH agent response.";
   }
 }
@@ -32,12 +33,14 @@ export class SshAgentClient extends Context.Service<
   SshAgentClient,
   {
     readonly open: (
-      input: VaultSshAgentOpen,
-    ) => Effect.Effect<VaultSshAgentSession, SshAgentClientError>;
+      input: VaultSshAgentOpenInput,
+    ) => Effect.Effect<VaultSshAgentSession, SshAgentClientError | VaultTerminalError>;
     readonly frame: (
       input: VaultSshAgentFrame,
-    ) => Effect.Effect<{ response: string }, SshAgentClientError>;
-    readonly close: (sessionId: string) => Effect.Effect<void, SshAgentClientError>;
+    ) => Effect.Effect<{ response: string }, SshAgentClientError | VaultTerminalError>;
+    readonly close: (
+      sessionId: string,
+    ) => Effect.Effect<void, SshAgentClientError | VaultTerminalError>;
   }
 >()("t3/fork/vault/SshAgentClient") {}
 const Envelope = Schema.Struct({
@@ -108,7 +111,11 @@ const make = Effect.gen(function* () {
       ),
     );
     if (Option.isNone(envelope)) return yield* new SshAgentClientError({ reason: "response" });
-    if (envelope.value.isError) return yield* new SshAgentClientError({ reason: "denied" });
+    if (envelope.value.isError) {
+      const failure = decodeVaultTerminalError(envelope.value);
+      if (Option.isSome(failure)) return yield* failure.value;
+      return yield* new SshAgentClientError({ reason: "denied" });
+    }
     const decode = Schema.decodeUnknownOption(schema),
       decodeText = Schema.decodeUnknownOption(Schema.fromJsonString(schema));
     let value = decode(envelope.value.structuredContent);

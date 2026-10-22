@@ -1,13 +1,27 @@
 import { KeyRoundIcon } from "lucide-react";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
+import { openVaultSsh } from "./ssh-navigation";
 import { openVaultAccess } from "./access-navigation";
 export const vaultAccessPaletteSource: ForkCommandPaletteSource = {
   id: "vault-grants",
-  items: ({ activeThreadRef, loomFeatures }) =>
-    activeThreadRef && loomFeatures.includes("vault-grants")
+  items: ({ activeThreadRef, loomFeatures }) => [
+    ...(loomFeatures.includes("vault-owner-trusted")
       ? [
           {
-            kind: "action",
+            kind: "action" as const,
+            value: "action:loom:vault-owner-access:open",
+            title: "Vault owner access",
+            description: "Manage personal environment access and repair development connections",
+            searchTerms: ["vault", "owner", "personal", "credentials", "ssh", "github", "setup"],
+            icon: <KeyRoundIcon className="size-4" />,
+            run: async () => openVaultSsh(activeThreadRef?.environmentId),
+          },
+        ]
+      : []),
+    ...(activeThreadRef && loomFeatures.includes("vault-grants")
+      ? [
+          {
+            kind: "action" as const,
             value: "action:loom:vault-access:open",
             title: "Vault grants and readiness",
             description: "Inspect this thread's access and manage development grants",
@@ -29,5 +43,6 @@ export const vaultAccessPaletteSource: ForkCommandPaletteSource = {
             },
           },
         ]
-      : [],
+      : []),
+  ],
 };

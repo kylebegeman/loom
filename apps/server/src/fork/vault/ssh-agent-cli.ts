@@ -1,4 +1,4 @@
-import { VaultSshAgentRun } from "@t3tools/contracts/fork";
+import { VaultSshAgentRunInput } from "@t3tools/contracts/fork";
 import { Argument, Command } from "effect/cli";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -19,12 +19,12 @@ class SshChildExit extends Schema.TaggedError<SshChildExit>()("SshChildExit", {
   }
 }
 const runtime = SshAgentTerminal.layer.pipe(Layer.provide(SshAgentClient.layer));
-const decode = Schema.decodeEffect(Schema.fromJsonString(VaultSshAgentRun));
+const decode = Schema.decodeEffect(Schema.fromJsonString(VaultSshAgentRunInput));
 export const sshAgentExecCommand = Command.make("ssh-agent-exec", {
   input: Argument.String("arguments-json"),
 }).pipe(
   Command.withDescription(
-    "Activate a Vault SSH agent for one ordinary terminal SSH/Git command. Requires an authenticated active agent run and host SSH grant. Uses no personal keys; child streams and exit code are preserved.",
+    "Activate a Vault SSH agent for one ordinary terminal SSH/Git command. Requires an authenticated active agent run and current Vault host policy permission. Owner-trusted mode needs no individual grant. Uses no personal keys; child streams and exit code are preserved.",
   ),
   Command.withHandler(({ input }) =>
     Effect.gen(function* () {
@@ -37,12 +37,11 @@ export const sshAgentExecCommand = Command.make("ssh-agent-exec", {
       const code = yield* terminal.execute(request);
       if (code !== 0) return yield* new SshChildExit({ code: Math.min(255, Math.max(1, code)) });
     }).pipe(
-      Effect.catchTags({
-        SshAgentClientError: (error) =>
-          Console.error(error.message).pipe(Effect.andThen(new SshChildExit({ code: 1 }))),
-        SshAgentTerminalError: (error) =>
-          Console.error(error.message).pipe(Effect.andThen(new SshChildExit({ code: 1 }))),
-      }),
+      Effect.catch((error) =>
+        error._tag === "SshChildExit"
+          ? Effect.fail(error)
+          : Console.error(error.message).pipe(Effect.andThen(new SshChildExit({ code: 1 }))),
+      ),
       Effect.provide(runtime),
     ),
   ),

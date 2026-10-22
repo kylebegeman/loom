@@ -6,7 +6,7 @@ The complete PRODUCT scope stays selected. See [TESTING.md](./TESTING.md) for ex
 ## Delivered
 
 - Typed environment-scoped metadata search/describe and stable reference text.
-- Bounded sparse pagination, inspect-granted agent results and indistinguishable missing/forbidden descriptions.
+- Bounded sparse pagination, inspect-authorized agent results and indistinguishable missing/forbidden descriptions.
 - Shared refreshing queries, web/native search and copy, profile picker reuse and palette entry.
 - Explicit computer selection in web/desktop and mobile discovery. Each selected computer checks
   its connection, feature support and inspection scope; switching clears the search. Local profile

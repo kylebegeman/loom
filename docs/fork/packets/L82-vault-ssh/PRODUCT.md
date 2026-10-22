@@ -9,7 +9,7 @@ Use dedicated Loom-managed SSH keys for development connections and Git operatio
 An administrator creates a dedicated Ed25519 key and verifies the host public key independently.
 Trust may start empty, be replaced after review or be removed without replacing the user key.
 Copy the public key for manual registration; no real host registration is performed automatically.
-The authenticated workload needs a separate exact-destination use grant and current machine
+The authenticated workload needs current exact-destination use authorization and current machine
 heartbeat. A standalone runner signs a bounded command request using both local identities.
 
 Execution occurs on the Loom server, with at most four concurrent commands, eight seconds per
@@ -36,12 +36,13 @@ one temporary agent, pinned host trust and isolated configuration. Output and ex
 preserved. Completion, cancellation or timeout removes local activation state; inspection and
 close are also available through the authenticated CLI/MCP connection.
 
-This requires a host SSH use grant. A repository-only Git grant remains appropriate for the
-mediated Git tool and does not authorize unrestricted host authentication. Pi and ACP work with
-their existing terminal connection; other native harnesses need explicit terminal setup or use
-hosted MCP operations. No personal key-manager prompt or automatic personal-key fallback is
-part of the flow. The connection originates on the invoking host. Five-minute expiry and live
-signing checks do not revoke an already authenticated connection or undo its remote effects.
+In restricted mode this requires a host SSH use grant. A repository-only Git grant remains
+appropriate for the mediated Git tool and does not authorize unrestricted host authentication.
+Pi and ACP work with their existing terminal connection; other native harnesses need explicit
+terminal setup or use hosted MCP operations. No personal key-manager prompt or automatic
+personal-key fallback is part of the flow. The connection originates on the invoking host.
+Five-minute expiry and live signing checks do not revoke an already authenticated connection or
+undo its remote effects.
 
 ## How it works
 
@@ -93,7 +94,7 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Initial generated keys and host pins use Ed25519. Private keys are stored as PKCS8 inside the encrypted item payload. Imports and additional algorithms remain open.
-- D7 is resolved for this milestone: mediated connections from the Loom server, operation-scoped POSIX sockets, verified OpenSSH host-bound authentication and no forwarding. Explicit POSIX terminal relay sockets are now implemented with host SSH grants; persistent shell attachment, additional runner modes and Windows transports remain open.
+- D7 is resolved for this milestone: mediated connections from the Loom server, operation-scoped POSIX sockets, verified OpenSSH host-bound authentication and no forwarding. Explicit POSIX terminal relay sockets require host authentication authority (host grants in restricted mode); persistent shell attachment, additional runner modes and Windows transports remain open.
 - Is commit signing part of a later extension of this packet? It is not required by the current SSH outcome.
 
 Resolve relevant [shared gates](../LOOM-VAULT.md#design-decisions-before-building) as the implementation advances. Do not silently reduce the selected scope.

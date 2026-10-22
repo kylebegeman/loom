@@ -22,11 +22,13 @@ export function GitHubReadiness({
   info,
   repository,
   disabled,
+  ownerMode = false,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode?: boolean;
 }) {
   const configs = useServerConfigs();
   if (
@@ -43,6 +45,7 @@ export function GitHubReadiness({
       info={info}
       repository={repository}
       disabled={disabled}
+      ownerMode={ownerMode}
     />
   );
 }
@@ -51,11 +54,13 @@ function Checks({
   info,
   repository,
   disabled,
+  ownerMode,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
   disabled: boolean;
+  ownerMode: boolean;
 }) {
   const catalog = useAtomValue(access.catalog({ environmentId, input: {} }));
   const threads =
@@ -99,8 +104,16 @@ function Checks({
         }),
         { signal: cancellation.signal, refresh: true, reportFailure: false, reportDefect: false },
       );
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setReport(result.value);
+      if (result._tag === "Failure") {
+        const cause = squashAtomCommandFailure(result);
+        setError(
+          cancellation.signal.aborted
+            ? "Readiness check cancelled. Run again for a fresh result."
+            : cause instanceof Error
+              ? cause.message
+              : "Could not check GitHub readiness.",
+        );
+      } else setReport(result.value);
     } catch (cause) {
       setError(
         cancellation.signal.aborted
@@ -109,9 +122,8 @@ function Checks({
             ? cause.message
             : "Could not check GitHub readiness.",
       );
-    } finally {
-      setController(null);
     }
+    setController(null);
   };
   const selection = JSON.stringify({
     id: info.item.id,
@@ -144,8 +156,9 @@ function Checks({
         </select>
       </label>
       <p className="text-sm">
-        Checks read GitHub through the selected identity on this computer. A thread also needs an
-        active full-access run and its repository use grant. Results expire after 60 seconds.
+        {ownerMode
+          ? "Checks use this GitHub connection on the Loom server. Choose an active full-access thread to check agent tools too. Results expire after 60 seconds."
+          : "Checks read GitHub through the selected identity on this computer. A thread also needs an active full-access run and its repository use grant. Results expire after 60 seconds."}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -167,7 +180,7 @@ function Checks({
         <div role="status" className="flex flex-col gap-1">
           {expired ? <p>Report expired. Run the check again.</p> : <p>Current readiness result</p>}
           <p>
-            Execution: Loom server · Run access:{" "}
+            Execution: Loom server · Agent access:{" "}
             {report.grant === "unchecked" ? "not checked" : report.grant}
             {report.providerInstanceId ? ` · Provider: ${report.providerInstanceId}` : ""}
           </p>

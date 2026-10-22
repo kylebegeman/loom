@@ -6,7 +6,7 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { VaultSshAgentRun } from "@t3tools/contracts/fork";
+import { VaultSshAgentRunInput } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -34,36 +34,41 @@ export class SshAgentTerminalError extends Schema.TaggedError<SshAgentTerminalEr
           : "The Vault terminal agent or child command could not complete.";
   }
 }
-type Failure = SshAgentTerminalError | SshAgentClient.SshAgentClientError;
+type Failure =
+  | SshAgentTerminalError
+  | Effect.Error<ReturnType<SshAgentClient.SshAgentClient["Service"]["open"]>>;
 export class SshAgentTerminal extends Context.Service<
   SshAgentTerminal,
   {
-    readonly execute: (input: VaultSshAgentRun) => Effect.Effect<number, Failure>;
+    readonly execute: (input: VaultSshAgentRunInput) => Effect.Effect<number, Failure>;
   }
 >()("t3/fork/vault/SshAgentTerminal") {}
-const isRun = Schema.is(VaultSshAgentRun);
+const isRun = Schema.is(VaultSshAgentRunInput);
 const failed = () => new SshAgentTerminalError({ reason: "failed" });
 const make = Effect.gen(function* () {
   const client = yield* SshAgentClient.SshAgentClient,
     platform = yield* HostProcess.Platform,
     cwd = yield* HostProcess.WorkingDirectory,
     environment = yield* HostProcess.Environment;
-  const execute = Effect.fn("SshAgentTerminal.execute")(function* (input: VaultSshAgentRun) {
+  const execute = Effect.fn("SshAgentTerminal.execute")(function* (input: VaultSshAgentRunInput) {
     if (platform !== "darwin" && platform !== "linux")
       return yield* new SshAgentTerminalError({ reason: "unsupported" });
     if (!isRun(input)) return yield* new SshAgentTerminalError({ reason: "configuration" });
     return yield* Effect.gen(function* () {
-      const session = yield* Effect.acquireRelease(
-        client.open({ id: input.id, expectedVersion: input.expectedVersion }),
-        (s) => client.close(s.sessionId).pipe(Effect.ignore),
+      const selection =
+        "connection" in input
+          ? { connection: input.connection }
+          : { id: input.id, expectedVersion: input.expectedVersion };
+      const pin = "connection" in input ? input.connection : input;
+      const session = yield* Effect.acquireRelease(client.open(selection), (s) =>
+        client.close(s.sessionId).pipe(Effect.ignore),
       );
       const lifetime = Math.min(
         input.timeoutMs,
         session.expiresAt - (yield* Clock.currentTimeMillis),
       );
       if (
-        session.id !== input.id ||
-        session.version !== input.expectedVersion ||
+        ("id" in pin && (session.id !== pin.id || session.version !== pin.expectedVersion)) ||
         !session.target.hostKey ||
         lifetime <= 0 ||
         lifetime > 300_000

@@ -9,7 +9,13 @@ import {
   NonNegativeInt,
   PositiveInt,
 } from "../baseSchemas.ts";
-import { VaultError, VaultItemId, VaultItemSummary, VaultCoreStatus } from "./vault-core.ts";
+import {
+  VaultError,
+  VaultItemId,
+  VaultItemSummary,
+  VaultCoreStatus,
+  VaultItemKind,
+} from "./vault-core.ts";
 
 import { VaultSshRun, VaultGitRun, VaultSshTarget } from "./vault-ssh.ts";
 import { VaultGitHubRun } from "./vault-github.ts";
@@ -104,6 +110,7 @@ export const VaultAccessDecision = Schema.Struct({
   expiresAt: Schema.NullOr(Time),
   policyRevision: NonNegativeInt,
   lineage: Schema.Array(VaultItemId),
+  basis: Schema.optionalKey(Schema.Literals(["grant", "owner-trusted"])),
 });
 export type VaultAccessDecision = typeof VaultAccessDecision.Type;
 export const VaultDecisionInput = Schema.Struct({
@@ -122,15 +129,50 @@ export const VaultAuditEvent = Schema.Struct({
   id: VaultItemId,
   at: Time,
   actor: Id,
-  type: Schema.Literals(["grant-change", "decision"]),
+  type: Schema.Literals(["grant-change", "decision", "owner-policy-change"]),
   itemId: Schema.NullOr(VaultItemId),
   grantId: Schema.NullOr(VaultItemId),
   action: Schema.NullOr(VaultAccessAction),
   reason: Schema.String,
   policyRevision: NonNegativeInt,
+  authorization: Schema.optionalKey(
+    Schema.Struct({
+      category: Schema.Literals(["grant", "owner-trusted", "owner-policy-change"]),
+      environmentId: Id,
+      ownerId: Schema.NullOr(VaultItemId),
+      threadId: Schema.NullOr(ThreadId),
+      runId: Schema.NullOr(RunId),
+      destinationDigest: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
+      itemKind: Schema.NullOr(VaultItemKind),
+    }),
+  ),
 });
 export type VaultAuditEvent = typeof VaultAuditEvent.Type;
+export const VaultOwnerPolicyMode = Schema.Literals(["restricted", "owner-trusted"]);
+export type VaultOwnerPolicyMode = typeof VaultOwnerPolicyMode.Type;
+export const VaultOwnerPolicy = Schema.Struct({
+  environmentId: Id,
+  ownerId: Schema.NullOr(VaultItemId),
+  mode: VaultOwnerPolicyMode,
+  revision: NonNegativeInt,
+  updatedAt: Schema.NullOr(Time),
+  updatedBy: Schema.NullOr(Id),
+}).check(
+  Schema.makeFilter((value) =>
+    value.ownerId === null
+      ? value.mode === "restricted" && value.updatedAt === null && value.updatedBy === null
+      : value.revision > 0 && value.updatedAt !== null && value.updatedBy !== null,
+  ),
+);
+export type VaultOwnerPolicy = typeof VaultOwnerPolicy.Type;
+export const VaultOwnerPolicyChange = Schema.Struct({
+  operationId: VaultItemId,
+  expectedRevision: NonNegativeInt,
+  mode: VaultOwnerPolicyMode,
+});
+export type VaultOwnerPolicyChange = typeof VaultOwnerPolicyChange.Type;
 export const VaultPolicySnapshot = Schema.Struct({
+  ownerPolicy: Schema.optionalKey(VaultOwnerPolicy),
   environmentId: Id,
   revision: NonNegativeInt,
   grants: Schema.Array(VaultGrant).check(Schema.isMaxLength(128)),
@@ -449,6 +491,7 @@ export const VaultApprovalInbox = Schema.Struct({
 export type VaultApprovalInbox = typeof VaultApprovalInbox.Type;
 
 export const VAULT_ACCESS_WS_METHODS = {
+  setOwnerPolicy: "loom.vault-owner-policy.set",
   approvalInbox: "loom.vault-approvals.inbox",
   approvalCreate: "loom.vault-approvals.request",
   approvalChange: "loom.vault-approvals.decide",
@@ -463,6 +506,11 @@ export const VAULT_ACCESS_WS_METHODS = {
 } as const;
 const error = Schema.Union([VaultError, EnvironmentAuthorizationError]);
 export const VaultAccessRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_ACCESS_WS_METHODS.setOwnerPolicy, {
+    payload: VaultOwnerPolicyChange,
+    success: VaultPolicySnapshot,
+    error,
+  }),
   Rpc.make(VAULT_ACCESS_WS_METHODS.approvalInbox, {
     payload: Schema.Struct({}),
     success: VaultApprovalInbox,

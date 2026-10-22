@@ -95,9 +95,10 @@ function ProfileProjects({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Give SSH, Git and GitHub requirements stable names. Profiles hold references and grant no
-        access. A run keeps the revision and key versions it first resolves; later edits and default
-        changes apply to later runs.
+        Profiles are optional shortcuts that give SSH, Git and GitHub connections stable names.
+        Owner access works without a profile. Profiles hold references and grant no access. A run
+        keeps the revision and key versions it first resolves; later edits and default changes apply
+        to later runs.
       </p>
       <label className="flex flex-col gap-1 text-sm">
         Project
@@ -172,9 +173,8 @@ function ProfileManager({
       await work();
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const apply = (change: VaultProfileMutation["change"]) =>
     act(async () => {

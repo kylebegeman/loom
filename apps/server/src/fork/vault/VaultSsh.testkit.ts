@@ -35,6 +35,7 @@ import * as SshCrypto from "./SshCrypto.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultCore from "./VaultCore.ts";
+import * as VaultConnections from "./VaultConnections.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultBrokers from "./VaultBrokers.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
@@ -112,7 +113,11 @@ export const sshFixture = (
         ),
       ),
     );
+    const connectionsLayer = VaultConnections.layer.pipe(
+      Layer.provide(Layer.mergeAll(coreLayer, accessLayer, dependencies)),
+    );
     const github = VaultGitHub.layer.pipe(
+      Layer.provideMerge(connectionsLayer),
       Layer.provideMerge(layer),
       Layer.provideMerge(githubAdapters),
       Layer.provideMerge(GitHubTerminal.layer),

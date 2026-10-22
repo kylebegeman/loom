@@ -1,5 +1,8 @@
 # L76 product
 
+Profiles are optional saved connection selections. Direct resource-name selection uses the
+shared resolver without a profile; either path rechecks the environment access policy.
+
 ## Summary
 
 Bind a complete set of development accounts, credentials and endpoints to a named project environment.
@@ -81,10 +84,11 @@ Administrators choose GitHub operations in the profile editor, pick a dedicated 
 one of its allowed repositories, review and save. Switching operation kinds clears the previous
 binding; unbind, replace, remove, cancel and archive/restore remain available. Web/desktop and
 native mobile share the service authority. Host-only review checks configuration; a selected
-thread adds grant checks. Live GitHub API health and GH CLI availability are separate checks.
+thread adds current access-policy checks. Live GitHub API health and GH CLI availability are
+separate checks.
 
 Agents execute a named GitHub binding without repeating the item ID, version or repository.
 Interactive and scheduled profile attachments use the same required-version/run preflight.
-Denied grants, archived records/profiles, changed versions or disallowed repositories block use.
+Denied access, archived records/profiles, changed versions or disallowed repositories block use.
 Version 2 portable declarations share GitHub requirement names/kinds and leave all local
 connection/repository bindings empty on import. Other credential kinds remain selected work.

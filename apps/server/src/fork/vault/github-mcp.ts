@@ -1,9 +1,11 @@
+import { objectInput } from "./mcp-input.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
   VaultGitHubError,
-  VaultGitHubRun,
-  VaultGitHubTerminalRun,
+  VaultGitHubRunInput,
+  VaultConnectionError,
+  VaultGitHubTerminalRunInput,
   VaultGitHubTerminalResult,
   VaultGitHubReadinessInput,
   VaultGitHubReadiness,
@@ -24,31 +26,39 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultAccess from "./VaultAccess.ts";
-const failure = Schema.Union([VaultError, VaultGitHubError, OrchestratorMcpFailure]),
+const failure = Schema.Union([
+    VaultError,
+    VaultGitHubError,
+    VaultConnectionError,
+    OrchestratorMcpFailure,
+  ]),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github_exec", {
     description:
-      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Active full-access/default thread only with exact use grant. gh supports repo view and PR/issue operations; git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
-    parameters: VaultGitHubTerminalRun,
+      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Accepts connection:{resource} or an explicit item/version. Active full-access/default thread with current Vault policy permission; owner-trusted mode needs no individual grant. gh supports repo view and PR/issue operations; git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
+    parameters: VaultGitHubTerminalRunInput.check(objectInput),
     success: VaultGitHubTerminalResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_github_readiness", {
     description:
-      "Read-only GitHub API, GH CLI and Git HTTPS probes in the Loom server context. Agent callers check their own current run and use grant; administrators may name a thread or use null for host-only checks. No prompt credentials or persistent terminal login. Results expire after 60 seconds.",
+      "Read-only GitHub API, GH CLI and Git HTTPS probes in the Loom server context. Agent callers check their own current run and Vault policy; administrators may name a thread or use null for host-only checks. No prompt credentials or persistent terminal login. Results expire after 60 seconds.",
     parameters: VaultGitHubReadinessInput,
     success: VaultGitHubReadiness,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_github", {
     description:
-      "Run a documented GH operation on the Loom server with a dedicated Vault GitHub connection and operation-scoped token. Requires this authenticated full-access/default active run, current item version, repository allowlist and exact use grant for https://github.com/owner/repo. Supported actions: repo-view, pr-list, issue-list, pr-view/issue-view/pr-checks with number; pr-comment/issue-comment with number/body; issue-create with title/body. No raw gh argv, tokens, ambient GitHub login or SSH agents. Writes may have completed after a timeout; inspect before retrying. Does not configure the provider terminal or Git HTTPS.",
-    parameters: VaultGitHubRun,
+      "Run a documented GH operation on the Loom server with a dedicated Vault GitHub connection and operation-scoped token. Requires this authenticated full-access/default active run, current item version, configured repository coverage and current Vault policy permission. Accepts connection:{resource} or an explicit item/version; owner-trusted mode needs no profile or individual grant. Supported actions: repo-view, pr-list, issue-list, pr-view/issue-view/pr-checks with number; pr-comment/issue-comment with number/body; issue-create with title/body. No raw gh argv, tokens, ambient GitHub login or SSH agents. Writes may have completed after a timeout; inspect before retrying. Does not configure the provider terminal or Git HTTPS.",
+    parameters: VaultGitHubRunInput.check(objectInput),
     success: VaultGitHubResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_github_info", {
@@ -57,6 +67,7 @@ export const VaultGitHubToolkit = Toolkit.make(
     parameters: Schema.Struct({ id: VaultItemId }),
     success: VaultGitHubInfo,
     failure,
+    failureMode: "return",
     dependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_github_connections", {
@@ -68,6 +79,7 @@ export const VaultGitHubToolkit = Toolkit.make(
       nextCursor: Schema.NullOr(VaultItemId),
     }),
     failure,
+    failureMode: "return",
     dependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_github_test", {
@@ -76,6 +88,7 @@ export const VaultGitHubToolkit = Toolkit.make(
     parameters: VaultGitHubTarget,
     success: VaultGitHubTestResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_github_change", {
@@ -84,6 +97,7 @@ export const VaultGitHubToolkit = Toolkit.make(
     parameters: VaultItemChange,
     success: VaultItemSummary,
     failure,
+    failureMode: "return",
     dependencies,
   }),
 );

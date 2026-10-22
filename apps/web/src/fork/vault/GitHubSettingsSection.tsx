@@ -4,6 +4,7 @@ import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@
 import type { VaultGitHubInfo } from "@t3tools/contracts/fork";
 import {
   createVaultGitHubAtoms,
+  createVaultAccessAtoms,
   makeVaultGitHubSave,
   supportsLoomFeature,
   type VaultGitHubDraft,
@@ -30,6 +31,7 @@ import { GitHubReadiness } from "./GitHubReadiness";
 import { runVault } from "./state";
 
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime);
+const access = createVaultAccessAtoms(connectionAtomRuntime);
 const id = () => randomUUID().replaceAll("-", "");
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "The GitHub operation failed. Refresh and try again.";
@@ -57,15 +59,56 @@ export function VaultGitHubSettingsSection() {
     return <p>Choose a computer with Vault GitHub connection support.</p>;
   if (!canRead) return <p>Your connection does not include Vault inspection.</p>;
   return (
-    <Manager
+    <GitHubManager
       key={`${environment.environmentId}:${canWrite}`}
       environmentId={environment.environmentId}
       canWrite={canWrite}
+      supportsOwner={supportsLoomFeature(
+        configs.get(environment.environmentId)?.environment.capabilities,
+        "vault-owner-trusted",
+      )}
     />
   );
 }
 
-function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; canWrite: boolean }) {
+function GitHubManager({
+  environmentId,
+  canWrite,
+  supportsOwner,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+  supportsOwner: boolean;
+}) {
+  return supportsOwner ? (
+    <PolicyAwareManager environmentId={environmentId} canWrite={canWrite} />
+  ) : (
+    <Manager environmentId={environmentId} canWrite={canWrite} ownerTrusted={false} />
+  );
+}
+function PolicyAwareManager({
+  environmentId,
+  canWrite,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+}) {
+  const result = useAtomValue(access.snapshot({ environmentId, input: {} }));
+  const ownerTrusted =
+    result._tag === "Success" &&
+    !result.waiting &&
+    result.value.ownerPolicy?.mode === "owner-trusted";
+  return <Manager environmentId={environmentId} canWrite={canWrite} ownerTrusted={ownerTrusted} />;
+}
+function Manager({
+  environmentId,
+  canWrite,
+  ownerTrusted,
+}: {
+  environmentId: EnvironmentId;
+  canWrite: boolean;
+  ownerTrusted: boolean;
+}) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [draft, setDraft] = useState<VaultGitHubDraft | null>(null);
   const [saved, setSaved] = useState<VaultGitHubInfo | null>(null);
@@ -119,13 +162,18 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
       setSaved(connection);
       setDraft(null);
       setCursor(null);
-      setNotice("Connection saved. Choose project access below.");
+      setNotice(
+        ownerTrusted
+          ? "Connection saved. Agents in this personal environment can use its repositories."
+          : "Connection saved. Choose project access below.",
+      );
     });
   };
   const connection = (info: VaultGitHubInfo) => (
     <Connection
       key={`${info.item.id}:${info.item.version}`}
       info={info}
+      ownerTrusted={ownerTrusted}
       environmentId={environmentId}
       disabled={locked || (draft !== null && draft.id !== info.item.id)}
       canEdit={saveAllowed}
@@ -152,7 +200,9 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
             input: { id: info.item.id, expectedVersion: info.item.version, repository },
           });
           setNotice(
-            `GitHub API access verified for ${repository}. Project access and terminal readiness are checked separately.`,
+            ownerTrusted
+              ? `GitHub API access verified for ${repository}. Check an active agent thread to verify terminal readiness.`
+              : `GitHub API access verified for ${repository}. Project access and terminal readiness are checked separately.`,
           );
         })
       }
@@ -173,7 +223,9 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
             action === "archive"
               ? "Disconnected in Loom. Revoke the token or App installation on GitHub to stop credentials already issued."
               : action === "restore"
-                ? "Connection restored. Review its project access and test its GitHub permissions."
+                ? ownerTrusted
+                  ? "Connection restored. Test its GitHub permissions before use."
+                  : "Connection restored. Review its project access and test its GitHub permissions."
                 : "Connection deleted from Loom. Vault version history may remain.",
           );
         })
@@ -185,7 +237,9 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
     <div className="flex min-w-0 flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-prose text-sm text-muted-foreground">
-          Save a GitHub connection, then choose which projects can use each repository.
+          {ownerTrusted
+            ? "Connect GitHub once. Agents in this personal environment can use the repositories on your saved connections."
+            : "Save a GitHub connection, then choose which projects can use each repository."}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -240,7 +294,9 @@ function Manager({ environmentId, canWrite }: { environmentId: EnvironmentId; ca
         <p className="text-sm text-muted-foreground">
           {cursor
             ? "No connections on this page. Return to the first page."
-            : "No GitHub connections yet. Connect GitHub to start choosing project access."}
+            : ownerTrusted
+              ? "No GitHub connections yet. Connect GitHub to give your agents repository access."
+              : "No GitHub connections yet. Connect GitHub to start choosing project access."}
         </p>
       ) : null}
       {items.filter((info) => info.item.state === "active").map(connection)}
@@ -442,6 +498,7 @@ function Connection({
   canChange,
   canTest,
   initiallyConfigure,
+  ownerTrusted,
   editor,
   onEdit,
   onTest,
@@ -454,6 +511,7 @@ function Connection({
   canChange: boolean;
   canTest: boolean;
   initiallyConfigure: boolean;
+  ownerTrusted: boolean;
   editor: ReactNode;
   onEdit: () => void;
   onTest: (repo: string) => void;
@@ -487,12 +545,51 @@ function Connection({
           ))}
         </ul>
       </div>
-      <GitHubProjectAccess
-        environmentId={environmentId}
-        connection={info}
-        disabled={disabled || !!editor}
-        initiallyOpen={initiallyConfigure}
-      />
+      {ownerTrusted ? (
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Owner access allows agents in this environment to use these repositories. GitHub's
+            permissions still apply.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled || !canEdit || !active}
+              onClick={onEdit}
+            >
+              Edit connection
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled || !canTest || !active || !repo}
+              onClick={() => onTest(repo)}
+            >
+              Test connection
+            </Button>
+          </div>
+          {editor}
+          <details>
+            <summary className="cursor-pointer text-sm">Saved restricted access</summary>
+            <div className="mt-3">
+              <GitHubProjectAccess
+                environmentId={environmentId}
+                connection={info}
+                disabled={disabled || !!editor}
+                initiallyOpen={false}
+              />
+            </div>
+          </details>
+        </div>
+      ) : (
+        <GitHubProjectAccess
+          environmentId={environmentId}
+          connection={info}
+          disabled={disabled || !!editor}
+          initiallyOpen={initiallyConfigure}
+        />
+      )}
       <details>
         <summary className="cursor-pointer text-sm">Advanced</summary>
         <div className="mt-4 flex min-w-0 flex-col gap-4">
@@ -501,18 +598,20 @@ function Connection({
             aria-label={`Credentials for ${info.item.label}`}
           >
             <h4 className="text-sm font-medium">Credentials</h4>
-            {editor ?? (
-              <div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={disabled || !canEdit || !active}
-                  onClick={onEdit}
-                >
-                  Edit connection
-                </Button>
-              </div>
-            )}
+            {ownerTrusted && editor
+              ? null
+              : (editor ?? (
+                  <div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={disabled || !canEdit || !active}
+                      onClick={onEdit}
+                    >
+                      Edit connection
+                    </Button>
+                  </div>
+                ))}
           </section>
           <details>
             <summary className="cursor-pointer text-sm">
@@ -520,8 +619,9 @@ function Connection({
             </summary>
             <div className="mt-3 flex min-w-0 flex-col gap-3">
               <p className="text-sm text-muted-foreground">
-                Saving verifies GitHub API access. Project authorization and a thread’s terminal
-                access are separate checks.
+                {ownerTrusted
+                  ? "Saving verifies GitHub API access. Check an active agent thread to verify its terminal access."
+                  : "Saving verifies GitHub API access. Project authorization and a thread's terminal access are separate checks."}
               </p>
               <label
                 htmlFor={`${field}-repository`}
@@ -562,6 +662,7 @@ function Connection({
                 info={info}
                 repository={repo}
                 disabled={disabled}
+                ownerMode={ownerTrusted}
               />
             </div>
           </details>

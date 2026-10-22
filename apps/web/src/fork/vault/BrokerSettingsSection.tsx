@@ -189,7 +189,7 @@ function BrokerManager({ environmentId }: { environmentId: EnvironmentId }) {
       </div>
       <p className="text-sm text-muted-foreground">
         Enrollment verifies machine identity. Credential delivery and SSH signing still need their
-        own supported channels and workload grants. No boot service is installed.
+        own supported channels and Vault use permission. No boot service is installed.
       </p>
       {error || result._tag === "Failure" ? (
         <p role="alert" className="text-sm">

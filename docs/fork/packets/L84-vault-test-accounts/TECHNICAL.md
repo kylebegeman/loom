@@ -88,14 +88,16 @@ leases, unavailable entries and unrelated collection metadata are omitted; no re
 snapshot cross this boundary. Empty discovery is not proof that a collection does not exist.
 The ledger revision is a conflict token, not authority or an environment activity feed.
 
-Discovery requires both `inspect` and `use` through the existing grant evaluator. The exact scope
-is `loom:test-accounts:<collectionId>`; existing unscoped grants also match under normal evaluator
-rules. This is a pool scope, not a provider host or login endpoint. Reserve/renew audit and recheck
-those actions, active pinned Account version, workload identity and transport ceiling before CAS.
-The sole mutation tool accepts reserve, renew and release; the CLI aliases use that same boundary. It cannot mark clean, create, archive,
-retire, approve itself or return credentials. Release requires the exact owned lease but remains
-possible after item grant withdrawal. Mutation results pass through the same filtered discovery;
-withdrawal can hide a lease that was already committed. Inspect/reconcile before retrying.
+Discovery requires both `inspect` and `use` through the shared access-policy evaluator. Personal
+owner-trusted mode supplies that authority; restricted mode requires matching grants. The exact
+scope is `loom:test-accounts:<collectionId>`; existing unscoped grants also match under normal
+evaluator rules. This is a pool scope, not a provider host or login endpoint. Reserve/renew
+audit and recheck those actions, active pinned Account version, workload identity and transport
+ceiling before CAS. The sole mutation tool accepts reserve, renew and release; the CLI aliases
+use that same boundary. It cannot mark clean, create, archive, retire, approve itself or return
+credentials. Release requires the exact owned lease but remains possible after item grant
+withdrawal. Mutation results pass through the same filtered discovery; withdrawal can hide a
+lease that was already committed. Inspect/reconcile before retrying.
 
 Lease ownership ends with the root run. Queued follow-ups and pending runtime requests retain
 ownership while activeRunId identifies that run. A real waiting thread with only background

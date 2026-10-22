@@ -1,7 +1,9 @@
+import { objectInput } from "./mcp-input.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
-  VaultSshAgentOpen,
+  VaultSshAgentOpenInput,
+  VaultConnectionError,
   VaultSshAgentSession,
   VaultSshAgentFrame,
   VaultSshAgentResponse,
@@ -11,9 +13,9 @@ import {
   VaultSshError,
   VaultWorkloadError,
   VaultSshGenerate,
-  VaultSshRun,
+  VaultSshRunInput,
   VaultSshResult,
-  VaultGitRun,
+  VaultGitRunInput,
   VaultGitResult,
   VaultSshProbe,
   VaultSshProbeResult,
@@ -34,24 +36,27 @@ const failure = Schema.Union([
   VaultError,
   VaultSshError,
   VaultWorkloadError,
+  VaultConnectionError,
   OrchestratorMcpFailure,
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_agent_open", {
     description:
-      "Explicitly activate one five-minute SSH agent session for this current full-access/default run, dedicated key/version and pinned host. Requires a host SSH use grant; repository-only grants do not authorize agent signing. Use the Loom ssh-agent-exec CLI to run ordinary terminal SSH/Git with local socket cleanup. Returns public metadata, never private keys. Already authenticated remote connections are not recalled by revocation.",
-    parameters: VaultSshAgentOpen,
+      "Explicitly activate one five-minute SSH agent session for this current full-access/default run, dedicated key/version and pinned host. Requires current Vault policy permission for that SSH host; repository-only grants do not authorize agent signing. Use the Loom ssh-agent-exec CLI to run ordinary terminal SSH/Git with local socket cleanup. Returns public metadata, never private keys. Already authenticated remote connections are not recalled by revocation.",
+    parameters: VaultSshAgentOpenInput.check(objectInput),
     success: VaultSshAgentSession,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_agent_frame", {
     description:
-      "Relay one bounded SSH agent protocol frame for an owned activation/channel with strict sequence order. The server verifies session/host-bound authentication and live grants before releasing a signature. Used by the Loom terminal agent; no generic signing or forwarding.",
+      "Relay one bounded SSH agent protocol frame for an owned activation/channel with strict sequence order. The server verifies session/host-bound authentication and current access policy before releasing a signature. Used by the Loom terminal agent; no generic signing or forwarding.",
     parameters: VaultSshAgentFrame,
     success: VaultSshAgentResponse,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_agent_close", {
@@ -60,6 +65,7 @@ export const VaultSshToolkit = Toolkit.make(
     parameters: VaultSshAgentClose,
     success: VaultSshAgentClosed,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_agents", {
@@ -68,22 +74,25 @@ export const VaultSshToolkit = Toolkit.make(
     parameters: Tool.EmptyParams,
     success: Schema.Array(VaultSshAgentSession),
     failure,
+    failureMode: "return",
     dependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_ssh_exec", {
     description:
-      "Run bounded SSH argv using a dedicated Vault item and its current version for this authenticated active thread/run. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Requires a current exact-destination use grant and full-access/default mode. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
-    parameters: VaultSshRun,
+      "Run bounded SSH argv using a dedicated Vault item and its current version for this authenticated active thread/run. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Accepts connection:{resource:personal-vps} with command:{argv,timeoutMs}, or the existing explicit item/version. Requires current Vault policy and full-access/default mode. Owner-trusted environments need no individual grant or project profile. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
+    parameters: VaultSshRunInput.check(objectInput),
     success: VaultSshResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_git", {
     description:
-      "List remote refs or fetch into this thread's checkout using a dedicated Vault SSH key. Supply item id, current expectedVersion, action ls-remote or fetch, repository path on that host and timeoutMs up to 30000. Destination grant is git+ssh://user@host:port/repository (absolute paths use /:absolute/path). Host-scoped SSH grants alone do not grant this Git destination. Workload signing/release is automatic through the configured enrolled server broker. Fetch writes FETCH_HEAD, does not merge, rewrite origin or change personal SSH settings. No clone/push/submodules yet. Runs on the Loom server; no secret output.",
-    parameters: VaultGitRun,
+      "List remote refs or fetch into this thread's checkout using a dedicated Vault SSH key. Supply connection:{resource} or an explicit item id/current expectedVersion, action ls-remote or fetch, repository path on that host and timeoutMs up to 30000. Requires current Vault policy permission; owner-trusted mode needs no individual grant. Restricted grants use git+ssh://user@host:port/repository (absolute paths use /:absolute/path); a host-scoped SSH grant alone does not authorize this Git destination. Workload signing/release is automatic through the configured enrolled server broker. Fetch writes FETCH_HEAD, does not merge, rewrite origin or change personal SSH settings. No clone/push/submodules yet. Runs on the Loom server; no secret output.",
+    parameters: VaultGitRunInput.check(objectInput),
     success: VaultGitResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_probe", {
@@ -92,6 +101,7 @@ export const VaultSshToolkit = Toolkit.make(
     parameters: VaultSshProbe,
     success: VaultSshProbeResult,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_generate", {
@@ -100,14 +110,16 @@ export const VaultSshToolkit = Toolkit.make(
     parameters: VaultSshGenerate,
     success: VaultSshInfo,
     failure,
+    failureMode: "return",
     dependencies,
   }),
   Tool.make("loom_vault_ssh_info", {
     description:
-      "Read a managed SSH key's public key, destination and fingerprints. Threads require an inspect grant; administrator clients may inspect. No private key is returned.",
+      "Read a managed SSH key's public key, destination and fingerprints. Threads require metadata inspection permission; administrator clients may inspect. No private key is returned.",
     parameters: Schema.Struct({ id: VaultItemId }),
     success: VaultSshInfo,
     failure,
+    failureMode: "return",
     dependencies,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_ssh_trust", {
@@ -116,6 +128,7 @@ export const VaultSshToolkit = Toolkit.make(
     parameters: VaultSshTrust,
     success: VaultSshInfo,
     failure,
+    failureMode: "return",
     dependencies,
   }),
 );

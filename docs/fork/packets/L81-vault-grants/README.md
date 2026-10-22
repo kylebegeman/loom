@@ -1,6 +1,7 @@
 # L81: Agent identities and persistent access grants
 
-Status: **In progress**. Local thread/project grants milestone implemented; full packet scope retained.
+Status: **In progress**. Personal owner-trusted and restricted grant modes implemented; full
+packet scope retained.
 
 Authorize recurring agent work at a useful scope without granting access to the personal vault.
 
@@ -8,19 +9,28 @@ V09 | Major system | Complexity: Large | Impact: Transformational
 
 ## Delivered milestone
 
-The local milestone provides environment-owned thread/project grants, one default-deny
-evaluator, exact item/action/project/destination scopes, bounded validity windows, parent
-attenuation and authenticated direct-child delegation. Grant revisions and permanent revocation
-survive restart and OpenBao restore. UI changes require an explicit preview and apply;
-suspension is reversible. Workload identity comes from ThreadManagement, never prompt text.
+The policy supports two environment access modes. Existing and shared environments retain
+restricted default-deny thread/project grants. An authenticated human owner can explicitly
+declare a personal environment owner-trusted once, enabling metadata inspection and supported
+brokered use for authenticated active full-access/default agent runs without recurring
+thread/project/provider grants. Profiles are optional connection selections. Both modes use
+the same evaluator and current item, run, destination and adapter checks.
 
-Existing agent metadata, private ingress and lifecycle paths enforce the evaluator and T3's
-permission ceiling. Human environment administration remains governed by access:read/write;
-agent threads cannot administer root grants. Scheduled jobs may use their authenticated T3
-thread, but credential-use leases and automatic external runner attestation are not delivered.
-L85 now binds signed channel checks to an active run and its current item/destination use grants. L80 now provides
-reviewed host enrollment and heartbeat presence, without credential-use authority. L82 mediated
-SSH commands consume a fresh command-bound proof and recheck this policy before signing.
+The declaration is bound durably to the environment and the human subject that first sets it.
+There is no verified platform multi-owner identity or membership model. Another person who can
+launch agents in that environment is not distinguished from its owner by a prompt or provider
+label; shared environments must keep restricted mode. Owner trust does not authorize a task,
+elevate plan/runtime permissions, administer policy/trust, reveal/export values or bypass
+format-4 one-time protection. Disabling returns to restricted evaluation without deleting
+records, grants or recovery material. Existing authenticated sessions may continue.
+
+Restricted grants retain exact item/action/project/destination scopes, bounded validity,
+parent attenuation, authenticated direct-child delegation and permanent revocation. UI grant
+changes require preview/apply; suspension is reversible. Workload identity comes from
+ThreadManagement, never prompt text. Manage/private-ingress actions remain grant-controlled.
+Human environment administration remains governed by access:read/write; agents cannot set
+owner policy or administer their own root grants. Signed workload checks, hosted SSH/Git and
+GitHub operations consume the same policy rather than a provider-specific bypass.
 
 ## Remaining selected scope
 
