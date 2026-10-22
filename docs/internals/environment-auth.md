@@ -27,6 +27,25 @@ model. DPoP binds a token to a client's proof key; an invalid proof must fail
 rather than fall back to bearer authentication. The OAuth token-exchange
 vocabulary gives these grants a familiar meaning.
 
+### Identity remains a host-local grant
+
+[Identity verification](../../apps/server/src/auth/PocketId.ts) accepts only the issuer,
+audience, clients and immutable subjects enrolled through the host's trusted process
+configuration. The Library's issuer or directory never delegates access to another
+computer. Each execution host needs its own explicitly accepted API resource; reusing a
+Library audience silently widens the trust boundary. Sessions are bounded by both the
+accepted token's expiry and one hour, and changes to the enrolled policy invalidate
+previous sessions after restart. IdP account removal alone is not immediate host-session
+revocation; revoke the local session to close that window.
+
+A hosted frontend receives a short-lived, single-use PKCE code through an exactly bound
+opener message, then redeems it at the selected host without cookies. The host's OIDC
+callback stays on the host, and the application handoff never puts credentials in URLs.
+Saved native/browser connections pin the environment and Identity account; renewal
+requires an interactive sign-in. T3 Connect's Clerk relay remains a separate adapter.
+Cookie logout requires the configured host origin and clears its HttpOnly session cookie;
+bearer logout and connection removal revoke only their current local sessions.
+
 ### MCP clients are a separate audience
 
 Agents T3 Code did not launch sign in to `/mcp` through a narrow OAuth

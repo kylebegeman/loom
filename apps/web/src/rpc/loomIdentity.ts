@@ -161,6 +161,10 @@ export async function signInToLoomBrowser(
       environmentId: metadata.environmentId,
     }))
       login.searchParams.set(key, value);
+    if (input.expectedIdentity) {
+      login.searchParams.set("issuer", input.expectedIdentity.issuer);
+      login.searchParams.set("subject", input.expectedIdentity.subject);
+    }
     popup.location.replace(login.href);
     const authorizationCode = await code;
     dispose();
@@ -181,6 +185,13 @@ export async function signInToLoomBrowser(
     if (!response.ok)
       throw new Error("This account could not sign in to the computer. Try again or use pairing.");
     const session = decodeIdentitySession(await response.json());
+    if (
+      session.token_type !== "Bearer" ||
+      !Number.isFinite(session.expires_in) ||
+      session.expires_in <= 0 ||
+      session.expires_in > 3600
+    )
+      throw new Error("The computer returned an unsupported or expired Identity session.");
     if (
       session.environmentId !== metadata.environmentId ||
       session.identity.issuer !== metadata.issuer ||

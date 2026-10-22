@@ -446,6 +446,7 @@ it.effect(
       const verifier = "v".repeat(43);
       const browser = {
         ...browserRequest,
+        expectedIdentity: { issuer: ISSUER, subject: "owner-id" },
         challenge: Base64Url.encode(
           yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)),
         ),
@@ -514,6 +515,28 @@ it.effect(
         expect(
           (yield* identity.createSession(redeem, CLIENT, browser.origin).pipe(Effect.flip)).reason,
         ).toBe("state");
+        const issuedCount = test.issued.length;
+        const wrongAccount = yield* identity.beginLogin("/", {
+          ...browser,
+          expectedIdentity: { issuer: ISSUER, subject: "different-saved-account" },
+        });
+        const wrongAuthorization = new URL(wrongAccount.authorizationUrl);
+        test.tokenReply.id = yield* test.signed(
+          { nonce: wrongAuthorization.searchParams.get("nonce")! },
+          CLIENT_ID,
+          "JWT",
+        );
+        expect(
+          (yield* identity
+            .completeLogin({
+              state: wrongAuthorization.searchParams.get("state")!,
+              code: "idp-code",
+              cookieValue: wrongAccount.cookieValue,
+              client: CLIENT,
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("subject");
+        expect(test.issued.length).toBe(issuedCount);
       }).pipe(Effect.provide(test.layer));
     }),
 );

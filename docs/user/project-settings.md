@@ -49,11 +49,12 @@ and other phone-only settings ignore the filter.
 ## Projects and files
 
 Shared projects keep their brief, components and saved conversation history independently
-of their execution computers. Configure the Library connection in **Settings → Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
-sign-in page. On desktop, you can check a Library address and sign in before saving its
-computer connection. Desktop sign-in opens your browser and returns to Loom after verification.
-Existing computer pairing and T3 Connect remain available. Changing your
-Library selection does not move records from the previous Library.
+of their execution computers. Configure the Library connection in **Settings → Connections**.
+If that server has Identity configured, **Sign in with Identity** opens its account sign-in.
+You can enter a Library address on web, desktop, or mobile before saving its connection.
+Sign-in opens your browser and returns to Loom after verification. Identity access lasts
+up to one hour; sign in again when it expires. Existing pairing and T3 Connect remain
+available. Changing your Library selection does not move records from the previous Library.
 
 **New project** needs only a name. Add repositories, reference links or a brief whenever
 useful. **Add existing folder** finds repositories in a folder and suggests an existing
