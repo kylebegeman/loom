@@ -105,6 +105,51 @@ it.effect("Git HTTPS helper supplies only the exact repository and bypasses pers
     ).toBe(false);
   }).pipe(Effect.scoped),
 );
+it.effect("repository hooks are disabled without blocking scoped release commands", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.write(
+      "git",
+      `const cp=require('node:child_process');const result=cp.spawnSync('/usr/bin/git',process.argv.slice(2),{env:process.env,encoding:'utf8'});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exit(result.status??1);`,
+    );
+    const repository = NodePath.join(f.dir, "repository");
+    yield* Effect.promise(async () => {
+      await NodeFSP.mkdir(repository);
+      await NodeFSP.mkdir(NodePath.join(repository, ".git"));
+      await NodeFSP.mkdir(NodePath.join(repository, ".git", "objects"));
+      await NodeFSP.mkdir(NodePath.join(repository, ".git", "refs"));
+      await NodeFSP.writeFile(NodePath.join(repository, ".git", "HEAD"), "ref: refs/heads/main\n");
+      await NodeFSP.writeFile(
+        NodePath.join(repository, ".git", "config"),
+        "[core]\nrepositoryformatversion = 0\nhooksPath = /repository-hooks\n",
+      );
+    });
+    yield* f.write(
+      "gh",
+      `const cp=require('node:child_process');const hooks=cp.spawnSync('/usr/bin/git',['config','--get','core.hooksPath'],{env:process.env,encoding:'utf8'});console.log(JSON.stringify({hooks:hooks.stdout.trim(),args:process.argv.slice(2)}));process.exit(hooks.status??1);`,
+    );
+    const input = {
+      token: Redacted.make("synthetic-terminal-token"),
+      repository: "owner/repo",
+      command: { tool: "gh" as const, argv: ["release", "view", "v1.2.3"] },
+      cwd: repository,
+      authorize: Effect.void,
+    };
+    const result = yield* f.service.execute(input);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      hooks: "/dev/null",
+      args: ["release", "view", "v1.2.3", "--repo", "owner/repo"],
+    });
+    yield* Effect.promise(() =>
+      NodeFSP.appendFile(
+        NodePath.join(repository, ".git", "config"),
+        '[url "https://elsewhere.invalid/"]\ninsteadOf = https://github.com/\n',
+      ),
+    );
+    expect((yield* f.service.execute(input).pipe(Effect.flip)).reason).toBe("unsafe-git-config");
+  }).pipe(Effect.scoped),
+);
 it.effect("rejects repository credential rewrites, denied execution and oversized output", () =>
   Effect.gen(function* () {
     const f = yield* fixture;

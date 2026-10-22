@@ -44,8 +44,9 @@ done
 printf 'username=x-access-token\\npassword=%s\\n\\n' "$LOOM_GITHUB_TOKEN"
 `;
 const fail = (reason: VaultGitHubError["reason"]) => new VaultGitHubError({ reason });
+// core.hooksPath is always overridden to /dev/null before credentials reach a child.
 const forbiddenConfig =
-  /^(include\.|includeif\.|credential\.|http\.|https\.|url\.|filter\.|alias\.|protocol\.|core\.(sshcommand|gitproxy|hookspath|fsmonitor)|remote\..*\.(uploadpack|receivepack|proxy|vcs|pushoption)|push\.pushoption)/i;
+  /^(include\.|includeif\.|credential\.|http\.|https\.|url\.|filter\.|alias\.|protocol\.|core\.(sshcommand|gitproxy|fsmonitor)|remote\..*\.(uploadpack|receivepack|proxy|vcs|pushoption)|push\.pushoption)/i;
 const OUTPUT_LIMIT = 65536;
 // Skip consumed values so flag-shaped titles, notes and patterns stay text.
 const releaseFileValues = new Set([
