@@ -185,7 +185,7 @@ describe("BotPipelines", () => {
     ),
   );
 
-  it.effect("records a pinned step run on another computer as the version that runs there", () =>
+  it.effect("keeps the pinned version for a step run on another computer", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
         const { bots, pipelines } = yield* makePipelines(harness);
@@ -232,10 +232,10 @@ describe("BotPipelines", () => {
           USER_CALLER,
         );
 
-        expect(yield* Deferred.await(submitted)).toBe(current.version);
+        expect(yield* Deferred.await(submitted)).toBe(pinned.version);
         const [attempt] = (yield* pipelines.getRun(run.id)).attempts;
-        expect(attempt?.botVersion).toBe(current.version);
-        expect(attempt?.botVersion).not.toBe(pinned.version);
+        expect(attempt?.botVersion).toBe(pinned.version);
+        expect(attempt?.botVersion).not.toBe(current.version);
       }),
     ),
   );
