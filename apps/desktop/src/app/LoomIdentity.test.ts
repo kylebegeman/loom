@@ -98,137 +98,162 @@ describe("Loom native OAuth enrollment", () => {
       verifyLoomIdToken(token, { ...input, issuer: "https://other.example" }),
     ).rejects.toThrow();
   });
-  it("exchanges a verified loopback response into an ordinary host bearer session", async () => {
-    const { publicKey, privateKey } = await generateKeyPair("RS256");
-    const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
-    let nonce = "";
-    let challenge = "";
-    let redirect = "";
-    let exchanged = false;
-    let origin = "";
-    origin = await serve((request, response) => {
-      void (async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) chunks.push(Buffer.from(chunk));
-        const body = new URLSearchParams(Buffer.concat(chunks).toString());
-        let result: unknown;
-        if (request.url === "/api/loom/identity")
-          result = {
-            enabled: true,
-            browserLoginEnabled: false,
-            issuer: `${origin}/idp`,
-            clientId: null,
-            nativeClientId: "native",
-            authorizationEndpoint: `${origin}/authorize`,
-            tokenEndpoint: `${origin}/idp/token`,
-            scopes: ["openid"],
-            audience: "loom",
-            environmentId: EnvironmentId.make("central"),
-          };
-        else if (request.url === "/idp/.well-known/openid-configuration")
-          result = {
-            issuer: `${origin}/idp`,
-            authorization_endpoint: `${origin}/authorize`,
-            token_endpoint: `${origin}/idp/token`,
-            jwks_uri: `${origin}/idp/jwks`,
-          };
-        else if (request.url === "/idp/jwks") result = { keys: [jwk] };
-        else if (request.url === "/idp/token") {
-          expect(body.get("redirect_uri")).toBe(redirect);
-          expect(
-            NodeCrypto.createHash("sha256").update(body.get("code_verifier")!).digest("base64url"),
-          ).toBe(challenge);
-          const id = await new SignJWT({ nonce })
-            .setProtectedHeader({ alg: "RS256", kid: "test" })
-            .setIssuer(`${origin}/idp`)
-            .setAudience("native")
-            .setSubject("user")
-            .setIssuedAt()
-            .setExpirationTime("5m")
-            .sign(privateKey);
-          const access = await new SignJWT({})
-            .setProtectedHeader({ alg: "RS256", kid: "test", typ: "at+jwt" })
-            .setIssuer(`${origin}/idp`)
-            .setAudience("loom")
-            .setSubject("user")
-            .setIssuedAt()
-            .setExpirationTime("5m")
-            .sign(privateKey);
-          result = { id_token: id, access_token: access, token_type: "Bearer" };
-        } else if (request.url === "/oauth/token") {
-          expect(body.get("subject_token_type")).toBe(AuthAccessTokenType);
-          exchanged = true;
-          result = {
-            access_token: "host-session",
-            issued_token_type: AuthAccessTokenType,
-            token_type: "Bearer",
-            expires_in: 3600,
-            scope: "orchestration:read",
-          };
-        } else {
-          response.writeHead(404).end();
-          return;
-        }
-        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result));
-      })().catch(() => response.writeHead(500).end());
-    });
-    const result = await signInToLoom(origin, async (authorizationUrl) => {
-      const url = new URL(authorizationUrl);
-      nonce = url.searchParams.get("nonce")!;
-      challenge = url.searchParams.get("code_challenge")!;
-      redirect = url.searchParams.get("redirect_uri")!;
-      const wrong = new URL(redirect);
-      wrong.search = "state=wrong&code=bad";
-      expect((await fetch(wrong)).status).toBe(400);
-      const callback = new URL(redirect);
-      callback.search = new URLSearchParams({
-        state: url.searchParams.get("state")!,
-        code: "valid",
-      }).toString();
-      expect((await fetch(callback)).status).toBe(200);
-      return true;
-    });
-    expect(result).toEqual({
-      httpBaseUrl: origin,
-      environmentId: "central",
-      accessToken: "host-session",
-    });
-    expect(exchanged).toBe(true);
-    await expect(fetch(redirect)).rejects.toThrow();
-  });
-  it("cancels a sign-in and closes the owned loopback listener", async () => {
-    let origin = "";
-    let redirect = "";
-    origin = await serve((request, response) => {
-      const result =
-        request.url === "/api/loom/identity"
-          ? {
+  it.each([3600, 0, -1])(
+    "accepts only a live host bearer session (expires_in=%s)",
+    async (expiresIn) => {
+      const { publicKey, privateKey } = await generateKeyPair("RS256");
+      const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
+      let nonce = "";
+      let challenge = "";
+      let redirect = "";
+      let exchanged = false;
+      let origin = "";
+      origin = await serve((request, response) => {
+        void (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const body = new URLSearchParams(Buffer.concat(chunks).toString());
+          let result: unknown;
+          if (request.url === "/api/loom/identity")
+            result = {
               enabled: true,
               browserLoginEnabled: false,
               issuer: `${origin}/idp`,
               clientId: null,
               nativeClientId: "native",
               authorizationEndpoint: `${origin}/authorize`,
-              tokenEndpoint: `${origin}/token`,
+              tokenEndpoint: `${origin}/idp/token`,
               scopes: ["openid"],
               audience: "loom",
-              environmentId: "central",
-            }
-          : {
+              environmentId: EnvironmentId.make("central"),
+            };
+          else if (request.url === "/idp/.well-known/openid-configuration")
+            result = {
               issuer: `${origin}/idp`,
               authorization_endpoint: `${origin}/authorize`,
-              token_endpoint: `${origin}/token`,
-              jwks_uri: `${origin}/jwks`,
+              token_endpoint: `${origin}/idp/token`,
+              jwks_uri: `${origin}/idp/jwks`,
             };
-      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result));
-    });
-    await expect(
-      signInToLoom(origin, async (url) => {
-        redirect = new URL(url).searchParams.get("redirect_uri")!;
-        cancelLoomSignIn(origin);
+          else if (request.url === "/idp/jwks") result = { keys: [jwk] };
+          else if (request.url === "/idp/token") {
+            expect(body.get("redirect_uri")).toBe(redirect);
+            expect(
+              NodeCrypto.createHash("sha256")
+                .update(body.get("code_verifier")!)
+                .digest("base64url"),
+            ).toBe(challenge);
+            const id = await new SignJWT({ nonce })
+              .setProtectedHeader({ alg: "RS256", kid: "test" })
+              .setIssuer(`${origin}/idp`)
+              .setAudience("native")
+              .setSubject("user")
+              .setIssuedAt()
+              .setExpirationTime("5m")
+              .sign(privateKey);
+            const access = await new SignJWT({})
+              .setProtectedHeader({ alg: "RS256", kid: "test", typ: "at+jwt" })
+              .setIssuer(`${origin}/idp`)
+              .setAudience("loom")
+              .setSubject("user")
+              .setIssuedAt()
+              .setExpirationTime("5m")
+              .sign(privateKey);
+            result = { id_token: id, access_token: access, token_type: "Bearer" };
+          } else if (request.url === "/oauth/token") {
+            expect(body.get("subject_token_type")).toBe(AuthAccessTokenType);
+            exchanged = true;
+            result = {
+              access_token: "host-session",
+              issued_token_type: AuthAccessTokenType,
+              token_type: "Bearer",
+              expires_in: expiresIn,
+              scope: "orchestration:read",
+            };
+          } else {
+            response.writeHead(404).end();
+            return;
+          }
+          response
+            .writeHead(200, { "content-type": "application/json" })
+            .end(JSON.stringify(result));
+        })().catch(() => response.writeHead(500).end());
+      });
+      const result = signInToLoom(origin, async (authorizationUrl) => {
+        const url = new URL(authorizationUrl);
+        nonce = url.searchParams.get("nonce")!;
+        challenge = url.searchParams.get("code_challenge")!;
+        redirect = url.searchParams.get("redirect_uri")!;
+        const wrong = new URL(redirect);
+        wrong.search = "state=wrong&code=bad";
+        expect((await fetch(wrong)).status).toBe(400);
+        const callback = new URL(redirect);
+        callback.search = new URLSearchParams({
+          state: url.searchParams.get("state")!,
+          code: "valid",
+        }).toString();
+        expect((await fetch(callback)).status).toBe(200);
         return true;
-      }),
-    ).rejects.toThrow(/cancelled/);
-    await expect(fetch(redirect)).rejects.toThrow();
-  });
+      });
+      if (expiresIn <= 0) await expect(result).rejects.toThrow(/expired/);
+      else
+        await expect(result).resolves.toEqual({
+          httpBaseUrl: origin,
+          environmentId: "central",
+          accessToken: "host-session",
+        });
+      expect(exchanged).toBe(true);
+      await expect(fetch(redirect)).rejects.toThrow();
+    },
+  );
+  it.each([
+    { response: "cancel", message: /cancelled/ },
+    { response: "decline", message: /declined/ },
+    { response: "invalid-code", message: /authorization code/ },
+  ])(
+    "settles a $response sign-in and closes its loopback listener",
+    async ({ response: outcome, message }) => {
+      let origin = "";
+      let redirect = "";
+      origin = await serve((request, response) => {
+        const result =
+          request.url === "/api/loom/identity"
+            ? {
+                enabled: true,
+                browserLoginEnabled: false,
+                issuer: `${origin}/idp`,
+                clientId: null,
+                nativeClientId: "native",
+                authorizationEndpoint: `${origin}/authorize`,
+                tokenEndpoint: `${origin}/token`,
+                scopes: ["openid"],
+                audience: "loom",
+                environmentId: "central",
+              }
+            : {
+                issuer: `${origin}/idp`,
+                authorization_endpoint: `${origin}/authorize`,
+                token_endpoint: `${origin}/token`,
+                jwks_uri: `${origin}/jwks`,
+              };
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result));
+      });
+      await expect(
+        signInToLoom(origin, async (url) => {
+          const authorization = new URL(url);
+          redirect = authorization.searchParams.get("redirect_uri")!;
+          if (outcome !== "cancel") {
+            const callback = new URL(redirect);
+            callback.search = new URLSearchParams({
+              state: authorization.searchParams.get("state")!,
+              ...(outcome === "decline" ? { error: "access_denied" } : {}),
+            }).toString();
+            expect((await fetch(callback)).status).toBe(400);
+          }
+          cancelLoomSignIn(origin);
+          return true;
+        }),
+      ).rejects.toThrow(message);
+      await expect(fetch(redirect)).rejects.toThrow();
+    },
+  );
 });

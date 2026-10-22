@@ -62,7 +62,9 @@ const isRetryable = (item: BotBatchItem, includeAttention: boolean) => {
   if (item.state !== "started" || run === null) return false;
   if (run.status === "failed" || run.status === "timed_out") return true;
   return (
-    includeAttention && run.status === "completed" && run.verdict?.verdict === "needs_attention"
+    run.status === "completed" &&
+    (run.verdict?.verdict === "fail" ||
+      (includeAttention && run.verdict?.verdict === "needs_attention"))
   );
 };
 
@@ -550,10 +552,12 @@ export const make = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           for (const item of retried)
-            yield* store.requeueItem(batchId, item.index, [
-              ...item.previousRunIds,
-              ...(item.runId === null ? [] : [item.runId]),
-            ], item.runId);
+            yield* store.requeueItem(
+              batchId,
+              item.index,
+              [...item.previousRunIds, ...(item.runId === null ? [] : [item.runId])],
+              item.runId,
+            );
           if (input.useLatest === true) yield* store.setDefinition(batchId, current);
           yield* store.setStatus(batchId, "running", null, null);
         }),

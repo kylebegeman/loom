@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import * as VaultReferences from "./VaultReferences.ts";
+import { VaultPromptRun } from "./active-run.ts";
 
 export class VaultPromptError extends Schema.TaggedError<VaultPromptError>()("VaultPromptError", {
   reason: Schema.Literals([
@@ -48,7 +49,9 @@ export const applyVaultPromptContext = Effect.fn("VaultPromptContext.apply")(fun
   if (Option.isNone(identity)) return yield* new VaultPromptError({ reason: "unavailable" });
   const guard = guards.get(yield* identity.value.getEnvironmentId);
   if (!guard) return yield* new VaultPromptError({ reason: "unavailable" });
-  yield* guard(input);
+  yield* guard(input).pipe(
+    Effect.provideService(VaultPromptRun, { threadId: input.threadId, runId: input.runId }),
+  );
 });
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -62,7 +65,12 @@ export const layer = Layer.effectDiscard(
         return yield* new VaultPromptError({ reason: "invalid-links" });
       if (!vaultPromptEnvironmentMatches(parsed.attachments, environmentId))
         return yield* new VaultPromptError({ reason: "wrong-environment" });
-      for (const link of parsed.attachments) {
+      // Check read-only references before preparing the profile, which creates the run's pin.
+      // A rejected steering message must not change the run already in progress.
+      const attachments = parsed.attachments.toSorted(
+        (a, b) => Number(a.kind === "profile") - Number(b.kind === "profile"),
+      );
+      for (const link of attachments) {
         if (link.kind === "profile") {
           yield* profiles.prepare(input.threadId, link.id, link.version, input.runId).pipe(
             Effect.mapError(

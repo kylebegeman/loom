@@ -244,7 +244,10 @@ it.effect(
             Effect.provide(f.context),
             Effect.provideService(McpInvocationContext, caller),
           );
-      expect((yield* invoke(scope).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* invoke(scope))[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       const trust = yield* toolkit
         .handle("loom_vault_ssh_trust", {
           id: f.itemId,
@@ -256,25 +259,35 @@ it.effect(
           Effect.flatMap(Stream.runCollect),
           Effect.provide(f.context),
           Effect.provideService(McpInvocationContext, scope),
-          Effect.flip,
         );
-      expect(trust._tag).toBe("VaultError");
+      expect(trust[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       const probe = yield* toolkit
         .handle("loom_vault_ssh_probe", { id: f.itemId, expectedVersion: 1 })
         .pipe(
           Effect.flatMap(Stream.runCollect),
           Effect.provide(f.context),
           Effect.provideService(McpInvocationContext, scope),
-          Effect.flip,
         );
-      expect(probe._tag).toBe("VaultError");
+      expect(probe[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect(
         (yield* invoke({
           ...scope,
           thread: undefined,
           client: { sessionId: "read-only", label: "Read only", access: "read-only" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "capability_denied" },
+      });
+      const unchanged = yield* f.ssh.info(f.itemId);
+      expect(unchanged.item.version).toBe(f.key.item.version);
+      expect(unchanged.target.hostKey).toBe(f.key.target.hostKey);
       const human = {
         ...scope,
         thread: undefined,

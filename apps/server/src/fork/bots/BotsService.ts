@@ -138,7 +138,7 @@ interface LiveRun {
    */
   launched: boolean;
   threadRunId: RunId | null;
-  /** From the version that ran; a restarted server reads the current one. */
+  /** From the version that ran, including after recovery when its version is still stored. */
   output: BotOutput;
 }
 
@@ -283,10 +283,14 @@ export const make = Effect.gen(function* () {
   const changes = yield* PubSub.unbounded<BotsChange>();
   const environmentPermits = yield* Semaphore.make(BOTS_MAX_ACTIVE_RUNS);
   const botPermits = new Map<string, { readonly semaphore: Semaphore.Semaphore; size: number }>();
+  const recoveredRuns = new Map<string, number>();
+  let recoveredRunCount = 0;
   const live = new Map<string, LiveRun>();
   const recovered = yield* Deferred.make<void>();
   const seeded = yield* Deferred.make<void>();
   const retryPermit = yield* Semaphore.make(1);
+  // The optimistic check also covers publishing to the Library, which yields before the write.
+  const definitionPermit = yield* Semaphore.make(1);
   // Serializes a budget check with the run row it admits, so two starts cannot both take the last run.
   const budgetPermit = yield* Semaphore.make(1);
 
@@ -298,16 +302,29 @@ export const make = Effect.gen(function* () {
 
   const permitsFor = Effect.fnUntraced(function* (bot: BotDefinition) {
     const existing = botPermits.get(bot.id);
+    const available = Math.max(0, bot.maxConcurrentRuns - (recoveredRuns.get(bot.id) ?? 0));
     if (existing === undefined) {
-      const semaphore = yield* Semaphore.make(bot.maxConcurrentRuns);
+      const semaphore = yield* Semaphore.make(available);
       botPermits.set(bot.id, { semaphore, size: bot.maxConcurrentRuns });
       return semaphore;
     }
     if (existing.size !== bot.maxConcurrentRuns) {
-      yield* Semaphore.resize(bot.maxConcurrentRuns)(existing.semaphore);
+      yield* Semaphore.resize(available)(existing.semaphore);
       existing.size = bot.maxConcurrentRuns;
     }
     return existing.semaphore;
+  });
+
+  // Recovered threads already run, so they reduce launch capacity while all their waiters start
+  // immediately, including when a bot's limit was lowered below its unfinished run count.
+  const accountRecovered = Effect.fnUntraced(function* (botId: string, delta: 1 | -1) {
+    recoveredRunCount += delta;
+    const count = (recoveredRuns.get(botId) ?? 0) + delta;
+    if (count === 0) recoveredRuns.delete(botId);
+    else recoveredRuns.set(botId, count);
+    yield* environmentPermits.resize(Math.max(0, BOTS_MAX_ACTIVE_RUNS - recoveredRunCount));
+    const permits = botPermits.get(botId);
+    if (permits !== undefined) yield* permits.semaphore.resize(Math.max(0, permits.size - count));
   });
 
   // Only a budget needs the runs of its window kept past RUNS_KEPT_PER_BOT.
@@ -393,6 +410,12 @@ export const make = Effect.gen(function* () {
       );
     const origin = options.origin ?? existing?.origin;
     const existingLink = existing?.library ?? null;
+    // A sync may have read its revision before waiting behind a local save or unshare.
+    if (options.library != null && existing !== null) {
+      if (existingLink === null)
+        return yield* fail("invalid", "A local bot with this id already exists on this computer.");
+      if (existingLink.revision >= options.library.revision) return existing;
+    }
     const library =
       options.library !== undefined
         ? options.library
@@ -431,7 +454,7 @@ export const make = Effect.gen(function* () {
     yield* permitsFor(bot);
     yield* publish({ _tag: "bot", bot });
     return bot;
-  });
+  }, definitionPermit.withPermits(1));
 
   const save = Effect.fn("BotsService.save")(function* (input: BotsSaveInput, caller: BotCaller) {
     const { expectedVersion, ...definition } = input;
@@ -572,7 +595,7 @@ export const make = Effect.gen(function* () {
     yield* store.putDefinition(next).pipe(Effect.catch(storageError));
     yield* publish({ _tag: "bot", bot: next });
     return next;
-  });
+  }, definitionPermit.withPermits(1));
 
   const activeRunCount = (botId: string) =>
     [...live.values()].filter((entry) => entry.run.botId === botId).length;
@@ -584,7 +607,7 @@ export const make = Effect.gen(function* () {
     yield* store.deleteDefinition(botId).pipe(Effect.catch(storageError));
     botPermits.delete(botId);
     yield* publish({ _tag: "bot-deleted", botId });
-  });
+  }, definitionPermit.withPermits(1));
 
   const missingVersion = (bot: BotDefinition, version: number) =>
     fail("not_found", `Version ${version} of ${bot.name} is no longer stored.`);
@@ -634,7 +657,7 @@ export const make = Effect.gen(function* () {
       input.version === null ? rest : { ...rest, stableVersion: input.version };
     yield* publish({ _tag: "bot", bot: next });
     return next;
-  });
+  }, definitionPermit.withPermits(1));
 
   /** Saves an earlier version's definition as a new version, so history only grows. */
   const restoreVersion = Effect.fn("BotsService.restoreVersion")(function* (
@@ -1139,7 +1162,7 @@ export const make = Effect.gen(function* () {
     const next: BotDefinition = link === null ? rest : { ...rest, library: link };
     yield* publish({ _tag: "bot", bot: next });
     return next;
-  });
+  }, definitionPermit.withPermits(1));
 
   /** Validates the inputs, writes the queued run and starts it under `permitBot`'s limits. */
   const start = Effect.fnUntraced(function* (
@@ -1470,21 +1493,19 @@ export const make = Effect.gen(function* () {
           modelSelection: input.modelSelection,
           retryOf: old.id,
           onInserted: (inserted) =>
-            store
-              .setRetriedBy(old.id, inserted.id)
-              .pipe(
-                Effect.andThen(
-                  batchId == null
-                    ? Effect.void
-                    : store.replaceBatchItemRun(batchId, old.id, inserted.id).pipe(
-                        // The batch requeued the item since the check; rolls the retry back.
-                        Effect.andThen(store.batchRerunsWithout(batchId, inserted.id)),
-                        Effect.flatMap((reruns) =>
-                          reruns ? Effect.fail(fail("invalid", BATCH_RERUNS_ITEM)) : Effect.void,
-                        ),
+            store.setRetriedBy(old.id, inserted.id).pipe(
+              Effect.andThen(
+                batchId == null
+                  ? Effect.void
+                  : store.replaceBatchItemRun(batchId, old.id, inserted.id).pipe(
+                      // The batch requeued the item since the check; rolls the retry back.
+                      Effect.andThen(store.batchRerunsWithout(batchId, inserted.id)),
+                      Effect.flatMap((reruns) =>
+                        reruns ? Effect.fail(fail("invalid", BATCH_RERUNS_ITEM)) : Effect.void,
                       ),
-                ),
+                    ),
               ),
+            ),
         },
       ).pipe(Effect.tap((next) => publish({ _tag: "run", run: { ...old, retriedBy: next.id } })));
     }).pipe(retryPermit.withPermits(1));
@@ -1589,7 +1610,13 @@ export const make = Effect.gen(function* () {
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     for (const stored of unfinished) {
       if (live.has(stored.id)) continue;
-      const bot = yield* store.getDefinition(stored.botId).pipe(Effect.orElseSucceed(() => null));
+      const current = yield* store
+        .getDefinition(stored.botId)
+        .pipe(Effect.orElseSucceed(() => null));
+      const version = yield* store
+        .getVersion(stored.botId, stored.botVersion)
+        .pipe(Effect.orElseSucceed(() => null));
+      const definition = version?.definition ?? current;
       const entry: LiveRun = {
         run: stored,
         fiber: null,
@@ -1597,7 +1624,7 @@ export const make = Effect.gen(function* () {
         cancelRequested: false,
         launched: stored.status === "running",
         threadRunId: null,
-        output: bot?.output ?? "text",
+        output: definition?.output ?? "text",
       };
       if (stored.status === "queued") {
         yield* finish(entry, {
@@ -1607,12 +1634,14 @@ export const make = Effect.gen(function* () {
         continue;
       }
       live.set(stored.id, entry);
-      const limitMs = (bot?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES) * 60_000;
+      yield* accountRecovered(stored.botId, 1);
+      const limitMs = (definition?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES) * 60_000;
       const startedMs = stored.startedAt === null ? nowMs : Date.parse(stored.startedAt);
       const remainingMs = Math.max(1, limitMs - (nowMs - startedMs));
       entry.fiber = yield* awaitThread(entry, remainingMs).pipe(
         Effect.catch(recordFailure(entry)),
         Effect.catchDefect(recordFailure(entry)),
+        Effect.ensuring(accountRecovered(stored.botId, -1)),
         Effect.forkIn(serviceScope),
       );
     }

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 export function VaultRequirementImport({
   disabled,
   supportsGitHub,
@@ -82,7 +83,7 @@ export function VaultRequirementExport({ profile }: { profile: VaultProfileDefin
           size="sm"
           variant="outline"
           onClick={() =>
-            void navigator.clipboard.writeText(text).then(
+            void writeTextToClipboard(text, "Vault profile requirements").then(
               () => setNotice("Requirements copied."),
               () => setNotice("Copy unavailable. Select and copy the declaration above."),
             )

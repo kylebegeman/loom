@@ -1,6 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
-import { BOTS_RESULT_MAX_BYTES, type BotRun, type BotStarterId } from "@t3tools/contracts/fork";
+import {
+  BOTS_MAX_ACTIVE_RUNS,
+  BOTS_RESULT_MAX_BYTES,
+  type BotRun,
+  type BotStarterId,
+} from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -223,6 +228,84 @@ describe("BotsService", () => {
           status: "cancelled",
           result: "Partial notes.",
         });
+      }),
+    ),
+  );
+
+  it.effect("recovers a run with the output format of the version that started it", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ output: "verdict" }), USER_CALLER);
+        yield* bots.save(reviewer({ output: "text" }), USER_CALLER);
+        yield* (yield* makeBotsStore).insertRun({
+          ...storedRun("running-run", "reviewer", 1),
+          status: "running",
+          finishedAt: null,
+        });
+
+        yield* bots.recover();
+        yield* harness.end("bot-run-running-run", {
+          status: "completed",
+          reply: '{"verdict":"fail","summary":"One bug."}',
+        });
+        expect(yield* bots.awaitRun("running-run", 60_000)).toMatchObject({
+          status: "completed",
+          verdict: { verdict: "fail", summary: "One bug." },
+        });
+      }),
+    ),
+  );
+
+  it.effect("counts a recovered run against the bot's concurrency limit", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* (yield* makeBotsStore).insertRun({
+          ...storedRun("running-run", "reviewer", 1),
+          status: "running",
+          finishedAt: null,
+        });
+        yield* bots.recover();
+        const next = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "next.ts" }, projectId },
+          USER_CALLER,
+        );
+        yield* Effect.yieldNow;
+        expect((yield* bots.getRun(next.id)).status).toBe("queued");
+        yield* harness.end("bot-run-running-run", { status: "completed", reply: "Recovered." });
+        expect((yield* harness.nextLaunch).threadId).toBe(next.threadId);
+        yield* harness.end(next.threadId, { status: "completed", reply: "Next." });
+        expect((yield* bots.awaitRun(next.id)).status).toBe("completed");
+      }),
+    ),
+  );
+
+  it.effect("counts recovered runs against the shared environment limit", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ maxConcurrentRuns: BOTS_MAX_ACTIVE_RUNS }), USER_CALLER);
+        yield* bots.save(reviewer({ id: "another-bot" }), USER_CALLER);
+        const store = yield* makeBotsStore;
+        for (let index = 0; index < BOTS_MAX_ACTIVE_RUNS; index++)
+          yield* store.insertRun({
+            ...storedRun(`recovered-${index}`, "reviewer", 1),
+            status: "running",
+            finishedAt: null,
+          });
+        yield* bots.recover();
+        const next = yield* bots.run(
+          { botId: "another-bot", inputs: { file: "next.ts" }, projectId },
+          USER_CALLER,
+        );
+        yield* Effect.yieldNow;
+        expect((yield* bots.getRun(next.id)).status).toBe("queued");
+        yield* harness.end("bot-run-recovered-0", { status: "completed", reply: "Recovered." });
+        expect((yield* harness.nextLaunch).threadId).toBe(next.threadId);
+        yield* harness.end(next.threadId, { status: "completed", reply: "Next." });
+        expect((yield* bots.awaitRun(next.id)).status).toBe("completed");
       }),
     ),
   );

@@ -84,7 +84,7 @@ export function loomNativeAuthorization(input: {
   return url.href;
 }
 
-export function loomCallbackCode(value: string, redirectUri: string, state: string) {
+function loomCallbackUrl(value: string, redirectUri: string, state: string) {
   const url = new URL(value, redirectUri);
   const expected = new URL(redirectUri);
   if (
@@ -94,6 +94,11 @@ export function loomCallbackCode(value: string, redirectUri: string, state: stri
     url.searchParams.get("state") !== state
   )
     throw new Error("This response does not belong to the active Loom sign-in.");
+  return url;
+}
+
+export function loomCallbackCode(value: string, redirectUri: string, state: string) {
+  const url = loomCallbackUrl(value, redirectUri, state);
   if (url.searchParams.has("error")) throw new Error("Loom sign-in was declined. Try again.");
   const codes = url.searchParams.getAll("code");
   if (codes.length !== 1 || !codes[0])
@@ -199,21 +204,31 @@ export async function signInToLoom(
       try {
         if (incoming.method !== "GET" || consumed || incoming.headers.host !== redirect.host)
           throw new Error("callback");
+        loomCallbackUrl(incoming.url ?? "/", redirect.href, state);
+      } catch {
+        response
+          .writeHead(400, { "content-type": "text/plain; charset=utf-8" })
+          .end("This response does not belong to the active Loom sign-in.");
+        return;
+      }
+      // Only a callback bound to this attempt can settle it, including a provider denial.
+      consumed = true;
+      response.setHeader("cache-control", "no-store");
+      response.setHeader("referrer-policy", "no-referrer");
+      response.setHeader("content-security-policy", "default-src 'none'; frame-ancestors 'none'");
+      try {
         const code = loomCallbackCode(incoming.url ?? "/", redirect.href, state);
-        consumed = true;
-        response.setHeader("cache-control", "no-store");
-        response.setHeader("referrer-policy", "no-referrer");
-        response.setHeader("content-security-policy", "default-src 'none'; frame-ancestors 'none'");
         response
           .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
           .end(
             "Return to Loom. Your sign-in response was received and the connection is being verified. You can close this tab.",
           );
         callback.resolve(code);
-      } catch {
+      } catch (cause) {
         response
           .writeHead(400, { "content-type": "text/plain; charset=utf-8" })
-          .end("This response does not belong to the active Loom sign-in.");
+          .end("Loom sign-in did not complete. Return to Loom to try again.");
+        callback.reject(cause);
       }
     });
     const ownedServer = server;
@@ -306,8 +321,8 @@ export async function signInToLoom(
           "This Loom account is not authorized for the Library, or its session could not be issued.",
         );
       }
-      if (session.token_type !== "Bearer")
-        throw new Error("The Library returned an unsupported desktop session type.");
+      if (session.token_type !== "Bearer" || session.expires_in <= 0)
+        throw new Error("The Library returned an unsupported or expired desktop session.");
       return {
         httpBaseUrl: origin,
         environmentId: metadata.environmentId,

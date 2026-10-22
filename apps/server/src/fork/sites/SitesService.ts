@@ -73,11 +73,11 @@ const make = Effect.gen(function* () {
   const api = env.LOOM_SITES_API_ORIGIN?.trim() || "https://api.begam.in";
   const issuer = env.LOOM_IDENTITY_ISSUER?.trim();
   const id = env.LOOM_SITES_CLIENT_ID?.trim();
-  const secret = env.LOOM_SITES_CLIENT_SECRET
+  const secret = env.LOOM_SITES_CLIENT_SECRET?.trim()
     ? Redacted.make(env.LOOM_SITES_CLIENT_SECRET.trim())
     : null;
   const managerId = env.LOOM_SITES_MANAGER_CLIENT_ID?.trim();
-  const managerSecret = env.LOOM_SITES_MANAGER_CLIENT_SECRET
+  const managerSecret = env.LOOM_SITES_MANAGER_CLIENT_SECRET?.trim()
     ? Redacted.make(env.LOOM_SITES_MANAGER_CLIENT_SECRET.trim())
     : null;
   const configured = Boolean(id && secret && issuer);

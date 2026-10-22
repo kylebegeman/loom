@@ -35,7 +35,7 @@ export function GitHubReadiness({
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-github-terminal")) return null;
   return (
     <Checks
-      key={`${info.item.version}:${repository}`}
+      key={`${environmentId}:${info.item.id}:${info.item.version}:${repository}:${ownerMode}`}
       environmentId={environmentId}
       info={info}
       repository={repository}
@@ -85,9 +85,10 @@ function Checks({
     setError(null);
   };
   const check = async () => {
-    if (controller) return;
+    if (controller || disabled || !allowed || info.item.state !== "active") return;
     const cancellation = new AbortController();
     setController(cancellation);
+    setChoosing(false);
     setReport(null);
     setExpired(false);
     setError(null);
@@ -146,14 +147,20 @@ function Checks({
             placeholder="Find a thread"
             value={filter}
             onChangeText={setFilter}
+            editable={!disabled && !controller}
           />
-          <Button label="Loom server tools only" onPress={() => select(null)} />
+          <Button
+            label="Loom server tools only"
+            disabled={disabled || !!controller}
+            onPress={() => select(null)}
+          />
           {threads
             .filter((s) => s.label.toLowerCase().includes(filter.toLowerCase()))
             .map((s) => (
               <Button
                 key={s.principal.id}
                 label={`Check thread ${s.label}`}
+                disabled={disabled || !!controller}
                 onPress={() => select(s.principal.id)}
               />
             ))}

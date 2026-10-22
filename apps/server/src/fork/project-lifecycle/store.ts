@@ -84,7 +84,7 @@ export const makeStore = Effect.gen(function* () {
     }),
     setPortBase: Effect.fn("ProjectLifecycleStore.setPortBase")(function* (
       id: string,
-      portBase: number,
+      portBase: number | null,
     ) {
       yield* sql`UPDATE fork_project_lifecycle_lanes SET port_base = ${portBase} WHERE id = ${id}`;
     }),

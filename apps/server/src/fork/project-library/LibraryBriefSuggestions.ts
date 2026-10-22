@@ -183,6 +183,31 @@ const make = Effect.gen(function* () {
     if (runThreadId === undefined) return yield* new LibraryError({ reason: "invalid" });
     const launched = yield* Effect.gen(function* () {
       const current = yield* project({ projectId: suggestion.projectId });
+      const resolved = yield* workspaces.getBinding(suggestion.threadId);
+      const pinned = yield* workspaces.getBoundProject(suggestion.threadId);
+      const source = yield* threads.getThreadShell(suggestion.threadId).pipe(Effect.mapError(io));
+      if (
+        current.archived ||
+        resolved === null ||
+        pinned === null ||
+        source === null ||
+        source.deletedAt != null ||
+        source.projectId !== stored.launch.localProjectId ||
+        resolved.localProjectId !== stored.launch.localProjectId ||
+        resolved.binding.projectId !== suggestion.projectId ||
+        pinned.id !== suggestion.projectId ||
+        pinned.revision !== resolved.binding.projectRevision
+      )
+        return yield* new LibraryError({ reason: "blocked" });
+      yield* workspaces.validateThreadCwd({
+        threadId: suggestion.threadId,
+        localProjectId: stored.launch.localProjectId,
+        cwd: source.worktreePath ?? resolved.cwd,
+      });
+      // Provider startup requires a binding before its first turn. Keep the source's reviewed
+      // copy, scope and cwd, including migrated worktrees, without inheriting its continuation.
+      const { continuationOf: _continuationOf, ...binding } = resolved.binding;
+      yield* workspaces.bind(runThreadId, { ...resolved, binding }, pinned);
       return yield* launches
         .launch({
           commandId: CommandId.make(`library-brief-suggestion:${suggestion.threadId}`),
@@ -194,7 +219,10 @@ const make = Effect.gen(function* () {
           // Plan mode asks for a plan to approve, so it would stop before proposing. The
           // prompt forbids edits instead.
           interactionMode: "default",
-          workspaceStrategy: { type: "root" },
+          workspaceStrategy:
+            source.worktreePath == null
+              ? { type: "root" }
+              : { type: "existing_worktree", worktreePath: source.worktreePath },
           initialMessage: {
             text: briefSuggestionRunPrompt({ threadId: suggestion.threadId, project: current }),
             attachments: [],

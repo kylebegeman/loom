@@ -561,7 +561,13 @@ const make = Effect.gen(function* () {
       const claims = yield* decodeClaims(idToken.payload).pipe(
         Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
       );
-      if (claims.nonce !== entry.nonce || (claims.azp !== undefined && claims.azp !== clientId))
+      if (
+        claims.nonce !== entry.nonce ||
+        (claims.azp !== undefined && claims.azp !== clientId) ||
+        (Array.isArray(idToken.payload.aud) &&
+          idToken.payload.aud.length > 1 &&
+          claims.azp !== clientId)
+      )
         return yield* new PocketIdError({ reason: "token" });
       const identity = yield* verifyAccessToken(tokens.access_token);
       if (identity.subject !== `pocket-id:${claims.sub}`)
@@ -605,26 +611,25 @@ const make = Effect.gen(function* () {
     beginLogin,
     completeLogin,
     verifyAccessToken,
-    exchangeAccessToken: (input) =>
-      Effect.gen(function* () {
-        const identity = yield* verifyAccessToken(input.token);
-        const session = yield* issue(identity, {
-          ...input,
-          method:
-            input.proofKeyThumbprint === undefined ? "bearer-access-token" : "dpop-access-token",
-        });
-        const now = yield* DateTime.now;
-        return {
-          access_token: session.token,
-          issued_token_type: AuthAccessTokenType,
-          token_type: input.proofKeyThumbprint === undefined ? "Bearer" : "DPoP",
-          expires_in: Math.max(
-            0,
-            Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
-          ),
-          scope: session.scopes.join(" "),
-        };
-      }),
+    exchangeAccessToken: Effect.fn("PocketId.exchangeAccessToken")(function* (input) {
+      const identity = yield* verifyAccessToken(input.token);
+      const session = yield* issue(identity, {
+        ...input,
+        method:
+          input.proofKeyThumbprint === undefined ? "bearer-access-token" : "dpop-access-token",
+      });
+      const now = yield* DateTime.now;
+      return {
+        access_token: session.token,
+        issued_token_type: AuthAccessTokenType,
+        token_type: input.proofKeyThumbprint === undefined ? "Bearer" : "DPoP",
+        expires_in: Math.max(
+          0,
+          Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
+        ),
+        scope: session.scopes.join(" "),
+      };
+    }),
   });
 });
 

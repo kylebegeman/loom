@@ -9,6 +9,7 @@ import * as SshTransport from "./SshTransport.ts";
 import * as VaultReferences from "./VaultReferences.ts";
 import * as VaultPromptContext from "./VaultPromptContext.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
+import { vaultRun } from "./VaultActiveRun.testkit.ts";
 const deps = Layer.merge(NodeServices.layer, memoryVault);
 const fixture = Effect.gen(function* () {
   const f = yield* launchFixture(
@@ -111,6 +112,44 @@ it.effect(
           .pipe(Effect.flip)).reason,
       ).toBe("denied");
     }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+it.effect(
+  "prepares the exact starting run under owner trust without permitting broker use before it runs",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.access.setOwnerPolicy(
+        { operationId: yield* f.id, expectedRevision: 0, mode: "owner-trusted" },
+        "owner",
+        Effect.void,
+      );
+      f.state.runs = [vaultRun(f.state.thread, { status: "starting" })];
+      const reference = vaultPromptLink(
+        { kind: "reference", environmentId: f.environmentId, id: f.itemId },
+        "Owner SSH connection",
+      );
+      yield* f.prepare(`${f.input.text}\n\n${reference}`);
+      expect((yield* f.profiles.currentPin(f.threadId))?.profileId).toBe(f.profile.id);
+      expect((yield* f.session(f.key.destination).pipe(Effect.flip)).reason).toBe("denied");
+      expect((yield* f.profiles.resolve(f.threadId, null).pipe(Effect.flip)).reason).toBe("denied");
+
+      f.state.runs = [vaultRun(f.state.thread, { status: "queued" })];
+      expect((yield* f.prepare().pipe(Effect.flip)).reason).toBe("profile-blocked");
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+it.effect("does not pin a profile when another attachment blocks a steering message", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.grant(f.key.destination);
+    const reference = vaultPromptLink(
+      { kind: "reference", environmentId: f.environmentId, id: yield* f.id },
+      "Unavailable reference",
+    );
+    expect((yield* f.prepare(`${f.input.text}\n\n${reference}`).pipe(Effect.flip)).reason).toBe(
+      "reference-blocked",
+    );
+    expect(yield* f.profiles.currentPin(f.threadId)).toBeNull();
+  }).pipe(Effect.scoped, Effect.provide(deps)),
 );
 it.effect(
   "checks active references with inspect grants, never reveals values, and rejects archived references",

@@ -15,6 +15,7 @@ import { Button } from "~/components/ui/button";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { useServerConfigs } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 const github = createVaultGitHubAtoms(connectionAtomRuntime),
   access = createVaultAccessAtoms(connectionAtomRuntime);
 export function GitHubReadiness({
@@ -40,7 +41,7 @@ export function GitHubReadiness({
     return null;
   return (
     <Checks
-      key={`${info.item.version}:${repository}`}
+      key={`${environmentId}:${info.item.id}:${info.item.version}:${repository}:${ownerMode}`}
       environmentId={environmentId}
       info={info}
       repository={repository}
@@ -84,7 +85,7 @@ function Checks({
   }, [report]);
   useEffect(() => () => controller?.abort(), [controller]);
   const check = async () => {
-    if (controller) return;
+    if (controller || disabled || !allowed || info.item.state !== "active") return;
     const cancellation = new AbortController();
     setController(cancellation);
     setReport(null);
@@ -210,7 +211,7 @@ function Checks({
           size="sm"
           variant="outline"
           onClick={() => {
-            void navigator.clipboard.writeText(example).then(
+            void writeTextToClipboard(example, "the terminal command").then(
               () => setCopied(true),
               () => setError("Could not copy the command. Select the example above."),
             );

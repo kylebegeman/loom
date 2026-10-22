@@ -112,15 +112,18 @@ it.effect.each(["pi", "codex"])(
           ...scope,
           thread: undefined,
           client: { sessionId: "reader", access: "read-only", label: "reader" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "capability_denied" },
+      });
       expect(
         (yield* invoke({
           ...scope,
           thread: undefined,
           client: { sessionId: "admin", access: "full-access", label: "admin" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("VaultError");
+        }))[0],
+      ).toMatchObject({ isFailure: true, result: { _tag: "VaultError", reason: "denied" } });
       expect(
         (yield* invoke({
           ...scope,
@@ -128,10 +131,16 @@ it.effect.each(["pi", "codex"])(
             ...scope.thread!,
             providerInstanceId: ProviderInstanceId.make("other-provider"),
           },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "parent_not_active" },
+      });
       f.state.thread = { ...f.state.thread, runtimeMode: "approval-required" };
-      expect((yield* invoke().pipe(Effect.flip))._tag).toBe("OrchestratorMcpFailure");
+      expect((yield* invoke())[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "capability_denied" },
+      });
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 

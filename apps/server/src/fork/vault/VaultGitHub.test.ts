@@ -281,7 +281,10 @@ it.effect(
             Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
-      expect((yield* list(scope).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* list(scope))[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect((yield* list(admin))[0]?.result).toMatchObject({ items: [saved] });
       const inspect = (caller = scope) =>
         toolkit
@@ -291,7 +294,10 @@ it.effect(
             Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
-      expect((yield* inspect().pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* inspect())[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect((yield* inspect(admin))[0]?.result).toEqual(saved);
       const run = (caller: McpInvocationScope) =>
         toolkit
@@ -306,18 +312,22 @@ it.effect(
             Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
-      expect((yield* run(admin).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* run(admin))[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect(
         (yield* run({
           ...scope,
           thread: { ...scope.thread!, providerInstanceId: ProviderInstanceId.make("wrong") },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "parent_not_active" },
+      });
       expect(
-        (yield* list({ ...admin, client: { ...admin.client!, access: "read-only" } }).pipe(
-          Effect.flip,
-        ))._tag,
-      ).toBe("VaultError");
+        (yield* list({ ...admin, client: { ...admin.client!, access: "read-only" } }))[0],
+      ).toMatchObject({ isFailure: true, result: { _tag: "VaultError", reason: "denied" } });
       const terminalInput = {
         id: f.input.id,
         expectedVersion: 1,
@@ -332,7 +342,10 @@ it.effect(
             Effect.provide(context),
             Effect.provideService(McpInvocationContext, caller),
           );
-      expect((yield* exec(admin).pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* exec(admin))[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       yield* allowTerminal(f);
       expect((yield* exec(scope))[0]?.result).toMatchObject({ stdout: "Scoped terminal result" });
       const readiness = toolkit
@@ -347,8 +360,12 @@ it.effect(
           Effect.provide(context),
           Effect.provideService(McpInvocationContext, scope),
         );
-      expect((yield* readiness.pipe(Effect.flip))._tag).toBe("VaultError");
+      expect((yield* readiness)[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect(f.calls()).toBe(0);
+      expect(f.terminalCalls()).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(deps)),
 );
 

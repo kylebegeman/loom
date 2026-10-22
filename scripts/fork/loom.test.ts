@@ -48,11 +48,14 @@ function run(f: ReturnType<typeof fixture>, command: string) {
       `
     source "$LOOM_TEST_SCRIPT"
     T3_USERDATA=$LOOM_TEST_USERDATA
+    APP_PATH="$LOOM_TEST_CURRENT/Loom.app"
+    mkdir -p "$APP_PATH"
     installed_record() { echo "$LOOM_TEST_CURRENT"; }
     records() { echo "$LOOM_TEST_PREVIOUS"; }
     quit_app() { :; }
-    install_record() { :; }
+    install_record() { rm -rf "$2/Loom.app"; }
     verify_install_signing() { :; }
+    prepare_install() { verify_install_signing "$1" || return; mkdir -p "$LOOM_TEST_CURRENT/prepared/Loom.app"; echo "$LOOM_TEST_CURRENT/prepared"; }
     ${command}
   `,
     ],
@@ -600,3 +603,166 @@ it("refuses an incompatible rollback before restoring application data", () => {
   expect(history(NodePath.join(f.userdata, "statev2.sqlite"))).toBe("current");
   expect(NodeFS.existsSync(NodePath.join(f.current, "state"))).toBe(false);
 });
+
+it.each(["copy", "replacement"])("preserves the installed app when %s fails", (failure) => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-install-failure-"));
+  roots.push(root);
+  const app = NodePath.join(root, "Loom.app");
+  const record = NodePath.join(root, "record");
+  NodeFS.mkdirSync(app);
+  NodeFS.writeFileSync(NodePath.join(app, "keep"), "installed bytes");
+  NodeFS.mkdirSync(NodePath.join(record, "Loom.app"), { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(record, "Loom.app", "candidate"), "new bytes");
+  expect(() =>
+    runMetadata(
+      root,
+      `
+    APP_PATH=$LOOM_TEST_APP
+    BUILDS_DIR=$LOOM_TEST_ROOT
+    verify_install_signing() { :; }
+    quit_app() { echo quit > "$LOOM_TEST_ROOT/quit"; }
+    installed_record() { :; }
+    snapshot_state() { :; }
+    open() { :; }
+    installed_version() { echo test; }
+    ditto() {
+      [ "$LOOM_TEST_FAILURE" != copy ] || return 1
+      cp -R "$1" "$2"
+    }
+    mv() {
+      if [ "$LOOM_TEST_FAILURE" = replacement ] && [ "$2" = "$APP_PATH" ] && [ "$(basename "$1")" = Loom.app ]; then return 1; fi
+      command mv "$@"
+    }
+    install_record "$LOOM_TEST_RECORD"
+  `,
+      { LOOM_TEST_APP: app, LOOM_TEST_RECORD: record, LOOM_TEST_FAILURE: failure },
+    ),
+  ).toThrow();
+  expect(NodeFS.readFileSync(NodePath.join(app, "keep"), "utf8")).toBe("installed bytes");
+  expect(NodeFS.existsSync(NodePath.join(app, "candidate"))).toBe(false);
+  expect(NodeFS.readdirSync(root).some((name) => name.startsWith(".loom-install."))).toBe(false);
+  if (failure === "copy") expect(NodeFS.existsSync(NodePath.join(root, "quit"))).toBe(false);
+});
+
+it.each(["none", "launch", "interrupted-after-replacement"])(
+  "keeps the outgoing snapshot and previous data after replacement (%s)",
+  (failure) => {
+    const f = fixture();
+    const app = NodePath.join(f.current, "Loom.app");
+    NodeFS.mkdirSync(app);
+    NodeFS.writeFileSync(NodePath.join(app, "version"), "current");
+    NodeFS.mkdirSync(NodePath.join(f.previous, "Loom.app"));
+    NodeFS.writeFileSync(NodePath.join(f.previous, "Loom.app/version"), "previous");
+    database(NodePath.join(f.userdata, "statev2.sqlite"), "current");
+    database(NodePath.join(f.previous, "state/statev2.sqlite"), "previous");
+    const rollback = () =>
+      runMetadata(
+        f.current,
+        `
+    APP_PATH=$LOOM_TEST_APP
+    BUILDS_DIR=$LOOM_TEST_ROOT
+    T3_USERDATA=$LOOM_TEST_USERDATA
+    installed_record() { echo "$LOOM_TEST_CURRENT"; }
+    records() { echo "$LOOM_TEST_PREVIOUS"; }
+    verify_install_signing() { :; }
+    quit_app() { :; }
+    ditto() { cp -R "$1" "$2"; }
+    mv() {
+      command mv "$@" || return
+      if [ "$LOOM_TEST_FAILURE" = interrupted-after-replacement ] && [ "$2" = "$APP_PATH" ] && [ "$(basename "$1")" = Loom.app ]; then
+        sh -c 'kill -TERM "$PPID"'
+      fi
+    }
+    open() { [ "$LOOM_TEST_FAILURE" != launch ]; }
+    installed_version() { echo test; }
+    cmd_rollback
+  `,
+        {
+          LOOM_TEST_APP: app,
+          LOOM_TEST_USERDATA: f.userdata,
+          LOOM_TEST_CURRENT: f.current,
+          LOOM_TEST_PREVIOUS: f.previous,
+          LOOM_TEST_FAILURE: failure,
+        },
+      );
+    if (failure === "none") rollback();
+    else expect(rollback).toThrow();
+    expect(NodeFS.readFileSync(NodePath.join(app, "version"), "utf8")).toBe("previous");
+    expect(history(NodePath.join(f.userdata, "statev2.sqlite"))).toBe("previous");
+    expect(history(NodePath.join(f.current, "state/statev2.sqlite"))).toBe("current");
+  },
+);
+
+it.each(["state-copy", "state-swap", "replacement", "interrupted"])(
+  "restores outgoing app and userdata when rollback fails during %s",
+  (failure) => {
+    const f = fixture();
+    const root = NodePath.dirname(f.current);
+    const app = NodePath.join(root, "Loom.app");
+    NodeFS.mkdirSync(app);
+    NodeFS.writeFileSync(NodePath.join(app, "version"), "current");
+    NodeFS.mkdirSync(NodePath.join(f.previous, "Loom.app"));
+    NodeFS.writeFileSync(NodePath.join(f.previous, "Loom.app/version"), "previous");
+    database(NodePath.join(f.userdata, "state.sqlite"), "current-v1");
+    database(NodePath.join(f.userdata, "statev2.sqlite"), "current-v2");
+    database(NodePath.join(f.previous, "state/state.sqlite"), "previous-v1");
+    database(NodePath.join(f.previous, "state/statev2.sqlite"), "previous-v2");
+    NodeFS.writeFileSync(NodePath.join(f.userdata, "settings.json"), "current settings");
+    NodeFS.writeFileSync(NodePath.join(f.previous, "state/settings.json"), "previous settings");
+    NodeFS.writeFileSync(
+      NodePath.join(f.previous, "state/client-settings.json"),
+      "previous client",
+    );
+    expect(() =>
+      runMetadata(
+        root,
+        `
+        APP_PATH=$LOOM_TEST_APP
+        BUILDS_DIR=$LOOM_TEST_ROOT
+        T3_USERDATA=$LOOM_TEST_USERDATA
+        installed_record() { echo "$LOOM_TEST_CURRENT"; }
+        records() { echo "$LOOM_TEST_PREVIOUS"; }
+        verify_install_signing() { :; }
+        quit_app() { :; }
+        ditto() { command cp -R "$1" "$2"; }
+        cp() {
+          if [ "$LOOM_TEST_FAILURE" = state-copy ] && [ "$1" = "$LOOM_TEST_PREVIOUS/state/statev2.sqlite" ]; then return 1; fi
+          command cp "$@"
+        }
+        mv() {
+          if [ "$LOOM_TEST_FAILURE" = state-swap ] && [ "$2" = "$T3_USERDATA/statev2.sqlite" ] && [[ "$1" = */restored/* ]]; then return 1; fi
+          if [ "$2" = "$APP_PATH" ] && [ "$(basename "$1")" = Loom.app ]; then
+            case "$LOOM_TEST_FAILURE" in
+              replacement) return 1 ;;
+              interrupted) sh -c 'kill -TERM "$PPID"'; return 1 ;;
+            esac
+          fi
+          command mv "$@"
+        }
+        open() { :; }
+        installed_version() { echo test; }
+        cmd_rollback
+        `,
+        {
+          LOOM_TEST_APP: app,
+          LOOM_TEST_USERDATA: f.userdata,
+          LOOM_TEST_CURRENT: f.current,
+          LOOM_TEST_PREVIOUS: f.previous,
+          LOOM_TEST_FAILURE: failure,
+        },
+      ),
+    ).toThrow();
+    expect(NodeFS.readFileSync(NodePath.join(app, "version"), "utf8")).toBe("current");
+    expect(history(NodePath.join(f.userdata, "state.sqlite"))).toBe("current-v1");
+    expect(history(NodePath.join(f.userdata, "statev2.sqlite"))).toBe("current-v2");
+    expect(NodeFS.readFileSync(NodePath.join(f.userdata, "settings.json"), "utf8")).toBe(
+      "current settings",
+    );
+    expect(NodeFS.existsSync(NodePath.join(f.userdata, "client-settings.json"))).toBe(false);
+    expect(history(NodePath.join(f.current, "state/statev2.sqlite"))).toBe("current-v2");
+    expect(NodeFS.readdirSync(root).some((name) => name.startsWith(".loom-install."))).toBe(false);
+    expect(NodeFS.readdirSync(f.userdata).some((name) => name.startsWith(".loom-rollback."))).toBe(
+      false,
+    );
+  },
+);

@@ -14,13 +14,14 @@ const PreparationAttempt = Schema.Struct({
 });
 export type PreparationAttempt = typeof PreparationAttempt.Type;
 const decodeAttempt = Schema.decodeUnknownOption(Schema.fromJsonString(PreparationAttempt));
-const memoryAttempts = new Map<string, PreparationAttempt>();
+const memoryAttempts = new Map<string, PreparationAttempt | null>();
 const listeners = new Map<string, Set<() => void>>();
 
 export function readPreparationAttempt(
   key: string,
   storage: Pick<Storage, "getItem"> | null,
 ): PreparationAttempt | null {
+  if (memoryAttempts.has(key)) return memoryAttempts.get(key) ?? null;
   try {
     const serialized = storage?.getItem(key);
     if (serialized) {
@@ -38,8 +39,9 @@ export function savePreparationAttempt(
   attempt: PreparationAttempt | null,
   storage: Pick<Storage, "setItem" | "removeItem"> | null,
 ) {
-  if (attempt) memoryAttempts.set(key, attempt);
-  else memoryAttempts.delete(key);
+  // A failed write or removal can leave an older receipt in storage. Keep completions too,
+  // so that stale receipt cannot replace the request the client actually submitted.
+  memoryAttempts.set(key, attempt);
   try {
     if (attempt) storage?.setItem(key, JSON.stringify(attempt));
     else storage?.removeItem(key);
@@ -77,7 +79,7 @@ export function useProjectPreparationAttempt(sourceKey: string) {
         if (event.key !== key && event.key !== null) return;
         const decoded = decodeAttempt(event.newValue);
         if (Option.isSome(decoded)) memoryAttempts.set(key, decoded.value);
-        else memoryAttempts.delete(key);
+        else memoryAttempts.set(key, null);
         listener();
       };
       window.addEventListener("storage", changed);

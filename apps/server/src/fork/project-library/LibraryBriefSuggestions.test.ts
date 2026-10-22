@@ -2,11 +2,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  EventId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
   RunId,
   ThreadId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import {
   BRIEF_SUGGESTION_RUNS_PER_DAY,
@@ -18,15 +21,20 @@ import {
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import * as ServerConfig from "../../config.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import { emptyProjection } from "../../orchestration-v2/ProjectionStore.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
@@ -68,16 +76,48 @@ const libraryLayer = LibraryService.layer.pipe(
 const noPublisher = partial<LibraryPublisher.LibraryPublisher["Service"]>({ enabled: false });
 const isLibraryError = Schema.is(LibraryError);
 
-const settledThread = (id: string) =>
-  ({
-    id: ThreadId.make(id),
-    projectId: localProjectId,
-    title: `Work ${id}`,
-    modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "claude-opus-5-5" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    settledAt: null,
-  }) as unknown as OrchestrationV2AppThread;
+const settledThread = (id: string): OrchestrationV2AppThread => ({
+  id: ThreadId.make(id),
+  projectId: localProjectId,
+  title: `Work ${id}`,
+  providerInstanceId: ProviderInstanceId.make("claude"),
+  modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "claude-opus-5-5" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  branch: null,
+  worktreePath: null,
+  activeProviderThreadId: null,
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
+  forkedFrom: null,
+  createdBy: "user",
+  creationSource: "web",
+  createdAt: DateTime.makeUnsafe(0),
+  updatedAt: DateTime.makeUnsafe(0),
+  archivedAt: null,
+  settledOverride: "settled",
+  settledAt: null,
+  lastVisitedAt: null,
+  deletedAt: null,
+});
+
+const threadShell = (
+  id: string,
+  worktreePath: string | null = null,
+): OrchestrationV2ThreadShell => ({
+  ...settledThread(id),
+  worktreePath,
+  latestRunId: null,
+  activeRunId: null,
+  status: "idle",
+  pendingRuntimeRequest: null,
+  latestVisibleMessage: null,
+  latestUserMessageAt: null,
+  hasActionableProposedPlan: false,
+  pendingBackgroundTasks: [],
+  providerInstanceHistory: [],
+  itemCount: 0,
+  visibleItemCount: 0,
+});
 
 /**
  * A computer with one Library project. Launches behave like the real service: one thread per
@@ -116,9 +156,20 @@ const fixture = Effect.gen(function* () {
     },
   });
   const unbound = new Set<string>(["unbound"]);
+  const runBindings = new Map<
+    string,
+    { resolved: LibraryResolvedBinding; project: LibraryProject }
+  >();
   const workspaces = partial<LibraryWorkspaceStore.LibraryWorkspaceStore["Service"]>({
     getBinding: (threadId) =>
       Effect.sync(() => (unbound.has(threadId) ? null : binding(threadId, project))),
+    getBoundProject: () => Effect.succeed(project),
+    validateThreadCwd: (input) => Effect.succeed(input.cwd),
+    bind: (threadId, resolved, pinned) =>
+      Effect.sync(() => {
+        if (pinned === undefined) throw new Error("The suggestion must pin its source project.");
+        runBindings.set(threadId, { resolved, project: pinned });
+      }),
   });
   const launched = new Map<string, ThreadLaunch.ThreadLaunchInput>();
   const launchCalls: Array<ThreadLaunch.ThreadLaunchInput> = [];
@@ -128,16 +179,45 @@ const fixture = Effect.gen(function* () {
         launchCalls.push(input);
         const resumed = launched.has(input.commandId);
         if (!resumed) launched.set(input.commandId, input);
+        const thread = settledThread(input.threadId!);
         return {
           threadId: input.threadId!,
-          projection: { runs: [{ id: RunId.make(`run-${input.threadId}`) }] },
+          projection: {
+            ...emptyProjection({
+              type: "thread.created",
+              id: EventId.make(`created-${thread.id}`),
+              threadId: thread.id,
+              occurredAt: thread.createdAt,
+              payload: thread,
+            }),
+            runs: [
+              {
+                id: RunId.make(`run-${input.threadId}`),
+                threadId: thread.id,
+                ordinal: 1,
+                providerInstanceId: thread.providerInstanceId,
+                modelSelection: thread.modelSelection,
+                providerThreadId: null,
+                userMessageId: MessageId.make(`message-${input.threadId}`),
+                rootNodeId: null,
+                activeAttemptId: null,
+                status: "running",
+                requestedAt: thread.createdAt,
+                startedAt: thread.createdAt,
+                completedAt: null,
+                checkpointId: null,
+                contextHandoffId: null,
+              },
+            ],
+          },
           resumed,
-        } as unknown as ThreadLaunch.ThreadLaunchResult;
+        } satisfies ThreadLaunch.ThreadLaunchResult;
       }),
   });
   const settledRuns: Array<string> = [];
   const threads = partial<ThreadManagement.ThreadManagementService["Service"]>({
     settleAfterRun: (input) => Effect.sync(() => void settledRuns.push(input.runId)),
+    getThreadShell: (threadId) => Effect.succeed(threadShell(threadId)),
   });
   // A fresh instance over the same database is what a restart gives.
   const start = Layer.build(Suggestions.layer).pipe(
@@ -155,6 +235,7 @@ const fixture = Effect.gen(function* () {
     unbound,
     launched,
     launchCalls,
+    runBindings,
     settledRuns,
     threads,
     workspaces,
@@ -170,6 +251,117 @@ const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   );
 
 describe("Library brief suggestions", () => {
+  it.effect.each([false, true])("starts in a bound Library copy (worktree: %s)", (inWorktree) =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.setMode("automatic");
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+        const cwd = inWorktree ? `${root}/worktree` : root;
+        if (inWorktree) yield* fs.makeDirectory(cwd);
+        const workspaces = yield* Layer.build(
+          LibraryWorkspaceStore.layer.pipe(
+            Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "brief-copy-" })),
+            Layer.provide(
+              Layer.succeed(ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(computer),
+              }),
+            ),
+            Layer.provide(Layer.succeed(HostProcess.HomeDirectory, root)),
+          ),
+        ).pipe(Effect.map(Context.get(LibraryWorkspaceStore.LibraryWorkspaceStore)));
+        const pinned = f.project();
+        const resolved: LibraryResolvedBinding = {
+          cwd,
+          localProjectId,
+          repositoryPaths: [],
+          binding: {
+            projectId: pinned.id,
+            projectRevision: pinned.revision,
+            workingCopyId: "copy",
+            environmentId: computer,
+            resourceIds: [],
+          },
+        };
+        yield* workspaces.put({
+          requestId: "copy",
+          fingerprint: "copy",
+          project: pinned,
+          copy: {
+            id: "copy",
+            projectId: pinned.id,
+            projectRevision: pinned.revision,
+            environmentId: computer,
+            rootPath: root,
+            rootLocalProjectId: localProjectId,
+            repositories: [],
+            ownership: "managed",
+            state: "ready",
+            createdAt: pinned.createdAt,
+            updatedAt: pinned.updatedAt,
+          },
+          rootLocalProjectId: localProjectId,
+          rootCheckpointRepository: true,
+          legacyThreadIds: [],
+          rootIdentity: null,
+          releaseRequestId: null,
+          releaseReviewToken: null,
+          removalPath: null,
+          archivePath: null,
+          archiveDigest: null,
+        });
+        const source = settledThread("bound-source");
+        yield* workspaces.bind(source.id, resolved, pinned);
+        const launches = partial<ThreadLaunch.ThreadLaunchService["Service"]>({
+          launch: (input) =>
+            workspaces
+              .validateThreadCwd({
+                threadId: input.threadId!,
+                localProjectId: input.projectId,
+                cwd:
+                  input.workspaceStrategy.type === "existing_worktree"
+                    ? input.workspaceStrategy.worktreePath
+                    : root,
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ThreadLaunch.ThreadLaunchError({
+                      operation: "resolve-project",
+                      commandId: input.commandId,
+                      projectId: input.projectId,
+                      threadId: input.threadId,
+                      cause,
+                    }),
+                ),
+                Effect.andThen(f.launches.launch(input)),
+              ),
+        });
+        const threads = partial<ThreadManagement.ThreadManagementService["Service"]>({
+          settleAfterRun: f.threads.settleAfterRun,
+          getThreadShell: (threadId) =>
+            Effect.succeed(threadShell(threadId, inWorktree ? cwd : null)),
+        });
+        const suggestions = yield* Layer.build(Suggestions.layer).pipe(
+          Effect.map(Context.get(Suggestions.LibraryBriefSuggestions)),
+          Effect.provideService(LibraryPublisher.LibraryPublisher, noPublisher),
+          Effect.provideService(LibraryService.LibraryService, f.library),
+          Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, workspaces),
+          Effect.provideService(ThreadLaunch.ThreadLaunchService, launches),
+          Effect.provideService(ThreadManagement.ThreadManagementService, threads),
+        );
+        yield* suggestions.settled(source);
+
+        const suggestion = yield* suggestions.suggestion({ threadId: source.id });
+        expect(suggestion?.status).toBe("started");
+        expect(f.launchCalls).toHaveLength(1);
+        expect(yield* workspaces.getBinding(suggestion!.runThreadId!)).toEqual(resolved);
+        expect(yield* workspaces.getBoundProject(suggestion!.runThreadId!)).toEqual(pinned);
+      }),
+    ),
+  );
+
   it.effect("does nothing when the project setting is off", () =>
     run(
       Effect.gen(function* () {
@@ -220,6 +412,17 @@ describe("Library brief suggestions", () => {
           createdBy: "system",
         });
         expect(launch.threadId).not.toBe(thread.id);
+        expect(f.runBindings.get(launch.threadId!)).toMatchObject({
+          resolved: {
+            localProjectId,
+            binding: {
+              projectId: f.project().id,
+              workingCopyId: "copy",
+              resourceIds: [resource.id],
+            },
+          },
+          project: f.project(),
+        });
         expect(launch.initialMessage?.text).toContain(`threadId ${thread.id}`);
         expect(launch.initialMessage?.text).toContain("loom_library_brief_propose once");
         // The run settles itself in the background once its turn ends.

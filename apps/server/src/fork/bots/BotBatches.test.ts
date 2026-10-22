@@ -210,6 +210,34 @@ describe("BotBatches", () => {
     ),
   );
 
+  it.effect("retries completed items with a fail verdict without rerunning passing items", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches } = yield* makeBatches(harness);
+        yield* bots.save(reviewer({ output: "verdict" }), USER_CALLER);
+        const batch = yield* batches.runBatch(lines("a.ts\nb.ts"), USER_CALLER);
+        yield* endNext(harness, "completed", '{"verdict":"fail","summary":"Bug found."}');
+        yield* endNext(harness, "completed", '{"verdict":"pass","summary":"Fine."}');
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { fail: 1, pass: 1 },
+        });
+
+        expect(
+          yield* batches.retry({ batchId: batch.id, include: "failed" }, USER_CALLER),
+        ).toMatchObject({ retried: 1 });
+        expect(
+          yield* endNext(harness, "completed", '{"verdict":"pass","summary":"Fixed."}'),
+        ).toContain("Review a.ts.");
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { pass: 2 },
+        });
+        expect(harness.launches).toHaveLength(3);
+      }),
+    ),
+  );
+
   it.effect("refuses a batch with an invalid item and says which", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -335,45 +363,47 @@ describe("BotBatches", () => {
     ),
   );
 
-  it.effect("retries an inbox run whose batch is gone, and keeps a retry its batch did not requeue", () =>
-    withHarness((harness) =>
-      Effect.gen(function* () {
-        const { bots } = yield* makeBatches(harness);
-        const bot = yield* bots.save(reviewer(), USER_CALLER);
-        const batchStore = yield* makeBotBatchesStore;
-        const failedRun = (id: string, batchId: string): BotRun => ({
-          id,
-          botId: bot.id,
-          botVersion: 1,
-          botName: bot.name,
-          threadId: ThreadId.make(`bot-run-${id}`),
-          projectId,
-          inputs: { file: "a.ts" },
-          status: "failed",
-          startedBy: "user",
-          callerThreadId: null,
-          createdAt: "2026-10-20T10:00:01.000Z",
-          startedAt: "2026-10-20T10:00:02.000Z",
-          finishedAt: "2026-10-20T10:00:03.000Z",
-          result: null,
-          resultTruncated: false,
-          error: "It broke.",
-          batchId,
-        });
-        // A pruned batch took its items with it; nothing else reruns the run.
-        yield* (yield* makeBotsStore).insertRun(failedRun("pruned-run", "pruned-batch"));
-        const retried = yield* bots.retry({ runId: "pruned-run" }, USER_CALLER);
-        expect(retried).toMatchObject({ retryOf: "pruned-run", batchId: "pruned-batch" });
+  it.effect(
+    "retries an inbox run whose batch is gone, and keeps a retry its batch did not requeue",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots } = yield* makeBatches(harness);
+          const bot = yield* bots.save(reviewer(), USER_CALLER);
+          const batchStore = yield* makeBotBatchesStore;
+          const failedRun = (id: string, batchId: string): BotRun => ({
+            id,
+            botId: bot.id,
+            botVersion: 1,
+            botName: bot.name,
+            threadId: ThreadId.make(`bot-run-${id}`),
+            projectId,
+            inputs: { file: "a.ts" },
+            status: "failed",
+            startedBy: "user",
+            callerThreadId: null,
+            createdAt: "2026-10-20T10:00:01.000Z",
+            startedAt: "2026-10-20T10:00:02.000Z",
+            finishedAt: "2026-10-20T10:00:03.000Z",
+            result: null,
+            resultTruncated: false,
+            error: "It broke.",
+            batchId,
+          });
+          // A pruned batch took its items with it; nothing else reruns the run.
+          yield* (yield* makeBotsStore).insertRun(failedRun("pruned-run", "pruned-batch"));
+          const retried = yield* bots.retry({ runId: "pruned-run" }, USER_CALLER);
+          expect(retried).toMatchObject({ retryOf: "pruned-run", batchId: "pruned-batch" });
 
-        // A requeue for a run the item no longer holds leaves the item on its newer run.
-        yield* batchStore.insertBatch(storedBatch(bot, "batch-1", "running", 0), [
-          { label: "a.ts", inputs: { file: "a.ts" } },
-        ]);
-        yield* batchStore.setItemState("batch-1", 0, "started", "newer-run");
-        yield* batchStore.requeueItem("batch-1", 0, [], "older-run");
-        expect((yield* batchStore.getItems("batch-1"))[0]).toMatchObject({ state: "started" });
-      }),
-    ),
+          // A requeue for a run the item no longer holds leaves the item on its newer run.
+          yield* batchStore.insertBatch(storedBatch(bot, "batch-1", "running", 0), [
+            { label: "a.ts", inputs: { file: "a.ts" } },
+          ]);
+          yield* batchStore.setItemState("batch-1", 0, "started", "newer-run");
+          yield* batchStore.requeueItem("batch-1", 0, [], "older-run");
+          expect((yield* batchStore.getItems("batch-1"))[0]).toMatchObject({ state: "started" });
+        }),
+      ),
   );
 
   it.effect("keeps the newest batches of a bot and every running one", () =>

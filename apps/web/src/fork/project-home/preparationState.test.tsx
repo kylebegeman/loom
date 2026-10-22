@@ -91,6 +91,23 @@ describe("project preparation recovery receipt", () => {
     ).toBe(attempt.projectId);
     savePreparationAttempt(key, null, null);
   });
+  it("keeps the newest request and completion when failed writes leave an older receipt", () => {
+    const key = "stale-recovery";
+    const previous = { ...attempt, projectId: ProjectId.make("previous-request") };
+    const storage = {
+      getItem: () => JSON.stringify(previous),
+      setItem: () => {
+        throw new Error("Storage full");
+      },
+      removeItem: () => {
+        throw new Error("Storage blocked");
+      },
+    };
+    savePreparationAttempt(key, attempt, storage);
+    expect(readPreparationAttempt(key, storage)?.projectId).toBe(attempt.projectId);
+    savePreparationAttempt(key, null, storage);
+    expect(readPreparationAttempt(key, storage)).toBeNull();
+  });
   it("rejects corrupted receipt data instead of inventing a replacement submitted request", () => {
     expect(readPreparationAttempt("corrupt", { getItem: () => "broken" })).toBeNull();
     expect(

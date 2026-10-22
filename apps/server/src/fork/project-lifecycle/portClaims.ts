@@ -18,7 +18,8 @@ interface Claim {
 const present = (path: string) =>
   NodeFSP.access(path).then(
     () => true,
-    () => false,
+    // Permission or filesystem failures do not prove another server's state was deleted.
+    (cause: NodeJS.ErrnoException) => cause.code !== "ENOENT",
   );
 
 /** `owner` is the server's state folder, which tells servers apart and outlives restarts. */
