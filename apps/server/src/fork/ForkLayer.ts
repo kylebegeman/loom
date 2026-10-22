@@ -1,3 +1,8 @@
+import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
+import * as ProfileEnvInspector from "./project-profiles/EnvInspectorLive.ts";
+import * as ProfileVarlock from "./project-profiles/VarlockRunner.ts";
+import * as ProfileBudgets from "./project-profiles/BudgetReactor.ts";
+import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as VaultAccessInspector from "./vault/VaultAccessInspector.ts";
 import * as VaultReadiness from "./vault/VaultReadiness.ts";
 import * as VaultTestAccountWorkloads from "./vault/VaultTestAccountWorkloads.ts";
@@ -264,6 +269,25 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  ProjectProfiles.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ProjectStore.layer,
+        ProjectionStore.layer,
+        ProfileEnvInspector.layer,
+        ProfileVarlock.layer.pipe(Layer.provide(ProcessRunner.layer)),
+      ),
+    ),
+  ),
+  ProfileBudgets.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        RuntimeLayer.layerEventSink,
+        ProjectionStore.layer,
+        ThreadCommandExecutor.layer,
+      ),
+    ),
+  ),
   VaultMigrationInventory.layer.pipe(
     Layer.provide(
       Layer.mergeAll(

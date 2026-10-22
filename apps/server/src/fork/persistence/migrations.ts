@@ -1,3 +1,4 @@
+import { ProjectProfilesMigrations } from "../project-profiles/migrations.ts";
 import { VaultScheduledMigrations } from "../vault/scheduled-migrations.ts";
 import { LibraryAssetMigrations } from "../project-library/assets/migrations.ts";
 import { LibraryHistoryMigrations } from "../project-library/history-migrations.ts";
@@ -26,6 +27,7 @@ export interface ForkMigrationSet {
 
 /** One entry per packet that owns tables. */
 export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
+  ProjectProfilesMigrations,
   ProjectLibraryMigrations,
   LibraryHistoryMigrations,
   LibraryAssetMigrations,

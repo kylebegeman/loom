@@ -1,4 +1,5 @@
 export * from "./project-library-decisions.ts";
+export * from "./project-profiles.ts";
 export * from "./vault-test-accounts.ts";
 export * from "./vault-migration-inventory.ts";
 export * from "./vault-migration.ts";
