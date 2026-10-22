@@ -62,6 +62,15 @@ We need to be on the same page with terminology. When communicating, use this la
 2. **Writing to the live install.** `~/.t3/userdata` is the developer's real T3 Code database, in use while you work. Reading it and copying from it are fine, and a good way to get real test data (see Test data). Never start a server against it, never open it read-write, never clean it up.
 3. **Baking in origins.** Never set `VITE_HTTP_URL` or `VITE_WS_URL` for dev. Dev is single-origin and Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known`. Setting them bakes localhost into the bundle and silently breaks every remote browser.
 
+## Installed app and update continuity
+
+Keep development builds separate from `/Applications/Loom.app`. Never patch its
+resources or replace its signature with an ad hoc signature. Install only the
+publisher's verified, signed artifacts through the existing install/update path,
+preserving the signing identity, Loom update feed and embedded build metadata.
+Validate the candidate signature and compatibility before quitting or replacing
+the installed app. Keep the running app in place when the request is publish-only.
+
 ## Hit every surface
 
 The most common defect in this repo is a change that works on the path you tested and is missing everywhere else. Before calling frontend work done, walk this list and say which entries applied:

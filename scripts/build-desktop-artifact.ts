@@ -4097,6 +4097,11 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     });
   }
 
+  if (options.platform === "mac" && !options.signed) {
+    yield* Effect.log(
+      "[desktop-artifact] Development artifact with signing disabled. Use the signed publisher before replacing a signed installed app.",
+    );
+  }
   yield* Effect.log("[desktop-artifact] Done. Artifacts:").pipe(
     Effect.annotateLogs({ artifacts: copiedArtifacts }),
   );
