@@ -9,6 +9,8 @@ import {
   RuntimeMode,
   type ServerAuthSessionMethod,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identitySessionPrefix, isCurrentIdentitySession } from "./identityPolicy.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -485,6 +487,7 @@ function toAuthClientSession(input: Omit<AuthClientSession, "current">): AuthCli
 
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
+  const identityPrefix = identitySessionPrefix(yield* HostProcess.Environment);
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -822,6 +825,8 @@ export const make = Effect.gen(function* () {
         Effect.mapError((cause) => new InvalidSessionTokenPayloadError({ cause })),
       );
 
+      if (!isCurrentIdentitySession(claims.sub, identityPrefix))
+        return yield* new UnknownSessionTokenError({ sessionId: claims.sid });
       const observedAt = yield* DateTime.now;
       const expiresAt = DateTime.make(claims.exp);
       if (Option.isNone(expiresAt)) {
@@ -951,6 +956,8 @@ export const make = Effect.gen(function* () {
     if (Option.isNone(row)) {
       return yield* new UnknownWebSocketSessionError({ sessionId: claims.sid });
     }
+    if (!isCurrentIdentitySession(row.value.subject, identityPrefix))
+      return yield* new UnknownWebSocketSessionError({ sessionId: claims.sid });
     if (row.value.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
       return yield* new WebSocketSessionExpiredError({
         sessionId: claims.sid,

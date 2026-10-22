@@ -8,7 +8,14 @@ import {
   type AuthClientMetadata,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
-import { LOOM_IDENTITY_CALLBACK_PATH, type LoomIdentityMetadata } from "@t3tools/contracts/fork";
+import {
+  LOOM_IDENTITY_CALLBACK_PATH,
+  type LoomIdentityMetadata,
+  type LoomIdentityAccount,
+  type LoomIdentityBrowserRequest,
+  type LoomIdentitySessionRequest,
+  type LoomIdentitySessionResult,
+} from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -28,6 +35,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { signPayload, timingSafeEqualBase64Url } from "./utils.ts";
+import { identitySessionPrefix } from "./identityPolicy.ts";
 
 const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
   AuthAccessReadScope,
@@ -45,7 +53,7 @@ export const PocketIdStandardScopes = AuthStandardClientScopes.filter(
 );
 
 const LOGIN_TTL_MS = 5 * 60 * 1000;
-const HOST_SESSION_TTL = Duration.hours(24);
+const HOST_SESSION_TTL = Duration.hours(1);
 const MAX_PENDING_LOGINS = 1000;
 const JWKS_TTL_MS = 5 * 60 * 1000;
 const JWKS_REFRESH_COOLDOWN_MS = 30 * 1000;
@@ -111,6 +119,7 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
 
 interface VerifiedIdentity {
   readonly subject: string;
+  readonly account: LoomIdentityAccount;
   readonly expiresAt: DateTime.Utc;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }
@@ -119,6 +128,7 @@ interface PendingLogin {
   readonly verifier: string;
   readonly nonce: string;
   readonly expiresAt: number;
+  readonly browser?: LoomIdentityBrowserRequest;
 }
 
 /** Verifies identity; the allowlist and grants remain local to this execution host. */
@@ -127,7 +137,10 @@ export class PocketId extends Context.Service<
   {
     readonly metadata: Effect.Effect<LoomIdentityMetadata, PocketIdError>;
     readonly cookieName: string;
-    readonly beginLogin: (returnTo?: string) => Effect.Effect<
+    readonly beginLogin: (
+      returnTo?: string,
+      browser?: LoomIdentityBrowserRequest,
+    ) => Effect.Effect<
       {
         readonly authorizationUrl: string;
         readonly cookieValue: string;
@@ -141,7 +154,23 @@ export class PocketId extends Context.Service<
       readonly code: string;
       readonly issuer?: string;
       readonly client: AuthClientMetadata;
-    }) => Effect.Effect<SessionStore.IssuedSession & { readonly returnTo: string }, PocketIdError>;
+    }) => Effect.Effect<
+      SessionStore.IssuedSession & {
+        readonly returnTo: string;
+        readonly handoff?: {
+          readonly code: string;
+          readonly state: string;
+          readonly origin: string;
+          readonly environmentId: string;
+        };
+      },
+      PocketIdError
+    >;
+    readonly createSession: (
+      input: LoomIdentitySessionRequest,
+      client: AuthClientMetadata,
+      origin?: string,
+    ) => Effect.Effect<LoomIdentitySessionResult, PocketIdError>;
     readonly verifyAccessToken: (token: string) => Effect.Effect<VerifiedIdentity, PocketIdError>;
     readonly exchangeAccessToken: (input: {
       readonly token: string;
@@ -180,6 +209,8 @@ const make = Effect.gen(function* () {
       : Redacted.make(optional("LOOM_IDENTITY_CLIENT_SECRET")!);
   const allowedSubjects = csv("LOOM_IDENTITY_ALLOWED_SUBJECTS");
   const requiredGroups = csv("LOOM_IDENTITY_REQUIRED_GROUPS");
+  const browserOrigins = csv("LOOM_IDENTITY_BROWSER_ORIGINS");
+  const sessionPrefix = identitySessionPrefix(environment);
   const audiences = csv("LOOM_IDENTITY_AUDIENCE");
   if (audiences.length === 0) audiences.push(environmentId);
   const grantedScopes =
@@ -189,6 +220,16 @@ const make = Effect.gen(function* () {
   const stateSecret = yield* crypto.randomBytes(32).pipe(Effect.orDie);
   const cookieName = `loom_identity_state_${Base64Url.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)).pipe(Effect.orDie)).slice(0, 16)}`;
   const pending = yield* Ref.make<ReadonlyMap<string, PendingLogin>>(new Map());
+  const handoffs = yield* Ref.make<
+    ReadonlyMap<
+      string,
+      {
+        readonly browser: LoomIdentityBrowserRequest;
+        readonly identity: VerifiedIdentity;
+        readonly expiresAt: number;
+      }
+    >
+  >(new Map());
   const discoveryCache = yield* Ref.make<{
     readonly value: typeof Discovery.Type;
     readonly expiresAt: number;
@@ -222,6 +263,12 @@ const make = Effect.gen(function* () {
   const checkConfig = Effect.gen(function* () {
     if (!enabled || issuer === null) return yield* new PocketIdError({ reason: "disabled" });
     yield* secureUrl(issuer);
+    if (clientId === null && nativeClientId === null)
+      return yield* new PocketIdError({ reason: "configuration" });
+    for (const origin of browserOrigins) {
+      const url = yield* secureUrl(origin);
+      if (url.origin !== origin) return yield* new PocketIdError({ reason: "configuration" });
+    }
     if (resource !== null) {
       yield* secureUrl(resource);
       if (!audiences.includes(resource))
@@ -354,7 +401,8 @@ const make = Effect.gen(function* () {
     if (expiration._tag === "None" || expiration.value.epochMilliseconds <= now.epochMilliseconds)
       return yield* new PocketIdError({ reason: "token" });
     return {
-      subject: `pocket-id:${claims.sub}`,
+      subject: `${sessionPrefix}${Base64Url.encode(new TextEncoder().encode(claims.sub))}`,
+      account: { issuer: issuer!, subject: claims.sub },
       expiresAt: DateTime.toUtc(expiration.value),
       scopes: grantedScopes,
     } satisfies VerifiedIdentity;
@@ -444,9 +492,14 @@ const make = Effect.gen(function* () {
       audience: audiences[0]!,
       ...(resource === null ? {} : { resource }),
       environmentId,
+      sessionExchangeEnabled: true,
+      browserOrigins,
     } satisfies LoomIdentityMetadata;
   });
-  const beginLogin = Effect.fn("PocketId.beginLogin")(function* (requestedReturnTo = "/") {
+  const beginLogin = Effect.fn("PocketId.beginLogin")(function* (
+    requestedReturnTo = "/",
+    browser?: LoomIdentityBrowserRequest,
+  ) {
     // Keep the destination in single-use server state, never in callback parameters.
     const returnTo =
       requestedReturnTo.startsWith("/") &&
@@ -458,6 +511,15 @@ const make = Effect.gen(function* () {
     if (!browserLoginEnabled || clientId === null || redirectUri === null)
       return yield* new PocketIdError({ reason: "disabled" });
     const endpoints = yield* discovery;
+    if (
+      browser &&
+      (!browserOrigins.includes(browser.origin) ||
+        browser.environmentId !== environmentId ||
+        !/^[A-Za-z0-9_-]{43}$/.test(browser.challenge) ||
+        !/^[A-Za-z0-9_-]{43}$/.test(browser.state) ||
+        (browser.expectedIdentity !== undefined && browser.expectedIdentity.issuer !== issuer))
+    )
+      return yield* new PocketIdError({ reason: "state" });
     const now = yield* DateTime.now;
     const random = () =>
       crypto.randomBytes(32).pipe(
@@ -479,6 +541,7 @@ const make = Effect.gen(function* () {
         verifier,
         nonce,
         returnTo,
+        ...(browser ? { browser } : {}),
         expiresAt: now.epochMilliseconds + LOGIN_TTL_MS,
       });
       return [true, next] as const;
@@ -564,7 +627,12 @@ const make = Effect.gen(function* () {
       if (claims.nonce !== entry.nonce || (claims.azp !== undefined && claims.azp !== clientId))
         return yield* new PocketIdError({ reason: "token" });
       const identity = yield* verifyAccessToken(tokens.access_token);
-      if (identity.subject !== `pocket-id:${claims.sub}`)
+      if (
+        identity.account.subject !== claims.sub ||
+        (entry.browser?.expectedIdentity &&
+          (entry.browser.expectedIdentity.issuer !== identity.account.issuer ||
+            entry.browser.expectedIdentity.subject !== identity.account.subject))
+      )
         return yield* new PocketIdError({ reason: "subject" });
       if (claims.at_hash !== undefined) {
         const algorithm =
@@ -585,18 +653,38 @@ const make = Effect.gen(function* () {
       }
       const expiration = DateTime.make(claims.exp * 1000);
       if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
-      const session = yield* issue(
-        {
-          ...identity,
-          expiresAt: DateTime.toUtc(
-            expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
-              ? expiration.value
-              : identity.expiresAt,
-          ),
-        },
-        { client: input.client, method: "browser-session-cookie" },
-      );
-      return { ...session, returnTo: entry.returnTo };
+      const acceptedIdentity = {
+        ...identity,
+        expiresAt: DateTime.toUtc(
+          expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
+            ? expiration.value
+            : identity.expiresAt,
+        ),
+      };
+      const session = yield* issue(acceptedIdentity, {
+        client: input.client,
+        method: "browser-session-cookie",
+      });
+      if (!entry.browser) return { ...session, returnTo: entry.returnTo };
+      const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
+      const accepted = yield* Ref.modify(handoffs, (current) => {
+        const next = new Map(
+          [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
+        );
+        if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
+        next.set(code, {
+          browser: entry.browser!,
+          identity: acceptedIdentity,
+          expiresAt: now.epochMilliseconds + 60_000,
+        });
+        return [true, next] as const;
+      });
+      if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
+      return {
+        ...session,
+        returnTo: entry.returnTo,
+        handoff: { code, origin: entry.browser.origin, state: entry.browser.state, environmentId },
+      };
     },
   );
   return PocketId.of({
@@ -605,26 +693,83 @@ const make = Effect.gen(function* () {
     beginLogin,
     completeLogin,
     verifyAccessToken,
-    exchangeAccessToken: (input) =>
-      Effect.gen(function* () {
-        const identity = yield* verifyAccessToken(input.token);
-        const session = yield* issue(identity, {
-          ...input,
-          method:
-            input.proofKeyThumbprint === undefined ? "bearer-access-token" : "dpop-access-token",
-        });
+    createSession: Effect.fn("PocketId.createSession")(function* (input, client, origin) {
+      if (input.environmentId !== environmentId)
+        return yield* new PocketIdError({ reason: "state" });
+      let identity: VerifiedIdentity;
+      if (input.type === "native") {
+        identity = yield* verifyAccessToken(input.accessToken);
+        if (
+          input.expectedIdentity &&
+          (input.expectedIdentity.issuer !== identity.account.issuer ||
+            input.expectedIdentity.subject !== identity.account.subject)
+        )
+          return yield* new PocketIdError({ reason: "subject" });
+      } else {
         const now = yield* DateTime.now;
-        return {
-          access_token: session.token,
-          issued_token_type: AuthAccessTokenType,
-          token_type: input.proofKeyThumbprint === undefined ? "Bearer" : "DPoP",
-          expires_in: Math.max(
-            0,
-            Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
-          ),
-          scope: session.scopes.join(" "),
-        };
-      }),
+        const entry = yield* Ref.get(handoffs).pipe(Effect.map((values) => values.get(input.code)));
+        if (
+          !entry ||
+          entry.expiresAt <= now.epochMilliseconds ||
+          entry.browser.origin !== origin ||
+          !/^[A-Za-z0-9._~-]{43,128}$/.test(input.verifier)
+        )
+          return yield* new PocketIdError({ reason: "state" });
+        const challenge = Base64Url.encode(
+          yield* crypto
+            .digest("SHA-256", new TextEncoder().encode(input.verifier))
+            .pipe(Effect.orDie),
+        );
+        if (!timingSafeEqualBase64Url(challenge, entry.browser.challenge))
+          return yield* new PocketIdError({ reason: "state" });
+        const consumed = yield* Ref.modify(handoffs, (values) => {
+          const next = new Map(values);
+          const found = next.delete(input.code);
+          return [found, next] as const;
+        });
+        if (!consumed) return yield* new PocketIdError({ reason: "state" });
+        identity = entry.identity;
+      }
+      if (
+        input.expectedIdentity &&
+        (input.expectedIdentity.issuer !== identity.account.issuer ||
+          input.expectedIdentity.subject !== identity.account.subject)
+      )
+        return yield* new PocketIdError({ reason: "subject" });
+      const session = yield* issue(identity, { client, method: "bearer-access-token" });
+      const now = yield* DateTime.now;
+      return {
+        access_token: session.token,
+        issued_token_type: AuthAccessTokenType,
+        token_type: "Bearer" as const,
+        expires_in: Math.max(
+          0,
+          Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
+        ),
+        scope: session.scopes.join(" "),
+        environmentId,
+        identity: identity.account,
+      };
+    }),
+    exchangeAccessToken: Effect.fn("PocketId.exchangeAccessToken")(function* (input) {
+      const identity = yield* verifyAccessToken(input.token);
+      const session = yield* issue(identity, {
+        ...input,
+        method:
+          input.proofKeyThumbprint === undefined ? "bearer-access-token" : "dpop-access-token",
+      });
+      const now = yield* DateTime.now;
+      return {
+        access_token: session.token,
+        issued_token_type: AuthAccessTokenType,
+        token_type: input.proofKeyThumbprint === undefined ? "Bearer" : "DPoP",
+        expires_in: Math.max(
+          0,
+          Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
+        ),
+        scope: session.scopes.join(" "),
+      };
+    }),
   });
 });
 

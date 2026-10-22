@@ -56,6 +56,7 @@ describe("Loom browser sign-in boundary", () => {
     expect(await readLoomIdentity("https://library.example.com")).toEqual(metadata);
     expect(fetch).toHaveBeenCalledWith("https://library.example.com/api/loom/identity", {
       credentials: "omit",
+      redirect: "error",
     });
     fetch.mockResolvedValue(new Response(JSON.stringify({ enabled: true }), { status: 200 }));
     await expect(readLoomIdentity("https://library.example.com")).rejects.toThrow();
