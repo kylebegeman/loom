@@ -1,3 +1,4 @@
+import { isVaultRunRunning } from "./active-run.ts";
 import {
   VaultProfilePinList,
   VaultProfilePinRetire,
@@ -159,7 +160,7 @@ const make = Effect.gen(function* () {
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       (requireRun &&
-        (thread.status !== "running" ||
+        (!(yield* isVaultRunRunning(threads, thread)) ||
           !thread.activeRunId ||
           thread.runtimeMode !== "full-access" ||
           thread.interactionMode !== "default"))

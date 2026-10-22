@@ -1,3 +1,4 @@
+import { isVaultRunRunning } from "./active-run.ts";
 import { admissionStamp } from "./admission-stamp.ts";
 import { ThreadId, type ProviderInstanceId } from "@t3tools/contracts";
 import {
@@ -102,7 +103,7 @@ const make = Effect.gen(function* () {
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       thread.activeRunId === null ||
-      thread.status !== "running" ||
+      !(yield* isVaultRunRunning(threads, thread)) ||
       thread.runtimeMode !== "full-access" ||
       thread.interactionMode !== "default"
     )
@@ -237,7 +238,7 @@ const make = Effect.gen(function* () {
           expiresAt: checkedAt + 60_000,
           activeRun:
             thread.activeRunId !== null &&
-            thread.status === "running" &&
+            (yield* isVaultRunRunning(threads, thread)) &&
             thread.runtimeMode === "full-access" &&
             thread.interactionMode === "default",
           brokerOnline:

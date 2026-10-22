@@ -1,3 +1,4 @@
+import { isVaultRunRunning } from "./active-run.ts";
 import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import {
   VaultError,
@@ -28,7 +29,6 @@ const sameContext = (a: OrchestrationV2ThreadShell, b: OrchestrationV2ThreadShel
   a.projectId === b.projectId &&
   a.providerInstanceId === b.providerInstanceId &&
   a.activeRunId === b.activeRunId &&
-  a.status === b.status &&
   a.runtimeMode === b.runtimeMode &&
   a.interactionMode === b.interactionMode &&
   b.archivedAt === null &&
@@ -158,7 +158,7 @@ const make = Effect.gen(function* () {
         const live =
           initial.providerInstanceId !== null &&
           initial.activeRunId !== null &&
-          initial.status === "running" &&
+          (yield* isVaultRunRunning(threads, initial)) &&
           initial.runtimeMode === "full-access" &&
           initial.interactionMode === "default";
         checks.push({
@@ -204,7 +204,10 @@ const make = Effect.gen(function* () {
       const latest = yield* threads
         .getThreadShell(input.threadId)
         .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })));
-      if (!sameContext(initial, latest))
+      if (
+        !sameContext(initial, latest) ||
+        (needsUse && latest !== null && !(yield* isVaultRunRunning(threads, latest)))
+      )
         checks.push({
           id: "context-changed",
           state: "blocked",

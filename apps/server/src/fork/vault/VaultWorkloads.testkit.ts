@@ -1,3 +1,6 @@
+import { vaultRun } from "./VaultActiveRun.testkit.ts";
+import { idleThreadProjection } from "../../mcp/McpToolAccess.testkit.ts";
+import type { OrchestrationV2Run } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { VaultError } from "@t3tools/contracts/fork";
@@ -22,6 +25,7 @@ export const workloadFixture = Effect.gen(function* () {
     hostActive: true,
     leaseUntil: (yield* Clock.currentTimeMillis) + 600_000,
     thread: liveThreadShell(threadId),
+    runs: [] as OrchestrationV2Run[],
     decisions: [] as Array<{
       threadId: ThreadId;
       itemId: string;
@@ -35,6 +39,14 @@ export const workloadFixture = Effect.gen(function* () {
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
     Layer.mock(ThreadManagementService)({
       getThreadShell: (id) => Effect.sync(() => (id === threadId ? state.thread : null)),
+      getThreadRecords: (_id, _fields, filter) =>
+        Effect.sync(() => ({
+          ...idleThreadProjection(state.thread),
+          runs: (state.runs.length > 0 || !state.thread.activeRunId
+            ? state.runs
+            : [vaultRun(state.thread)]
+          ).filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
+        })),
     }),
     Layer.mock(VaultAccess.VaultAccess)({
       require: (threadId, itemId, action, destination) =>

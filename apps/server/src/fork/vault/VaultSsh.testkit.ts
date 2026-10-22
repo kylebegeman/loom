@@ -1,3 +1,4 @@
+import { vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
@@ -62,7 +63,10 @@ export const sshFixture = (
         getThreadRecords: (_id, _fields, filter) =>
           Effect.sync(() => ({
             ...idleThreadProjection(state.thread),
-            runs: state.runs.filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
+            runs: (state.runs.length > 0 || !state.thread.activeRunId
+              ? state.runs
+              : [vaultRun(state.thread)]
+            ).filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
           })),
       }),
       Layer.mock(ProjectStoreV2)({
