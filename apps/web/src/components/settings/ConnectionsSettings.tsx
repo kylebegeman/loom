@@ -1,3 +1,7 @@
+import {
+  ComputerIdentityConnect,
+  SavedComputerIdentity,
+} from "~/fork/identity/ComputerIdentityAccess";
 import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession";
 import { LibrarySetup } from "~/fork/project-library/LibrarySetup"; // fork: library-setup
 import {
@@ -1675,6 +1679,7 @@ function SavedBackendListRow({
                 onAddRoute={() => onAddRoute(environment)}
               />
             </section>
+            <SavedComputerIdentity entry={environment.entry} />
             <RemoteComputerAccess environmentId={environmentId} connected={isConnected} />
             <section aria-label="Connection permissions">
               <h3 className="text-xs font-medium">This device's permissions</h3>
@@ -2874,6 +2879,15 @@ export function ConnectionsSettings() {
         </div>
       ) : null}
       {renderRemoteFields()}
+      <ComputerIdentityConnect
+        address={savedBackendHost}
+        {...(routeTarget ? { entry: routeTarget.entry } : {})}
+        onConnected={() => {
+          setAddBackendDialogOpen(false);
+          setSavedBackendHost("");
+          setSavedBackendPairingCode("");
+        }}
+      />
       {savedBackendError ? <p className="text-xs text-destructive">{savedBackendError}</p> : null}
       <Button
         variant="outline"

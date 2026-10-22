@@ -6,6 +6,8 @@ import {
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
+import { TestClock } from "effect/testing";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -351,6 +353,79 @@ describe("ConnectionResolver", () => {
         target,
       });
     }),
+  );
+
+  it.effect(
+    "binds Identity credentials to the saved computer and account, and requires interactive renewal after expiry",
+    () =>
+      Effect.gen(function* () {
+        const identity = { issuer: "https://id.example.test", subject: "owner" };
+        const target = new BearerConnectionTarget({
+          environmentId: ENVIRONMENT_ID,
+          label: "Computer",
+          connectionId: "identity",
+        });
+        const profile = new BearerConnectionProfile({
+          ...ENDPOINT,
+          environmentId: ENVIRONMENT_ID,
+          label: "Computer",
+          connectionId: "identity",
+          identity,
+        });
+        const expiresAt = (yield* Clock.currentTimeMillis) + 1000;
+        let calls = 0;
+        for (const binding of [
+          { ...identity, environmentId: EnvironmentId.make("other"), expiresAt },
+          { ...identity, subject: "another-owner", environmentId: ENVIRONMENT_ID, expiresAt },
+          {
+            ...identity,
+            issuer: "https://other-id.test",
+            environmentId: ENVIRONMENT_ID,
+            expiresAt,
+          },
+          { ...identity, environmentId: ENVIRONMENT_ID, expiresAt },
+        ]) {
+          const layer = yield* makeDependencies({
+            credentials: [
+              [
+                "identity",
+                new BearerConnectionCredential({ token: "host-identity", identity: binding }),
+              ],
+            ],
+            authorizeBearer: (input) => {
+              calls++;
+              return Effect.succeed({
+                environmentId: input.expectedEnvironmentId,
+                label: "Computer",
+                httpBaseUrl: input.httpBaseUrl,
+                socketUrl: "wss://environment.example.test/ws",
+                httpAuthorization: { _tag: "Bearer" as const, token: input.bearerToken },
+              });
+            },
+          });
+          const resolver = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layer));
+          if (
+            binding.environmentId !== ENVIRONMENT_ID ||
+            binding.subject !== identity.subject ||
+            binding.issuer !== identity.issuer
+          ) {
+            expect(
+              yield* resolver.prepare(catalogEntry(target, Option.some(profile))).pipe(Effect.flip),
+            ).toMatchObject({ reason: "configuration" });
+            expect(calls).toBe(0);
+          } else {
+            yield* resolver.prepare(catalogEntry(target, Option.some(profile)));
+            expect(calls).toBe(1);
+            yield* TestClock.adjust("1 second");
+            const error = yield* resolver
+              .prepare(catalogEntry(target, Option.some(profile)))
+              .pipe(Effect.flip);
+            expect(error).toMatchObject({ reason: "authentication" });
+            expect(error.message).toContain("Sign in again");
+            expect(calls).toBe(1);
+          }
+        }
+      }),
   );
 
   it.effect("exports the complete relay authorization flow through the product tracer", () =>

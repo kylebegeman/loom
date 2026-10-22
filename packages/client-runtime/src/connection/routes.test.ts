@@ -114,6 +114,39 @@ describe("learned routes", () => {
     });
   });
 
+  it("preserves Identity provenance and shared credential when learning a tailnet route", () => {
+    const identity = { issuer: "https://id.example.test", subject: "owner" };
+    const source = {
+      ...PUBLIC,
+      profile: Option.some(
+        new BearerConnectionProfile({
+          ...(Option.getOrThrow(PUBLIC.profile) as BearerConnectionProfile),
+          identity,
+        }),
+      ),
+    };
+    const entry = entryWithRoutes(relayOnly, [source, RELAY]);
+    const routes = mergeLearnedRoutes({
+      entry,
+      activeRoute: source,
+      reported: [{ kind: "tailnet", httpBaseUrl: "https://desk.tail1234.ts.net/" }],
+      allowInsecure: false,
+    })!;
+    const learnedRoute = routes.find(
+      (route) =>
+        route.target._tag === "BearerConnectionTarget" &&
+        route.target.connectionId.startsWith("learned:"),
+    )!;
+    expect(Option.getOrThrow(learnedRoute.profile)).toMatchObject({ identity });
+    expect(
+      credentialConnectionId(
+        learnedRoute.target._tag === "BearerConnectionTarget"
+          ? learnedRoute.target.connectionId
+          : "",
+      ),
+    ).toBe("public");
+  });
+
   it("replaces a learned LAN address when the server reports a new one", () => {
     const first = mergeLearnedRoutes({
       entry: relayOnly,

@@ -291,6 +291,9 @@ export function mergeLearnedRoutes(input: {
           wsBaseUrl: `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}/`,
           learned: true,
           ...(authorization === undefined ? {} : { authorization }),
+          ...(activeProfile?._tag === "BearerConnectionProfile" && activeProfile.identity
+            ? { identity: activeProfile.identity }
+            : {}),
           ...(tailscaleOrigins.has(url.origin) ? { network: "tailscale" as const } : {}),
         }),
       ),
@@ -371,6 +374,7 @@ function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRout
         wsBaseUrl: profile.wsBaseUrl,
         ...(profile.learned === undefined ? {} : { learned: profile.learned }),
         ...(profile.authorization === undefined ? {} : { authorization: profile.authorization }),
+        ...(profile.identity === undefined ? {} : { identity: profile.identity }),
         ...(tailscale ? { network: "tailscale" as const } : {}),
       }),
     ),

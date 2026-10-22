@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off - Native OAuth owns a bounded loopback listener with abort cleanup.
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off - Native OAuth owns a bounded loopback listener with abort cleanup.
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import * as Schema from "effect/Schema";
@@ -12,9 +12,13 @@ import {
   LoomIdentityMetadata,
   LOOM_IDENTITY_METADATA_PATH,
   type LoomDesktopSignInResult,
+  type LoomDesktopSignInRequest,
+  LoomIdentitySessionResult,
+  LOOM_IDENTITY_SESSION_PATH,
 } from "@t3tools/contracts/fork";
 
 const decodeMetadata = Schema.decodeUnknownSync(LoomIdentityMetadata);
+const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
 const decodeSession = Schema.decodeUnknownSync(AuthAccessTokenResult);
 const decodeDiscovery = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -38,7 +42,7 @@ const activeSignIns = new Map<string, AbortController>();
 export function loomHostOrigin(value: string) {
   const url = new URL(value);
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
-    throw new Error("Choose an http or https Loom Library address without URL credentials.");
+    throw new Error("Choose an http or https computer address without URL credentials.");
   return url.origin;
 }
 
@@ -73,7 +77,9 @@ export function loomNativeAuthorization(input: {
     client_id: input.clientId,
     response_type: "code",
     redirect_uri: input.redirectUri,
-    scope: [...new Set(["openid", ...input.scopes])].join(" "),
+    scope: [
+      ...new Set(["openid", ...input.scopes.filter((scope) => scope !== "offline_access")]),
+    ].join(" "),
     state: input.state,
     nonce: input.nonce,
     code_challenge: NodeCrypto.createHash("sha256").update(input.verifier).digest("base64url"),
@@ -138,7 +144,7 @@ async function jsonRequest(url: string, init: RequestInit, signal: AbortSignal) 
   });
   if (!response.ok)
     throw new Error(
-      "The Loom sign-in service rejected the request. Check the Library address and account access, then try again.",
+      "The Loom sign-in service rejected the request. Check the computer address and account access, then try again.",
     );
   return response.json() as Promise<unknown>;
 }
@@ -152,9 +158,10 @@ export async function signInToLoom(
   httpBaseUrl: string,
   openBrowser: (url: string) => Promise<boolean>,
   signal?: AbortSignal,
+  expected?: Pick<LoomDesktopSignInRequest, "expectedEnvironmentId" | "expectedIdentity">,
 ): Promise<LoomDesktopSignInResult> {
   const origin = loomHostOrigin(httpBaseUrl);
-  if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this Library.");
+  if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this computer.");
   const abort = new AbortController();
   const interrupted = () => abort.abort();
   signal?.addEventListener("abort", interrupted, { once: true });
@@ -174,7 +181,16 @@ export async function signInToLoom(
       !metadata.authorizationEndpoint ||
       !metadata.tokenEndpoint
     )
-      throw new Error("This Library has not enabled native Loom account sign-in.");
+      throw new Error("This computer has not enabled native Loom account sign-in.");
+    if (
+      expected?.expectedEnvironmentId &&
+      expected.expectedEnvironmentId !== metadata.environmentId
+    )
+      throw new Error("This address reaches another computer. Review the saved connection.");
+    if (expected?.expectedIdentity && expected.expectedIdentity.issuer !== metadata.issuer)
+      throw new Error(
+        "This computer's Identity provider changed. Remove the saved connection before signing in again.",
+      );
     const discovery = decodeDiscovery(
       await jsonRequest(
         `${metadata.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`,
@@ -187,7 +203,7 @@ export async function signInToLoom(
       discovery.authorization_endpoint !== metadata.authorizationEndpoint ||
       discovery.token_endpoint !== metadata.tokenEndpoint
     )
-      throw new Error("The Library identity configuration changed. Reload and try again.");
+      throw new Error("The computer Identity configuration changed. Reload and try again.");
     const state = NodeCrypto.randomBytes(32).toString("base64url");
     const nonce = NodeCrypto.randomBytes(32).toString("base64url");
     const verifier = NodeCrypto.randomBytes(32).toString("base64url");
@@ -279,39 +295,95 @@ export async function signInToLoom(
         jwksUri: discovery.jwks_uri,
         nonce,
       });
-      if (decodeJwt(tokens.access_token).sub !== subject)
+      if (expected?.expectedIdentity && expected.expectedIdentity.subject !== subject)
+        throw new Error(
+          "Sign in with the saved Identity account, or remove this connection to choose another account.",
+        );
+      const accessClaims = decodeJwt(tokens.access_token);
+      if (typeof accessClaims.exp !== "number" || accessClaims.exp * 1000 <= Date.now())
+        throw new Error("Identity access expired. Sign in again.");
+      if (accessClaims.sub !== subject)
         throw new Error("The sign-in tokens do not identify the same Loom account.");
+      const current = decodeMetadata(
+        await jsonRequest(`${origin}${LOOM_IDENTITY_METADATA_PATH}`, {}, abort.signal),
+      );
+      if (
+        current.environmentId !== metadata.environmentId ||
+        current.issuer !== metadata.issuer ||
+        current.nativeClientId !== metadata.nativeClientId ||
+        current.audience !== metadata.audience ||
+        current.resource !== metadata.resource ||
+        current.authorizationEndpoint !== metadata.authorizationEndpoint ||
+        current.tokenEndpoint !== metadata.tokenEndpoint ||
+        current.sessionExchangeEnabled !== metadata.sessionExchangeEnabled
+      )
+        throw new Error("The computer's Identity configuration changed. Retry sign-in.");
       let session: ReturnType<typeof decodeSession>;
       try {
-        session = decodeSession(
-          await jsonRequest(
-            `${origin}/oauth/token`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({
-                grant_type: AuthTokenExchangeGrantType,
-                subject_token: tokens.access_token,
-                subject_token_type: AuthAccessTokenType,
-                requested_token_type: AuthAccessTokenType,
-                client_label: "Loom Desktop",
-                client_device_type: "desktop",
-              }).toString(),
-            },
-            abort.signal,
-          ),
-        );
+        session = metadata.sessionExchangeEnabled
+          ? decodeIdentitySession(
+              await jsonRequest(
+                `${origin}${LOOM_IDENTITY_SESSION_PATH}`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    type: "native",
+                    accessToken: tokens.access_token,
+                    environmentId: metadata.environmentId,
+                    ...(expected?.expectedIdentity
+                      ? { expectedIdentity: expected.expectedIdentity }
+                      : {}),
+                  }),
+                },
+                abort.signal,
+              ),
+            )
+          : decodeSession(
+              await jsonRequest(
+                `${origin}/oauth/token`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/x-www-form-urlencoded" },
+                  body: new URLSearchParams({
+                    grant_type: AuthTokenExchangeGrantType,
+                    subject_token: tokens.access_token,
+                    subject_token_type: AuthAccessTokenType,
+                    requested_token_type: AuthAccessTokenType,
+                    client_label: "Loom Desktop",
+                    client_device_type: "desktop",
+                  }).toString(),
+                },
+                abort.signal,
+              ),
+            );
       } catch {
         throw new Error(
-          "This Loom account is not authorized for the Library, or its session could not be issued.",
+          "This Loom account is not authorized for this computer, or its session could not be issued.",
         );
       }
-      if (session.token_type !== "Bearer")
-        throw new Error("The Library returned an unsupported desktop session type.");
+      if (metadata.sessionExchangeEnabled) {
+        const enrolled = decodeIdentitySession(session);
+        if (
+          enrolled.environmentId !== metadata.environmentId ||
+          enrolled.identity.issuer !== metadata.issuer ||
+          enrolled.identity.subject !== subject
+        )
+          throw new Error(
+            "The computer returned a session for another environment or Identity account.",
+          );
+      }
+      if (session.token_type !== "Bearer" || session.expires_in <= 0)
+        throw new Error("The computer returned an unsupported desktop session type.");
       return {
         httpBaseUrl: origin,
         environmentId: metadata.environmentId,
         accessToken: session.access_token,
+        identity: { issuer: metadata.issuer, subject },
+        expiresAt: Math.min(
+          Date.now() + Math.min(session.expires_in, 3600) * 1000,
+          (accessClaims.exp ?? 0) * 1000,
+        ),
       };
     } finally {
       abort.signal.removeEventListener("abort", cancelled);

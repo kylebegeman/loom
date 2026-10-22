@@ -5,7 +5,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
-import { readLoomIdentity, loomBrowserLoginUrl } from "~/rpc/loomIdentity";
+import { readLoomIdentity, loomBrowserLoginUrl, cancelLoomBrowserSignIn } from "~/rpc/loomIdentity";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
@@ -13,12 +13,16 @@ import { connectLoomIdentity } from "./connection";
 /** Keep Loom host authentication distinct from the existing T3 Connect account. */
 export function LoomSignIn({
   baseUrl,
+  expectedEnvironmentId,
+  expectedIdentity,
   description = true,
   onConnected,
   showUnavailable = false,
   onAvailabilityChange,
 }: {
   readonly baseUrl?: string;
+  readonly expectedEnvironmentId?: EnvironmentId;
+  readonly expectedIdentity?: import("@t3tools/contracts/fork").LoomIdentityAccount;
   readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
@@ -73,11 +77,17 @@ export function LoomSignIn({
         new URL(loomSignInDestination(window.location.href), window.location.href).href,
       )
     : null;
+  const crossOriginUnavailable =
+    !isElectron &&
+    active &&
+    new URL(active.baseUrl).origin !== window.location.origin &&
+    (!active.metadata.sessionExchangeEnabled ||
+      !active.metadata.browserOrigins?.includes(window.location.origin));
   const nativeEnabled =
     active?.metadata.enabled &&
     active.metadata.nativeClientId &&
     window.desktopBridge?.signInToLoom;
-  if (!active || (isElectron ? !nativeEnabled : !browserUrl))
+  if (!active || crossOriginUnavailable || (isElectron ? !nativeEnabled : !browserUrl))
     return showUnavailable ? (
       <div className="space-y-2">
         <p role="status" className="text-xs text-muted-foreground">
@@ -95,14 +105,26 @@ export function LoomSignIn({
       </div>
     ) : null;
   const signIn = async () => {
-    if (!isElectron) {
+    if (!isElectron && new URL(active.baseUrl).origin === window.location.origin) {
       if (browserUrl) window.location.assign(browserUrl);
+      return;
+    }
+    const popup = isElectron
+      ? undefined
+      : window.open("about:blank", "_blank", "popup,width=520,height=720");
+    if (!isElectron && !popup) {
+      setError("Allow the sign-in window and try again.");
       return;
     }
     setBusy(true);
     setError(null);
     setConnected(false);
-    const result = await connect({ httpBaseUrl: active.baseUrl });
+    const result = await connect({
+      httpBaseUrl: active.baseUrl,
+      ...(popup ? { popup } : {}),
+      ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
+      ...(expectedIdentity ? { expectedIdentity } : {}),
+    });
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not sign in to Loom.");
@@ -116,14 +138,16 @@ export function LoomSignIn({
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy} onClick={() => void signIn()}>
-          {busy ? "Waiting for sign-in..." : "Sign in to Loom"}
+          {busy ? "Waiting for sign-in..." : "Sign in with Identity"}
         </Button>
-        {busy && window.desktopBridge?.cancelLoomSignIn ? (
+        {busy ? (
           <Button
             variant="outline"
-            onClick={() =>
-              void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: active.baseUrl })
-            }
+            onClick={() => {
+              if (isElectron)
+                void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: active.baseUrl });
+              else cancelLoomBrowserSignIn(active.baseUrl);
+            }}
           >
             Cancel sign-in
           </Button>
@@ -131,13 +155,13 @@ export function LoomSignIn({
       </div>
       {description ? (
         <p className="max-w-lg text-xs text-muted-foreground">
-          Use your Loom account to access this Library. Computer pairing and T3 Connect remain
-          available.
+          Use this computer's configured Identity account. When access expires, sign in again.
+          Pairing links remain available. T3 Connect uses its own account.
         </p>
       ) : null}
       {connected ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Loom account connected. You can select this server as your Library.
+          Identity connected. This computer is saved on this device.
         </p>
       ) : null}
       {error ? (

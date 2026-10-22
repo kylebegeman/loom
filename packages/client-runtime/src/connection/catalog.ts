@@ -1,4 +1,5 @@
 import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
+import { LoomIdentityAccount } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -22,6 +23,7 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
+    identity: Schema.optionalKey(LoomIdentityAccount),
     learned: Schema.optionalKey(Schema.Literal(true)),
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
     /**
@@ -61,6 +63,13 @@ export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnect
   "BearerConnectionCredential",
   {
     token: Schema.String,
+    identity: Schema.optionalKey(
+      Schema.Struct({
+        ...LoomIdentityAccount.fields,
+        environmentId: EnvironmentId,
+        expiresAt: Schema.Number,
+      }),
+    ),
   },
 ) {}
 

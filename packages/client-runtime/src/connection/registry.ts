@@ -1,5 +1,8 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
+import * as HttpClient from "effect/http/HttpClient";
+import { revokeIdentitySession } from "./identity.ts";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
@@ -208,6 +211,7 @@ export const make = Effect.gen(function* () {
   const ownedDataCleanup = yield* Persistence.EnvironmentOwnedDataCleanup;
   const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
+  const identityHttp = yield* HttpClient.HttpClient;
   const githubRoutingPermissions = yield* GitHubRoutingPermissions;
   const connectivity = yield* Connectivity.Connectivity;
   const driver = yield* ConnectionDriver.ConnectionDriver;
@@ -800,6 +804,53 @@ export const make = Effect.gen(function* () {
     yield* Effect.forEach(platformRegistrations, installPlatformRegistration, { discard: true });
   });
 
+  const revokeIdentityRoutes = Effect.fn("EnvironmentRegistry.revokeIdentityRoutes")(function* (
+    environmentId: EnvironmentId,
+    routes: ReadonlyArray<ConnectionRoute>,
+    kept: ReadonlyArray<ConnectionRoute> = [],
+  ) {
+    const seen = new Set<string>();
+    for (const route of routes) {
+      if (route.target._tag !== "BearerConnectionTarget") continue;
+      const id = credentialConnectionId(route.target.connectionId);
+      if (
+        seen.has(id) ||
+        kept.some(
+          (candidate) =>
+            candidate.target._tag === "BearerConnectionTarget" &&
+            credentialConnectionId(candidate.target.connectionId) === id,
+        )
+      )
+        continue;
+      seen.add(id);
+      const credential = yield* credentials.get(id);
+      if (
+        Option.isNone(credential) ||
+        !credential.value.identity ||
+        credential.value.identity.expiresAt <= (yield* Clock.currentTimeMillis)
+      )
+        continue;
+      const profile = yield* profiles.get(id);
+      if (
+        Option.isNone(profile) ||
+        profile.value._tag !== "BearerConnectionProfile" ||
+        profile.value.environmentId !== environmentId ||
+        credential.value.identity.environmentId !== environmentId ||
+        profile.value.identity?.issuer !== credential.value.identity.issuer ||
+        profile.value.identity.subject !== credential.value.identity.subject
+      )
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          detail:
+            "The saved Identity connection belongs to another computer. Review its connection settings.",
+        });
+      yield* revokeIdentitySession({
+        httpBaseUrl: profile.value.httpBaseUrl,
+        token: credential.value.token,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, identityHttp));
+    }
+  });
+
   /** Callers hold its lease lock. */
   const removeLocked = Effect.fn("EnvironmentRegistry.removeLocked")(function* (
     environmentId: EnvironmentId,
@@ -811,6 +862,7 @@ export const make = Effect.gen(function* () {
     }
     const entry = yield* getEntry(environmentId);
 
+    yield* revokeIdentityRoutes(environmentId, connectionRoutes(entry));
     yield* githubRoutingPermissions.forget(environmentId);
     yield* registrations.remove(environmentId);
     yield* Ref.update(persistedEnvironmentIds, (current) => {
@@ -944,6 +996,7 @@ export const make = Effect.gen(function* () {
         if (route === undefined) return;
         const remaining = routesAfterRemoving(routes, routeId);
         if (remaining.length === 0) return yield* removeLocked(environmentId);
+        yield* revokeIdentityRoutes(environmentId, routes, remaining);
         yield* replaceRoutesLocked(entry, remaining);
         const profile = Option.getOrNull(route.profile);
         if (profile !== null && isSshConnectionProfile(profile)) {

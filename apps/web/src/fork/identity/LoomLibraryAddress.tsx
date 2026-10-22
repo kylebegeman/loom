@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { isElectron } from "~/env";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
 
@@ -15,7 +14,6 @@ export function LoomLibraryAddress({
   const [address, setAddress] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (!isElectron) return null;
   return (
     <details className="space-y-3 text-sm">
       <summary className="cursor-pointer text-muted-foreground">

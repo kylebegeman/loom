@@ -3,6 +3,7 @@ import type {
   ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -162,6 +163,27 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
     );
     if (!isBearerCredential(credential)) {
       return yield* credentialMissingError(target.connectionId);
+    }
+    if (credential.identity) {
+      if (
+        credential.identity.environmentId !== target.environmentId ||
+        credential.identity.issuer !== profile.identity?.issuer ||
+        credential.identity.subject !== profile.identity.subject
+      )
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "This Identity credential belongs to another computer or account. Sign in again.",
+        });
+      if (credential.identity.expiresAt <= (yield* Clock.currentTimeMillis))
+        return yield* new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "Identity access expired. Sign in again on this computer to reconnect.",
+        });
+    } else if (profile.identity) {
+      return yield* new ConnectionBlockedError({
+        reason: "authentication",
+        detail: "Sign in again with this computer's Identity account.",
+      });
     }
     const authorized = yield* remote.authorizeBearer({
       expectedEnvironmentId: target.environmentId,
