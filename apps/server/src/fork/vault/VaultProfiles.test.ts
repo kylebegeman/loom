@@ -1,3 +1,4 @@
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as DateTime from "effect/DateTime";
 import { vaultProfileRequirements } from "@t3tools/contracts/fork";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -422,12 +423,29 @@ it.effect(
         (yield* f.profiles.resolve(f.threadId, f.definition.id).pipe(Effect.flip)).reason,
       ).toBe("denied");
       f.state.thread = { ...f.state.thread, activeRunId: RunId.make("new-after-retire") };
+      f.state.runs.push(vaultRun(f.state.thread));
       expect((yield* f.profiles.resolve(f.threadId, f.definition.id)).profileId).toBe(
         f.definition.id,
       );
       expect(
         (yield* f.profiles.pins({ projectId: ProjectId.make("other"), cursor: null })).items,
       ).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect.each(["cancelled", "completed"] as const)(
+  "pins the actual running profile after a newer %s turn",
+  (status) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.apply({ type: "save", profile: f.definition });
+      yield* f.apply({ type: "activate", id: f.definition.id });
+      yield* f.grant(f.key.destination);
+      newerVaultRun(f.state, status);
+      expect((yield* f.profiles.resolve(f.threadId, null)).profileId).toBe(f.definition.id);
+      expect(
+        (yield* f.profiles.pins({ projectId: f.projectId, cursor: null })).items[0]?.runId,
+      ).toBe(f.state.thread.activeRunId);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 
@@ -439,6 +457,7 @@ it.effect(
       yield* f.apply({ type: "save", profile: f.definition });
       yield* f.grant(f.key.destination);
       const pinned = yield* f.profiles.resolve(f.threadId, f.definition.id);
+      f.state.runs.push(vaultRun(f.state.thread));
       f.state.thread = { ...f.state.thread, status: "queued" };
       expect(yield* f.profiles.resolve(f.threadId, null)).toEqual(pinned);
       f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };

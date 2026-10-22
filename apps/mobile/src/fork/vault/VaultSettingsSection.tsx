@@ -74,8 +74,8 @@ export function VaultSettingsSection({
       <VaultMigrationSettingsSection environmentId={environmentId} connected={connected} />
       <VaultHealthSettingsSection environmentId={environmentId} connected={connected} />
       <VaultBrokerSettingsSection environmentId={environmentId} connected={connected} />
-      <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
       <VaultGitHubSettingsSection environmentId={environmentId} connected={connected} />
+      <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
       <VaultProfileSettingsSection environmentId={environmentId} connected={connected} />
     </>
   );

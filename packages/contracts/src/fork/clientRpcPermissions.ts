@@ -8,7 +8,7 @@ import { VAULT_SSH_WS_METHODS as VS } from "./vault-ssh.ts";
 import { VAULT_BROKER_WS_METHODS as VB } from "./vault-brokers.ts";
 import { VAULT_ACCESS_WS_METHODS as VA } from "./vault-access.ts";
 import { VAULT_CORE_WS_METHODS as V } from "./vault-core.ts";
-import { AuthAccessWriteScope } from "../auth.ts";
+import { AuthAccessReadScope, AuthAccessWriteScope } from "../auth.ts";
 import { SITES_WS_METHODS as S } from "./sites.ts";
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
@@ -73,6 +73,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [VA.approvalCreate]: AuthAccessWriteScope,
   [VA.approvalChange]: AuthAccessWriteScope,
   [VA.apply]: AuthAccessWriteScope,
+  [VA.applyBatch]: AuthAccessWriteScope,
+  [VA.previewBatch]: AuthAccessReadScope,
   [V.save]: AuthAccessWriteScope,
   [V.change]: AuthAccessWriteScope,
   [V.reveal]: AuthAccessWriteScope,

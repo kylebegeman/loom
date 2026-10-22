@@ -104,7 +104,12 @@ function AccessManager({
   } | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [history, setHistory] = useState(false);
+    [history, setHistory] = useState(false),
+    [advanced, setAdvanced] = useState(false);
+  const recurring =
+    snapshot.data?.grants.filter(
+      (grant) => grant.state !== "revoked" && grant.definition.expiresAt === null,
+    ) ?? [];
   const refresh = () => {
     setPending(null);
     snapshot.refresh();
@@ -125,34 +130,55 @@ function AccessManager({
   };
   return (
     <View className="gap-3">
-      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} connected={connected} />
-      <Text>Choose who may inspect, manage or use development records.</Text>
+      <Text accessibilityRole="header" className="font-t3-semibold">
+        Recurring access
+      </Text>
+      <Text>
+        For GitHub, choose projects and repositories in GitHub access and approve them together.
+      </Text>
       <Text className="text-foreground-muted">
-        Every thread starts without access. A project grant covers all threads in that project.
+        A recurring project grant covers all current and future threads until revoked. Temporary
+        requests are listed below.
       </Text>
       {!connected ? <Text>Reconnect this computer to inspect Vault access.</Text> : null}
       <View className="flex-row flex-wrap gap-2">
         <Button label="Refresh access" disabled={!connected || busy} onPress={refresh} />
         <Button
-          label="Add grant"
+          label={advanced ? "Hide advanced access controls" : "Advanced access controls"}
           tone="primary"
+          disabled={busy}
+          onPress={() => setAdvanced(!advanced)}
+        />
+      </View>
+      {advanced ? (
+        <Button
+          label="Add custom grant"
           disabled={!connected || !canWrite || busy || !snapshot.data || !catalog.data}
           onPress={() => setEditing("new")}
         />
-      </View>
+      ) : null}
       {error || snapshot.error || catalog.error ? (
         <Text accessibilityRole="alert">{error ?? snapshot.error ?? catalog.error}</Text>
       ) : null}
       {snapshot.isPending && !snapshot.data ? <Text>Loading access policy…</Text> : null}
       {snapshot.data ? (
         <>
-          <Text className="text-foreground-muted">Policy revision {snapshot.data.revision}</Text>
-          {snapshot.data.grants.length === 0 ? (
+          {advanced ? (
+            <Text className="text-foreground-muted">Policy revision {snapshot.data.revision}</Text>
+          ) : null}
+          {(advanced ? snapshot.data.grants : recurring).length === 0 ? (
             <Text>
-              No grants yet. Add one for a thread or project, then check its access below.
+              No recurring grants yet. Choose projects in GitHub access, or add a custom grant in
+              advanced access controls.
             </Text>
           ) : null}
-          {snapshot.data.grants.map((grant) => (
+          {(advanced
+            ? [...snapshot.data.grants].sort(
+                (a, b) =>
+                  Number(b.definition.expiresAt === null) - Number(a.definition.expiresAt === null),
+              )
+            : recurring
+          ).map((grant) => (
             <View key={grant.definition.id} className="gap-2 rounded-2xl bg-subtle p-3">
               <Text className="font-t3-semibold">{grant.definition.label}</Text>
               <Text>{vaultGrantExpiry(grant, grantTime)}</Text>
@@ -219,7 +245,7 @@ function AccessManager({
               )}
             </View>
           ))}
-          {catalog.data ? (
+          {advanced && catalog.data ? (
             <AccessCheck
               environmentId={environmentId}
               catalog={catalog.data}
@@ -246,6 +272,7 @@ function AccessManager({
           ) : null}
         </>
       ) : null}
+      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} connected={connected} />
       {editing !== null && catalog.data && snapshot.data ? (
         <GrantEditor
           environmentId={environmentId}
@@ -352,7 +379,7 @@ function GrantEditor({
     );
   const [items, setItems] = useState<readonly string[]>(grant?.definition.itemIds ?? []),
     [actions, setActions] = useState<readonly VaultAccessAction[]>(
-      grant?.definition.actions ?? ["inspect", "manage"],
+      grant?.definition.actions ?? ["inspect"],
     );
   const [destination, setDestination] = useState(grant?.definition.destination ?? "");
   const [start, setStart] = useState(() =>

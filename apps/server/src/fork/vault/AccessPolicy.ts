@@ -4,6 +4,7 @@ import {
   VaultApprovalRetryInput,
   VaultAuditEvent,
   VaultGrant,
+  VaultGrantBatchResult,
   VaultItemId,
 } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
@@ -29,6 +30,15 @@ const StoredApproval = Schema.Struct({
   lastOperation: Schema.NullOr(Schema.Struct({ id: Schema.String, fingerprint: Schema.String })),
 });
 const fields = {
+  batchReceipts: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        fingerprint: Schema.String,
+        result: VaultGrantBatchResult,
+      }),
+    ).check(Schema.isMaxLength(32)),
+  ),
   approvals: Schema.optionalKey(Schema.Array(StoredApproval).check(Schema.isMaxLength(128))),
   revision: Counter,
   grants: Schema.Array(VaultGrant).check(Schema.isMaxLength(128)),

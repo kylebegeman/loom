@@ -13,6 +13,7 @@ import { normalizeDesktopUpdateReleaseNotes } from "../../apps/desktop/src/updat
 import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
   buildEnvironment,
+  installedUpdateRequirement,
   preparedConnectConfig,
   launchAgent,
   nextLoomVersion,
@@ -60,6 +61,35 @@ async function publicationFixture() {
 }
 
 describe("Loom update publishing", () => {
+  it("distinguishes an ad hoc installed app from an update-compatible signing requirement", () => {
+    expect(
+      installedUpdateRequirement({
+        status: 0,
+        stdout: '# designated => cdhash H"0123456789012345678901234567890123456789"\n',
+        stderr: "Executable=/Applications/Loom.app/Contents/MacOS/Loom\nSignature=adhoc\n",
+      }),
+    ).toBeNull();
+    const expression = 'identifier "com.t3tools.t3code" and anchor trusted';
+    for (const stream of ["stdout", "stderr"] as const)
+      expect(
+        installedUpdateRequirement({
+          status: 0,
+          stdout: "",
+          stderr: "",
+          [stream]: `designated => ${expression}\n`,
+        }),
+      ).toBe(expression);
+    for (const result of [
+      { status: 1, stdout: `designated => ${expression}`, stderr: "" },
+      { status: null, stdout: "", stderr: "Signature=adhoc" },
+      { status: 0, stdout: "", stderr: "Signature=adhoc" },
+      { status: 0, stdout: "", stderr: "" },
+    ])
+      expect(() => installedUpdateRequirement(result)).toThrow(
+        "Cannot read the installed Loom signing requirement.",
+      );
+  });
+
   it("uses only the explicitly prepared public config for desktop and runtime builds", () => {
     const config = parseLoomConnectConfig({
       enabled: true,

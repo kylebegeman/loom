@@ -1,3 +1,4 @@
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
@@ -227,10 +228,27 @@ it.effect(
     ),
 );
 
+it.effect.each(["cancelled", "completed"] as const)(
+  "keeps workload readiness and issuance on the active run after a newer %s turn",
+  (status) =>
+    test((f, service) =>
+      Effect.gen(function* () {
+        newerVaultRun(f.state, status);
+        expect(f.state.thread.status).toBe(status);
+        expect(
+          (yield* service.terminalReadiness(f.threadId, f.state.thread.providerInstanceId!))
+            .activeRun,
+        ).toBe(true);
+        expect((yield* service.open(f.input, f.threadId)).runId).toBe(f.state.thread.activeRunId);
+      }),
+    ),
+);
+
 it.effect("keeps a queued root run's workload live and refuses it when root ownership ends", () =>
   test((f, service) =>
     Effect.gen(function* () {
       const session = yield* service.open(f.input, f.threadId);
+      f.state.runs.push(vaultRun(f.state.thread));
       f.state.thread = { ...f.state.thread, status: "queued" };
       expect(
         (yield* service.terminalReadiness(f.threadId, f.state.thread.providerInstanceId!))

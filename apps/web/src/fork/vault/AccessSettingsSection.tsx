@@ -125,6 +125,7 @@ function AccessManager({
     snapshot?.grants.flatMap((grant) => [grant.definition.notBefore, grant.definition.expiresAt]) ??
       [],
   );
+  const [showGrantHistory, setShowGrantHistory] = useState(false);
   const [editing, setEditing] = useState<VaultGrant | "new" | null>(null);
   const [pending, setPending] = useState<{
     input: VaultGrantMutation;
@@ -169,29 +170,29 @@ function AccessManager({
     )?.label ?? grant.definition.principal.id;
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
-      <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-base font-medium">Access grants</h3>
-          <p className="max-w-prose text-sm">
-            Choose who may inspect, manage or use development records.
+        <div>
+          <h3 className="text-base font-medium">Saved project access</h3>
+          <p className="text-sm text-muted-foreground">
+            Saved access continues across runs until revoked or its chosen expiry. Project grants
+            cover current and future threads in that project.
           </p>
           <p className="text-sm text-muted-foreground">
-            Every thread starts without access. Project grants cover all threads in that project.
+            For GitHub, choose projects and repositories in GitHub access.
           </p>
         </div>
-        <LoomSettingsActions>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm-multiline" variant="outline" disabled={busy} onClick={refresh}>
+            Refresh access
+          </Button>
           <Button
             size="sm-multiline"
             disabled={!canWrite || busy || pending !== null || !snapshot || !catalog}
             onClick={() => setEditing("new")}
           >
-            Add grant
+            Add custom grant
           </Button>
-          <Button size="sm-multiline" variant="ghost" disabled={busy} onClick={refresh}>
-            Refresh access
-          </Button>
-        </LoomSettingsActions>
+        </div>
       </div>
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       <VaultQueryFeedback
@@ -208,104 +209,130 @@ function AccessManager({
       />
       {snapshot ? (
         <>
-          <p className="text-xs text-muted-foreground">
-            Policy revision {snapshot.revision}. Changes use this revision to protect newer edits.
-          </p>
-          {snapshot.grants.length === 0 ? (
+          {snapshot.grants.filter(
+            (grant) =>
+              grant.state !== "revoked" &&
+              (grant.definition.expiresAt === null || grant.definition.expiresAt > grantTime),
+          ).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No grants yet. Add one for a thread or project, then check its access below.
+              No current saved access. Configure GitHub project access from a saved connection, or
+              add a custom grant for another Vault record.
             </p>
-          ) : (
-            <div className="flex flex-col divide-y divide-border">
-              {snapshot.grants.map((grant) => (
-                <div key={grant.definition.id} className="flex min-w-0 flex-col gap-3 py-4">
-                  <div className="flex flex-wrap justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{grant.definition.label}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {grant.definition.principal.kind === "project"
-                          ? "All threads in"
-                          : "Thread"}{" "}
-                        {grantLabel(grant)}
-                      </p>
-                    </div>
-                    <span className="text-sm">{vaultGrantExpiry(grant, grantTime)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {grant.definition.itemIds.length} selected items.{" "}
-                    {grant.definition.actions
-                      .map((action) => VAULT_ACTION_LABELS[action])
-                      .join(", ")}
-                    .{" "}
-                    {grant.definition.destination
-                      ? `Destination: ${grant.definition.destination}`
-                      : "Any destination within the project scope."}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {grant.definition.expiresAt === null
-                      ? "No expiry"
-                      : `Expires ${new Date(grant.definition.expiresAt).toLocaleString()}`}
-                    {grant.definition.parentId
-                      ? `; inherits from ${grant.definition.parentId}`
-                      : ""}
-                  </p>
-                  {grant.state !== "revoked" ? (
-                    <LoomSettingsActions>
-                      <Button
-                        size="sm-multiline"
-                        variant="outline"
-                        disabled={!canWrite || busy || pending !== null}
-                        onClick={() => setEditing(grant)}
-                      >
-                        Edit grant
-                      </Button>
-                      {(
-                        [grant.state === "active" ? "suspended" : "active", "revoked"] as const
-                      ).map((state) => (
-                        <Button
-                          key={state}
-                          size="sm-multiline"
-                          variant={state === "revoked" ? "ghost-destructive" : "ghost"}
-                          disabled={!canWrite || busy || pending !== null}
-                          onClick={() =>
-                            void preview({
-                              operationId: newId(),
-                              expectedRevision: snapshot.revision,
-                              change: { type: "state", id: grant.definition.id, state },
-                            })
-                          }
-                        >
-                          {state === "revoked"
-                            ? "Preview revocation"
-                            : state === "active"
-                              ? "Preview resume"
-                              : "Preview suspension"}
-                        </Button>
-                      ))}
-                    </LoomSettingsActions>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Revocation is permanent. Create a new grant to restore access deliberately.
-                    </p>
-                  )}
-                </div>
-              ))}
+          ) : null}
+          {snapshot.grants.some(
+            (grant) =>
+              grant.state === "revoked" ||
+              (grant.definition.expiresAt !== null && grant.definition.expiresAt <= grantTime),
+          ) ? (
+            <div>
+              <Button
+                size="sm-multiline"
+                variant="ghost"
+                onClick={() => setShowGrantHistory(!showGrantHistory)}
+              >
+                {showGrantHistory
+                  ? "Hide expired and revoked grants"
+                  : "Show expired and revoked grants"}
+              </Button>
             </div>
-          )}
+          ) : null}
+          {snapshot.grants.length > 0 ? (
+            <div className="flex flex-col divide-y divide-border">
+              {snapshot.grants
+                .filter(
+                  (grant) =>
+                    showGrantHistory ||
+                    (grant.state !== "revoked" &&
+                      (grant.definition.expiresAt === null ||
+                        grant.definition.expiresAt > grantTime)),
+                )
+                .toSorted(
+                  (a, b) =>
+                    Number(b.definition.principal.kind === "project") -
+                    Number(a.definition.principal.kind === "project"),
+                )
+                .map((grant) => (
+                  <div key={grant.definition.id} className="flex min-w-0 flex-col gap-3 py-4">
+                    <div className="flex flex-wrap justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{grant.definition.label}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {grant.definition.principal.kind === "project"
+                            ? "All threads in"
+                            : "Thread"}{" "}
+                          {grantLabel(grant)}
+                        </p>
+                      </div>
+                      <span className="text-sm">{vaultGrantExpiry(grant, grantTime)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {grant.definition.itemIds.length} selected items.{" "}
+                      {grant.definition.actions
+                        .map((action) => VAULT_ACTION_LABELS[action])
+                        .join(", ")}
+                      .{" "}
+                      {grant.definition.destination
+                        ? `Destination: ${grant.definition.destination}`
+                        : "Any destination within the project scope."}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {grant.definition.expiresAt === null
+                        ? "No expiry"
+                        : `Expires ${new Date(grant.definition.expiresAt).toLocaleString()}`}
+                      {grant.definition.parentId
+                        ? `; inherits from ${grant.definition.parentId}`
+                        : ""}
+                    </p>
+                    {grant.state !== "revoked" ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          disabled={!canWrite || busy || pending !== null}
+                          onClick={() => setEditing(grant)}
+                        >
+                          Edit grant
+                        </Button>
+                        {(
+                          [grant.state === "active" ? "suspended" : "active", "revoked"] as const
+                        ).map((state) => (
+                          <Button
+                            key={state}
+                            size="sm-multiline"
+                            variant={state === "revoked" ? "ghost-destructive" : "ghost"}
+                            disabled={!canWrite || busy || pending !== null}
+                            onClick={() =>
+                              void preview({
+                                operationId: newId(),
+                                expectedRevision: snapshot.revision,
+                                change: { type: "state", id: grant.definition.id, state },
+                              })
+                            }
+                          >
+                            {state === "revoked"
+                              ? "Preview revocation"
+                              : state === "active"
+                                ? "Preview resume"
+                                : "Preview suspension"}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Revocation is permanent. Create a new grant to restore access deliberately.
+                      </p>
+                    )}
+                  </div>
+                ))}
+            </div>
+          ) : null}
           {pending && (
             <div
               className="flex flex-col gap-3 rounded-lg bg-muted p-4"
               role="region"
               aria-label="Grant change preview"
             >
-              <div className="space-y-1">
-                <h3 className="text-base font-medium">
-                  Review {pending.preview.grant.definition.label}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Preview only. Apply this reviewed change to update the policy.
-                </p>
-              </div>
+              <p className="text-sm font-medium">Review {pending.preview.grant.definition.label}</p>
               <p className="text-sm">
                 {pending.input.change.type === "state"
                   ? `Set grant to ${pending.input.change.state}.`
@@ -318,7 +345,7 @@ function AccessManager({
                   {text}
                 </p>
               ))}
-              <LoomSettingsActions>
+              <div className="flex min-w-0 flex-wrap gap-2.5">
                 <Button
                   size="sm-multiline"
                   variant="outline"
@@ -334,21 +361,32 @@ function AccessManager({
                 >
                   {busy ? "Applying…" : "Apply reviewed change"}
                 </Button>
-              </LoomSettingsActions>
+              </div>
             </div>
           )}
-          <AccessCheck
-            key={`${initial?.itemId ?? ""}:${initial?.threadId ?? ""}`}
-            environmentId={environmentId}
-            catalog={catalog}
-            initialItemId={initial?.itemId ?? ""}
-            initialThreadId={initial?.threadId ?? ""}
-            policyRevision={snapshot.revision}
-          />
-          <LoomSettingsDetails title="Recent access decisions and policy changes">
+          <VaultApprovalInbox environmentId={environmentId} canWrite={canWrite} />
+          <details open={initial !== null}>
+            <summary className="cursor-pointer text-sm">Advanced access checks</summary>
+            <div className="mt-3">
+              <AccessCheck
+                key={`${initial?.itemId ?? ""}:${initial?.threadId ?? ""}`}
+                environmentId={environmentId}
+                catalog={catalog}
+                initialItemId={initial?.itemId ?? ""}
+                initialThreadId={initial?.threadId ?? ""}
+                policyRevision={snapshot.revision}
+              />
+            </div>
+          </details>
+          <details>
+            <summary className="cursor-pointer text-sm">
+              Recent access decisions and policy changes
+            </summary>
             <div className="mt-3 flex flex-col gap-2">
               {snapshot.audit.length === 0 ? (
-                <p className="text-sm">No recorded decisions.</p>
+                <p className="text-sm">
+                  No recent policy changes or access checks. Saved grants appear above.
+                </p>
               ) : (
                 snapshot.audit.map((event) => (
                   <p key={event.id} className="break-words text-xs text-muted-foreground">
@@ -362,7 +400,7 @@ function AccessManager({
                 authorization decisions, not successful external logins.
               </p>
             </div>
-          </LoomSettingsDetails>
+          </details>
         </>
       ) : null}
       {editing !== null && catalog && snapshot ? (
@@ -417,7 +455,7 @@ function GrantEditor({
   );
   const [items, setItems] = useState<readonly string[]>(grant?.definition.itemIds ?? []);
   const [actions, setActions] = useState<readonly VaultAccessAction[]>(
-    grant?.definition.actions ?? ["inspect", "manage"],
+    grant?.definition.actions ?? ["inspect"],
   );
   const [destination, setDestination] = useState(grant?.definition.destination ?? "");
   const [start, setStart] = useState(() => localDate(grant?.definition.notBefore ?? Date.now()));

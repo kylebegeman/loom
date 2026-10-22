@@ -997,3 +997,49 @@ it.effect("withdraws an observation when migration inventory changes during auth
     }),
   ),
 );
+
+it.effect(
+  "keeps format-4 protection and intent evidence through durable batch approval replay",
+  () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.review;
+        const before = f.raw();
+        const input = {
+          operationId: yield* f.id,
+          expectedRevision: before.revision,
+          changes: [
+            {
+              type: "save" as const,
+              grant: {
+                ...before.grants[0]!.definition,
+                id: yield* f.id,
+                label: "Project metadata",
+                actions: ["inspect" as const],
+                destination: null,
+                parentId: null,
+              },
+            },
+          ],
+        };
+        const result = yield* f.access.applyBatch(input, "human", Effect.void);
+        expect(f.raw()).toMatchObject({
+          schemaVersion: 4,
+          environmentId: before.environmentId,
+          credentialModes: before.credentialModes,
+          intents: before.intents,
+          batchReceipts: [{ id: input.operationId, result }],
+        });
+        const after = f.records.get(f.path);
+        expect(yield* f.access.applyBatch(input, "human", Effect.void)).toEqual(result);
+        expect(f.records.get(f.path)).toEqual(after);
+        expect((yield* f.access.snapshot).revision).toBe(result.policyRevision);
+        expect(
+          (yield* f.access
+            .require(f.threadId, f.itemId, "use", f.key.destination)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);

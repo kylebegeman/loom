@@ -68,9 +68,12 @@ function Inbox({
   const review = vaultApprovalReviewQueue(data?.requests ?? [], now, filter);
   const [pending, setPending] = useState<VaultApprovalChange | null>(null),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null);
+    [error, setError] = useState<string | null>(null),
+    [details, setDetails] = useState<readonly string[]>([]);
   const countMessage = data
-    ? `${review.pendingCount} pending of ${review.totalCount} retained requests.`
+    ? filter === "pending"
+      ? `${review.pendingCount} pending temporary requests.`
+      : `${review.pendingCount} pending of ${review.totalCount} retained requests.`
     : null;
   const announcedCount = useRef(countMessage);
   useEffect(() => {
@@ -112,10 +115,12 @@ function Inbox({
   };
   return (
     <View accessibilityLabel="Vault approvals" className="gap-3">
-      <Text className="font-semibold">Remote approvals</Text>
+      <Text accessibilityRole="header" className="font-t3-semibold">
+        Temporary requests
+      </Text>
       <Text>
-        Review temporary access for the exact thread, record, action and destination. Notification
-        delivery is not connected. Approvals do not restart an operation.
+        Temporary requests apply to one thread for a short time. Use recurring project access for
+        day-to-day GitHub work. Approvals do not restart an operation.
       </Text>
       {!connected ? <Text>Reconnect this computer to view requests.</Text> : null}
       <Button label="Refresh requests" onPress={refresh} disabled={!connected || busy} />
@@ -128,7 +133,7 @@ function Inbox({
           disabled={!connected || busy || !canWrite}
         />
       ) : null}
-      {data?.retention ? (
+      {data?.retention && filter === "all" ? (
         <Text>
           Requests are retained for 24 hours, up to 128 entries. Automatic resumption and allow-once
           access remain disabled.
@@ -138,19 +143,26 @@ function Inbox({
         <View className="gap-2">
           <Text accessibilityLiveRegion="polite">{countMessage}</Text>
           <Button
-            label={filter === "pending" ? "Show all requests" : "Show pending requests"}
+            label={
+              filter === "pending"
+                ? "Show temporary request history"
+                : "Hide temporary request history"
+            }
             disabled={busy}
             onPress={() => setFilter(filter === "pending" ? "all" : "pending")}
           />
           {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
             <Text>
-              No pending requests. Show all requests to review decisions or revoke an approval.
+              No pending temporary requests. History includes decisions, cancelled requests and
+              approvals you can revoke.
             </Text>
           ) : null}
         </View>
       ) : null}
       {data && review.totalCount === 0 ? (
-        <Text>No access requests. An agent can request access with the Vault request tool.</Text>
+        <Text>
+          No temporary access requests. Recurring project access can be configured in GitHub access.
+        </Text>
       ) : null}
       {data &&
         review.requests.map((r) => {
@@ -184,30 +196,49 @@ function Inbox({
                 <Text accessibilityRole="alert">{labels.warning}</Text>
               ) : null}
               <Text>
-                Thread {r.threadId}
-                {"\n"}Project {r.projectId}
-                {"\n"}Record {r.itemId} · version {r.itemVersion}
-                {"\n"}Destination {r.destination ?? "Any destination (unrestricted)"}
+                Repository or destination: {r.destination ?? "No destination restriction"}
               </Text>
               <Text>
-                {vaultApprovalNotificationMessage(
-                  data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
-                  state,
-                )}
-              </Text>
-              {r.waitingOperation ? (
-                <Text>
-                  Waiting operation {r.waitingOperation.operationId}
-                  {"\n"}Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
-                  required.
-                </Text>
-              ) : (
-                <Text>No run-bound operation correlation was captured.</Text>
-              )}
-              <Text>
-                Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
                 Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
               </Text>
+              <Button
+                label={details.includes(r.id) ? "Hide request details" : "Request details"}
+                tone="text"
+                onPress={() =>
+                  setDetails((previous) =>
+                    previous.includes(r.id)
+                      ? previous.filter((id) => id !== r.id)
+                      : [...previous, r.id],
+                  )
+                }
+              />
+              {details.includes(r.id) ? (
+                <View className="gap-2">
+                  <Text>
+                    Thread {r.threadId}
+                    {"\n"}Project {r.projectId}
+                    {"\n"}Record {r.itemId} · version {r.itemVersion}
+                  </Text>
+                  <Text>
+                    {vaultApprovalNotificationMessage(
+                      data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                      state,
+                    )}
+                  </Text>
+                  {r.waitingOperation ? (
+                    <Text>
+                      Waiting operation {r.waitingOperation.operationId}
+                      {"\n"}Run {r.waitingOperation.runId}. Explicit retry and a fresh access check
+                      are required.
+                    </Text>
+                  ) : (
+                    <Text>No run-bound operation correlation was captured.</Text>
+                  )}
+                  <Text>
+                    Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}
+                  </Text>
+                </View>
+              ) : null}
               {state === "pending" ? (
                 <>
                   <Button

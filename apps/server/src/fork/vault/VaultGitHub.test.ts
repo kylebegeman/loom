@@ -1,3 +1,4 @@
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -652,6 +653,60 @@ it.effect(
     }).pipe(Effect.scoped, Effect.provide(deps)),
 );
 
+it.effect.each(["cancelled", "completed"] as const)(
+  "executes the active GitHub run after a newer %s turn",
+  (status) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      yield* allowTerminal(f);
+      newerVaultRun(f.state, status);
+      expect(f.state.thread.status).toBe(status);
+      const input = { id: f.input.id, expectedVersion: 1, repository: "owner/repo" };
+      expect(
+        (yield* f.service.readiness({ ...input, threadId: f.threadId }, Effect.void)).grant,
+      ).toBe("ready");
+      expect(
+        (yield* f.service.terminal(
+          { ...input, command: { tool: "git", argv: ["fetch", "origin"] } },
+          f.threadId,
+        )).exitCode,
+      ).toBe(0);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect("refuses a non-running or missing actual run despite a running shell summary", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.service.save(f.input, "admin", Effect.void);
+    yield* allowTerminal(f);
+    newerVaultRun(f.state, "cancelled");
+    f.state.thread = { ...f.state.thread, status: "running" };
+    const input = {
+      id: f.input.id,
+      expectedVersion: 1,
+      repository: "owner/repo",
+      command: { tool: "git" as const, argv: ["fetch", "origin"] },
+    };
+    for (const status of [
+      "preparing",
+      "starting",
+      "waiting",
+      "completed",
+      "cancelled",
+      "interrupted",
+    ] as const) {
+      f.state.runs[0] = { ...f.state.runs[0]!, status };
+      expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+    }
+    f.state.runs = f.state.runs.slice(1);
+    expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+    expect(f.terminalCalls()).toBe(0);
+  }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
 it.effect(
   "keeps authorized GitHub delivery bound to the same active run while a follow-up is queued",
   () =>
@@ -687,6 +742,7 @@ it.effect(
         repository,
         operation: { action: "pr-list" as const },
       };
+      f.state.runs.push(vaultRun(f.state.thread));
       f.state.thread = { ...f.state.thread, status: "queued" };
       expect((yield* f.service.run(input, f.threadId)).stdout).toBe("Synthetic GH result");
       expect(f.calls()).toBe(1);

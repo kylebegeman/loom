@@ -39,7 +39,7 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["apply", "approvalCreate", "approvalChange"] as const)(
+it.effect.each(["apply", "applyBatch", "approvalCreate", "approvalChange"] as const)(
   "Vault %s requires its destination's access:write grant and observes revocation",
   (method) =>
     Effect.scoped(
@@ -74,4 +74,35 @@ it.effect.each(["apply", "approvalCreate", "approvalChange"] as const)(
         });
       }),
     ),
+);
+
+it.effect("batch preview requires access:read on the destination and observes revocation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      registry.mount(sessions(destination));
+      registry.mount(sessions(other));
+      const command = createVaultAccessAtoms(runtime).previewBatch;
+      const policy = createCommandPermissions(runtime, VAULT_ACCESS_WS_METHODS.previewBatch);
+      registry.mount(command.permissionAtom(destination));
+      expect(policy.requiredScopes()).toEqual([AuthAccessReadScope]);
+      const noAccess = { ...grant(false), scopes: [], permissions: [] };
+      registry.set(sessions(destination), AsyncResult.success(noAccess));
+      registry.set(sessions(other), AsyncResult.success(grant(false)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
+      expect(registry.get(command.permissionAtom(other))).toBe(true);
+      expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: AuthAccessReadScope,
+      });
+      registry.set(sessions(destination), AsyncResult.success(grant(false)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(true);
+      yield* policy.authorize(registry, destination);
+      registry.set(sessions(destination), AsyncResult.success(noAccess));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
+      expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: AuthAccessReadScope,
+      });
+    }),
+  ),
 );

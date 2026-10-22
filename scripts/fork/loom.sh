@@ -391,8 +391,30 @@ snapshot_state() {
   echo "Saved the current T3 data to $into/state"
 }
 
+verify_install_signing() {
+  local app="$1/Loom.app" details authority installed requirement
+  codesign --verify --deep --strict "$app" \
+    || die "the selected app has an invalid signature; the installed app was not changed"
+  details=$(codesign -dvv "$app" 2>&1) \
+    || die "could not inspect the selected app's signature"
+  authority=$(printf '%s\n' "$details" | sed -n 's/^Authority=//p' | sed -n 1p)
+  [ "$authority" = "$SIGNING_IDENTITY" ] \
+    || die "the selected app is not signed by $SIGNING_IDENTITY; refusing to break updates"
+  if [ -d "$APP_PATH" ]; then
+    installed=$(codesign -dvv -r- "$APP_PATH" 2>&1) \
+      || die "could not inspect the installed app's signature"
+    if ! printf '%s\n' "$installed" | grep -q -x 'Signature=adhoc'; then
+      requirement=$(printf '%s\n' "$installed" | sed -n 's/^\(# \)\{0,1\}designated => //p')
+      [ -n "$requirement" ] || die "the installed app has no readable signing requirement"
+      codesign --verify --deep --strict -R "=$requirement" "$app" \
+        || die "the selected app changes the installed signing identity; refusing to break updates"
+    fi
+  fi
+}
+
 install_record() {
   local record=$1
+  verify_install_signing "$record"
   quit_app install
   local current
   current=$(installed_record)
@@ -477,6 +499,7 @@ cmd_rollback() {
   [ -n "$previous" ] || die "no earlier build is kept"
   [ -f "$previous/state/state.sqlite" ] || [ -f "$previous/state/statev2.sqlite" ] \
     || die "$(basename "$previous") has no saved data to restore"
+  verify_install_signing "$previous"
   quit_app rollback
   snapshot_state "$current"
   say "Restoring the data $(basename "$previous") last ran with"

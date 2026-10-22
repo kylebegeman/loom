@@ -1,3 +1,4 @@
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId } from "@t3tools/contracts";
@@ -464,12 +465,33 @@ it.effect("does not disclose discovered destinations to a thread without item in
   ),
 );
 
+it.effect.each(["cancelled", "completed"] as const)(
+  "reports provider readiness for the actual run after a newer %s turn",
+  (status) =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        newerVaultRun(f.state, status);
+        const report = yield* f.service.check({ threadId: f.threadId, requirements: [] });
+        expect(report.checks).toContainEqual(
+          expect.objectContaining({ id: "provider-runtime", state: "passed" }),
+        );
+        expect(report.checks.some((check) => check.id === "context-changed")).toBe(false);
+        expect(report.checks).toContainEqual(
+          expect.objectContaining({ id: "broker-delivery", state: "unsupported" }),
+        );
+        expect(report.ready).toBe(false);
+      }),
+    ),
+);
+
 it.effect(
   "reports a queued active root run as live, without treating background drain as root ownership",
   () =>
     withFixture((f) =>
       Effect.gen(function* () {
         yield* f.grant(f.key.destination);
+        f.state.runs.push(vaultRun(f.state.thread));
         f.state.thread = { ...f.state.thread, status: "queued" };
         expect(
           (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,

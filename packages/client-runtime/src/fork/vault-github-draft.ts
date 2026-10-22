@@ -1,4 +1,4 @@
-import { VaultGitHubSave } from "@t3tools/contracts/fork";
+import { VaultGitHubSave, VaultGitHubRepository } from "@t3tools/contracts/fork";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
@@ -12,6 +12,20 @@ export type VaultGitHubDraft = {
   installationId: string;
   secret: string;
 };
+const isRepository = Schema.is(VaultGitHubRepository);
+export const parseVaultGitHubRepositories = (input: string): string[] | null => {
+  const repositories: string[] = [];
+  for (const entry of input.split(/[\s,]+/).filter(Boolean)) {
+    const url =
+      /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9-]+\/[A-Za-z0-9_.-]+?)\/?$/i.exec(
+        entry,
+      );
+    const repository = (url ? url[1]!.replace(/\.git$/i, "") : entry).toLowerCase();
+    if (!isRepository(repository)) return null;
+    if (!repositories.includes(repository)) repositories.push(repository);
+  }
+  return repositories;
+};
 const decodeSave = Schema.decodeUnknownOption(Schema.toType(VaultGitHubSave));
 export const makeVaultGitHubSave = (draft: VaultGitHubDraft, operationId: string) =>
   Option.getOrNull(
@@ -20,10 +34,7 @@ export const makeVaultGitHubSave = (draft: VaultGitHubDraft, operationId: string
       operationId,
       expectedVersion: draft.expectedVersion,
       label: draft.label.trim(),
-      repositories: draft.repositories
-        .split(/[\s,]+/)
-        .filter(Boolean)
-        .map((r) => r.toLowerCase()),
+      repositories: parseVaultGitHubRepositories(draft.repositories),
       credential:
         draft.type === "token"
           ? { type: "token", token: Redacted.make(draft.secret.trim()) }

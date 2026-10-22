@@ -360,6 +360,17 @@ async function exists(filename: string) {
   }
 }
 
+export function installedUpdateRequirement(
+  result: Pick<NodeChildProcess.SpawnSyncReturns<string>, "status" | "stdout" | "stderr">,
+): string | null {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const expression = /^#? ?designated => (.+)$/m.exec(output)?.[1];
+  if (result.status !== 0 || !expression)
+    throw new Error("Cannot read the installed Loom signing requirement.");
+  // An ad hoc signature binds the installed bytes, so any newer build needs a manual install.
+  return /^Signature=adhoc$/m.test(output) ? null : expression;
+}
+
 export async function updateManifest(zipPath: string, release: Release) {
   const hash = NodeCrypto.createHash("sha512");
   for await (const chunk of NodeFS.createReadStream(zipPath)) hash.update(chunk);
@@ -613,15 +624,19 @@ async function prepare(release: Release) {
     run("codesign", ["--verify", "--deep", "--strict", app], { stream: true });
     if (await exists(APP_PATH)) {
       // Squirrel validates the new bundle against the installed app's requirement.
-      const requirement = NodeChildProcess.spawnSync("codesign", ["-d", "-r-", APP_PATH], {
+      const requirement = NodeChildProcess.spawnSync("codesign", ["-dvv", "-r-", APP_PATH], {
         encoding: "utf8",
       });
-      const expression = /^designated => (.+)$/m.exec(requirement.stdout)?.[1];
-      if (requirement.status !== 0 || !expression)
-        throw new Error("Cannot read the installed Loom signing requirement.");
-      run("codesign", ["--verify", "--deep", "--strict", "-R", `=${expression}`, app], {
-        stream: true,
-      });
+      const expression = installedUpdateRequirement(requirement);
+      if (expression === null) {
+        console.log(
+          "The installed app is ad hoc signed. Install this signed release manually to enable future signed updates.",
+        );
+      } else {
+        run("codesign", ["--verify", "--deep", "--strict", "-R", `=${expression}`, app], {
+          stream: true,
+        });
+      }
     }
     const stagedRecord = NodePath.join(staging, "record");
     await NodeFSP.mkdir(NodePath.join(stagedRecord, "updates"), { recursive: true });

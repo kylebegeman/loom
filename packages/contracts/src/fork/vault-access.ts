@@ -67,6 +67,21 @@ export const VaultGrantMutation = Schema.Struct({
   change: Schema.Union([VaultGrantSave, VaultGrantStateChange]),
 });
 export type VaultGrantMutation = typeof VaultGrantMutation.Type;
+export const VaultGrantBatchMutation = Schema.Struct({
+  operationId: VaultItemId,
+  expectedRevision: NonNegativeInt,
+  changes: Schema.Array(VaultGrantMutation.fields.change).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(128),
+  ),
+}).check(
+  Schema.makeFilter(
+    (input) =>
+      new Set(input.changes.map((change) => (change.type === "save" ? change.grant.id : change.id)))
+        .size === input.changes.length,
+  ),
+);
+export type VaultGrantBatchMutation = typeof VaultGrantBatchMutation.Type;
 export const VaultDecisionReason = Schema.Literals([
   "allowed",
   "no-grant",
@@ -131,6 +146,18 @@ export const VaultGrantPreview = Schema.Struct({
   unknowns: Schema.Array(Schema.String),
 });
 export type VaultGrantPreview = typeof VaultGrantPreview.Type;
+export const VaultGrantBatchResult = Schema.Struct({
+  policyRevision: NonNegativeInt,
+  grants: Schema.Array(VaultGrant).check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+});
+export type VaultGrantBatchResult = typeof VaultGrantBatchResult.Type;
+export const VaultGrantBatchPreview = Schema.Struct({
+  ...VaultGrantBatchResult.fields,
+  affectedGrantIds: VaultGrantPreview.fields.affectedGrantIds,
+  knownItemIds: VaultGrantPreview.fields.knownItemIds,
+  unknowns: VaultGrantPreview.fields.unknowns,
+});
+export type VaultGrantBatchPreview = typeof VaultGrantBatchPreview.Type;
 export const VaultAccessContext = Schema.Struct({
   checkedAt: Time,
   freshUntil: Time,
@@ -428,7 +455,9 @@ export const VAULT_ACCESS_WS_METHODS = {
   catalog: "loom.vault-grants.catalog",
   snapshot: "loom.vault-grants.snapshot",
   apply: "loom.vault-grants.apply",
+  applyBatch: "loom.vault-grants.apply-batch",
   preview: "loom.vault-access-inspector.preview",
+  previewBatch: "loom.vault-access-inspector.preview-batch",
   explain: "loom.vault-access-inspector.explain",
   readiness: "loom.vault-readiness.check",
 } as const;
@@ -462,6 +491,16 @@ export const VaultAccessRpcGroup = RpcGroup.make(
   Rpc.make(VAULT_ACCESS_WS_METHODS.apply, {
     payload: VaultGrantMutation,
     success: VaultGrant,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.applyBatch, {
+    payload: VaultGrantBatchMutation,
+    success: VaultGrantBatchResult,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.previewBatch, {
+    payload: VaultGrantBatchMutation,
+    success: VaultGrantBatchPreview,
     error,
   }),
   Rpc.make(VAULT_ACCESS_WS_METHODS.preview, {

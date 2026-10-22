@@ -52,6 +52,7 @@ function run(f: ReturnType<typeof fixture>, command: string) {
     records() { echo "$LOOM_TEST_PREVIOUS"; }
     quit_app() { :; }
     install_record() { :; }
+    verify_install_signing() { :; }
     ${command}
   `,
     ],
@@ -503,4 +504,99 @@ it("refuses installation when application discovery fails", () => {
   expect(result.status).toBe(1);
   expect(result.stdout).not.toContain("unsafe");
   expect(result.stderr).toContain("could not determine whether the desktop app is running");
+});
+
+function signingProbe(failure: string, installed: "signed" | "ad-hoc" | "absent" = "signed") {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-install-signing-"));
+  roots.push(root);
+  const app = NodePath.join(root, "installed.app");
+  const record = NodePath.join(root, "record");
+  const calls = NodePath.join(root, "calls");
+  if (installed !== "absent") {
+    NodeFS.mkdirSync(app);
+    NodeFS.writeFileSync(NodePath.join(app, "keep"), "installed bytes");
+  }
+  NodeFS.mkdirSync(NodePath.join(record, "Loom.app"), { recursive: true });
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `
+    source "$LOOM_TEST_SCRIPT"
+    APP_PATH=$LOOM_TEST_APP
+    codesign() {
+      if [ "$1" = --verify ]; then
+        [ "$LOOM_TEST_FAILURE" != damaged ] || return 1
+        if [ "$4" = -R ]; then [ "$LOOM_TEST_FAILURE" != incompatible ] || return 1; fi
+        return 0
+      fi
+      if [ "$#" -eq 3 ] && [ "$3" = "$APP_PATH" ]; then
+        if [ "$LOOM_TEST_INSTALLED" = ad-hoc ]; then
+          echo 'Signature=adhoc'
+        else
+          echo 'designated => identifier "com.t3tools.t3code" and certificate leaf = H"synthetic"'
+        fi
+      elif [ "$LOOM_TEST_FAILURE" = ad-hoc ]; then
+        echo 'Signature=adhoc'
+      elif [ "$LOOM_TEST_FAILURE" = different-signer ]; then
+        echo 'Authority=Different Identity'
+      else
+        echo 'Authority=Loom Local Code Signing'
+      fi
+    }
+    quit_app() { echo quit >> "$LOOM_TEST_CALLS"; }
+    snapshot_state() { echo snapshot >> "$LOOM_TEST_CALLS"; }
+    if [ "$LOOM_TEST_FAILURE" = none ]; then
+      verify_install_signing "$LOOM_TEST_RECORD"
+    else
+      install_record "$LOOM_TEST_RECORD"
+    fi
+  `,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOOM_TEST_SCRIPT: script,
+        LOOM_TEST_APP: app,
+        LOOM_TEST_RECORD: record,
+        LOOM_TEST_CALLS: calls,
+        LOOM_TEST_FAILURE: failure,
+        LOOM_TEST_INSTALLED: installed,
+      },
+    },
+  );
+  return { app, calls, result };
+}
+
+it.each([
+  ["ad-hoc", "not signed by"],
+  ["different-signer", "not signed by"],
+  ["damaged", "invalid signature"],
+  ["incompatible", "changes the installed signing identity"],
+])("refuses a %s install before quitting or changing the installed app", (failure, message) => {
+  const { app, calls, result } = signingProbe(failure);
+  expect(result.status).toBe(1);
+  expect(NodeFS.readFileSync(NodePath.join(app, "keep"), "utf8")).toBe("installed bytes");
+  expect(NodeFS.existsSync(calls)).toBe(false);
+  expect(result.stderr).toContain(message);
+});
+
+it.each(["signed", "ad-hoc", "absent"] as const)(
+  "accepts a stable signed candidate over a %s installation",
+  (installed) => {
+    const { calls, result } = signingProbe("none", installed);
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(NodeFS.existsSync(calls)).toBe(false);
+  },
+);
+
+it("refuses an incompatible rollback before restoring application data", () => {
+  const f = fixture();
+  database(NodePath.join(f.userdata, "statev2.sqlite"), "current");
+  database(NodePath.join(f.previous, "state/statev2.sqlite"), "previous");
+  expect(() => run(f, "verify_install_signing() { return 1; }; cmd_rollback")).toThrow();
+  expect(history(NodePath.join(f.userdata, "statev2.sqlite"))).toBe("current");
+  expect(NodeFS.existsSync(NodePath.join(f.current, "state"))).toBe(false);
 });

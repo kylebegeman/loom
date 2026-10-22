@@ -1,3 +1,4 @@
+import { isVaultRunRunning } from "./active-run.ts";
 import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 import { type ThreadId } from "@t3tools/contracts";
@@ -175,6 +176,7 @@ const make = Effect.gen(function* () {
         thread.projectId !== initial.projectId ||
         thread.worktreePath !== initial.worktreePath ||
         thread.providerInstanceId !== initial.providerInstanceId ||
+        !(yield* isVaultRunRunning(threads, thread)) ||
         thread.runtimeMode !== "full-access" ||
         thread.interactionMode !== "default" ||
         thread.archivedAt ||
