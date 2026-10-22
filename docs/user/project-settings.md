@@ -216,6 +216,11 @@ project's history** on a project page search saved conversations. Resting projec
 under **Resting** on the Projects page; select one to tidy it up. New conversation chooses a
 computer the same way, but mobile does not name Mini workers.
 
+Ask an agent to search your Library's recorded decisions or catalogued ideas when you need
+the reasoning behind a project choice. Results identify the repository, file, heading, date
+and status. Superseded records are hidden unless you ask for them. The Library reads the
+repository's committed default branch, so uncommitted notes and other branches do not appear.
+
 Saved projects and conversation history remain readable when a computer is offline.
 Conversation history shows when it was last saved to the Library; work that has not uploaded
 may be missing. Very long conversations upload less often in the background. Open saved
