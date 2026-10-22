@@ -388,6 +388,7 @@ export const AuthCreatePairingCredentialInput = Schema.Struct({
 export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;
 
 export const AuthSessionState = Schema.Struct({
+  identity: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
   authenticated: Schema.Boolean,
   auth: ServerAuthDescriptor,
   scopes: Schema.optionalKey(AuthEnvironmentScopes),

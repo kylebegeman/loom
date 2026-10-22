@@ -367,9 +367,27 @@ it.effect("identity sessions remain locally revocable and expire with their acce
       yield* TestClock.adjust(Duration.seconds(119));
       const verified = yield* local.verify(first.access_token);
       expect(verified.subject).toBe(`${identitySessionPrefix(test.env)}b3duZXItaWQ`);
-      expect(yield* local.revoke(verified.sessionId)).toBe(true);
+      for (const origin of [
+        undefined,
+        "https://attacker.invalid",
+        "https://library.example.test.attacker.invalid",
+      ]) {
+        const result = yield* Effect.result(
+          identity.logout({ cookieToken: first.access_token, ...(origin ? { origin } : {}) }),
+        );
+        expect(result._tag).toBe("Failure");
+        yield* local.verify(first.access_token);
+      }
+      yield* identity.logout({
+        cookieToken: first.access_token,
+        origin: "https://library.example.test",
+      });
       expect((yield* Effect.result(local.verify(first.access_token)))._tag).toBe("Failure");
       yield* local.verify(second.access_token);
+      const third = yield* identity.exchangeAccessToken({ token, client: CLIENT });
+      yield* identity.logout({ bearerToken: third.access_token });
+      expect((yield* Effect.result(local.verify(third.access_token)))._tag).toBe("Failure");
+      yield* identity.logout({ bearerToken: third.access_token });
       yield* TestClock.adjust(Duration.seconds(2));
       expect(
         (yield* Effect.result(identity.exchangeAccessToken({ token, client: CLIENT })))._tag,

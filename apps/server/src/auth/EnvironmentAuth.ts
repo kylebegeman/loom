@@ -25,6 +25,8 @@ import {
   type DpopFailureReason as DpopFailureReasonType,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identityAccountFromSession } from "./identityPolicy.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -719,6 +721,7 @@ function isBrowserOriginAllowed(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
+  const identityEnvironment = yield* HostProcess.Environment;
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
@@ -835,16 +838,17 @@ export const make = Effect.gen(function* () {
 
   const getSessionState: EnvironmentAuth["Service"]["getSessionState"] = (request) =>
     authenticateRequest(request).pipe(
-      Effect.map(
-        (session) =>
-          ({
-            authenticated: true,
-            auth: descriptor,
-            ...authScopeResponse(session.scopes),
-            sessionMethod: session.method,
-            ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
-          }) satisfies AuthSessionState,
-      ),
+      Effect.map((session) => {
+        const identity = identityAccountFromSession(session.subject, identityEnvironment);
+        return {
+          authenticated: true,
+          auth: descriptor,
+          ...authScopeResponse(session.scopes),
+          sessionMethod: session.method,
+          ...(identity ? { identity } : {}),
+          ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
+        } satisfies AuthSessionState;
+      }),
       Effect.catchIf(isServerAuthCredentialError, () =>
         Effect.succeed({
           authenticated: false,

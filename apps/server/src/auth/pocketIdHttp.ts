@@ -134,13 +134,27 @@ export const layer = Layer.unwrap(
     }).pipe(Effect.catch(() => Effect.succeed(failed(401))));
     const logout = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const bearer = request.headers.authorization;
-      if (!bearer?.startsWith("Bearer ")) return failed(401);
-      const session = yield* sessions.verify(bearer.slice(7));
-      if (!session.subject.startsWith("identity:") && !session.subject.startsWith("pocket-id:"))
-        return failed(403);
-      yield* sessions.revoke(session.sessionId);
-      return HttpServerResponse.jsonUnsafe({ revoked: true }, { headers: HEADERS });
+      const authorization = request.headers.authorization;
+      if (authorization !== undefined && !authorization.startsWith("Bearer ")) return failed(401);
+      const bearerToken = authorization?.slice(7);
+      const cookieToken =
+        request.cookies[sessions.cookieName] ??
+        (sessions.legacyCookieName ? request.cookies[sessions.legacyCookieName] : undefined);
+      yield* identity.logout({
+        ...(bearerToken !== undefined ? { bearerToken } : cookieToken ? { cookieToken } : {}),
+        ...(request.headers.origin ? { origin: request.headers.origin } : {}),
+      });
+      let response = HttpServerResponse.jsonUnsafe({ revoked: true }, { headers: HEADERS });
+      if (bearerToken === undefined) {
+        for (const name of [sessions.cookieName, sessions.legacyCookieName, identity.cookieName]) {
+          if (!name) continue;
+          const cookies = yield* Effect.fromResult(
+            Cookies.expireCookie(Cookies.empty, name, COOKIE_OPTIONS),
+          );
+          response = HttpServerResponse.mergeCookies(response, cookies);
+        }
+      }
+      return response;
     }).pipe(Effect.catch(() => Effect.succeed(failed(401))));
     return Layer.mergeAll(
       HttpRouter.add("POST", LOOM_IDENTITY_SESSION_PATH, exchange),
