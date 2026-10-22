@@ -11,6 +11,7 @@ import {
 const state = vi.hoisted(() => ({
   supported: true,
   permitted: true,
+  varlock: "auto" as "auto" | "never",
   report: null as EnvReport | null,
   error: null as string | null,
   validate: vi.fn(),
@@ -38,9 +39,33 @@ vi.mock("~/state/entities", () => ({
     providerInstanceId: ProviderInstanceId.make("cursor"),
     latestRun: null,
   }),
-  useProject: () => null,
+  useProject: () => ({
+    id: ProjectId.make("project"),
+    scripts: [
+      {
+        id: "build",
+        name: "Build",
+        command: "vp build",
+        icon: "build",
+        runOnWorktreeCreate: false,
+      },
+    ],
+  }),
   useServerConfigs: () =>
-    new Map([[EnvironmentId.make("host"), { environment: { label: "Remote workstation" } }]]),
+    new Map([
+      [
+        EnvironmentId.make("host"),
+        {
+          environment: { label: "Remote workstation" },
+          settings: {
+            defaultProjectScripts: [],
+            projectScriptOverrides: {},
+            projectSettingsOverrides: {},
+            projectSettingsFolded: false,
+          },
+        },
+      ],
+    ]),
 }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: () => new Map() }));
 vi.mock("~/state/query", () => ({
@@ -52,6 +77,7 @@ vi.mock("~/state/query", () => ({
           ? {
               ...defaultProjectProfile(ProjectId.make("project")),
               commands: { test: { _tag: "command", command: "vp test" } },
+              env: { schemaPath: ".env.schema", varlock: state.varlock },
             }
           : null,
     error: kind === "report" ? state.error : null,
@@ -109,6 +135,7 @@ beforeEach(() => {
   );
   state.supported = true;
   state.permitted = true;
+  state.varlock = "auto";
   state.error = null;
   state.report = report();
   state.validate.mockReset();
@@ -173,10 +200,46 @@ it("honors permission loss while confirmation is open", async () => {
   render();
   expect(button("Validate").disabled).toBe(true);
   expect(button("Run test with varlock").disabled).toBe(true);
+  expect(button("Run test with varlock").title).toBe("Terminal operate access is required");
   await act(async () => button("Validate").click());
   expect(state.validate).not.toHaveBeenCalled();
   expect(state.run).not.toHaveBeenCalled();
 });
+it.each([
+  { label: "Run test", target: { intent: "test" } },
+  { label: "Build", target: { scriptId: "build" } },
+])(
+  "explains missing varlock for $label and permits direct execution with Never",
+  async ({ label, target }) => {
+    state.report = {
+      ...report(),
+      varlock: { _tag: "missing", installHint: "npm install -g varlock@1.20.0" },
+    };
+    render();
+    const automatic = button(`${label} with varlock`);
+    expect(automatic).toBeDefined();
+    expect(automatic.disabled).toBe(true);
+    expect(automatic.title).toBe("Install varlock to use this");
+    expect(container.textContent).toContain("npm install -g varlock@1.20.0");
+    await act(async () => automatic.click());
+    expect(state.run).not.toHaveBeenCalled();
+
+    state.varlock = "never";
+    render();
+    const direct = button(label);
+    expect(direct.disabled).toBe(false);
+    expect(direct.title).toBe("");
+    await act(async () => direct.click());
+    expect(state.run).toHaveBeenCalledExactlyOnceWith(target);
+
+    state.permitted = false;
+    render();
+    expect(button(label).disabled).toBe(true);
+    expect(button(label).title).toBe("Terminal operate access is required");
+    await act(async () => button(label).click());
+    expect(state.run).toHaveBeenCalledTimes(1);
+  },
+);
 it("runs the selected intent and surfaces a load error with retry", async () => {
   render();
   await act(async () => button("Run test with varlock").click());

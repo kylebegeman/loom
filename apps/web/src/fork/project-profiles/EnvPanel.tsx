@@ -205,7 +205,13 @@ function ProjectEnv({ threadRef }: ForkPanelProps) {
   }, [completedAt, refreshBudget]);
   const data = report.data;
   const available = data?.varlock._tag === "available";
-  const wrapped = profile.data?.env.varlock === "auto" && data?.schema._tag === "ok" && available;
+  const automatic = profile.data?.env.varlock === "auto";
+  const wrapped = automatic && data?.schema._tag === "ok" && available;
+  const commandTitle = !canRun
+    ? "Terminal operate access is required"
+    : automatic && !available
+      ? "Install varlock to use this"
+      : undefined;
   const validate = async () => {
     if (!input || !canValidate || !available || busy) return;
     setConfirm(false);
@@ -375,10 +381,11 @@ function ProjectEnv({ threadRef }: ForkPanelProps) {
                           busy !== null ||
                           (!wrapped && profile.data?.env.varlock !== "never")
                         }
+                        title={commandTitle}
                         onClick={() => void runTarget({ intent }, intent)}
                       >
                         Run {intent}
-                        {wrapped ? " with varlock" : ""}
+                        {automatic ? " with varlock" : ""}
                       </Button>
                     ),
                   )}
@@ -392,10 +399,11 @@ function ProjectEnv({ threadRef }: ForkPanelProps) {
                         busy !== null ||
                         (!wrapped && profile.data?.env.varlock !== "never")
                       }
+                      title={commandTitle}
                       onClick={() => void runTarget({ scriptId: script.id }, script.name)}
                     >
                       {script.name}
-                      {wrapped ? " with varlock" : ""}
+                      {automatic ? " with varlock" : ""}
                     </Button>
                   ))}
                 </div>
