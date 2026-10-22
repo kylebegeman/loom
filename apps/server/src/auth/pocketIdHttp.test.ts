@@ -10,6 +10,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as HttpRouter from "effect/http/HttpRouter";
@@ -21,10 +22,13 @@ import { expect } from "vite-plus/test";
 import * as PocketId from "./PocketId.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as PocketIdHttp from "./pocketIdHttp.ts";
+import * as ServerHttp from "../http.ts";
+import * as ServerConfig from "../config.ts";
 import * as AuthHttp from "./http.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const metadata = {
   enabled: true,
   browserLoginEnabled: true,
@@ -47,6 +51,23 @@ const pocket = Layer.mock(PocketId.PocketId)({
         expiresAt: DateTime.add(now, { minutes: 5 }),
       })),
     ),
+  createSession: (input, _client, origin) =>
+    origin === "https://app.example.test" && input.type === "browser"
+      ? Effect.succeed({
+          access_token: "host-bearer",
+          issued_token_type: AuthAccessTokenType,
+          token_type: "Bearer" as const,
+          expires_in: 600,
+          scope: "orchestration:read",
+          environmentId: metadata.environmentId,
+          identity: { issuer: metadata.issuer, subject: "owner-id" },
+        })
+      : Effect.fail(new PocketId.PocketIdError({ reason: "state" })),
+  logout: (input) =>
+    input.bearerToken === "host-bearer" ||
+    (input.cookieToken === "host-browser-token" && input.origin === "https://host.example.test")
+      ? Effect.void
+      : Effect.fail(new PocketId.PocketIdError({ reason: "state" })),
   completeLogin: (input) =>
     Effect.gen(function* () {
       if (input.state !== "verified" || input.cookieValue !== "signed-state")
@@ -215,6 +236,125 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
               });
               const refused = await web.handler(request("not-verified"), context);
               expect(refused.status).toBe(401);
+            }),
+          (web) => Effect.promise(() => web.dispose()),
+        );
+      }),
+  );
+  it.effect(
+    "serves CORS preflight and a credential-free browser exchange through the server CORS layer",
+    () =>
+      Effect.gen(function* () {
+        const crypto = yield* Crypto.Crypto;
+        const context = Context.make(Crypto.Crypto, crypto);
+        const routes = Layer.merge(layerBrowser, ServerHttp.layerBrowserApiCors).pipe(
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-cors-test-" }),
+          ),
+          Layer.provide(NodeServices.layer),
+        );
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => HttpRouter.toWebHandler(routes, { disableLogger: true })),
+          (web) =>
+            Effect.tryPromise(async () => {
+              const preflight = await web.handler(
+                new Request("https://host.example.test/api/loom/identity/session", {
+                  method: "OPTIONS",
+                  headers: {
+                    origin: "https://app.example.test",
+                    "access-control-request-method": "POST",
+                    "access-control-request-headers": "content-type",
+                  },
+                }),
+                context,
+              );
+              expect(preflight.status).toBeLessThan(300);
+              expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+              expect(preflight.headers.get("access-control-allow-methods")).toContain("POST");
+              expect(preflight.headers.get("access-control-allow-headers")).toContain(
+                "content-type",
+              );
+              const exchange = (origin: string) =>
+                web.handler(
+                  new Request("https://host.example.test/api/loom/identity/session", {
+                    method: "POST",
+                    headers: { origin, "content-type": "application/json" },
+                    body: encodeJson({
+                      type: "browser",
+                      code: "c".repeat(43),
+                      verifier: "v".repeat(43),
+                      environmentId: "host",
+                    }),
+                  }),
+                  context,
+                );
+              const accepted = await exchange("https://app.example.test");
+              expect(accepted.status).toBe(200);
+              expect(accepted.headers.get("access-control-allow-origin")).toBe("*");
+              expect(accepted.headers.get("access-control-allow-credentials")).not.toBe("true");
+              expect(await accepted.json()).toMatchObject({
+                access_token: "host-bearer",
+                environmentId: "host",
+              });
+              expect((await exchange("https://attacker.test")).status).toBe(401);
+            }),
+          (web) => Effect.promise(() => web.dispose()),
+        );
+      }),
+  );
+  it.effect(
+    "revokes a same-origin cookie session and expires its cookies while rejecting cross-origin logout",
+    () =>
+      Effect.gen(function* () {
+        const crypto = yield* Crypto.Crypto;
+        const context = Context.make(Crypto.Crypto, crypto);
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
+          (web) =>
+            Effect.tryPromise(async () => {
+              const logout = (origin?: string) =>
+                web.handler(
+                  new Request("https://host.example.test/api/loom/identity/logout", {
+                    method: "POST",
+                    headers: {
+                      cookie: "host-session=host-browser-token",
+                      ...(origin ? { origin } : {}),
+                    },
+                  }),
+                  context,
+                );
+              for (const origin of [
+                undefined,
+                "https://attacker.test",
+                "https://host.example.test.attacker.test",
+              ]) {
+                const rejected = await logout(origin);
+                expect(rejected.status).toBe(401);
+                expect(rejected.headers.getSetCookie()).toEqual([]);
+              }
+              const signedOut = await logout("https://host.example.test");
+              expect(signedOut.status).toBe(200);
+              expect(signedOut.headers.getSetCookie()).toContainEqual(
+                expect.stringContaining("host-session=;"),
+              );
+              expect(signedOut.headers.getSetCookie()).toContainEqual(
+                expect.stringContaining("HttpOnly"),
+              );
+              expect(signedOut.headers.getSetCookie()).toContainEqual(
+                expect.stringContaining("Secure"),
+              );
+              const bearer = await web.handler(
+                new Request("https://host.example.test/api/loom/identity/logout", {
+                  method: "POST",
+                  headers: {
+                    authorization: "Bearer host-bearer",
+                    origin: "https://app.example.test",
+                  },
+                }),
+                context,
+              );
+              expect(bearer.status).toBe(200);
+              expect(bearer.headers.getSetCookie()).toEqual([]);
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

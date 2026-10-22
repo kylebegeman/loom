@@ -3,6 +3,7 @@ import {
   LOOM_IDENTITY_METADATA_PATH,
   LOOM_IDENTITY_LOGIN_PATH,
   LOOM_IDENTITY_SESSION_PATH,
+  LOOM_IDENTITY_LOGOUT_PATH,
   LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
@@ -199,4 +200,16 @@ export async function signInToLoomBrowser(
     activeBrowserSignIns.delete(origin);
     popup.close();
   }
+}
+
+/** Cookie logout is same-origin only; the server also checks Origin before revoking it. */
+export async function signOutLoomBrowser() {
+  const response = await fetch(new URL(LOOM_IDENTITY_LOGOUT_PATH, window.location.origin), {
+    method: "POST",
+    credentials: "same-origin",
+    redirect: "error",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) throw new Error("Could not sign out of this computer. Try again.");
 }

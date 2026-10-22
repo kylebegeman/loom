@@ -32,3 +32,10 @@ export function isCurrentIdentitySession(subject: string, prefix: string | null)
   if (subject.startsWith("pocket-id:")) return false;
   return !subject.startsWith("identity:") || (prefix !== null && subject.startsWith(prefix));
 }
+
+export function identityAccountFromSession(subject: string, environment: NodeJS.ProcessEnv) {
+  const prefix = identitySessionPrefix(environment);
+  if (!prefix || !subject.startsWith(prefix)) return undefined;
+  const id = Buffer.from(subject.slice(prefix.length), "base64url").toString("utf8");
+  return { issuer: environment.LOOM_IDENTITY_ISSUER!.trim(), subject: id };
+}

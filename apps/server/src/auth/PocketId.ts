@@ -166,6 +166,11 @@ export class PocketId extends Context.Service<
       },
       PocketIdError
     >;
+    readonly logout: (input: {
+      readonly bearerToken?: string;
+      readonly cookieToken?: string;
+      readonly origin?: string;
+    }) => Effect.Effect<void, PocketIdError>;
     readonly createSession: (
       input: LoomIdentitySessionRequest,
       client: AuthClientMetadata,
@@ -693,6 +698,24 @@ const make = Effect.gen(function* () {
     beginLogin,
     completeLogin,
     verifyAccessToken,
+    logout: Effect.fn("PocketId.logout")(function* (input) {
+      if (input.bearerToken === undefined) {
+        if (redirectUri === null || input.origin !== (yield* secureUrl(redirectUri)).origin)
+          return yield* new PocketIdError({ reason: "state" });
+      }
+      const token = input.bearerToken ?? input.cookieToken;
+      if (!token) return;
+      const session = yield* sessions.verify(token).pipe(
+        Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () => Effect.void),
+        Effect.mapError((cause) => new PocketIdError({ reason: "session", cause })),
+      );
+      if (!session) return;
+      if (!session.subject.startsWith("identity:") && !session.subject.startsWith("pocket-id:"))
+        return yield* new PocketIdError({ reason: "subject" });
+      yield* sessions
+        .revoke(session.sessionId)
+        .pipe(Effect.mapError((cause) => new PocketIdError({ reason: "session", cause })));
+    }),
     createSession: Effect.fn("PocketId.createSession")(function* (input, client, origin) {
       if (input.environmentId !== environmentId)
         return yield* new PocketIdError({ reason: "state" });

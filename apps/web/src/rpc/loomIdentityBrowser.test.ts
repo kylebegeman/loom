@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, AuthAccessTokenType } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
-import { cancelLoomBrowserSignIn, signInToLoomBrowser } from "./loomIdentity";
+import { cancelLoomBrowserSignIn, signInToLoomBrowser, signOutLoomBrowser } from "./loomIdentity";
 
 const environmentId = EnvironmentId.make("execution-computer");
 const origin = "https://computer.example.test";
@@ -161,4 +161,21 @@ it("rejects saved environment and issuer changes before opening account authoriz
       test.popup as unknown as Window,
     ),
   ).rejects.toThrow("provider changed");
+});
+
+it("revokes the current same-origin cookie session and surfaces logout failure", async () => {
+  const test = setup();
+  await signOutLoomBrowser();
+  expect(test.request).toHaveBeenCalledWith(
+    new URL("https://app.example.test/api/loom/identity/logout"),
+    {
+      method: "POST",
+      credentials: "same-origin",
+      redirect: "error",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    },
+  );
+  test.request.mockResolvedValueOnce(new Response("{}", { status: 401 }));
+  await expect(signOutLoomBrowser()).rejects.toThrow("Could not sign out");
 });
