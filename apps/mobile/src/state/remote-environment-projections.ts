@@ -3,7 +3,7 @@ import type {
   EnvironmentPresentation,
   PreparedConnection,
 } from "@t3tools/client-runtime/connection";
-import { connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection";
+import { connectionRoutes, connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -60,6 +60,13 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         ? prepared.target._tag === "RelayConnectionTarget"
         : presentation.entry.target._tag === "RelayConnectionTarget";
 
+      const identityProfiles = connectionRoutes(presentation.entry).flatMap((route) => {
+        const profile = Option.getOrNull(route.profile);
+        return profile?._tag === "BearerConnectionProfile" && profile.identity ? [profile] : [];
+      });
+      const identityProfile =
+        identityProfiles.find((profile) => profile.httpBaseUrl === httpBaseUrl) ??
+        identityProfiles[0];
       previousEntry = presentation.entry;
       previousPrepared = prepared;
       previous = {
@@ -70,6 +77,9 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         httpBaseUrl,
         wsBaseUrl,
         bearerToken: authorization?._tag === "Bearer" ? authorization.token : null,
+        ...(identityProfile?.identity
+          ? { identity: identityProfile.identity, identityHttpBaseUrl: identityProfile.httpBaseUrl }
+          : {}),
         ...(relayManaged
           ? {
               authenticationMethod: "dpop" as const,

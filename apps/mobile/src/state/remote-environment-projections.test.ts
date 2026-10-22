@@ -2,7 +2,12 @@ import type {
   EnvironmentPresentation,
   PreparedConnection,
 } from "@t3tools/client-runtime/connection";
-import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import {
+  PrimaryConnectionTarget,
+  BearerConnectionTarget,
+  BearerConnectionProfile,
+  RelayConnectionTarget,
+} from "@t3tools/client-runtime/connection";
 import type { ServerConfig } from "@t3tools/contracts";
 import { EnvironmentId, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -76,6 +81,55 @@ function makeHarness() {
 }
 
 describe("remote environment projections", () => {
+  it("keeps the saved Identity host and account available after expiry and while another route is in use", () => {
+    const harness = makeHarness();
+    const identity = { issuer: "https://id.example.test", subject: "owner" };
+    const identityTarget = new BearerConnectionTarget({
+      environmentId: ENVIRONMENT_ID,
+      label: "Computer",
+      connectionId: "identity",
+    });
+    const profile = new BearerConnectionProfile({
+      environmentId: ENVIRONMENT_ID,
+      label: "Computer",
+      connectionId: "identity",
+      httpBaseUrl: "https://computer.tail.test",
+      wsBaseUrl: "wss://computer.tail.test/ws",
+      identity,
+    });
+    const initial = presentation(ENVIRONMENT_ID);
+    harness.registry.set(harness.presentationAtom(ENVIRONMENT_ID), {
+      ...initial,
+      entry: { target: identityTarget, profile: Option.some(profile), enabled: true },
+    });
+    const atom = harness.projections.savedConnectionAtom(ENVIRONMENT_ID);
+    expect(harness.registry.get(atom)).toMatchObject({
+      identity,
+      identityHttpBaseUrl: "https://computer.tail.test",
+      bearerToken: null,
+    });
+    const relay = new RelayConnectionTarget({ environmentId: ENVIRONMENT_ID, label: "Computer" });
+    harness.registry.set(
+      harness.preparedConnectionAtom(ENVIRONMENT_ID),
+      Option.some({
+        ...prepared(ENVIRONMENT_ID, "relay", "unused"),
+        target: relay,
+        httpAuthorization: {
+          _tag: "Dpop",
+          accessToken: "relay-token",
+          expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        },
+      }),
+    );
+    expect(harness.registry.get(atom)).toMatchObject({
+      identity,
+      identityHttpBaseUrl: "https://computer.tail.test",
+      relayManaged: true,
+      httpBaseUrl: "https://relay.example.test",
+      bearerToken: null,
+    });
+  });
+
   // fork: computer-naming - A host rename must update Home without replacing its route or credentials.
   it("refreshes the shared computer name while preserving credentials and older local aliases", () => {
     const harness = makeHarness();

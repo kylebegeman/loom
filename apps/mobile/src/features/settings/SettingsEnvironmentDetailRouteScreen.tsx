@@ -26,7 +26,10 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { serverEnvironment } from "../../state/server";
 import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useRemoteConnections } from "../../state/use-remote-environment-registry";
+import {
+  useRemoteConnections,
+  useSavedRemoteConnection,
+} from "../../state/use-remote-environment-registry";
 // fork: fleet-connections - Computer work and access live beside its routes and permissions.
 import { ComputerNameSection } from "../../fork/connections/ComputerNameSection"; // fork: computer-naming
 import { ComputerConnectSection } from "../../fork/connect/ComputerConnectSection"; // fork: fleet-connect
@@ -62,6 +65,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const connections = useRemoteConnections();
+  const savedConnection = useSavedRemoteConnection(environmentId);
   const environment = connections.connectedEnvironments.find(
     (entry) => entry.environmentId === environmentId,
   );
@@ -222,6 +226,26 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 onUpdate={connections.onUpdateEnvironment}
               />
             </SettingsSection>
+            {savedConnection?.identity ? (
+              <SettingsSection title="Identity access">
+                <Text className="px-4 py-3 text-sm text-foreground-muted">
+                  {savedConnection.identity.issuer}. Access lasts up to one hour. Sign in with the
+                  same account to reconnect.
+                </Text>
+                <SettingsActionRow
+                  icon="person.crop.circle"
+                  label="Sign in again with Identity"
+                  onPress={() =>
+                    navigation.navigate("IdentitySignIn", {
+                      environmentId,
+                      ...(savedConnection.identityHttpBaseUrl
+                        ? { address: savedConnection.identityHttpBaseUrl }
+                        : {}),
+                    })
+                  }
+                />
+              </SettingsSection>
+            ) : null}
             {/* fork: fleet-connections - Preserve work actions and access in the shared details. */}
             <ComputerWorkSection environmentId={environmentId} connected={connected} />
             {/* fork: computer-naming - One name follows the computer across clients. */}
