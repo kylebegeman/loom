@@ -1,6 +1,8 @@
 import { GitHubReadiness } from "./GitHubReadiness";
+import { GitHubProjectAccess } from "./GitHubProjectAccess";
+import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Linking, ScrollView, View } from "react-native";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import type { VaultGitHubInfo } from "@t3tools/contracts/fork";
 import {
@@ -34,7 +36,7 @@ export function VaultGitHubSettingsSection({
     canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-github")) return null;
   return (
-    <SettingsSection title="Vault GitHub connections">
+    <SettingsSection title="GitHub access">
       {canRead ? (
         <Manager
           key={`${environmentId}:${canWrite}`}
@@ -61,14 +63,19 @@ function Manager({
     [draft, setDraft] = useState<VaultGitHubDraft | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [notice, setNotice] = useState<string | null>(null);
+    [notice, setNotice] = useState<string | null>(null),
+    [advanced, setAdvanced] = useState(false);
+  const canSave = useAtomValue(atoms.save.permissionAtom(environmentId)),
+    canTest = useAtomValue(atoms.test.permissionAtom(environmentId)),
+    canChange = useAtomValue(atoms.change.permissionAtom(environmentId));
   const page = useEnvironmentQuery(
       connected ? atoms.list({ environmentId, input: { cursor } }) : null,
     ),
     save = useAtomCommand(atoms.save, { reportFailure: false }),
     test = useAtomCommand(atoms.test, { reportFailure: false }),
     change = useAtomCommand(atoms.change, { reportFailure: false });
-  const locked = busy || !connected || !canWrite || page.isPending || !!page.error;
+  const locked = busy || !connected || page.isPending || !!page.error;
+  const cannotSave = locked || !canWrite || !canSave;
   const act = async (work: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -88,12 +95,13 @@ function Manager({
   };
   const edit = (info?: VaultGitHubInfo) => {
     setError(null);
+    setAdvanced(info?.mechanism === "app");
     setDraft({
       id: info?.item.id ?? id(),
       expectedVersion: info?.item.version ?? 0,
-      label: info?.item.label ?? "",
+      label: info?.item.label ?? "GitHub",
       repositories: info?.repositories.join(", ") ?? "",
-      type: info?.mechanism ?? "app",
+      type: info?.mechanism ?? "token",
       appId: "",
       installationId: "",
       secret: "",
@@ -102,21 +110,22 @@ function Manager({
   return (
     <View className="gap-3">
       <Text>
-        Dedicated GitHub identities for Loom agents. App installations mint short-lived tokens;
-        dedicated fine-grained tokens are also supported. Personal logins and SSH agents stay
-        separate.
+        Save a GitHub connection, then choose the projects and repositories it can use. Approve
+        recurring project access once; it lasts until you revoke it.
       </Text>
-      <Text>
-        Use is limited to named github.com repositories and exact active-run grants. API testing
-        does not prove Git HTTPS or GH CLI installation. Use the explicit Vault terminal command for
-        supported gh and Git HTTPS operations.
-      </Text>
+      {!connected ? <Text>Reconnect this computer to manage GitHub connections.</Text> : null}
+      <Button
+        label="Connect GitHub"
+        tone="primary"
+        disabled={cannotSave || !!draft}
+        onPress={() => edit()}
+      />
       <Button
         label="Refresh GitHub connections"
+        tone="text"
         disabled={busy || !connected}
         onPress={page.refresh}
       />
-      <Button label="Connect GitHub" disabled={locked || !!draft} onPress={() => edit()} />
       {page.isPending ? <Text>Loading GitHub connections…</Text> : null}
       {error || page.error ? (
         <Text accessibilityRole="alert">
@@ -124,12 +133,19 @@ function Manager({
         </Text>
       ) : null}
       {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
-      {page.data?.items.length === 0 ? <Text>No GitHub connections in this page.</Text> : null}
+      {page.data?.items.length === 0 ? (
+        <Text>No saved GitHub connections on this page. Connect GitHub to get started.</Text>
+      ) : null}
       {page.data?.items.map((info) => (
         <Connection
           key={`${info.item.id}:${info.item.version}`}
           info={info}
           environmentId={environmentId}
+          connected={connected}
+          canWrite={canWrite}
+          canTest={canTest}
+          canChange={canChange}
+          canSave={canSave}
           disabled={locked || !!draft}
           onEdit={() => edit(info)}
           onTest={(repository) =>
@@ -182,21 +198,65 @@ function Manager({
             contentInsetAdjustmentBehavior="automatic"
             contentContainerClassName="gap-3 p-4"
           >
-            <Text>Connection label</Text>
-            <TextInput
-              accessibilityLabel="GitHub connection label"
-              value={draft.label}
-              maxLength={200}
-              editable={!locked}
-              onChangeText={(label) => setDraft({ ...draft, label })}
-            />
+            <Text>
+              {draft.expectedVersion === 0
+                ? "Use a dedicated fine-grained GitHub token. Your saved connections can be reused without entering credentials again."
+                : "Replace this connection's credential. Existing project access stays in place; review it after changing the repository allowlist."}
+            </Text>
+            {draft.type === "token" ? (
+              <View className="gap-2 rounded-2xl bg-subtle p-3">
+                <Text className="font-t3-semibold">GitHub token permissions</Text>
+                <Text>Select only the repositories you want Loom to use.</Text>
+                <Text>Metadata: read access. Contents: read and write for Git pushes.</Text>
+                <Text>
+                  Pull requests and Issues: read and write when agents should create or update them.
+                  GitHub permissions remain the upper limit of what agents can do.
+                </Text>
+                <Button
+                  label="Create a fine-grained token on GitHub"
+                  tone="text"
+                  disabled={busy}
+                  onPress={() => {
+                    void Linking.openURL(
+                      "https://github.com/settings/personal-access-tokens/new",
+                    ).catch(() =>
+                      setError(
+                        "Could not open GitHub. Visit GitHub Settings, Developer settings, Personal access tokens, Fine-grained tokens.",
+                      ),
+                    );
+                  }}
+                />
+              </View>
+            ) : null}
             <Button
-              label={`Authentication: ${draft.type === "app" ? "GitHub App installation" : "Dedicated token"}`}
-              disabled={locked}
-              onPress={() =>
-                setDraft({ ...draft, type: draft.type === "app" ? "token" : "app", secret: "" })
+              label={
+                advanced
+                  ? "Hide advanced connection settings"
+                  : "Advanced: GitHub App or connection name"
               }
+              tone="text"
+              disabled={busy}
+              onPress={() => setAdvanced(!advanced)}
             />
+            {advanced ? (
+              <View className="gap-3">
+                <Text>Connection name</Text>
+                <TextInput
+                  accessibilityLabel="GitHub connection name"
+                  value={draft.label}
+                  maxLength={200}
+                  editable={!cannotSave}
+                  onChangeText={(label) => setDraft({ ...draft, label })}
+                />
+                <Button
+                  label={`Authentication: ${draft.type === "app" ? "GitHub App installation" : "Dedicated token"}`}
+                  disabled={cannotSave}
+                  onPress={() =>
+                    setDraft({ ...draft, type: draft.type === "app" ? "token" : "app", secret: "" })
+                  }
+                />
+              </View>
+            ) : null}
             {draft.type === "app" ? (
               <>
                 <Text>App ID</Text>
@@ -205,7 +265,7 @@ function Manager({
                   value={draft.appId}
                   maxLength={20}
                   keyboardType="number-pad"
-                  editable={!locked}
+                  editable={!cannotSave}
                   onChangeText={(appId) => setDraft({ ...draft, appId })}
                 />
                 <Text>Installation ID</Text>
@@ -214,7 +274,7 @@ function Manager({
                   value={draft.installationId}
                   maxLength={20}
                   keyboardType="number-pad"
-                  editable={!locked}
+                  editable={!cannotSave}
                   onChangeText={(installationId) => setDraft({ ...draft, installationId })}
                 />
               </>
@@ -232,40 +292,44 @@ function Manager({
               autoComplete="off"
               value={draft.secret}
               maxLength={16384}
-              editable={!locked}
+              editable={!cannotSave}
               onChangeText={(secret) => setDraft({ ...draft, secret })}
             />
-            <Text>Allowed repositories</Text>
+            <Text>Repositories this connection may access</Text>
             <TextInput
               accessibilityLabel="Allowed GitHub repositories"
-              placeholder="owner/repo, owner/other"
+              placeholder="https://github.com/owner/repo"
+              multiline
+              textAlignVertical="top"
               autoCapitalize="none"
               autoCorrect={false}
               value={draft.repositories}
-              maxLength={4500}
-              editable={!locked}
+              maxLength={8192}
+              editable={!cannotSave}
               onChangeText={(repositories) => setDraft({ ...draft, repositories })}
             />
             <Text>
-              Loom tests the identity and API access to every repository before saving credentials
-              in OpenBao. Replacing creates a new item version. Existing operations may already have
-              authenticated.
+              Paste GitHub repository URLs or owner/repository names, separated by commas or
+              newlines. Select up to 32 repositories allowed by the token or App. Loom verifies API
+              access before saving. Saving this connection does not authorize any project.
             </Text>
             {error ? <Text accessibilityRole="alert">{error}</Text> : null}
             <Button
               label="Test and save GitHub connection"
-              disabled={locked}
+              disabled={cannotSave}
               onPress={() =>
                 void act(async () => {
                   const input = makeVaultGitHubSave(draft, id());
                   if (!input)
                     throw new Error(
-                      "Enter a label, valid credentials and 1 to 32 owner/repository names.",
+                      "Enter valid credentials and 1 to 32 owner/repository names. Check the connection name in advanced settings if needed.",
                     );
                   const result = await save({ environmentId, input });
                   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
                   setDraft(null);
-                  setNotice("Identity and repository API access verified. Connection saved.");
+                  setNotice(
+                    "Identity and repository API access verified. Connection saved. Choose projects below to authorize access.",
+                  );
                 })
               }
             />
@@ -283,6 +347,11 @@ function Manager({
 function Connection({
   environmentId,
   info,
+  connected,
+  canWrite,
+  canTest,
+  canChange,
+  canSave,
   disabled,
   onEdit,
   onTest,
@@ -290,59 +359,108 @@ function Connection({
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
+  connected: boolean;
+  canWrite: boolean;
+  canTest: boolean;
+  canChange: boolean;
+  canSave: boolean;
   disabled: boolean;
   onEdit: () => void;
   onTest: (repo: string) => void;
   onChange: (action: "archive" | "restore") => void;
 }) {
   const [index, setIndex] = useState(0),
-    [confirm, setConfirm] = useState(false);
+    [confirm, setConfirm] = useState(false),
+    [details, setDetails] = useState(false);
   const repo = info.repositories[index]!;
   return (
-    <View className="gap-2 rounded-lg bg-subtle p-3">
-      <Text className="font-t3-medium">
-        {info.item.label} · {info.item.state}
+    <View className="gap-3 rounded-2xl bg-subtle p-3">
+      <Text accessibilityRole="header" className="font-t3-semibold">
+        {info.item.label}
       </Text>
       <Text>
-        {info.account} · {info.mechanism === "app" ? "App installation" : "Dedicated token"} ·
-        Version {info.item.version}
+        {info.account} · {info.item.state === "active" ? "Connection saved" : "Disconnected"}
       </Text>
-      <Text selectable>Connection {info.item.id}</Text>
-      <Text selectable>Use-grant destination: https://github.com/{repo}</Text>
-      {info.repositories.length > 1 ? (
-        <Button
-          label={`Repository: ${repo}. Choose next repository`}
-          disabled={disabled}
-          onPress={() => setIndex((index + 1) % info.repositories.length)}
+      <Text>{info.repositories.join(", ")}</Text>
+      {info.item.state === "active" ? (
+        <GitHubProjectAccess
+          environmentId={environmentId}
+          connected={connected}
+          connection={info}
+          disabled={disabled || !canWrite}
         />
+      ) : (
+        <Button
+          label={`Restore ${info.item.label}`}
+          disabled={disabled || !canWrite || !canChange}
+          onPress={() => onChange("restore")}
+        />
+      )}
+      <Button
+        label={details ? "Hide connection details and tools" : "Connection details and tools"}
+        tone="text"
+        disabled={disabled}
+        onPress={() => setDetails(!details)}
+      />
+      {details ? (
+        <View className="gap-2">
+          <Text>
+            {info.mechanism === "app" ? "GitHub App installation" : "Dedicated token"} · Version{" "}
+            {info.item.version}
+          </Text>
+          <Text selectable>Connection {info.item.id}</Text>
+          <Text>
+            Saving a connection, authorizing projects and checking an active run's tools are
+            separate steps. Project access does not prove the current run can reach GitHub.
+          </Text>
+          {info.repositories.length > 1 ? (
+            <Button
+              label={`Test repository: ${repo}. Choose next repository`}
+              disabled={disabled}
+              onPress={() => setIndex((index + 1) % info.repositories.length)}
+            />
+          ) : null}
+          <Button
+            label="Test GitHub API access"
+            disabled={disabled || !canWrite || !canTest || info.item.state !== "active"}
+            onPress={() => onTest(repo)}
+          />
+          <Button
+            label={`Replace credentials for ${info.item.label}`}
+            disabled={disabled || !canWrite || !canSave || info.item.state !== "active"}
+            onPress={onEdit}
+          />
+          <GitHubReadiness
+            environmentId={environmentId}
+            info={info}
+            repository={repo}
+            disabled={disabled || !canWrite || info.item.state !== "active"}
+          />
+          <Text>
+            App installations mint short-lived tokens. Dedicated tokens follow their GitHub expiry.
+            Local disconnect does not revoke credentials on GitHub, and authenticated operations may
+            still finish.
+          </Text>
+          {info.item.state === "active" ? (
+            <Button
+              label={`Disconnect ${info.item.label}`}
+              tone="text"
+              disabled={disabled || !canWrite || !canChange}
+              onPress={() => setConfirm(true)}
+            />
+          ) : null}
+        </View>
       ) : null}
-      <Button
-        label="Test GitHub API access"
-        disabled={disabled || info.item.state !== "active"}
-        onPress={() => onTest(repo)}
-      />
-      <Button
-        label={`Replace credentials for ${info.item.label}`}
-        disabled={disabled || info.item.state !== "active"}
-        onPress={onEdit}
-      />
-      <Button
-        label={`${info.item.state === "archived" ? "Restore" : "Disconnect"} ${info.item.label}`}
-        disabled={disabled}
-        onPress={() => (info.item.state === "archived" ? onChange("restore") : setConfirm(true))}
-      />
-      <GitHubReadiness
-        environmentId={environmentId}
-        info={info}
-        repository={repo}
-        disabled={disabled}
-      />
       {confirm ? (
         <>
-          <Text>Disconnect locally? Provider revocation is separate.</Text>
+          <Text>
+            Disconnect locally? Project grants remain saved. Revoke project access first if you do
+            not want it restored when reconnecting. Provider revocation is separate.
+          </Text>
           <Button
             label="Confirm local disconnect"
-            disabled={disabled}
+            tone="danger"
+            disabled={disabled || !canWrite || !canChange}
             onPress={() => {
               setConfirm(false);
               onChange("archive");

@@ -16,6 +16,9 @@ import {
   VaultError,
   VaultGrant,
   VaultGrantMutation,
+  VaultGrantBatchMutation,
+  VaultGrantBatchResult,
+  type VaultGrantBatchPreview,
   VaultAuditEvent,
   type VaultAccessAction,
   type VaultAccessDecision,
@@ -54,6 +57,15 @@ const StoredApproval = Schema.Struct({
   lastOperation: Schema.NullOr(Schema.Struct({ id: Schema.String, fingerprint: Schema.String })),
 });
 const Policy = Schema.Struct({
+  batchReceipts: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        fingerprint: Schema.String,
+        result: VaultGrantBatchResult,
+      }),
+    ).check(Schema.isMaxLength(32)),
+  ),
   approvals: Schema.optionalKey(Schema.Array(StoredApproval).check(Schema.isMaxLength(128))),
   schemaVersion: Schema.Literals([1, 2, 3]),
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -93,6 +105,10 @@ const encodeApprovalChange = Schema.encodeEffect(
 const decodePolicy = Schema.decodeUnknownOption(Policy);
 const encodePolicy = Schema.encodeEffect(Policy);
 const decodeMutation = Schema.decodeUnknownOption(VaultGrantMutation);
+const decodeBatchMutation = Schema.decodeUnknownOption(VaultGrantBatchMutation);
+const encodeBatchMutation = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Struct({ mutation: VaultGrantBatchMutation, actor: Schema.String })),
+);
 const encodeMutation = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ mutation: VaultGrantMutation, actor: Schema.String })),
 );
@@ -175,6 +191,15 @@ export class VaultAccess extends Context.Service<
       actor: string,
       authorize?: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultGrant, VaultError>;
+    readonly applyBatch: (
+      input: VaultGrantBatchMutation,
+      actor: string,
+      authorize?: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultGrantBatchResult, VaultError>;
+    readonly previewBatch: (
+      input: VaultGrantBatchMutation,
+      actor: string,
+    ) => Effect.Effect<VaultGrantBatchPreview, VaultError>;
     readonly preview: (
       input: VaultGrantMutation,
       actor: string,
@@ -256,10 +281,30 @@ const make = Effect.gen(function* () {
       return yield* new VaultError({ reason: "denied" });
     return { threadId, projectId: thread.projectId, thread };
   });
+  // Preparation is covered by the preview/apply operation's span.
+  const validateLineage = Effect.fnUntraced(function* (
+    grant: VaultGrant,
+    grants: ReadonlyArray<VaultGrant>,
+  ) {
+    const definition = grant.definition;
+    if (definition.parentId !== null) {
+      const parent = grants.find((value) => value.definition.id === definition.parentId);
+      if (!parent || parent.state !== "active" || !grantAttenuates(parent, grant))
+        return yield* new VaultError({ reason: "denied" });
+      const seen = new Set([definition.id]);
+      let ancestor: VaultGrant | undefined = parent;
+      while (ancestor) {
+        if (seen.has(ancestor.definition.id)) return yield* new VaultError({ reason: "denied" });
+        seen.add(ancestor.definition.id);
+        ancestor = grants.find((value) => value.definition.id === ancestor?.definition.parentId);
+      }
+    }
+  });
   const prepare = Effect.fnUntraced(function* (
     input: VaultGrantMutation,
     policy: Policy,
     actor: string,
+    deferLineage = false,
   ) {
     if (!actor.trim() || actor.length > 256 || Option.isNone(decodeMutation(input)))
       return yield* new VaultError({ reason: "invalid-input" });
@@ -304,20 +349,7 @@ const make = Effect.gen(function* () {
       createdBy: current?.createdBy ?? actor,
       updatedBy: actor,
     };
-    if (definition.parentId !== null) {
-      const parent = policy.grants.find((value) => value.definition.id === definition.parentId);
-      if (!parent || parent.state !== "active" || !grantAttenuates(parent, grant))
-        return yield* new VaultError({ reason: "denied" });
-      const seen = new Set([definition.id]);
-      let ancestor: VaultGrant | undefined = parent;
-      while (ancestor) {
-        if (seen.has(ancestor.definition.id)) return yield* new VaultError({ reason: "denied" });
-        seen.add(ancestor.definition.id);
-        ancestor = policy.grants.find(
-          (value) => value.definition.id === ancestor?.definition.parentId,
-        );
-      }
-    }
+    if (!deferLineage) yield* validateLineage(grant, policy.grants);
     if (!current && policy.grants.length >= 128)
       return yield* new VaultError({ reason: "invalid-input" });
     return grant;
@@ -338,6 +370,8 @@ const make = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
       yield* authorize ?? Effect.void;
+      if (policy.batchReceipts?.some((value) => value.id === input.operationId))
+        return yield* new VaultError({ reason: "conflict" });
       const receipt = policy.receipts.find((value) => value.id === input.operationId);
       if (receipt) {
         if (receipt.fingerprint !== fingerprint)
@@ -370,6 +404,88 @@ const make = Effect.gen(function* () {
       yield* authorize ?? Effect.void;
       const saved = yield* persist(next, version).pipe(Effect.result);
       if (saved._tag === "Success") return grant;
+      if (saved.failure.reason !== "conflict") return yield* saved.failure;
+    }
+    return yield* new VaultError({ reason: "conflict" });
+  });
+  const prepareBatch = Effect.fn("VaultAccess.prepareBatch")(function* (
+    input: VaultGrantBatchMutation,
+    policy: Policy,
+    actor: string,
+  ) {
+    if (Option.isNone(decodeBatchMutation(input)))
+      return yield* new VaultError({ reason: "invalid-input" });
+    const grants = yield* Effect.forEach(input.changes, (change) =>
+      prepare(
+        { operationId: input.operationId, expectedRevision: input.expectedRevision, change },
+        policy,
+        actor,
+        true,
+      ),
+    );
+    const changedIds = new Set(grants.map((grant) => grant.definition.id));
+    const finalGrants = [
+      ...policy.grants.filter((grant) => !changedIds.has(grant.definition.id)),
+      ...grants,
+    ];
+    if (finalGrants.length > 128) return yield* new VaultError({ reason: "invalid-input" });
+    // Resolve every saved lineage against the final policy, independent of input order.
+    for (const [index, change] of input.changes.entries())
+      if (change.type === "save") yield* validateLineage(grants[index]!, finalGrants);
+    return { grants, finalGrants };
+  });
+  const applyBatch = Effect.fn("VaultAccess.applyBatch")(function* (
+    input: VaultGrantBatchMutation,
+    actor: string,
+    authorize?: Effect.Effect<void, VaultError>,
+  ) {
+    if (Option.isNone(decodeBatchMutation(input)) || !actor.trim() || actor.length > 256)
+      return yield* new VaultError({ reason: "invalid-input" });
+    if (actor.startsWith("thread:") || actor === "mcp-client")
+      return yield* new VaultError({ reason: "denied" });
+    const fingerprint = yield* hash(
+      yield* encodeBatchMutation({ mutation: input, actor }).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      ),
+    );
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { policy, version } = yield* load();
+      yield* authorize ?? Effect.void;
+      if (policy.receipts.some((value) => value.id === input.operationId))
+        return yield* new VaultError({ reason: "conflict" });
+      const receipt = policy.batchReceipts?.find((value) => value.id === input.operationId);
+      if (receipt) {
+        if (receipt.fingerprint !== fingerprint)
+          return yield* new VaultError({ reason: "conflict" });
+        return receipt.result;
+      }
+      const { grants, finalGrants } = yield* prepareBatch(input, policy, actor);
+      const result: VaultGrantBatchResult = { policyRevision: policy.revision + 1, grants };
+      let next: Policy = {
+        ...policy,
+        revision: result.policyRevision,
+        grants: finalGrants,
+        batchReceipts: [
+          ...(policy.batchReceipts ?? []),
+          { id: input.operationId, fingerprint, result },
+        ].slice(-32),
+      };
+      const at = yield* Clock.currentTimeMillis;
+      for (const grant of grants)
+        next = withAudit(next, {
+          id: yield* eventId,
+          at,
+          actor,
+          type: "grant-change",
+          itemId: null,
+          grantId: grant.definition.id,
+          action: null,
+          reason: grant.state,
+          policyRevision: result.policyRevision,
+        });
+      yield* authorize ?? Effect.void;
+      const saved = yield* persist(next, version).pipe(Effect.result);
+      if (saved._tag === "Success") return result;
       if (saved.failure.reason !== "conflict") return yield* saved.failure;
     }
     return yield* new VaultError({ reason: "conflict" });
@@ -1082,6 +1198,30 @@ const make = Effect.gen(function* () {
       };
     }),
     apply,
+    applyBatch,
+    previewBatch: Effect.fn("VaultAccess.previewBatch")(function* (input, actor) {
+      const { policy } = yield* load();
+      const { grants, finalGrants } = yield* prepareBatch(input, policy, actor);
+      const impacted = new Set(grants.map((grant) => grant.definition.id));
+      const combined = [...policy.grants, ...finalGrants];
+      for (let count = 0; count < finalGrants.length; count++)
+        for (const grant of combined)
+          if (grant.definition.parentId !== null && impacted.has(grant.definition.parentId))
+            impacted.add(grant.definition.id);
+      return {
+        policyRevision: policy.revision,
+        grants,
+        affectedGrantIds: [...impacted],
+        knownItemIds: [
+          ...new Set(
+            combined
+              .filter((grant) => impacted.has(grant.definition.id))
+              .flatMap((grant) => grant.definition.itemIds),
+          ),
+        ],
+        unknowns: PREVIEW_UNKNOWN,
+      };
+    }),
     require: requireAccess,
     preview: Effect.fn("VaultAccess.preview")(function* (input, actor) {
       const { policy } = yield* load();

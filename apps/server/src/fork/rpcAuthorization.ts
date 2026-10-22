@@ -117,6 +117,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [VA.approvalCreate]: AuthAccessWriteScope,
   [VA.approvalChange]: AuthAccessWriteScope,
   [VA.apply]: AuthAccessWriteScope,
+  [VA.applyBatch]: AuthAccessWriteScope,
+  [VA.previewBatch]: AuthAccessReadScope,
   [VA.preview]: AuthAccessReadScope,
   [VA.explain]: AuthAccessReadScope,
   [VA.readiness]: AuthAccessReadScope,

@@ -40,6 +40,14 @@ export function createVaultAccessAtoms<R, E>(
       tag: V.catalog,
     }),
     apply: createEnvironmentRpcCommand(runtime, { label: "loom:vault:grant-apply", tag: V.apply }),
+    applyBatch: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:grant-apply-batch",
+      tag: V.applyBatch,
+    }),
+    previewBatch: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:grant-preview-batch",
+      tag: V.previewBatch,
+    }),
     preview: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:grant-preview",
       tag: V.preview,

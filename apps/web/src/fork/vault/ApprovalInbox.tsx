@@ -83,10 +83,10 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
   };
   return (
     <section aria-label="Vault approvals" className="flex flex-col gap-3">
-      <h3 className="font-medium">Remote approvals</h3>
+      <h3 className="font-medium">Temporary access requests</h3>
       <p className="text-sm text-muted-foreground">
-        Review temporary access for the exact thread, record, action and destination. Notification
-        delivery is not connected. Approvals do not restart an operation.
+        These requests authorize one thread for 5 or 15 minutes. For ongoing GitHub access,
+        configure projects in GitHub access. Approvals do not restart an operation.
       </p>
       <div>
         <Button variant="outline" onClick={refresh} disabled={busy}>
@@ -106,7 +106,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
           </Button>
         </div>
       ) : null}
-      {data?.retention ? (
+      {data?.retention && filter === "all" ? (
         <p className="text-sm text-muted-foreground">
           Requests are retained for 24 hours, up to 128 entries. Automatic resumption and allow-once
           access remain disabled.
@@ -115,24 +115,34 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
       {data ? (
         <div className="flex flex-col items-start gap-2">
           <p role="status" className="text-sm">
-            {review.pendingCount} pending of {review.totalCount} retained requests.
+            {review.pendingCount === 0
+              ? "No pending temporary requests."
+              : `${review.pendingCount} pending temporary ${review.pendingCount === 1 ? "request" : "requests"}.`}
           </p>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
-          >
-            {filter === "pending" ? "Show all requests" : "Show pending requests"}
-          </Button>
+          {review.totalCount > review.pendingCount ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
+            >
+              {filter === "pending"
+                ? `Show request history (${review.totalCount - review.pendingCount})`
+                : "Hide request history"}
+            </Button>
+          ) : null}
           {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
             <p className="text-sm">
-              No pending requests. Show all requests to review decisions or revoke an approval.
+              Previous decisions and cancelled requests are in request history.
             </p>
           ) : null}
         </div>
       ) : null}
       {data && review.totalCount === 0 ? (
-        <p>No access requests. An agent can request access with the Vault request tool.</p>
+        <p className="text-sm text-muted-foreground">
+          Temporary requests appear here when an agent asks for access to a specific operation.
+          Saved project access is managed above.
+        </p>
       ) : null}
       {data &&
         review.requests.map((r) => {
@@ -170,29 +180,39 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
                   {labels.warning}
                 </p>
               ) : null}
-              <p className="break-all text-sm">
-                Thread {r.threadId} · Project {r.projectId}
-                <br />
-                Record {r.itemId} · version {r.itemVersion}
-                <br />
-                Destination {r.destination ?? "Any destination (unrestricted)"}
+              <p className="break-words text-sm">
+                {r.destination ?? "Any destination (unrestricted)"}
               </p>
-              <p className="text-sm text-muted-foreground">
-                {vaultApprovalNotificationMessage(
-                  data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
-                  state,
-                )}
-              </p>
-              {r.waitingOperation ? (
-                <p className="break-all text-sm">
-                  Waiting operation {r.waitingOperation.operationId}
-                  <br />
-                  Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
-                  required.
-                </p>
-              ) : (
-                <p className="text-sm">No run-bound operation correlation was captured.</p>
-              )}
+              <details>
+                <summary className="cursor-pointer text-sm text-muted-foreground">
+                  Request details
+                </summary>
+                <div className="mt-2 flex flex-col gap-2">
+                  <p className="break-all text-sm">
+                    Thread {r.threadId} · Project {r.projectId}
+                    <br />
+                    Record {r.itemId} · version {r.itemVersion}
+                    <br />
+                    Destination {r.destination ?? "Any destination (unrestricted)"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {vaultApprovalNotificationMessage(
+                      data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                      state,
+                    )}
+                  </p>
+                  {r.waitingOperation ? (
+                    <p className="break-all text-sm">
+                      Waiting operation {r.waitingOperation.operationId}
+                      <br />
+                      Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
+                      required.
+                    </p>
+                  ) : (
+                    <p className="text-sm">No run-bound operation correlation was captured.</p>
+                  )}
+                </div>
+              </details>
               <p className="text-sm">
                 Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
                 Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.

@@ -9,6 +9,7 @@ import {
   type VaultItemKind,
   type VaultGrantDefinition,
   type VaultGrantMutation,
+  type VaultGrantBatchMutation,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -50,6 +51,9 @@ const fixture = () => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = {
     loseNextReply: false,
+    policyWrites: 0,
+    policyWriteAttempts: 0,
+    conflictNextPolicyWrite: false,
     notificationsFail: false,
     notificationCalls: 0,
     notificationBarrier: null as {
@@ -95,10 +99,18 @@ const fixture = () => {
       ),
     write: (path, value, expected) =>
       Effect.suspend(() => {
+        if (path.endsWith("/access-policy")) state.policyWriteAttempts++;
+        if (path.endsWith("/access-policy") && state.conflictNextPolicyWrite) {
+          state.conflictNextPolicyWrite = false;
+          const record = records.get(path)!;
+          records.set(path, { ...record, version: record.version + 1 });
+          return Effect.fail(new VaultError({ reason: "conflict" }));
+        }
         if (state.failWrites) return Effect.fail(new VaultError({ reason: "unavailable" }));
         const current = records.get(path)?.version ?? 0;
         if (current !== expected) return Effect.fail(new VaultError({ reason: "conflict" }));
         records.set(path, { value, version: current + 1 });
+        if (path.endsWith("/access-policy")) state.policyWrites++;
         if (state.loseNextReply) {
           state.loseNextReply = false;
           return Effect.fail(new VaultError({ reason: "unavailable" }));
@@ -1710,6 +1722,322 @@ it.effect(
         expect((yield* access.approvalInbox).requests).toHaveLength(1);
         yield* access.approvalChange({ ...approveInput, decision: "deny" }, "human", Effect.void);
         expect((yield* access.approvalInbox).requests[0]?.state).toBe("denied");
+      }),
+    ),
+);
+
+const batchSave: VaultGrantBatchMutation = {
+  operationId: "1".repeat(32),
+  expectedRevision: 0,
+  changes: [
+    save.change,
+    {
+      type: "save",
+      grant: { ...definition, id: "d".repeat(32), destination: "github://github.com/owner/repo" },
+    },
+  ],
+};
+it.effect("previews a batch without writes and commits every grant at one policy revision", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const preview = yield* access.previewBatch(batchSave, "human");
+      expect(preview.policyRevision).toBe(0);
+      expect(preview.grants.map((grant) => grant.definition.id)).toEqual([
+        definition.id,
+        "d".repeat(32),
+      ]);
+      expect(preview.affectedGrantIds).toEqual([definition.id, "d".repeat(32)]);
+      expect(preview.knownItemIds).toEqual([itemId]);
+      expect(fixture.state.policyWriteAttempts).toBe(0);
+      const result = yield* access.applyBatch(batchSave, "human");
+      expect(result).toEqual({ policyRevision: 1, grants: preview.grants });
+      expect(fixture.state.policyWrites).toBe(1);
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.revision).toBe(1);
+      expect(snapshot.grants).toEqual(result.grants);
+      expect(snapshot.audit).toHaveLength(2);
+      expect(snapshot.audit.every((event) => event.policyRevision === 1)).toBe(true);
+      expect(yield* access.applyBatch(batchSave, "human")).toEqual(result);
+      expect(fixture.state.policyWriteAttempts).toBe(1);
+    }),
+  ),
+);
+it.effect(
+  "refuses duplicates, empty/oversized batches, invalid later changes and stale revisions without writes",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const invalid: ReadonlyArray<readonly [VaultGrantBatchMutation, string]> = [
+          [{ ...batchSave, changes: [] }, "invalid-input"],
+          [{ ...batchSave, changes: [save.change, save.change] }, "invalid-input"],
+          [
+            {
+              ...batchSave,
+              changes: [save.change, { type: "state", id: definition.id, state: "revoked" }],
+            },
+            "invalid-input",
+          ],
+          [
+            {
+              ...batchSave,
+              changes: Array.from({ length: 129 }, (_, index) => ({
+                type: "save",
+                grant: { ...definition, id: index.toString(16).padStart(32, "0") },
+              })),
+            },
+            "invalid-input",
+          ],
+          [{ ...batchSave, expectedRevision: 1 }, "conflict"],
+          [
+            {
+              ...batchSave,
+              changes: [save.change, { type: "state", id: "e".repeat(32), state: "revoked" }],
+            },
+            "not-found",
+          ],
+          [
+            {
+              ...batchSave,
+              changes: [
+                save.change,
+                {
+                  type: "save",
+                  grant: {
+                    ...definition,
+                    id: "e".repeat(32),
+                    principal: { kind: "thread", id: "missing" },
+                  },
+                },
+              ],
+            },
+            "denied",
+          ],
+          [
+            {
+              ...batchSave,
+              changes: [
+                save.change,
+                { type: "save", grant: { ...definition, id: "e".repeat(32), label: "" } },
+              ],
+            },
+            "invalid-input",
+          ],
+        ];
+        for (const [input, reason] of invalid) {
+          expect((yield* access.previewBatch(input, "human").pipe(Effect.flip)).reason).toBe(
+            reason,
+          );
+          expect((yield* access.applyBatch(input, "human").pipe(Effect.flip)).reason).toBe(reason);
+        }
+        expect(fixture.state.policyWriteAttempts).toBe(0);
+        expect((yield* access.snapshot).grants).toEqual([]);
+      }),
+    ),
+);
+it.effect(
+  "resolves batch lineage against the final policy and previews descendants and prior item scopes",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const child = {
+          ...definition,
+          id: "d".repeat(32),
+          parentId: definition.id,
+          principal: { kind: "thread" as const, id: childId },
+        };
+        const create: VaultGrantBatchMutation = {
+          ...batchSave,
+          changes: [{ type: "save", grant: child }, save.change],
+        };
+        yield* access.applyBatch(create, "human");
+        expect(fixture.state.policyWrites).toBe(1);
+        const update: VaultGrantBatchMutation = {
+          operationId: "2".repeat(32),
+          expectedRevision: 1,
+          changes: [{ type: "save", grant: { ...definition, itemIds: ["e".repeat(32)] } }],
+        };
+        const preview = yield* access.previewBatch(update, "human");
+        expect(preview.affectedGrantIds).toEqual([definition.id, child.id]);
+        expect(preview.knownItemIds).toEqual([itemId, "e".repeat(32)]);
+        for (const changes of [
+          [{ type: "save" as const, grant: { ...child, actions: ["reveal" as const] } }],
+          [
+            { type: "save" as const, grant: { ...definition, parentId: child.id } },
+            { type: "save" as const, grant: child },
+          ],
+          [
+            { type: "save" as const, grant: child },
+            { type: "state" as const, id: definition.id, state: "revoked" as const },
+          ],
+        ]) {
+          expect(
+            (yield* access.applyBatch({ ...update, changes }, "human").pipe(Effect.flip)).reason,
+          ).toBe("denied");
+        }
+        expect(fixture.state.policyWriteAttempts).toBe(1);
+        yield* access.applyBatch(
+          {
+            ...update,
+            changes: [
+              { type: "state", id: definition.id, state: "revoked" },
+              { type: "state", id: child.id, state: "revoked" },
+            ],
+          },
+          "human",
+        );
+        expect((yield* access.snapshot).grants.every((grant) => grant.state === "revoked")).toBe(
+          true,
+        );
+        expect(fixture.state.policyWrites).toBe(2);
+      }),
+    ),
+);
+it.effect("rejects batch capacity overflow without partially adding grants", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      yield* access.applyBatch(
+        {
+          ...batchSave,
+          changes: Array.from({ length: 127 }, (_, index) => ({
+            type: "save",
+            grant: { ...definition, id: index.toString(16).padStart(32, "0") },
+          })),
+        },
+        "human",
+      );
+      expect(
+        (yield* access
+          .applyBatch({ ...batchSave, operationId: "2".repeat(32), expectedRevision: 1 }, "human")
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-input");
+      expect(fixture.state.policyWriteAttempts).toBe(1);
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.grants).toHaveLength(127);
+      expect(snapshot.revision).toBe(1);
+    }),
+  ),
+);
+it.effect(
+  "replays a durable batch receipt after a lost response, policy changes and service reconstruction",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        fixture.state.loseNextReply = true;
+        expect((yield* access.applyBatch(batchSave, "human").pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+        const committed = yield* access.snapshot;
+        yield* access.apply(
+          {
+            operationId: "2".repeat(32),
+            expectedRevision: 1,
+            change: { type: "state", id: definition.id, state: "suspended" },
+          },
+          "human",
+        );
+        const result = yield* Effect.flatMap(VaultAccess.VaultAccess, (rebuilt) =>
+          rebuilt.applyBatch(batchSave, "human"),
+        ).pipe(Effect.provide(fixture.layer));
+        expect(result).toEqual({ policyRevision: 1, grants: committed.grants });
+        expect((yield* access.snapshot).revision).toBe(2);
+        for (const [input, actor] of [
+          [batchSave, "other-human"],
+          [{ ...batchSave, expectedRevision: 2 }, "human"],
+          [{ ...batchSave, changes: batchSave.changes.toReversed() }, "human"],
+        ] as const)
+          expect((yield* access.applyBatch(input, actor).pipe(Effect.flip)).reason).toBe(
+            "conflict",
+          );
+        expect(
+          (yield* access
+            .apply({ ...save, operationId: batchSave.operationId }, "human")
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(
+          (yield* access
+            .applyBatch({ ...batchSave, operationId: "2".repeat(32) }, "human")
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(fixture.state.policyWriteAttempts).toBe(2);
+      }),
+    ),
+);
+it.effect("retries storage CAS races without changing the reviewed policy revision", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      yield* access.apply(save, "human");
+      fixture.state.conflictNextPolicyWrite = true;
+      const result = yield* access.applyBatch({ ...batchSave, expectedRevision: 1 }, "human");
+      expect(result.policyRevision).toBe(2);
+      expect(result.grants[0]?.revision).toBe(2);
+      expect(fixture.state.policyWriteAttempts).toBe(3);
+      expect(fixture.state.policyWrites).toBe(2);
+      expect((yield* access.snapshot).audit).toHaveLength(3);
+    }),
+  ),
+);
+it.effect("loses a policy CAS race without committing any part of the batch", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const observed = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      fixture.state.readBarrier = { observed, release };
+      const loser = yield* access
+        .applyBatch(batchSave, "human")
+        .pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(observed);
+      yield* access.apply(save, "other-human");
+      yield* Deferred.succeed(release, undefined);
+      const result = yield* Fiber.join(loser);
+      expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "conflict" } });
+      const snapshot = yield* access.snapshot;
+      expect(snapshot.revision).toBe(1);
+      expect(snapshot.grants).toHaveLength(1);
+      expect(snapshot.grants[0]?.createdBy).toBe("other-human");
+      expect(fixture.state.policyWrites).toBe(1);
+    }),
+  ),
+);
+it.effect("concurrent identical batches replay one commit", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const observed = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      fixture.state.readBarrier = { observed, release };
+      const first = yield* access.applyBatch(batchSave, "human").pipe(Effect.forkChild);
+      yield* Deferred.await(observed);
+      const second = yield* access.applyBatch(batchSave, "human");
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(first)).toEqual(second);
+      expect(fixture.state.policyWrites).toBe(1);
+      expect((yield* access.snapshot).audit).toHaveLength(2);
+    }),
+  ),
+);
+it.effect(
+  "denies thread self-approval and revoked authorization before commit and receipt replay",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const denied = Effect.fail(new VaultError({ reason: "denied" }));
+        expect(
+          (yield* access.applyBatch(batchSave, "human", denied).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        for (const actor of ["thread:grant-thread", "mcp-client"])
+          expect((yield* access.applyBatch(batchSave, actor).pipe(Effect.flip)).reason).toBe(
+            "denied",
+          );
+        let checks = 0;
+        const authorize = Effect.suspend(() => (++checks > 1 ? denied : Effect.void));
+        expect(
+          (yield* access.applyBatch(batchSave, "human", authorize).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(fixture.state.policyWriteAttempts).toBe(0);
+        yield* access.applyBatch(batchSave, "human", Effect.void);
+        expect(
+          (yield* access.applyBatch(batchSave, "human", denied).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(fixture.state.policyWriteAttempts).toBe(1);
       }),
     ),
 );

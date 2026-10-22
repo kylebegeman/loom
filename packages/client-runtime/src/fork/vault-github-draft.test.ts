@@ -29,11 +29,34 @@ it("normalizes portable repository input and redacts private form data", () => {
 it("rejects empty or excessive allowlists, invalid identity fields and missing private data", () => {
   for (const change of [
     { repositories: "" },
-    { repositories: "https://github.com/owner/repo" },
     { repositories: Array.from({ length: 33 }, (_, i) => `owner/repo${i}`).join(",") },
     { type: "app" as const, appId: "invalid" },
     { secret: "  " },
     { expectedVersion: -1 },
   ])
     expect(makeVaultGitHubSave({ ...draft, ...change }, "b".repeat(32))).toBeNull();
+});
+
+it("accepts pasted GitHub URLs and SSH remotes, normalizes and deduplicates them", () => {
+  const save = makeVaultGitHubSave(
+    {
+      ...draft,
+      repositories:
+        "https://github.com/Owner/Repo.git, git@github.com:Owner/Other.git\nowner/repo\nhttps://github.com/owner/third/",
+    },
+    "b".repeat(32),
+  );
+  expect(save?.repositories).toEqual(["owner/repo", "owner/other", "owner/third"]);
+});
+it("refuses credential-bearing URLs, another host, and repository subpages", () => {
+  for (const repositories of [
+    "https://token@github.com/owner/repo",
+    "https://github.com/owner/repo?token=private",
+    "https://github.example.com/owner/repo",
+    "https://github.com/owner/repo/tree/main",
+    "git@other.test:owner/repo.git",
+    "http://github.com/owner/repo",
+  ]) {
+    expect(makeVaultGitHubSave({ ...draft, repositories }, "b".repeat(32))).toBeNull();
+  }
 });

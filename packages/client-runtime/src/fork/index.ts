@@ -3,6 +3,7 @@ export * from "./vault-migration-inventory.ts";
 export * from "./vault-migration.ts";
 export * from "./vault-health.ts";
 export * from "./vault-github-draft.ts";
+export * from "./vault-github-access.ts";
 export * from "./vault-github.ts";
 export * from "./vault-profiles.ts";
 export * from "./vault-ssh.ts";

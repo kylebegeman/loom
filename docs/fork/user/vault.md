@@ -519,20 +519,42 @@ run when new selection is needed. OpenBao version history, credentials and grant
 This is not secure erasure or remote credential revocation. Human administrators can also use
 `loom vault profile-pins` and `profile-retire`; agents cannot retire their own selections.
 
-## Connect a dedicated GitHub identity
+## Connect GitHub and approve project access
 
-Open **Settings → Loom → Vault GitHub connections** on web/desktop, or the same section under
-**Settings → Computers → Manage computer** on mobile. Use a GitHub App installation for
-short-lived tokens or a dedicated fine-grained token. Enter the private credential in the form,
-with 1 to 32 `owner/repository` names. App setup also needs the App and installation IDs plus
-its RSA PEM key; pasted escaped newlines are accepted. Loom checks the identity and API access
-to every listed repository before saving it in Vault.
+Open **Settings → Loom → GitHub access** on web/desktop, or **GitHub access** under
+**Settings → Computers → Manage computer** on mobile. Save a dedicated fine-grained token
+or choose a GitHub App under **Advanced connection settings**. Paste GitHub repository URLs
+or `owner/repository` names. Loom verifies the account and API access before saving.
 
-Review the account, allowed repositories and connection version. **Test GitHub API access**
-checks the selected repository. It does not prove that GH CLI is installed or that Git HTTPS
-works. Replace credentials to create a new version. Disconnect blocks future Loom use locally;
-restore reconnects locally. Revoke an App installation or token at GitHub separately. Issued
-credentials may remain valid until expiry even if cleanup was attempted.
+The token form links to GitHub and lists the required repository permissions. Choosing
+**All repositories** on GitHub chooses repository coverage; it does not add permission entries.
+For development, set **Contents** and **Pull requests** to read and write, and **Actions** and
+**Commit statuses** to read-only. Metadata is included automatically. Organizations may require
+separate approval. App setup needs its App ID, installation ID and RSA private key.
+
+Choose **Configure project access** on the saved connection, then **Find matching projects**
+to suggest repositories from registered projects' local Git metadata. Review the detected set;
+a project name can differ from its repository name. Search for additional projects and choose
+their repositories from this connection's allowlist. Matching never authenticates or changes
+Git configuration. If metadata is unavailable or incomplete, select missing projects manually.
+
+Review and approve all selected projects together. The default is recurring access until revoked;
+the web form also offers a fixed duration. This authorizes every thread in each selected project
+to use only its chosen repositories and inspect connection metadata. It does not allow changing,
+revealing or exporting the saved credential. Names, exact destinations and separate metadata
+permissions are generated for you. The full selection saves in one operation; a stale review
+must be refreshed before approval. Existing connections and grants remain usable.
+
+Saved project access appears on the connection. Choose **Revoke project access** to review
+removal; custom delegated grants may need review in advanced Vault access. Removing Loom access
+does not undo completed GitHub operations or revoke credentials already issued by GitHub.
+Temporary run-bound requests remain separate and are not needed for recurring project setup.
+
+Open the saved connection's advanced tools to replace credentials, test repository API access,
+or inspect runtime readiness. A saved connection and an approved project are separate from a
+successful current-run check: API, GH CLI and Git HTTPS must each pass for that run. Disconnect
+blocks new Loom use; revoke the token or App installation at GitHub separately to stop issued
+credentials. Older computers without bulk-access support prompt for an update.
 
 Agents use `loom_vault_github` with the connection ID/version, repository and a documented
 operation. An active full-access/default run and exact use grant for
@@ -568,7 +590,7 @@ ordinary terminal gh/Git HTTPS or your personal credentials.
 
 ## Route a terminal command through Vault
 
-In **Vault GitHub connections**, choose the repository and copy the terminal command. Run it
+In **GitHub access**, choose the repository and copy the terminal command. Run it
 from an authenticated Loom agent terminal. It names only a connection reference and version;
 never paste a credential into the command. The command runs on the Loom server in the active
 thread's checkout, including when you control it from another computer or phone.

@@ -40,6 +40,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-approval-requests",
   "vault-approvals",
   "vault-grants",
+  "vault-grants-batch",
   "vault-access-inspector",
   "vault-readiness",
   "sites",
