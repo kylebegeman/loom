@@ -51,32 +51,28 @@ import * as VaultCore from "./VaultCore.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import { evaluateVaultPolicy, grantAttenuates, grantMatchesWorkload } from "./VaultPolicy.ts";
 
-const StoredApproval = Schema.Struct({
-  request: VaultApprovalRequest,
-  fingerprint: Schema.String,
-  lastOperation: Schema.NullOr(Schema.Struct({ id: Schema.String, fingerprint: Schema.String })),
+import * as AccessPolicy from "./AccessPolicy.ts";
+import { decodePolicy, encodePolicy, type Policy } from "./AccessPolicy.ts";
+
+const isAdministrator = Schema.is(AccessPolicy.OperationIntent.fields.reviewedBy);
+const decodeModeChange = Schema.decodeUnknownEffect(AccessPolicy.ModeChange, {
+  onExcessProperty: "error",
 });
-const Policy = Schema.Struct({
-  batchReceipts: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        id: Schema.String,
-        fingerprint: Schema.String,
-        result: VaultGrantBatchResult,
-      }),
-    ).check(Schema.isMaxLength(32)),
-  ),
-  approvals: Schema.optionalKey(Schema.Array(StoredApproval).check(Schema.isMaxLength(128))),
-  schemaVersion: Schema.Literals([1, 2, 3]),
-  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  grants: Schema.Array(VaultGrant).check(Schema.isMaxLength(128)),
-  audit: Schema.Array(VaultAuditEvent).check(Schema.isMaxLength(256)),
-  omittedAuditEvents: Schema.Int,
-  receipts: Schema.Array(
-    Schema.Struct({ id: Schema.String, fingerprint: Schema.String, result: VaultGrant }),
-  ).check(Schema.isMaxLength(32)),
+const decodeIntentProposal = Schema.decodeUnknownEffect(AccessPolicy.IntentProposal, {
+  onExcessProperty: "error",
 });
-type Policy = typeof Policy.Type;
+const decodeIntentReview = Schema.decodeUnknownEffect(AccessPolicy.IntentReview, {
+  onExcessProperty: "error",
+});
+const decodeIntentReservation = Schema.decodeUnknownEffect(AccessPolicy.IntentReservation, {
+  onExcessProperty: "error",
+});
+const decodeIntentClose = Schema.decodeUnknownEffect(AccessPolicy.IntentClose, {
+  onExcessProperty: "error",
+});
+const decodeMigrationPreviewInput = Schema.decodeUnknownEffect(AccessPolicy.MigrationPreviewInput, {
+  onExcessProperty: "error",
+});
 const encodeRetryOperation = Schema.encodeEffect(
   Schema.fromJsonString(
     Schema.Struct({
@@ -102,8 +98,6 @@ const encodeApprovalCreate = Schema.encodeEffect(
 const encodeApprovalChange = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ input: VaultApprovalChange, actor: Schema.String })),
 );
-const decodePolicy = Schema.decodeUnknownOption(Policy);
-const encodePolicy = Schema.encodeEffect(Policy);
 const decodeMutation = Schema.decodeUnknownOption(VaultGrantMutation);
 const decodeBatchMutation = Schema.decodeUnknownOption(VaultGrantBatchMutation);
 const encodeBatchMutation = Schema.encodeEffect(
@@ -151,6 +145,57 @@ const RETRY_REPAIRS = {
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
+    // Internal preparation only: no transport or dispatcher invokes these methods.
+    readonly protectionMigrationPreview: (
+      input: AccessPolicy.MigrationPreviewInput,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<
+      {
+        readonly sourceStorageVersion: number;
+        readonly proposal: AccessPolicy.ProtectedPolicy;
+        readonly canMigrate: false;
+      },
+      VaultError
+    >;
+    readonly credentialModeChange: (
+      input: AccessPolicy.ModeChange,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<typeof AccessPolicy.CredentialMode.Type, VaultError>;
+    readonly intentPreview: (
+      input: AccessPolicy.IntentProposal,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<
+      {
+        readonly binding: typeof AccessPolicy.IntentBinding.Type;
+        readonly policyRevision: number;
+        readonly expiresNoLaterThan: number;
+        readonly canExecute: false;
+      },
+      VaultError
+    >;
+    readonly intentReview: (
+      input: AccessPolicy.IntentReview,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<AccessPolicy.IntentObservation, VaultError>;
+    readonly intentReserve: (
+      input: AccessPolicy.IntentReservation,
+      requester: ThreadId,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<AccessPolicy.IntentObservation, VaultError>;
+    readonly intentStatus: (
+      id: string,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<AccessPolicy.IntentObservation, VaultError>;
+    readonly intentClose: (
+      input: AccessPolicy.IntentClose,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<AccessPolicy.IntentObservation, VaultError>;
     readonly approvalPrepareRetry: (
       input: VaultApprovalRetryInput,
       requester: ThreadId,
@@ -257,14 +302,17 @@ const make = Effect.gen(function* () {
       new Set(value.value.grants.map((grant) => grant.definition.id)).size !==
         value.value.grants.length ||
       new Set(value.value.approvals?.map((r) => r.request.id)).size !==
-        (value.value.approvals?.length ?? 0)
+        (value.value.approvals?.length ?? 0) ||
+      (value.value.schemaVersion === 4 && value.value.environmentId !== environmentId)
     )
       return yield* new VaultError({ reason: "invalid-response" });
     return { policy: value.value, version: record.version };
   });
   const persist = Effect.fnUntraced(function* (policy: Policy, version: number) {
     const encoded = yield* encodePolicy(
-      policy.approvals === undefined ? policy : { ...policy, schemaVersion: 3 },
+      policy.schemaVersion === 4 || policy.approvals === undefined
+        ? policy
+        : { ...policy, schemaVersion: 3 },
     ).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));
     yield* store.write(path, Redacted.make(encoded), version);
   });
@@ -517,6 +565,18 @@ const make = Effect.gen(function* () {
       (item === null || (input.action !== "inspect" && item.state !== "active"))
         ? { ...evaluated, allowed: false, reason: "item-unavailable" }
         : evaluated;
+    const ordinaryResult = result;
+    const protection = AccessPolicy.credentialUseRefusal(policy, input.itemId);
+    if (input.action !== "inspect" && protection)
+      result = {
+        ...result,
+        allowed: false,
+        reason: protection,
+        grantId: null,
+        grantRevision: null,
+        expiresAt: null,
+        lineage: [],
+      };
     if (
       (input.action === "manage" || input.action === "delegate") &&
       (workload.thread.runtimeMode !== "full-access" ||
@@ -525,7 +585,7 @@ const make = Effect.gen(function* () {
       result = { ...result, allowed: false, reason: "caller-permission" };
     if (input.action !== "inspect" && workload.thread.activeRunId === null)
       result = { ...result, allowed: false, reason: "workload-inactive" };
-    return { workload, item, result };
+    return { workload, item, result, ordinaryResult };
   });
   const requireAccess = Effect.fn("VaultAccess.require")(function* (
     threadId: ThreadId,
@@ -822,6 +882,154 @@ const make = Effect.gen(function* () {
       canExecute: false as const,
     };
   });
+  const requireAdministrator = (actor: string) =>
+    isAdministrator(actor) ? Effect.void : Effect.fail(new VaultError({ reason: "denied" }));
+  const requireProtectedPolicy = (policy: Policy) =>
+    policy.schemaVersion === 4
+      ? Effect.succeed(policy)
+      : Effect.fail(new VaultError({ reason: "denied" }));
+  const observeIntent = Effect.fn("VaultAccess.observeIntent")(function* (
+    intent: AccessPolicy.OperationIntent,
+  ): Effect.fn.Return<AccessPolicy.IntentObservation> {
+    const checkedAt = yield* Clock.currentTimeMillis;
+    return {
+      intent:
+        intent.state === "reviewed" && checkedAt >= intent.expiresAt
+          ? { ...intent, state: "expired" }
+          : intent,
+      checkedAt,
+      canExecute: false,
+      automaticResumption: false,
+      allowOnceConsumption: false,
+    };
+  });
+  const sameBinding = (
+    a: typeof AccessPolicy.IntentBinding.Type,
+    b: typeof AccessPolicy.IntentBinding.Type,
+  ) => JSON.stringify(a) === JSON.stringify(b);
+  const intentBinding = Effect.fn("VaultAccess.intentBinding")(function* (
+    policy: AccessPolicy.ProtectedPolicy,
+    input: AccessPolicy.IntentProposal,
+  ) {
+    const request = policy.approvals?.find(
+      (entry) => entry.request.id === input.requestId,
+    )?.request;
+    const now = yield* Clock.currentTimeMillis;
+    if (
+      !request ||
+      !request.waitingOperation ||
+      (request.state !== "pending" && request.state !== "approved") ||
+      request.revision !== input.expectedRequestRevision ||
+      request.waitingOperation.operationId !== input.waitingOperationId ||
+      now >= request.requestExpiresAt ||
+      request.action !== "use"
+    )
+      return yield* new VaultError({ reason: "denied" });
+    const mode = policy.credentialModes.find((entry) => entry.itemId === request.itemId);
+    if (!mode || mode.mode !== "one-time") return yield* new VaultError({ reason: "denied" });
+    const evaluated = yield* decision(policy, {
+      threadId: request.threadId,
+      itemId: request.itemId,
+      action: "use",
+      destination: request.destination,
+    });
+    const thread = evaluated.workload.thread;
+    const item = evaluated.item;
+    const grant = evaluated.ordinaryResult;
+    const operation = input.operation;
+    const destination =
+      operation.kind === "github-api"
+        ? vaultGitHubDestination(operation.input.repository)
+        : operation.kind === "git-ssh"
+          ? vaultGitDestination(operation.target, operation.input.repository)
+          : vaultSshDestination(operation.target);
+    const itemVersion =
+      operation.kind === "ssh"
+        ? operation.input.command.expectedVersion
+        : operation.input.expectedVersion;
+    if (
+      !item ||
+      item.state !== "active" ||
+      item.version !== request.itemVersion ||
+      item.version !== itemVersion ||
+      operation.input.id !== item.id ||
+      item.kind !== (operation.kind === "github-api" ? "service-connection" : "ssh-key") ||
+      destination !== request.destination ||
+      evaluated.workload.projectId !== request.projectId ||
+      thread.activeRunId !== request.waitingOperation.runId ||
+      thread.runtimeMode !== "full-access" ||
+      thread.interactionMode !== "default" ||
+      !grant.allowed ||
+      !grant.grantId ||
+      !grant.grantRevision
+    )
+      return yield* new VaultError({ reason: "denied" });
+    const operationDigest = yield* hash(
+      yield* encodeRetryOperation({
+        protocol: "loom-vault-retry-v1",
+        environmentId,
+        requester: request.threadId,
+        requestId: request.id,
+        waitingOperation: request.waitingOperation,
+        proposedOperationId: input.waitingOperationId,
+        operation,
+      }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" }))),
+    );
+    const binding: typeof AccessPolicy.IntentBinding.Type = {
+      environmentId,
+      itemId: item.id,
+      itemVersion: item.version,
+      modeRevision: mode.revision,
+      requestId: request.id,
+      requestRevision: request.revision,
+      waitingOperationId: input.waitingOperationId,
+      threadId: request.threadId,
+      projectId: evaluated.workload.projectId,
+      runId: request.waitingOperation.runId,
+      action: "use",
+      destination,
+      adapter: operation.kind,
+      operationDigest,
+      grantId: grant.grantId,
+      grantRevision: grant.grantRevision,
+    };
+    return {
+      binding,
+      deadline: Math.min(
+        request.requestExpiresAt,
+        grant.expiresAt ?? Number.MAX_SAFE_INTEGER,
+        now + 300_000,
+      ),
+    };
+  });
+  const intentWrite = Effect.fn("VaultAccess.intentWrite")(function* (
+    policy: AccessPolicy.ProtectedPolicy,
+    version: number,
+    intent: AccessPolicy.OperationIntent,
+    actor: string,
+  ) {
+    const next = withAudit(
+      {
+        ...policy,
+        revision: policy.revision + 1,
+        intents: [...policy.intents.filter((entry) => entry.id !== intent.id), intent],
+      },
+      {
+        id: yield* eventId,
+        at: yield* Clock.currentTimeMillis,
+        actor,
+        type: "decision",
+        itemId: intent.binding.itemId,
+        grantId: intent.binding.grantId,
+        action: "use",
+        reason: `intent-${intent.state}`,
+        policyRevision: policy.revision + 1,
+      },
+    );
+    // One CAS only. A replay or ambiguous acknowledgement never returns a fresh opportunity.
+    yield* persist(next, version);
+    return yield* observeIntent(intent);
+  });
   const approvalCreate = Effect.fn("VaultAccess.approvalCreate")(function* (
     input: VaultApprovalCreate,
     actor: string,
@@ -882,9 +1090,9 @@ const make = Effect.gen(function* () {
         approvedUntil: null,
         grantId: null,
       };
+      const base = policy.schemaVersion === 4 ? policy : { ...policy, schemaVersion: 3 as const };
       const next: Policy = {
-        ...policy,
-        schemaVersion: 3,
+        ...base,
         approvals: [...(policy.approvals ?? []), { request, fingerprint, lastOperation: null }],
       };
       yield* authorize;
@@ -951,6 +1159,8 @@ const make = Effect.gen(function* () {
         if (request.state !== "pending" || now >= request.requestExpiresAt)
           return yield* new VaultError({ reason: "conflict" });
         if (input.decision === "approve") {
+          if (AccessPolicy.credentialUseRefusal(policy, request.itemId))
+            return yield* new VaultError({ reason: "denied" });
           const target = yield* subject(request.threadId),
             item = yield* core.inspect(request.itemId);
           if (
@@ -1042,6 +1252,289 @@ const make = Effect.gen(function* () {
     return yield* new VaultError({ reason: "conflict" });
   });
   return VaultAccess.of({
+    protectionMigrationPreview: Effect.fn("VaultAccess.protectionMigrationPreview")(
+      function* (raw, actor, authorize) {
+        const input = yield* decodeMigrationPreviewInput(raw).pipe(
+          Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+        );
+        yield* requireAdministrator(actor);
+        yield* authorize;
+        const { policy, version } = yield* load();
+        if (policy.schemaVersion === 4 || policy.revision !== input.expectedPolicyRevision)
+          return yield* new VaultError({ reason: "conflict" });
+        const inventory = Effect.gen(function* () {
+          const items: VaultItemPage["items"][number][] = [];
+          let cursor: string | null = null;
+          do {
+            const page: VaultItemPage = yield* core.list({ cursor, includeArchived: true });
+            items.push(...page.items);
+            if (items.length > 128) return yield* new VaultError({ reason: "invalid-input" });
+            if (page.nextCursor !== null && cursor !== null && page.nextCursor <= cursor)
+              return yield* new VaultError({ reason: "invalid-response" });
+            cursor = page.nextCursor;
+          } while (cursor !== null);
+          return items
+            .map((item) => ({ id: item.id, version: item.version }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+        });
+        const items = yield* inventory;
+        const sameInventory = (
+          a: ReadonlyArray<{ readonly id: string; readonly version: number }>,
+          b: ReadonlyArray<{ readonly id: string; readonly version: number }>,
+        ) =>
+          a.length === b.length &&
+          a.every((item, i) => item.id === b[i]?.id && item.version === b[i]?.version);
+        if (
+          new Set(input.selections.map((entry) => entry.itemId)).size !== input.selections.length ||
+          !sameInventory(
+            items,
+            input.selections
+              .map((entry) => ({ id: entry.itemId, version: entry.itemVersion }))
+              .sort((a, b) => a.id.localeCompare(b.id)),
+          )
+        )
+          return yield* new VaultError({ reason: "conflict" });
+        yield* authorize;
+        if (!sameInventory(yield* inventory, items) || (yield* load()).version !== version)
+          return yield* new VaultError({ reason: "conflict" });
+        const now = yield* Clock.currentTimeMillis;
+        const proposal: AccessPolicy.ProtectedPolicy = {
+          ...policy,
+          schemaVersion: 4,
+          environmentId,
+          revision: policy.revision + 1,
+          credentialModes: input.selections.map((entry) => ({
+            itemId: entry.itemId,
+            mode: entry.mode,
+            revision: 1,
+            updatedBy: actor,
+            updatedAt: now,
+          })),
+          intents: [],
+        };
+        return { sourceStorageVersion: version, proposal, canMigrate: false };
+      },
+    ),
+    credentialModeChange: Effect.fn("VaultAccess.credentialModeChange")(
+      function* (raw, actor, authorize) {
+        const input = yield* decodeModeChange(raw).pipe(
+          Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+        );
+        yield* requireAdministrator(actor);
+        yield* authorize;
+        const loaded = yield* load();
+        const policy = yield* requireProtectedPolicy(loaded.policy);
+        if (policy.revision !== input.expectedPolicyRevision)
+          return yield* new VaultError({ reason: "conflict" });
+        const old = policy.credentialModes.find((entry) => entry.itemId === input.itemId);
+        if (old?.mode === "one-time" && input.mode !== "one-time")
+          return yield* new VaultError({ reason: "denied" });
+        const check = Effect.gen(function* () {
+          const item = yield* core.inspect(input.itemId);
+          if (!item || item.state !== "active" || item.version !== input.itemVersion)
+            return yield* new VaultError({ reason: "conflict" });
+        });
+        yield* check;
+        yield* authorize;
+        yield* check;
+        const now = yield* Clock.currentTimeMillis;
+        if (old && now < old.updatedAt) return yield* new VaultError({ reason: "unavailable" });
+        if (old?.mode === input.mode) return old;
+        const mode = {
+          itemId: input.itemId,
+          mode: input.mode,
+          revision: (old?.revision ?? 0) + 1,
+          updatedBy: actor,
+          updatedAt: now,
+        };
+        const next = withAudit(
+          {
+            ...policy,
+            revision: policy.revision + 1,
+            credentialModes: [
+              ...policy.credentialModes.filter((entry) => entry.itemId !== input.itemId),
+              mode,
+            ],
+          },
+          {
+            id: yield* eventId,
+            at: now,
+            actor,
+            type: "grant-change",
+            itemId: input.itemId,
+            grantId: null,
+            action: "manage",
+            reason: "credential-protection-change",
+            policyRevision: policy.revision + 1,
+          },
+        );
+        yield* persist(next, loaded.version);
+        return mode;
+      },
+    ),
+    intentPreview: Effect.fn("VaultAccess.intentPreview")(function* (raw, actor, authorize) {
+      const input = yield* decodeIntentProposal(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      yield* requireAdministrator(actor);
+      yield* authorize;
+      const loaded = yield* load();
+      const policy = yield* requireProtectedPolicy(loaded.policy);
+      const prepared = yield* intentBinding(policy, input);
+      yield* authorize;
+      const latest = yield* intentBinding(policy, input);
+      if (
+        !sameBinding(latest.binding, prepared.binding) ||
+        (yield* load()).version !== loaded.version
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      return {
+        binding: latest.binding,
+        policyRevision: policy.revision,
+        expiresNoLaterThan: Math.min(prepared.deadline, latest.deadline),
+        canExecute: false,
+      };
+    }),
+    intentReview: Effect.fn("VaultAccess.intentReview")(function* (raw, actor, authorize) {
+      const input = yield* decodeIntentReview(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      yield* requireAdministrator(actor);
+      yield* authorize;
+      const loaded = yield* load();
+      const policy = yield* requireProtectedPolicy(loaded.policy);
+      if (
+        policy.revision !== input.expectedPolicyRevision ||
+        policy.intents.length >= 128 ||
+        policy.intents.some(
+          (entry) =>
+            entry.id === input.id ||
+            entry.binding.requestId === input.requestId ||
+            ((entry.state === "reserved" || entry.state === "unknown") &&
+              entry.binding.itemId ===
+                policy.approvals?.find((entry) => entry.request.id === input.requestId)?.request
+                  .itemId),
+        )
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      const prepared = yield* intentBinding(policy, input);
+      if (input.reviewedDigest !== prepared.binding.operationDigest)
+        return yield* new VaultError({ reason: "conflict" });
+      yield* authorize;
+      const latest = yield* intentBinding(policy, input);
+      const now = yield* Clock.currentTimeMillis;
+      if (
+        !sameBinding(latest.binding, prepared.binding) ||
+        now >= input.expiresAt ||
+        input.expiresAt > Math.min(prepared.deadline, latest.deadline)
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      return yield* intentWrite(
+        policy,
+        loaded.version,
+        {
+          id: input.id,
+          binding: latest.binding,
+          revision: 1,
+          reviewedBy: actor,
+          reviewedAt: now,
+          expiresAt: input.expiresAt,
+          updatedAt: now,
+          state: "reviewed",
+          reservationId: null,
+        },
+        actor,
+      );
+    }),
+    intentReserve: Effect.fn("VaultAccess.intentReserve")(function* (raw, requester, authorize) {
+      const input = yield* decodeIntentReservation(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      yield* authorize;
+      const loaded = yield* load();
+      const policy = yield* requireProtectedPolicy(loaded.policy);
+      const intent = policy.intents.find((entry) => entry.id === input.id);
+      if (
+        policy.revision !== input.expectedPolicyRevision ||
+        !intent ||
+        intent.state !== "reviewed" ||
+        intent.revision !== input.expectedIntentRevision ||
+        intent.binding.threadId !== requester ||
+        // Reviews of one item can coexist, so a reservation must recheck that no other intent for
+        // the item is in flight or awaiting reconciliation. intentWrite CASes this policy version.
+        policy.intents.some(
+          (entry) =>
+            entry.id !== intent.id &&
+            entry.binding.itemId === intent.binding.itemId &&
+            (entry.state === "reserved" || entry.state === "unknown"),
+        )
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      const prepared = yield* intentBinding(policy, input);
+      if (!sameBinding(intent.binding, prepared.binding))
+        return yield* new VaultError({ reason: "conflict" });
+      yield* authorize;
+      const latest = yield* intentBinding(policy, input);
+      const reservationId = yield* eventId;
+      const now = yield* Clock.currentTimeMillis;
+      if (
+        now < intent.updatedAt ||
+        now >= intent.expiresAt ||
+        !sameBinding(intent.binding, latest.binding)
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      return yield* intentWrite(
+        policy,
+        loaded.version,
+        {
+          ...intent,
+          state: "reserved",
+          reservationId,
+          revision: intent.revision + 1,
+          updatedAt: now,
+        },
+        `thread:${requester}`,
+      );
+    }),
+    intentStatus: Effect.fn("VaultAccess.intentStatus")(function* (id, actor, authorize) {
+      yield* requireAdministrator(actor);
+      yield* authorize;
+      const policy = yield* requireProtectedPolicy((yield* load()).policy);
+      const intent = policy.intents.find((entry) => entry.id === id);
+      if (!intent) return yield* new VaultError({ reason: "not-found" });
+      return yield* observeIntent(intent);
+    }),
+    intentClose: Effect.fn("VaultAccess.intentClose")(function* (raw, actor, authorize) {
+      const input = yield* decodeIntentClose(raw).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      );
+      yield* requireAdministrator(actor);
+      yield* authorize;
+      const loaded = yield* load();
+      const policy = yield* requireProtectedPolicy(loaded.policy);
+      const intent = policy.intents.find((entry) => entry.id === input.id);
+      if (
+        policy.revision !== input.expectedPolicyRevision ||
+        !intent ||
+        intent.revision !== input.expectedIntentRevision ||
+        (intent.state !== "reviewed" && intent.state !== "reserved")
+      )
+        return yield* new VaultError({ reason: "conflict" });
+      yield* authorize;
+      const now = yield* Clock.currentTimeMillis;
+      if (now < intent.updatedAt) return yield* new VaultError({ reason: "unavailable" });
+      return yield* intentWrite(
+        policy,
+        loaded.version,
+        {
+          ...intent,
+          state: intent.state === "reserved" ? "unknown" : "revoked",
+          revision: intent.revision + 1,
+          updatedAt: now,
+        },
+        actor,
+      );
+    }),
     approvalPrepareRetry,
     approvalRetain,
     approvalStatus,
@@ -1335,7 +1828,11 @@ const make = Effect.gen(function* () {
             yield* Clock.currentTimeMillis,
             policy.revision,
           );
-          if (!allowed.allowed || allowed.grantId !== parent.definition.id)
+          if (
+            AccessPolicy.credentialUseRefusal(policy, itemId) ||
+            !allowed.allowed ||
+            allowed.grantId !== parent.definition.id
+          )
             return yield* new VaultError({ reason: "denied" });
         }
       });

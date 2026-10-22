@@ -1,5 +1,4 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
-import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
@@ -100,6 +99,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -1022,6 +1022,7 @@ function ScheduledTaskEditorForm({
 
   const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
+  const AccessIcon = runtimeModeConfig[draft.runtimeMode].icon;
   const activeSelection =
     draftSelection &&
     instanceEntries.some((entry) => entry.instanceId === draftSelection.instanceId && entry.enabled)
@@ -1333,15 +1334,6 @@ function ScheduledTaskEditorForm({
             />
           </Field>
 
-          {/* fork: vault-launch-ui */}
-          <VaultPromptAttachments
-            environmentId={environmentId}
-            projectId={draft.projectId || null}
-            threadId={draft.threadId || null}
-            prompt={draft.prompt}
-            onChange={(prompt) => setDraft((current) => ({ ...current, prompt }))}
-            disabled={saving || !connected}
-          />
           <Field label="Model">
             <div>
               <ProviderModelPicker
@@ -1359,6 +1351,39 @@ function ScheduledTaskEditorForm({
                 }
               />
             </div>
+          </Field>
+
+          <Field label="Access" htmlFor="scheduled-task-access">
+            <Select
+              value={draft.runtimeMode}
+              onValueChange={(runtimeMode) => {
+                if (runtimeMode) setDraft((current) => ({ ...current, runtimeMode }));
+              }}
+            >
+              <SelectTrigger size="sm" id="scheduled-task-access">
+                <AccessIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <SelectValue>{runtimeModeConfig[draft.runtimeMode].label}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {runtimeModeOptions.map((mode) => {
+                  const option = runtimeModeConfig[mode];
+                  const Icon = option.icon;
+                  return (
+                    <SelectItem key={mode} value={mode}>
+                      <div className="grid gap-0.5">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                          {option.label}
+                        </span>
+                        <span className="text-xs leading-4 text-muted-foreground">
+                          {option.description}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectPopup>
+            </Select>
           </Field>
 
           <div className="space-y-3">

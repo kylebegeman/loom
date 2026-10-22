@@ -1,6 +1,7 @@
 # L87 testing
 
-Status: acceptance targets for this packet. No complete packet implementation has been verified.
+Status: internal durable evidence ledger verified; live issuance/rotation acceptance remains open.
+The packet is not complete.
 Shared foundation checks are recorded in L79; they do not establish this packet's acceptance.
 
 ## Automated behavior
@@ -26,18 +27,22 @@ errors, focus restoration and every reverse action.
 
 ## Focused verification commands
 
-Once implementation files exist, assign concrete test filenames in this document and run:
+From `apps/server`:
 
 ```sh
-vp test run apps/server/src/fork/vault-lifecycle/service.test.ts
-vp lint apps/server/src/fork/vault-lifecycle
-vp run --filter t3 typecheck
+../../node_modules/.bin/vp test run src/fork/vault/CredentialLifecycleLedger.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 src/fork/vault/testkit/journal_proof.py --bao /verified/path/to/bao
 ```
 
-The test path above is the proposed service-test target, not a file present today. Add targeted
-client-runtime/contract tests and consumer typechecks only for changed packages. Mobile work
-also requires the mobile static check. Do not run these speculative paths now or invoke
-repo-wide checks. Use worker drains, persisted milestones or controlled clocks for async tests.
+The 15 lifecycle unit cases pass. They cover issuance/consumer-validation/revocation records,
+monotonic generations, lost intent acknowledgements, persistent unknown states without remint,
+immutable references/issuer/consumer binding, stale CAS, forbidden phase skips, expiry with
+maintenance still permitted, corruption/future versions, capacity refusal and server timestamps.
+The disposable OpenBao proof reloads issuing evidence after an actual backend restart, verifies
+existing profiles/* rights/json-v1 envelopes/sibling denial and keeps policy-format-3 approvals
+readable. See [L84 testing](../L84-vault-test-accounts/TESTING.md#durable-maintenance-ledger-evidence)
+for combined checks. No live provider operation, rotation, broker process restart or cutover is
+claimed. The internal ledger has no client/agent surface or enabled execution worker.
 
 ## Merge safety and results
 

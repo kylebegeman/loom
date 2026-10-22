@@ -1,4 +1,3 @@
-import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -6527,15 +6526,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             restingControlsHost,
           )
         : null}
-      {/* fork: vault-launch-ui */}
-      <VaultPromptAttachments
-        environmentId={environmentId}
-        projectId={pullRequestProjectId}
-        threadId={routeKind === "server" ? routeThreadRef.threadId : null}
-        prompt={prompt}
-        onChange={setPromptFromTraitsStable}
-        disabled={!canOperateThread}
-      />
       <ComposerBanner.Dock>
         <ComposerBanner.Column>
           <ComposerBannerStack

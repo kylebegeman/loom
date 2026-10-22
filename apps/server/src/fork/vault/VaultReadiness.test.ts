@@ -1,4 +1,4 @@
-import { newerVaultRun } from "./VaultActiveRun.testkit.ts";
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId } from "@t3tools/contracts";
@@ -481,6 +481,25 @@ it.effect.each(["cancelled", "completed"] as const)(
           expect.objectContaining({ id: "broker-delivery", state: "unsupported" }),
         );
         expect(report.ready).toBe(false);
+      }),
+    ),
+);
+
+it.effect(
+  "reports a queued active root run as live, without treating background drain as root ownership",
+  () =>
+    withFixture((f) =>
+      Effect.gen(function* () {
+        yield* f.grant(f.key.destination);
+        f.state.runs.push(vaultRun(f.state.thread));
+        f.state.thread = { ...f.state.thread, status: "queued" };
+        expect(
+          (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,
+        ).toContainEqual(expect.objectContaining({ id: "provider-runtime", state: "passed" }));
+        f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
+        expect(
+          (yield* f.service.check({ threadId: f.threadId, requirements: [] })).checks,
+        ).toContainEqual(expect.objectContaining({ id: "provider-runtime", state: "blocked" }));
       }),
     ),
 );

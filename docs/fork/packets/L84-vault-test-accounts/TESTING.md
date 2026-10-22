@@ -3,6 +3,19 @@
 Status: **Local pool and authenticated run reservation milestones verified within the limits below.** Full
 packet acceptance remains unfinished. Implementation base is current fork main `4070ef99a2`.
 
+## Python requirement for mail proofs
+
+The Migadu Python suites and the broker/mail cases in `VaultTestAccountWorkloads.test.ts`
+require **Python 3.13 or newer**, with that interpreter available as `python3` on `PATH`.
+The TypeScript suite launches `python3` directly; macOS `/usr/bin/python3` 3.9 is insufficient
+and produces the adapter's deliberate unavailable result. Select an installed 3.13+ Python
+in the shell before running either suite. Check from `apps/server`:
+
+```sh
+python3 -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ must be python3 on PATH"'
+../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts src/fork/vault/SyntheticCleanupBarrier.test.ts
+```
+
 ## Selected Loom target evidence
 
 On 2026-10-20 the operator-only `loom_test_instance.py prepare/start/prove` workflow ran against
@@ -22,7 +35,7 @@ runtime session provisioning/reset, not an email/password account, browser logou
 provisioning, app-data reset or durable broker cleanup. A crashed operator proof can leave its
 session until the five-minute TTL. No execution, resumption or allow-once flag changes.
 
-Fifty-three focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
+Fifty-six focused local-target Python cases pass from `apps/server`, also with `TMPDIR=/var/tmp`
 to exercise macOS's `/var` symlink. Cases cover independent Git metadata, core.worktree escapes,
 foreign common/absolute Git directories, symlinked objects/refs, alternates, owned interrupted-init
 repair and unowned-init refusal. Start refuses a live PID and creates the HOME/XDG/gh sandbox;
@@ -124,9 +137,9 @@ records the dedicated-mail setup and remaining live acceptance.
 
 ## Migadu contract evidence
 
-Thirty-nine focused Migadu Python tests pass from `apps/server`: 35 message/selection/budget
+Forty-six focused Migadu Python tests pass from `apps/server`: 42 message/selection/budget
 cases and four stdlib IMAP-over-TLS cases against a disposable loopback server. Together with
-the 53 local-target cases, **92 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
+the 56 local-target cases, **102 tests pass**, normally and with `TMPDIR=/var/tmp`. The four TLS
 cases also pass using stock macOS `/usr/bin/openssl` through `PATH=/usr/bin:/bin` and the current
 Python executable. Temporary certificates use portable `-nodes`; fixture keys are removed on
 cleanup. Both untrusted certificates and a trusted certificate for another hostname refuse
@@ -150,8 +163,10 @@ Independent body cases change INTERNALDATE, RFC822.SIZE and literal length while
 routing headers, each withdrawing the entire observation. A three-message expiry case proves
 only the first body is fetched. Private-provider failures check formatted traceback, cause and
 suppressed context, in addition to fixed public error text. Finite flooding-socket fixtures drive
-both untagged lines (5 MB offered) and repeated literals (10 MB offered) through actual imaplib
-parsing and stop near the 2 MB logical-byte budget, allowing one stdlib receive buffer of read-ahead.
+short untagged lines (5 MB offered), near-maximum 999 KB lines (about 8 MB offered) and repeated
+literals (10 MB offered) through actual imaplib parsing. Delivery is bounded by the logical-byte
+budget plus one stdlib maximum line and socket read-ahead, rather than by one receive buffer
+alone. The long-line case fails the former one-buffer assertion.
 Expired readline refuses before socket access. No sleeps or live network destinations are used.
 
 A separate no-sleep slow-drip reproduction confirms optional s1: one read can finish after 45
@@ -159,7 +174,7 @@ simulated seconds despite a thirty-second boundary budget. This remains explicit
 not claimed fixed. No live-read gate is opened. The proposed `vault-reader@begam.in` login is
 now named in the mail-owner handoff; its setup is not claimed.
 
-An in-memory mutation pass kills **28/28 mutants**, without changing the disk source:
+The earlier in-memory mutation pass killed **28/28 mutants**, without changing the disk source:
 
 | Review item | Mutations caught                                                                                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -176,6 +191,23 @@ An in-memory mutation pass kills **28/28 mutants**, without changing the disk so
 | m12         | Certificate hostname verification disabled despite a trusted wrong-host certificate.                                                                                |
 | m13         | In-loop request expiry removed; provider exception-context suppression removed.                                                                                     |
 | c2, c3      | Header-object defects ignored; vanished-FETCH handling removed.                                                                                                     |
+
+The round-2 residual follow-up adds seven inbox cases and three local-target cases. Parser
+failures in From/To/Cc and malformed MIME parameters preserve a different UID's valid text in
+both UID orders. Server-style field selection continues past malformed fields until the first
+blank line, exposing the before-routing structural defect. Display names with periods/raw UTF-8
+remain usable; noncanonical aliases in Delivered-To/X-Original-To refuse correlation. Metadata-only
+or empty FETCH replies report unavailable rather than aborting. Stamped, stopped, HEAD-less Git
+fixtures recover stale config/HEAD locks and Git's exact symlink probe; foreign layouts and live
+runtime records refuse before artifact cleanup or an init subprocess.
+
+A fresh in-memory mutation pass catches **13/13 mutations**: narrow header-object exceptions,
+unguarded header parse, omitted body IndexError handling, restored structural-defect drift,
+blanket display-name rejection, excluded noncanonical aliases, all-None-only FETCH handling,
+omitted transfer accounting, the former one-buffer assertion, omitted init-artifact cleanup,
+refused init probe, omitted pre-init layout scan and omitted live-process refusal. Each is caught
+by a focused regression; disk source is not mutated. The normal and `/var/tmp` runs both pass
+102 tests. No live reads, runtime registration, persistent format or access gate changes.
 
 m7 is the tracker correction restoring durable broker delivery alongside broker mail integration.
 c1 is the explicit proposed reader identity in the handoff. Existing search/epoch/identity,
@@ -201,10 +233,90 @@ contract has no credential-file export, product CLI/MCP/RPC surface, backend pat
 format change. `canReadLive`, `canExecute`, resumption, verification and allow-once gates remain
 false; L84 remains partial.
 
+## Retained cleanup/reset design proof
+
+The new `SyntheticCleanupBarrier.test.ts` has **51 passing cases** against an opaque in-memory
+CAS store and a separately retained synthetic provider ledger. Controllers are reconstructed
+at intent, external-effect and receipt/write boundaries. This is simulated crash/restart evidence,
+not an OS-process, durable storage, real provider or production deployment exercise.
+
+Cases prove write-before-start with before/after-commit failures; no automatic remint after a
+lost start response; unknown/forged/error/lost fence evidence; before/after reset-intent failures;
+provider failure/lost receipt; readiness write failure/lost acknowledgement; same-ID reset retry;
+foreign scope/generation/operation receipts; concurrent CAS admission; delayed start after fence
+and generation advance; stale cleanup/reset receipts that cannot clear a newer operation;
+controller rollback refused by provider generation; missing/outage state; unchanged barriers after
+thirty days; fresh lease/operation requirements; scope/version changes; and resource/replay/reset
+capacity refusal without eviction. Deferred interleavings and fiber interruption use no sleeps
+or polling. Separate start and maintenance authority allow host cleanup after workload revocation.
+The result gates remain false and no pool account is marked clean.
+
+All **11 guard-removal mutations are caught**: omitted write-ahead intent; reset before terminal
+fence; unknown fence accepted; mismatched fence/reset receipt accepted; stale cleanup writing
+against a fresh revision; forgotten operation ID; forgotten lease ID; provider-generation
+comparison omitted; capacity guard omitted; and reset ID rebound to a later generation. Each
+mutant runs the matching behavioral regression and is restored before final verification.
+The rollback case uses a fresh operation ID so an old operation's terminal fence cannot mask a
+missing provider-generation check. The original in-memory proof adds no serialized fixture or persistent backend. The later
+durable adapter is verified separately below.
+
+Final package-CWD verification passes **158 tests** across the 51 barrier and 107 workload cases.
+Server typecheck, changed-file lint, 398 seam entries/unlisted-marker scan, local doc references
+and whitespace pass. No Python, client, native or provider code changes in this slice, so the
+earlier Python and app-interaction checks are not claimed as new runs.
+
+```sh
+# From apps/server:
+../../node_modules/.bin/vp test run src/fork/vault/SyntheticCleanupBarrier.test.ts \
+  src/fork/vault/VaultTestAccountWorkloads.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
+The [design](./TECHNICAL.md#cleanup-and-reset-before-reuse-barrier-design) states the required
+terminal fence and provider-generation semantics, atomic CAS boundaries, reader/rollback and
+reclamation gates. Only test files import the model. It changes no runtime transport, backend
+path/capability, persistent reader/schema or policy/journal/registry format. Existing live cleanup,
+provider identity and reset/reuse integration remain unfinished.
+
+## Synthetic broker/mail integration evidence
+
+The workload suite adds **55 cases** and passes **106 total** from `apps/server`. Combined with
+five seeder and three fixture-home cases, the focused run passes **114 tests**. Server typecheck
+and changed-file lint pass. The Python suites remain green at 92 cases under both normal temp
+configuration and `TMPDIR=/var/tmp`; syntax, links, seams and whitespace pass.
+
+The positive integration launches a bounded, cancellable Python child that uses the actual
+inbox selector over synthetic messages: a different run's UID is not body-fetched, an unusable
+matched UID is visible, and the valid UID remains usable. Raw body/reader/session canaries are
+absent from the metadata-only result. Its gates remain false. No network connection, real mail,
+provider or new browser/native pass is involved.
+
+Cases prove fifteen forged initial scope fields refuse even when adapter registration agrees,
+and nineteen registration-field changes refuse before reading. A separate real evaluator grant
+on a synthetic reader reference is required. Revocation before read, at the adapter boundary,
+after the awaited observation or during cleanup withdraws the result. Root-run replacement,
+lease release, reader rotation, expiry and broker-offline transitions also refuse. Receipt tests
+reject foreign scope/correlation/recipient/folder, out-of-range UID, inconsistent status, raw body
+fields and enabled gates.
+
+Deferred-only interleavings prove delayed observation refusal after broker reconciliation and
+cleanup fencing on cancellation. An unknown cleanup withholds metadata; later cleanup can fence
+but cannot reread/resume. Accounts stay reserved, not automatically clean or reusable. The
+correlation echo does not authenticate mail. This remains test-only, with no durable cleanup
+journal, live credential delivery, product grant namespace, API, policy or format change.
+
+```sh
+# From apps/server:
+../../node_modules/.bin/vp test run src/fork/vault/VaultTestAccountWorkloads.test.ts \
+  scripts/seed-dev-db.test.ts src/fork/dev-fixtures/fixtureHome.test.ts
+../../node_modules/.bin/vp run typecheck
+```
+
 ## Authenticated workload evidence
 
-Four focused suites pass **66 tests**: 13 manager cases, 51 real-service workload/contract
-cases, one MCP authorization case and real startup registration. Workload tests use the real
+The focused workload suite now passes **106 tests**, including 55 new broker/mail composition
+cases. The earlier four-suite baseline passed 66 tests (13 manager, 51 workload, MCP authorization
+and startup registration); the unchanged manager/MCP suites are prior evidence. Workload tests use the real
 account registry, VaultCore and VaultAccess evaluator with synthetic external storage/thread
 boundaries. They prove inspect plus use and exact pool destination filtering; no discovery writes;
 no other-owner/unrelated-collection leakage; audited reserve; exact run/lease release; renewal;
@@ -362,7 +474,8 @@ post-await revalidation refuses each case. These are synthetic service tests, no
 
 ## Synthetic broker contract
 
-The server package-CWD workload suite passes 51 tests, including 25 broker-contract cases.
+The server package-CWD workload suite passes 106 tests, including 25 broker-contract cases and
+55 broker/mail composition cases.
 It uses the real account/grant admission service and a fake broker, with no credential reveal.
 Cases cover environment/machine/app/target/origin mismatch, offline/expired presence, registered
 origin changes at the adapter boundary, forged return correlation, grant/run/lease/expiry changes,
@@ -392,3 +505,37 @@ A Deferred-interleaved start now waits after minting while reconciliation closes
 operation. Releasing that delayed response must return denied, keep the operation closed, skip
 the callback and perform cleanup only once. The regression fails with the previous unconditional
 activation; starting-to-active now requires an atomic state claim.
+
+The barrier review regressions add same-generation controller rollback before and after fencing,
+and reset replay from fenced/resetting snapshots after a new start or generation advance. The
+mail regression passes admission B to a delivery captured under A and requires refusal before
+session start or mailbox read. All six new cases fail against the previous implementation and
+pass with provider spent-generation/reset-currentness checks and delivery-admission correlation.
+
+## Durable maintenance ledger evidence
+
+The focused package-CWD suite now includes `CleanupLedger.test.ts` (17 cases),
+`CredentialLifecycleLedger.test.ts` (15), the 51 cleanup-controller cases, 107 workload cases
+and 8 intent-boundary cases: **198 tests**. Ledger tests cover acknowledged and lost CAS,
+reconstruction after committed/unknown start, corrupt/foreign/unsupported records, duplicate
+or orphaned history, replay-set preservation after two days, capacity refusal, immutable scope,
+forged phase skips, stale revisions and backward clocks before dispatch. Lifecycle tests also
+cover immutable issuer/consumer/reference binding, terminal generation advance and maintenance
+after expiry. All execution gates remain closed.
+
+`journal_proof.py` now also runs `MaintenanceLedgers.integration.test.ts` from `apps/server`
+before and after a real disposable OpenBao 2.7.1 restart. It uses the existing documented
+profiles/* capability without adding policy rights, verifies both json-v1 envelopes, reloads
+uncertain cleanup and issuing evidence, refuses a second start and sibling-environment writes,
+and decodes format-3 approval state alongside both records. Across journal and maintenance
+suites, four real-backend cases pass (plus two phase-specific skips). Provider behavior stays
+synthetic; this is storage restart and compatibility evidence, not live issuer/fence acceptance.
+
+```sh
+# From apps/server, with Python 3.13+ selected as python3:
+../../node_modules/.bin/vp test run src/fork/vault/CleanupLedger.test.ts src/fork/vault/CredentialLifecycleLedger.test.ts src/fork/vault/SyntheticCleanupBarrier.test.ts src/fork/vault/VaultTestAccountWorkloads.test.ts src/fork/vault/OperationIntentBoundary.proof.test.ts
+PYTHONDONTWRITEBYTECODE=1 python3 src/fork/vault/testkit/journal_proof.py --bao /verified/path/to/bao
+```
+
+Scoped server typecheck, changed-file lint, Python syntax, seam/link and whitespace checks pass.
+No client, MCP/RPC, Library, production policy, installed service or live gate changed.

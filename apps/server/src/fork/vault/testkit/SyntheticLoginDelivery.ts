@@ -39,6 +39,19 @@ type State =
   | "cleanup-required"
   | "closed"
   | "refused";
+export const syntheticLoginAdmissionScope = (admission: VaultTestAccountLoginAdmission) =>
+  JSON.stringify([
+    admission.account.id,
+    admission.account.itemId,
+    admission.account.itemVersion,
+    admission.collection.id,
+    admission.collection.application,
+    admission.collection.target,
+    admission.leaseId,
+    admission.expiresAt,
+    admission.origin,
+    admission.destination,
+  ]);
 export const syntheticLoginDelivery = Effect.fnUntraced(function* (
   operationId: string,
   expected: { readonly environmentId: string; readonly machineId: string },
@@ -48,12 +61,16 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
   },
   adapter: SyntheticLoginAdapter,
 ) {
+  const admission = Object.freeze({
+    ...prepared.report,
+    account: Object.freeze({ ...prepared.report.account }),
+    collection: Object.freeze({ ...prepared.report.collection }),
+  });
   const state = yield* Ref.make<State>("pending");
   const denied = () => new VaultError({ reason: "denied" });
   const validate = Effect.gen(function* () {
     yield* prepared.revalidate;
     const broker = yield* adapter.observe;
-    const admission = prepared.report;
     if (
       broker.environmentId !== expected.environmentId ||
       broker.machineId !== expected.machineId ||
@@ -87,6 +104,12 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
     );
   });
   return {
+    binding: Object.freeze({
+      operationId,
+      environmentId: expected.environmentId,
+      machineId: expected.machineId,
+      admissionScope: syntheticLoginAdmissionScope(admission),
+    }),
     snapshot: Ref.get(state),
     gates: {
       canDeliver: false as const,
@@ -109,12 +132,12 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
                 yield* Effect.addFinalizer(() => cleanup);
               }),
             );
-            const session = yield* adapter.start({ operationId, admission: prepared.report });
+            const session = yield* adapter.start({ operationId, admission });
             if (
               session.operationId !== operationId ||
               session.machineId !== expected.machineId ||
-              session.leaseId !== prepared.report.leaseId ||
-              session.origin !== prepared.report.origin
+              session.leaseId !== admission.leaseId ||
+              session.origin !== admission.origin
             )
               return yield* denied();
             const activated = yield* Ref.modify(state, (current) =>

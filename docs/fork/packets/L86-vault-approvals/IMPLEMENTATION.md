@@ -1,9 +1,16 @@
 # L86 implementation plan
 
-Status: In progress; timed approvals, requester lifecycle and bounded queue retention implemented. The sequence below describes the full packet outcome;
+Status: In progress; timed approvals, requester lifecycle, bounded queue retention and gated format-4 preparation implemented. The sequence below describes the full packet outcome;
 see README for delivered progress and remaining work.
 
 ## Delivered milestone and next work
+
+The approved format-4 reader/writer contract adds mandatory credential classification and
+bounded exact-intent evidence in the existing policy CAS. Existing policies remain format 3;
+migration is preview-only. Protected/unclassified use refuses at evaluator and raw reveal
+boundaries. Internal review, reservation, status and close are gated preparation with no public
+surface or execution authority. Exact-operation review UI, live dispatcher and host rollout
+remain open. See TECHNICAL for the reader and downgrade contract.
 
 The existing access service now atomically stores bounded durable requests, reviewed timed
 decisions and grants in its existing policy. Web/desktop and mobile inboxes expose approve,
@@ -126,8 +133,9 @@ timeout. This is test/design only; no permit, persisted intent or dispatcher is 
 Mandatory intent boundary design now covers caller omissions, trusted destination classification,
 child/grandchild delegation and alternate service/transport entry points. A test-local model
 refuses fallback and unsupported reusable sessions/raw release; the real evaluator counterexample
-shows timed attenuation does not bind an intent budget. Environment/item-wide classification is
-a conservative future recommendation, not a selected persisted schema or changed product policy.
+shows timed attenuation does not bind an intent budget. Kyle selected environment/item-wide protection for every Loom-mediated use on 2026-10-20;
+ordinary grants cannot bypass it. This does not select a persisted schema or change today's
+timed approvals.
 The current services do not implement mandatory intent enforcement.
 
 The temporal design proof now covers classification/coverage/binding/authority changes during
@@ -139,7 +147,7 @@ services still do not enforce persisted one-time intent or its mandatory/tempora
 The selected bounded synthetic review is complete. No further independent synthetic L86 slice
 is selected: persistence/readers, protected-item semantics, an implementable consistency boundary,
 restart-safe cleanup and rollback protection require the named owners' decisions and real proofs.
-See [the next-owner handoff](../IMPLEMENT-NOW.md#l86-next-owner-handoff) for each owner and the
+See [the next-owner handoff](../IMPLEMENT-NOW.md#vault-completion-dependencies) for each owner and the
 check that permits the next step. Stop this lane after landing this test/docs slice; retain its
 worktree and unrelated result.json. Do not infer approval to persist new fields, change formats
 or enable execution/resumption/allow-once from these model results.

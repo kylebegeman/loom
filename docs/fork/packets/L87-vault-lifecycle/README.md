@@ -1,6 +1,8 @@
 # L87: Credential lifecycle automation and short-lived access
 
-Status: Selected for implementation by Kyle on 2026-10-17. Queued; full packet scope retained.
+Status: In progress. Kyle selected the full scope on 2026-10-17 and approved separate durable
+ledgers on 2026-10-20. Internal issuance/validation/revocation evidence now persists via CAS;
+live issuer integration, consumer cutover and review/repair surfaces remain. Gates stay closed.
 
 Issue temporary access and rotate long-lived credentials without losing track of consumers.
 

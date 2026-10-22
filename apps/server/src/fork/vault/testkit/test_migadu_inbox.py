@@ -40,9 +40,17 @@ def selected_headers(body: bytes, fetch: str) -> bytes:
     if fields is None:
         raise AssertionError("Expected a HEADER.FIELDS request")
     allowed = fields[1].lower().split()
-    parsed = BytesParser(policy=policy.compat32).parsebytes(body, headersonly=True)
-    return b"".join(name.encode() + b": " + value.encode("ascii", "surrogateescape").replace(b"\r\n", b"\n").replace(b"\n", b"\r\n") + b"\r\n"
-                    for name, value in parsed.raw_items() if name.lower() in allowed) + b"\r\n"
+    # The server scans until the blank line, even if Python would stop at a malformed field.
+    lines = body.replace(b"\r\n", b"\n").split(b"\n\n", 1)[0].split(b"\n")
+    selected: list[bytes] = []
+    include = False
+    for line in lines:
+        if not line.startswith((b" ", b"\t")):
+            include = line.split(b":", 1)[0].lower() in {name.encode() for name in allowed}
+        if include:
+            selected.append(line)
+    return b"\r\n".join(selected) + b"\r\n\r\n"
+
 
 
 class FixtureClient:
@@ -425,6 +433,77 @@ class TestMigaduInbox(unittest.TestCase):
         self.assertEqual([entry["uid"] for entry in result["messages"]], [2])
         self.assertEqual(client.body_fetches, [2])
 
+    def test_hostile_header_parser_failures_do_not_withdraw_a_valid_message(self):
+        for name in ("From", "To", "Cc"):
+            for value in ("Prize,\t: <spam@unrelated.example>", "a@b " + "(" * 3000):
+                for bad_uid in (1, 2):
+                    fields = {"From": "spam@unrelated.example", "To": "unrelated@example.com", name: value}
+                    body = ("\r\n".join(f"{key}: {value}" for key, value in fields.items()) + "\r\n\r\nSpam").encode()
+                    client = FixtureClient({bad_uid: body, 3 - bad_uid: message()}, fallback=True)
+                    with self.subTest(name=name, value=value[:24], bad_uid=bad_uid):
+                        result = self.read(client)
+                        self.assertEqual([entry["uid"] for entry in result["messages"]], [3 - bad_uid])
+                        self.assertEqual(client.body_fetches, [3 - bad_uid])
+
+    def test_message_error_during_header_construction_is_a_nonmatch(self):
+        parsed = BytesParser(policy=policy.default).parsebytes(message())
+        with patch.object(parsed, "get_all", side_effect=inbox.MessageError("synthetic header failure")):
+            self.assertFalse(inbox.matches(parsed, REQUEST))
+
+    def test_header_parse_failure_is_a_nonmatch(self):
+        original = inbox.BytesParser.parsebytes
+        for error in (inbox.MessageError, IndexError, RecursionError):
+            def parse(parser, raw, *args, **kwargs):
+                if b"hostile-parse-canary" in raw:
+                    raise error("hostile-parse-canary")
+                return original(parser, raw, *args, **kwargs)
+            client = FixtureClient({1: message(sender="hostile-parse-canary@example.com"), 2: message()})
+            with self.subTest(error=error.__name__), patch.object(inbox.BytesParser, "parsebytes", parse):
+                self.assertEqual([entry["uid"] for entry in self.read(client)["messages"]], [2])
+
+    def test_malformed_header_before_routing_is_unusable_not_drift(self):
+        for malformed in (b"X-Campaign : welcome", b"not a header", b"X-\xff: welcome"):
+            for position in ("before", "between"):
+                prefix = f"From: {SENDER}\r\nTo: {REQUEST.recipient}\r\n".encode()
+                if position == "before":
+                    raw = malformed + b"\r\n" + prefix
+                else:
+                    raw = prefix.replace(b"\r\nTo:", b"\r\n" + malformed + b"\r\nTo:")
+                for bad_uid in (1, 2):
+                    with self.subTest(malformed=malformed, position=position, bad_uid=bad_uid):
+                        result = self.read(FixtureClient({bad_uid: raw + b"\r\nWelcome", 3 - bad_uid: message()}))
+                        self.assertEqual([entry["uid"] for entry in result["messages"]], [3 - bad_uid])
+                        self.assertEqual(result["candidates"], [{"uid": bad_uid, "status": "unusable", "reason": "invalid-mime"}])
+
+    def test_body_parameter_parser_failure_does_not_withdraw_a_valid_message(self):
+        for content_type in ("text/plain; charset*", "multipart/mixed; boundary*", "text/plain; a*0*"):
+            raw = f"From: {SENDER}\r\nTo: {REQUEST.recipient}\r\nContent-Type: {content_type}\r\n\r\nWelcome".encode()
+            for bad_uid in (1, 2):
+                with self.subTest(content_type=content_type, bad_uid=bad_uid):
+                    result = self.read(FixtureClient({bad_uid: raw, 3 - bad_uid: message()}))
+                    self.assertEqual([entry["uid"] for entry in result["messages"]], [3 - bad_uid])
+                    self.assertEqual(result["candidates"], [{"uid": bad_uid, "status": "unusable", "reason": "invalid-mime"}])
+
+    def test_ordinary_display_name_defects_do_not_hide_valid_mail(self):
+        for name, value in (("From", f"Acme Inc. <{SENDER}>"), ("From", f"Café <{SENDER}>"),
+                            ("To", f"Vault Q. Test <{REQUEST.recipient}>")):
+            raw = f"From: {SENDER}\r\nTo: {REQUEST.recipient}\r\n\r\n123456".encode()
+            old = f"{name}: {SENDER if name == 'From' else REQUEST.recipient}".encode()
+            raw = raw.replace(old, f"{name}: {value}".encode())
+            with self.subTest(name=name, value=value):
+                result = self.read(FixtureClient({1: raw}))
+                self.assertEqual(result["status"], "found")
+                self.assertIn("123456", result["messages"][0]["text"])
+
+    def test_unstructured_routing_headers_cannot_hide_noncanonical_run_aliases(self):
+        other = REQUEST.recipient.replace(RUN, OTHER_RUN)
+        for name in ("Delivered-To", "X-Original-To"):
+            for value in (other + ".", REQUEST.recipient + ", " + other + ".", other + " x"):
+                client = FixtureClient({1: message(extra={name: value})})
+                with self.subTest(name=name, value=value):
+                    self.assertEqual(self.read(client)["messages"], [])
+                    self.assertEqual(client.body_fetches, [])
+
     def test_same_second_mail_is_not_lost_to_local_microseconds(self):
         request = inbox.Request(RUN, NOW.replace(microsecond=800000), SENDER)
         client = FixtureClient()
@@ -473,7 +552,8 @@ class TestMigaduInbox(unittest.TestCase):
 
     def test_vanished_uid_does_not_withdraw_another_message(self):
         for phase in ("header", "body"):
-            for reply in (("OK", [None]), ("NO", [b"message no longer exists"])):
+            for reply in (("OK", [None]), ("NO", [b"message no longer exists"]),
+                          ("OK", [b"2 (UID 1 FLAGS (\\Seen))"]), ("OK", [b"", None])):
                 client = FixtureClient({1: message(), 2: message()}, fallback=True)
                 original = client.uid
 
@@ -520,17 +600,20 @@ class TestMigaduInbox(unittest.TestCase):
                 self.assertNotIn("forwarded-secret-canary", json.dumps(result))
 
     def test_aggregate_budget_stops_untagged_line_and_literal_floods(self):
-        for literals in (False, True):
-            if literals:
+        for mode in ("short-lines", "long-lines", "literals"):
+            if mode == "literals":
                 record = b"* 1 FETCH (BODY[] {200000}\r\n" + b"x" * 200000 + b")\r\n"
                 flood = record * 50
             else:
-                flood = (b"* OK " + b"x" * 1000 + b"\r\n") * 5000
+                line_size = 999_000 if mode == "long-lines" else 1000
+                flood = (b"* OK " + b"x" * line_size + b"\r\n") * (8 if mode == "long-lines" else 5000)
             socket = FloodSocket(b"* OK synthetic ready\r\n" + flood)
-            with self.subTest(literals=literals), patch.object(inbox.BoundedImap, "_create_socket", return_value=socket):
+            with self.subTest(mode=mode), patch.object(inbox.BoundedImap, "_create_socket", return_value=socket):
                 with self.assertRaises(inbox.InboxError):
                     inbox.BoundedImap()
-                self.assertLessEqual(socket.stream.delivered, inbox.MAX_TRANSFER_BYTES + imaplib.DEFAULT_BUFFER_SIZE)
+                # readline accounts after a whole stdlib line, in addition to socket read-ahead.
+                self.assertLessEqual(socket.stream.delivered,
+                                     inbox.MAX_TRANSFER_BYTES + imaplib._MAXLINE + imaplib.DEFAULT_BUFFER_SIZE)
 
     def test_expired_readline_deadline_stops_before_socket_access(self):
         client = object.__new__(inbox.BoundedImap)

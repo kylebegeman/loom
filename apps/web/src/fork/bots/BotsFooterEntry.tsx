@@ -5,19 +5,22 @@ import { useBotsAttentionCount } from "./state";
 const footerLabel = (count: number) =>
   count === 0 ? "Bots" : `Bots, ${count} ${count === 1 ? "needs" : "need"} attention`;
 
+// The icon stays a direct child of the menu button so it gets the button's icon size and
+// colors, and the badge sits inside the button's corner: the button clips overflow and
+// truncates its last span child, which cut off a badge hung outside the icon.
 function FooterIcon({ count }: { readonly count: number }) {
   return (
-    <span className="relative inline-flex">
+    <>
       <BotIcon />
       {count === 0 ? null : (
         <span
           aria-hidden
-          className="absolute -top-1.5 -right-2 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-foreground px-0.5 text-3xs font-medium text-background ring-2 ring-sidebar-control-surface"
+          className="pointer-events-none absolute top-0.5 right-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-foreground px-0.5 text-3xs leading-none font-medium text-background ring-2 ring-sidebar-control-surface"
         >
           {count > 99 ? "99+" : count}
         </span>
       )}
-    </span>
+    </>
   );
 }
 

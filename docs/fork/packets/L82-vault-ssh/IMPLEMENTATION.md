@@ -20,7 +20,7 @@ with repository-specific grants. Project profiles and searchable references are 
 section now provides explicit per-child ordinary SSH/Git routing, including clone/fetch/push,
 with run-owned host-bound signing and live policy checks. The real CLI path is verified against
 disposable OpenSSH/OpenBao. Pi/ACP terminal connections are recognized; automatic terminal
-connection propagation for remaining native harnesses is the next proposed section. Imports,
+connection propagation for Codex/Claude is implemented; other native harnesses remain open. Imports,
 additional algorithms, persistent shell attachment, Windows and production registration remain
 pending. The narrower hosted Git tool continues to support ref listing/fetch.
 No existing Git remote or personal 1Password configuration was changed.

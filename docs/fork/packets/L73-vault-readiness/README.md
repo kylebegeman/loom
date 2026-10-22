@@ -8,8 +8,11 @@ V01 | Minor improvement | Complexity: Medium | Impact: High
 
 ## Delivered milestone
 
-The local milestone checks OpenBao connectivity, authenticated thread liveness and up to
-16 explicit item/action/destination requirements through the execution evaluator. Results name
+Readiness checks OpenBao connectivity, authenticated root-run liveness and up to
+16 explicit item/action/destination requirements through the execution evaluator. Empty
+requirements use the active run's retained profile, including pinned credential versions, or
+the future-run default only when no pin exists. SSH/Git requirements inspect enrolled-broker
+presence; configuration preflight never pretends to be a live authentication probe. Results name
 the Loom server context, include repair guidance and expire after 60 seconds. Web/desktop and
 mobile can cancel a pending check; RPC, CLI and MCP use the same bounded service.
 
@@ -19,9 +22,10 @@ GitHub authentication, host trust, provider tools or unattended launch readiness
 
 ## Remaining selected scope
 
-Implement enrolled broker/runner context probes, profile requirement discovery, harmless
-SSH/GitHub/provider checks and network/host-trust/tool failure classification. Integrate
-preflight with project launches and schedules. Durable long-running check operations are not
+Selected-host broker/runner execution and additional provider checks, broader failure
+classification and integrated remote/platform acceptance remain. Profile discovery, retained-pin
+revalidation, observational broker presence and launch/schedule configuration guards are
+implemented. Explicit GitHub API/GH CLI/Git HTTPS checks use the connector readiness service. Durable long-running check operations are not
 needed by the current bounded server check, but remain required for future external probes.
 
 ## Scope

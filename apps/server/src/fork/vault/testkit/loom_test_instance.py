@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import shutil
 import subprocess
 import sys
@@ -106,7 +107,7 @@ def require_stopped(home: Path) -> None:
     raise InstanceError("Stop the dedicated test instance before preparing or starting it again.")
 
 
-def require_git_layout(workspace: Path) -> None:
+def require_git_layout(workspace: Path, *, allow_init_probe: bool = False) -> None:
     git_directory = workspace / ".git"
     # pathlib globbing can silently omit unlistable directories, which Git can still traverse.
     try:
@@ -117,6 +118,11 @@ def require_git_layout(workspace: Path) -> None:
             with os.scandir(pending.pop()) as entries:
                 for entry in entries:
                     if entry.is_symlink():
+                        # git init can leave its local symlink-support probe after interruption.
+                        if (allow_init_probe and Path(entry.path).parent == git_directory
+                                and re.fullmatch(r"t[A-Za-z0-9]{6}", entry.name)
+                                and os.readlink(entry.path) == "testing"):
+                            continue
                         raise InstanceError("The synthetic Git metadata must not share or redirect storage.")
                     if entry.is_dir(follow_symlinks=False):
                         pending.append(Path(entry.path))
@@ -174,7 +180,6 @@ def initialize_git_fixture(home: Path) -> None:
         if path.is_symlink():
             raise InstanceError("The synthetic workspace must not redirect to another location.")
     if git_directory.exists():
-        require_git_layout(workspace)
         if (git_directory / "HEAD").exists():
             require_git_boundary(home)
             return
@@ -182,6 +187,15 @@ def initialize_git_fixture(home: Path) -> None:
         if (not ownership.exists() or read_json(ownership) != owner
                 or (git_directory / "commondir").exists()):
             raise InstanceError("Refusing to repair Git metadata not created by this harness.")
+        require_stopped(home)
+        require_git_layout(workspace, allow_init_probe=True)
+        try:
+            # Only stamped, HEAD-less fixtures may discard these interrupted-init artifacts.
+            for path in git_directory.iterdir():
+                if path.is_symlink() or path.name in ("config.lock", "HEAD.lock"):
+                    path.unlink()
+        except OSError:
+            raise InstanceError("The interrupted Git initialization could not be prepared for retry.") from None
     else:
         private_json(ownership, owner)
     env = isolated_environment(dict(os.environ), home)

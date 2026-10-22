@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email import policy
-from email.errors import MessageError
+from email.errors import MessageError, ObsoleteHeaderDefect, UndecodableBytesDefect
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import getaddresses
@@ -156,25 +156,27 @@ def matches(message: EmailMessage, request: Request) -> bool:
     try:
         from_headers = message.get_all("From", [])
         recipient_headers = [value for name in RECIPIENT_HEADERS for value in message.get_all(name, [])]
+        # Display-name punctuation and raw UTF-8 do not change the strictly parsed addresses.
         if (message.defects or len(from_headers) != 1
-                or any(value.defects for value in [*from_headers, *recipient_headers])):
+                or any(not isinstance(defect, (ObsoleteHeaderDefect, UndecodableBytesDefect))
+                       for value in [*from_headers, *recipient_headers] for defect in value.defects)):
             return False
         senders = getaddresses([str(value) for value in from_headers], strict=True)
         recipients = getaddresses([str(value) for value in recipient_headers], strict=True)
-    except (TypeError, ValueError):
+    except (MessageError, LookupError, TypeError, ValueError, RecursionError):
         return False
     if len(senders) != 1 or senders[0][1].lower() != request.expected_sender:
         return False
     addresses = {value.lower() for _, value in recipients}
     # Multiple run aliases are ambiguous even when this request's recipient is also present.
-    run_addresses = {value for value in addresses if value.startswith("vault+loom-") and value.endswith("@begam.in")}
+    run_addresses = {value for value in addresses if value.startswith("vault+loom-")}
     return request.recipient in addresses and run_addresses == {request.recipient}
 
 
 def fetch_unavailable(kind: str, data: Any) -> bool:
     # NO does not prove expungement, so expose uncertainty rather than infer absence or pending mail.
     return kind == "NO" or (kind == "OK" and (data is None or isinstance(data, (list, tuple))
-                                            and all(part is None for part in data)))
+                                            and all(part is None or isinstance(part, bytes) for part in data)))
 
 
 def plain_text(message: EmailMessage) -> str:
@@ -266,7 +268,10 @@ def read_once(credentials: Credentials, request: Request, *,
                 if len(headers) > MAX_HEADER_BYTES:
                     candidates.append({"uid": uid, "status": "unclassified", "reason": "headers-too-large"})
                     continue
-                header = BytesParser(policy=policy.default).parsebytes(headers)
+                try:
+                    header = BytesParser(policy=policy.default).parsebytes(headers)
+                except (MessageError, LookupError, TypeError, ValueError, RecursionError):
+                    continue
                 if not matches(header, request):
                     continue
                 if not 0 < size <= MAX_MESSAGE_BYTES:
@@ -283,7 +288,10 @@ def read_once(credentials: Credentials, request: Request, *,
                     raise InboxError("The test message changed during its read.")
                 try:
                     message = BytesParser(policy=policy.default).parsebytes(body)
-                except (MessageError, ValueError, RecursionError):
+                except (MessageError, LookupError, TypeError, ValueError, RecursionError):
+                    candidates.append({"uid": uid, "status": "unusable", "reason": "invalid-mime"})
+                    continue
+                if message.defects:
                     candidates.append({"uid": uid, "status": "unusable", "reason": "invalid-mime"})
                     continue
                 if routing_headers(message) != routing_headers(header):

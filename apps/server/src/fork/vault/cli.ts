@@ -1,3 +1,4 @@
+import { recoveryCommand } from "./recovery-cli.ts";
 import { referencesCompleteCommand } from "./references-cli.ts";
 import { sshAgentExecCommand } from "./ssh-agent-cli.ts";
 import { githubExecCommand } from "./terminal-cli.ts";
@@ -75,6 +76,7 @@ export const vaultCommand = Command.make("vault").pipe(
     "Inspect Loom Vault or change item lifecycle through the authenticated Loom connection. Enter secret values privately in Loom.",
   ),
   Command.withSubcommands([
+    recoveryCommand,
     referencesCompleteCommand,
     sshAgentExecCommand,
     brokerCommand,

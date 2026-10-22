@@ -1,4 +1,4 @@
-import { newerVaultRun } from "./VaultActiveRun.testkit.ts";
+import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -705,4 +705,49 @@ it.effect("refuses a non-running or missing actual run despite a running shell s
     expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
     expect(f.terminalCalls()).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "keeps authorized GitHub delivery bound to the same active run while a follow-up is queued",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const repository = "owner/repo";
+      yield* f.access.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: (yield* f.access.snapshot).revision,
+          change: {
+            type: "save",
+            grant: {
+              id: yield* f.id,
+              label: "Queued-run GitHub",
+              principal: { kind: "thread", id: f.threadId },
+              itemIds: [f.input.id],
+              actions: ["use"],
+              projectId: null,
+              destination: vaultGitHubDestination(repository),
+              notBefore: 0,
+              expiresAt: null,
+              parentId: null,
+            },
+          },
+        },
+        "admin",
+      );
+      const input = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository,
+        operation: { action: "pr-list" as const },
+      };
+      f.state.runs.push(vaultRun(f.state.thread));
+      f.state.thread = { ...f.state.thread, status: "queued" };
+      expect((yield* f.service.run(input, f.threadId)).stdout).toBe("Synthetic GH result");
+      expect(f.calls()).toBe(1);
+      f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
+      expect((yield* f.service.run(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
+      expect(f.calls()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
 );

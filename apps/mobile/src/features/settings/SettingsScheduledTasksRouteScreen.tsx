@@ -1,5 +1,4 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
-import { VaultPromptAttachments } from "../../fork/vault/PromptAttachments"; // fork: vault-launch-ui
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -506,24 +505,14 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
             setSaving={setSaving}
             dictationPending={voiceInput.blocksSubmission}
             promptField={
-              // fork: vault-launch-ui
-              <>
-                <VaultPromptAttachments
-                  environmentId={editor.environmentId}
-                  projectId={editor.draft.projectId || null}
-                  prompt={prompt}
-                  onChange={setPrompt}
-                  disabled={saving}
-                />
-                <ScheduledTaskPromptField
-                  value={prompt}
-                  onChange={setPrompt}
-                  selection={selection}
-                  onChangeSelection={setSelection}
-                  disabled={saving}
-                  voiceInput={voiceInput}
-                />
-              </>
+              <ScheduledTaskPromptField
+                value={prompt}
+                onChange={setPrompt}
+                selection={selection}
+                onChangeSelection={setSelection}
+                disabled={saving}
+                voiceInput={voiceInput}
+              />
             }
             setDraft={(draft) => {
               if (!saving) setEditor({ ...editor, draft });

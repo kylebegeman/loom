@@ -118,6 +118,58 @@ class TestLoomInstance(unittest.TestCase):
                 target.require_git_boundary(self.home)
                 self.assertTrue((git_directory / "HEAD").is_file())
 
+    def test_owned_headless_git_recovers_init_locks_and_probe(self) -> None:
+        git_directory = self.workspace / ".git"
+        for artifact in ("config.lock", "HEAD.lock", "probe", "combined"):
+            with self.subTest(artifact=artifact):
+                (git_directory / "HEAD").unlink()
+                for name in ("config.lock", "HEAD.lock"):
+                    if artifact in (name, "combined"):
+                        (git_directory / name).write_text("interrupted init")
+                if artifact in ("probe", "combined"):
+                    (git_directory / "tABC123").symlink_to("testing")
+                self.assertEqual(target.prepare(self.root), self.home)
+                target.require_git_boundary(self.home)
+                self.assertTrue((git_directory / "HEAD").is_file())
+                for name in ("config.lock", "HEAD.lock", "tABC123"):
+                    self.assertFalse((git_directory / name).exists())
+                    self.assertFalse((git_directory / name).is_symlink())
+
+    def test_headless_repair_checks_layout_before_git_or_artifact_cleanup(self) -> None:
+        git_directory = self.workspace / ".git"
+        (git_directory / "HEAD").unlink()
+        (git_directory / "config.lock").write_text("preserve until fully inspected")
+        foreign = self.root / "foreign-objects"
+        foreign.mkdir()
+        shutil.rmtree(git_directory / "objects")
+        (git_directory / "objects").symlink_to(foreign, target_is_directory=True)
+        with patch.object(target.subprocess, "run") as run:
+            with self.assertRaises(target.InstanceError):
+                target.initialize_git_fixture(self.home)
+            run.assert_not_called()
+        self.assertEqual(list(foreign.iterdir()), [])
+        self.assertEqual((git_directory / "config.lock").read_text(), "preserve until fully inspected")
+
+    def test_headless_repair_never_removes_foreign_or_live_artifacts(self) -> None:
+        git_directory = self.workspace / ".git"
+        (git_directory / "HEAD").unlink()
+        for name, destination in (("tABC123", "../outside"), ("foreign-probe", "testing"),
+                                  ("config.lock", "testing"), ("HEAD.lock", "testing")):
+            path = git_directory / name
+            path.symlink_to(destination)
+            with self.subTest(name=name), patch.object(target.subprocess, "run") as run:
+                with self.assertRaises(target.InstanceError):
+                    target.initialize_git_fixture(self.home)
+                run.assert_not_called()
+                self.assertTrue(path.is_symlink())
+            path.unlink()
+        target.private_json(self.userdata / "server-runtime.json", {"pid": target.os.getpid()})
+        lock = git_directory / "config.lock"
+        lock.write_text("owned but live")
+        with self.assertRaisesRegex(target.InstanceError, "Stop the dedicated"):
+            target.initialize_git_fixture(self.home)
+        self.assertEqual(lock.read_text(), "owned but live")
+
     def test_unowned_interrupted_git_init_is_not_adopted(self) -> None:
         (self.home / "git-fixture-owner.json").unlink()
         (self.workspace / ".git" / "HEAD").unlink()

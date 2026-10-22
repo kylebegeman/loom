@@ -540,6 +540,100 @@ minimum compatible server/broker set, and verify that stale runtimes cannot use 
 grant copy. Client capability advertisement alone cannot enforce that boundary. These are
 future host-owner/Kyle dependencies, not production actions in this slice.
 
+#### Approved mandatory-protection storage contract
+
+Kyle approved access-policy format 4 behind closed gates on 2026-10-20, with credential-wide
+protection. The reader/writer contract is implemented internally; existing policies stay at
+format 3 until a reviewed migration. Journal format 1 and the approved maintenance ledgers
+remain separate and unchanged. All execution, automatic-resumption and allow-once gates
+remain literal false. No public migration or intent API is exposed.
+
+Use the existing environment-specific `access-policy` record and existing OpenBao permissions.
+Format 4 requires two bounded arrays in that same CAS document:
+
+- `credentialModes`: at most 128 entries, keyed by stable item ID, with explicit `ordinary` or
+  `one-time` mode and a monotonic mode revision. Classification belongs to the destination
+  environment and applies to all versions of that item. Missing, duplicate, unsupported or
+  corrupt classification refuses credential-bearing use. Rotation, request retention and item
+  version changes cannot remove protection. Item creation can precede classification, but the
+  item remains unusable until an administrator explicitly classifies it. Capacity exhaustion
+  refuses enrollment; there is no eviction that could make a protected item ordinary. Removing
+  protection remains unavailable until a reviewed procedure can fence outstanding sessions and
+  reconcile all reservations; changing the mode is not a cleanup shortcut.
+- `intents`: at most 128 retained, non-authorizing operation records. Each binds an intent ID,
+  request ID/revision, waiting-operation ID, environment, item/version/mode revision,
+  thread/project/run, action/destination, adapter and proposal digest to an authenticated
+  administrator's explicit review, bounded expiry and monotonic revision. Records begin
+  `reviewed`; their only forward transitions are `reserved`, `revoked` or `expired`, followed
+  by terminal `completed` or `unknown` for a reserved attempt. Reservation fixes a unique
+  reservation ID. Terminal and spent IDs remain retained; missing or aged evidence never
+  recreates an unused intent. Exhaustion refuses new review until a separately reviewed
+  reclamation protocol exists. No command output, token or credential bytes belong here.
+
+A protected item requires both normal current authorization and its exact reviewed intent.
+A broad thread/project/delegated or temporary grant alone cannot authorize it. Ordinary timed
+approval continues to mean timed access for ordinary items; it never creates a one-time review.
+The administrator must see and approve the exact operation rather than a requester-selected
+label or an unreviewed retry digest. Delegation transfers no review or consumption budget.
+Metadata inspection still follows its own grant and does not consume an operation intent.
+
+The same policy CAS must compare the current classification, request, grants and intent and
+reserve at most one adapter-start attempt. A concurrent grant change or revoke invalidates the
+CAS; no stale successful observation authorizes a retry. The journal supplies recovery evidence,
+never a second opportunity. A crash after reservation burns the attempt even if no provider
+started; ambiguous acknowledgement requires reconciliation and cannot be retried as new work.
+Unsupported reusable sessions, raw export/reveal and adapters without a complete trusted
+classification/intent boundary refuse protected use. No fallback to ordinary authorization.
+
+This atomic policy reservation does not by itself make a remote effect atomic with policy
+revocation, item changes or host rollback. Real dispatch still requires verified provider
+fencing, temporal revalidation, restart cleanup and the independent host rollback barrier.
+A reviewed intent cannot open those gates or attest that those prerequisites exist.
+
+Rollout and downgrade are operator-reviewed operations, not an automatic format conversion:
+
+1. Deploy and verify compatible readers/writers at every server/broker that can mediate this
+   environment. Stop incompatible processes and quiesce or fence existing credential sessions;
+   an old process with cached authority cannot be repaired by changing a file. Capture the
+   pre-change policy and journal evidence before the existing-policy CAS publishes format 4.
+2. Inventory and explicitly classify existing items in a reviewable migration. Recheck inventory
+   at commit; any concurrently created or unclassified item remains denied. Verify old readers
+   refuse authorization and writes against format 4, new readers preserve all required fields,
+   and rollback/unknown evidence cannot produce unused authority. Only then may an administrator
+   enroll protected items. Live execution remains separately disabled.
+3. Older format-3 runtimes reject format 4 and cannot operate this environment's Vault. Do not
+   lower `schemaVersion`, erase classifications or restore a legacy policy to make a downgrade
+   run. Use a compatible reader, or stop/fence work and reconcile all consumed/unknown operations
+   and provider revocations under the host owner's reviewed recovery procedure. The host owner
+   must retain independent post-snapshot authority evidence before any live rollout.
+
+The internal migration preview verifies the complete bounded inventory twice, compares policy
+storage versions, and returns a proposed document with `canMigrate: false`. It writes nothing.
+Only an already-format-4 policy can enroll a mode or tighten ordinary access to one-time;
+protection cannot be removed. All policy writers preserve format-4 fields. The evaluator and
+raw credential reveal refuse unclassified or protected credential-bearing actions, including
+administrator probes, signing/reusable sessions, typed adapters and delegation. Metadata
+grants are unchanged, but the SSH and GitHub adapters still read metadata by decoding the stored
+item through raw reveal. Under format 4, `ssh.info`, SSH inspect, `trust`, an idempotent
+`generate` replay, `github.info` and any profile preview or resolve that binds such an item
+therefore refuse for protected or unclassified items. This fails closed. A metadata-only reader
+must replace those reveal calls before an environment migrates.
+
+Internal intent preview/review/reservation bind server-computed canonical digests to current
+request, grant revision, item, classification and run. Review requires an authenticated
+administrator authorization callback; `thread:` actors cannot review. Reservation performs
+one CAS and returns no execution opportunity on duplicate, conflict or lost acknowledgement.
+Closing an unused review revokes it; closing a reservation records unknown and never refunds
+it. No method marks an operation completed because no dispatcher runs. The timed inbox cannot
+approve a protected item and does not yet provide an exact-operation review UI. These methods
+have no MCP/RPC/CLI or worker callers. Real dispatcher integration, temporal fencing and the
+review UI remain required before any live one-time workflow.
+
+`MandatoryProtection.test.ts` covers actual service writers, classification, alternate grants,
+entry-point refusal, review/reservation races, lost replies, retention and old-reader rejection.
+The disposable OpenBao proof checks the same existing data permissions and CAS. None of this
+authorizes production migration, new paths/permissions, a Library change or live execution.
+
 #### Enforcement across entry points
 
 A future one-time operation must choose that intent explicitly through a trusted service,
@@ -555,10 +649,10 @@ GitHub API/token minting, direct credential delivery and workload sessions, CLI/
 provider continuations and scheduled work. Thin transports cannot mint a permit or choose a
 weaker fallback. If an entry point cannot carry and revalidate the bound intent, one-time use
 must be unsupported there. A future generic credential-use call lacking an intent reference
-cannot be marketed as one-time just because a matching request exists. Stronger restrictions
-on all use by a principal/item require mandatory enforcement even on calls that omit the
-reference, plus resolution of overlapping ordinary grants. Otherwise the claim remains limited
-to the explicitly bound operation. Full-access host processes and external credential copies
+cannot be marketed as one-time just because a matching request exists. Kyle selected protection for every Loom-mediated use of an explicitly protected credential,
+including calls that omit a reference. Ordinary grants never bypass it. Mandatory destination
+classification must precede grant evaluation across all credential-bearing entry points; this
+selection does not change today's timed approvals or authorize a persisted policy-format change. Full-access host processes and external credential copies
 remain outside that claim.
 
 Normal authorization must continue at the adapter's final handoff and at subsequent credential
@@ -602,7 +696,9 @@ This is a future enforcement design with a test-local trust model, not a policy 
 intent or runtime authorization change. Existing format-3 grants and all current timed workflows
 retain their semantics. No record becomes protected automatically because it has a pending
 request, journal entry, matching label or preparation digest. A future protected-mode choice must
-be explicitly reviewed before any storage contract or migration is proposed.
+be explicitly reviewed before any storage contract or migration is proposed. Kyle selected
+credential-wide scope on 2026-10-20; enabling protection still requires compatible storage/readers
+and complete mandatory enforcement.
 
 The server must classify the destination environment's item **before** selecting an authorization
 path. A caller's absent reference, `timed` hint, transport name, thread label or project grant cannot
@@ -615,13 +711,13 @@ unresolved and are not implemented in this slice.
 
 #### Scope and trusted inputs
 
-| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                             |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                         |
-| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                     |
-| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Conservative design recommendation for the first protected workflow; requires Kyle's product/schema review before persistence. |
+| Candidate scope                                                    | Omission and delegation consequence                                                                                                                             | Design disposition                                                                                                                  |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The supplied request/reference only                                | A caller omits it and falls back to a broad timed grant.                                                                                                        | Insufficient for a mandatory boundary.                                                                                              |
+| Requester/run only                                                 | Other threads, descendants, project-wide grants and generic release still need an authoritative classification rule. Missing ancestry cannot mean ordinary.     | Possible narrower product scope, but adds coverage and lineage requirements. Not selected.                                          |
+| Environment and credential item, for credential-bearing operations | All principals and entry points must meet intent requirements for that explicitly protected item. It deliberately refuses concurrent ordinary use of that item. | Selected by Kyle on 2026-10-20. Scope applies across mediated use; persisted policy/readers and live activation are separate gates. |
 
-Item-wide classification is a proposed policy tradeoff, not a claim of global isolation. Different
+Item-wide classification is the selected policy scope, not a claim of global isolation. Different
 items retain their ordinary policies; using an external copy of the same credential remains
 outside Loom's control. An administrator's reveal/export is also credential-bearing use, not
 metadata. In protected mode it cannot be a hidden bypass. Any emergency declassification or
@@ -692,7 +788,7 @@ mutates all 14 reviewed binding dimensions at each supported typed boundary, and
 review, unknown classification, incomplete coverage and metadata separation. Every observation
 retains three literal-false gates, including `intent-eligible`. The model does not persist or
 parse a new record, prove real endpoint coverage, grant a capability, execute an adapter or
-instantiate a production classifier. Actual coverage, protected-item semantics, compatible
+instantiate a production classifier. Actual coverage, exact review semantics, compatible
 storage/readers, restart-safe cleanup and host rollback protection require later review and
 implementation. No runtime eligibility or one-time claim follows from this proof.
 
