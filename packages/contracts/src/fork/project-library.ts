@@ -180,6 +180,16 @@ export const LibraryThreadSummary = Schema.Struct({
 });
 export type LibraryThreadSummary = typeof LibraryThreadSummary.Type;
 export const LibraryThreadIndex = Schema.Struct({
+  /** Whole-library totals on the first page, independent of conversation pagination. */
+  projectActivity: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        projectId: LibraryId,
+        conversations: NonNegativeInt,
+        latestAt: IsoDateTime,
+      }),
+    ),
+  ),
   threads: Schema.Array(LibraryThreadSummary),
   nextOffset: Schema.NullOr(NonNegativeInt),
 });

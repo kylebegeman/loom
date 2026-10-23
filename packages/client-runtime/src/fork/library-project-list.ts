@@ -78,7 +78,7 @@ export type ProjectEntry = {
   readonly color: LibraryProjectColor;
   readonly copies: readonly LibraryWorkingCopy[];
   readonly localIcon: LocalProjectIcon | null;
-  /** Null when the thread index is partial, so the count would undercount. */
+  /** Null when a legacy host supplies only a partial conversation index. */
   readonly conversations: number | null;
   /** The later of the last edit and the last conversation update. */
   readonly activeAt: string;
@@ -99,7 +99,15 @@ export function projectEntries(
       latest: current && current.latest > thread.updatedAt ? current.latest : thread.updatedAt,
     });
   }
-  const complete = index?.nextOffset === null;
+  // New hosts aggregate metadata in SQL rather than requiring every conversation to be fetched.
+  const totals = index?.projectActivity;
+  if (totals !== undefined) {
+    threads.clear();
+    for (const activity of totals) {
+      threads.set(activity.projectId, { count: activity.conversations, latest: activity.latestAt });
+    }
+  }
+  const complete = totals !== undefined || index?.nextOffset === null;
   const locals = localProjectsByRef(localProjects);
   return projects.map((project) => {
     const activity = threads.get(project.id);
@@ -167,7 +175,8 @@ export function isRestingSince(activeAt: string, now: number) {
 }
 
 export function isRestingEntry(entry: ProjectEntry, now: number) {
-  return isRestingSince(entry.activeAt, now);
+  // Missing activity in a partial legacy page cannot establish two quiet weeks.
+  return entry.conversations !== null && isRestingSince(entry.activeAt, now);
 }
 
 /** Splits entries into the sections the page shows, keeping each section in the given order. */

@@ -1,3 +1,4 @@
+import type { LibraryThreadIndex } from "@t3tools/contracts/fork";
 import * as NodeZlib from "node:zlib";
 import * as NodeUtil from "node:util";
 import * as Crypto from "effect/Crypto";
@@ -84,6 +85,10 @@ export class LibraryStore extends Context.Service<
       environmentId: string,
       threadId: string,
     ) => Effect.Effect<string | null, LibraryStoreError>;
+    readonly projectActivity: Effect.Effect<
+      NonNullable<LibraryThreadIndex["projectActivity"]>,
+      LibraryStoreError
+    >;
     readonly threadIndex: (
       limit: number,
       offset: number,
@@ -450,6 +455,15 @@ const make = Effect.gen(function* () {
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
       ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
+    projectActivity: run(
+      "project-activity",
+      sql<NonNullable<LibraryThreadIndex["projectActivity"]>[number]>`
+        SELECT project_id AS "projectId", COUNT(*) AS conversations, MAX(updated_at) AS "latestAt"
+        FROM fork_library_threads
+        WHERE COALESCE(json_extract(summary_json, '$.deleted'), 0) = 0
+          AND COALESCE(json_extract(summary_json, '$.archived'), 0) = 0
+        GROUP BY project_id`,
+    ),
     threadIndex: (limit, offset) =>
       run(
         "thread-index",

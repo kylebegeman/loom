@@ -396,10 +396,46 @@ describe("independent Library catalog and durable history", () => {
         ).toBeNull();
         expect(a.threads).toHaveLength(1);
         expect(a.nextOffset).toBe(1);
+        expect(a.projectActivity).toEqual(
+          expect.arrayContaining([
+            { projectId: firstProject.id, conversations: 1, latestAt: first.summary.updatedAt },
+            { projectId: secondProject.id, conversations: 1, latestAt: second.summary.updatedAt },
+          ]),
+        );
+        expect(b.projectActivity).toBeUndefined();
         expect(b.threads).toHaveLength(1);
         expect(b.nextOffset).toBeNull();
         expect(new Set([...a.threads, ...b.threads].map((t) => t.projectId)).size).toBe(2);
         expect("projection" in a.threads[0]!).toBe(false);
+        const newest = "2026-10-20T15:29:46.828Z";
+        const thirdEnvironment = EnvironmentId.make("third-source");
+        const third = {
+          ...first,
+          summary: {
+            ...first.summary,
+            id: `${thirdEnvironment}:${first.summary.threadId}`,
+            environmentId: thirdEnvironment,
+            updatedAt: newest,
+          },
+        };
+        yield* service.registerThread({ requestId: "index-thread-3", thread: third });
+        expect((yield* service.threadIndex({ limit: 1 })).projectActivity).toEqual(
+          expect.arrayContaining([
+            { projectId: firstProject.id, conversations: 2, latestAt: newest },
+          ]),
+        );
+        for (const [sequence, lifecycle] of [
+          [2, { archived: true }],
+          [3, { archived: false, deleted: true }],
+        ] as const) {
+          yield* service.registerThread({
+            requestId: `index-hidden-${sequence}`,
+            thread: { ...second, summary: { ...second.summary, sequence, ...lifecycle } },
+          });
+          expect((yield* service.threadIndex({ limit: 1 })).projectActivity).toEqual([
+            { projectId: firstProject.id, conversations: 2, latestAt: newest },
+          ]);
+        }
         expect((yield* Effect.result(service.threadIndex({ limit: 201 })))._tag).toBe("Failure");
         expect((yield* Effect.result(service.threadIndex({ offset: -1 })))._tag).toBe("Failure");
       }),

@@ -1280,14 +1280,24 @@ const make = Effect.gen(function* () {
       )
         return Effect.fail(new LibraryError({ reason: "invalid" }));
       return catalogRead(
-        store.threadIndex(limit + 1, offset).pipe(
-          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
-          Effect.map((rows) => ({
-            threads: rows.slice(0, limit),
-            nextOffset: rows.length > limit ? offset + limit : null,
-          })),
-          Effect.mapError(io),
-        ),
+        store
+          .transaction(
+            Effect.gen(function* () {
+              const rows = yield* store
+                .threadIndex(limit + 1, offset)
+                .pipe(
+                  Effect.flatMap((rows) =>
+                    Effect.forEach(rows, (row) => decode(codecs.summary, row)),
+                  ),
+                );
+              return {
+                threads: rows.slice(0, limit),
+                nextOffset: rows.length > limit ? offset + limit : null,
+                ...(offset === 0 ? { projectActivity: yield* store.projectActivity } : {}),
+              };
+            }),
+          )
+          .pipe(Effect.mapError(io)),
       );
     },
     history: (input) =>

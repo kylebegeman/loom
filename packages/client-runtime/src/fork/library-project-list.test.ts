@@ -8,6 +8,7 @@ import type {
 import {
   filterProjectEntries,
   libraryLocalProjectIcon,
+  isRestingEntry,
   localProjectsByRef,
   projectEntries,
   projectSections,
@@ -94,9 +95,33 @@ describe("projectEntries", () => {
     expect(entry).toMatchObject({ conversations: 2, activeAt: "2026-10-12T00:00:00.000Z" });
   });
 
-  it("leaves the count unknown while the index is partial, and falls back to the last edit", () => {
+  it("does not classify a project as resting from an incomplete legacy index", () => {
     const [entry] = projectEntries([iris], [], { nextOffset: 100, threads: [] });
     expect(entry).toMatchObject({ conversations: null, activeAt: iris.updatedAt });
+    expect(isRestingEntry(entry!, Date.parse("2026-10-23T00:00:00.000Z"))).toBe(false);
+  });
+
+  it("uses whole-library activity when the recent page contains only another project's work", () => {
+    const [entry, quiet] = projectEntries([iris, loom], [], {
+      nextOffset: 100,
+      threads: [thread({ projectId: "busy", updatedAt: "2026-10-22T00:00:00.000Z" })],
+      projectActivity: [
+        { projectId: "iris", conversations: 23, latestAt: "2026-10-20T15:29:46.828Z" },
+      ],
+    });
+    expect(entry).toMatchObject({ conversations: 23, activeAt: "2026-10-20T15:29:46.828Z" });
+    expect(isRestingEntry(entry!, Date.parse("2026-10-23T00:00:00.000Z"))).toBe(false);
+    expect(quiet).toMatchObject({ conversations: 0, activeAt: loom.updatedAt });
+    expect(isRestingEntry(quiet!, Date.parse("2026-10-23T00:00:00.000Z"))).toBe(true);
+  });
+
+  it("keeps a newer project edit active even when its last conversation is older", () => {
+    const [entry] = projectEntries([iris], [], {
+      nextOffset: 100,
+      threads: [],
+      projectActivity: [{ projectId: "iris", conversations: 2, latestAt: loom.updatedAt }],
+    });
+    expect(entry).toMatchObject({ conversations: 2, activeAt: iris.updatedAt });
   });
 });
 
@@ -182,7 +207,7 @@ describe("sortProjectEntries", () => {
 
 describe("projectSections", () => {
   const now = Date.parse("2026-10-19T00:00:00.000Z");
-  const entries = projectEntries([loom, iris], [], undefined);
+  const entries = projectEntries([loom, iris], [], { threads: [], nextOffset: null });
   const kinds = (group: Parameters<typeof projectSections>[1], at = now) =>
     projectSections(entries, group, at).map((section) => [
       section.kind === "color" ? section.color : section.kind,
