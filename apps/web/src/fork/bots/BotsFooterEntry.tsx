@@ -4,7 +4,7 @@ import { useBotsAttentionCount } from "./state";
 function FooterIcon({ count }: { readonly count: number }) {
   return (
     <>
-      <BotIcon className="size-4" />
+      <BotIcon className="size-5" />
       {count === 0 ? null : (
         <span
           aria-hidden
