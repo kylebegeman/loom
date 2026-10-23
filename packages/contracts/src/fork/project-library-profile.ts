@@ -70,6 +70,11 @@ export const LibraryBriefSuggestionMode = Schema.Literals(["off", "ask", "automa
 export type LibraryBriefSuggestionMode = typeof LibraryBriefSuggestionMode.Type;
 
 const profileFields = {
+  connectionNames: Schema.optional(
+    Schema.Array(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))).check(
+      Schema.isMaxLength(32),
+    ),
+  ),
   scripts: Schema.optional(
     Schema.Array(ProjectScript).check(Schema.isMaxLength(LIBRARY_PROFILE_LIMITS.scripts)),
   ),
@@ -202,7 +207,11 @@ export const libraryProfileSecretValueMessage = (field: string) =>
 
 type SecretCheckedProfile = Pick<
   LibraryProjectProfile,
-  "scripts" | "defaultModelSelection" | "secretNames" | "preferredEnvironmentIds"
+  | "scripts"
+  | "defaultModelSelection"
+  | "secretNames"
+  | "preferredEnvironmentIds"
+  | "connectionNames"
 >;
 
 const scriptText = (script: ProjectScript) => [
@@ -254,6 +263,8 @@ export function libraryProfileSecretValueField(
     )
   )
     return "A preferred computer";
+  if (added(profile.connectionNames, saved?.connectionNames).some(looksLikeSecretValue))
+    return "A connection name";
   return added(profile.secretNames, saved?.secretNames).some(looksLikeSecretValue)
     ? "A secret name"
     : null;

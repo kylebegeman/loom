@@ -4,6 +4,7 @@ import {
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
+  AuthSettingsWriteScope,
   EnvironmentId,
   type AuthSessionState,
 } from "@t3tools/contracts";
@@ -25,7 +26,10 @@ const destination = EnvironmentId.make("copy-computer");
 const other = EnvironmentId.make("other-host");
 const grant = (
   write: boolean,
-  scope: typeof AuthTerminalOperateScope | typeof AuthOrchestrationOperateScope,
+  scope:
+    | typeof AuthTerminalOperateScope
+    | typeof AuthOrchestrationOperateScope
+    | typeof AuthSettingsWriteScope,
 ): AuthSessionState => ({
   authenticated: true,
   auth: {
@@ -84,6 +88,37 @@ it.effect.each([
       expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
         requiredPermission: scope,
       });
+    }),
+  ),
+);
+
+it.effect.each([
+  "saveWorkstream",
+  "applyBlueprint",
+  "runOperation",
+  "executeOperation",
+  "resumeOperation",
+  "cancelOperation",
+] as const)("Project workflows %s uses destination permissions and observes revocation", (method) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const command = createProjectLibraryAtoms(runtime)[method];
+      registry.mount(command.permissionAtom(destination));
+      registry.mount(command.permissionAtom(other));
+      const scope =
+        method === "saveWorkstream" || method === "applyBlueprint"
+          ? AuthSettingsWriteScope
+          : AuthTerminalOperateScope;
+      registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
+      registry.set(sessions(other), AsyncResult.success(grant(true, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
+      expect(registry.get(command.permissionAtom(other))).toBe(true);
+      registry.set(sessions(destination), AsyncResult.success(grant(true, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(true);
+      registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
+      expect(registry.get(command.permissionAtom(destination))).toBe(false);
     }),
   ),
 );

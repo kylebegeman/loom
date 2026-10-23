@@ -25,6 +25,7 @@ vi.mock("../orchestration-v2/runtimeLayer.ts", async () => {
     layerThreadManagementProvided: Layer.mock(ThreadManagement.ThreadManagementService)({}),
     layerThreadSettlement: Layer.mock(ThreadSettlement.ThreadSettlementServiceV2)({}),
     layerProjectService: Layer.empty,
+    layerEventSink: Layer.empty,
   };
 });
 

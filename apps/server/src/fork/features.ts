@@ -12,6 +12,7 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-profiles",
+  "project-workflows",
   "core",
   "vault-core",
   "vault-owner-trusted",

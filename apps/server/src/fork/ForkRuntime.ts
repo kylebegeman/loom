@@ -1,3 +1,5 @@
+import type { ProjectWorkflows } from "./project-library/ProjectWorkflows.ts";
+import type { ProjectOperations } from "./project-library/ProjectOperations.ts";
 import type { ProjectProfileService } from "./project-profiles/ProjectProfileService.ts";
 import type { VaultConnections } from "./vault/VaultConnections.ts";
 import type { VaultAccessInspector } from "./vault/VaultAccessInspector.ts";
@@ -93,6 +95,8 @@ export type ForkServices =
   | LibraryHistorySource
   | LibraryAssetService
   | LibraryService
+  | ProjectWorkflows
+  | ProjectOperations
   | LibraryPublisher
   | LibraryTimeline
   | LibraryLaunchCandidates

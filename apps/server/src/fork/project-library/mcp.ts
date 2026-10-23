@@ -1,3 +1,5 @@
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
+import { ProjectOperations } from "./ProjectOperations.ts";
 import {
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -20,6 +22,10 @@ import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Replication from "./LibraryReplication.ts";
+
+const decodeOperationProject = Schema.decodeUnknownEffect(Library.LibraryProject);
+const decodeOperationCopy = Schema.decodeUnknownEffect(Library.LibraryWorkingCopy);
+const isLibraryFailure = Schema.is(Library.LibraryError);
 
 const failure = Schema.Union([Library.LibraryError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
@@ -50,6 +56,76 @@ const searchParameters = Schema.Struct({
   limit: Schema.optional(Library.LibrarySearchRequest.fields.limit),
 });
 export const ProjectLibraryToolkit = Toolkit.make(
+  Tool.make("loom_library_workstreams", {
+    description: "List optional durable workstreams and linked work for a project.",
+    parameters: Schema.Struct({ projectId: Library.LibraryId }),
+    success: Schema.Array(Library.LibraryWorkstream),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_workstream_save", {
+    description:
+      "Create, revise, archive or reopen a workstream. Completion refuses unfinished links and local work. Verification and PR states are explicit recorded observations, not inferred CI results.",
+    parameters: Library.LibrarySaveWorkstream,
+    success: Library.LibraryWorkstream,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_library_blueprint", {
+    description:
+      "Export version 1 portable repository layout and setup. Omits computer paths, credentials and provider selections.",
+    parameters: Schema.Struct({ projectId: Library.LibraryId }),
+    success: Library.LibraryBlueprint,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_blueprint_apply", {
+    description:
+      "Apply a reviewed portable blueprint to a project revision. Does not execute its scripts or change existing copies or conversation pins.",
+    parameters: Schema.Struct({
+      requestId: Library.LibraryRequestId,
+      projectId: Library.LibraryId,
+      expectedRevision: Schema.Int,
+      blueprint: Library.LibraryBlueprint,
+    }),
+    success: Library.LibraryProject,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_library_preservation", {
+    description:
+      "Review saved cross-project preservation observations. Connect each computer and use copy status for a current guarded removal preview. Missing observations never mean files are safe to delete.",
+    parameters: Schema.Struct({ projectId: Schema.optional(Library.LibraryId) }),
+    success: Schema.Array(Library.LibraryPreservationEntry),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_operations", {
+    description:
+      "Read durable project operations on this computer, including progress, failures and safe repair instructions.",
+    parameters: Schema.Struct({ projectId: Schema.optional(Library.LibraryId) }),
+    success: Schema.Array(Library.LibraryOperation),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_operation_control", {
+    description:
+      "Resume an interrupted project operation or cancel its remaining steps. Completed steps are preserved. Only the original owner or calling thread may control it; authorization is checked again.",
+    parameters: Schema.Struct({
+      operationId: Library.LibraryRequestId,
+      action: Schema.Literals(["resume", "cancel"]),
+    }),
+    success: Library.LibraryOperation,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_library_operation_run", {
+    description:
+      "Run a durable create, import/prepare, restore, launch, archive or cleanup operation. Reuse operationId and identical input after a lost response. Runtime and task authorization still apply. Do not send credentials except an existing short-lived recovery grant through its typed restore path.",
+    parameters: Schema.Struct({
+      operationId: Library.LibraryRequestId,
+      request: Library.LibraryOperationInput,
+    }),
+    success: Library.LibraryOperation,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_library_projects", {
     description: "List durable projects in this Library, independent of working computers.",
     parameters: Schema.Struct({ includeArchived: Schema.optional(Schema.Boolean) }),
@@ -335,7 +411,61 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
     const runtime = yield* ForkRuntime;
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
+    const operate = Effect.fn("ProjectLibrary.operate")(function* (
+      id: string,
+      request: Library.LibraryOperationInput,
+    ) {
+      const invocation = yield* McpInvocationContext;
+      return yield* onHost(
+        Effect.flatMap(ProjectOperations, (service) =>
+          invocation.thread
+            ? service.executeAgent(id, request, invocation.thread)
+            : invocation.client
+              ? service.executeClient(id, request, invocation.client.sessionId)
+              : Effect.fail(new Library.LibraryError({ reason: "blocked" })),
+        ),
+      );
+    });
     return {
+      loom_library_workstreams: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.workstreams(input))),
+      ),
+      loom_library_workstream_save: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.saveWorkstream(input))),
+      ),
+      loom_library_blueprint: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.blueprint(input))),
+      ),
+      loom_library_blueprint_apply: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.applyBlueprint(input))),
+      ),
+      loom_library_preservation: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.preservation(input))),
+      ),
+      loom_library_operations: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(ProjectOperations, (service) => service.list(input))),
+      ),
+      loom_library_operation_control: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const invocation = yield* McpInvocationContext;
+          return yield* onHost(
+            Effect.flatMap(ProjectOperations, (service) =>
+              invocation.thread
+                ? service.controlAgent(input.operationId, input.action, invocation.thread)
+                : invocation.client
+                  ? service.controlClient(
+                      input.operationId,
+                      input.action,
+                      invocation.client.sessionId,
+                    )
+                  : Effect.fail(new Library.LibraryError({ reason: "blocked" })),
+            ),
+          );
+        }),
+      ),
+      loom_library_operation_run: McpToolAccess.writesEnvironment((input) =>
+        operate(input.operationId, input.request),
+      ),
       loom_library_projects: McpToolAccess.reads((input) =>
         onHost(
           Effect.flatMap(Catalog.LibraryService, (service) =>
@@ -400,7 +530,12 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),
+        operate(`${input.requestId}:create`, { kind: "create", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationProject(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_project_update: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.updateProject(input))),
@@ -409,7 +544,12 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.archiveProject(input))),
       ),
       loom_library_copy_prepare: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.prepareCopy(input))),
+        operate(`${input.requestId}:prepare`, { kind: "prepare", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_copy_retention: McpToolAccess.writesEnvironment((input) =>
         onHost(
@@ -417,11 +557,19 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_copy_reopen: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.reopenCopy(input))),
+        operate(`${input.requestId}:reopen`, { kind: "reopen", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_copy_snapshot: McpToolAccess.writesEnvironment((input) =>
-        onHost(
-          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.snapshotCopy(input)),
+        operate(`${input.requestId}:snapshot`, { kind: "snapshot", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
         ),
       ),
       loom_library_recovery_authorize: McpToolAccess.writesEnvironment((input) =>
@@ -439,10 +587,20 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         }),
       ),
       loom_library_copy_restore: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.restoreCopy(input))),
+        operate(`${input.requestId}:restore`, { kind: "restore", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_copy_release: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.release(input))),
+        operate(`${input.requestId}:release`, { kind: "release", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_copy_status: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),

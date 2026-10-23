@@ -1,3 +1,5 @@
+import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
+import * as ProjectOperations from "./project-library/ProjectOperations.ts";
 import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
 import * as ProfileEnvInspector from "./project-profiles/EnvInspectorLive.ts";
 import * as ProfileVarlock from "./project-profiles/VarlockRunner.ts";
@@ -211,6 +213,7 @@ const layerLibraryService = LibraryService.layer.pipe(
   Layer.provide(layerLibraryRecovery),
 );
 
+const layerProjectWorkflows = ProjectWorkflows.layer.pipe(Layer.provide(layerLibraryService));
 const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerLibraryService),
@@ -336,6 +339,21 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
   layerLibraryService,
+  layerProjectWorkflows,
+  ProjectOperations.layer.pipe(
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(layerProjectWorkflows),
+    Layer.provide(layerLibraryService),
+    Layer.provide(layerLibraryWorkspace),
+    Layer.provide(layerLibraryPublisher),
+    Layer.provide(RuntimeLayer.layerThreadManagementProvided),
+    Layer.provide(
+      LibraryHistorySource.layer.pipe(
+        Layer.provide(LibraryWorkspaceStore.layer),
+        Layer.provide(ProjectionStore.layer),
+      ),
+    ),
+  ),
   layerLibraryPublisher,
   LibraryTimeline.layer,
   LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService)),

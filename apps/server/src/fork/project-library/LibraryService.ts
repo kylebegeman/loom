@@ -807,12 +807,20 @@ const make = Effect.gen(function* () {
         const timestamp = yield* now;
         const resources = input.resources ?? [];
         if (!validLibraryResources(resources)) return yield* invalid();
+        if (input.profile) {
+          const unknownTools = libraryProfileAddedUnknownTools(input.profile, undefined);
+          if (unknownTools.length)
+            return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
+          const secretField = libraryProfileSecretValueField(input.profile);
+          if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
+        }
         return yield* putProject({
           id: yield* randomUuidV4,
           title: input.title.trim(),
           brief: input.brief ?? "",
           resources,
           ...(input.color ? { color: input.color } : {}),
+          ...(input.profile ? { profile: input.profile } : {}),
           archived: false,
           revision: 1,
           createdAt: timestamp,

@@ -1,3 +1,4 @@
+import { PROJECT_WORKFLOW_WS_METHODS as WF } from "@t3tools/contracts/fork";
 import { LIBRARY_DECISIONS_WS_METHODS as LD } from "@t3tools/contracts/fork";
 import { PROJECT_PROFILES_WS_METHODS as PP } from "@t3tools/contracts/fork";
 import { VAULT_TEST_ACCOUNT_WS_METHODS as VT } from "@t3tools/contracts/fork";
@@ -62,6 +63,17 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [WF.saveWorkstream]: AuthSettingsWriteScope,
+  [WF.applyBlueprint]: AuthSettingsWriteScope,
+  [WF.run]: AuthTerminalOperateScope,
+  [WF.cancel]: AuthTerminalOperateScope,
+  [WF.execute]: AuthTerminalOperateScope,
+  [WF.resume]: AuthTerminalOperateScope,
+  [WF.changes]: AuthOrchestrationReadScope,
+  [WF.workstreams]: AuthOrchestrationReadScope,
+  [WF.blueprint]: AuthOrchestrationReadScope,
+  [WF.preservation]: AuthOrchestrationReadScope,
+  [WF.operations]: AuthOrchestrationReadScope,
   [PP.update]: AuthOrchestrationOperateScope,
   [PP.reset]: AuthOrchestrationOperateScope,
   [PP.updateSettings]: AuthOrchestrationOperateScope,
