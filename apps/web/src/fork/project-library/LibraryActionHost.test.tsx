@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-import { act, useState, type ComponentProps, type ReactNode } from "react";
+import { act, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import type { LibraryFlowNavigation } from "./LibraryFlow";
 
 const state = vi.hoisted(() => ({
   authorityId: "library" as string | null,
@@ -36,30 +35,32 @@ vi.mock("./state", () => ({
   }),
 }));
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
-vi.mock("./LibraryControls", () => ({
-  LibraryDialog: ({
-    open,
-    children,
-    actions,
-  }: {
-    open: boolean;
-    children: ReactNode;
-    actions: ReactNode;
-  }) =>
-    open ? (
-      <div role="dialog">
-        {children}
-        {actions}
-      </div>
-    ) : null,
-  LibrarySearch: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-    <input
-      aria-label="Search projects"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    />
+vi.mock("./LibraryPalette", () => ({
+  LibraryPaletteView: (
+    props: ComponentProps<typeof import("./LibraryPalette").LibraryPaletteView>,
+  ) => (
+    <div role="dialog">
+      <input
+        aria-label="Search projects"
+        value={props.query}
+        onChange={(event) => props.onQueryChange(event.target.value)}
+      />
+      {props.message}
+      <p role="alert">{props.error}</p>
+      {props.children}
+      {props.items
+        .filter((item) =>
+          [item.title, item.description ?? "", ...(item.terms ?? [])].some((value) =>
+            value.toLowerCase().includes(props.query.toLowerCase()),
+          ),
+        )
+        .map((item) => (
+          <button key={item.id} disabled={item.disabled} onClick={item.select}>
+            {item.title}
+          </button>
+        ))}
+    </div>
   ),
-  LibraryErrorNotice: () => null,
 }));
 vi.mock("./LibrarySetup", () => ({ LibrarySetup: () => <p>Connect Library</p> }));
 vi.mock("./ProjectEditorDialog", () => ({
@@ -68,7 +69,7 @@ vi.mock("./ProjectEditorDialog", () => ({
   ) => (
     <DraftStep
       open={props.open ?? true}
-      flow={props.flow}
+      onBack={props.onBack}
       label="Project name"
       save={() => props.onSaved(state.projects[0]!)}
     />
@@ -80,7 +81,7 @@ vi.mock("./ImportProjectDialog", () => ({
   ) => (
     <DraftStep
       open={props.open ?? true}
-      flow={props.flow}
+      onBack={props.onBack}
       label="Folder"
       save={() => props.onSaved(state.projects[0]!, state.copies[0])}
     />
@@ -93,7 +94,7 @@ vi.mock("./NewConversationDialog", () => ({
     <DraftStep
       open={props.open ?? true}
       label="Conversation title"
-      flow={{ steps: [], current: 0, onBack: props.onChooseProject }}
+      onBack={props.onChooseProject}
       details={JSON.stringify(props, (key, value) => (key === "copiesQuery" ? undefined : value))}
     />
   ),
@@ -102,13 +103,13 @@ vi.mock("./NewConversationDialog", () => ({
 function DraftStep({
   open,
   label,
-  flow,
+  onBack,
   save,
   details,
 }: {
   open: boolean;
   label: string;
-  flow?: LibraryFlowNavigation | undefined;
+  onBack?: (() => void) | undefined;
   save?: () => void;
   details?: string;
 }) {
@@ -116,15 +117,22 @@ function DraftStep({
   return open ? (
     <div role="dialog">
       <input aria-label={label} value={value} onChange={(event) => setValue(event.target.value)} />
-      <button onClick={flow?.onBack}>Back</button>
+      <button onClick={onBack}>Back</button>
       {save ? <button onClick={save}>Save</button> : null}
       <output>{details}</output>
     </div>
   ) : null;
 }
 
-import { LibraryActionHost } from "./LibraryActionHost";
+import { LibraryActionHost, useLibraryPaletteSession } from "./LibraryActionHost";
 import { openLibraryAction, type LibraryConversationDefaults } from "./actions";
+
+function HostHarness() {
+  const palette = useLibraryPaletteSession();
+  return palette.isOpen && palette.session ? (
+    <LibraryActionHost key={palette.session.id} session={palette.session} onClose={palette.close} />
+  ) : null;
+}
 const project: LibraryProject = {
   id: "alpha",
   title: "Alpha",
@@ -201,7 +209,7 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(() => root.render(<LibraryActionHost />));
+  await act(() => root.render(<HostHarness />));
 });
 afterEach(async () => {
   await act(() => root.unmount());
@@ -221,7 +229,6 @@ it("keeps the conversation draft and all source + settings when returning to the
   await act(() => openLibraryAction("new-conversation", project.id, defaults));
   await type("Conversation title", "My draft");
   expect(launch()).toMatchObject({
-    initialStep: "agent",
     initialHostId: defaults.environmentId,
     initialCopyId: defaults.workingCopyId,
     initialResourceIds: defaults.resourceIds,
@@ -239,7 +246,6 @@ it("drops the source file binding when choosing a different project but retains 
   await click("Back");
   await click("Beta");
   expect(launch()).toMatchObject({
-    initialStep: "files",
     initialHostId: defaults.environmentId,
     initialModelSelection: defaults.modelSelection,
     initialRuntimeMode: defaults.runtimeMode,
@@ -263,7 +269,6 @@ it("continues with the imported folder's computer and exact registered copy", as
   await click("Add existing folder");
   await click("Save");
   expect(launch()).toMatchObject({
-    initialStep: "agent",
     initialHostId: copy.environmentId,
     initialCopyId: copy.id,
     copies: [copy],
@@ -286,7 +291,7 @@ it("resumes the requested action after connecting the Library", async () => {
   await act(() => openLibraryAction("create-project"));
   expect(container.textContent).toContain("Connect Library");
   state.authorityId = "library";
-  await act(() => root.render(<LibraryActionHost />));
+  await act(() => root.render(<HostHarness />));
   expect(input("Project name")).not.toBeNull();
 });
 it("waits for a requested project instead of flashing the project chooser", async () => {
@@ -294,10 +299,10 @@ it("waits for a requested project instead of flashing the project chooser", asyn
   state.projects = [];
   await act(() => openLibraryAction("new-conversation", project.id, defaults));
   expect(container.textContent).toContain("Loading project...");
-  expect(input("Search projects")).toBeNull();
+  expect(button("New project")).toBeUndefined();
   state.pending = false;
   state.projects = [project];
-  await act(() => root.render(<LibraryActionHost />));
+  await act(() => root.render(<HostHarness />));
   expect(launch().initialCopyId).toBe(copy.id);
 });
 

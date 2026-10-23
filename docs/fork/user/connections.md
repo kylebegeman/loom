@@ -48,9 +48,10 @@ inspect routes, permissions and devices with access. Permissions belong to each
 computer and determine which actions that connection can use.
 
 On web and desktop, **New conversation** opens a searchable project chooser. Choose
-an existing project, create one, or add a folder from a connected computer. Continue
-through the computer and files step, then review the agent, model, permissions and
-mode before starting. **Back** keeps your choices while you review an earlier step.
+an existing project, create one, or browse folders on a connected computer in the
+same command palette. When the project is ready, **Start conversation** uses its
+current computer, files and agent settings. Search or select a setting to change it;
+**Back** keeps your choices. Arrow keys and Enter work throughout the flow.
 Creating a project or adding a folder from this flow continues into conversation setup;
 using those actions directly opens the project instead.
 

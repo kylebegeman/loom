@@ -56,7 +56,12 @@ vi.mock("~/state/query", () => ({
         request && !state.browseError
           ? {
               parentPath: nested ? "/Users/kyle/Developer" : "/Users/kyle",
-              entries: nested ? [] : [{ name: "Developer", fullPath: "/Users/kyle/Developer" }],
+              entries: nested
+                ? []
+                : [
+                    { name: "Developer", fullPath: "/Users/kyle/Developer" },
+                    { name: ".config", fullPath: "/Users/kyle/.config" },
+                  ],
             }
           : null,
       isSuccess: request !== null && !state.browseError,
@@ -66,68 +71,29 @@ vi.mock("~/state/query", () => ({
     };
   },
 }));
-vi.mock("./LibraryControls", () => ({
-  LibraryDialog: ({
-    children,
-    actions,
-    open,
-    flow,
-  }: {
-    children: ReactNode;
-    actions: ReactNode;
-    open: boolean;
-    flow?: { onBack?: (() => void) | undefined; busy?: boolean | undefined };
-  }) =>
-    open ? (
-      <div>
-        {flow?.onBack ? (
-          <button disabled={flow.busy} onClick={flow.onBack}>
-            Back
-          </button>
-        ) : null}
-        {children}
-        {actions}
-      </div>
-    ) : null,
-  LibraryField: ({ label, children }: { label: string; children: ReactNode }) => (
-    <label>
-      {label}
-      {children}
-    </label>
+vi.mock("./LibraryPalette", () => ({
+  LibraryPaletteDialog: ({ children }: { children: ReactNode }) => (
+    <div role="dialog">{children}</div>
   ),
-  LibraryErrorNotice: ({ error, onRetry }: { error: string | null; onRetry?: () => void }) =>
-    error ? (
-      <div role="alert">
-        {error}
-        {onRetry ? <button onClick={onRetry}>Try again</button> : null}
-      </div>
-    ) : null,
-}));
-vi.mock("~/components/ui/select", () => ({
-  Select: ({
-    value,
-    onValueChange,
-    children,
-    disabled,
-  }: {
-    value: string;
-    onValueChange: (value: string) => void;
-    children: ReactNode;
-    disabled?: boolean;
-  }) => (
-    <select
-      value={value ?? ""}
-      disabled={disabled}
-      onChange={(event) => onValueChange(event.target.value)}
-    >
-      {children}
-    </select>
-  ),
-  SelectTrigger: () => null,
-  SelectValue: () => null,
-  SelectPopup: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-    <option value={value}>{children}</option>
+  LibraryPaletteView: (
+    props: ComponentProps<typeof import("./LibraryPalette").LibraryPaletteView>,
+  ) => (
+    <div>
+      <input
+        aria-label={props.placeholder}
+        value={props.query}
+        onChange={(event) => props.onQueryChange(event.target.value)}
+      />
+      {props.onBack ? <button onClick={props.onBack}>Back</button> : null}
+      {props.message}
+      <p role="alert">{props.error}</p>
+      {props.children}
+      {props.items.map((item) => (
+        <button key={item.id} disabled={props.busy || item.disabled} onClick={item.select}>
+          {item.title}
+        </button>
+      ))}
+    </div>
   ),
 }));
 import { ImportProjectDialog } from "./ImportProjectDialog";
@@ -170,8 +136,6 @@ async function mount(props: Partial<ComponentProps<typeof ImportProjectDialog>> 
 
 it("browses folders on the selected computer and checks the selected folder without importing it", async () => {
   await mount({ initialHostId: EnvironmentId.make("remote") });
-  expect(button("Choose folder")).toBeDefined();
-  await act(async () => button("Choose folder").click());
   expect(state.browse).toHaveBeenLastCalledWith({
     environmentId: "remote",
     input: { partialPath: "~/" },
@@ -181,55 +145,53 @@ it("browses folders on the selected computer and checks the selected folder with
     environmentId: "remote",
     input: { partialPath: "/Users/kyle/Developer/" },
   });
-  await act(async () => button("Select this folder").click());
+  await act(async () => button("Use this folder").click());
   expect(state.inspect).toHaveBeenCalledExactlyOnceWith({
     environmentId: "remote",
     input: { rootPath: "/Users/kyle/Developer" },
   });
   expect(state.create).not.toHaveBeenCalled();
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Existing folder"]')?.value,
-  ).toBe("/Users/kyle/Developer");
+  expect(container.textContent).toContain("/Users/kyle/Developer");
+  expect(button("Add folder to Developer")).toBeDefined();
 });
 
-it("can go up or cancel without changing the chosen folder", async () => {
+it("retraces folder navigation with Back and leaves without changing the chosen folder", async () => {
   await mount();
-  await act(async () => button("Choose folder").click());
   await act(async () => button("Developer").click());
-  await act(async () => button("Up").click());
+  await act(async () => button("Back").click());
   expect(state.browse).toHaveBeenLastCalledWith({
     environmentId: "dorothy",
-    input: { partialPath: "/Users/kyle/" },
+    input: { partialPath: "~/" },
   });
-  await act(async () => button("Cancel selection").click());
+  await act(async () => button("Back").click());
+  expect(button("remote")).toBeDefined();
   expect(state.inspect).not.toHaveBeenCalled();
-  expect(button("Select this folder")).toBeUndefined();
 });
 
 it("does not allow a stale or failed listing to select a folder", async () => {
   await mount();
-  await act(async () => button("Choose folder").click());
   state.pending = true;
   await mount();
-  expect(button("Select this folder").disabled).toBe(true);
+  expect(button("Use this folder").disabled).toBe(true);
   state.pending = false;
   state.browseError = "Permission denied on this computer.";
   await mount();
   expect(container.textContent).toContain(state.browseError);
-  expect(button("Select this folder").disabled).toBe(true);
+  expect(button("Use this folder").disabled).toBe(true);
   await act(async () => button("Try again").click());
   expect(state.refresh).toHaveBeenCalled();
 });
 
-it("keeps browsing unavailable when the selected computer is offline or access is denied", async () => {
+it("keeps selection unavailable when access is denied or the selected computer is offline", async () => {
   state.allowed = false;
   await mount();
-  expect(button("Choose folder").disabled).toBe(true);
+  expect(button("Use this folder").disabled).toBe(true);
   expect(state.browse).not.toHaveBeenCalled();
   state.allowed = true;
   state.online = false;
   await mount();
-  expect(button("Choose folder").disabled).toBe(true);
+  expect(button("Use this folder")).toBeUndefined();
+  expect(state.inspect).not.toHaveBeenCalled();
 });
 
 it("reports an inspection failure after selection without importing", async () => {
@@ -237,48 +199,60 @@ it("reports an inspection failure after selection without importing", async () =
     AsyncResult.failure(Cause.fail(new Error("Folder is unreadable."))),
   );
   await mount();
-  await act(async () => button("Choose folder").click());
-  await act(async () => button("Select this folder").click());
+  await act(async () => button("Use this folder").click());
   expect(container.textContent).toContain("Folder is unreadable.");
-  expect(button("Check folder").disabled).toBe(false);
+  expect(button("Use this folder").disabled).toBe(false);
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("closes the old computer's listing when the computer changes", async () => {
+it("browses the new computer after returning to the computer list", async () => {
   await mount();
-  await act(async () => button("Choose folder").click());
-  const computer = container.querySelector("select")!;
-  await act(async () => {
-    computer.value = "remote";
-    computer.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(button("Select this folder")).toBeUndefined();
-  await act(async () => button("Choose folder").click());
+  await act(async () => button("Back").click());
+  await act(async () => button("remote").click());
   expect(state.browse).toHaveBeenLastCalledWith({
     environmentId: "remote",
     input: { partialPath: "~/" },
   });
-  await act(async () => button("Select this folder").click());
+  await act(async () => button("Use this folder").click());
   expect(state.inspect).toHaveBeenCalledExactlyOnceWith({
     environmentId: "remote",
     input: { rootPath: "/Users/kyle" },
   });
 });
 
-it("moves through folder and project steps without creating anything, preserving the selection on Back", async () => {
+it("preserves folder and project choices on Back without starting an import", async () => {
   await mount();
-  expect(button("Continue").disabled).toBe(true);
-  await act(async () => button("Choose folder").click());
-  await act(async () => button("Select this folder").click());
-  await act(async () => button("Continue").click());
-  expect(button("Add folder")).toBeDefined();
-  expect(state.create).not.toHaveBeenCalled();
+  await act(async () => button("Use this folder").click());
+  expect(button("Add folder to kyle")).toBeDefined();
+  await act(async () => button("Project name").click());
   await act(async () => button("Back").click());
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Existing folder"]')?.value,
-  ).toBe("/Users/kyle");
-  expect(button("Continue").disabled).toBe(false);
-  await act(async () => button("Continue").click());
+  expect(button("Add folder to kyle")).toBeDefined();
   expect(state.inspect).toHaveBeenCalledOnce();
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("returns from the project brief to the folder confirmation without losing the draft", async () => {
+  const onBack = vi.fn();
+  await mount({ onBack });
+  await act(async () => button("Use this folder").click());
+  await act(async () => button("Project brief").click());
+  await act(async () => button("Back").click());
+  expect(button("Add folder to kyle")).toBeDefined();
+  expect(onBack).not.toHaveBeenCalled();
+  expect(state.inspect).toHaveBeenCalledOnce();
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("keeps hidden folders out of ordinary browsing and finds them when explicitly searched", async () => {
+  await mount();
+  expect(button("Developer")).toBeDefined();
+  expect(button(".config")).toBeUndefined();
+  const input = container.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, ".");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(button(".config")).toBeDefined();
+  expect(button("Developer")).toBeUndefined();
+  expect(state.inspect).not.toHaveBeenCalled();
 });

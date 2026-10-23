@@ -1,30 +1,25 @@
+import { LibraryTextPalette } from "./LibraryTextPalette";
+import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
+import { FolderPlusIcon } from "lucide-react";
 import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
 import {
+  LIBRARY_PROJECT_COLORS,
   LibraryError,
   LibraryProjectColor,
   LibraryResource,
   type LibraryProject,
 } from "@t3tools/contracts/fork";
+import { PROJECT_COLOR_NAMES } from "@t3tools/client-runtime/fork";
 import * as Schema from "effect/Schema";
 import { useLibraryAttempt } from "./attempts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Textarea } from "~/components/ui/textarea";
+
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./state";
-import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
-import { LibrarySetup } from "./LibrarySetup";
-import {
-  libraryResourceLocation,
-  isRepositoryResource,
-  validateResources,
-} from "@t3tools/client-runtime/fork";
-import { FolderGit2Icon, LinkIcon, XIcon } from "lucide-react";
-import { ResourceAdder } from "./ProjectResources";
-import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";
+
+import { libraryResourceFromInput, validateResources } from "@t3tools/client-runtime/fork";
 
 const isLibraryError = Schema.is(LibraryError);
 const EditorAttempt = Schema.NullOr(
@@ -40,14 +35,18 @@ const EditorAttempt = Schema.NullOr(
 /** Creating a project asks for a name; a brief and its repositories can come now or later. */
 export function ProjectEditorDialog({
   open = true,
-  flow,
+  embedded = false,
+  onBack,
+  initialTitle = "",
   continueToConversation = false,
   authorityId,
   onSaved,
   onClose,
 }: {
   readonly open?: boolean;
-  readonly flow?: import("./LibraryFlow").LibraryFlowNavigation | undefined;
+  readonly embedded?: boolean;
+  readonly onBack?: (() => void) | undefined;
+  readonly initialTitle?: string | undefined;
   readonly continueToConversation?: boolean;
   readonly authorityId: EnvironmentId | null;
   readonly onSaved: (project: LibraryProject) => void;
@@ -57,15 +56,17 @@ export function ProjectEditorDialog({
     `loom:library:editor:${authorityId}:new`,
     EditorAttempt,
   );
-  const [title, setTitle] = useState(attempt?.title ?? "");
+  const [title, setTitle] = useState(attempt?.title ?? initialTitle);
   const [brief, setBrief] = useState(attempt?.brief ?? "");
   const [resources, setResources] = useState<readonly LibraryResource[]>(attempt?.resources ?? []);
   const [resourceDraft, setResourceDraft] = useState("");
   const [color, setColor] = useState<LibraryProjectColor | undefined>(attempt?.color);
   const catalog = useLibraryProjects();
   const existing = catalog.query.data?.find(
-    (entry) => entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
+    (entry) =>
+      !entry.archived && entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
   );
+  const [page, setPage] = useState<"name" | "repository" | "brief" | "color">("name");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -109,147 +110,175 @@ export function ProjectEditorDialog({
     }
     setBusy(false);
   };
-  return (
-    <LibraryDialog
-      open={open}
-      flow={flow ? { ...flow, busy: locked } : undefined}
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-      title="New project"
-      description="A home for one thing you're building: its brief, repositories and conversations."
-      actions={
-        <>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="library-project-editor"
-            disabled={busy || !allowed || !title.trim()}
-          >
-            {busy
-              ? "Creating..."
-              : attempt
-                ? "Retry"
-                : continueToConversation
-                  ? "Create project & continue"
-                  : "Create project"}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id="library-project-editor"
-        className="space-y-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        <div className="flex items-end gap-3">
-          <ProjectTile project={{ id: "", title, color }} neutral={!color} />
-          <div className="min-w-0 flex-1">
-            <LibraryField label="Name">
-              <Input
-                autoFocus
-                placeholder="AspectAvy"
-                maxLength={160}
-                value={title}
-                disabled={locked}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            </LibraryField>
-          </div>
-        </div>
-        {existing ? (
-          <div className="space-y-2 rounded-lg bg-muted/40 p-3">
-            <p className="text-sm">A project named {existing.title} already exists.</p>
-            <Button size="sm" variant="outline" disabled={locked} onClick={() => onSaved(existing)}>
-              Open existing project
-            </Button>
-          </div>
-        ) : null}
-        <details className="space-y-4" open={attempt !== null || undefined}>
-          <summary className="w-fit cursor-pointer text-sm text-muted-foreground">
-            Optional details
-          </summary>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Color</p>
-            <ProjectColorPicker
-              value={color}
-              disabled={locked}
-              onChange={(next) => setColor(next ?? undefined)}
-            />
-          </div>
-          <LibraryField label="Brief (optional)">
-            <Textarea
-              rows={3}
-              value={brief}
-              maxLength={65536}
-              disabled={locked}
-              onChange={(event) => setBrief(event.target.value)}
-              placeholder="What are we making, and what matters?"
-            />
-          </LibraryField>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Repositories and links (optional)</p>
-            {resources.length ? (
-              <ul className="divide-y divide-border">
-                {resources.map((resource) => {
-                  const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
-                  return (
-                    <li key={resource.id} className="flex items-center gap-3 py-2">
-                      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm">{resource.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {libraryResourceLocation(resource)}
-                        </p>
-                      </div>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        aria-label={`Remove ${resource.title}`}
-                        disabled={locked}
-                        onClick={() =>
-                          setResources((current) =>
-                            current.filter((entry) => entry.id !== resource.id),
-                          )
-                        }
-                      >
-                        <XIcon />
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            {resources.length < 64 ? (
-              <ResourceAdder
-                resources={resources}
-                draft={{ value: resourceDraft, onChange: setResourceDraft }}
-                busy={locked}
-                onAdd={async (resource) => {
-                  setResources((current) => [...current, resource]);
-                  return true;
-                }}
-              />
-            ) : null}
-          </div>
-        </details>
-        {attempt ? (
-          <p className="text-xs text-muted-foreground">
-            Creating this project is waiting for confirmation. Retry to finish it.
-          </p>
-        ) : null}
-        <LibraryErrorNotice error={error} />
-      </form>
-      {!authorityId ? (
-        <section className="mt-6 rounded-lg bg-muted/40 p-4" aria-label="Connect shared Library">
-          <LibrarySetup />
-        </section>
-      ) : null}
-    </LibraryDialog>
+
+  const back = () => {
+    if (page !== "name") setPage("name");
+    else onBack?.();
+  };
+  const parsed = libraryResourceFromInput(resourceDraft, resources);
+  const target = parsed ? (parsed.kind === "link" ? parsed.url : parsed.remoteUrl) : null;
+  const resourceError =
+    target &&
+    resources.some(
+      (resource) => (resource.kind === "link" ? resource.url : resource.remoteUrl) === target,
+    )
+      ? "That's already in this project."
+      : parsed
+        ? validateResources([...resources, { id: "draft", ...parsed }])
+        : null;
+  const [colorSearch, setColorSearch] = useState("");
+  if (!open) return null;
+  const content =
+    page === "brief" ? (
+      <LibraryTextPalette
+        title="Project brief"
+        value={brief}
+        onChange={setBrief}
+        onBack={back}
+        onClose={onClose}
+      />
+    ) : (
+      <LibraryPaletteView
+        key={page}
+        title={
+          page === "repository"
+            ? "Add a repository or link"
+            : page === "color"
+              ? "Project color"
+              : "New project"
+        }
+        placeholder={
+          page === "repository"
+            ? "Paste a repository URL or link..."
+            : page === "color"
+              ? "Search colors..."
+              : "Name your project..."
+        }
+        query={page === "repository" ? resourceDraft : page === "color" ? colorSearch : title}
+        onQueryChange={
+          page === "repository" ? setResourceDraft : page === "color" ? setColorSearch : setTitle
+        }
+        onBack={page !== "name" || onBack ? back : undefined}
+        onClose={onClose}
+        busy={busy}
+        readOnly={locked}
+        filter={page === "color"}
+        error={error ?? (page === "repository" ? resourceError : null)}
+        message={
+          attempt
+            ? "Creation is waiting for confirmation. Retry to finish the same project."
+            : continueToConversation
+              ? "Create a project, then start a conversation. Repositories and a brief are optional."
+              : "A shared home for your work. Repositories and a brief are optional."
+        }
+        items={
+          page === "repository"
+            ? [
+                {
+                  id: "add-repository",
+                  title: parsed ? `Add ${parsed.title}` : "Paste a repository URL or link",
+                  disabled: locked || !parsed || !!resourceError,
+                  select: () => {
+                    if (parsed && !resourceError) {
+                      setResources((current) => [...current, { id: randomUUID(), ...parsed }]);
+                      setResourceDraft("");
+                      setPage("name");
+                    }
+                  },
+                },
+              ]
+            : page === "color"
+              ? [
+                  {
+                    id: "automatic",
+                    title: "Automatic",
+                    select: () => {
+                      setColor(undefined);
+                      setPage("name");
+                    },
+                  },
+                  ...LIBRARY_PROJECT_COLORS.map((choice) => ({
+                    id: choice,
+                    title: PROJECT_COLOR_NAMES[choice],
+                    select: () => {
+                      setColor(choice);
+                      setPage("name");
+                    },
+                  })),
+                ]
+              : [
+                  {
+                    id: "create-project",
+                    title: busy
+                      ? "Creating..."
+                      : attempt
+                        ? "Retry project creation"
+                        : title.trim()
+                          ? `Create “${title.trim()}”`
+                          : "Enter a project name",
+                    description: continueToConversation
+                      ? "Continue to your conversation"
+                      : "Open project",
+                    disabled: !allowed || !title.trim(),
+                    icon: <FolderPlusIcon className="size-4" />,
+                    select: () => void save(),
+                  },
+                  ...(existing
+                    ? [
+                        {
+                          id: "existing",
+                          title: `Use existing ${existing.title}`,
+                          description: "Keep work in the project already in your Library",
+                          disabled: locked,
+                          select: () => onSaved(existing),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: "repository",
+                    title: "Add a repository or link",
+                    description: resources.length
+                      ? `${resources.length} added`
+                      : "Optional. You can also add these later.",
+                    next: true,
+                    disabled: locked || resources.length >= 64,
+                    select: () => setPage("repository"),
+                  },
+                  {
+                    id: "brief",
+                    title: "Project brief",
+                    description: brief || "Optional",
+                    next: true,
+                    disabled: locked,
+                    select: () => setPage("brief"),
+                  },
+                  {
+                    id: "color",
+                    title: "Project color",
+                    description: color ? PROJECT_COLOR_NAMES[color] : "Automatic",
+                    next: true,
+                    disabled: locked,
+                    select: () => setPage("color"),
+                  },
+                  ...resources.map((resource) => ({
+                    id: resource.id,
+                    title: resource.title,
+                    description: "Remove from this project",
+                    disabled: locked,
+                    select: () =>
+                      setResources((current) =>
+                        current.filter((entry) => entry.id !== resource.id),
+                      ),
+                  })),
+                ]
+        }
+      />
+    );
+  return embedded ? (
+    content
+  ) : (
+    <LibraryPaletteDialog title="New project" onClose={onClose}>
+      {content}
+    </LibraryPaletteDialog>
   );
 }

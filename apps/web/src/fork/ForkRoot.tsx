@@ -2,7 +2,6 @@ import { ProjectProfileHost } from "./project-profiles/ProjectProfileHost";
 
 import { VaultPasswordGeneratorHost } from "./vault/PasswordGenerator";
 import { VaultAccessHost } from "./vault/AccessHost";
-import { LibraryActionHost } from "./project-library/LibraryActionHost";
 import { WorkspaceHandoffHost } from "./workspace-handoff/WorkspaceHandoffHost";
 import { PcbPreviewCommandHost } from "./pcb-preview/commands";
 import { ModelPreview3dShortcuts } from "./model-preview-3d/Shortcuts";
@@ -27,7 +26,6 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
 
   { id: "vault-passwords", Component: VaultPasswordGeneratorHost },
   { id: "vault-access", Component: VaultAccessHost },
-  { id: "project-library-actions", Component: LibraryActionHost },
   { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },
   { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },
   { id: "pcb-preview-commands", Component: PcbPreviewCommandHost },

@@ -9,6 +9,7 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly escapeLabel?: ReactNode;
   readonly footerActionLabel?: ReactNode;
   readonly footerTrailing?: ReactNode;
+  readonly footerHints?: ReactNode; // fork: library-palette
   readonly inputAccessory?: ReactNode;
   readonly inputProps: ComponentProps<typeof CommandInput>;
   readonly panelSize?: "list" | "tall-list" | "fill";
@@ -21,6 +22,7 @@ export function CommandPaletteContent({
   escapeLabel = "Close",
   footerActionLabel,
   footerTrailing,
+  footerHints, // fork: library-palette
   inputAccessory,
   inputProps,
   panelSize = "list",
@@ -59,31 +61,36 @@ export function CommandPaletteContent({
         </CommandPanel>
         <CommandFooter className="max-sm:flex-col max-sm:items-start">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 max-sm:w-full">
-            <KbdGroup>
-              <Kbd>
-                <ArrowUpIcon />
-              </Kbd>
-              <Kbd>
-                <ArrowDownIcon />
-              </Kbd>
-              <span>Navigate</span>
-            </KbdGroup>
-            {footerActionLabel !== undefined ? (
-              <KbdGroup>
-                <Kbd>Enter</Kbd>
-                <span>{footerActionLabel}</span>
-              </KbdGroup>
-            ) : null}
-            {showBackHint ? (
-              <KbdGroup>
-                <Kbd>Backspace</Kbd>
-                <span>Back</span>
-              </KbdGroup>
-            ) : null}
-            <KbdGroup>
-              <Kbd>Esc</Kbd>
-              <span>{escapeLabel}</span>
-            </KbdGroup>
+            {/* fork: library-palette */}
+            {footerHints ?? (
+              <>
+                <KbdGroup>
+                  <Kbd>
+                    <ArrowUpIcon />
+                  </Kbd>
+                  <Kbd>
+                    <ArrowDownIcon />
+                  </Kbd>
+                  <span>Navigate</span>
+                </KbdGroup>
+                {footerActionLabel !== undefined ? (
+                  <KbdGroup>
+                    <Kbd>Enter</Kbd>
+                    <span>{footerActionLabel}</span>
+                  </KbdGroup>
+                ) : null}
+                {showBackHint ? (
+                  <KbdGroup>
+                    <Kbd>Backspace</Kbd>
+                    <span>Back</span>
+                  </KbdGroup>
+                ) : null}
+                <KbdGroup>
+                  <Kbd>Esc</Kbd>
+                  <span>{escapeLabel}</span>
+                </KbdGroup>
+              </>
+            )}
           </div>
           {footerTrailing}
         </CommandFooter>

@@ -1,5 +1,3 @@
-import { ArrowLeftIcon } from "lucide-react";
-import { LibraryFlowProgress, type LibraryFlowNavigation } from "./LibraryFlow";
 import type { ReactNode, Ref } from "react";
 import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -22,7 +20,6 @@ export function LibraryDialog({
   description,
   children,
   actions,
-  flow,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -30,7 +27,6 @@ export function LibraryDialog({
   readonly description: string;
   readonly children: ReactNode;
   readonly actions: ReactNode;
-  readonly flow?: LibraryFlowNavigation | undefined;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,18 +34,9 @@ export function LibraryDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
-          {flow ? <LibraryFlowProgress {...flow} /> : null}
         </DialogHeader>
         <DialogPanel>{children}</DialogPanel>
-        <DialogFooter variant="bare">
-          {flow?.onBack ? (
-            <Button variant="outline" disabled={flow.busy} onClick={flow.onBack}>
-              <ArrowLeftIcon />
-              Back
-            </Button>
-          ) : null}
-          {actions}
-        </DialogFooter>
+        <DialogFooter variant="bare">{actions}</DialogFooter>
       </DialogPopup>
     </Dialog>
   );
