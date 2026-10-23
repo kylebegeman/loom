@@ -256,6 +256,7 @@ export function ConnectionEnvironmentRow(props: {
                 />
               </View>
             )}
+            {/* fork: fleet-connections - Match the shared computer inventory terminology. */}
             <IconButton
               accessibilityLabel="Reconnect computer"
               icon="arrow.clockwise"
@@ -263,6 +264,7 @@ export function ConnectionEnvironmentRow(props: {
               disabled={!enabled || isRetrying}
               onPress={() => props.onReconnect(props.environment.environmentId)}
             />
+            {/* fork: fleet-connections - Removal targets this computer connection. */}
             <IconButton
               accessibilityLabel="Remove computer"
               icon="trash"

@@ -201,6 +201,7 @@ export function ConnectionsNewRouteScreen({
     !scanComplete &&
     !isSubmitting;
 
+  // fork: fleet-connections - The title distinguishes a computer from another address for it.
   return (
     <SettingsScreen
       formSheet={routeName === "ConnectionsNew"}
@@ -220,6 +221,7 @@ export function ConnectionsNewRouteScreen({
         }}
       >
         <View collapsable={false} className="gap-6.5">
+          {/* fork: fleet-connections - Pairing guidance follows the selected computer. */}
           <Text className="px-4 text-sm leading-normal text-foreground-muted">
             {params.routeFor
               ? "Open Connections settings on this same computer to add another way to reach it."
