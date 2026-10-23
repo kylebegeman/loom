@@ -39,10 +39,16 @@ const EditorAttempt = Schema.NullOr(
 
 /** Creating a project asks for a name; a brief and its repositories can come now or later. */
 export function ProjectEditorDialog({
+  open = true,
+  flow,
+  continueToConversation = false,
   authorityId,
   onSaved,
   onClose,
 }: {
+  readonly open?: boolean;
+  readonly flow?: import("./LibraryFlow").LibraryFlowNavigation | undefined;
+  readonly continueToConversation?: boolean;
   readonly authorityId: EnvironmentId | null;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
@@ -54,6 +60,7 @@ export function ProjectEditorDialog({
   const [title, setTitle] = useState(attempt?.title ?? "");
   const [brief, setBrief] = useState(attempt?.brief ?? "");
   const [resources, setResources] = useState<readonly LibraryResource[]>(attempt?.resources ?? []);
+  const [resourceDraft, setResourceDraft] = useState("");
   const [color, setColor] = useState<LibraryProjectColor | undefined>(attempt?.color);
   const catalog = useLibraryProjects();
   const existing = catalog.query.data?.find(
@@ -104,7 +111,8 @@ export function ProjectEditorDialog({
   };
   return (
     <LibraryDialog
-      open
+      open={open}
+      flow={flow ? { ...flow, busy: locked } : undefined}
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
@@ -120,7 +128,13 @@ export function ProjectEditorDialog({
             form="library-project-editor"
             disabled={busy || !allowed || !title.trim()}
           >
-            {busy ? "Creating..." : attempt ? "Retry" : "Create project"}
+            {busy
+              ? "Creating..."
+              : attempt
+                ? "Retry"
+                : continueToConversation
+                  ? "Create project & continue"
+                  : "Create project"}
           </Button>
         </>
       }
@@ -214,6 +228,7 @@ export function ProjectEditorDialog({
             {resources.length < 64 ? (
               <ResourceAdder
                 resources={resources}
+                draft={{ value: resourceDraft, onChange: setResourceDraft }}
                 busy={locked}
                 onAdd={async (resource) => {
                   setResources((current) => [...current, resource]);

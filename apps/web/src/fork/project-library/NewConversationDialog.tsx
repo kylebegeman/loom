@@ -72,6 +72,7 @@ import { PortableLaunchAttempt, restoreLibraryLaunchCopy } from "./portableLaunc
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+import { LibraryFlowSection } from "./LibraryFlow";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import {
   LaunchGetCopy,
@@ -198,6 +199,8 @@ export function libraryConversationDefaults(input: {
 
 /** Persist an empty upstream thread, bind verified files, and register history before its first send. */
 export function NewConversationDialog({
+  open = true,
+  initialStep = "files",
   project,
   copies,
   copiesQuery,
@@ -213,6 +216,8 @@ export function NewConversationDialog({
   onChanged,
   onClose,
 }: {
+  readonly open?: boolean;
+  readonly initialStep?: "files" | "agent";
   readonly project: LibraryProject;
   readonly copies: readonly LibraryWorkingCopy[];
   readonly copiesQuery: Pick<
@@ -231,6 +236,7 @@ export function NewConversationDialog({
   readonly onChanged: () => void;
   readonly onClose: () => void;
 }) {
+  const [step, setStep] = useState(initialStep);
   const authority = useLibraryAuthority();
   const providersByEnvironment = useEnvironmentProviders();
   const clientSettings = useClientSettings();
@@ -1070,7 +1076,7 @@ export function NewConversationDialog({
     } else setReviewingFiles(true);
     setBusy(false);
   };
-  const canCreate =
+  const canContinue =
     !needsSourceReview &&
     !busy &&
     !pulling &&
@@ -1113,11 +1119,11 @@ export function NewConversationDialog({
         (filesPolicy && (filesPolicy.keepOnComputer !== false) !== keepOnComputer))
     ) ||
       (canSetRetention && canRegisterCopy)) &&
-    modelSelection !== null &&
     (continuation === undefined || (source.isSuccess && !source.isPending)) &&
     authority.connected &&
     host?.connection.phase === "connected" &&
     host.entry.enabled;
+  const canCreate = canContinue && modelSelection !== null;
   const rankOf = (environmentId: EnvironmentId) => {
     const index = ranking.candidates.findIndex(
       (candidate) => candidate.environmentId === environmentId,
@@ -1161,7 +1167,13 @@ export function NewConversationDialog({
     );
   return (
     <LibraryDialog
-      open
+      open={open}
+      flow={{
+        steps: ["Project", "Computer & files", "Agent"],
+        current: step === "files" ? 1 : 2,
+        onBack: step === "agent" ? () => setStep("files") : onChooseProject,
+        busy: busy || pulling || locked,
+      }}
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
@@ -1217,504 +1229,530 @@ export function NewConversationDialog({
               Review files
             </Button>
           ) : null}
-          <Button disabled={!canCreate} onClick={() => void submit()}>
-            {busy ? "Starting..." : locked ? "Retry conversation" : "Start conversation"}
-          </Button>
+          {step === "files" ? (
+            <Button
+              disabled={!canContinue}
+              onClick={() => {
+                if (canContinue) setStep("agent");
+              }}
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button disabled={!canCreate} onClick={() => void submit()}>
+              {busy ? "Starting..." : locked ? "Retry conversation" : "Start conversation"}
+            </Button>
+          )}
         </>
       }
     >
       <div className="space-y-4">
-        <LibraryField label="Project">
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-sm font-medium">{project.title}</span>
-            {onChooseProject ? (
-              <Button variant="ghost" size="xs" disabled={busy || locked} onClick={onChooseProject}>
-                Change project
-              </Button>
-            ) : null}
-          </div>
-        </LibraryField>
-        <LibraryField label="Conversation title">
-          <Input
-            value={title}
-            disabled={busy || locked}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </LibraryField>
-        <LibraryField label="Scope">
-          <Select
-            value={launchResourceIds.length > 1 ? "source-scope" : (resourceId ?? "whole")}
-            disabled={busy || locked}
-            onValueChange={(value) => {
-              if (value === "source-scope") return;
-              setScopeChanged(true);
-              setResourceId(value === "whole" ? null : value);
-              setCopyId(null);
-              setSourceChoiceId(null);
-              setExistingFolder(null);
-              setLocalFolder(null);
-              setRootPath(null);
-              setKeepChoice(null);
-            }}
-            items={[
-              { value: "whole", label: "Whole project" },
-              ...(launchResourceIds.length > 1
-                ? [{ value: "source-scope", label: "Original repositories" }]
-                : []),
-              ...project.resources
-                .filter(isRepositoryResource)
-                .map((resource) => ({ value: resource.id, label: resource.title })),
-            ]}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="whole">Whole project</SelectItem>
-              {launchResourceIds.length > 1 ? (
-                <SelectItem value="source-scope">Original repositories</SelectItem>
-              ) : null}
-              {project.resources.filter(isRepositoryResource).map((resource) => (
-                <SelectItem key={resource.id} value={resource.id}>
-                  {resource.title}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LibraryField>
-        <details className="text-sm" open={!chosen?.online || undefined}>
-          <summary className="cursor-pointer text-muted-foreground">
-            {host ? `On ${host.label}` : "Choose a computer"}
-          </summary>
-          <div className="mt-2 space-y-2">
-            {canChooseComputer ? (
-              <LibraryField label="Computer">
-                <Select
-                  value={hostId}
+        <LibraryFlowSection active={step === "files"}>
+          <LibraryField label="Project">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-sm font-medium">{project.title}</span>
+              {onChooseProject ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
                   disabled={busy || locked}
-                  onValueChange={(value) => {
-                    setHostId(value);
-                    setCopyId(null);
-                    setSourceChoiceId(null);
-                    setExistingFolder(null);
-                    setLocalFolder(null);
-                    setRootPath(null);
-                    setModelChoice(null);
-                    setRuntimeChoice(null);
-                    setInteractionChoice("default");
-                    setKeepChoice(null);
-                  }}
-                  items={executionHosts.map((entry) => ({
-                    value: entry.environmentId,
-                    label: entry.label,
-                  }))}
+                  onClick={onChooseProject}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a computer" />
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {executionHosts.map((entry) => (
-                      <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                        {entry.label}
-                        {entry.connection.phase !== "connected"
-                          ? " (offline)"
-                          : toolProblemsOf(entry.environmentId)
-                            ? ` (${toolProblemsOf(entry.environmentId)})`
-                            : ""}
-                      </SelectItem>
-                    ))}
-                    {authority.computers
-                      .filter(
-                        (computer) =>
-                          computer.supportsExecution &&
-                          !authority.environments.some(
-                            (entry) => entry.environmentId === computer.environmentId,
-                          ),
-                      )
-                      .map((computer) => (
-                        <SelectItem
-                          key={computer.environmentId}
-                          value={computer.environmentId}
-                          disabled
-                        >
-                          {computer.label} (connect first)
-                        </SelectItem>
-                      ))}
-                  </SelectPopup>
-                </Select>
-                {chosen && !attempt ? (
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    {libraryLaunchCandidateSummary(chosen).replace(
-                      "no copy yet",
-                      "files prepared when starting",
-                    )}
-                  </p>
-                ) : null}
-                {!attempt
-                  ? miniCandidates.map((candidate) => (
-                      <p
-                        key={candidate.kind === "mini" ? candidate.workerId : candidate.label}
-                        className="mt-1 text-xs text-muted-foreground"
-                      >
-                        {libraryLaunchCandidateSummary(candidate)}
-                      </p>
-                    ))
-                  : null}
-              </LibraryField>
-            ) : chosen ? (
-              <p className="text-xs text-muted-foreground">
-                {libraryLaunchCandidateSummary(chosen).replace(
-                  "no copy yet",
-                  "files prepared when starting",
-                )}
-              </p>
-            ) : null}
-          </div>
-        </details>
-        {hostId && host?.serverConfig && modelSelection && defaults ? (
-          <LibraryField label="Model">
-            <div className="flex flex-wrap items-center gap-2">
-              <ProviderModelPicker
-                environmentId={hostId}
-                activeInstanceId={modelSelection.instanceId}
-                model={modelSelection.model}
-                lockedProvider={null}
-                instanceEntries={defaults.entries}
-                modelOptionsByInstance={getCustomModelOptionsByInstance(
-                  mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
-                  defaults.providers,
-                  modelSelection.instanceId,
-                  modelSelection.model,
-                )}
-                disabled={busy || locked}
-                onInstanceModelChange={(instanceId, model) => setModelChoice({ instanceId, model })}
-              />
-              {providerEntry ? (
-                <TraitsPicker
-                  provider={providerEntry.driverKind}
-                  instanceId={modelSelection.instanceId}
-                  models={providerEntry.models}
-                  model={modelSelection.model}
-                  modelOptions={modelSelection.options}
-                  prompt=""
-                  onPromptChange={() => {}}
-                  allowPromptInjectedEffort={false}
-                  planModeEnabled={interactionMode === "plan"}
-                  isComposerOwned={false}
-                  disabled={busy || locked}
-                  onModelOptionsChange={(options) =>
-                    setModelChoice({ ...modelSelection, options: options ?? [] })
-                  }
-                />
+                  Change project
+                </Button>
               ) : null}
             </div>
           </LibraryField>
-        ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <LibraryField label="Permissions">
+          <LibraryField label="Scope">
             <Select
-              value={runtimeMode}
+              value={launchResourceIds.length > 1 ? "source-scope" : (resourceId ?? "whole")}
               disabled={busy || locked}
               onValueChange={(value) => {
-                if (value) setRuntimeChoice(value);
-              }}
-              items={runtimeModeOptions.map((mode) => ({
-                value: mode,
-                label: runtimeModeConfig[mode].label,
-              }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup>
-                {runtimeModeOptions.map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {runtimeModeConfig[mode].label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-          <LibraryField label="Mode">
-            <Select
-              value={interactionMode}
-              disabled={busy || locked}
-              onValueChange={(value) => {
-                if (value) setInteractionChoice(value);
+                if (value === "source-scope") return;
+                setScopeChanged(true);
+                setResourceId(value === "whole" ? null : value);
+                setCopyId(null);
+                setSourceChoiceId(null);
+                setExistingFolder(null);
+                setLocalFolder(null);
+                setRootPath(null);
+                setKeepChoice(null);
               }}
               items={[
-                { value: "default", label: "Do the work" },
-                { value: "plan", label: "Plan only" },
+                { value: "whole", label: "Whole project" },
+                ...(launchResourceIds.length > 1
+                  ? [{ value: "source-scope", label: "Original repositories" }]
+                  : []),
+                ...project.resources
+                  .filter(isRepositoryResource)
+                  .map((resource) => ({ value: resource.id, label: resource.title })),
               ]}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="default">Do the work</SelectItem>
-                <SelectItem value="plan">Plan only</SelectItem>
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        </div>
-        {authority.computers.some(
-          (computer) =>
-            computer.supportsExecution &&
-            !authority.environments.some((entry) => entry.environmentId === computer.environmentId),
-        ) ? (
-          <p className="text-sm text-muted-foreground">
-            Your Library remembers other computers.{" "}
-            <Link to="/settings/connections" className="underline underline-offset-4">
-              Connect a computer
-            </Link>{" "}
-            to run work there. Saved conversations are available here.
-          </p>
-        ) : null}
-        {!locked && sourcePlan.kind === "choose" ? (
-          <LibraryField label="Files">
-            <p className="mb-2 text-xs text-muted-foreground">{sourcePlan.reason}</p>
-            <Select
-              value={sourceChoiceId}
-              disabled={busy}
-              items={sourcePlan.candidates.map((entry) => ({
-                value: entry.id,
-                label: entry.rootPath,
-              }))}
-              onValueChange={(value) => {
-                setSourceChoiceId(value);
-                setExistingFolder(null);
-                setLocalFolder(null);
-                setCopyId(value);
-                setRootPath(null);
-                setKeepChoice(null);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose project files" />
-              </SelectTrigger>
-              <SelectPopup>
-                {sourcePlan.candidates.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.rootPath} on{" "}
-                    {authority.environments.find(
-                      (host) => host.environmentId === entry.environmentId,
-                    )?.label ??
-                      authority.computers.find((host) => host.environmentId === entry.environmentId)
-                        ?.label ??
-                      entry.environmentId}
-                    {entry.environmentId === hostId && entry.state === "ready"
-                      ? " (on this computer)"
-                      : " (saved files)"}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        ) : candidates.length > 1 && !sourceWorkingCopyId && !portableSource ? (
-          <LibraryField label="Files location">
-            <Select
-              value={copy?.id ?? null}
-              onValueChange={(value) => {
-                setCopyId(value);
-                setSourceChoiceId(value);
-                setKeepChoice(null);
-              }}
-              disabled={busy || locked}
-              items={candidates.map((entry) => ({ value: entry.id, label: entry.rootPath }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a folder" />
-              </SelectTrigger>
-              <SelectPopup>
-                {candidates.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.rootPath}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        ) : null}
-        {existingFolder ? (
-          <div className="space-y-2">
-            <p role="alert" className="text-sm text-muted-foreground">
-              {existingFolder} already has files. Choose which files to use.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setRootPath(existingFolder);
-                  setLocalFolder(existingFolder);
-                  setExistingFolder(null);
-                }}
-              >
-                Use files in this folder
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setExistingFolder(null);
-                  setRootPath("");
-                }}
-              >
-                Choose another folder
-              </Button>
-            </div>
-          </div>
-        ) : null}
-        {hostId && !locked && filesPlan.kind === "unavailable" && !needsReopen ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {filesPlan.message}
-          </p>
-        ) : null}
-        {needsPortable && !supportsPortable ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            Update Loom on this computer to use these saved files here.
-          </p>
-        ) : null}
-        {needsPortable && !sourceCanSnapshot ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            Connect the source computer to save its latest files before starting here.
-          </p>
-        ) : null}
-        {copiesReadiness === "loading" ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading project files...
-          </p>
-        ) : copiesReadiness === "error" ? (
-          <LibraryErrorNotice
-            error={copiesQuery.error ?? "Could not load project files."}
-            onRetry={copiesQuery.refresh}
-          />
-        ) : copy?.state === "ready" && !needsPortable ? (
-          <div className="space-y-2">
-            <p className="break-words text-sm text-muted-foreground">
-              Files on {host?.label}: {copy.rootPath}
-            </p>
-            <details className="text-sm text-muted-foreground">
-              <summary className="cursor-pointer">Files location</summary>
-              <div className="mt-2">
-                <LibraryField label="Folder">
-                  <Input
-                    font="mono"
-                    value={rootPath}
-                    disabled={busy || locked}
-                    onChange={(event) => setRootPath(event.target.value)}
-                  />
-                </LibraryField>
-              </div>
-            </details>
-            {warning ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm text-warning-foreground">
-                  {warning.message
-                    .replace("This copy is", "These files are")
-                    .replace("This copy has", "These files have")
-                    .replace(" and has ", " and have ")
-                    .replace("in this copy", "in this project")}
-                </p>
-                {warning.pullPaths && canPull ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={!canCreate}
-                    onClick={() => void pullThenSubmit(warning.pullPaths ?? [])}
-                  >
-                    {pulling ? "Pulling..." : "Pull first"}
-                  </Button>
+                <SelectItem value="whole">Whole project</SelectItem>
+                {launchResourceIds.length > 1 ? (
+                  <SelectItem value="source-scope">Original repositories</SelectItem>
                 ) : null}
+                {project.resources.filter(isRepositoryResource).map((resource) => (
+                  <SelectItem key={resource.id} value={resource.id}>
+                    {resource.title}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+          <details className="text-sm" open={!chosen?.online || undefined}>
+            <summary className="cursor-pointer text-muted-foreground">
+              {host ? `On ${host.label}` : "Choose a computer"}
+            </summary>
+            <div className="mt-2 space-y-2">
+              {canChooseComputer ? (
+                <LibraryField label="Computer">
+                  <Select
+                    value={hostId}
+                    disabled={busy || locked}
+                    onValueChange={(value) => {
+                      setHostId(value);
+                      setCopyId(null);
+                      setSourceChoiceId(null);
+                      setExistingFolder(null);
+                      setLocalFolder(null);
+                      setRootPath(null);
+                      setModelChoice(null);
+                      setRuntimeChoice(null);
+                      setInteractionChoice("default");
+                      setKeepChoice(null);
+                    }}
+                    items={executionHosts.map((entry) => ({
+                      value: entry.environmentId,
+                      label: entry.label,
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a computer" />
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {executionHosts.map((entry) => (
+                        <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                          {entry.label}
+                          {entry.connection.phase !== "connected"
+                            ? " (offline)"
+                            : toolProblemsOf(entry.environmentId)
+                              ? ` (${toolProblemsOf(entry.environmentId)})`
+                              : ""}
+                        </SelectItem>
+                      ))}
+                      {authority.computers
+                        .filter(
+                          (computer) =>
+                            computer.supportsExecution &&
+                            !authority.environments.some(
+                              (entry) => entry.environmentId === computer.environmentId,
+                            ),
+                        )
+                        .map((computer) => (
+                          <SelectItem
+                            key={computer.environmentId}
+                            value={computer.environmentId}
+                            disabled
+                          >
+                            {computer.label} (connect first)
+                          </SelectItem>
+                        ))}
+                    </SelectPopup>
+                  </Select>
+                  {chosen && !attempt ? (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {libraryLaunchCandidateSummary(chosen).replace(
+                        "no copy yet",
+                        "files prepared when starting",
+                      )}
+                    </p>
+                  ) : null}
+                  {!attempt
+                    ? miniCandidates.map((candidate) => (
+                        <p
+                          key={candidate.kind === "mini" ? candidate.workerId : candidate.label}
+                          className="mt-1 text-xs text-muted-foreground"
+                        >
+                          {libraryLaunchCandidateSummary(candidate)}
+                        </p>
+                      ))
+                    : null}
+                </LibraryField>
+              ) : chosen ? (
+                <p className="text-xs text-muted-foreground">
+                  {libraryLaunchCandidateSummary(chosen).replace(
+                    "no copy yet",
+                    "files prepared when starting",
+                  )}
+                </p>
+              ) : null}
+            </div>
+          </details>
+          {authority.computers.some(
+            (computer) =>
+              computer.supportsExecution &&
+              !authority.environments.some(
+                (entry) => entry.environmentId === computer.environmentId,
+              ),
+          ) ? (
+            <p className="text-sm text-muted-foreground">
+              Your Library remembers other computers.{" "}
+              <Link to="/settings/connections" className="underline underline-offset-4">
+                Connect a computer
+              </Link>{" "}
+              to run work there. Saved conversations are available here.
+            </p>
+          ) : null}
+          {!locked && sourcePlan.kind === "choose" ? (
+            <LibraryField label="Files">
+              <p className="mb-2 text-xs text-muted-foreground">{sourcePlan.reason}</p>
+              <Select
+                value={sourceChoiceId}
+                disabled={busy}
+                items={sourcePlan.candidates.map((entry) => ({
+                  value: entry.id,
+                  label: entry.rootPath,
+                }))}
+                onValueChange={(value) => {
+                  setSourceChoiceId(value);
+                  setExistingFolder(null);
+                  setLocalFolder(null);
+                  setCopyId(value);
+                  setRootPath(null);
+                  setKeepChoice(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose project files" />
+                </SelectTrigger>
+                <SelectPopup>
+                  {sourcePlan.candidates.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.rootPath} on{" "}
+                      {authority.environments.find(
+                        (host) => host.environmentId === entry.environmentId,
+                      )?.label ??
+                        authority.computers.find(
+                          (host) => host.environmentId === entry.environmentId,
+                        )?.label ??
+                        entry.environmentId}
+                      {entry.environmentId === hostId && entry.state === "ready"
+                        ? " (on this computer)"
+                        : " (saved files)"}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LibraryField>
+          ) : candidates.length > 1 && !sourceWorkingCopyId && !portableSource ? (
+            <LibraryField label="Files location">
+              <Select
+                value={copy?.id ?? null}
+                onValueChange={(value) => {
+                  setCopyId(value);
+                  setSourceChoiceId(value);
+                  setKeepChoice(null);
+                }}
+                disabled={busy || locked}
+                items={candidates.map((entry) => ({ value: entry.id, label: entry.rootPath }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a folder" />
+                </SelectTrigger>
+                <SelectPopup>
+                  {candidates.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.rootPath}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LibraryField>
+          ) : null}
+          {existingFolder ? (
+            <div className="space-y-2">
+              <p role="alert" className="text-sm text-muted-foreground">
+                {existingFolder} already has files. Choose which files to use.
+              </p>
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={!canCreate}
-                  onClick={() => void submit()}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setRootPath(existingFolder);
+                    setLocalFolder(existingFolder);
+                    setExistingFolder(null);
+                  }}
                 >
-                  Continue anyway
+                  Use files in this folder
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setExistingFolder(null);
+                    setRootPath("");
+                  }}
+                >
+                  Choose another folder
                 </Button>
               </div>
-            ) : null}
-          </div>
-        ) : hostId ? (
-          <LaunchGetCopy
-            environmentId={hostId}
-            project={project}
-            hostLabel={host?.label ?? "this computer"}
-            temporary={supportsLoomFeature(
-              host?.serverConfig?.environment.capabilities,
-              LIBRARY_FILE_LIFECYCLE_FEATURE,
-            )}
-            rootPath={rootPath}
-            disabled={busy || pulling || locked || host?.connection.phase !== "connected"}
-            needsExistingFolder={
-              !needsPortable &&
-              project.resources.some(
-                (resource) =>
-                  isRepositoryResource(resource) &&
-                  (!resourceId || resource.id === resourceId) &&
-                  !resource.remoteUrl,
-              )
-            }
-            onRootPathChange={(path) => {
-              setRootPath(path);
-              setExistingFolder(null);
-            }}
-          />
-        ) : null}
-        {supportsReopen && filesPolicy?.ownership !== "borrowed" ? (
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span>
-              Keep files on this computer
-              <span className="mt-1 block text-xs text-muted-foreground">
-                With Keep off, finished work can be cleaned up to free space.
-              </span>
-            </span>
-            <Switch
-              checked={keepOnComputer}
-              onCheckedChange={setKeepChoice}
-              disabled={busy || locked || !canSetRetention || !canRegisterCopy}
+            </div>
+          ) : null}
+          {hostId && !locked && filesPlan.kind === "unavailable" && !needsReopen ? (
+            <p role="alert" className="text-sm text-muted-foreground">
+              {filesPlan.message}
+            </p>
+          ) : null}
+          {needsPortable && !supportsPortable ? (
+            <p role="alert" className="text-sm text-muted-foreground">
+              Update Loom on this computer to use these saved files here.
+            </p>
+          ) : null}
+          {needsPortable && !sourceCanSnapshot ? (
+            <p role="alert" className="text-sm text-muted-foreground">
+              Connect the source computer to save its latest files before starting here.
+            </p>
+          ) : null}
+          {copiesReadiness === "loading" ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Loading project files...
+            </p>
+          ) : copiesReadiness === "error" ? (
+            <LibraryErrorNotice
+              error={copiesQuery.error ?? "Could not load project files."}
+              onRetry={copiesQuery.refresh}
             />
-          </label>
-        ) : null}
-        {copy?.state !== "ready" && retained.error ? (
-          <LibraryErrorNotice error={retained.error} onRetry={retained.refresh} />
-        ) : null}
-        {copy?.state !== "ready" && retained.isPending ? (
-          <p role="status" className="text-xs text-muted-foreground">
-            Checking saved files...
-          </p>
-        ) : null}
-        {project.brief ? (
-          <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer">Shared project brief</summary>
-            <p className="mt-2 whitespace-pre-wrap">{project.brief}</p>
-          </details>
-        ) : null}
-        {continuation && !source.data ? (
-          <LibraryErrorNotice
-            error={source.error ?? "Loading recent saved context..."}
-            onRetry={source.refresh}
-          />
-        ) : null}
-        {continuation ? (
-          <LibraryField label="Context to carry forward">
-            <Textarea
-              disabled={busy || locked}
-              value={context}
-              onChange={(event) => {
-                setContext(event.target.value);
+          ) : copy?.state === "ready" && !needsPortable ? (
+            <div className="space-y-2">
+              <p className="break-words text-sm text-muted-foreground">
+                Files on {host?.label}: {copy.rootPath}
+              </p>
+              <details className="text-sm text-muted-foreground">
+                <summary className="cursor-pointer">Files location</summary>
+                <div className="mt-2">
+                  <LibraryField label="Folder">
+                    <Input
+                      font="mono"
+                      value={rootPath}
+                      disabled={busy || locked}
+                      onChange={(event) => setRootPath(event.target.value)}
+                    />
+                  </LibraryField>
+                </div>
+              </details>
+              {warning ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-warning-foreground">
+                    {warning.message
+                      .replace("This copy is", "These files are")
+                      .replace("This copy has", "These files have")
+                      .replace(" and has ", " and have ")
+                      .replace("in this copy", "in this project")}
+                  </p>
+                  {warning.pullPaths && canPull ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={!canCreate}
+                      onClick={() => void pullThenSubmit(warning.pullPaths ?? [])}
+                    >
+                      {pulling ? "Pulling..." : "Pull first"}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={!canCreate}
+                    onClick={() => void submit()}
+                  >
+                    Continue anyway
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : hostId ? (
+            <LaunchGetCopy
+              environmentId={hostId}
+              project={project}
+              hostLabel={host?.label ?? "this computer"}
+              temporary={supportsLoomFeature(
+                host?.serverConfig?.environment.capabilities,
+                LIBRARY_FILE_LIFECYCLE_FEATURE,
+              )}
+              rootPath={rootPath}
+              disabled={busy || pulling || locked || host?.connection.phase !== "connected"}
+              needsExistingFolder={
+                !needsPortable &&
+                project.resources.some(
+                  (resource) =>
+                    isRepositoryResource(resource) &&
+                    (!resourceId || resource.id === resourceId) &&
+                    !resource.remoteUrl,
+                )
+              }
+              onRootPathChange={(path) => {
+                setRootPath(path);
+                setExistingFolder(null);
               }}
-              placeholder="Summarize the decisions and next step to carry into the new conversation."
+            />
+          ) : null}
+          {supportsReopen && filesPolicy?.ownership !== "borrowed" ? (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>
+                Keep files on this computer
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  With Keep off, finished work can be cleaned up to free space.
+                </span>
+              </span>
+              <Switch
+                checked={keepOnComputer}
+                onCheckedChange={setKeepChoice}
+                disabled={busy || locked || !canSetRetention || !canRegisterCopy}
+              />
+            </label>
+          ) : null}
+          {copy?.state !== "ready" && retained.error ? (
+            <LibraryErrorNotice error={retained.error} onRetry={retained.refresh} />
+          ) : null}
+          {copy?.state !== "ready" && retained.isPending ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Checking saved files...
+            </p>
+          ) : null}
+        </LibraryFlowSection>
+        <LibraryFlowSection active={step === "agent"}>
+          <LibraryField label="Conversation title">
+            <Input
+              aria-label="Conversation title"
+              value={title}
+              disabled={busy || locked}
+              onChange={(event) => setTitle(event.target.value)}
             />
           </LibraryField>
-        ) : null}
-        {hostId && !modelSelection ? (
-          <p className="text-xs text-muted-foreground">
-            Connect this computer and enable a provider before creating a conversation.
-          </p>
-        ) : null}
+          {hostId && host?.serverConfig && modelSelection && defaults ? (
+            <LibraryField label="Model">
+              <div className="flex flex-wrap items-center gap-2">
+                <ProviderModelPicker
+                  environmentId={hostId}
+                  activeInstanceId={modelSelection.instanceId}
+                  model={modelSelection.model}
+                  lockedProvider={null}
+                  instanceEntries={defaults.entries}
+                  modelOptionsByInstance={getCustomModelOptionsByInstance(
+                    mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
+                    defaults.providers,
+                    modelSelection.instanceId,
+                    modelSelection.model,
+                  )}
+                  disabled={busy || locked}
+                  onInstanceModelChange={(instanceId, model) =>
+                    setModelChoice({ instanceId, model })
+                  }
+                />
+                {providerEntry ? (
+                  <TraitsPicker
+                    provider={providerEntry.driverKind}
+                    instanceId={modelSelection.instanceId}
+                    models={providerEntry.models}
+                    model={modelSelection.model}
+                    modelOptions={modelSelection.options}
+                    prompt=""
+                    onPromptChange={() => {}}
+                    allowPromptInjectedEffort={false}
+                    planModeEnabled={interactionMode === "plan"}
+                    isComposerOwned={false}
+                    disabled={busy || locked}
+                    onModelOptionsChange={(options) =>
+                      setModelChoice({ ...modelSelection, options: options ?? [] })
+                    }
+                  />
+                ) : null}
+              </div>
+            </LibraryField>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <LibraryField label="Permissions">
+              <Select
+                value={runtimeMode}
+                disabled={busy || locked}
+                onValueChange={(value) => {
+                  if (value) setRuntimeChoice(value);
+                }}
+                items={runtimeModeOptions.map((mode) => ({
+                  value: mode,
+                  label: runtimeModeConfig[mode].label,
+                }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup>
+                  {runtimeModeOptions.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {runtimeModeConfig[mode].label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LibraryField>
+            <LibraryField label="Mode">
+              <Select
+                value={interactionMode}
+                disabled={busy || locked}
+                onValueChange={(value) => {
+                  if (value) setInteractionChoice(value);
+                }}
+                items={[
+                  { value: "default", label: "Do the work" },
+                  { value: "plan", label: "Plan only" },
+                ]}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="default">Do the work</SelectItem>
+                  <SelectItem value="plan">Plan only</SelectItem>
+                </SelectPopup>
+              </Select>
+            </LibraryField>
+          </div>
+          {project.brief ? (
+            <details className="text-sm text-muted-foreground">
+              <summary className="cursor-pointer">Shared project brief</summary>
+              <p className="mt-2 whitespace-pre-wrap">{project.brief}</p>
+            </details>
+          ) : null}
+          {continuation && !source.data ? (
+            <LibraryErrorNotice
+              error={source.error ?? "Loading recent saved context..."}
+              onRetry={source.refresh}
+            />
+          ) : null}
+          {continuation ? (
+            <LibraryField label="Context to carry forward">
+              <Textarea
+                disabled={busy || locked}
+                value={context}
+                onChange={(event) => {
+                  setContext(event.target.value);
+                }}
+                placeholder="Summarize the decisions and next step to carry into the new conversation."
+              />
+            </LibraryField>
+          ) : null}
+          {hostId && !modelSelection ? (
+            <p className="text-xs text-muted-foreground">
+              Connect this computer and enable a provider before creating a conversation.
+            </p>
+          ) : null}
+        </LibraryFlowSection>
         {locked ? (
           <p className="text-xs text-muted-foreground">
             {needsSourceReview

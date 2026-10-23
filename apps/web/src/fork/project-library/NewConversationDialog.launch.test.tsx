@@ -116,8 +116,21 @@ vi.mock("./ProfileReadiness", () => ({ ProfileReadiness: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
 vi.mock("./LibraryControls", () => ({
-  LibraryDialog: ({ children, actions }: { children: ReactNode; actions: ReactNode }) => (
+  LibraryDialog: ({
+    children,
+    actions,
+    flow,
+  }: {
+    children: ReactNode;
+    actions: ReactNode;
+    flow?: { onBack?: (() => void) | undefined; busy?: boolean | undefined };
+  }) => (
     <dialog>
+      {flow?.onBack ? (
+        <button disabled={flow.busy} onClick={flow.onBack}>
+          Back
+        </button>
+      ) : null}
       {children}
       {actions}
     </dialog>
@@ -220,6 +233,7 @@ async function mount(
     renderer = create(
       <NewConversationDialog
         project={project}
+        initialStep="agent"
         copies={copies}
         {...defaults}
         copiesQuery={{ isPending: false, isSuccess: true, error: null, refresh: vi.fn() }}
@@ -690,7 +704,9 @@ describe("new conversations with source settings", () => {
 
   it("leaves the regular form blank and resolves its project defaults", async () => {
     await mount();
-    const title = renderer!.root.findAllByType("input").find((node) => "value" in node.props);
+    const title = renderer!.root
+      .findAllByType("input")
+      .find((node) => node.props["aria-label"] === "Conversation title");
     expect(title?.props.value).toBe("");
     await click("Start conversation");
     expect(commands.create.run).toHaveBeenCalledWith({
@@ -1265,5 +1281,56 @@ describe("portable project launch", () => {
     expect(button("Start conversation").props.disabled).toBe(true);
     expect(commands.prepareCopy.run).not.toHaveBeenCalled();
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("guided conversation setup", () => {
+  it("keeps source settings and the title when going between files and agent, and launches only at the end", async () => {
+    const selection = {
+      instanceId,
+      model: "test-model",
+      options: [{ id: "reasoningEffort", value: "high" }],
+    };
+    await mount([restoredCopy], {
+      initialStep: "files",
+      initialHostId: environmentId,
+      initialCopyId: restoredCopy.id,
+      initialModelSelection: selection,
+      initialRuntimeMode: "approval-required",
+      initialInteractionMode: "plan",
+    });
+    await click("Continue");
+    expect(commands.create.run).not.toHaveBeenCalled();
+    const title = renderer!.root
+      .findAllByType("input")
+      .find((node) => node.props["aria-label"] === "Conversation title")!;
+    await act(() => title.props.onChange({ target: { value: "Review the design" } }));
+    await click("Back");
+    expect(commands.create.run).not.toHaveBeenCalled();
+    await click("Continue");
+    expect(
+      renderer!.root
+        .findAllByType("input")
+        .some((node) => node.props.value === "Review the design"),
+    ).toBe(true);
+    await click("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          title: "Review the design",
+          modelSelection: selection,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        }),
+      }),
+    );
+  });
+
+  it("blocks Continue when files cannot be used and does not start an operation", async () => {
+    state.authority.mockReturnValue({ ...state.authority(), connected: false });
+    await mount([restoredCopy], { initialStep: "files" });
+    expect(button("Continue").props.disabled).toBe(true);
+    expect(commands.create.run).not.toHaveBeenCalled();
+    expect(commands.prepareCopy.run).not.toHaveBeenCalled();
   });
 });

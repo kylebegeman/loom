@@ -47,6 +47,18 @@ selected computer, or continue its recent work. Expand connection details to
 inspect routes, permissions and devices with access. Permissions belong to each
 computer and determine which actions that connection can use.
 
+On web and desktop, **New conversation** opens a searchable project chooser. Choose
+an existing project, create one, or add a folder from a connected computer. Continue
+through the computer and files step, then review the agent, model, permissions and
+mode before starting. **Back** keeps your choices while you review an earlier step.
+Creating a project or adding a folder from this flow continues into conversation setup;
+using those actions directly opens the project instead.
+
+Use the **+** beside a thread to copy its project, computer, files and agent settings,
+including model options, permissions and mode. You can review them before starting.
+Existing branch and worktree shortcuts remain available. Choosing another project
+clears the original project's file selection.
+
 Moving existing work still uses **Move work**. Signing in or choosing a different
 computer does not move its projects or conversations automatically.
 

@@ -67,12 +67,28 @@ vi.mock("~/state/query", () => ({
   },
 }));
 vi.mock("./LibraryControls", () => ({
-  LibraryDialog: ({ children, actions }: { children: ReactNode; actions: ReactNode }) => (
-    <div>
-      {children}
-      {actions}
-    </div>
-  ),
+  LibraryDialog: ({
+    children,
+    actions,
+    open,
+    flow,
+  }: {
+    children: ReactNode;
+    actions: ReactNode;
+    open: boolean;
+    flow?: { onBack?: (() => void) | undefined; busy?: boolean | undefined };
+  }) =>
+    open ? (
+      <div>
+        {flow?.onBack ? (
+          <button disabled={flow.busy} onClick={flow.onBack}>
+            Back
+          </button>
+        ) : null}
+        {children}
+        {actions}
+      </div>
+    ) : null,
   LibraryField: ({ label, children }: { label: string; children: ReactNode }) => (
     <label>
       {label}
@@ -247,4 +263,22 @@ it("closes the old computer's listing when the computer changes", async () => {
     environmentId: "remote",
     input: { rootPath: "/Users/kyle" },
   });
+});
+
+it("moves through folder and project steps without creating anything, preserving the selection on Back", async () => {
+  await mount();
+  expect(button("Continue").disabled).toBe(true);
+  await act(async () => button("Choose folder").click());
+  await act(async () => button("Select this folder").click());
+  await act(async () => button("Continue").click());
+  expect(button("Add folder")).toBeDefined();
+  expect(state.create).not.toHaveBeenCalled();
+  await act(async () => button("Back").click());
+  expect(
+    container.querySelector<HTMLInputElement>('input[aria-label="Existing folder"]')?.value,
+  ).toBe("/Users/kyle");
+  expect(button("Continue").disabled).toBe(false);
+  await act(async () => button("Continue").click());
+  expect(state.inspect).toHaveBeenCalledOnce();
+  expect(state.create).not.toHaveBeenCalled();
 });
