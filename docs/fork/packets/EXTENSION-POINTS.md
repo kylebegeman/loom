@@ -3239,3 +3239,16 @@ other native adapters retain hosted tools and explicit terminal configuration.
 All Vault terminal paths use the same validated connection-family resolver. A specified broken
 file cannot fall back to another identity. Terminal readiness is a service-backed authenticated
 context check; it is not permission to use an arbitrary item or proof of an upstream login.
+
+## Personal Vault client boundary (proposed)
+
+Kyle requested a personal password-manager expansion on 2026-10-21. The proposed shared boundary
+in [Loom Personal Vault](./LOOM-PERSONAL-VAULT.md#shared-design-constraints) separates human-owned
+personal custody from environment-owned OpenBao credentials. It is not an implemented extension
+point or a verbatim API specification. Engine choice, key hierarchy, trusted-client/OS isolation,
+encrypted metadata, offline recovery and synchronization semantics need evidence before contracts
+are promoted here. Feature packets consume verified shared primitives or report unavailable;
+they must not use a development environment's grant/token as personal decryption authority.
+
+L101 needs no new boundary: its pure client-runtime generator, local web/native controls and
+existing fork registries have no server operation, persistent value or agent-facing raw output.

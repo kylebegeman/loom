@@ -1,4 +1,6 @@
 import { ProjectProfileHost } from "./project-profiles/ProjectProfileHost";
+
+import { VaultPasswordGeneratorHost } from "./vault/PasswordGenerator";
 import { VaultAccessHost } from "./vault/AccessHost";
 import { LibraryActionHost } from "./project-library/LibraryActionHost";
 import { WorkspaceHandoffHost } from "./workspace-handoff/WorkspaceHandoffHost";
@@ -22,6 +24,8 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   readonly Component: ComponentType;
 }> = [
   { id: "project-profile-host", Component: ProjectProfileHost },
+
+  { id: "vault-passwords", Component: VaultPasswordGeneratorHost },
   { id: "vault-access", Component: VaultAccessHost },
   { id: "project-library-actions", Component: LibraryActionHost },
   { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },

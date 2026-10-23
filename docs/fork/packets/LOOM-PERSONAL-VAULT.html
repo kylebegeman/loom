@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Loom Personal Vault</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: var(--foreground, light-dark(#172c43, #e9eef5));
+        --quiet: var(--muted-foreground, light-dark(#536477, #a7b5c6));
+        --line: var(--border, light-dark(#d3dce6, #39485b));
+        --surface: var(--card, light-dark(#f3f6fa, #202e40));
+        --fill: var(--accent-surface, light-dark(#e2ecfb, #253e5e));
+        --accent-ink: var(--accent-surface-foreground, light-dark(#204d82, #b4d6ff));
+        --round: var(--radius, 10px);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+      }
+      body {
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      main {
+        max-width: 100%;
+        padding: 0 0 18px;
+      }
+      h1 {
+        font-size: 32px;
+        line-height: 1.1;
+        letter-spacing: -0.035em;
+        font-weight: 650;
+        margin: 4px 0 14px;
+      }
+      h2 {
+        font-size: 19px;
+        line-height: 1.3;
+        letter-spacing: -0.015em;
+        margin: 30px 0 12px;
+      }
+      p {
+        margin: 0 0 14px;
+        max-width: 72ch;
+      }
+      .lead {
+        font-size: 17px;
+        color: var(--quiet);
+      }
+      .domains {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 24px 0;
+      }
+      .domain {
+        padding: 18px;
+        background: var(--surface);
+        border-radius: var(--round);
+      }
+      .domain h3 {
+        font-size: 16px;
+        margin: 0 0 6px;
+      }
+      .domain p {
+        font-size: 14px;
+        color: var(--quiet);
+        margin: 0;
+      }
+      .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 14px 0 5px;
+      }
+      button {
+        font: inherit;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        border-radius: var(--round);
+        padding: 7px 11px;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        background: var(--fill);
+        color: var(--accent-ink);
+      }
+      button:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent-ink);
+        outline-offset: 4px;
+      }
+      .hint {
+        color: var(--quiet);
+        font-size: 13px;
+      }
+      #count {
+        margin: 10px 0 3px;
+      }
+      .feature {
+        border-bottom: 1px solid var(--line);
+        padding: 13px 0;
+      }
+      .feature[hidden] {
+        display: none;
+      }
+      summary {
+        cursor: pointer;
+        list-style: none;
+        display: grid;
+        grid-template-columns: 46px 1fr auto;
+        align-items: baseline;
+        gap: 8px;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      .packet {
+        font-size: 12px;
+        color: var(--quiet);
+      }
+      .name {
+        font-weight: 600;
+      }
+      .state {
+        font-size: 12px;
+        color: var(--quiet);
+        white-space: nowrap;
+      }
+      .feature p {
+        margin: 7px 0 0 54px;
+        color: var(--quiet);
+        font-size: 14px;
+      }
+      .feature .idea {
+        color: var(--ink);
+      }
+      .steps {
+        padding-left: 22px;
+        margin: 12px 0;
+      }
+      .steps li {
+        margin: 10px 0;
+        padding-left: 3px;
+      }
+      .steps li span {
+        color: var(--quiet);
+      }
+      .build {
+        padding: 18px;
+        background: var(--surface);
+        border-radius: var(--round);
+        margin-top: 25px;
+      }
+      .build p:last-child {
+        margin: 0;
+      }
+      .note {
+        font-size: 13px;
+        color: var(--quiet);
+        margin-top: 24px;
+      }
+      .feature[open] .name {
+        color: var(--accent-ink);
+      }
+      @media (max-width: 470px) {
+        h1 {
+          font-size: 28px;
+        }
+        .domains {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        summary {
+          grid-template-columns: 40px 1fr;
+          gap: 7px;
+        }
+        .state {
+          grid-column: 2;
+        }
+        .feature p {
+          margin-left: 47px;
+        }
+        .domain {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Personal Vault</h1>
+      <p class="lead">
+        A password manager for your daily life, with deliberate access for your agents.
+      </p>
+      <p>
+        The full direction is preserved in eleven implementation packets. Local password tools are
+        the first build. Kyle confirmed daily password-manager use, browser and phone autofill, and
+        carefully scoped agent access on 2026-10-21. The remaining detailed scopes are proposals,
+        with no individual packet, engine or trusted-client topology selected.
+      </p>
+      <div class="domains">
+        <section class="domain">
+          <h3>Personal accounts</h3>
+          <p>
+            Trusted devices and deliberate unlock. Independently protected personal keys, including
+            recovery when Loom is unavailable.
+          </p>
+        </section>
+        <section class="domain">
+          <h3>Development identities</h3>
+          <p>
+            Unattended operation through the existing OpenBao and broker system. Scoped access for
+            projects, servers and agent runs.
+          </p>
+        </section>
+      </div>
+      <h2>Explore the feature ideas</h2>
+      <p class="hint">Choose a track and open any idea for its scope.</p>
+      <div class="filters" role="group" aria-label="Feature tracks">
+        <button type="button" data-filter="all" aria-pressed="true">All ideas</button
+        ><button type="button" data-filter="daily" aria-pressed="false">Daily use</button
+        ><button type="button" data-filter="agents" aria-pressed="false">Agent access</button
+        ><button type="button" data-filter="trust" aria-pressed="false">Trust and recovery</button>
+      </div>
+      <p id="count" class="hint" role="status"></p>
+      <div id="features"></div>
+      <h2>A useful path to the full manager</h2>
+      <ol class="steps">
+        <li>
+          <strong>Local tools.</strong>
+          <span>Share generation across clients, with explicit reveal, copy and clear.</span>
+        </li>
+        <li>
+          <strong>Custody proof.</strong>
+          <span
+            >Evaluate maintained engines with synthetic records. Prove unlock, isolation and
+            recovery.</span
+          >
+        </li>
+        <li>
+          <strong>Daily use.</strong>
+          <span
+            >Combine personal records, one trusted browser path, phone autofill, encrypted sync and
+            reviewed import.</span
+          >
+        </li>
+        <li>
+          <strong>Delegated use.</strong>
+          <span>Build an enforced adapter and inspectable task-bound sessions, then expand.</span>
+        </li>
+      </ol>
+      <div class="build">
+        <p><strong>First build: local password tools</strong></p>
+        <p>
+          Web and desktop Settings and command palette, plus a native mobile sheet. Cryptographic
+          generation stays on the device and is never saved automatically. This is a useful start,
+          with personal storage and autofill still to build.
+        </p>
+        <p>
+          Automated checks: 114 focused tests, shared/web/mobile typechecks and targeted lint
+          passed. Integrated browser and device acceptance remains pending.
+        </p>
+      </div>
+      <p class="note">
+        Mac and iPhone with Safari and Chromium are the first usable platforms confirmed by Kyle on
+        2026-10-21. Sharing and emergency access remain optional; these platform choices do not
+        prioritize them. Recovery details remain open. No real personal accounts have been imported.
+        Integrated browser and device acceptance remains pending.
+      </p>
+    </main>
+    <script>
+      const features = [
+        {
+          id: "L101",
+          name: "Local password tools",
+          track: "daily",
+          state: "In progress",
+          idea: "Generate on your device, reveal deliberately, copy and clear.",
+          detail:
+            "Reuse Loom Utilities on web and native clients. No automatic saving or server connection. This is the first working slice; personal storage remains separate.",
+        },
+        {
+          id: "L102",
+          name: "Personal custody and unlock",
+          track: "trust",
+          state: "Designing",
+          idea: "Your personal keys stay independently protected.",
+          detail:
+            "Evaluate a maintained vault format or engine, trusted clients, device unlock, encrypted metadata and a real boundary from unattended development agents.",
+        },
+        {
+          id: "L103",
+          name: "Personal credential library",
+          track: "daily",
+          state: "Designing",
+          idea: "Keep the right identity close at hand.",
+          detail:
+            "Logins, secure notes, recovery codes, cards, identities and attachments. Private search, favorites, history and clear archive, restore and reveal flows.",
+        },
+        {
+          id: "L104",
+          name: "Reviewed personal migration",
+          track: "daily",
+          state: "Designing",
+          idea: "Bring your accounts over with a full accounting.",
+          detail:
+            "Review a local 1Password export, map fields, resolve duplicates, count attachments and preserve unsupported data visibly. Keep raw exports off development servers.",
+        },
+        {
+          id: "L105",
+          name: "Trusted browser autofill",
+          track: "daily",
+          state: "Designing",
+          idea: "Choose an account and fill the verified site.",
+          detail:
+            "Chromium and Safari, origin and frame checks, navigation rechecks, and reviewed save/update. Trusted personal filling is separate from an agent-controlled page.",
+        },
+        {
+          id: "L106",
+          name: "Agent session delegation",
+          track: "agents",
+          state: "Designing",
+          idea: "Approve an outcome. Lend a session.",
+          detail:
+            "Bind an account, destination, task, duration and supported operations. Inspect or end access. An unrestricted website session cannot honestly promise read-only powers.",
+        },
+        {
+          id: "L107",
+          name: "Native autofill and passkeys",
+          track: "daily",
+          state: "Designing",
+          idea: "Reach credentials through the device you are using.",
+          detail:
+            "Phone credential providers, desktop quick access, TOTP and reviewed passkey handling. Mac and iPhone first was confirmed on 2026-10-21; other platforms remain in scope.",
+        },
+        {
+          id: "L108",
+          name: "Encrypted sync and offline use",
+          track: "trust",
+          state: "Designing",
+          idea: "Keep working when the server is unavailable.",
+          detail:
+            "Encrypted trusted-device caches and synchronization, visible conflicts and honest offline revocation limits. Personal ownership stays independent of a development environment.",
+        },
+        {
+          id: "L109",
+          name: "Recovery and device loss",
+          track: "trust",
+          state: "Designing",
+          idea: "Recover even when Loom cannot help you.",
+          detail:
+            "Separately held recovery material, clean-device restoration, encrypted exports and lost-device handling. Restore must reconcile old trust and revoked permissions.",
+        },
+        {
+          id: "L110",
+          name: "Account maintenance",
+          track: "daily",
+          state: "Designing",
+          idea: "Keep credentials useful after the day you save them.",
+          detail:
+            "Check weakness and reuse locally. Review reminders and account changes. Distinguish saving a new value from changing the actual website password.",
+        },
+        {
+          id: "L111",
+          name: "Selective sharing and emergency access",
+          track: "trust",
+          state: "Optional idea",
+          idea: "Share a specific item with a clear recipient and purpose.",
+          detail:
+            "Recipient keys, access review, expiry and a cancellable emergency flow. Expiry cannot recall a value someone has already decrypted or copied.",
+        },
+      ];
+      const container = document.getElementById("features");
+      for (const f of features) {
+        const d = document.createElement("details");
+        d.className = "feature";
+        d.dataset.track = f.track;
+        const s = document.createElement("summary");
+        for (const [className, value] of [
+          ["packet", f.id],
+          ["name", f.name],
+          ["state", f.state],
+        ]) {
+          const e = document.createElement("span");
+          e.className = className;
+          e.textContent = value;
+          s.append(e);
+        }
+        d.append(s);
+        const idea = document.createElement("p");
+        idea.className = "idea";
+        idea.textContent = f.idea;
+        d.append(idea);
+        const p = document.createElement("p");
+        p.textContent = f.detail;
+        d.append(p);
+        container.append(d);
+      }
+      function filter(track) {
+        let count = 0;
+        for (const item of container.children) {
+          item.hidden = track !== "all" && item.dataset.track !== track;
+          if (!item.hidden) count++;
+        }
+        for (const b of document.querySelectorAll("[data-filter]"))
+          b.setAttribute("aria-pressed", String(b.dataset.filter === track));
+        document.getElementById("count").textContent =
+          count + " " + (count === 1 ? "idea" : "ideas") + " shown";
+      }
+      for (const b of document.querySelectorAll("[data-filter]"))
+        b.addEventListener("click", () => filter(b.dataset.filter));
+      filter("all");
+      console.assert(container.children.length === 11, "Expected eleven packet ideas");
+      console.assert(
+        document.querySelectorAll("[aria-pressed=true]").length === 1,
+        "Exactly one track selected",
+      );
+      console.log(
+        "Feature overview checks passed: 11 packet ideas, labelled filters, text-only content insertion.",
+      );
+    </script>
+  </body>
+</html>

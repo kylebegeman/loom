@@ -1,3 +1,4 @@
+import { VaultPasswordGeneratorSection } from "./PasswordGeneratorSection";
 import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshSheet } from "./SshSheet";
 import { VaultAccessCheckSheet } from "./AccessSettingsSection";
@@ -49,22 +50,28 @@ export function VaultSettingsSection({
   const config = useEnvironmentServerConfig(environmentId);
   const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
-  if (!supportsLoomFeature(config?.environment.capabilities, "vault-core")) return null;
-  return canRead ? (
-    <VaultOwnerSettings
-      key={`${environmentId}:${canWrite}:${connected}:${supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted")}`}
-      environmentId={environmentId}
-      connected={connected}
-      advancedItems={
-        <SettingsSection title="Vault items">
-          <VaultItems environmentId={environmentId} connected={connected} />
+  if (!supportsLoomFeature(config?.environment.capabilities, "vault-core"))
+    return <VaultPasswordGeneratorSection />;
+  return (
+    <>
+      <VaultPasswordGeneratorSection />
+      {canRead ? (
+        <VaultOwnerSettings
+          key={`${environmentId}:${canWrite}:${connected}:${supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted")}`}
+          environmentId={environmentId}
+          connected={connected}
+          advancedItems={
+            <SettingsSection title="Vault items">
+              <VaultItems environmentId={environmentId} connected={connected} />
+            </SettingsSection>
+          }
+        />
+      ) : (
+        <SettingsSection title="Vault">
+          <Text>Your access to this computer does not include Vault inspection.</Text>
         </SettingsSection>
-      }
-    />
-  ) : (
-    <SettingsSection title="Vault">
-      <Text>Your access to this computer does not include Vault inspection.</Text>
-    </SettingsSection>
+      )}
+    </>
   );
 }
 

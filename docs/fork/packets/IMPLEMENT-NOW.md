@@ -84,6 +84,23 @@ production dependencies beyond the selected OpenBao service, personal-vault migr
 production credential registration are separate actions. Browser/device verification follows
 the repository's explicit-authorization rule. This selection leaves non-Vault priorities below intact.
 
+## Personal Vault expansion
+
+On 2026-10-21 Kyle asked to brainstorm a personal password manager, create implementation
+packets and start building. [The personal Vault overview](./LOOM-PERSONAL-VAULT.md) preserves
+the full direction and proposed L101 to L111 scopes. L101 local password tools is the first
+local build. Kyle confirmed daily password-manager use, browser/phone autofill and carefully
+scoped agent access on 2026-10-21. The first usable platforms are Mac and iPhone, Safari and
+Chromium. The other detailed scopes remain Designing; L111 sharing/emergency access stays
+optional and is not prioritized by the platform choices. This does not mark eleven individually
+proposed features as selected or complete. Engine, topology and recovery details remain open.
+
+Personal and unattended-development custody remain independent. Existing OpenBao records are
+server-readable; they are not the personal encryption boundary. Local implementation proceeds
+without live personal data, new dependencies, migration, deployment or release. Engine/key-custody
+choices, native entitlements and live operations retain their applicable decision requirements.
+Existing L73 to L88 scope and implementation ownership are preserved.
+
 ## Selected queue
 
 | Order | Packet                                                | Status                                        | Decision                                                                                        |

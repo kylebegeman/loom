@@ -12,6 +12,10 @@ computers, remote workers and CI should use authorized development identities wi
 repeated personal key approvals. Kyle's VPS, begam.in services and Loom platform are available
 hosting/integration options, not infrastructure to replace or deploy without review.
 
+The [personal Vault expansion](./LOOM-PERSONAL-VAULT.md) adds a separate proposed personal
+password-manager track. The sixteen development packets retain their scope; their server-readable
+OpenBao boundary is not promoted to personal key custody.
+
 ## Product scope and confirmed intent
 
 - All sixteen outcomes below are retained, including the core storage, broker and policy systems.
@@ -88,14 +92,14 @@ implemented shared contract into that specification as it becomes usable. A pack
 missing approved portion of the shared extension in a separate commit; it must not import
 another feature packet's internals or assume its UI exists.
 
-| Shared capability                                       | Primary design owner    | Consumers and graceful absence                                                                |
-| ------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| Encrypted records, stable references, baseline recovery | V07 / L79               | All Vault features; no backend means clearly unavailable, never fallback to personal secrets. |
-| Enrolled host and workload channels                     | V08 / L80               | Readiness, SSH, delivery and automation; absent broker means no unattended-use claim.         |
-| Access mode, grants, principal attestation and decision audit   | V09 / L81               | All execution and explanation paths; absence denies use.                                      |
-| Purpose-specific delivery adapters                      | V13 / L85               | SSH, connectors and account sessions; unsupported modes fail before launch.                   |
-| Provider connection/issuance adapters                   | V11 / L83 and V15 / L87 | Checks, health and renewal; report each adapter's capability rather than assuming support.    |
-| Durable requests and account leases                     | V14 / L86 and V12 / L84 | Approval and QA consumers; existing grants/stored accounts work without automation UI.        |
+| Shared capability                                             | Primary design owner    | Consumers and graceful absence                                                                |
+| ------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Encrypted records, stable references, baseline recovery       | V07 / L79               | All Vault features; no backend means clearly unavailable, never fallback to personal secrets. |
+| Enrolled host and workload channels                           | V08 / L80               | Readiness, SSH, delivery and automation; absent broker means no unattended-use claim.         |
+| Access mode, grants, principal attestation and decision audit | V09 / L81               | All execution and explanation paths; absence denies use.                                      |
+| Purpose-specific delivery adapters                            | V13 / L85               | SSH, connectors and account sessions; unsupported modes fail before launch.                   |
+| Provider connection/issuance adapters                         | V11 / L83 and V15 / L87 | Checks, health and renewal; report each adapter's capability rather than assuming support.    |
+| Durable requests and account leases                           | V14 / L86 and V12 / L84 | Approval and QA consumers; existing grants/stored accounts work without automation UI.        |
 
 The owner column identifies who develops the design, not a compulsory sequence of sixteen
 feature builds. Each packet's optional adapters must be independently installable or unavailable
@@ -123,10 +127,10 @@ permission to migrate personal keys, register a public endpoint or deploy on the
 | --- | -------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
 | D1  | Select backend after a disposable proof of encryption, APIs, policy fit, backup/restore, license and operating cost. | L79           | Decided: OpenBao, Kyle 2026-10-17; 2.7.1 synthetic proof passed                    |
 | D2  | Decide decryption/key custody, unattended unlock and recovery bootstrap for every supported host mode.               | L79, L80, L88 | Open                                                                               |
-| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L79, L81      | Personal environment declaration; platform multi-owner mapping remains open             |
+| D3  | Verify platform identity and session contracts; choose Vault owner/admin mapping and service-to-service auth.        | L79, L81      | Personal environment declaration; platform multi-owner mapping remains open        |
 | D4  | Choose the initial macOS/Linux/Windows broker matrix, service lifecycle and workload authentication.                 | L80, L85      | User-service matrix implemented locally; real-host acceptance and other modes open |
 | D5  | Decide offline support and maximum lease/revocation delay. Proposed initial default: online-only new use.            | L80, L81      | Open                                                                               |
-| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L81           | Personal opt-in and restricted grants selected; platform/isolation open                                     |
+| D6  | Set grant scopes, precedence, delegation and the boundary requiring OS/container isolation.                          | L81           | Personal opt-in and restricted grants selected; platform/isolation open            |
 | D7  | Choose SSH destination enforcement, key formats, agent transports and forwarding policy.                             | L82           | Host-bound mediated/terminal POSIX resolved; other transports open                 |
 | D8  | Select initial service/account adapters and account ownership, starting with GitHub and a real test application.     | L83, L84, L87 | App/token implemented locally; broader onboarding/adapters open                    |
 | D9  | Set recovery ownership, separate key custody, backup destination/retention and recovery time/data-loss goals.        | L79, L88      | Open                                                                               |

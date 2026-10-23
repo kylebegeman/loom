@@ -21,6 +21,8 @@ import {
   WrenchIcon,
   type LucideIcon,
 } from "lucide-react";
+
+import { VaultPasswordSettingsSection } from "../vault/PasswordGenerator";
 import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import { VaultMigrationInventorySettingsSection } from "../vault/MigrationInventorySettingsSection";
 import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
@@ -56,6 +58,17 @@ export interface ForkSettingsSection {
 }
 
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "vault-passwords",
+    title: "Vault password tools",
+    description: "Generate passwords locally without connecting a Vault.",
+    group: "tools",
+    keywords: "vault password generator random local device clipboard",
+    icon: KeyRoundIcon,
+    scope: "device",
+    related: ["vault"],
+    Component: VaultPasswordSettingsSection,
+  },
   {
     id: "project-profiles",
     title: "Project profile",

@@ -3,6 +3,8 @@ import {
   useProfilePaletteContext,
   type ProfilePaletteContext,
 } from "../project-profiles/palette";
+
+import { vaultPasswordPaletteSource } from "../vault/password-palette";
 import { vaultTestAccountsPaletteSource } from "../vault/test-accounts-palette";
 import { vaultMigrationPaletteSource } from "../vault/migration-palette";
 import { vaultHealthPaletteSource } from "../vault/health-palette";
@@ -74,6 +76,8 @@ export interface ForkCommandPaletteSource {
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
   projectProfilesPaletteSource,
+
+  vaultPasswordPaletteSource,
   vaultProfilePaletteSource,
   vaultSshPaletteSource,
   vaultMigrationPaletteSource,

@@ -875,3 +875,14 @@ These local commands do not capture or restore a server. Authentication does not
 older backup is safe to use: restore in isolation and reconcile later revocations before
 reconnecting workloads. Scheduled backups, in-app recovery and automatic promotion are not
 available yet.
+
+## Generate a password locally
+
+Open **Settings > Loom > Vault password tools**, or choose **Generate a Vault password** in
+the command palette. On mobile, open a computer's settings and find **Vault password tools**.
+Generation works on the current device without a Vault backend or an active connection once
+settings is accessible. Choose the length and characters, generate, and copy when ready.
+
+Passwords start hidden and are not saved automatically. Changing the options, closing the tool
+or leaving the window/app clears the result from the view. Copy uses the system clipboard;
+clearing the view does not erase that clipboard or copies saved by another app.
