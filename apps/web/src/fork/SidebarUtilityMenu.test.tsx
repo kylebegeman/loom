@@ -39,6 +39,7 @@ vi.mock("~/components/sidebar/SidebarUpdatePill", () => ({
 
 import { SidebarProvider } from "~/components/ui/sidebar";
 import { SidebarUtilityMenu } from "~/components/sidebar/SidebarChrome";
+import { MainAppLocationTracker } from "~/components/sidebar/mainAppLocation";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -61,6 +62,7 @@ async function renderMenu(pathname: string) {
   const layout = createRootRoute({
     component: () => (
       <SidebarProvider>
+        <MainAppLocationTracker />
         <SidebarUtilityMenu />
         <Outlet />
       </SidebarProvider>
@@ -68,6 +70,7 @@ async function renderMenu(pathname: string) {
   });
   const routes = [
     "/",
+    "/draft/$draftId",
     "/settings",
     "/settings/$section",
     "/usage",
@@ -91,19 +94,44 @@ const button = (label: string) =>
 const activeLabel = () =>
   container.querySelector('[aria-current="page"]')?.getAttribute("aria-label");
 
-it("keeps every destination reachable while switching between top-level pages", async () => {
-  const router = await renderMenu("/usage");
-  expect(activeLabel()).toBe("Usage");
+const backButton = () =>
+  Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent === "Back");
+
+it.each([
+  ["Settings", "/settings", "/settings/connections"],
+  ["Pull Requests", "/pull-requests", "/pull-requests"],
+  ["Usage", "/usage", "/usage"],
+])("returns from %s to the previous conversation", async (label, path, detail) => {
+  const router = await renderMenu("/draft/retained?view=diff#latest");
+  await act(async () => button(label)!.click());
+  expect(router.state.location.pathname).toBe(path);
+  await act(async () => router.navigate({ href: detail }));
+  expect(backButton()).toBeDefined();
+  expect(button("Settings")).toBeNull();
+  expect(button("Projects")).toBeNull();
+  expect(button("Sites")).toBeNull();
+  expect(button("Bots, attention needed")).toBeNull();
+  await act(async () => backButton()!.click());
+  expect(router.state.location.href).toBe("/draft/retained?view=diff#latest");
+  expect(button("Settings")).not.toBeNull();
+});
+
+it("keeps highlighted navigation across Projects, Sites and Bots", async () => {
+  const router = await renderMenu("/projects");
   const destinations = [
-    ["Settings", "/settings"],
     ["Projects", "/projects"],
     ["Sites", "/sites"],
     ["Bots, attention needed", "/loom/bots"],
-    ["Pull Requests", "/pull-requests"],
-    ["Usage", "/usage"],
   ] as const;
   for (const [label, path] of destinations) {
-    for (const [other] of destinations) expect(button(other)).not.toBeNull();
+    for (const other of [
+      "Settings",
+      "Pull Requests",
+      "Usage",
+      ...destinations.map(([name]) => name),
+    ])
+      expect(button(other)).not.toBeNull();
+    expect(backButton()).toBeUndefined();
     await act(async () => button(label)!.click());
     expect(router.state.location.pathname).toBe(path);
     expect(activeLabel()).toBe(label);
@@ -111,14 +139,11 @@ it("keeps every destination reachable while switching between top-level pages", 
   }
 });
 
-it("retains the active section on its detail pages without marking conversations active", async () => {
-  const router = await renderMenu("/settings/connections");
-  expect(activeLabel()).toBe("Settings");
-  expect(button("Sites")).not.toBeNull();
-  await act(async () =>
-    router.navigate({ to: "/projects/$projectKey", params: { projectKey: "test" } }),
-  );
+it("retains project selection on detail pages without marking conversations active", async () => {
+  const router = await renderMenu("/projects/test");
   expect(activeLabel()).toBe("Projects");
+  expect(button("Sites")).not.toBeNull();
+  expect(backButton()).toBeUndefined();
   await act(async () => router.navigate({ to: "/" }));
   expect(activeLabel()).toBeUndefined();
   expect(button("Settings")).not.toBeNull();
@@ -126,9 +151,9 @@ it("retains the active section on its detail pages without marking conversations
 
 it("keeps capability-gated destinations hidden without hiding the rest of navigation", async () => {
   state.pullRequestsSupported = false;
-  await renderMenu("/settings");
+  await renderMenu("/projects");
   expect(button("Pull Requests")).toBeNull();
   expect(button("Projects")).not.toBeNull();
   expect(button("Bots, attention needed")).not.toBeNull();
-  expect(activeLabel()).toBe("Settings");
+  expect(activeLabel()).toBe("Projects");
 });
