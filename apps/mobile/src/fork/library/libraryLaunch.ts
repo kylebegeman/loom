@@ -156,6 +156,7 @@ export async function launchLibraryConversation(
     resolve: (
       input: LibraryResolveBindingRequest & { readonly project: LibraryProject },
     ) => Promise<LibraryResolvedBinding>;
+    durableLaunch?: ((input: LibraryLaunchBindingInput) => Promise<void>) | undefined;
     create: (localProjectId: ProjectId) => Promise<void>;
     bind: (input: LibraryLaunchBindingInput) => Promise<void>;
     snapshot: () => Promise<LibraryThreadArchive>;
@@ -222,6 +223,15 @@ export async function launchLibraryConversation(
       JSON.stringify(binding.continuationOf)
   )
     throw new Error("The resolved conversation belongs to another working copy.");
+  if (ports.durableLaunch) {
+    ports.progress("Starting and saving conversation...");
+    await ports.durableLaunch({ threadId: intent.threadId, binding, project: intent.project });
+    receipt.threadCreated = true;
+    receipt.threadBound = true;
+    receipt.historyRegistered = true;
+    await ports.persist?.();
+    return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
+  }
   if (!receipt.threadCreated) {
     ports.progress("Creating conversation…");
     await ports.create(receipt.resolved.localProjectId);

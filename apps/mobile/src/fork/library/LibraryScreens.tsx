@@ -1,3 +1,4 @@
+import { LibraryWorkflows, LibraryPreservationCenter } from "./LibraryWorkflows";
 import { ProjectSites } from "../sites/ProjectSites";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -10,6 +11,8 @@ import {
 import {
   filterProjectEntries,
   libraryActiveCopies,
+  libraryStartIntent,
+  libraryStartRepositoryProjects,
   libraryResourceLocation,
   projectEntries,
   sortProjectEntries,
@@ -154,6 +157,11 @@ export function LibraryRouteScreen() {
     }, [authority.connected, refreshCatalog, refreshInfo]),
   );
   const query = search.trim();
+  const intent = libraryStartIntent(search);
+  const associated =
+    intent.kind === "repository"
+      ? libraryStartRepositoryProjects(catalog.data ?? [], intent.url)
+      : [];
   // The list carries no copies, so search reads names, briefs and repositories, never computers.
   const projects = sortProjectEntries(
     filterProjectEntries(
@@ -217,6 +225,9 @@ export function LibraryRouteScreen() {
           ) : authority.ready && !canCreate ? (
             <LibraryNotice detail="This connection can browse projects. Sign in with your owner account to create or edit them." />
           ) : null}
+          {authority.info.data?.features?.includes("project-workflows") ? (
+            <LibraryPreservationCenter environmentId={authority.environmentId} />
+          ) : null}
           <TextInput
             accessibilityLabel="Search projects"
             placeholder="Search projects"
@@ -225,6 +236,30 @@ export function LibraryRouteScreen() {
             autoCorrect={false}
             className="min-h-[44px] rounded-xl bg-field px-4 text-base text-foreground"
           />
+          {intent.kind !== "search" ? (
+            <View className="gap-2">
+              {associated.map((project) => (
+                <Button
+                  key={project.id}
+                  label={`Continue ${project.title}`}
+                  onPress={() => navigation.navigate("LibraryStart", { projectId: project.id })}
+                />
+              ))}
+              <Button
+                label={
+                  intent.kind === "folder"
+                    ? `Use folder: ${intent.title}`
+                    : associated.length
+                      ? `Create another project from ${intent.title}`
+                      : `Start from repository: ${intent.title}`
+                }
+                disabled={!canCreate || !authority.ready}
+                onPress={() =>
+                  navigation.navigate("LibraryCreate", { initialInput: search.trim() })
+                }
+              />
+            </View>
+          ) : null}
           <View className="flex-row gap-2">
             <Button
               label="Active"
@@ -556,6 +591,14 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
       </View>
+      {authority.info.data?.features?.includes("project-workflows") ? (
+        <LibraryWorkflows
+          environmentId={target}
+          project={p}
+          copies={activeCopies}
+          threads={visibleThreads}
+        />
+      ) : null}
       <SettingsSection
         title={
           showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS

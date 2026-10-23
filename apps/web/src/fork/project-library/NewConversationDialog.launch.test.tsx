@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const state = vi.hoisted(() => ({
   commands: {
+    executeOperation: { run: vi.fn() },
     bindThread: { run: vi.fn() },
     prepareCopy: { run: vi.fn() },
     reopenCopy: { run: vi.fn() },

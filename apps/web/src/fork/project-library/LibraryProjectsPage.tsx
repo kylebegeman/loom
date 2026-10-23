@@ -1,3 +1,4 @@
+import { ProjectPreservationCenter } from "./ProjectPreservation";
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -114,6 +115,7 @@ export function LibraryProjectsPage() {
   const [query, setQuery] = useState("");
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
+  const [preservationOpen, setPreservationOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [tidying, setTidying] = useState<ProjectEntry | null>(null);
   const [importing, setImporting] = useState<{
@@ -249,6 +251,16 @@ export function LibraryProjectsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          {catalog.authorityId && catalog.info.data?.features?.includes("project-workflows") ? (
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              onClick={() => setPreservationOpen(true)}
+            >
+              Preservation and cleanup
+            </Button>
+          ) : null}
           {catalog.authorityId && (archivedCount || showArchived) ? (
             <ToggleGroup
               shape="pill"
@@ -292,6 +304,13 @@ export function LibraryProjectsPage() {
           </Button>
         </div>
       </header>
+      {preservationOpen && catalog.authorityId ? (
+        <ProjectPreservationCenter
+          authorityId={catalog.authorityId}
+          onClose={() => setPreservationOpen(false)}
+          onChanged={refresh}
+        />
+      ) : null}
       {!catalog.authorityId ? (
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <LibrarySetup />

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { libraryStartFolderProjects, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryFolderInspection } from "@t3tools/contracts/fork";
@@ -23,6 +23,7 @@ export type ExistingLibraryFolder = ReturnType<typeof libraryFolderResources> & 
 };
 
 export function LibraryExistingFolder(props: {
+  initialRootPath?: string | undefined;
   disabled: boolean;
   folder: ExistingLibraryFolder | null;
   onClear: () => void;
@@ -33,8 +34,8 @@ export function LibraryExistingFolder(props: {
   const authority = useLibraryAuthority();
   const { environments } = useEnvironments();
   const projects = useProjects();
-  const [expanded, setExpanded] = useState(false),
-    [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(!!props.initialRootPath),
+    [search, setSearch] = useState(props.initialRootPath ?? "");
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null),
     [pending, setPending] = useState<string | null>(null),
@@ -49,7 +50,28 @@ export function LibraryExistingFolder(props: {
         })
       : null,
   );
-  const suggestions = inspection ? libraryProjectsForFolder(inspection, catalog.data ?? []) : [];
+  const copies = useEnvironmentQuery(
+    expanded && authority.environmentId
+      ? library.copies({ environmentId: authority.environmentId, input: {} })
+      : null,
+  );
+  const [inspectionEnvironmentId, setInspectionEnvironmentId] = useState<EnvironmentId | null>(
+    null,
+  );
+  const exact =
+    inspection && inspectionEnvironmentId
+      ? libraryStartFolderProjects(
+          catalog.data ?? [],
+          copies.data ?? [],
+          inspectionEnvironmentId,
+          inspection.rootPath,
+        )
+      : [];
+  const suggestions = exact.length
+    ? exact
+    : inspection
+      ? libraryProjectsForFolder(inspection, catalog.data ?? [])
+      : [];
   const known = projects.filter(
     (project, index) =>
       !project.isScratch &&
@@ -73,6 +95,7 @@ export function LibraryExistingFolder(props: {
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       const inferred = libraryFolderResources(result.value);
       setInspection(result.value);
+      setInspectionEnvironmentId(environmentId);
       setSelectedSource(`${environmentId}:${rootPath}`);
       props.onChoose({ ...inferred, environmentId });
     } catch (cause) {
@@ -108,6 +131,31 @@ export function LibraryExistingFolder(props: {
               autoCorrect={false}
               className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
+            {search.trim().startsWith("/") ||
+            search.trim().startsWith("~") ||
+            /^[a-z]:[\\/]/i.test(search.trim())
+              ? environments
+                  .filter(
+                    (host) =>
+                      host.entry.enabled &&
+                      host.connection.phase === "connected" &&
+                      supportsLoomFeature(
+                        host.serverConfig?.environment.capabilities,
+                        "project-library",
+                      ),
+                  )
+                  .map((host) => (
+                    <KnownFolderRow
+                      key={host.environmentId}
+                      environmentId={host.environmentId}
+                      title={`Use this folder on ${host.label}`}
+                      description={search.trim()}
+                      selected={selectedSource === `${host.environmentId}:${search.trim()}`}
+                      disabled={props.disabled || pending !== null}
+                      onPress={() => void choose(host.environmentId, search.trim())}
+                    />
+                  ))
+              : null}
             {inspection && props.folder ? (
               <>
                 <Text selectable className="text-xs text-foreground-muted">
@@ -130,7 +178,7 @@ export function LibraryExistingFolder(props: {
             {suggestions.map((project) => (
               <View key={project.id} className="gap-2">
                 <Text className="text-sm text-foreground-muted">
-                  {project.title} already includes repositories from this folder.
+                  {project.title} already has files or matching repositories from this folder.
                 </Text>
                 <Button
                   label={`Open ${project.title}`}
@@ -139,7 +187,7 @@ export function LibraryExistingFolder(props: {
                 />
               </View>
             ))}
-            {catalog.error ? (
+            {catalog.error || copies.error ? (
               <Text className="text-xs text-danger-foreground">
                 Could not check existing projects. Reopen this section to retry.
               </Text>

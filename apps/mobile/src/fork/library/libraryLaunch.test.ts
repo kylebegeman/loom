@@ -446,3 +446,25 @@ describe("library conversation launch", () => {
     expect(h.ports.registerHistory).not.toHaveBeenCalled();
   });
 });
+
+it("uses the durable launch boundary and preserves the same identity after a lost response", async () => {
+  const { ports } = harness();
+  const receipt = emptyLibraryLaunchReceipt();
+  const durableLaunch = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Disconnected"))
+    .mockResolvedValue(undefined);
+  await expect(
+    launchLibraryConversation(input, receipt, { ...ports, durableLaunch }),
+  ).rejects.toThrow("Disconnected");
+  expect(receipt.threadCreated).toBe(false);
+  await expect(
+    launchLibraryConversation(input, receipt, { ...ports, durableLaunch }),
+  ).resolves.toEqual({ environmentId: host, threadId });
+  expect(durableLaunch).toHaveBeenCalledTimes(2);
+  expect(durableLaunch.mock.calls[0]).toEqual(durableLaunch.mock.calls[1]);
+  expect(ports.create).not.toHaveBeenCalled();
+  expect(ports.bind).not.toHaveBeenCalled();
+  expect(ports.registerHistory).not.toHaveBeenCalled();
+  expect(receipt.historyRegistered).toBe(true);
+});

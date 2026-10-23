@@ -1,3 +1,8 @@
+import { ProjectWorkstreams } from "./ProjectWorkstreams";
+import { ProjectBlueprint } from "./ProjectBlueprint";
+import { ProjectAttention } from "./ProjectAttention";
+import { ProjectOperationHistory } from "./ProjectOperations";
+import { ProjectPreservationCenter } from "./ProjectPreservation";
 import { SitesSummary } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState } from "react";
@@ -182,6 +187,7 @@ function ProjectView({
   // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
   // health look recent. Only copies read live from the connected Library may be aged by it, and
   // they stay trusted while a refresh is in flight so the age does not jump back and forth.
+  const [preservationOpen, setPreservationOpen] = useState(false);
   const [liveCopies, setLiveCopies] = useState<typeof library.copies.data>(null);
   const nextLiveCopies = !library.connected
     ? null
@@ -194,6 +200,7 @@ function ProjectView({
   const activeCopies = libraryActiveCopies(copies);
   const capabilities = library.environment?.serverConfig?.environment.capabilities;
   // An older Library would drop a saved profile, so the section waits until it says it keeps one.
+  const supportsWorkflows = supportsLoomFeature(capabilities, "project-workflows");
   const keepsProfile = supportsLoomFeature(capabilities, LIBRARY_PROJECT_PROFILE_FEATURE);
   // Suggested brief updates appear only once the Library says it keeps them.
   const proposesBrief = supportsLoomFeature(capabilities, LIBRARY_BRIEF_PROPOSALS_FEATURE);
@@ -213,7 +220,10 @@ function ProjectView({
       : project.updatedAt;
   const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
   const views = PROJECT_VIEWS.filter(
-    (entry) => entry !== "repositories" && (entry !== "setup" || keepsProfile),
+    (entry) =>
+      entry !== "repositories" &&
+      (entry !== "setup" || keepsProfile) &&
+      (entry !== "workstreams" || supportsWorkflows),
   );
   // A link to the setup view still lands somewhere on a Library that keeps no setup.
   const shown = view === "repositories" ? "computers" : views.includes(view) ? view : "overview";
@@ -255,9 +265,57 @@ function ProjectView({
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
+        {shown === "workstreams" && supportsWorkflows ? (
+          <ProjectWorkstreams
+            project={project}
+            authorityId={authorityId}
+            copies={copies}
+            threads={threads}
+          />
+        ) : null}
+        {shown === "setup" && supportsWorkflows ? (
+          <ProjectBlueprint
+            project={project}
+            authorityId={authorityId}
+            onChanged={library.refresh}
+          />
+        ) : null}
+        {shown === "computers" && supportsWorkflows ? (
+          <div className="space-y-6">
+            <Button size="sm" variant="outline" onClick={() => setPreservationOpen(true)}>
+              Preservation and cleanup
+            </Button>
+            {activeCopies
+              .filter(
+                (copy, index) =>
+                  activeCopies.findIndex((entry) => entry.environmentId === copy.environmentId) ===
+                    index && hostConnected(copy.environmentId),
+              )
+              .map((copy) => (
+                <ProjectOperationHistory
+                  key={copy.environmentId}
+                  environmentId={copy.environmentId}
+                  projectId={project.id}
+                />
+              ))}
+          </div>
+        ) : null}
+        {preservationOpen ? (
+          <ProjectPreservationCenter
+            authorityId={authorityId}
+            projectId={project.id}
+            onClose={() => setPreservationOpen(false)}
+            onChanged={library.refresh}
+          />
+        ) : null}
         {shown === "overview" ? (
           <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="flex min-w-0 flex-col gap-10">
+              <ProjectAttention
+                threads={threads}
+                copies={copies}
+                onFiles={() => show("computers")}
+              />
               {settingUp ? (
                 <ProjectSetup
                   project={project}
@@ -388,7 +446,7 @@ function ProjectView({
               onRemove={setReleasing}
             />
           </div>
-        ) : (
+        ) : shown === "setup" ? (
           <ProjectProfile
             project={project}
             copies={activeCopies}
@@ -401,7 +459,7 @@ function ProjectView({
             onEdit={update.clearError}
             onSave={(profile) => update.save({ profile })}
           />
-        )}
+        ) : null}
       </ProjectTabs>
       {copyRequest ? (
         <CopyDialog

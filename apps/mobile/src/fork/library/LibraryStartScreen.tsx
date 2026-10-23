@@ -550,6 +550,7 @@ function LibraryStartContent(props: {
       : null;
   const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(execution));
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
+  const executeOperation = useAtomCommand(library.executeOperation, { reportFailure: false });
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false }),
     registerCopy = useAtomCommand(library.registerCopy, { reportFailure: false }),
     bind = useAtomCommand(library.bindThread, { reportFailure: false }),
@@ -779,6 +780,52 @@ function LibraryStartContent(props: {
                 input,
               }),
             ),
+          durableLaunch: supportsLoomFeature(config?.environment.capabilities, "project-workflows")
+            ? async (input) => {
+                const localProjectId = receipt.current.resolved?.localProjectId;
+                if (!localProjectId) throw new Error("Review the selected files before starting.");
+                const currentModels = buildModelOptions(
+                  config,
+                  review.model.selection,
+                  undefined,
+                  localProjectId,
+                );
+                if (
+                  !currentModels.some(
+                    (model) => model.key === review.model.key && !model.isUnavailable,
+                  )
+                )
+                  throw new Error(
+                    "This model is unavailable for the chosen workspace. Review provider settings.",
+                  );
+                unwrap(
+                  await executeOperation({
+                    environmentId: execution,
+                    input: {
+                      operationId: `${requestId.current}:launch`,
+                      request: {
+                        kind: "launch",
+                        input: {
+                          ...input,
+                          title: review.title,
+                          modelSelection: review.model.selection,
+                          runtimeMode:
+                            review.runtimeMode ??
+                            libraryLaunchDefaults({ settings: config?.settings, localProjectId })
+                              .runtimeMode,
+                          interactionMode:
+                            review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+                          ...(receipt.current.copy?.ownership === "managed" &&
+                          review.keepOnComputer !== undefined
+                            ? { keepOnComputer: review.keepOnComputer }
+                            : {}),
+                        },
+                      },
+                    },
+                  }),
+                );
+              }
+            : undefined,
           create: async (localProjectId) => {
             const currentModels = buildModelOptions(
               config,

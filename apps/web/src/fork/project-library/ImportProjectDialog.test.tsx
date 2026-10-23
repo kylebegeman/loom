@@ -2,12 +2,15 @@
 import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EnvironmentId } from "@t3tools/contracts";
+import type { LibraryProject } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 import { beforeEach, afterEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
+  projects: [] as LibraryProject[],
   inspect: vi.fn(),
+  readCopies: vi.fn(),
   create: vi.fn(),
   browse: vi.fn(),
   refresh: vi.fn(),
@@ -17,12 +20,12 @@ const state = vi.hoisted(() => ({
   pending: false,
 }));
 vi.mock("./state", () => ({
-  projectLibrary: { inspectFolder: "inspect", createProject: "create" },
+  projectLibrary: { inspectFolder: "inspect", createProject: "create", copies: "copies" },
   useLibraryPermission: () => state.allowed,
   useLibraryProjects: () => ({
     authorityId: "library",
     connected: true,
-    query: { data: [], isPending: false },
+    query: { data: state.projects, isPending: false },
     environments: ["dorothy", "remote"].map((id) => ({
       environmentId: id,
       label: id,
@@ -38,7 +41,9 @@ vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "dorothy
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: string) => (command === "inspect" ? state.inspect : state.create),
 }));
-vi.mock("~/state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
+vi.mock("~/state/use-atom-query-runner", () => ({
+  useAtomQueryRunner: (query: string) => (query === "copies" ? state.readCopies : vi.fn()),
+}));
 vi.mock("~/state/filesystem", () => ({
   filesystemEnvironment: {
     browse: (input: unknown) => {
@@ -107,6 +112,8 @@ const button = (name: string) =>
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  state.readCopies.mockResolvedValue(AsyncResult.success([]));
+  state.projects = [];
   state.allowed = true;
   state.online = true;
   state.browseError = null;
@@ -255,4 +262,48 @@ it("keeps hidden folders out of ordinary browsing and finds them when explicitly
   expect(button(".config")).toBeDefined();
   expect(button("Developer")).toBeUndefined();
   expect(state.inspect).not.toHaveBeenCalled();
+});
+
+it("uses an existing non-Git project association on the inspected computer", async () => {
+  const project: LibraryProject = {
+    id: "existing",
+    title: "Existing app",
+    brief: "",
+    revision: 1,
+    resources: [],
+    archived: false,
+    createdAt: "2026-10-23T00:00:00.000Z",
+    updatedAt: "2026-10-23T00:00:00.000Z",
+  };
+  state.projects = [project];
+  state.readCopies.mockResolvedValue(
+    AsyncResult.success([
+      {
+        id: "copy",
+        projectId: project.id,
+        projectRevision: 1,
+        environmentId: EnvironmentId.make("dorothy"),
+        rootPath: "/Users/kyle",
+        repositories: [],
+        ownership: "borrowed",
+        state: "ready",
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      },
+    ]),
+  );
+  await mount();
+  await act(async () => button("Use this folder").click());
+  expect(button("Add folder to Existing app")).toBeDefined();
+  expect(state.create).not.toHaveBeenCalled();
+});
+it("does not silently create a project when existing folder associations cannot be checked", async () => {
+  state.readCopies.mockResolvedValue(AsyncResult.failure(Cause.fail(new Error("offline"))));
+  await mount();
+  await act(async () => button("Use this folder").click());
+  expect(container.textContent).toContain("existing folder associations");
+  state.readCopies.mockResolvedValue(AsyncResult.success([]));
+  await act(async () => button("Use this folder").click());
+  expect(button("Add folder to kyle")).toBeDefined();
+  expect(state.create).not.toHaveBeenCalled();
 });

@@ -10,7 +10,13 @@ export function LibraryTextPalette({
   onChange,
   onBack,
   onClose,
+  onDone,
+  error,
+  doneLabel = "Keep this text",
 }: {
+  readonly onDone?: (() => void) | undefined;
+  readonly error?: string | null | undefined;
+  readonly doneLabel?: string | undefined;
   readonly title: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
@@ -31,6 +37,7 @@ export function LibraryTextPalette({
       onBack={onBack}
       onClose={onClose}
       readOnly
+      error={error}
       filter={false}
       footerHints={
         <>
@@ -49,7 +56,7 @@ export function LibraryTextPalette({
           </KbdGroup>
         </>
       }
-      items={[{ id: "keep-text", title: "Keep this text", select: onBack }]}
+      items={[{ id: "keep-text", title: doneLabel, select: onDone ?? onBack }]}
     >
       <div className="px-4 pb-2">
         <Textarea
@@ -66,7 +73,8 @@ export function LibraryTextPalette({
               (event.key === "Enter" && (event.ctrlKey || event.metaKey))
             ) {
               event.preventDefault();
-              onBack();
+              if (event.key === "Escape") onBack();
+              else (onDone ?? onBack)();
             }
           }}
         />

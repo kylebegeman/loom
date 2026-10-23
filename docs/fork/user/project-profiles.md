@@ -1,5 +1,7 @@
 # Project profiles and env
 
+For Library projects, portable blueprints and workstreams, see [Projects](./projects.md).
+
 Open **Settings > Loom > Project profile** and choose a project. Keep private notes there,
 map test/build and other command intents to existing project actions or literal commands,
 and set optional token budgets. Profiles belong to that project on that computer. They

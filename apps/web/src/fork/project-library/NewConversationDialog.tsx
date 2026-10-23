@@ -555,6 +555,9 @@ export function useLibraryConversationSetup({
   });
   const create = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const bind = useAtomCommand(projectLibrary.bindThread, { reportFailure: false });
+  const executeOperation = useAtomCommand(projectLibrary.executeOperation, {
+    reportFailure: false,
+  });
   const prepareCopy = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const reopenCopy = useAtomCommand(projectLibrary.reopenCopy, { reportFailure: false });
   const readCopyStatus = useAtomCommand(projectLibrary.readCopyStatus, { reportFailure: false });
@@ -590,6 +593,7 @@ export function useLibraryConversationSetup({
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canRegisterCopy = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
+  const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
   const submit = async () => {
     const authorityId = authority.authorityId;
@@ -927,71 +931,100 @@ export function useLibraryConversationSetup({
         };
         saveAttempt(next);
       }
-      if (!next.created) {
-        const created = await create({
+      const durableLaunch = supportsLoomFeature(
+        host?.serverConfig?.environment.capabilities,
+        "project-workflows",
+      );
+      if (durableLaunch) {
+        const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
-            threadId: next.threadId,
-            projectId: resolved.value.localProjectId,
-            title: next.title,
-            modelSelection: next.modelSelection,
-            runtimeMode: next.runtimeMode,
-            interactionMode: next.interactionMode ?? "default",
-            branch: null,
-            worktreePath: resolved.value.cwd,
-            createdAt: next.createdAt,
+            operationId: `${next.registerRequestId}:launch`,
+            request: {
+              kind: "launch",
+              input: {
+                project: next.project,
+                binding: next.binding,
+                threadId: next.threadId,
+                title: next.title,
+                modelSelection: next.modelSelection,
+                runtimeMode: next.runtimeMode,
+                interactionMode: next.interactionMode ?? "default",
+                ...(launchCopy.ownership === "managed" && next.keepOnComputer !== undefined
+                  ? { keepOnComputer: next.keepOnComputer }
+                  : {}),
+              },
+            },
           },
         });
-        // A lost create response may leave the same empty thread upstream. Binding that ID is recoverable.
-        if (created._tag === "Failure") {
-          const recovery = await bind({
-            environmentId: next.environmentId,
-            input: { threadId: next.threadId, binding: next.binding, project: next.project },
-          });
-          if (recovery._tag === "Failure") throw squashAtomCommandFailure(created);
-        }
-        next = { ...next, created: true };
-        saveAttempt(next);
-      }
-      const bound = await bind({
-        environmentId: next.environmentId,
-        input: { threadId: next.threadId, binding: next.binding, project: next.project },
-      });
-      if (bound._tag === "Failure") throw squashAtomCommandFailure(bound);
-      // Binding protects restored temporary files before cleanup becomes eligible again.
-      if (
-        launchCopy.ownership === "managed" &&
-        next.keepOnComputer !== undefined &&
-        (next.retentionCopy || (launchCopy.keepOnComputer !== false) !== next.keepOnComputer)
-      ) {
-        if (!next.retentionCopy) {
-          const updated = await setRetention({
+        if (launched._tag === "Failure") throw squashAtomCommandFailure(launched);
+      } else {
+        if (!next.created) {
+          const created = await create({
             environmentId: next.environmentId,
             input: {
-              workingCopyId: next.binding.workingCopyId,
-              keepOnComputer: next.keepOnComputer,
+              threadId: next.threadId,
+              projectId: resolved.value.localProjectId,
+              title: next.title,
+              modelSelection: next.modelSelection,
+              runtimeMode: next.runtimeMode,
+              interactionMode: next.interactionMode ?? "default",
+              branch: null,
+              worktreePath: resolved.value.cwd,
+              createdAt: next.createdAt,
             },
           });
-          if (updated._tag === "Failure") throw squashAtomCommandFailure(updated);
-          next = { ...next, retentionCopy: updated.value };
+          // A lost create response may leave the same empty thread upstream. Binding that ID is recoverable.
+          if (created._tag === "Failure") {
+            const recovery = await bind({
+              environmentId: next.environmentId,
+              input: { threadId: next.threadId, binding: next.binding, project: next.project },
+            });
+            if (recovery._tag === "Failure") throw squashAtomCommandFailure(created);
+          }
+          next = { ...next, created: true };
           saveAttempt(next);
         }
-        const published = await registerCopy({
-          environmentId: authorityId,
-          input: { requestId: `${next.registerRequestId}:retention`, copy: next.retentionCopy! },
+        const bound = await bind({
+          environmentId: next.environmentId,
+          input: { threadId: next.threadId, binding: next.binding, project: next.project },
         });
-        if (published._tag === "Failure") throw squashAtomCommandFailure(published);
+        if (bound._tag === "Failure") throw squashAtomCommandFailure(bound);
+        // Binding protects restored temporary files before cleanup becomes eligible again.
+        if (
+          launchCopy.ownership === "managed" &&
+          next.keepOnComputer !== undefined &&
+          (next.retentionCopy || (launchCopy.keepOnComputer !== false) !== next.keepOnComputer)
+        ) {
+          if (!next.retentionCopy) {
+            const updated = await setRetention({
+              environmentId: next.environmentId,
+              input: {
+                workingCopyId: next.binding.workingCopyId,
+                keepOnComputer: next.keepOnComputer,
+              },
+            });
+            if (updated._tag === "Failure") throw squashAtomCommandFailure(updated);
+            next = { ...next, retentionCopy: updated.value };
+            saveAttempt(next);
+          }
+          const published = await registerCopy({
+            environmentId: authorityId,
+            input: { requestId: `${next.registerRequestId}:retention`, copy: next.retentionCopy! },
+          });
+          if (published._tag === "Failure") throw squashAtomCommandFailure(published);
+        }
+        const archived = await snapshot({
+          environmentId: next.environmentId,
+          input: { threadId: next.threadId },
+        });
+        if (archived._tag === "Failure") throw squashAtomCommandFailure(archived);
+        const saved = await register({
+          environmentId: authorityId,
+          input: { requestId: next.registerRequestId, thread: archived.value },
+        });
+        if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
       }
-      const archived = await snapshot({
-        environmentId: next.environmentId,
-        input: { threadId: next.threadId },
-      });
-      if (archived._tag === "Failure") throw squashAtomCommandFailure(archived);
-      const saved = await register({
-        environmentId: authorityId,
-        input: { requestId: next.registerRequestId, thread: archived.value },
-      });
-      if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
       if (next.context.trim())
         useComposerDraftStore
           .getState()
@@ -1111,7 +1144,20 @@ export function useLibraryConversationSetup({
     authority.connected &&
     host?.connection.phase === "connected" &&
     host.entry.enabled;
-  const canCreate = canContinue && modelSelection !== null;
+  const supportsOperations = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    "project-workflows",
+  );
+  const operationProgress = useEnvironmentQuery(
+    busy && hostId && supportsOperations
+      ? projectLibrary.operations({ environmentId: hostId, input: { projectId: project.id } })
+      : null,
+  );
+  const operationPhase = operationProgress.data?.find(
+    (operation) => operation.id === `${attempt?.registerRequestId}:launch`,
+  )?.phase;
+  const canCreate =
+    canContinue && modelSelection !== null && (!supportsOperations || canExecuteOperation);
   const rankOf = (environmentId: EnvironmentId) => {
     const index = ranking.candidates.findIndex(
       (candidate) => candidate.environmentId === environmentId,
@@ -1156,6 +1202,7 @@ export function useLibraryConversationSetup({
                           : null);
   return {
     project,
+    operationPhase,
     open,
     embedded,
     onClose,

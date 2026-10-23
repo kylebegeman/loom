@@ -98,7 +98,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
     id: next,
     title,
     description,
-    icon: icon ?? <SettingsIcon className="size-4" />,
+    icon: icon ?? <SettingsIcon className="size-4 text-(--project-gold)" />,
     next: true,
     disabled: s.locked,
     select: () => go(next),
@@ -156,7 +156,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
           host.connection.phase === "connected"
             ? "Run this conversation here"
             : "Reconnect this computer first",
-        icon: <MonitorIcon className="size-4" />,
+        icon: <MonitorIcon className="size-4 text-(--project-blue)" />,
         disabled: !host.entry.enabled || host.connection.phase !== "connected",
         select: () => {
           s.selectHost(host.environmentId);
@@ -185,7 +185,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         title: copy.rootPath,
         description:
           copy.state === "ready" ? "Existing project files" : "Restore saved project files",
-        icon: <FolderIcon className="size-4" />,
+        icon: <FolderIcon className="size-4 text-(--project-teal)" />,
         select: () => {
           s.selectCopy(copy.id);
           go("start");
@@ -195,7 +195,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         "browse",
         "Browse computer folders",
         "Choose an existing folder on the selected computer",
-        <FolderIcon className="size-4" />,
+        <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
       edit("path", "Set files location", s.rootPath || "Choose where to prepare new files"),
       ...(s.canKeep
@@ -320,9 +320,13 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
     items = [
       {
         id: "start",
-        title: s.busy ? "Starting..." : s.locked ? "Retry conversation" : "Start conversation",
-        description: `${s.project.title} on ${s.hostLabel ?? "a computer"}`,
-        icon: <PlayIcon className="size-4" />,
+        title: s.busy
+          ? (s.operationPhase ?? "Starting...")
+          : s.locked
+            ? "Retry conversation"
+            : "Start conversation",
+        description: `${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
+        icon: <PlayIcon className="size-4 text-(--project-green)" />,
         disabled: !s.canCreate,
         select: () => void s.submit(),
       },
@@ -374,19 +378,19 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         "computers",
         "Computer",
         s.hostLabel ?? "Choose a computer",
-        <MonitorIcon className="size-4" />,
+        <MonitorIcon className="size-4 text-(--project-blue)" />,
       ),
       edit(
         "files",
         "Files",
         s.rootPath || "Choose project files",
-        <FolderIcon className="size-4" />,
+        <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
       edit(
         "models",
         "Model",
         [provider?.displayName, modelName].filter(Boolean).join(": "),
-        <BotIcon className="size-4" />,
+        <BotIcon className="size-4 text-(--project-plum)" />,
       ),
       ...(descriptors.length
         ? [

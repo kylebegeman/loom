@@ -1,5 +1,11 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { libraryHoldsLocalRefs, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  libraryHoldsLocalRefs,
+  supportsLoomFeature,
+  libraryStartIntent,
+  libraryStartRepositoryProjects,
+  rankLibraryStartProjects,
+} from "@t3tools/client-runtime/fork";
 import { CommandId, ThreadId } from "@t3tools/contracts";
 import type { LibraryProject } from "@t3tools/contracts/fork";
 import { useRef } from "react";
@@ -47,9 +53,26 @@ export function useNewTaskLibraryProjects(input: {
       ? library.copies({ environmentId: authority.environmentId, input: {} })
       : null,
   );
+  const recent = useEnvironmentQuery(
+    authority.environmentId
+      ? library.threadIndex({ environmentId: authority.environmentId, input: { limit: 200 } })
+      : null,
+  );
+  const intent = libraryStartIntent(input.searchText);
+  const associated =
+    intent.kind === "repository"
+      ? libraryStartRepositoryProjects(sharedProjects.data ?? [], intent.url)
+      : [];
   const query = input.searchText.trim().toLocaleLowerCase();
-  const choices = (sharedProjects.data ?? []).filter((project) =>
-    project.title.toLocaleLowerCase().includes(query),
+  const choices = rankLibraryStartProjects(
+    sharedProjects.data ?? [],
+    recent.data?.threads ?? [],
+  ).filter(
+    (project) =>
+      associated.some((entry) => entry.id === project.id) ||
+      `${project.title} ${project.brief} ${project.resources.map((resource) => resource.remoteUrl ?? resource.title).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(query),
   );
   const holdsLocalRefs = (refs: readonly { environmentId: string; projectId: string }[]) =>
     libraryHoldsLocalRefs([], refs, sharedCopies.data ?? []);

@@ -5,12 +5,15 @@ import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
 import {
   LIBRARY_PROJECT_COLORS,
+  PROJECT_WORKFLOWS_FEATURE,
   LibraryError,
   LibraryProjectColor,
   LibraryResource,
+  LibraryBlueprint,
+  LibraryProjectProfileInput,
   type LibraryProject,
 } from "@t3tools/contracts/fork";
-import { PROJECT_COLOR_NAMES } from "@t3tools/client-runtime/fork";
+import { PROJECT_COLOR_NAMES, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import * as Schema from "effect/Schema";
 import { useLibraryAttempt } from "./attempts";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -21,6 +24,7 @@ import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./stat
 
 import { libraryResourceFromInput, validateResources } from "@t3tools/client-runtime/fork";
 
+const decodeBlueprint = Schema.decodeUnknownOption(Schema.fromJsonString(LibraryBlueprint));
 const isLibraryError = Schema.is(LibraryError);
 const EditorAttempt = Schema.NullOr(
   Schema.Struct({
@@ -29,6 +33,7 @@ const EditorAttempt = Schema.NullOr(
     brief: Schema.String,
     resources: Schema.Array(LibraryResource),
     color: Schema.optional(LibraryProjectColor),
+    profile: Schema.optional(LibraryProjectProfileInput),
   }),
 );
 
@@ -38,6 +43,7 @@ export function ProjectEditorDialog({
   embedded = false,
   onBack,
   initialTitle = "",
+  initialResource = "",
   continueToConversation = false,
   authorityId,
   onSaved,
@@ -47,6 +53,7 @@ export function ProjectEditorDialog({
   readonly embedded?: boolean;
   readonly onBack?: (() => void) | undefined;
   readonly initialTitle?: string | undefined;
+  readonly initialResource?: string | undefined;
   readonly continueToConversation?: boolean;
   readonly authorityId: EnvironmentId | null;
   readonly onSaved: (project: LibraryProject) => void;
@@ -58,15 +65,24 @@ export function ProjectEditorDialog({
   );
   const [title, setTitle] = useState(attempt?.title ?? initialTitle);
   const [brief, setBrief] = useState(attempt?.brief ?? "");
-  const [resources, setResources] = useState<readonly LibraryResource[]>(attempt?.resources ?? []);
+  const [resources, setResources] = useState<readonly LibraryResource[]>(() => {
+    const parsed = libraryResourceFromInput(initialResource, []);
+    return attempt?.resources ?? (parsed ? [{ id: randomUUID(), ...parsed }] : []);
+  });
+  const [profile, setProfile] = useState<LibraryProjectProfileInput | undefined>(attempt?.profile);
+  const [blueprintDraft, setBlueprintDraft] = useState("");
   const [resourceDraft, setResourceDraft] = useState("");
   const [color, setColor] = useState<LibraryProjectColor | undefined>(attempt?.color);
   const catalog = useLibraryProjects();
+  const supportsBlueprint = supportsLoomFeature(
+    catalog.environment?.serverConfig?.environment.capabilities,
+    PROJECT_WORKFLOWS_FEATURE,
+  );
   const existing = catalog.query.data?.find(
     (entry) =>
       !entry.archived && entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
   );
-  const [page, setPage] = useState<"name" | "repository" | "brief" | "color">("name");
+  const [page, setPage] = useState<"name" | "repository" | "brief" | "color" | "blueprint">("name");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -74,6 +90,10 @@ export function ProjectEditorDialog({
   const locked = busy || attempt !== null;
   const save = async () => {
     if (!authorityId || !allowed || busy) return;
+    if (profile && !supportsBlueprint) {
+      setError("Connect an updated Library before creating a project from this blueprint.");
+      return;
+    }
     const validation = validateResources(resources);
     if (!title.trim() || validation) {
       setError(validation ?? "Give the project a name.");
@@ -88,6 +108,7 @@ export function ProjectEditorDialog({
         brief,
         resources,
         ...(color ? { color } : {}),
+        ...(profile ? { profile } : {}),
       };
       saveAttempt(input);
       const result = await create({ environmentId: authorityId, input });
@@ -128,8 +149,39 @@ export function ProjectEditorDialog({
         : null;
   const [colorSearch, setColorSearch] = useState("");
   if (!open) return null;
+  const importBlueprint = () => {
+    const result = decodeBlueprint(blueprintDraft);
+    if (result._tag === "None") {
+      setError("Paste a version 1 Loom blueprint without credentials or computer preferences.");
+      return;
+    }
+    const value = result.value;
+    const validation = validateResources(value.resources);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setTitle(value.title);
+    setBrief(value.brief);
+    setResources(value.resources);
+    setColor(value.color);
+    setProfile({ ...value.setup, connectionNames: value.connections });
+    setError(null);
+    setPage("name");
+  };
   const content =
-    page === "brief" ? (
+    page === "blueprint" ? (
+      <LibraryTextPalette
+        title="Import project blueprint"
+        value={blueprintDraft}
+        onChange={setBlueprintDraft}
+        onBack={back}
+        onClose={onClose}
+        onDone={importBlueprint}
+        doneLabel="Review this blueprint"
+        error={error}
+      />
+    ) : page === "brief" ? (
       <LibraryTextPalette
         title="Project brief"
         value={brief}
@@ -231,6 +283,22 @@ export function ProjectEditorDialog({
                           description: "Keep work in the project already in your Library",
                           disabled: locked,
                           select: () => onSaved(existing),
+                        },
+                      ]
+                    : []),
+                  ...(supportsBlueprint
+                    ? [
+                        {
+                          id: "blueprint",
+                          title: profile ? "Review imported blueprint" : "Use a project blueprint",
+                          description: profile
+                            ? `${resources.length} repositories and links. Review shared scripts in Preferences before running them.`
+                            : "Paste portable repository layout and setup",
+                          disabled: locked,
+                          select: () => {
+                            setError(null);
+                            setPage("blueprint");
+                          },
                         },
                       ]
                     : []),

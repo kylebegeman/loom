@@ -2,6 +2,7 @@ import { Tabs } from "@base-ui/react/tabs";
 import {
   FolderGit2Icon,
   HistoryIcon,
+  GitBranchIcon,
   LayoutDashboardIcon,
   MessagesSquareIcon,
   SlidersHorizontalIcon,
@@ -12,6 +13,7 @@ import { PROJECT_VIEW_LABELS, type ProjectViewName } from "./projectViews";
 
 const VIEW_ICONS: Record<ProjectViewName, LucideIcon> = {
   overview: LayoutDashboardIcon,
+  workstreams: GitBranchIcon,
   conversations: MessagesSquareIcon,
   timeline: HistoryIcon,
   computers: FolderGit2Icon,

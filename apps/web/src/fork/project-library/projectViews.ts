@@ -1,6 +1,7 @@
 export const PROJECT_VIEWS = [
   "overview",
   "conversations",
+  "workstreams",
   "timeline",
   "computers",
   "repositories",
@@ -12,6 +13,7 @@ export type ProjectViewName = (typeof PROJECT_VIEWS)[number];
 export const PROJECT_VIEW_LABELS: Record<ProjectViewName, string> = {
   overview: "Overview",
   conversations: "Conversations",
+  workstreams: "Workstreams",
   timeline: "Timeline",
   computers: "Files",
   repositories: "Files",

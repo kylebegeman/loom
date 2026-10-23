@@ -21,6 +21,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
 
 import { usePrimaryEnvironmentId } from "~/state/environments";
+import { libraryStartFolderProjects } from "@t3tools/client-runtime/fork";
 import { folderProjectMatches } from "./folderProjectMatches";
 
 import { projectLibrary, useLibraryProjects, useLibraryPermission } from "./state";
@@ -98,6 +99,23 @@ export function ImportProjectDialog({
     refresh: true,
     reportFailure: false,
   });
+  const readCopies = useAtomQueryRunner(projectLibrary.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
+  const [registeredCopies, setRegisteredCopies] = useState<readonly LibraryWorkingCopy[]>([]);
+  const matchingProjects = (
+    inspection: LibraryFolderInspection,
+    copies: readonly LibraryWorkingCopy[],
+  ) => {
+    const exact = libraryStartFolderProjects(
+      library.query.data ?? [],
+      copies,
+      hostId ?? "",
+      inspection.rootPath,
+    );
+    return exact.length ? exact : folderProjectMatches(library.query.data ?? [], inspection);
+  };
   const [error, setError] = useState<string | null>(null);
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -120,7 +138,19 @@ export function ImportProjectDialog({
       setInspection(result.value);
       if (!result.value.exists)
         setError("This folder no longer exists on this computer. Choose another folder.");
-      const matches = folderProjectMatches(library.query.data ?? [], result.value);
+      const copies = library.authorityId
+        ? await readCopies({ environmentId: library.authorityId, input: {} })
+        : null;
+      if (!copies || copies._tag === "Failure") {
+        setError(
+          "Could not check the Library's existing folder associations. Reconnect it and check this folder again.",
+        );
+        setProjectId("choose");
+        setBusy(false);
+        return null;
+      }
+      setRegisteredCopies(copies.value);
+      const matches = matchingProjects(result.value, copies.value);
       setProjectId(matches.length === 1 ? matches[0]!.id : matches.length > 1 ? "choose" : "new");
       if (!title)
         setTitle(
@@ -160,7 +190,7 @@ export function ImportProjectDialog({
     library.query.isPending,
     attempt,
   ]);
-  const matches = inspection ? folderProjectMatches(library.query.data ?? [], inspection) : [];
+  const matches = inspection ? matchingProjects(inspection, registeredCopies) : [];
   const submit = async () => {
     const authorityId = library.authorityId;
     if (!hostId || !authorityId || busy || (!attempt && !inspection?.exists)) return;

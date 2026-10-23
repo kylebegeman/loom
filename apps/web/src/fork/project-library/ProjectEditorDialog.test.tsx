@@ -6,12 +6,21 @@ import * as Cause from "effect/Cause";
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-const state = vi.hoisted(() => ({ create: vi.fn() }));
+const state = vi.hoisted(() => ({ create: vi.fn(), workflows: true }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => state.create }));
 vi.mock("./state", () => ({
   projectLibrary: { createProject: {} },
   useLibraryPermission: () => true,
-  useLibraryProjects: () => ({ query: { data: [] } }),
+  useLibraryProjects: () => ({
+    query: { data: [] },
+    environment: {
+      serverConfig: {
+        environment: {
+          capabilities: { loomFeatures: state.workflows ? ["project-workflows"] : [] },
+        },
+      },
+    },
+  }),
 }));
 vi.mock("./LibraryPalette", () => ({
   LibraryPaletteDialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -57,6 +66,7 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   state.create.mockReset();
+  state.workflows = true;
   onSaved.mockClear();
   state.create.mockResolvedValue(AsyncResult.success({ id: "new-project" }));
   container = document.createElement("div");
@@ -123,4 +133,21 @@ it("retries an uncertain create with the same receipt and locked draft", async (
   await choose("Retry project creation");
   expect(state.create.mock.calls[1]).toEqual(state.create.mock.calls[0]);
   expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it("keeps blueprint creation unavailable on older Library servers", async () => {
+  state.workflows = false;
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(button("Use a project blueprint")).toBeUndefined();
+  await choose("Create “Coast”");
+  expect(state.create).toHaveBeenCalledOnce();
 });

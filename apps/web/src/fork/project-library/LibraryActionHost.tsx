@@ -1,8 +1,20 @@
+import {
+  libraryStartIntent,
+  libraryStartRepositoryProjects,
+  rankLibraryStartProjects,
+} from "@t3tools/client-runtime/fork";
+import { ProjectTile } from "./ProjectIdentity";
+import { useEnvironmentQuery } from "~/state/query";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderKanbanIcon, FolderPlusIcon, PlusIcon } from "lucide-react";
-import { useLibraryProject, useLibraryProjects, useSelectedLibraryProject } from "./state";
+import { FolderPlusIcon, PlusIcon } from "lucide-react";
+import {
+  projectLibrary,
+  useLibraryProject,
+  useLibraryProjects,
+  useSelectedLibraryProject,
+} from "./state";
 import { onLibraryAction, type LibraryConversationDefaults, type LibraryAction } from "./actions";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
@@ -70,6 +82,18 @@ export function LibraryActionHost({
   );
   const [search, setSearch] = useState("");
   const [newTitle, setNewTitle] = useState("");
+  const [initialResource, setInitialResource] = useState("");
+  const [initialFolder, setInitialFolder] = useState("");
+  const recent = useEnvironmentQuery(
+    catalog.authorityId
+      ? projectLibrary.threadIndex({ environmentId: catalog.authorityId, input: { limit: 200 } })
+      : null,
+  );
+  const intent = libraryStartIntent(search);
+  const repositoryProjects =
+    intent.kind === "repository"
+      ? libraryStartRepositoryProjects(catalog.query.data ?? [], intent.url)
+      : [];
   const [visited, setVisited] = useState({
     create: action === "create-project",
     import: action === "import-folder",
@@ -135,42 +159,83 @@ export function LibraryActionHost({
             !library.authorityId || loadingProject
               ? []
               : [
-                  ...(catalog.query.data ?? [])
-                    .filter((entry) => !entry.archived)
-                    .map((entry) => ({
-                      id: entry.id,
-                      title: entry.title,
-                      description: entry.brief.trim().split("\n")[0] || "Start a conversation",
-                      terms: entry.resources.map(
-                        (resource) => `${resource.title} ${resource.remoteUrl ?? ""}`,
-                      ),
-                      icon: <FolderKanbanIcon className="size-4" />,
-                      next: true,
-                      select: () => choose(entry),
-                    })),
-                  {
-                    id: "new-project",
-                    title: search.trim()
-                      ? visited.create
-                        ? "Continue new project"
-                        : `New project: ${search.trim()}`
-                      : "New project",
+                  ...repositoryProjects.map((entry) => ({
+                    id: `repository:${entry.id}`,
+                    title: `Continue ${entry.title}`,
+                    description: "This repository is already part of this project",
                     terms: [search],
-                    description: visited.create
-                      ? "Return to your project draft"
-                      : "Start something new",
-                    icon: <PlusIcon className="size-4" />,
+                    icon: <ProjectTile project={entry} size="sm" />,
                     next: true,
-                    select: () => {
-                      if (!visited.create) setNewTitle(search.trim());
-                      show("create");
-                    },
-                  },
+                    select: () => choose(entry),
+                  })),
+                  ...(intent.kind !== "search"
+                    ? [
+                        {
+                          id: "resource-intent",
+                          title:
+                            intent.kind === "folder"
+                              ? `Use folder: ${intent.title}`
+                              : repositoryProjects.length
+                                ? `Create another project from ${intent.title}`
+                                : `Start from repository: ${intent.title}`,
+                          description: intent.kind === "folder" ? intent.path : intent.url,
+                          terms: [search],
+                          icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
+                          next: true,
+                          select: () => {
+                            if (intent.kind === "folder") {
+                              setInitialFolder(intent.path);
+                              show("import");
+                            } else {
+                              setInitialResource(intent.url);
+                              setNewTitle(intent.title);
+                              show("create");
+                            }
+                          },
+                        },
+                      ]
+                    : []),
+                  ...rankLibraryStartProjects(
+                    catalog.query.data ?? [],
+                    recent.data?.threads ?? [],
+                  ).map((entry) => ({
+                    id: entry.id,
+                    title: entry.title,
+                    description: entry.brief.trim().split("\n")[0] || "Start a conversation",
+                    terms: entry.resources.map(
+                      (resource) => `${resource.title} ${resource.remoteUrl ?? ""}`,
+                    ),
+                    icon: <ProjectTile project={entry} size="sm" />,
+                    next: true,
+                    select: () => choose(entry),
+                  })),
+                  ...(intent.kind === "search"
+                    ? [
+                        {
+                          id: "new-project",
+                          title: search.trim()
+                            ? visited.create
+                              ? "Continue new project"
+                              : `New project: ${search.trim()}`
+                            : "New project",
+                          terms: [search],
+                          description: visited.create
+                            ? "Return to your project draft"
+                            : "Start something new",
+                          icon: <PlusIcon className="size-4 text-(--project-green)" />,
+                          next: true,
+                          select: () => {
+                            if (!visited.create) setNewTitle(search.trim());
+                            show("create");
+                          },
+                        },
+                      ]
+                    : []),
                   {
                     id: "import",
                     title: "Add existing folder",
                     description: "Browse files on a connected computer",
-                    icon: <FolderPlusIcon className="size-4" />,
+                    icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
                     next: true,
                     select: () => show("import"),
                   },
@@ -198,10 +263,12 @@ export function LibraryActionHost({
       ) : null}
       {library.authorityId && visited.create ? (
         <ProjectEditorDialog
+          key={initialResource || "new"}
           embedded
           open={step === "create"}
           authorityId={library.authorityId}
           initialTitle={newTitle}
+          initialResource={initialResource}
           continueToConversation={action === "new-conversation"}
           onBack={back}
           onClose={onClose}
@@ -210,9 +277,11 @@ export function LibraryActionHost({
       ) : null}
       {library.authorityId && visited.import ? (
         <ImportProjectDialog
+          key={initialFolder || "browse"}
           embedded
           open={step === "import"}
           initialHostId={defaults?.environmentId}
+          initialRootPath={initialFolder}
           onBack={back}
           onClose={onClose}
           onSaved={choose}
