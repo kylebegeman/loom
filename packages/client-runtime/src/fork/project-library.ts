@@ -16,7 +16,8 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
-import type { Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
@@ -36,6 +37,12 @@ export function createProjectLibraryAtoms<R, E>(
     label: "loom:workflows:changes",
     tag: W.changes,
   });
+  const catalogWorkflowChanges = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => [
+      get(refreshes({ environmentId, input: {} })),
+      get(workflowChanges({ environmentId, input: {} })),
+    ]),
+  );
   return {
     refreshes,
     workstreams: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -50,7 +57,7 @@ export function createProjectLibraryAtoms<R, E>(
     blueprint: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:blueprint",
       tag: W.blueprint,
-      refreshTrigger: ({ environmentId }) => workflowChanges({ environmentId, input: {} }),
+      refreshTrigger: ({ environmentId }) => catalogWorkflowChanges(environmentId),
     }),
     applyBlueprint: createEnvironmentRpcCommand(runtime, {
       label: "loom:blueprint:apply",
@@ -59,7 +66,7 @@ export function createProjectLibraryAtoms<R, E>(
     preservation: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:preservation",
       tag: W.preservation,
-      refreshTrigger: ({ environmentId }) => workflowChanges({ environmentId, input: {} }),
+      refreshTrigger: ({ environmentId }) => catalogWorkflowChanges(environmentId),
     }),
     operations: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:operations",

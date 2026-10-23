@@ -150,10 +150,31 @@ describe("project attention", () => {
       "ready",
     ]);
     expect(result.find((entry) => entry.id === "dirty")?.detail).toBe(
-      "2 changed files; 1 local commits",
+      "2 changed files; 1 local commit",
     );
     expect(result.find((entry) => entry.id === "unknown")?.detail).toContain("not been checked");
     expect(result.every((entry) => entry.checkedAt === now)).toBe(true);
+  });
+  it("shows incomplete repository health and singular counts honestly", () => {
+    const incomplete = {
+      ...copy("partial"),
+      repositories: [
+        {
+          resourceId: "app",
+          path: "/work/app",
+          head: null,
+          branch: null,
+          localProjectId: ProjectId.make("local"),
+        },
+      ],
+      health: {
+        copyId: "partial",
+        environmentId: EnvironmentId.make("computer"),
+        checkedAt: now,
+        repositories: [],
+      },
+    };
+    expect(libraryProjectAttention([], [incomplete])[0]?.detail).toContain("not been checked");
   });
 });
 

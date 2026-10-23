@@ -18,6 +18,10 @@ import {
   type LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -67,6 +71,10 @@ function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvi
 export class ProjectOperations extends Context.Service<
   ProjectOperations,
   {
+    readonly operationId: (
+      requestId: string,
+      kind: LibraryOperationInput["kind"],
+    ) => Effect.Effect<string, LibraryError>;
     readonly executeClient: (
       id: string,
       request: LibraryOperationInput,
@@ -113,6 +121,20 @@ export class ProjectOperations extends Context.Service<
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const crypto = yield* Crypto.Crypto;
+  /** Existing IDs stay stable; maximum-length client request IDs still leave room for the operation kind. */
+  const operationId = Effect.fn("ProjectOperations.operationId")(function* (
+    requestId: string,
+    kind: LibraryOperationInput["kind"],
+  ) {
+    const candidate = `${requestId}:${kind}`;
+    if (candidate.length <= 200) return candidate;
+    const digest = yield* crypto
+      .digest("SHA-256", new TextEncoder().encode(requestId))
+      .pipe(Effect.mapError(io));
+    return `${Hex.encode(digest)}:${kind}`;
+  });
+
   const library = yield* LibraryService;
   const workflows = yield* ProjectWorkflows;
   const workspace = yield* LibraryWorkspace;
@@ -307,7 +329,9 @@ const make = Effect.gen(function* () {
               Effect.mapError(io),
             );
           }
+          yield* phase("Publishing conversation attachments");
           yield* publisher.publishAttachments(archive);
+          yield* phase("Publishing conversation history");
           yield* publisher.ingest({
             requestId: `${id}:publish`,
             sourceEnvironmentId: environmentId,
@@ -333,8 +357,10 @@ const make = Effect.gen(function* () {
       });
     });
     return yield* action.pipe(
-      Effect.catch((error) =>
+      Effect.catchCause((cause) =>
         Effect.gen(function* () {
+          if (Cause.hasInterrupts(cause)) return yield* Effect.failCause(cause);
+          const error = Cause.squash(cause);
           return yield* save({
             ...operation,
             state: io(error).reason === "blocked" ? "needs-input" : "failed",
@@ -367,7 +393,15 @@ const make = Effect.gen(function* () {
         ),
       ),
       Effect.catch((error) => release.pipe(Effect.andThen(Deferred.fail(completion, io(error))))),
-      Effect.ensuring(release),
+      Effect.onExit((exit) =>
+        release.pipe(
+          Effect.andThen(
+            Exit.isFailure(exit)
+              ? Deferred.fail(completion, io(Cause.squash(exit.cause)))
+              : Effect.void,
+          ),
+        ),
+      ),
       Effect.forkIn(scope),
     );
   });
@@ -399,7 +433,7 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "request-conflict" });
     if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
       return existing.operation;
-    if (existing?.operation.state === "running" && pending.has(id)) return existing.operation;
+    if (existing && pending.has(id)) return existing.operation;
     const timestamp = yield* now;
     const projectId =
       request.kind === "create"
@@ -435,7 +469,12 @@ const make = Effect.gen(function* () {
     actor: OperationActor,
   ) {
     const initial = yield* run(id, request, actor);
-    if (["succeeded", "cancelled"].includes(initial.state)) return initial;
+    if (initial.state === "succeeded") return initial;
+    if (initial.state === "cancelled")
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: "This operation was cancelled. Start a new operation to continue.",
+      });
     const completion = pending.get(id);
     const result = completion ? yield* Deferred.await(completion) : (yield* read(id))?.operation;
     if (!result) return yield* new LibraryError({ reason: "not-found" });
@@ -568,6 +607,7 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.catchCause(() => Effect.void)),
   );
   return {
+    operationId,
     list,
     run,
     execute,

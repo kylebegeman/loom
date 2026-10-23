@@ -593,6 +593,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       </View>
       {authority.info.data?.features?.includes("project-workflows") ? (
         <LibraryWorkflows
+          key={`${target}:${p.id}`}
           environmentId={target}
           project={p}
           copies={activeCopies}

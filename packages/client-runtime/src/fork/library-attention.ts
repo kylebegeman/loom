@@ -53,7 +53,8 @@ export function libraryProjectAttention(
       });
       continue;
     }
-    if (!copy.health) {
+    const health = copy.health;
+    if (!health) {
       items.push({
         id: copy.id,
         kind: "files",
@@ -64,24 +65,34 @@ export function libraryProjectAttention(
       });
       continue;
     }
-    const dirty = copy.health.repositories.reduce((sum, repo) => sum + repo.uncommittedFiles, 0);
-    const unpushed = copy.health.repositories.reduce((sum, repo) => sum + repo.unpushedCommits, 0);
-    const unknown = copy.health.repositories.some(
-      (repo) => repo.error || repo.fetchFailed || !repo.fetchedAt || repo.upstreamGone,
+    const dirty = health.repositories.reduce((sum, repo) => sum + repo.uncommittedFiles, 0);
+    const unpushed = health.repositories.reduce((sum, repo) => sum + repo.unpushedCommits, 0);
+    const incomplete = copy.repositories.some(
+      (repository) =>
+        !health.repositories.some((report) => report.resourceId === repository.resourceId),
     );
+    const unknown =
+      incomplete ||
+      health.repositories.some(
+        (repo) => repo.error || repo.fetchFailed || !repo.fetchedAt || repo.upstreamGone,
+      );
     if (dirty || unpushed || unknown)
       items.push({
         id: copy.id,
         kind: "files",
         title: copy.rootPath,
         detail: [
-          dirty ? `${dirty} changed files` : "",
-          unpushed ? `${unpushed} local commits` : "",
-          unknown ? "Remote preservation needs checking" : "",
+          dirty ? `${dirty} changed ${dirty === 1 ? "file" : "files"}` : "",
+          unpushed ? `${unpushed} local ${unpushed === 1 ? "commit" : "commits"}` : "",
+          incomplete
+            ? "Some repositories have not been checked"
+            : unknown
+              ? "Remote preservation needs checking"
+              : "",
         ]
           .filter(Boolean)
           .join("; "),
-        checkedAt: copy.health.checkedAt,
+        checkedAt: health.checkedAt,
         priority: dirty || unpushed ? 2 : 4,
       });
   }

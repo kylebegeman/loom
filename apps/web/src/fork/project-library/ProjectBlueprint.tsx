@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as Schema from "effect/Schema";
 import { LibraryBlueprint, type LibraryProject } from "@t3tools/contracts/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -13,6 +13,7 @@ import { projectLibrary, useLibraryPermission } from "./state";
 import { LibraryErrorNotice } from "./LibraryControls";
 
 const codec = Schema.fromJsonString(LibraryBlueprint);
+const decodeBlueprint = Schema.decodeOption(codec);
 export function ProjectBlueprint({
   project,
   authorityId,
@@ -27,10 +28,11 @@ export function ProjectBlueprint({
   );
   const apply = useAtomCommand(projectLibrary.applyBlueprint, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.applyBlueprint, authorityId);
+  const pendingImport = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const parsed = text === null ? null : Schema.decodeUnknownOption(codec)(text);
+  const parsed = text === null ? null : decodeBlueprint(text);
   const preview = parsed?._tag === "Some" ? parsed.value : null;
   const download = () => {
     if (!query.data) return;
@@ -46,14 +48,13 @@ export function ProjectBlueprint({
     if (!preview || busy) return;
     setBusy(true);
     setError(null);
+    const input = { projectId: project.id, expectedRevision: project.revision, blueprint: preview };
+    const fingerprint = JSON.stringify(input);
+    if (pendingImport.current?.fingerprint !== fingerprint)
+      pendingImport.current = { fingerprint, requestId: randomUUID() };
     const result = await apply({
       environmentId: authorityId,
-      input: {
-        requestId: randomUUID(),
-        projectId: project.id,
-        expectedRevision: project.revision,
-        blueprint: preview,
-      },
+      input: { ...input, requestId: pendingImport.current.requestId },
     });
     if (result._tag === "Success") {
       setText(null);

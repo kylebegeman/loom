@@ -126,6 +126,7 @@ export function LibraryProjectPage({
   return (
     <LibraryPageFrame title={project.title}>
       <ProjectView
+        key={`${library.authorityId}:${project.id}`}
         library={library}
         authorityId={library.authorityId}
         project={project}

@@ -6,7 +6,7 @@ import {
   LibraryWorkstream,
   LibrarySaveWorkstream,
   type LibraryPreservationEntry,
-  type LibraryProject,
+  LibraryProject,
   type LibraryWorkstreamReference,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
@@ -26,6 +26,8 @@ const decodeBlueprint = Schema.decodeUnknownEffect(LibraryBlueprint);
 const encodeWorkstreamInput = Schema.encodeEffect(Schema.fromJsonString(LibrarySaveWorkstream));
 const io = (cause: unknown) => (isLibraryFailure(cause) ? cause : fail("io"));
 const workstreamCodec = Schema.fromJsonString(LibraryWorkstream);
+const projectCodec = Schema.fromJsonString(LibraryProject);
+const encodeBlueprintRequest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 export class ProjectWorkflows extends Context.Service<
   ProjectWorkflows,
@@ -123,43 +125,64 @@ const make = Effect.gen(function* () {
       if ((current?.revision ?? 0) !== input.expectedRevision)
         return yield* fail("revision-conflict");
       if (current && current.projectId !== input.projectId) return yield* fail("invalid");
-      if (
-        new Set(input.references.map((ref) => `${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`))
-          .size !== input.references.length
-      )
-        return yield* fail("invalid", "Each linked item can appear only once.");
       const copies = yield* library.copies({ projectId: input.projectId, includeReleased: true });
       const threads = yield* library.threads({ projectId: input.projectId });
       const project = yield* library.project(input);
+      const references: LibraryWorkstreamReference[] = [];
       for (const ref of input.references) {
-        if (ref.kind === "copy" && !copies.some((copy) => copy.id === ref.id))
-          return yield* fail("invalid", "Choose a copy from this project.");
+        let resolved = ref;
+        if (ref.kind === "copy") {
+          const copy = copies.find((copy) => copy.id === ref.id);
+          if (!copy || (ref.environmentId && ref.environmentId !== copy.environmentId))
+            return yield* fail("invalid", "Choose a copy and its computer from this project.");
+          resolved = { ...ref, environmentId: copy.environmentId };
+        }
         if (
           ref.kind === "repository" &&
-          !project.resources.some((resource) => resource.id === ref.id)
+          !project.resources.some((resource) => resource.kind !== "link" && resource.id === ref.id)
         )
           return yield* fail("invalid", "Choose a repository from this project.");
-        if (
-          ref.kind === "thread" &&
-          !threads.some(
+        if (ref.kind === "thread") {
+          const matches = threads.filter(
             (thread) =>
               (thread.id === ref.id || thread.threadId === ref.id) &&
               (!ref.environmentId || thread.environmentId === ref.environmentId),
-          )
-        )
-          return yield* fail("invalid", "Choose a conversation from this project.");
-        if (ref.url && !/^https:\/\/[^/@\s]+\//.test(ref.url))
-          return yield* fail("invalid", "Use a public HTTPS link without credentials.");
+          );
+          if (matches.length !== 1)
+            return yield* fail(
+              "invalid",
+              "Choose a conversation and its computer from this project.",
+            );
+          resolved = { ...ref, id: matches[0]!.threadId, environmentId: matches[0]!.environmentId };
+        }
+        if (ref.url) {
+          let safe = false;
+          try {
+            const url = new URL(ref.url);
+            safe = url.protocol === "https:" && !url.username && !url.password;
+          } catch {
+            /* Invalid links must never be saved as clickable references. */
+          }
+          if (!safe) return yield* fail("invalid", "Use a valid HTTPS link without credentials.");
+        }
+        references.push(resolved);
       }
+      if (
+        new Set(references.map((ref) => `${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`))
+          .size !== references.length
+      )
+        return yield* fail("invalid", "Each linked item can appear only once.");
       if (input.state === "completed") {
-        const blockers = workstreamBlockers(input.references);
-        for (const ref of input.references) {
+        const blockers = workstreamBlockers(references);
+        for (const ref of references) {
           if (
             ref.kind === "thread" &&
             threads.some(
               (thread) =>
                 (thread.id === ref.id || thread.threadId === ref.id) &&
                 (!ref.environmentId || thread.environmentId === ref.environmentId) &&
+                !thread.archived &&
+                !thread.deleted &&
                 ["preparing", "queued", "starting", "running", "waiting"].includes(thread.status),
             )
           )
@@ -179,7 +202,7 @@ const make = Effect.gen(function* () {
         title: input.title,
         goal: input.goal,
         state: input.state,
-        references: input.references,
+        references,
         revision: input.expectedRevision + 1,
         createdAt: current?.createdAt ?? now,
         updatedAt: now,
@@ -228,8 +251,21 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
+      const request = yield* encodeBlueprintRequest({
+        ...input,
+        blueprint,
+      });
+      const receiptId = `blueprint:${input.requestId}`;
+      const receipts = yield* sql<{
+        request_json: string;
+        result_json: string;
+      }>`SELECT request_json,result_json FROM fork_library_workflow_receipts WHERE id=${receiptId}`;
+      if (receipts[0]) {
+        if (receipts[0].request_json !== request) return yield* fail("request-conflict");
+        return yield* Schema.decodeEffect(projectCodec)(receipts[0].result_json);
+      }
       const project = yield* library.project(input);
-      return yield* library.updateProject({
+      const updated = yield* library.updateProject({
         requestId: input.requestId,
         projectId: input.projectId,
         expectedRevision: input.expectedRevision,
@@ -248,7 +284,11 @@ const make = Effect.gen(function* () {
             : {}),
         },
       });
+      const payload = yield* Schema.encodeEffect(projectCodec)(updated);
+      yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${receiptId},${request},${payload})`;
+      return updated;
     },
+    (effect) => sql.withTransaction(effect).pipe(lock.withPermit),
     Effect.mapError(io),
     Effect.tap(() => changed),
   );
@@ -268,6 +308,8 @@ const make = Effect.gen(function* () {
           threads.some(
             (thread) =>
               thread.workingCopyId === copy.id &&
+              !thread.archived &&
+              !thread.deleted &&
               ["preparing", "queued", "starting", "running", "waiting"].includes(thread.status),
           )
         )

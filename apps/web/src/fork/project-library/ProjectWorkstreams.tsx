@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
@@ -44,29 +44,36 @@ export function ProjectWorkstreams({
   const [referenceText, setReferenceText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const draftId = useRef("");
+  const pendingSave = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const edit = (value: LibraryWorkstream | "new") => {
     setEditing(value);
     setTitle(value === "new" ? "" : value.title);
     setGoal(value === "new" ? "" : value.goal);
     setReferences(value === "new" ? [] : value.references);
     setError(null);
+    draftId.current = value === "new" ? randomUUID() : value.id;
+    pendingSave.current = null;
   };
   const persist = async (state: LibraryWorkstream["state"]) => {
     if (!editing || busy || !title.trim()) return;
     setBusy(true);
     setError(null);
+    const input = {
+      id: draftId.current,
+      projectId: project.id,
+      expectedRevision: editing === "new" ? 0 : editing.revision,
+      title: title.trim(),
+      goal,
+      references,
+      state,
+    };
+    const fingerprint = JSON.stringify(input);
+    if (pendingSave.current?.fingerprint !== fingerprint)
+      pendingSave.current = { fingerprint, requestId: randomUUID() };
     const result = await save({
       environmentId: authorityId,
-      input: {
-        requestId: randomUUID(),
-        id: editing === "new" ? randomUUID() : editing.id,
-        projectId: project.id,
-        expectedRevision: editing === "new" ? 0 : editing.revision,
-        title: title.trim(),
-        goal,
-        references,
-        state,
-      },
+      input: { ...input, requestId: pendingSave.current.requestId },
     });
     if (result._tag === "Success") {
       setEditing(null);
@@ -98,12 +105,14 @@ export function ProjectWorkstreams({
       label: copy.rootPath.slice(-160),
       state: "open" as const,
     })),
-    ...project.resources.map((resource) => ({
-      kind: "repository" as const,
-      id: resource.id,
-      label: resource.title,
-      state: "open" as const,
-    })),
+    ...project.resources
+      .filter((resource) => resource.kind !== "link")
+      .map((resource) => ({
+        kind: "repository" as const,
+        id: resource.id,
+        label: resource.title,
+        state: "open" as const,
+      })),
   ];
   const add = (reference: LibraryWorkstreamReference) =>
     setReferences((previous) =>
@@ -120,7 +129,12 @@ export function ProjectWorkstreams({
     <section aria-label="Workstreams" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">Workstreams</h2>
-        <Button size="xs" variant="ghost" disabled={!allowed || busy} onClick={() => edit("new")}>
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={!allowed || busy || editing !== null}
+          onClick={() => edit("new")}
+        >
           <PlusIcon />
           New workstream
         </Button>
@@ -166,7 +180,7 @@ export function ProjectWorkstreams({
                         conversationId:
                           threads.find(
                             (thread) =>
-                              thread.threadId === ref.id &&
+                              (thread.threadId === ref.id || thread.id === ref.id) &&
                               (!ref.environmentId || thread.environmentId === ref.environmentId),
                           )?.id ?? ref.id,
                       }}
@@ -188,7 +202,7 @@ export function ProjectWorkstreams({
           <Button
             size="xs"
             variant="ghost"
-            disabled={!allowed || busy}
+            disabled={!allowed || busy || editing !== null}
             onClick={() => edit(stream)}
           >
             Review
@@ -227,6 +241,7 @@ export function ProjectWorkstreams({
               disabled={busy}
               value=""
               onChange={(event) => {
+                if (event.target.value === "") return;
                 const option = options[Number(event.target.value)];
                 if (option) add(option);
               }}
@@ -328,7 +343,7 @@ export function ProjectWorkstreams({
             linked local work and refuses unfinished items.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" type="submit" disabled={busy || !title.trim()}>
+            <Button size="sm" type="submit" disabled={!allowed || busy || !title.trim()}>
               {editing !== "new" && editing.state !== "active"
                 ? "Reopen workstream"
                 : "Save active"}
@@ -337,7 +352,7 @@ export function ProjectWorkstreams({
               size="sm"
               type="button"
               variant="outline"
-              disabled={busy || !title.trim()}
+              disabled={!allowed || busy || !title.trim()}
               onClick={() => void persist("completed")}
             >
               Complete
@@ -347,7 +362,7 @@ export function ProjectWorkstreams({
                 size="sm"
                 type="button"
                 variant="ghost"
-                disabled={busy}
+                disabled={!allowed || busy}
                 onClick={() => void persist("archived")}
               >
                 Archive

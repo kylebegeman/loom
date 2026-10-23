@@ -82,6 +82,7 @@ const fixture = Effect.gen(function* () {
   const active = yield* Ref.make<readonly AuthClientSession[]>([session()]);
   const calls = yield* Ref.make(0);
   const failure = yield* Ref.make(false);
+  const defect = yield* Ref.make(false);
   const entered = yield* Deferred.make<void>();
   const release = yield* Deferred.make<void>();
   const pause = yield* Ref.make(false);
@@ -91,6 +92,8 @@ const fixture = Effect.gen(function* () {
   const retentionSaves = yield* Ref.make(0);
   const publishedRetentions = yield* Ref.make<readonly LibraryWorkingCopy[]>([]);
   const failPublish = yield* Ref.make(false);
+  const revokeAtAttachments = yield* Ref.make(false);
+  const ingests = yield* Ref.make(0);
   const observedToken = yield* Ref.make<string | null>(null);
   const external = Layer.mergeAll(
     Layer.mock(ProjectWorkflows)({ changed: Effect.void, changes: Stream.empty }),
@@ -100,6 +103,7 @@ const fixture = Effect.gen(function* () {
           yield* Ref.update(calls, (count) => count + 1);
           yield* Deferred.succeed(entered, undefined);
           if (yield* Ref.get(pause)) yield* Deferred.await(release);
+          if (yield* Ref.get(defect)) return yield* Effect.die(new Error("private backend detail"));
           if (yield* Ref.get(failure))
             return yield* new LibraryError({ reason: "revision-conflict" });
           return project;
@@ -156,9 +160,13 @@ const fixture = Effect.gen(function* () {
         Ref.update(publishedRetentions, (copies) => [...copies, input.copy]).pipe(
           Effect.as(input.copy),
         ),
-      publishAttachments: () => Effect.void,
+      publishAttachments: () =>
+        Ref.get(revokeAtAttachments).pipe(
+          Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
+        ),
       ingest: () =>
         Effect.gen(function* () {
+          yield* Ref.update(ingests, (count) => count + 1);
           if (yield* Ref.get(failPublish))
             return yield* new LibraryError({ reason: "blocked", detail: "Reconnect the Library." });
           return {
@@ -198,9 +206,12 @@ const fixture = Effect.gen(function* () {
     dispatched,
     snapshots,
     failPublish,
+    revokeAtAttachments,
+    ingests,
     active,
     calls,
     failure,
+    defect,
     entered,
     release,
     pause,
@@ -252,6 +263,27 @@ describe("Project operations", () => {
       }),
     ),
   );
+  it.effect("keeps derived operation IDs controllable for maximum-length client request IDs", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const requestId = "a".repeat(200);
+        const id = yield* state.service.operationId(requestId, "create");
+        expect(id.length).toBeLessThanOrEqual(200);
+        expect(id).not.toBe(yield* state.service.operationId("b".repeat(200), "create"));
+        expect(yield* state.service.operationId("ordinary", "create")).toBe("ordinary:create");
+        expect(
+          (yield* state.service.execute(
+            id,
+            { kind: "create", input: { requestId, title: "Project" } },
+            actor,
+          )).state,
+        ).toBe("succeeded");
+        expect((yield* state.service.controlClient(id, "resume", actor.sessionId)).state).toBe(
+          "succeeded",
+        );
+      }),
+    ),
+  );
   it.effect("retains typed failures and retries the same request with a renewed session", () =>
     run((state) =>
       Effect.gen(function* () {
@@ -267,6 +299,33 @@ describe("Project operations", () => {
           "succeeded",
         );
         expect((yield* state.service.list({}))[0]?.attempt).toBe(2);
+      }),
+    ),
+  );
+  it.effect("records unexpected worker failures and keeps the same operation retryable", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.defect, true);
+        const error = yield* state.service.execute("defect", create, actor).pipe(Effect.flip);
+        expect(error.reason).toBe("io");
+        const failed = (yield* state.service.list({}))[0];
+        expect(failed?.state).toBe("failed");
+        expect(failed?.error).not.toContain("private backend detail");
+        yield* Ref.set(state.defect, false);
+        expect((yield* state.service.execute("defect", create, actor)).state).toBe("succeeded");
+      }),
+    ),
+  );
+  it.effect("does not return cancelled work as a successful execution", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.failure, true);
+        yield* state.service.execute("cancelled", create, actor).pipe(Effect.flip);
+        yield* state.service.cancel("cancelled", actor);
+        expect(
+          (yield* state.service.execute("cancelled", create, actor).pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        expect(yield* Ref.get(state.calls)).toBe(1);
       }),
     ),
   );
@@ -470,6 +529,37 @@ describe("Project operations", () => {
           ).toContain("create-project");
         }),
       ),
+  );
+
+  it.effect("rechecks launch authorization after attachments before publishing history", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.revokeAtAttachments, true);
+        const request: LibraryOperationInput = {
+          kind: "launch",
+          input: {
+            project,
+            binding: {
+              projectId: project.id,
+              projectRevision: 1,
+              environmentId,
+              workingCopyId: "copy",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("revoked-launch"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+          },
+        };
+        expect(
+          (yield* state.service.execute("revoked-launch", request, actor).pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        expect(yield* Ref.get(state.ingests)).toBe(0);
+        expect((yield* state.service.list({}))[0]?.state).toBe("needs-input");
+      }),
+    ),
   );
   it.effect("requires current authorization and the original subject for operation control", () =>
     run((state) =>

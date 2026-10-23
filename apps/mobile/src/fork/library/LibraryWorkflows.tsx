@@ -1,6 +1,6 @@
 import { useNavigation } from "@react-navigation/native";
-import { useState } from "react";
-import { Share, View } from "react-native";
+import { useRef, useState } from "react";
+import { Linking, Share, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -31,6 +31,7 @@ import { LibraryCopySection } from "./LibraryCopySection";
 
 const inputStyle = "min-h-12 rounded-xl bg-field px-4 text-base text-foreground";
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
+const decodeBlueprint = Schema.decodeOption(blueprintCodec);
 export function LibraryWorkflows({
   environmentId,
   project,
@@ -58,36 +59,43 @@ export function LibraryWorkflows({
   const [goal, setGoal] = useState("");
   const [references, setReferences] = useState<readonly LibraryWorkstreamReference[]>([]);
   const [reference, setReference] = useState("");
+  const pendingImport = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [blueprintText, setBlueprintText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const parsed =
-    blueprintText === null ? null : Schema.decodeUnknownOption(blueprintCodec)(blueprintText);
+  const parsed = blueprintText === null ? null : decodeBlueprint(blueprintText);
   const preview = parsed?._tag === "Some" ? parsed.value : null;
   const attention = libraryProjectAttention(threads, copies);
+  const draftId = useRef("");
+  const pendingSave = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const edit = (value: LibraryWorkstream | "new") => {
     setEditor(value);
     setTitle(value === "new" ? "" : value.title);
     setGoal(value === "new" ? "" : value.goal);
     setReferences(value === "new" ? [] : value.references);
     setError(null);
+    draftId.current = value === "new" ? uuidv4() : value.id;
+    pendingSave.current = null;
   };
   const persist = async (state: LibraryWorkstream["state"]) => {
     if (!editor || busy) return;
     setBusy(true);
     setError(null);
+    const input = {
+      id: draftId.current,
+      projectId: project.id,
+      expectedRevision: editor === "new" ? 0 : editor.revision,
+      title: title.trim(),
+      goal,
+      references,
+      state,
+    };
+    const fingerprint = JSON.stringify(input);
+    if (pendingSave.current?.fingerprint !== fingerprint)
+      pendingSave.current = { fingerprint, requestId: uuidv4() };
     const result = await save({
-      environmentId,
-      input: {
-        requestId: uuidv4(),
-        id: editor === "new" ? uuidv4() : editor.id,
-        projectId: project.id,
-        expectedRevision: editor === "new" ? 0 : editor.revision,
-        title: title.trim(),
-        goal,
-        references,
-        state,
-      },
+      environmentId: environmentId,
+      input: { ...input, requestId: pendingSave.current.requestId },
     });
     if (result._tag === "Success") {
       streams.refresh();
@@ -99,13 +107,15 @@ export function LibraryWorkflows({
     setBusy(false);
   };
   const options: LibraryWorkstreamReference[] = [
-    ...threads.map((thread) => ({
-      kind: "thread" as const,
-      id: thread.threadId,
-      label: thread.title,
-      environmentId: thread.environmentId,
-      state: thread.settled ? ("completed" as const) : ("open" as const),
-    })),
+    ...threads
+      .filter((thread) => !thread.deleted)
+      .map((thread) => ({
+        kind: "thread" as const,
+        id: thread.threadId,
+        label: thread.title,
+        environmentId: thread.environmentId,
+        state: thread.settled ? ("completed" as const) : ("open" as const),
+      })),
     ...copies.map((copy) => ({
       kind: "copy" as const,
       id: copy.id,
@@ -113,18 +123,20 @@ export function LibraryWorkflows({
       environmentId: copy.environmentId,
       state: "open" as const,
     })),
-    ...project.resources.map((resource) => ({
-      kind: "repository" as const,
-      id: resource.id,
-      label: resource.title,
-      state: "open" as const,
-    })),
+    ...project.resources
+      .filter((resource) => resource.kind !== "link")
+      .map((resource) => ({
+        kind: "repository" as const,
+        id: resource.id,
+        label: resource.title,
+        state: "open" as const,
+      })),
   ];
   return (
     <View className="gap-5">
       <SettingsSection title="Needs attention">
         {attention.length ? (
-          attention.map((item) => (
+          attention.slice(0, 8).map((item) => (
             <View key={`${item.kind}:${item.id}`} className="gap-1 px-4 py-3">
               <Text className="font-t3-medium text-foreground">{item.title}</Text>
               <Text className="text-sm text-foreground-muted">
@@ -160,29 +172,71 @@ export function LibraryWorkflows({
             Optional groups for conversations, branches, copies and checks around a goal.
           </Text>
           {streams.error ? <Text accessibilityRole="alert">{streams.error}</Text> : null}
+          {streams.isPending ? (
+            <Text className="text-sm text-foreground-muted">Loading workstreams...</Text>
+          ) : !streams.error && !streams.data?.length ? (
+            <Text className="text-sm text-foreground-muted">
+              No workstreams yet. Start a conversation as usual, or group a larger goal here.
+            </Text>
+          ) : null}
           {streams.data?.map((stream) => (
             <View key={stream.id} className="gap-2">
               <Text className="font-t3-medium text-foreground">
                 {stream.title}: {stream.state}
               </Text>
               <Text className="text-sm text-foreground-muted">{stream.goal}</Text>
-              {stream.references.map((ref) => (
-                <Text
-                  key={`${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`}
-                  className="text-sm text-foreground-muted"
-                >
-                  {ref.label}: {ref.state}
-                </Text>
-              ))}
+              {stream.references.map((ref) => {
+                const thread =
+                  ref.kind === "thread"
+                    ? threads.find(
+                        (thread) =>
+                          (thread.threadId === ref.id || thread.id === ref.id) &&
+                          (!ref.environmentId || ref.environmentId === thread.environmentId),
+                      )
+                    : undefined;
+                return (
+                  <View key={`${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`} className="gap-1">
+                    <Text className="text-sm text-foreground-muted">
+                      {ref.label}: {ref.state}
+                    </Text>
+                    {thread ? (
+                      <Button
+                        label={`Open ${ref.label}`}
+                        tone="text"
+                        onPress={() =>
+                          navigation.navigate("LibraryHistory", {
+                            projectId: project.id,
+                            archiveId: thread.id,
+                          })
+                        }
+                      />
+                    ) : ref.url ? (
+                      <Button
+                        label={`Open ${ref.label}`}
+                        tone="text"
+                        onPress={() =>
+                          void Linking.openURL(ref.url!).catch(() =>
+                            setError("Could not open this reference link."),
+                          )
+                        }
+                      />
+                    ) : null}
+                  </View>
+                );
+              })}
               <Button
                 label="Review workstream"
                 tone="text"
-                disabled={!canSave || busy}
+                disabled={!canSave || busy || editor !== null}
                 onPress={() => edit(stream)}
               />
             </View>
           ))}
-          <Button label="New workstream" disabled={!canSave || busy} onPress={() => edit("new")} />
+          <Button
+            label="New workstream"
+            disabled={!canSave || busy || editor !== null}
+            onPress={() => edit("new")}
+          />
           {editor ? (
             <View className="gap-3">
               <TextInput
@@ -314,18 +368,18 @@ export function LibraryWorkflows({
                     ? "Reopen workstream"
                     : "Save active"
                 }
-                disabled={busy || !title.trim()}
+                disabled={!canSave || busy || !title.trim()}
                 onPress={() => void persist("active")}
               />
               <Button
                 label="Complete workstream"
-                disabled={busy || !title.trim()}
+                disabled={!canSave || busy || !title.trim()}
                 onPress={() => void persist("completed")}
               />
               {editor !== "new" ? (
                 <Button
                   label="Archive workstream"
-                  disabled={busy}
+                  disabled={!canSave || busy}
                   onPress={() => void persist("archived")}
                 />
               ) : null}
@@ -340,6 +394,7 @@ export function LibraryWorkflows({
             Repository layout, tools, scripts and connection names travel together. Save as
             .loom/project.json. Computer paths, provider choices and credentials stay local.
           </Text>
+          {blueprint.error ? <Text accessibilityRole="alert">{blueprint.error}</Text> : null}
           <Button
             label="Share blueprint"
             disabled={!blueprint.data}
@@ -385,14 +440,17 @@ export function LibraryWorkflows({
                 onPress={() => {
                   if (!preview) return;
                   setBusy(true);
+                  const input = {
+                    projectId: project.id,
+                    expectedRevision: project.revision,
+                    blueprint: preview,
+                  };
+                  const fingerprint = JSON.stringify(input);
+                  if (pendingImport.current?.fingerprint !== fingerprint)
+                    pendingImport.current = { fingerprint, requestId: uuidv4() };
                   void apply({
                     environmentId,
-                    input: {
-                      requestId: uuidv4(),
-                      projectId: project.id,
-                      expectedRevision: project.revision,
-                      blueprint: preview,
-                    },
+                    input: { ...input, requestId: pendingImport.current.requestId },
                   }).then((result) => {
                     if (result._tag === "Success") {
                       setBlueprintText(null);
@@ -506,6 +564,7 @@ export function LibraryOperationHistory({
 }: {
   readonly environmentId: EnvironmentId;
 }) {
+  const navigation = useNavigation();
   const [open, setOpen] = useState(false);
   const supported = useLoomFeature(environmentId, PROJECT_WORKFLOWS_FEATURE);
   const query = useEnvironmentQuery(
@@ -560,9 +619,16 @@ export function LibraryOperationHistory({
               {["queued", "failed", "needs-input"].includes(operation.state) ? (
                 <>
                   <Button
-                    label="Resume"
+                    label={operation.kind === "restore" ? "Open Start to restore" : "Resume"}
                     disabled={!allowed || busy}
-                    onPress={() => void act(operation.id, "resume")}
+                    onPress={() =>
+                      operation.kind === "restore" && operation.projectId
+                        ? navigation.navigate("LibraryStart", {
+                            projectId: operation.projectId,
+                            reuseEnvironmentId: environmentId,
+                          })
+                        : void act(operation.id, "resume")
+                    }
                   />
                   <Button
                     label="Cancel remaining steps"

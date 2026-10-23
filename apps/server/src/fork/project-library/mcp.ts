@@ -426,6 +426,14 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       );
     });
+    const projectOperationId = Effect.fn("ProjectLibrary.operationId")(function* (
+      requestId: string,
+      kind: Library.LibraryOperationInput["kind"],
+    ) {
+      return yield* onHost(
+        Effect.flatMap(ProjectOperations, (operations) => operations.operationId(requestId, kind)),
+      );
+    });
     return {
       loom_library_workstreams: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(ProjectWorkflows, (service) => service.workstreams(input))),
@@ -530,12 +538,14 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:create`, { kind: "create", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationProject(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "create")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "create", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationProject(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_project_update: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.updateProject(input))),
@@ -544,12 +554,14 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.archiveProject(input))),
       ),
       loom_library_copy_prepare: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:prepare`, { kind: "prepare", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "prepare")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "prepare", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_copy_retention: McpToolAccess.writesEnvironment((input) =>
         onHost(
@@ -557,20 +569,24 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_copy_reopen: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:reopen`, { kind: "reopen", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "reopen")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "reopen", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_copy_snapshot: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:snapshot`, { kind: "snapshot", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "snapshot")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "snapshot", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_recovery_authorize: McpToolAccess.writesEnvironment((input) =>
         Effect.gen(function* () {
@@ -587,20 +603,24 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         }),
       ),
       loom_library_copy_restore: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:restore`, { kind: "restore", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "restore")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "restore", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_copy_release: McpToolAccess.writesEnvironment((input) =>
-        operate(`${input.requestId}:release`, { kind: "release", input }).pipe(
-          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-          Effect.mapError((cause) =>
-            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+        projectOperationId(input.requestId, "release")
+          .pipe(Effect.flatMap((id) => operate(id, { kind: "release", input })))
+          .pipe(
+            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+            Effect.mapError((cause) =>
+              isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
       ),
       loom_library_copy_status: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),

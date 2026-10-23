@@ -6,7 +6,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "~/lib/utils";
-import { projectLibrary, useLibraryAuthority } from "./state";
+import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryErrorNotice } from "./LibraryControls";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { ProjectOperationHistory } from "./ProjectOperations";
@@ -52,11 +52,25 @@ export function ProjectPreservationCenter({
       setBusy(null);
       return;
     }
+    const status = await readStatus({
+      environmentId: entry.copy.environmentId,
+      input: { workingCopyId: entry.copy.id },
+    });
+    if (
+      status._tag === "Failure" ||
+      status.value.copy.state === "released" ||
+      status.value.copy.registered === false
+    ) {
+      setError("These files changed or became unavailable. Refresh the Library before continuing.");
+      query.refresh();
+      setBusy(null);
+      return;
+    }
     const publishedHealth = await register({
       environmentId: authorityId,
       input: {
         requestId: randomUUID(),
-        copy: { ...entry.copy, health: result.value, updatedAt: result.value.checkedAt },
+        copy: { ...status.value.copy, health: result.value },
       },
     });
     if (publishedHealth._tag === "Failure") {
@@ -67,11 +81,7 @@ export function ProjectPreservationCenter({
       return;
     }
     if (preserve) {
-      const status = await readStatus({
-        environmentId: entry.copy.environmentId,
-        input: { workingCopyId: entry.copy.id },
-      });
-      if (status._tag === "Failure" || !status.value.reviewToken) {
+      if (!status.value.reviewToken) {
         setError("Review this computer's current file blockers before saving a recovery archive.");
         setBusy(null);
         return;
@@ -161,40 +171,16 @@ export function ProjectPreservationCenter({
                   <li key={blocker}>{blocker}</li>
                 ))}
               </ul>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!!busy || !connected(entry.copy.environmentId)}
-                  onClick={() => void check(entry)}
-                >
-                  {busy === entry.copy.id ? "Checking..." : "Check files and remotes"}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!!busy || !connected(entry.copy.environmentId)}
-                  onClick={() => void check(entry, true)}
-                >
-                  Save recovery archive
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!!busy || !connected(entry.copy.environmentId)}
-                  onClick={() => setReview(entry)}
-                >
-                  Review{" "}
-                  {entry.copy.ownership === "borrowed" ? "forgetting folder" : "file removal"}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => setComputer(entry.copy.environmentId)}
-                >
-                  Operation history
-                </Button>
-              </div>
+              <PreservationActions
+                entry={entry}
+                authorityId={authorityId}
+                busy={!!busy}
+                checking={busy === entry.copy.id}
+                connected={connected(entry.copy.environmentId)}
+                onCheck={(preserve) => void check(entry, preserve)}
+                onReview={() => setReview(entry)}
+                onHistory={() => setComputer(entry.copy.environmentId)}
+              />
             </section>
           ))}
           {computer ? <ProjectOperationHistory environmentId={computer} /> : null}
@@ -212,5 +198,63 @@ export function ProjectPreservationCenter({
         />
       ) : null}
     </>
+  );
+}
+
+function PreservationActions({
+  entry,
+  authorityId,
+  busy,
+  checking,
+  connected,
+  onCheck,
+  onReview,
+  onHistory,
+}: {
+  readonly entry: LibraryPreservationEntry;
+  readonly authorityId: EnvironmentId;
+  readonly busy: boolean;
+  readonly checking: boolean;
+  readonly connected: boolean;
+  readonly onCheck: (preserve: boolean) => void;
+  readonly onReview: () => void;
+  readonly onHistory: () => void;
+}) {
+  const canCheck = useLibraryPermission(projectLibrary.refreshCopyHealth, entry.copy.environmentId);
+  const canRead = useLibraryPermission(projectLibrary.readCopyStatus, entry.copy.environmentId);
+  const canPublish = useLibraryPermission(projectLibrary.registerCopy, authorityId);
+  const canSave = useLibraryPermission(projectLibrary.snapshotCopy, entry.copy.environmentId);
+  const canRemove = useLibraryPermission(
+    entry.copy.ownership === "borrowed"
+      ? projectLibrary.unregisterCopy
+      : projectLibrary.releaseCopy,
+    entry.copy.environmentId,
+  );
+  const disabled = busy || !connected;
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={disabled || !canCheck || !canRead || !canPublish}
+        onClick={() => onCheck(false)}
+      >
+        {checking ? "Checking..." : "Check files and remotes"}
+      </Button>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={disabled || !canCheck || !canRead || !canPublish || !canSave}
+        onClick={() => onCheck(true)}
+      >
+        Save recovery archive
+      </Button>
+      <Button size="xs" variant="outline" disabled={disabled || !canRemove} onClick={onReview}>
+        Review {entry.copy.ownership === "borrowed" ? "forgetting folder" : "file removal"}
+      </Button>
+      <Button size="xs" variant="ghost" onClick={onHistory}>
+        Operation history
+      </Button>
+    </div>
   );
 }

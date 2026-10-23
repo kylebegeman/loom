@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_WS_METHODS as L,
+  PROJECT_WORKFLOW_WS_METHODS as W,
   type LibraryProject,
   type LibraryThreadArchive,
   type LibraryWorkingCopy,
@@ -76,7 +77,14 @@ describe("Library cross-client freshness", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const revision = yield* SubscriptionRef.make(0);
-          const catalogTags = [L.projects, L.project, L.copies, L.threads] as const;
+          const catalogTags = [
+            L.projects,
+            L.project,
+            L.copies,
+            L.threads,
+            W.blueprint,
+            W.preservation,
+          ] as const;
           const makeClient = Effect.fnUntraced(function* () {
             const updated = new Map<string, Deferred.Deferred<void>>();
             for (const tag of catalogTags) updated.set(tag, yield* Deferred.make<void>());
@@ -92,6 +100,17 @@ describe("Library cross-client freshness", () => {
             const session = {
               client: {
                 [L.subscribeRefreshes]: () => SubscriptionRef.changes(revision),
+                [W.changes]: () => Stream.never,
+                [W.blueprint]: () =>
+                  response(W.blueprint, () => ({
+                    format: "loom-project",
+                    version: 1,
+                    title: project.title,
+                    brief: project.brief,
+                    resources: [],
+                    connections: [],
+                  })),
+                [W.preservation]: () => response(W.preservation, () => []),
                 [L.projects]: () => response(L.projects, () => [project]),
                 [L.project]: () => response(L.project, () => project),
                 [L.copies]: () => response(L.copies, (current) => (current > 0 ? [copy] : [])),
@@ -152,6 +171,8 @@ describe("Library cross-client freshness", () => {
               project: atoms.project({ environmentId, input: { projectId: project.id } }),
               copies: atoms.copies({ environmentId, input: { projectId: project.id } }),
               threads: atoms.threads({ environmentId, input: { projectId: project.id } }),
+              blueprint: atoms.blueprint({ environmentId, input: { projectId: project.id } }),
+              preservation: atoms.preservation({ environmentId, input: {} }),
               history: atoms.history({ environmentId, input: { id: archive.summary.id } }),
             };
             const mounted: readonly Atom.Atom<unknown>[] = Object.values(catalog);
@@ -161,6 +182,8 @@ describe("Library cross-client freshness", () => {
               AtomRegistry.getResult(registry, catalog.project, { suspendOnWaiting: true }),
               AtomRegistry.getResult(registry, catalog.threads, { suspendOnWaiting: true }),
               AtomRegistry.getResult(registry, catalog.history, { suspendOnWaiting: true }),
+              AtomRegistry.getResult(registry, catalog.blueprint, { suspendOnWaiting: true }),
+              AtomRegistry.getResult(registry, catalog.preservation, { suspendOnWaiting: true }),
             ]);
             expect(
               yield* AtomRegistry.getResult(registry, catalog.copies, { suspendOnWaiting: true }),

@@ -1,5 +1,10 @@
 import { ProjectOperations } from "./ProjectOperations.ts";
-import { LibraryProject, LibraryWorkingCopy, LibraryError } from "@t3tools/contracts/fork";
+import {
+  LibraryProject,
+  LibraryWorkingCopy,
+  LibraryError,
+  type LibraryOperationInput,
+} from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import * as Replication from "./LibraryReplication.ts";
 import * as LibraryHistorySource from "./LibraryHistorySource.ts";
@@ -38,6 +43,13 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
   const workspace = yield* LibraryWorkspace.LibraryWorkspace;
   const suggestions = yield* LibraryBriefSuggestions.LibraryBriefSuggestions;
   const operations = yield* ProjectOperations;
+  const execute = Effect.fn("ProjectLibrary.executeOperation")(function* (
+    request: Exclude<LibraryOperationInput, { kind: "launch" }>,
+  ) {
+    const id = yield* operations.operationId(request.input.requestId, request.kind);
+    return yield* operations.execute(id, request, session);
+  });
+
   return {
     [L.subscribeRefreshes]: () => auth.stream(L.subscribeRefreshes, library.subscribeRefreshes),
     [L.replicationStatus]: () => auth.effect(L.replicationStatus, replication.status),
@@ -61,7 +73,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.createProject]: (input: Parameters<typeof library.createProject>[0]) =>
       auth.effect(
         L.createProject,
-        operations.execute(`${input.requestId}:create`, { kind: "create", input }, session).pipe(
+        execute({ kind: "create", input }).pipe(
           Effect.flatMap((operation) => decodeOperationProject(operation.result)),
           Effect.mapError((cause) =>
             isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
@@ -99,7 +111,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.prepareCopy]: (input: Parameters<typeof workspace.prepareCopy>[0]) =>
       auth.effect(
         L.prepareCopy,
-        operations.execute(`${input.requestId}:prepare`, { kind: "prepare", input }, session).pipe(
+        execute({ kind: "prepare", input }).pipe(
           Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
           Effect.mapError((cause) =>
             isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
@@ -119,21 +131,19 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.unregisterCopy]: (input: Parameters<typeof workspace.unregister>[0]) =>
       auth.effect(
         L.unregisterCopy,
-        operations
-          .execute(`${input.requestId}:unregister`, { kind: "unregister", input }, session)
-          .pipe(
-            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-            Effect.mapError((cause) =>
-              isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
-            ),
+        execute({ kind: "unregister", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
           ),
+        ),
       ),
     [L.setCopyRetention]: (input: Parameters<typeof workspace.setCopyRetention>[0]) =>
       auth.effect(L.setCopyRetention, workspace.setCopyRetention(input)),
     [L.reopenCopy]: (input: Parameters<typeof workspace.reopenCopy>[0]) =>
       auth.effect(
         L.reopenCopy,
-        operations.execute(`${input.requestId}:reopen`, { kind: "reopen", input }, session).pipe(
+        execute({ kind: "reopen", input }).pipe(
           Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
           Effect.mapError((cause) =>
             isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
@@ -143,21 +153,19 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.snapshotCopy]: (input: Parameters<typeof workspace.snapshotCopy>[0]) =>
       auth.effect(
         L.snapshotCopy,
-        operations
-          .execute(`${input.requestId}:snapshot`, { kind: "snapshot", input }, session)
-          .pipe(
-            Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
-            Effect.mapError((cause) =>
-              isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
-            ),
+        execute({ kind: "snapshot", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
           ),
+        ),
       ),
     [L.authorizeRecovery]: (input: Parameters<typeof library.authorizeRecovery>[0]) =>
       auth.effect(L.authorizeRecovery, library.authorizeRecovery(input, session)),
     [L.restoreCopy]: (input: Parameters<typeof workspace.restoreCopy>[0]) =>
       auth.effect(
         L.restoreCopy,
-        operations.execute(`${input.requestId}:restore`, { kind: "restore", input }, session).pipe(
+        execute({ kind: "restore", input }).pipe(
           Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
           Effect.mapError((cause) =>
             isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
@@ -167,7 +175,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.releaseCopy]: (input: Parameters<typeof workspace.release>[0]) =>
       auth.effect(
         L.releaseCopy,
-        operations.execute(`${input.requestId}:release`, { kind: "release", input }, session).pipe(
+        execute({ kind: "release", input }).pipe(
           Effect.flatMap((operation) => decodeOperationCopy(operation.result)),
           Effect.mapError((cause) =>
             isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),

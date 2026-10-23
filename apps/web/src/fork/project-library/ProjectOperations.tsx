@@ -8,6 +8,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { projectLibrary, useLibraryPermission } from "./state";
+import { openLibraryAction } from "./actions";
 import { LibraryErrorNotice } from "./LibraryControls";
 
 export function ProjectOperationHistory({
@@ -93,9 +94,15 @@ export function ProjectOperationHistory({
                 size="xs"
                 variant="outline"
                 disabled={!allowed || busy}
-                onClick={() => void act(operation.id, "resume")}
+                onClick={() =>
+                  operation.kind === "restore"
+                    ? openLibraryAction("new-conversation", operation.projectId ?? undefined, {
+                        environmentId,
+                      })
+                    : void act(operation.id, "resume")
+                }
               >
-                Resume
+                {operation.kind === "restore" ? "Open Start to restore" : "Resume"}
               </Button>
               <Button
                 size="xs"

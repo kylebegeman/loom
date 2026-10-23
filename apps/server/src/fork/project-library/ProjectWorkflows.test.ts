@@ -150,6 +150,165 @@ describe("Project workflows", () => {
       }),
     ),
   );
+  it.effect("validates linked computer identities and rejects ambiguous conversation IDs", () =>
+    run((service, library) =>
+      Effect.gen(function* () {
+        const project = yield* library.createProject({
+          requestId: "project",
+          title: "App",
+          resources: [resource],
+        });
+        const copy = copyFor(project);
+        yield* library.registerCopy({ requestId: "copy", copy });
+        const archive = yield* archiveFor(project);
+        yield* library.registerThread({ requestId: "thread", thread: archive });
+        yield* library.registerThread({
+          requestId: "other-thread",
+          thread: {
+            ...archive,
+            summary: {
+              ...archive.summary,
+              id: "other-archive",
+              workingCopyId: null,
+              environmentId: EnvironmentId.make("other-computer"),
+            },
+          },
+        });
+        const input = {
+          requestId: "save",
+          id: "work",
+          projectId: project.id,
+          expectedRevision: 0,
+          title: "Ship",
+          goal: "",
+          state: "active" as const,
+          references: [],
+        };
+        expect(
+          (yield* service
+            .saveWorkstream({
+              ...input,
+              references: [
+                {
+                  kind: "copy",
+                  id: copy.id,
+                  environmentId: EnvironmentId.make("wrong"),
+                  label: "Files",
+                  state: "open",
+                },
+              ],
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid");
+        expect(
+          (yield* service
+            .saveWorkstream({
+              ...input,
+              references: [
+                {
+                  kind: "thread",
+                  id: archive.summary.threadId,
+                  label: "Conversation",
+                  state: "open",
+                },
+              ],
+            })
+            .pipe(Effect.flip)).message,
+        ).toContain("computer");
+        const saved = yield* service.saveWorkstream({
+          ...input,
+          references: [
+            { kind: "thread", id: archive.summary.id, label: "Conversation", state: "open" },
+          ],
+        });
+        expect(saved.references[0]).toMatchObject({
+          id: archive.summary.threadId,
+          environmentId: archive.summary.environmentId,
+        });
+        expect(
+          (yield* service
+            .saveWorkstream({
+              ...input,
+              requestId: "duplicate",
+              id: "duplicate",
+              references: [
+                { kind: "thread", id: archive.summary.id, label: "Archive", state: "open" },
+                {
+                  kind: "thread",
+                  id: archive.summary.threadId,
+                  environmentId: archive.summary.environmentId,
+                  label: "Same conversation",
+                  state: "open",
+                },
+              ],
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid");
+      }),
+    ),
+  );
+  it.effect(
+    "refuses malformed HTTPS links and ignores inactive conversation observations at completion",
+    () =>
+      run((service, library) =>
+        Effect.gen(function* () {
+          const project = yield* library.createProject({ requestId: "project", title: "App" });
+          const archive = yield* archiveFor(project);
+          yield* library.registerThread({
+            requestId: "thread",
+            thread: {
+              ...archive,
+              summary: {
+                ...archive.summary,
+                workingCopyId: null,
+                archived: true,
+                status: "running",
+              },
+            },
+          });
+          const input = {
+            requestId: "save",
+            id: "work",
+            projectId: project.id,
+            expectedRevision: 0,
+            title: "Ship",
+            goal: "",
+            state: "completed" as const,
+            references: [],
+          };
+          expect(
+            (yield* service
+              .saveWorkstream({
+                ...input,
+                references: [
+                  {
+                    kind: "pull-request",
+                    id: "pr",
+                    label: "PR",
+                    state: "completed",
+                    url: "https://[invalid]/pull/1",
+                  },
+                ],
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid");
+          expect(
+            (yield* service.saveWorkstream({
+              ...input,
+              references: [
+                {
+                  kind: "thread",
+                  id: archive.summary.threadId,
+                  environmentId: archive.summary.environmentId,
+                  label: "Old run",
+                  state: "completed",
+                },
+              ],
+            })).state,
+          ).toBe("completed");
+        }),
+      ),
+  );
   it.effect("round trips multi-repository blueprints while keeping machine preferences local", () =>
     run((service, library) =>
       Effect.gen(function* () {
@@ -203,6 +362,30 @@ describe("Project workflows", () => {
         });
         expect(applied.profile?.preferredEnvironmentIds).toEqual(["my-mac"]);
         expect(applied.brief).toBe("Portable goal");
+        yield* library.updateProject({
+          requestId: "computer-preference",
+          projectId: project.id,
+          expectedRevision: applied.revision,
+          title: applied.title,
+          brief: applied.brief,
+          resources: applied.resources,
+          profile: {
+            ...applied.profile,
+            preferredEnvironmentIds: [EnvironmentId.make("new-computer")],
+          },
+        });
+        expect(
+          yield* service.applyBlueprint({
+            requestId: "apply",
+            projectId: project.id,
+            expectedRevision: configured.revision,
+            blueprint: { ...blueprint, brief: "Portable goal" },
+          }),
+        ).toEqual(applied);
+        expect(
+          (yield* library.project({ projectId: project.id })).profile?.preferredEnvironmentIds,
+        ).toEqual(["new-computer"]);
+
         const unsafe = { ...blueprint, resources: [{ ...resource, relativePath: "../escape" }] };
         expect(
           (yield* service

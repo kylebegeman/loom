@@ -306,6 +306,7 @@ export function LibraryProjectsPage() {
       </header>
       {preservationOpen && catalog.authorityId ? (
         <ProjectPreservationCenter
+          key={catalog.authorityId}
           authorityId={catalog.authorityId}
           onClose={() => setPreservationOpen(false)}
           onChanged={refresh}
