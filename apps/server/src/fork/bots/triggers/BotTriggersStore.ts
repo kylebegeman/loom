@@ -7,11 +7,13 @@ import {
   type BotTriggerFiring,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import type { PullRequestState } from "./matchers.ts";
+import { BUDGET_WINDOW_MS, isoAt } from "../BotBudgets.ts";
 
 export const FIRINGS_KEPT_PER_TRIGGER = 500;
 /** Pull requests with no update for this long are forgotten. */
@@ -195,7 +197,10 @@ export const makeBotTriggersStore = Effect.gen(function* () {
     }),
 
     pruneFirings: Effect.fn("BotTriggersStore.pruneFirings")(function* (triggerId: string) {
-      yield* sql`DELETE FROM fork_bots_trigger_firings WHERE id IN (SELECT id FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} ORDER BY fired_at DESC, id DESC LIMIT -1 OFFSET ${FIRINGS_KEPT_PER_TRIGGER})`;
+      // Recent skips must not erase the successful firings counted by the rolling daily limit,
+      // or let a sender's retry of a recent delivery run the bot again.
+      const since = isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS);
+      yield* sql`DELETE FROM fork_bots_trigger_firings WHERE fired_at < ${since} AND id IN (SELECT id FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} ORDER BY fired_at DESC, id DESC LIMIT -1 OFFSET ${FIRINGS_KEPT_PER_TRIGGER})`;
     }),
 
     getCursor: Effect.fn("BotTriggersStore.getCursor")(function* (eventType: string) {

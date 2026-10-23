@@ -24,6 +24,11 @@ const date = (value: string | null) =>
   value ? new Date(value).toLocaleString() : "No activity yet";
 export function SitesPage() {
   const authority = useLibraryAuthority();
+  return <SitesContent key={authority.authorityId} authority={authority} />;
+}
+
+// Drafts and pending action state belong to one Library, even when both use the same site IDs.
+function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAuthority> }) {
   const search = useSearch({ from: "/sites" });
   const navigate = useNavigate();
   const supported = supportsLoomFeature(
@@ -103,6 +108,14 @@ export function SitesPage() {
                 onClick={() => setEditing({ kind: "site" })}
               >
                 Register site
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canManage || !snapshot || running}
+                onClick={() => void run()}
+              >
+                {running ? "Running checks…" : "Run checks now"}
               </Button>
             </div>
           </div>
@@ -213,14 +226,6 @@ export function SitesPage() {
                     <section className="space-y-3" aria-label="Endpoint checks">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <h3 className="font-medium">Services and checks</h3>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canManage || running}
-                          onClick={() => void run()}
-                        >
-                          {running ? "Running checks…" : "Run checks now"}
-                        </Button>
                       </div>
                       {selected.serviceIds.length === 0 ? (
                         <p className="text-sm text-muted-foreground">

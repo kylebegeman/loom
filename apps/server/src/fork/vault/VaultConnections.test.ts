@@ -124,6 +124,16 @@ it.effect(
           f.threadId,
         )).item.id,
       ).toBe(two.item.id);
+      const untrusted = yield* f.second("Untrusted key", false);
+      expect(
+        (yield* f.resolver.resolve(
+          {
+            kind: "ssh",
+            connection: { resource: "example.test", preferredItemIds: [untrusted.item.id] },
+          },
+          f.threadId,
+        )).state,
+      ).toBe("untrusted-host");
       expect(
         (yield* f.resolver.resolve(
           { kind: "ssh", connection: { resource: "never-enrolled.test" } },
@@ -205,8 +215,127 @@ it.effect(
       );
       expect(result.exitCode).toBe(0);
       expect(f.executed).toEqual([two.publicKey]);
+      yield* f.ssh.trust(
+        {
+          id: two.item.id,
+          operationId: yield* f.id,
+          expectedVersion: 1,
+          hostKey: two.target.hostKey,
+        },
+        "admin",
+        Effect.void,
+      );
+      const changed = yield* f.resolver.resolve(
+        { kind: "ssh", connection: { resource: "deploy" } },
+        f.threadId,
+      );
+      expect(changed.state).toBe("version-conflict");
+      expect(changed.selected).toBeNull();
+      expect(
+        (yield* f.resolver.resolve(
+          { kind: "ssh", connection: { resource: "example.test" } },
+          f.threadId,
+        )).state,
+      ).toBe("version-conflict");
+      yield* f.profiles.apply(
+        {
+          projectId: f.state.thread.projectId,
+          operationId: yield* f.id,
+          expectedRevision: 3,
+          change: { type: "state", id: profileId, state: "archived" },
+        },
+        "admin",
+      );
+      expect(
+        (yield* f.resolver.resolve(
+          { kind: "ssh", connection: { resource: "example.test" } },
+          f.threadId,
+        )).state,
+      ).toBe("inactive");
+      expect(
+        (yield* f.resolver.resolve(
+          { kind: "ssh", connection: { id: f.itemId, expectedVersion: 1 } },
+          f.threadId,
+        )).state,
+      ).toBe("ready");
+      expect(
+        (yield* f.resolver.resolve(
+          { kind: "ssh", connection: { resource: "Launch SSH" } },
+          f.threadId,
+        )).state,
+      ).toBe("ready");
     }).pipe(Effect.provide(dependencies)),
 );
+
+it.effect("matches SSH account names exactly while matching host names without case", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.owner("owner-trusted");
+    const result = yield* f.resolver.resolve(
+      {
+        kind: "ssh",
+        connection: { resource: "EXAMPLE.TEST" },
+        account: "GIT",
+      },
+      f.threadId,
+    );
+    expect(result.state).toBe("incompatible");
+    expect(result.selected).toBeNull();
+  }).pipe(Effect.provide(dependencies)),
+);
+
+it.effect("refuses unreadable retained run selections instead of rediscovering credentials", () => {
+  let corruptPin = false;
+  const backend = Layer.effect(
+    OpenBaoStore.OpenBaoStore,
+    Effect.gen(function* () {
+      const store = yield* OpenBaoStore.OpenBaoStore;
+      return OpenBaoStore.OpenBaoStore.of({
+        ...store,
+        read: (path) =>
+          store
+            .read(path)
+            .pipe(
+              Effect.map((record) =>
+                corruptPin && record && path.includes("/runs/")
+                  ? { ...record, value: Redacted.make({}) }
+                  : record,
+              ),
+            ),
+      });
+    }),
+  ).pipe(Layer.provide(memoryVault));
+  return Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.owner("owner-trusted");
+    const profileId = yield* f.id;
+    yield* f.profiles.apply(
+      {
+        projectId: f.state.thread.projectId,
+        operationId: yield* f.id,
+        expectedRevision: 0,
+        change: {
+          type: "save",
+          profile: {
+            id: profileId,
+            label: "Retained selection",
+            bindings: [{ name: "deploy", kind: "ssh", itemId: f.itemId, repository: null }],
+          },
+        },
+      },
+      "admin",
+    );
+    yield* f.profiles.resolve(f.threadId, profileId);
+    corruptPin = true;
+    const result = yield* f.resolver.resolve(
+      { kind: "ssh", connection: { resource: "example.test" } },
+      f.threadId,
+    );
+    expect(result.state).toBe("policy-denied");
+    expect(result.selected).toBeNull();
+    expect(result.choices).toEqual([]);
+  }).pipe(Effect.provide(Layer.merge(NodeServices.layer, backend)));
+});
 
 it.effect(
   "pins the current version and revalidates archive, version, trust and policy before use",
@@ -344,7 +473,7 @@ it.effect(
           operationId: yield* f.id,
           expectedVersion: 0,
           label: "GitHub work",
-          repositories: ["owner/repo"],
+          repositories: ["owner/repo", "owner/other"],
           credential: { type: "token", token: Redacted.make("disposable-credential") },
         },
         "admin",
@@ -356,6 +485,31 @@ it.effect(
       );
       expect(selected.item.id).toBe(id);
       expect(selected.account).toBe("loom-bot");
+      const profileId = yield* f.id;
+      yield* f.profiles.apply(
+        {
+          projectId: f.state.thread.projectId,
+          operationId: yield* f.id,
+          expectedRevision: 0,
+          change: {
+            type: "save",
+            profile: {
+              id: profileId,
+              label: "Repository shortcut",
+              bindings: [{ name: "other", kind: "github", itemId: id, repository: "owner/other" }],
+            },
+          },
+        },
+        "admin",
+      );
+      yield* f.profiles.resolve(f.threadId, profileId);
+      const fromUrl = yield* f.resolver.require(
+        { kind: "github", connection: { resource: "https://github.com/OWNER/REPO.git" } },
+        f.threadId,
+      );
+      expect(fromUrl.item.id).toBe(id);
+      expect(fromUrl.repository).toBe("owner/repo");
+      expect(fromUrl.destination).toBe("https://github.com/owner/repo");
       yield* github.run(
         {
           connection: { resource: "loom-bot" },

@@ -21,8 +21,9 @@ import { LibraryDialog, LibraryField } from "../project-library/LibraryControls"
 import { BotTargetField } from "./BotAnywhere";
 import { Choice, ParameterRow } from "./BotEditor";
 import { BotModelPicker } from "./BotModelPicker";
-import { newParameterDraft, slugFromName } from "./draft";
 import {
+  newParameterDraft,
+  slugFromName,
   defaultStepInputs,
   emptyPipelineDraft,
   newStepDraft,
@@ -34,7 +35,8 @@ import {
   type PipelineFailChoice,
   type PipelineStepDraft,
   type PipelineVersionChoice,
-} from "./pipelineDraft";
+} from "@t3tools/client-runtime/fork";
+
 import { bots, useBotsHost } from "./state";
 
 const CHECK_DEBOUNCE_MS = 400;
@@ -189,6 +191,15 @@ function StepCard({
               <span className="text-xs font-normal text-muted-foreground">
                 The findings of an earlier step, or a long-text input with one item per line.
               </span>
+            </LibraryField>
+          ) : null}
+          {step.forEach ? (
+            <LibraryField label="Item label (optional)">
+              <Input
+                placeholder="Finding {{item}}"
+                value={step.forEachItemLabel}
+                onChange={(event) => onChange({ ...step, forEachItemLabel: event.target.value })}
+              />
             </LibraryField>
           ) : null}
           {bot.parameters.map((parameter) => (

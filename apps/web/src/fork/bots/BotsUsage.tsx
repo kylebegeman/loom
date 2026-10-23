@@ -1,12 +1,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { BotBudgetState, BotUsageRow } from "@t3tools/contracts/fork";
-import type { BotsChanges } from "@t3tools/client-runtime/fork";
+import { rollingBotsUsageWindow, type BotsChanges } from "@t3tools/client-runtime/fork";
 import { formatCount, formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
 import { bots } from "./state";
-import { rollingWindow } from "./usageWindow";
 import { formatDuration } from "./runMetrics";
 
 export { formatDuration } from "./runMetrics";
@@ -21,7 +20,7 @@ type WindowDays = (typeof WINDOWS)[number]["days"];
 /** One refetch at most this often while runs keep finishing. */
 const REFETCH_INTERVAL_MS = 5_000;
 
-const windowEndingNow = (days: WindowDays) => rollingWindow(days, Date.now());
+const windowEndingNow = (days: WindowDays) => rollingBotsUsageWindow(days, Date.now());
 
 const runsText = (count: number) => `${formatCount(count)} ${count === 1 ? "run" : "runs"}`;
 
@@ -157,7 +156,7 @@ export function BotsUsage({
   /** The same minute's window is the same query, so it is refetched rather than replaced. */
   const refetch = (nowMs: number) => {
     lastFetch.current = nowMs;
-    const next = rollingWindow(days, nowMs);
+    const next = rollingBotsUsageWindow(days, nowMs);
     if (next.until === window.until) query.refresh();
     else setWindow(next);
   };

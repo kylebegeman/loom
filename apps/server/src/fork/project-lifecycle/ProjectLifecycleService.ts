@@ -322,11 +322,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             taken.add(base);
           }
         }).pipe(
-          // Without the shared claims, ports are still unique among this server's lanes.
+          // Releasing a lane stops its port listeners, so a block must be reserved against
+          // other servers before this server may treat those processes as its own.
           Effect.catch((cause) =>
-            Effect.logWarning("Could not claim lane ports", { cause }).pipe(
-              Effect.as(allocatePortBase(new Set(ownBases(laneId)), busy)),
-            ),
+            Effect.logWarning("Could not claim lane ports", { cause }).pipe(Effect.as(null)),
           ),
         ),
       ),
@@ -345,12 +344,12 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const current = lane.portBase;
     if (current !== null) {
       const held = yield* node("claim lane ports", () => claims.claim(current, lane.id)).pipe(
-        Effect.orElseSucceed(() => true),
+        Effect.orElseSucceed(() => false),
       );
       if (held) continue;
     }
     const portBase = yield* claimPortBase(lane.id);
-    if (portBase === null) continue;
+    if (portBase === current) continue;
     yield* store.setPortBase(lane.id, portBase).pipe(Effect.orDie);
     const moved = { ...lane, portBase };
     lanes.set(lane.id, moved);

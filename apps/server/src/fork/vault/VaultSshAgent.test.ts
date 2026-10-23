@@ -232,14 +232,23 @@ it.effect(
           ...scope,
           thread: undefined,
           client: { sessionId: "admin", access: "full-access", label: "Administrator" },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("VaultError");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       expect(
         (yield* invoke({
           ...scope,
           thread: { ...scope.thread!, providerInstanceId: ProviderInstanceId.make("wrong") },
-        }).pipe(Effect.flip))._tag,
-      ).toBe("OrchestratorMcpFailure");
+        }))[0],
+      ).toMatchObject({
+        isFailure: true,
+        result: { _tag: "OrchestratorMcpFailure", code: "parent_not_active" },
+      });
+      expect((yield* f.ssh.agents(f.threadId)).map((agent) => agent.sessionId)).toEqual([
+        result.sessionId,
+      ]);
       yield* f.ssh.agentClose(result.sessionId, f.threadId);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

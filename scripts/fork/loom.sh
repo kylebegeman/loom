@@ -412,29 +412,63 @@ verify_install_signing() {
   fi
 }
 
-install_record() {
+prepare_install() (
   local record=$1
   verify_install_signing "$record"
-  quit_app install
-  local current
-  current=$(installed_record)
-  if [ -n "$current" ]; then
-    snapshot_state "$current"
-  else
-    snapshot_state "$BUILDS_DIR/before-loom"
+  loom_install_stage=$(mktemp -d "$(dirname "$APP_PATH")/.loom-install.XXXXXX") \
+    || die "could not stage the update beside the installed app"
+  trap 'rm -rf "$loom_install_stage"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ditto "$record/Loom.app" "$loom_install_stage/Loom.app" \
+    || die "could not copy the update; the installed app was not changed"
+  verify_install_signing "$loom_install_stage"
+  trap - EXIT
+  printf '%s\n' "$loom_install_stage"
+)
+
+install_record() (
+  local record=$1 current
+  loom_install_mode=${3:-install}
+  loom_install_stage=${2:-}
+  [ -n "$loom_install_stage" ] || loom_install_stage=$(prepare_install "$record")
+  cleanup_install() {
+    if [ -d "$loom_install_stage/previous.app" ] && [ ! -e "$APP_PATH" ]; then
+      mv "$loom_install_stage/previous.app" "$APP_PATH" \
+        || { echo "The previous app is retained at $loom_install_stage/previous.app" >&2; return; }
+    fi
+    # Rollback's outer cleanup also restores userdata when replacement did not finish.
+    # Keep the candidate's presence available as the rename's completion evidence.
+    [ "$loom_install_mode" != rollback ] || return 0
+    [ -d "$loom_install_stage/previous.app" ] || rm -rf "$loom_install_stage"
+  }
+  trap cleanup_install EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if [ "$loom_install_mode" != rollback ]; then
+    quit_app install
+    current=$(installed_record)
+    if [ -n "$current" ]; then
+      snapshot_state "$current"
+    else
+      snapshot_state "$BUILDS_DIR/before-loom"
+    fi
   fi
   if [ -d "$VANILLA_APP_PATH" ]; then
     echo "Warning: $VANILLA_APP_PATH is still installed. It shares Loom's app id and data;"
     echo "never run both. Remove it with: brew uninstall --cask t3-code"
   fi
   say "Installing $(basename "$record")"
-  rm -rf "$APP_PATH"
-  ditto "$record/Loom.app" "$APP_PATH"
+  if [ -e "$APP_PATH" ]; then
+    mv "$APP_PATH" "$loom_install_stage/previous.app" || die "could not retain the installed app"
+  fi
+  mv "$loom_install_stage/Loom.app" "$APP_PATH" || die "could not replace the app; restoring the previous app"
   basename "$record" > "$BUILDS_DIR/installed"
+  [ "$loom_install_mode" = rollback ] || rm -rf "$loom_install_stage/previous.app"
   xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
   open "$APP_PATH"
   echo "Installed Loom $(installed_version)"
-}
+)
 
 cmd_build() {
   require_clean
@@ -491,30 +525,81 @@ publish_main() {
   fi
 }
 
-cmd_rollback() {
-  local current previous commit
+cmd_rollback() (
+  local current previous commit database f
+  loom_rollback_state_stage=
+  loom_rollback_changed=0
+  loom_rollback_state_files=(settings.json client-settings.json)
+  for database in "${STATE_DATABASES[@]}"; do
+    loom_rollback_state_files+=("$database" "$database-wal" "$database-shm")
+  done
   current=$(installed_record)
   [ -n "$current" ] || die "the installed app has no build record, so there is nothing to roll back to"
   previous=$(records | grep -v -x -F "$current" | sed -n 1p)
   [ -n "$previous" ] || die "no earlier build is kept"
   [ -f "$previous/state/state.sqlite" ] || [ -f "$previous/state/statev2.sqlite" ] \
     || die "$(basename "$previous") has no saved data to restore"
-  verify_install_signing "$previous"
+  loom_rollback_stage=$(prepare_install "$previous")
+  cleanup_rollback() {
+    local result=$? installed=0 failed=0 f
+    trap - EXIT
+    if [ -d "$loom_rollback_stage/previous.app" ] && [ ! -e "$APP_PATH" ]; then
+      mv "$loom_rollback_stage/previous.app" "$APP_PATH" \
+        || echo "The outgoing app is retained at $loom_rollback_stage/previous.app" >&2
+    fi
+    # The staged app only disappears after its same-filesystem rename succeeds. Keep the
+    # restored data once that happens, even if recording the install or opening it fails.
+    if [ ! -d "$loom_rollback_stage/Loom.app" ] && [ -d "$APP_PATH" ]; then installed=1; fi
+    if [ "$loom_rollback_changed" -eq 1 ] && [ "$installed" -eq 0 ]; then
+      for f in "${loom_rollback_state_files[@]}"; do
+        if [ -e "$loom_rollback_state_stage/outgoing/$f" ] || [ -L "$loom_rollback_state_stage/outgoing/$f" ]; then
+          mv -f "$loom_rollback_state_stage/outgoing/$f" "$T3_USERDATA/$f" || failed=1
+        elif [ -f "$loom_rollback_state_stage/absent/$f" ]; then
+          rm -f "$T3_USERDATA/$f" || failed=1
+        fi
+      done
+    fi
+    if [ "$failed" -eq 1 ]; then
+      echo "Could not restore all outgoing data. Keep the app closed; recovery files remain at $loom_rollback_state_stage/outgoing" >&2
+      result=1
+    elif [ -n "$loom_rollback_state_stage" ]; then
+      rm -rf "$loom_rollback_state_stage"
+    fi
+    if [ "$installed" -eq 1 ] || [ ! -d "$loom_rollback_stage/previous.app" ]; then
+      rm -rf "$loom_rollback_stage"
+    fi
+    exit "$result"
+  }
+  trap cleanup_rollback EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   quit_app rollback
   snapshot_state "$current"
-  say "Restoring the data $(basename "$previous") last ran with"
-  local database
-  for database in "${STATE_DATABASES[@]}"; do
-    rm -f "$T3_USERDATA/$database" "$T3_USERDATA/$database-wal" "$T3_USERDATA/$database-shm"
-    if [ -f "$previous/state/$database" ]; then
-      cp "$previous/state/$database" "$T3_USERDATA/$database"
+  loom_rollback_state_stage=$(mktemp -d "$T3_USERDATA/.loom-rollback.XXXXXX")
+  mkdir "$loom_rollback_state_stage/outgoing" "$loom_rollback_state_stage/restored" "$loom_rollback_state_stage/absent"
+  # Prepare every incoming file before changing userdata. Original files, including WALs
+  # and absent settings, remain recoverable independently of the durable build snapshot.
+  for f in "${STATE_DATABASES[@]}" settings.json client-settings.json; do
+    [ ! -f "$previous/state/$f" ] || cp "$previous/state/$f" "$loom_rollback_state_stage/restored/$f"
+  done
+  for f in "${loom_rollback_state_files[@]}"; do
+    if [ ! -e "$T3_USERDATA/$f" ] && [ ! -L "$T3_USERDATA/$f" ]; then
+      touch "$loom_rollback_state_stage/absent/$f"
     fi
   done
-  local f
-  for f in settings.json client-settings.json; do
-    [ -f "$previous/state/$f" ] && cp "$previous/state/$f" "$T3_USERDATA/$f"
+  say "Restoring the data $(basename "$previous") last ran with"
+  loom_rollback_changed=1
+  for f in "${loom_rollback_state_files[@]}"; do
+    if [ -e "$T3_USERDATA/$f" ] || [ -L "$T3_USERDATA/$f" ]; then
+      mv "$T3_USERDATA/$f" "$loom_rollback_state_stage/outgoing/$f"
+    fi
+    if [ -f "$loom_rollback_state_stage/restored/$f" ]; then
+      mv "$loom_rollback_state_stage/restored/$f" "$T3_USERDATA/$f"
+    fi
   done
-  install_record "$previous"
+  # The outgoing data was saved before restoration. Saving it again would overwrite
+  # that recovery snapshot with the previous build's restored data.
+  install_record "$previous" "$loom_rollback_stage" rollback
   echo "Rolled back to $(basename "$previous"). main still points at the newer code;"
   commit=$(sed -n 's/^commit=//p' "$previous/build.env" | sed -n 1p)
   if printf '%s\n' "$commit" | grep -qE '^[0-9a-f]{40}$|^[0-9a-f]{64}$'; then
@@ -522,7 +607,7 @@ cmd_rollback() {
   else
     echo "The previous build has no recorded source commit. Choose its source revision before changing main."
   fi
-}
+)
 
 cmd_integrate() {
   local target=stable install=1 cont=0 dry=0 pr=0 arg

@@ -20,6 +20,7 @@ const httpsUrl = text.check(
     }
   }),
 );
+const httpsOrigin = httpsUrl.check(Schema.makeFilter((value) => new URL(value).origin === value));
 export const SitesSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   primarySiteId: SiteId,
@@ -87,17 +88,21 @@ const ids = Schema.Array(SiteId).check(Schema.isMaxLength(20));
 export const SaveSiteRequest = Schema.Struct({
   id: SiteId,
   name,
-  url: httpsUrl,
+  url: httpsOrigin,
   active: Schema.Boolean,
-  origins: Schema.Array(httpsUrl).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  origins: Schema.Array(httpsOrigin).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
   serviceIds: ids,
   projectIds: Schema.Array(projectId).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
-});
+}).check(
+  Schema.makeFilter(
+    (site) => site.origins.includes(site.url) && new Set(site.origins).size === site.origins.length,
+  ),
+);
 export type SaveSiteRequest = typeof SaveSiteRequest.Type;
 export const SaveSiteServiceRequest = Schema.Struct({
   id: SiteId,
   name,
-  url: httpsUrl,
+  url: httpsOrigin,
   active: Schema.Boolean,
   kind: Schema.Literals(["website", "api", "redirect"]),
 });

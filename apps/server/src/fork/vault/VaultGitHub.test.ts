@@ -362,6 +362,7 @@ it.effect(
         result: { _tag: "VaultError", reason: "denied" },
       });
       expect(f.calls()).toBe(0);
+      expect(f.terminalCalls()).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(deps)),
 );
 

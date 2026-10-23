@@ -11,15 +11,7 @@ import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
 
 /** Keep Loom host authentication distinct from the existing T3 Connect account. */
-export function LoomSignIn({
-  baseUrl,
-  expectedEnvironmentId,
-  expectedIdentity,
-  description = true,
-  onConnected,
-  showUnavailable = false,
-  onAvailabilityChange,
-}: {
+interface LoomSignInProps {
   readonly baseUrl?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
   readonly expectedIdentity?: import("@t3tools/contracts/fork").LoomIdentityAccount;
@@ -27,7 +19,21 @@ export function LoomSignIn({
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
   readonly onConnected?: (environmentId: EnvironmentId) => void;
-}) {
+}
+
+export function LoomSignIn(props: LoomSignInProps) {
+  return <LoomSignInTarget key={props.baseUrl} {...props} />;
+}
+
+function LoomSignInTarget({
+  baseUrl,
+  expectedEnvironmentId,
+  expectedIdentity,
+  description = true,
+  onConnected,
+  showUnavailable = false,
+  onAvailabilityChange,
+}: LoomSignInProps) {
   const [identity, setIdentity] = useState<{
     baseUrl: string;
     metadata: LoomIdentityMetadata;
@@ -37,10 +43,12 @@ export function LoomSignIn({
   const [checkAttempt, setCheckAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const attempt = useRef(0);
   const ownedSignIn = useRef<string | null>(null);
   const connect = useAtomCommand(connectLoomIdentity, { reportFailure: false });
   useEffect(
     () => () => {
+      attempt.current += 1;
       const target = ownedSignIn.current;
       if (!target || (baseUrl !== undefined && target !== baseUrl)) return;
       if (isElectron) void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: target });
@@ -102,14 +110,17 @@ export function LoomSignIn({
     return showUnavailable ? (
       <div className="space-y-2">
         <p role="status" className="text-xs text-muted-foreground">
-          {checked === baseUrl
+          {checked !== null && (!baseUrl || checked === baseUrl)
             ? "Account sign-in is unavailable at this address. Check the address or use a pairing link."
             : "Checking account sign-in..."}
         </p>
         <Button
           size="xs"
           variant="outline"
-          onClick={() => setCheckAttempt((attempt) => attempt + 1)}
+          onClick={() => {
+            setChecked(null);
+            setCheckAttempt((attempt) => attempt + 1);
+          }}
         >
           Check again
         </Button>
@@ -138,12 +149,14 @@ export function LoomSignIn({
     setBusy(true);
     setError(null);
     setConnected(false);
+    const current = ++attempt.current;
     const result = await connect({
       httpBaseUrl: active.baseUrl,
       ...(popup ? { popup } : {}),
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
     });
+    if (current !== attempt.current) return;
     ownedSignIn.current = null;
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);

@@ -359,6 +359,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [Q.updateSettings]: AuthOrchestrationOperateScope,
   [BOT.list]: AuthOrchestrationReadScope,
   [BOT.listRuns]: AuthOrchestrationReadScope,
+  [BOT.getRun]: AuthOrchestrationReadScope,
   [BOT.watch]: AuthOrchestrationReadScope,
   [BOT.save]: AuthOrchestrationOperateScope,
   [BOT.archive]: AuthOrchestrationOperateScope,

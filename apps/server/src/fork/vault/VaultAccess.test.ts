@@ -177,7 +177,15 @@ const fixture = () => {
         Effect.sync(
           () =>
             ({
-              thread: { id, projectId },
+              thread: {
+                id,
+                projectId,
+                deletedAt: state.deleted ? "2026-10-18T00:00:00Z" : null,
+                archivedAt: null,
+                providerInstanceId: "codex",
+                runtimeMode: state.approvalRequired ? "approval-required" : "full-access",
+                interactionMode: state.interactionMode,
+              },
               runs: [
                 {
                   id: state.runId,

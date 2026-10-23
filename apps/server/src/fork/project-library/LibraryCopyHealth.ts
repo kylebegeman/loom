@@ -71,8 +71,12 @@ export const toRepositoryHealth = (input: {
 }): LibraryRepositoryHealth => {
   if (!input.status.isRepo)
     return unreadableRepositoryHealth(input.resourceId, "not-a-repository", input.checkedAt);
-  // Tidy releases copies it reads as fully pushed, so a failed count must not read as zero.
-  if (input.head && input.unpushedCommits === null)
+  // Tidy and launch ranking trust these counts. A failed query against an existing upstream
+  // must not make an unreadable repository look clean or up to date.
+  if (
+    (input.head && input.unpushedCommits === null) ||
+    (input.upstream !== null && !input.upstream.gone && input.divergence === null)
+  )
     return unreadableRepositoryHealth(input.resourceId, "unreadable", input.checkedAt);
   const { status, upstream, divergence } = input;
   return {

@@ -166,6 +166,8 @@ function SettingsIndexSections() {
       </SettingsSection>
 
       <SettingsSection title="Automations">
+        {/* fork: bots */}
+        <SettingsRow icon="bolt.circle" label="Bots" onPress={() => navigation.navigate("Bots")} />
         <SettingsRow icon="clock" label="Scheduled tasks" target="SettingsScheduledTasks" />
       </SettingsSection>
 

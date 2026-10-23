@@ -64,7 +64,9 @@ const isRetryable = (item: BotBatchItem, includeAttention: boolean) => {
   if (item.state !== "started" || run === null) return false;
   if (run.status === "failed" || run.status === "timed_out") return true;
   return (
-    includeAttention && run.status === "completed" && run.verdict?.verdict === "needs_attention"
+    run.status === "completed" &&
+    (run.verdict?.verdict === "fail" ||
+      (includeAttention && run.verdict?.verdict === "needs_attention"))
   );
 };
 

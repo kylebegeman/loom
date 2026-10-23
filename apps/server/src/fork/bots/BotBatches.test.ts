@@ -471,6 +471,34 @@ describe("BotBatches", () => {
     ),
   );
 
+  it.effect("retries completed items with a fail verdict without rerunning passing items", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches } = yield* makeBatches(harness);
+        yield* bots.save(reviewer({ output: "verdict" }), USER_CALLER);
+        const batch = yield* batches.runBatch(lines("a.ts\nb.ts"), USER_CALLER);
+        yield* endNext(harness, "completed", '{"verdict":"fail","summary":"Bug found."}');
+        yield* endNext(harness, "completed", '{"verdict":"pass","summary":"Fine."}');
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { fail: 1, pass: 1 },
+        });
+
+        expect(
+          yield* batches.retry({ batchId: batch.id, include: "failed" }, USER_CALLER),
+        ).toMatchObject({ retried: 1 });
+        expect(
+          yield* endNext(harness, "completed", '{"verdict":"pass","summary":"Fixed."}'),
+        ).toContain("Review a.ts.");
+        expect(yield* batches.awaitBatch(batch.id, WAIT_MS)).toMatchObject({
+          status: "finished",
+          counts: { pass: 2 },
+        });
+        expect(harness.launches).toHaveLength(3);
+      }),
+    ),
+  );
+
   it.effect("refuses a batch with an invalid item and says which", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

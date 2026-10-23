@@ -27,7 +27,7 @@ import {
   type MappingMode,
   type TriggerDraft,
   type TriggerFollow,
-} from "./triggerDraft";
+} from "@t3tools/client-runtime/fork";
 import { bots } from "./state";
 
 const KIND_HINTS: Record<BotTriggerEventKind, string> = {

@@ -98,9 +98,11 @@ describe("Loom native OAuth enrollment", () => {
       verifyLoomIdToken(token, { ...input, issuer: "https://other.example" }),
     ).rejects.toThrow();
   });
-  it.each([false, true])(
-    "exchanges a verified loopback response into a bound host session (modern: %s)",
-    async (modern) => {
+  it.each(
+    [false, true].flatMap((modern) => [3600, 0, -1].map((expiresIn) => ({ modern, expiresIn }))),
+  )(
+    "accepts only live bound host sessions (modern: $modern, expires_in: $expiresIn)",
+    async ({ modern, expiresIn }) => {
       const { publicKey, privateKey } = await generateKeyPair("RS256");
       const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
       let nonce = "";
@@ -171,7 +173,7 @@ describe("Loom native OAuth enrollment", () => {
               access_token: "host-session",
               issued_token_type: AuthAccessTokenType,
               token_type: "Bearer",
-              expires_in: 3600,
+              expires_in: expiresIn,
               scope: "orchestration:read",
               ...(modern
                 ? {
@@ -189,7 +191,7 @@ describe("Loom native OAuth enrollment", () => {
             .end(JSON.stringify(result));
         })().catch(() => response.writeHead(500).end());
       });
-      const result = await signInToLoom(origin, async (authorizationUrl) => {
+      const pending = signInToLoom(origin, async (authorizationUrl) => {
         const url = new URL(authorizationUrl);
         nonce = url.searchParams.get("nonce")!;
         challenge = url.searchParams.get("code_challenge")!;
@@ -205,6 +207,13 @@ describe("Loom native OAuth enrollment", () => {
         expect((await fetch(callback)).status).toBe(200);
         return true;
       });
+      if (expiresIn <= 0) {
+        await expect(pending).rejects.toThrow();
+        expect(exchanged).toBe(true);
+        await expect(fetch(redirect)).rejects.toThrow();
+        return;
+      }
+      const result = await pending;
       expect(result).toEqual({
         httpBaseUrl: origin,
         environmentId: "central",

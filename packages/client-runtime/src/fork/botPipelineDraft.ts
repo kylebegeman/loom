@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { parameterDrafts, parameterInput, type BotParameterDraft } from "./draft";
+import { parameterDrafts, parameterInput, type BotParameterDraft } from "./botDraft.ts";
 
 export type PipelineVersionChoice = "latest" | "stable" | "number";
 /** `loop` goes back to another step, at most a number of rounds. */
@@ -26,6 +26,7 @@ export interface PipelineStepDraft {
   readonly inputs: Readonly<Record<string, string>>;
   readonly forEach: boolean;
   readonly forEachFrom: string;
+  readonly forEachItemLabel: string;
   readonly onFail: PipelineFailChoice;
   readonly goTo: string;
   readonly maxRounds: string;
@@ -64,6 +65,7 @@ export const newStepDraft = (
     inputs: bot === null ? {} : defaultStepInputs(draft, bot),
     forEach: false,
     forEachFrom: "",
+    forEachItemLabel: "",
     onFail: "stop",
     goTo: "",
     maxRounds: "3",
@@ -109,6 +111,7 @@ export const pipelineDraft = (pipeline: BotPipelineInput): PipelineDraft => ({
     inputs: step.inputs,
     forEach: step.forEach !== undefined,
     forEachFrom: step.forEach?.from ?? "",
+    forEachItemLabel: step.forEach?.itemLabel ?? "",
     onFail: typeof step.onFail === "object" ? "loop" : (step.onFail ?? "stop"),
     goTo: typeof step.onFail === "object" ? step.onFail.goTo : "",
     maxRounds: typeof step.onFail === "object" ? String(step.onFail.maxRounds) : "3",
@@ -133,7 +136,14 @@ const stepInput = (step: PipelineStepDraft): BotPipelineStep => {
         ? { version: Number(step.versionNumber) }
         : {}),
     inputs,
-    ...(step.forEach ? { forEach: { from: step.forEachFrom.trim() } } : {}),
+    ...(step.forEach
+      ? {
+          forEach: {
+            from: step.forEachFrom.trim(),
+            ...(step.forEachItemLabel.trim() === "" ? {} : { itemLabel: step.forEachItemLabel }),
+          },
+        }
+      : {}),
     ...(step.onFail === "loop"
       ? { onFail: { goTo: step.goTo, maxRounds: Number(step.maxRounds) } }
       : step.onFail === "continue"

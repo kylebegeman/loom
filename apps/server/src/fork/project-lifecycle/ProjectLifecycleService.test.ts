@@ -482,6 +482,52 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("leaves ports unassigned when the shared reservation directory is unavailable", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const claimsDir = `${t.home}/.loom/lane-ports`;
+      NodeFS.mkdirSync(NodePath.dirname(claimsDir), { recursive: true });
+      NodeFS.writeFileSync(claimsDir, "unavailable");
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).toBeNull();
+      expect((yield* t.service.laneView(lane.id)).ports).toBeNull();
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("keeps another server's claim when its state folder cannot be inspected", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const claimsDir = `${t.home}/.loom/lane-ports`;
+      const unreadable = `${t.home}/owner-loop`;
+      NodeFS.symlinkSync(unreadable, unreadable);
+      NodeFS.mkdirSync(claimsDir, { recursive: true });
+      const claim = JSON.stringify({ owner: `${unreadable}/state`, laneId: "theirs" });
+      NodeFS.writeFileSync(`${claimsDir}/41000`, claim);
+      t.threads.push(thread("worker"));
+
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).toBe(41020);
+      expect(NodeFS.readFileSync(`${claimsDir}/41000`, "utf8")).toBe(claim);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("clears a saved port block when startup cannot renew its shared reservation", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      expect(lane.portBase).not.toBeNull();
+      const claimsDir = `${t.home}/.loom/lane-ports`;
+      NodeFS.rmSync(claimsDir, { recursive: true });
+      NodeFS.writeFileSync(claimsDir, "unavailable");
+
+      const restarted = yield* t.create;
+      expect((yield* t.store.listLanes()).find((row) => row.id === lane.id)?.portBase).toBeNull();
+      expect((yield* restarted.laneView(lane.id)).ports).toBeNull();
+    }).pipe(Effect.scoped),
+  );
+
   it.live("gives a new lane a block nothing listens on or publishes, and never moves a lane", () =>
     Effect.gen(function* () {
       const t = yield* setup;

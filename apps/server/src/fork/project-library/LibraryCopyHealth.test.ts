@@ -114,6 +114,11 @@ describe("toRepositoryHealth", () => {
     expect(health.error).toBe("unreadable");
   });
 
+  it("reports a failed divergence query against an existing upstream as unreadable", () => {
+    const health = map({}, { divergence: null });
+    expect(health.error).toBe("unreadable");
+  });
+
   it("counts nothing unpushed before the first commit", () => {
     const health = toRepositoryHealth({
       resourceId: "web",

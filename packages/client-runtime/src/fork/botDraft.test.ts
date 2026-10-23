@@ -9,12 +9,13 @@ import {
   emptyBatchSourceDraft,
   emptyBotDraft,
   initialRunValues,
+  hasBotDraftChanges,
   newParameterDraft,
   newVaultSlotDraft,
   runInputs,
   saveInputFromDraft,
   slugFromName,
-} from "./draft";
+} from "./botDraft.ts";
 
 const model = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
 
@@ -61,6 +62,48 @@ describe("bot drafts", () => {
       ...definition
     } = bot;
     expect(result).toEqual({ ok: true, input: { ...definition, expectedVersion: 4 } });
+  });
+
+  it("recognizes changed definitions without treating generated row keys as edits", () => {
+    const complete: BotDefinition = {
+      ...bot,
+      output: "verdict",
+      budget: { runsPerDay: 20, tokensPerDay: 30_000 },
+      vaultSlots: [
+        {
+          name: "deploy-key",
+          label: "Deploy key",
+          action: "use",
+          destination: "https://example.com",
+        },
+      ],
+      modelSelection: { ...model, options: [{ id: "reasoningEffort", value: "high" }] },
+    };
+    const first = botDraft(complete);
+    expect(hasBotDraftChanges(first, botDraft(complete))).toBe(false);
+    expect(
+      hasBotDraftChanges(first, {
+        ...first,
+        parameters: first.parameters.map((parameter, index) =>
+          index === 0 ? { ...parameter, defaultValue: "changed.ts" } : parameter,
+        ),
+      }),
+    ).toBe(true);
+    expect(
+      hasBotDraftChanges(first, {
+        ...first,
+        vaultSlots: first.vaultSlots.map((slot) => ({
+          ...slot,
+          destination: "https://other.example.com",
+        })),
+      }),
+    ).toBe(true);
+    expect(hasBotDraftChanges(first, { ...first, tokensPerDay: "40,000" })).toBe(true);
+    const saved = saveInputFromDraft(first, complete.version);
+    expect(saved.ok && saved.input.modelSelection).toEqual(complete.modelSelection);
+    expect(saved.ok && saved.input.vaultSlots).toEqual(complete.vaultSlots);
+    expect(saved.ok && saved.input.budget).toEqual(complete.budget);
+    expect(saved.ok && saved.input.output).toBe("verdict");
   });
 
   it("names the field to fix instead of a schema path", () => {

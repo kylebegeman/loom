@@ -17,6 +17,7 @@ import { BotsService, USER_CALLER, versionInput, type BotCaller } from "../BotsS
 import { BotPipelines, make as makeBotPipelines } from "../pipelines/BotPipelines.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotTriggers.ts";
+import { FIRINGS_KEPT_PER_TRIGGER } from "./BotTriggersStore.ts";
 import type { TriggerEvent } from "./matchers.ts";
 
 const scratchReviewer = reviewer({ workspace: { type: "scratch" } });
@@ -108,6 +109,48 @@ const delivery = (
 };
 
 describe("BotTriggers", () => {
+  it.effect("keeps daily limits and delivery dedupe after newer skipped firings fill history", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* TestClock.adjust("1 hour");
+        const saved = yield* triggers.save(trigger({ dailyLimit: 1 }), USER_CALLER);
+        yield* triggers.handleEvent(checksFailing("started", "pr/1"));
+        yield* harness.nextLaunch;
+        const first = (yield* triggers.firings({ triggerId: saved.id, limit: 1 })).firings[0]!;
+        yield* TestClock.adjust("1 minute");
+        for (let index = 0; index < FIRINGS_KEPT_PER_TRIGGER; index++)
+          yield* triggers.store.insertFiring({
+            ...first,
+            id: `skipped-${index}`,
+            eventKey: `skipped-${index}`,
+            firedAt: "1970-01-01T01:01:00.000Z",
+            outcome: "skipped",
+            runId: null,
+          });
+        yield* triggers.store.pruneFirings(saved.id);
+        yield* TestClock.adjust("1 minute");
+        yield* triggers.handleEvent(checksFailing("next", "pr/2"));
+        expect(
+          (yield* triggers.firings({ triggerId: saved.id, limit: 1 })).firings[0],
+        ).toMatchObject({
+          outcome: "skipped",
+          reason: "Already started 1 run in the last 24 hours.",
+        });
+        const beforeDuplicate = yield* triggers.store.runFirings(
+          saved.id,
+          "1970-01-01T00:00:00.000Z",
+        );
+        yield* triggers.handleEvent(checksFailing("started", "pr/1"));
+        expect(yield* triggers.store.runFirings(saved.id, "1970-01-01T00:00:00.000Z")).toEqual(
+          beforeDuplicate,
+        );
+        expect(harness.launches).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("rejects a mapping that misses a required input or names a field the event lacks", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

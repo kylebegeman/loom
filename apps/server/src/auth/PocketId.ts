@@ -629,7 +629,13 @@ const make = Effect.gen(function* () {
       const claims = yield* decodeClaims(idToken.payload).pipe(
         Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
       );
-      if (claims.nonce !== entry.nonce || (claims.azp !== undefined && claims.azp !== clientId))
+      if (
+        claims.nonce !== entry.nonce ||
+        (claims.azp !== undefined && claims.azp !== clientId) ||
+        (Array.isArray(idToken.payload.aud) &&
+          idToken.payload.aud.length > 1 &&
+          claims.azp !== clientId)
+      )
         return yield* new PocketIdError({ reason: "token" });
       const identity = yield* verifyAccessToken(tokens.access_token);
       if (

@@ -137,6 +137,41 @@ it.effect("unconfigured servers remain usable and perform no external reads", ()
     expect(f.requests).toHaveLength(0);
   }).pipe(Effect.provide(f.layer));
 });
+it.effect("blank reader secrets are unconfigured and never sent to the issuer", () => {
+  const f = fixture({
+    env: {
+      LOOM_IDENTITY_ISSUER: "https://id.example.test",
+      LOOM_SITES_CLIENT_ID: "reader",
+      LOOM_SITES_CLIENT_SECRET: "   ",
+    },
+  });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    expect(yield* service.snapshot).toEqual({
+      configured: false,
+      managementConfigured: false,
+      snapshot: null,
+    });
+    expect(f.requests).toHaveLength(0);
+  }).pipe(Effect.provide(f.layer));
+});
+it.effect("blank manager secrets leave site management unavailable", () => {
+  const f = fixture({
+    env: {
+      LOOM_IDENTITY_ISSUER: "https://id.example.test",
+      LOOM_SITES_CLIENT_ID: "reader",
+      LOOM_SITES_CLIENT_SECRET: "reader-secret",
+      LOOM_SITES_MANAGER_CLIENT_ID: "manager",
+      LOOM_SITES_MANAGER_CLIENT_SECRET: "   ",
+    },
+  });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    expect((yield* service.snapshot).managementConfigured).toBe(false);
+    expect((yield* Effect.flip(service.runChecks())).stage).toBe("configuration");
+    expect(f.requests).toHaveLength(2);
+  }).pipe(Effect.provide(f.layer));
+});
 it.effect.each([
   [
     "invalid issuer",

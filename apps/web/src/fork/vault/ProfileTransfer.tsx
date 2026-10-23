@@ -7,6 +7,7 @@ import {
   type VaultProfileDefinition,
 } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { Textarea } from "~/components/ui/textarea";
 import {
   LoomSettingsActions,
@@ -95,7 +96,7 @@ export function VaultRequirementExport({ profile }: { profile: VaultProfileDefin
             size="sm-multiline"
             variant="outline"
             onClick={() =>
-              void navigator.clipboard.writeText(text).then(
+              void writeTextToClipboard(text, "Vault profile requirements").then(
                 () => setNotice("Requirements copied."),
                 () => setNotice("Copy unavailable. Select and copy the declaration above."),
               )

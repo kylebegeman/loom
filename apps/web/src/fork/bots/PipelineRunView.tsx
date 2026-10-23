@@ -10,7 +10,13 @@ import {
   type BotPipelineRun,
   type BotPipelineRunStatus,
 } from "@t3tools/contracts/fork";
-import { applyPipelineAttemptChanges, type BotPipelineChanges } from "@t3tools/client-runtime/fork";
+import {
+  applyPipelineAttemptChanges,
+  type BotPipelineChanges,
+  initialRunValues,
+  needsProject,
+  runInputs,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { Badge } from "~/components/ui/badge";
@@ -28,7 +34,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
 import { ParameterField } from "./BotRunForm";
 import { formatDuration } from "./BotsUsage";
-import { initialRunValues, needsProject, runInputs } from "./draft";
+
 import { bots } from "./state";
 import { VerdictChip } from "./VerdictChip";
 

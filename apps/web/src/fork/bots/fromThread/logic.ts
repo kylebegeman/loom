@@ -1,12 +1,15 @@
 import type { ExecutionEnvironmentCapabilities, ScopedThreadRef } from "@t3tools/contracts";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  supportsLoomFeature,
+  saveInputFromDraft,
+  type BotDraft,
+} from "@t3tools/client-runtime/fork";
 import {
   BOTS_FROM_THREAD_FEATURE,
   isBotRunThreadId,
   type BotDefinitionInput,
   type BotSuggestion,
 } from "@t3tools/contracts/fork";
-import { saveInputFromDraft, type BotDraft } from "../draft";
 
 /**
  * Whether a thread can become a bot: its server drafts bots, it is not itself a bot run, and it

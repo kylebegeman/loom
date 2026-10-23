@@ -1,4 +1,4 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "../state/models.ts";
 import {
   BotsSaveInput,
   isBotRunThreadId,
@@ -170,6 +170,17 @@ export const botDraft = (bot: BotDefinitionInput): BotDraft => ({
   tokensPerDay: bot.budget?.tokensPerDay === undefined ? "" : String(bot.budget.tokensPerDay),
   vaultSlots: vaultSlotDrafts(bot.vaultSlots ?? []),
 });
+
+/** Stable form identity ignores row keys that only React uses. */
+const draftSignature = (draft: BotDraft): string =>
+  JSON.stringify({
+    ...draft,
+    parameters: draft.parameters.map(({ key: _key, ...parameter }) => parameter),
+    vaultSlots: draft.vaultSlots.map(({ key: _key, ...slot }) => slot),
+  });
+
+export const hasBotDraftChanges = (initial: BotDraft, current: BotDraft): boolean =>
+  draftSignature(initial) !== draftSignature(current);
 
 /** A limit as typed, with thousands separators allowed; null when left empty. */
 const limitValue = (text: string): number | null => {

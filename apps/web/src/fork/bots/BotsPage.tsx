@@ -9,7 +9,12 @@ import {
   type BotTrigger,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
-import { applyBatchChanges, applyRunChanges, botVersionLabel } from "@t3tools/client-runtime/fork";
+import {
+  applyBatchChanges,
+  applyRunChanges,
+  botVersionLabel,
+  botDraft,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -36,7 +41,7 @@ import { BotsInbox } from "./BotsInbox";
 import { BotsUsage } from "./BotsUsage";
 import { BotFromThreadEditor } from "./fromThread/BotFromThreadEditor";
 import { BotSuggestions } from "./fromThread/BotSuggestions";
-import { botDraft } from "./draft";
+
 import { PipelineRunForm } from "./PipelineRunView";
 import { RunOnManyDialog } from "./RunOnManyDialog";
 import {

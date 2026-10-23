@@ -38,7 +38,12 @@ const fixture = Effect.gen(function* () {
   const seconds = Math.floor(now.epochMilliseconds / 1000);
   const pair = yield* Effect.tryPromise(() => Jose.generateKeyPair("RS256"));
   const publicKey = yield* Effect.tryPromise(() => Jose.exportJWK(pair.publicKey));
-  const signed = (payload: Jose.JWTPayload, audience: string, typ: string, issuer = ISSUER) =>
+  const signed = (
+    payload: Jose.JWTPayload,
+    audience: string | string[],
+    typ: string,
+    issuer = ISSUER,
+  ) =>
     Effect.tryPromise(() =>
       new Jose.SignJWT({ sub: "owner-id", ...payload })
         .setProtectedHeader({ alg: "RS256", kid: "test-key", typ })
@@ -297,6 +302,40 @@ it.effect(
       }).pipe(Effect.provide(test.layer));
     }),
 );
+it.effect(
+  "requires the browser client as authorized party for an ID token with multiple audiences",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        test.tokenReply.access = yield* test.access();
+        for (const azp of [undefined, "another-client", CLIENT_ID]) {
+          const login = yield* identity.beginLogin();
+          const authorization = new URL(login.authorizationUrl);
+          test.tokenReply.id = yield* test.signed(
+            {
+              nonce: authorization.searchParams.get("nonce")!,
+              ...(azp === undefined ? {} : { azp }),
+            },
+            [CLIENT_ID, "another-client"],
+            "JWT",
+          );
+          const result = yield* Effect.result(
+            identity.completeLogin({
+              state: authorization.searchParams.get("state")!,
+              code: "one-time-code",
+              cookieValue: login.cookieValue,
+              client: CLIENT,
+            }),
+          );
+          expect(result._tag).toBe(azp === CLIENT_ID ? "Success" : "Failure");
+        }
+        expect(test.issued).toHaveLength(1);
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+
 it.effect("rejects expired callback state before contacting the token endpoint", () =>
   Effect.gen(function* () {
     const test = yield* fixture;

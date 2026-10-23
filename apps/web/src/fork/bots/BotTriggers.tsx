@@ -12,6 +12,7 @@ import {
   applyFiringChanges,
   applyTriggerChanges,
   type BotTriggerChanges,
+  triggerSummary,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
@@ -28,7 +29,6 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { runTime } from "./BotRuns";
 import { bots } from "./state";
-import { triggerSummary } from "./triggerDraft";
 
 const FIRINGS_PAGE = Math.min(20, BOTS_TRIGGER_FIRINGS_MAX_LIMIT);
 

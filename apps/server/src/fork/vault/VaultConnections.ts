@@ -151,7 +151,13 @@ const make = Effect.gen(function* () {
     const selected = registry.value.profiles.find(
       (profile) => profile.id === registry.value.activeProfileId && profile.state === "active",
     );
-    let bindings = selected?.bindings ?? [];
+    let bindings: ReadonlyArray<
+      (typeof Registry.Type.profiles)[number]["bindings"][number] & {
+        readonly version?: number;
+        readonly destination?: string;
+        readonly profileActive?: boolean;
+      }
+    > = selected?.bindings ?? [];
     if (thread.activeRunId) {
       const key = yield* encodeRunKey({ threadId, runId: thread.activeRunId }).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
@@ -159,7 +165,7 @@ const make = Effect.gen(function* () {
       const storedPin = yield* store.read(`${root}/runs/${yield* hash(key)}`);
       if (storedPin) {
         const pin = decodeRunPin(Redacted.value(storedPin.value));
-        if (Option.isNone(pin)) return [];
+        if (Option.isNone(pin)) return report("policy-denied");
         if (
           pin.value.environmentId !== environmentId ||
           pin.value.threadId !== threadId ||
@@ -170,7 +176,10 @@ const make = Effect.gen(function* () {
         const profile = registry.value.profiles.find(
           (profile) => profile.id === pin.value.resolution.profileId && profile.state === "active",
         );
-        bindings = profile ? pin.value.resolution.bindings : [];
+        bindings = pin.value.resolution.bindings.map((binding) => ({
+          ...binding,
+          profileActive: profile !== undefined,
+        }));
       }
     }
     return bindings.filter(
@@ -213,22 +222,39 @@ const make = Effect.gen(function* () {
     record: NonNullable<Effect.Success<ReturnType<typeof metadata>>>,
     input: VaultConnectionRequest,
     threadId: ThreadId,
+    pinned?: {
+      readonly version?: number;
+      readonly destination?: string;
+      readonly profileActive?: boolean;
+      readonly repository?: string | null;
+    },
   ) {
     const { choice, target } = record;
     if ("id" in input.connection && input.connection.expectedVersion !== choice.item.version)
       return report("version-conflict", [choice]);
     if (choice.item.state !== "active") return report("inactive", [choice]);
-    if (input.account && normalize(input.account) !== normalize(choice.account ?? ""))
+    if (pinned?.profileActive === false) return report("inactive", [choice]);
+    if (pinned?.version !== undefined && pinned.version !== choice.item.version)
+      return report("version-conflict", [choice]);
+    if (
+      input.account &&
+      (input.kind === "github"
+        ? input.account.toLowerCase() !== choice.account?.toLowerCase()
+        : input.account !== choice.account)
+    )
       return report("incompatible", [choice]);
     let repository = input.repository ?? null;
     let destination: string;
     if (input.kind === "github") {
-      if (
-        repository === null &&
-        "resource" in input.connection &&
-        isGitHubRepository(input.connection.resource)
-      )
-        repository = input.connection.resource;
+      if (repository === null && "resource" in input.connection) {
+        const resource = normalize(input.connection.resource);
+        repository =
+          choice.repositories.find(
+            (candidate) =>
+              normalize(candidate) === resource ||
+              normalize(vaultGitHubDestination(candidate)) === resource,
+          ) ?? null;
+      }
       if (repository === null && choice.repositories.length === 1)
         repository = choice.repositories[0]!;
       if (
@@ -249,6 +275,13 @@ const make = Effect.gen(function* () {
         destination = vaultSshDestination(target);
       }
     }
+    const sameRepository =
+      pinned?.repository == null ||
+      (input.kind === "github"
+        ? pinned.repository.toLowerCase() === repository?.toLowerCase()
+        : pinned.repository === repository);
+    if (pinned?.destination !== undefined && sameRepository && pinned.destination !== destination)
+      return report("version-conflict", [choice]);
     const explanation = yield* access.explain({
       threadId,
       itemId: choice.item.id,
@@ -306,6 +339,7 @@ const make = Effect.gen(function* () {
               : Effect.fail(error),
         }),
       );
+      if ("state" in preferences) return preferences;
       const preferredIds =
         selector.preferredItemIds ??
         preferences
@@ -387,29 +421,38 @@ const make = Effect.gen(function* () {
             );
           else names.push(...record.choice.repositories.map(vaultGitHubDestination));
           if (!names.some((name) => normalize(name) === resource)) continue;
-          matches.push(yield* evaluate(record, input, threadId));
+          const pinned = preferences.find(
+            (binding) =>
+              binding.itemId === item.id &&
+              (!input.repository ||
+                !binding.repository ||
+                normalize(binding.repository) === normalize(input.repository)),
+          );
+          matches.push(yield* evaluate(record, input, threadId, pinned));
         }
         cursor = page.nextCursor;
         if (cursor === null) break;
       }
       if (cursor !== null) return report("inventory-limit");
-      const ready = matches.filter((match) => match.state === "ready");
-      const preferred = ready.filter((match) => preferredIds.includes(match.selected!.item.id));
-      const compatible = preferred.length > 0 ? preferred : ready;
-      if (compatible.length === 1) return compatible[0]!;
-      if (compatible.length > 1)
+      const preferred = matches.filter((match) =>
+        match.choices.some((choice) => preferredIds.includes(choice.item.id)),
+      );
+      const candidates = preferred.length > 0 ? preferred : matches;
+      const ready = candidates.filter((match) => match.state === "ready");
+      if (ready.length === 1) return ready[0]!;
+      if (ready.length > 1)
         return report(
           "ambiguous",
-          compatible.flatMap((match) => match.choices),
+          ready.flatMap((match) => match.choices),
         );
-      if (matches.length === 1) return matches[0]!;
-      if (matches.length > 1) {
-        const state = matches.every((match) => match.state === matches[0]!.state)
-          ? matches[0]!.state
+      if (candidates.length === 1) return candidates[0]!;
+      if (candidates.length > 1) {
+        const state = candidates.every((match) => match.state === candidates[0]!.state)
+          ? candidates[0]!.state
           : "incompatible";
         return report(
           state,
-          matches.flatMap((match) => match.choices),
+          candidates.flatMap((match) => match.choices),
         );
       }
       const policy = yield* access.snapshot;

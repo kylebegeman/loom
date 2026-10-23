@@ -1,20 +1,6 @@
 import type { UsageSummaryInput } from "@t3tools/contracts";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export interface BotsUsageWindow {
-  readonly since: string;
-  readonly until: string;
-}
-
-/** The last `days` rolling days up to the minute, so a refetch within a minute reuses the query. */
-export const rollingWindow = (days: number, nowMs: number): BotsUsageWindow => {
-  const until = Math.floor(nowMs / 60_000) * 60_000;
-  return {
-    since: new Date(until - days * DAY_MS).toISOString(),
-    until: new Date(until).toISOString(),
-  };
-};
+import type { BotsUsageWindow } from "@t3tools/client-runtime/fork";
 
 /** How far `timeZone`'s wall clock is ahead of UTC at `ms`. */
 const zoneOffsetMs = (ms: number, timeZone: string) => {

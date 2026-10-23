@@ -6,7 +6,7 @@ import {
   triggerDraftFrom,
   triggerInputFromDraft,
   triggerSummary,
-} from "./triggerDraft";
+} from "@t3tools/client-runtime/fork";
 
 const bot: BotDefinition = {
   id: "fixer",

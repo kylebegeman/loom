@@ -18,6 +18,16 @@ import { library, useLibraryAuthority } from "../library/libraryState";
 
 export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string } | undefined>) {
   const authority = useLibraryAuthority();
+  return <SitesScreen key={authority.environmentId} authority={authority} route={route} />;
+}
+
+// Keep drafts and pending actions bound to the Library where they started.
+function SitesScreen({
+  route,
+  authority,
+}: StaticScreenProps<{ siteId?: string } | undefined> & {
+  authority: ReturnType<typeof useLibraryAuthority>;
+}) {
   const navigation = useNavigation();
   const config = useEnvironmentServerConfig(authority.environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
@@ -92,6 +102,11 @@ export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string 
             analytics.refresh();
           }}
         />
+        <Button
+          label={running ? "Running checks…" : "Run checks now"}
+          disabled={!canManage || !snapshot || running}
+          onPress={() => void run()}
+        />
       </View>
       {actionError ? <Text accessibilityRole="alert">{actionError}</Text> : null}
       {supported && query.data?.configured && !query.data.managementConfigured ? (
@@ -161,11 +176,6 @@ export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string 
                 />
               ))}
               <Text className="font-t3-semibold">Services and checks</Text>
-              <Button
-                label={running ? "Running checks…" : "Run checks now"}
-                disabled={!canManage || running}
-                onPress={() => void run()}
-              />
               {selected.serviceIds.length === 0 ? (
                 <Text>
                   No services linked. Link a service in Edit site to monitor its endpoints.

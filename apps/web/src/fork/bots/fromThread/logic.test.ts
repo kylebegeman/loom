@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { BOTS_FROM_THREAD_FEATURE, botRunThreadId } from "@t3tools/contracts/fork";
-import { emptyBotDraft } from "../draft";
+import { emptyBotDraft } from "@t3tools/client-runtime/fork";
 import { canSaveAsBot, refineInputFromDraft } from "./logic";
 
 const host = EnvironmentId.make("host");
