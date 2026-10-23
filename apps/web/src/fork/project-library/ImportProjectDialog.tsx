@@ -27,6 +27,7 @@ import { useLibraryAttempt } from "./attempts";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { folderProjectMatches } from "./folderProjectMatches";
+import { LibraryFolderPicker } from "./LibraryFolderPicker";
 import { projectLibrary, useLibraryProjects, useLibraryPermission } from "./state";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -81,6 +82,7 @@ export function ImportProjectDialog({
   const [projectId, setProjectId] = useState(attempt?.project?.id ?? "choose");
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);
   const [busy, setBusy] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
     refresh: true,
@@ -96,27 +98,25 @@ export function ImportProjectDialog({
   const canCreate = useLibraryPermission(projectLibrary.createProject, library.authorityId);
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, library.authorityId);
   const host = library.environments.find((entry) => entry.environmentId === hostId);
-  const inspectFolder = async () => {
-    if (!hostId || !rootPath.trim()) return;
+  const inspectFolder = async (path = rootPath) => {
+    if (!hostId || !path.trim()) return;
     setBusy(true);
     setError(null);
-    const loadInspection = async () => {
-      const result = await inspect({ environmentId: hostId, input: { rootPath: rootPath.trim() } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    const result = await inspect({ environmentId: hostId, input: { rootPath: path.trim() } });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : "Could not check this folder.");
+    } else {
       setInspection(result.value);
       const matches = folderProjectMatches(library.query.data ?? [], result.value);
       setProjectId(matches.length === 1 ? matches[0]!.id : matches.length > 1 ? "choose" : "new");
       if (!title)
-        setTitle(result.value.rootPath.replace(/\/+$/, "").split("/").at(-1) ?? "Project");
-    };
-    try {
-      await loadInspection();
-    } catch (cause) {
-      const handleFailure = async () => {
-        setError(cause instanceof Error ? cause.message : "Could not inspect this folder.");
-      };
-      await handleFailure().finally(() => setBusy(false));
-      return;
+        setTitle(
+          result.value.rootPath
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .at(-1) ?? "Project",
+        );
     }
     setBusy(false);
   };
@@ -333,6 +333,7 @@ export function ImportProjectDialog({
             onValueChange={(value) => {
               setHostId(value);
               setInspection(null);
+              setBrowsing(false);
             }}
           >
             <SelectTrigger>
@@ -350,28 +351,57 @@ export function ImportProjectDialog({
         <LibraryField label="Existing folder">
           <Input
             font="mono"
+            aria-label="Existing folder"
             value={rootPath}
             disabled={busy || attempt !== null}
             onChange={(event) => {
               setRootPath(event.target.value);
               setInspection(null);
+              setBrowsing(false);
             }}
           />
         </LibraryField>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={
-            busy ||
-            attempt !== null ||
-            !canInspect ||
-            !rootPath.trim() ||
-            host?.connection.phase !== "connected"
-          }
-          onClick={() => void inspectFolder()}
-        >
-          Inspect folder
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              busy || attempt !== null || !canInspect || host?.connection.phase !== "connected"
+            }
+            onClick={() => setBrowsing(true)}
+          >
+            Choose folder
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              busy ||
+              attempt !== null ||
+              !canInspect ||
+              !rootPath.trim() ||
+              host?.connection.phase !== "connected"
+            }
+            onClick={() => void inspectFolder()}
+          >
+            {busy ? "Checking..." : "Check folder"}
+          </Button>
+        </div>
+        {browsing && hostId && host?.connection.phase === "connected" ? (
+          <LibraryFolderPicker
+            key={hostId}
+            environmentId={hostId}
+            computerName={host.label}
+            initialPath={rootPath}
+            onCancel={() => setBrowsing(false)}
+            onSelect={(path) => {
+              setRootPath(path);
+              setInspection(null);
+              setBrowsing(false);
+              void inspectFolder(path);
+            }}
+          />
+        ) : null}
         {inspection ? (
           <div className="space-y-1 text-xs text-muted-foreground">
             {!inspection.exists ? (
