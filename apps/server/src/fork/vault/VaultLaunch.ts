@@ -95,9 +95,9 @@ const make = Effect.gen(function* () {
   const connections = yield* VaultConnections.VaultConnections;
   const profiles = yield* VaultProfiles.VaultProfiles,
     github = yield* VaultGitHub.VaultGitHub;
-  const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR;
+  const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR ?? "";
   const hostIdentity = Effect.gen(function* () {
-    if (!configured || !path.isAbsolute(configured))
+    if (configured && !path.isAbsolute(configured))
       return yield* new VaultWorkloadError({ reason: "not-configured" });
     const connection = yield* identities
       .connection(configured)

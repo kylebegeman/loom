@@ -336,9 +336,10 @@ production credential, changes no user SSH setting and stops only processes it s
 ## Enable hosted agent SSH and Git access
 
 Enroll the machine running this Loom server using the existing broker procedure. Approve its
-fingerprint in Vault brokers and keep `loom vault broker run` active on that machine. Set
-`LOOM_VAULT_EXECUTION_BROKER_DIR` on the Loom server to that broker's absolute private state
-directory, then restart the isolated environment. The directory must remain outside the
+fingerprint in Vault brokers and keep `loom vault broker run` active on that machine. Hosted
+execution uses the broker CLI's default `~/.config/loom/vault-broker` directory. For a custom
+directory, set `LOOM_VAULT_EXECUTION_BROKER_DIR` on the Loom server to its absolute path and
+restart that environment. The directory must remain outside the
 working tree with owner-only permissions. It holds the existing plaintext machine identity
 and public connection metadata; it is not a new OpenBao token or encrypted machine-key store.
 Use the same environment used for enrollment. Missing configuration or stale presence denies use.

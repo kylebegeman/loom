@@ -14,7 +14,7 @@ const Time = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX
 const Destination = TrimmedNonEmptyString.check(Schema.isMaxLength(2048));
 const reasons = {
   "not-configured":
-    "An administrator must configure this Loom server with an enrolled execution broker directory and keep its heartbeat online.",
+    "No usable broker enrollment was found for this Loom server. Enroll its computer in Settings → Loom → Vault brokers and keep the broker running.",
   "invalid-proof":
     "The workload proof is invalid, belongs to another context or has already been used.",
   expired:

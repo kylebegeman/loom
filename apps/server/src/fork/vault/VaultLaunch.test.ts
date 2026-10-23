@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
-import { VaultSshError, vaultGitDestination } from "@t3tools/contracts/fork";
+import { VaultBrokerError, VaultSshError, vaultGitDestination } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -249,6 +249,56 @@ it.effect("releases managed sessions after transport failure and cancellation", 
 );
 
 it.effect(
+  "reuses the default enrolled broker without creating an identity or crossing environments",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* launchFixture(transport);
+      yield* f.grant(f.key.destination);
+      const reads: Array<{ directory: string; create: boolean | undefined }> = [];
+      let foreign = false;
+      let absent = false;
+      const identity = BrokerIdentity.BrokerIdentity.of({
+        ...f.identity,
+        read: (directory, create) => {
+          reads.push({ directory, create });
+          return f.identity.read(directory, create);
+        },
+        connection: (directory) =>
+          absent
+            ? Effect.fail(new VaultBrokerError({ reason: "local-state" }))
+            : f.identity.connection(directory).pipe(
+                Effect.map((connection) => ({
+                  ...connection,
+                  environmentId: foreign ? "another-environment" : connection.environmentId,
+                })),
+              ),
+      });
+      const launch = yield* VaultLaunch.VaultLaunch.pipe(
+        Effect.provide(
+          VaultLaunch.layer.pipe(
+            Layer.provide(Layer.merge(f.project, Layer.succeedContext(f.context))),
+          ),
+        ),
+        Effect.provideService(BrokerIdentity.BrokerIdentity, identity),
+        Effect.provideService(HostProcess.Environment, {}),
+      );
+      expect(yield* launch.ssh({ id: f.itemId, command }, f.threadId)).toMatchObject({
+        exitCode: 0,
+      });
+      expect(reads).toEqual([{ directory: "", create: false }]);
+      foreign = true;
+      expect(
+        (yield* launch.ssh({ id: f.itemId, command }, f.threadId).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
+      absent = true;
+      expect(
+        (yield* launch.ssh({ id: f.itemId, command }, f.threadId).pipe(Effect.flip)).reason,
+      ).toBe("not-configured");
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
   "refuses missing configuration, inactive runs, archived keys and revocation at signing",
   () =>
     Effect.gen(function* () {
@@ -270,7 +320,9 @@ it.effect(
           ),
         ),
         Effect.provideService(BrokerIdentity.BrokerIdentity, f.identity),
-        Effect.provideService(HostProcess.Environment, {}),
+        Effect.provideService(HostProcess.Environment, {
+          LOOM_VAULT_EXECUTION_BROKER_DIR: "relative/broker",
+        }),
       );
       expect(
         (yield* unconfigured.ssh({ id: f.itemId, command }, f.threadId).pipe(Effect.flip)).reason,
