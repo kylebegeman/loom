@@ -269,8 +269,8 @@ export function ProjectColorPicker({
 }
 
 /**
- * Shows where a folder lives the way people read it: home as `~`, the folder name in full
- * and its parents faded and truncated first. The full path and a copy action stay one hover away.
+ * Keeps the folder name ahead of its parents when space is limited. Even an oversized
+ * name stays inside its container; the full path and copy action stay one hover away.
  */
 export function PathLabel({
   path,
@@ -302,7 +302,7 @@ export function PathLabel({
       >
         <span className="flex min-w-0 items-baseline">
           <span className="min-w-0 truncate text-muted-foreground/80">{parts.parent}</span>
-          <span className="shrink-0 text-foreground/90">{parts.name}</span>
+          <span className="max-w-full shrink-0 truncate text-foreground/90">{parts.name}</span>
         </span>
         {isCopied ? (
           <CheckIcon aria-hidden className="size-3 shrink-0 text-success-foreground" />
