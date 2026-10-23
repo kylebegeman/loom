@@ -3,15 +3,15 @@ import { useBotsAttentionCount } from "./state";
 
 function FooterIcon({ count }: { readonly count: number }) {
   return (
-    <>
+    <span className="relative isolate inline-flex size-5 shrink-0 items-center justify-center">
       <BotIcon className="size-5" />
       {count === 0 ? null : (
         <span
           aria-hidden
-          className="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full bg-warning ring-2 ring-sidebar-control-surface"
+          className="pointer-events-none absolute top-0.5 right-0.5 z-10 size-1.5 rounded-full bg-warning ring-2 ring-sidebar-control-surface"
         />
       )}
-    </>
+    </span>
   );
 }
 
