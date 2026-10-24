@@ -7,6 +7,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import { forkParked } from "../serverActivation.ts";
+import { withoutParentSpan } from "../fork/tracing/withoutParentSpan.ts"; // fork: server-weight
 
 export class Scheduler extends Context.Service<
   Scheduler,
@@ -28,6 +29,8 @@ const make = Effect.gen(function* () {
     const context = yield* Effect.context<R>();
     const permit = yield* Semaphore.make(1);
     const run = runDueWork.pipe(
+      // fork: server-weight: the captured context would otherwise restore the registering span.
+      withoutParentSpan,
       Effect.provideContext(context),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)

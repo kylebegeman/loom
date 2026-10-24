@@ -307,10 +307,16 @@ export function truncateTraceAttributes(attributes: TraceAttributes): TraceAttri
   let truncated: Record<string, unknown> | undefined;
   for (const [key, value] of Object.entries(attributes)) {
     if (typeof value === "string" && ALWAYS_TRUNCATED_TRACE_ATTRIBUTES.has(key)) {
-      if (value.length <= TRACE_ATTRIBUTE_TRUNCATED_LENGTH) continue;
+      // fork: server-weight: SQL newlines and indentation filled much of the kept prefix.
+      const text = value.replace(/\s+/g, " ").trim();
+      // fork: server-weight
+      if (text === value && text.length <= TRACE_ATTRIBUTE_TRUNCATED_LENGTH) continue;
       truncated ??= { ...attributes };
+      // fork: server-weight
       truncated[key] =
-        `${value.slice(0, TRACE_ATTRIBUTE_TRUNCATED_LENGTH)}${TRACE_ATTRIBUTE_TRUNCATION_SUFFIX}`;
+        text.length <= TRACE_ATTRIBUTE_TRUNCATED_LENGTH
+          ? text
+          : `${text.slice(0, TRACE_ATTRIBUTE_TRUNCATED_LENGTH)}${TRACE_ATTRIBUTE_TRUNCATION_SUFFIX}`;
       continue;
     }
     const next = truncateNestedValue(value);

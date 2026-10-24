@@ -11,8 +11,10 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as SshCrypto from "./SshCrypto.ts";
 import * as SshTransport from "./SshTransport.ts";
+import { vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import { VaultSshToolkit, vaultSshHandlers } from "./ssh-mcp.ts";
@@ -22,9 +24,59 @@ import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 
 const decodeAgentSession = Schema.decodeUnknownSync(VaultSshAgentSession);
 const dependencies = Layer.merge(NodeServices.layer, memoryVault);
-const fixture = Effect.gen(function* () {
-  const f = yield* launchFixture(Layer.mock(SshTransport.SshTransport)({}));
-  yield* f.grant(f.key.destination);
+const countedVault = () => {
+  const calls: Array<string> = [];
+  const hooks: { beforeRead?: (target: string) => void } = {};
+  const target = (key: string) =>
+    key.endsWith("/access-policy")
+      ? "policy"
+      : key.endsWith("/brokers")
+        ? "brokers"
+        : key.includes("/items/")
+          ? "item"
+          : "other";
+  const counted = Layer.effect(
+    OpenBaoStore.OpenBaoStore,
+    Effect.gen(function* () {
+      const store = yield* OpenBaoStore.OpenBaoStore;
+      return OpenBaoStore.OpenBaoStore.of({
+        ...store,
+        read: (key) =>
+          Effect.suspend(() => {
+            calls.push(`read ${target(key)}`);
+            hooks.beforeRead?.(target(key));
+            return store.read(key);
+          }),
+        write: (key, value, expected) =>
+          Effect.suspend(() => {
+            calls.push(`write ${target(key)}`);
+            return store.write(key, value, expected);
+          }),
+        keys: (prefix) =>
+          Effect.suspend(() => {
+            calls.push(`keys ${target(prefix)}`);
+            return store.keys(prefix);
+          }),
+      });
+    }),
+  ).pipe(Layer.provide(memoryVault));
+  return { calls, hooks, layer: Layer.merge(NodeServices.layer, counted) };
+};
+const fixtureWith = (authority: "grant" | "owner") =>
+  Effect.gen(function* () {
+    const f = yield* launchFixture(Layer.mock(SshTransport.SshTransport)({}));
+    if (authority === "grant") yield* f.grant(f.key.destination);
+    else
+      yield* f.access.setOwnerPolicy(
+        { operationId: yield* f.id, expectedRevision: 0, mode: "owner-trusted" },
+        "owner",
+        Effect.void,
+      );
+    return f;
+  });
+const agentFixture = Effect.fnUntraced(function* (
+  f: Effect.Success<ReturnType<typeof fixtureWith>>,
+) {
   const activation = yield* f.launch.agent({ id: f.itemId, expectedVersion: 1 }, f.threadId);
   const channelId = yield* f.id;
   const host = Buffer.from(f.host.publicKey.split(" ")[1]!, "base64"),
@@ -78,6 +130,7 @@ const fixture = Effect.gen(function* () {
     );
   return { ...f, activation, bind, data, sign, frame };
 });
+const fixture = Effect.flatMap(fixtureWith("grant"), agentFixture);
 it.effect(
   "opens a proved run-owned session, lists one identity and signs only its pinned host-bound authentication",
   () =>
@@ -111,50 +164,117 @@ it.effect(
       expect((yield* f.frame(4, Buffer.from([11])).pipe(Effect.flip)).reason).toBe("denied");
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
-it.effect.each(["revoked", "run", "mode", "archived", "host", "version", "closed"] as const)(
-  "rechecks %s before issuing a signature",
+it.effect.each([
+  "revoked",
+  "run",
+  "stopped",
+  "mode",
+  "archived",
+  "host",
+  "version",
+  "closed",
+] as const)("rechecks %s before issuing a signature", (change) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.frame(0, f.bind);
+    if (change === "stopped") f.state.runs = [vaultRun(f.state.thread, { status: "completed" })];
+    if (change === "revoked")
+      yield* f.access.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: 1,
+          change: { type: "state", id: f.grantId, state: "revoked" },
+        },
+        "admin",
+      );
+    if (change === "run")
+      f.state.thread = { ...f.state.thread, activeRunId: RunId.make("other-run") };
+    if (change === "mode") f.state.thread = { ...f.state.thread, runtimeMode: "approval-required" };
+    if (change === "archived")
+      yield* f.core.change(
+        { id: f.itemId, expectedVersion: 1, operationId: yield* f.id, action: "archive" },
+        "admin",
+        Effect.void,
+      );
+    if (change === "host")
+      yield* f.brokers.apply(
+        {
+          operationId: yield* f.id,
+          expectedRevision: 3,
+          change: { type: "disable", machineId: f.machineId },
+        },
+        "admin",
+      );
+    if (change === "version")
+      yield* f.ssh.trust(
+        { id: f.itemId, expectedVersion: 1, operationId: yield* f.id, hostKey: null },
+        "admin",
+        Effect.void,
+      );
+    if (change === "closed") yield* f.ssh.agentClose(f.activation.sessionId, f.threadId);
+    const error = yield* f.frame(1, f.sign).pipe(Effect.flip);
+    expect(["denied", "conflict"]).toContain(error.reason);
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+it.effect.each(["restricted", "stopped"] as const)(
+  "owner-trusted agents recheck a %s owner session on the next frame",
   (change) =>
     Effect.gen(function* () {
-      const f = yield* fixture;
+      const f = yield* agentFixture(yield* fixtureWith("owner"));
       yield* f.frame(0, f.bind);
-      if (change === "revoked")
-        yield* f.access.apply(
-          {
-            operationId: yield* f.id,
-            expectedRevision: 1,
-            change: { type: "state", id: f.grantId, state: "revoked" },
-          },
-          "admin",
-        );
-      if (change === "run")
-        f.state.thread = { ...f.state.thread, activeRunId: RunId.make("other-run") };
-      if (change === "mode")
-        f.state.thread = { ...f.state.thread, runtimeMode: "approval-required" };
-      if (change === "archived")
-        yield* f.core.change(
-          { id: f.itemId, expectedVersion: 1, operationId: yield* f.id, action: "archive" },
-          "admin",
+      if (change === "restricted")
+        yield* f.access.setOwnerPolicy(
+          { operationId: yield* f.id, expectedRevision: 1, mode: "restricted" },
+          "owner",
           Effect.void,
         );
-      if (change === "host")
-        yield* f.brokers.apply(
-          {
-            operationId: yield* f.id,
-            expectedRevision: 3,
-            change: { type: "disable", machineId: f.machineId },
-          },
-          "admin",
-        );
-      if (change === "version")
-        yield* f.ssh.trust(
-          { id: f.itemId, expectedVersion: 1, operationId: yield* f.id, hostKey: null },
-          "admin",
-          Effect.void,
-        );
-      if (change === "closed") yield* f.ssh.agentClose(f.activation.sessionId, f.threadId);
-      const error = yield* f.frame(1, f.sign).pipe(Effect.flip);
-      expect(["denied", "conflict"]).toContain(error.reason);
+      else f.state.runs = [vaultRun(f.state.thread, { status: "cancelled" })];
+      expect((yield* f.frame(1, f.sign).pipe(Effect.flip)).reason).toBe("denied");
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+// A frame authorizes before reading the key, before signing and after signing. A run that
+// stops while one of those reads the broker registry must still deny that authorization, or
+// the last one would return a signature after the stop.
+it.effect.each([
+  { authority: "grant", stopAt: 1 },
+  { authority: "grant", stopAt: 2 },
+  { authority: "grant", stopAt: 3 },
+  { authority: "owner", stopAt: 3 },
+] as const)(
+  "denies a signing frame ($authority) whose run stops during broker check $stopAt",
+  ({ authority, stopAt }) => {
+    const vault = countedVault();
+    return Effect.gen(function* () {
+      const f = yield* agentFixture(yield* fixtureWith(authority));
+      yield* f.frame(0, f.bind);
+      let brokerReads = 0;
+      vault.hooks.beforeRead = (target) => {
+        if (target === "brokers" && ++brokerReads === stopAt)
+          f.state.runs = [vaultRun(f.state.thread, { status: "completed" })];
+      };
+      expect((yield* f.frame(1, f.sign).pipe(Effect.flip)).reason).toBe("denied");
+      expect(brokerReads).toBe(stopAt);
+    }).pipe(Effect.scoped, Effect.provide(vault.layer));
+  },
+);
+// A budget against regressions, not a call graph: a new check may raise it, and the recheck
+// tests above prove each check still runs. Before duplicate checks were removed a frame made
+// 22 OpenBao calls (4 of them policy writes) and 12 thread reads, 16 when owner-trusted.
+it.effect.each(["grant", "owner"] as const)(
+  "one %s agent frame stays within its Vault and thread read budget",
+  (authority) => {
+    const vault = countedVault();
+    return Effect.gen(function* () {
+      const f = yield* agentFixture(yield* fixtureWith(authority));
+      yield* f.frame(0, f.bind);
+      vault.calls.length = 0;
+      f.state.threadReads = { shell: 0, records: 0 };
+      yield* f.frame(1, f.sign);
+      expect(vault.calls.length).toBeLessThanOrEqual(17);
+      expect(vault.calls.filter((call) => call === "write policy").length).toBeLessThanOrEqual(3);
+      expect(f.state.threadReads.shell + f.state.threadReads.records).toBeLessThanOrEqual(6);
+    }).pipe(Effect.scoped, Effect.provide(vault.layer));
+  },
 );
 it.effect(
   "rejects foreign callers, replay, generic signing, forwarding and expired activations",

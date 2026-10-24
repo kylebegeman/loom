@@ -21,7 +21,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
-import { decodePolicy, credentialUseRefusal } from "./AccessPolicy.ts";
+import { decodePolicy, credentialUseRefusal, type Policy } from "./AccessPolicy.ts";
 
 export class VaultCore extends Context.Service<
   VaultCore,
@@ -29,7 +29,15 @@ export class VaultCore extends Context.Service<
     readonly status: Effect.Effect<VaultCoreStatus>;
     readonly inspect: (id: string) => Effect.Effect<VaultItemSummary | null, VaultError>;
     readonly list: (input: VaultItemList) => Effect.Effect<VaultItemPage, VaultError>;
-    readonly reveal: (input: VaultItemReveal) => Effect.Effect<VaultItemValue, VaultError>;
+    /**
+     * `accessPolicy` is the access policy this call has already read and validated, or `null`
+     * when it found none, and the caller's next write is conditional on that read's version.
+     * Omit it to read the policy here.
+     */
+    readonly reveal: (
+      input: VaultItemReveal,
+      accessPolicy?: Policy | null,
+    ) => Effect.Effect<VaultItemValue, VaultError>;
     readonly savedPrivate: (
       input: VaultPrivateSave,
       actorId: string,
@@ -122,6 +130,19 @@ const make = Effect.gen(function* () {
     );
     return summary(item, version);
   });
+  const accessPolicy = Effect.fnUntraced(function* () {
+    const stored = yield* store.read(`environments/${namespace}/access-policy`);
+    if (stored === null) return null;
+    const policy = decodePolicy(Redacted.value(stored.value));
+    if (
+      Option.isNone(policy) ||
+      (policy.value.schemaVersion === 4 && policy.value.environmentId !== environmentId) ||
+      (policy.value.ownerPolicy !== undefined &&
+        policy.value.ownerPolicy.environmentId !== environmentId)
+    )
+      return yield* new VaultError({ reason: "invalid-response" });
+    return policy.value;
+  });
   return VaultCore.of({
     status: store.status,
     inspect: Effect.fn("VaultCore.inspect")(function* (id) {
@@ -147,7 +168,7 @@ const make = Effect.gen(function* () {
       }
       return summary(current.item, current.version);
     }),
-    reveal: Effect.fn("VaultCore.reveal")(function* (raw) {
+    reveal: Effect.fn("VaultCore.reveal")(function* (raw, known) {
       const decoded = decodeReveal(raw);
       if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-input" });
       const current = yield* load(decoded.value.id);
@@ -157,19 +178,12 @@ const make = Effect.gen(function* () {
         return yield* new VaultError({ reason: "conflict" });
       // Admin reveal, probes and secret-decoding adapters bypass the thread evaluator. Until a
       // protected dispatcher exists, none may release a protected or unclassified credential.
-      const storedPolicy = yield* store.read(`environments/${namespace}/access-policy`);
-      if (storedPolicy) {
-        const policy = decodePolicy(Redacted.value(storedPolicy.value));
-        if (
-          Option.isNone(policy) ||
-          (policy.value.schemaVersion === 4 && policy.value.environmentId !== environmentId) ||
-          (policy.value.ownerPolicy !== undefined &&
-            policy.value.ownerPolicy.environmentId !== environmentId)
-        )
-          return yield* new VaultError({ reason: "invalid-response" });
-        if (credentialUseRefusal(policy.value, decoded.value.id))
-          return yield* new VaultError({ reason: "denied" });
-      }
+      // A caller that already read the policy for this call passes it instead of a second read.
+      // Its own write must be conditional on that read's version, so a policy change after the
+      // read discards this value.
+      const policy = known === undefined ? yield* accessPolicy() : known;
+      if (policy !== null && credentialUseRefusal(policy, decoded.value.id))
+        return yield* new VaultError({ reason: "denied" });
       return { item: summary(current.item, current.version), value: current.item.value };
     }),
     list: Effect.fn("VaultCore.list")(function* (raw) {

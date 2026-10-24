@@ -87,6 +87,8 @@ export class ServerBrowserContexts {
       executablePath,
       env,
       args: [
+        // fork: server-weight: 128 MiB; without a limit Chromium sizes the cache from free disk space.
+        "--disk-cache-size=134217728",
         "--disable-gpu",
         "--force-device-scale-factor=2",
         "--disable-blink-features=AutomationControlled",

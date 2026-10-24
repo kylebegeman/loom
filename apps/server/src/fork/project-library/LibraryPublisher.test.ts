@@ -85,6 +85,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const pageRequests = yield* Ref.make<
     Array<{ readonly method: string; readonly path: string; readonly body: unknown }>
   >([]);
+  /** Asset bytes the Library already holds, by attachment id. */
+  const heldAssets = yield* Ref.make<ReadonlyMap<string, Uint8Array>>(new Map());
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
       expect(request.headers.authorization).toBe("Bearer fixture-token");
@@ -148,6 +150,17 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           lastSequence: input.entries.at(-1)!.sequence,
           applied: input.entries.length,
         };
+      } else if (request.method === "GET") {
+        const held = (yield* Ref.get(heldAssets)).get(
+          decodeURIComponent(pathname.split("/").at(-1)!),
+        );
+        if (held !== undefined)
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(held, { status: 200, headers: { "content-type": "text/plain" } }),
+          );
+        status = 404;
+        response = { reason: "not-found" };
       } else
         response = {
           sourceEnvironmentId: source,
@@ -249,6 +262,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     localRegistrations,
     pageAnswer,
     pageRequests,
+    heldAssets,
     sql,
     fs,
     config,
@@ -372,6 +386,55 @@ describe("authenticated Library publishing", () => {
             "complete conversation",
           );
           expect(received?.entries[0]?.thread.summary.sequence).toBe(42);
+        }),
+      ),
+  );
+  it.effect(
+    "leaves out only the attachments a deleted conversation lost and still requires a live one's",
+    () =>
+      run(configured, (f) =>
+        Effect.gen(function* () {
+          const base = yield* archiveFor(project, 7);
+          const file = (suffix: string) => ({
+            type: "file" as const,
+            id: ChatAttachmentId.make(
+              `source-thread-00000000-0000-4000-8000-00000000000${suffix}-txt`,
+            ),
+            name: "notes.txt",
+            mimeType: "text/plain",
+            sizeBytes: 3,
+          });
+          const kept = file("1");
+          const lost = file("2");
+          // Uploaded by something other than this publisher, such as the migration script.
+          const held = file("3");
+          const live = {
+            ...base,
+            projection: {
+              ...base.projection,
+              messages: [{ ...base.projection.messages[0]!, attachments: [kept, lost, held] }],
+            },
+          };
+          const deleted = { ...live, summary: { ...live.summary, deleted: true } };
+          yield* f.fs.writeFile(
+            `${f.config.attachmentsDir}/${kept.id}.txt`,
+            new Uint8Array([1, 2, 3]),
+          );
+          yield* Ref.set(f.heldAssets, new Map([[held.id, new Uint8Array([4, 5, 6])]]));
+          const assetRequests = Effect.map(Ref.get(f.requests), (paths) =>
+            paths.filter((path) => path.includes("/assets/")).map((path) => path.split("/").at(-1)),
+          );
+          expect([...(yield* f.publisher.publishAttachments(deleted))]).toEqual([lost.id]);
+          expect(yield* assetRequests).toEqual([kept.id, lost.id, held.id]);
+          expect(
+            yield* f.sql`SELECT attachment_id FROM fork_library_source_assets ORDER BY attachment_id`,
+          ).toEqual([{ attachment_id: kept.id }, { attachment_id: held.id }]);
+          const failure = yield* f.publisher.publishAttachments(live).pipe(Effect.flip);
+          expect(failure.reason).toBe("not-found");
+          expect(failure.message).toContain(lost.id);
+          // A snapshot queued while the conversation was live is sent after it was deleted.
+          yield* f.sql`INSERT INTO orchestration_v2_projection_threads(thread_id,project_id,title,default_provider,runtime_mode,interaction_mode,created_at,updated_at,deleted_at,payload_json) VALUES (${live.summary.threadId},'project','Deleted','codex','full-access','default','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z','2026-10-16T00:00:00.000Z','{}')`;
+          expect([...(yield* f.publisher.publishAttachments(live))]).toEqual([lost.id]);
         }),
       ),
   );

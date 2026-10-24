@@ -368,6 +368,21 @@ write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
 `UsageService.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts` and
 `packages/shared/src/serverSettings.test.ts`.
 
+The `server-weight` seams cut trace volume and background database work on long-running
+computers. `serverActivation.ts` (4 marker lines) and `Scheduler.ts` (2) start each parked
+fiber and scheduler pass in its own trace through
+`apps/server/src/fork/tracing/withoutParentSpan.ts`, instead of growing the startup trace for
+the server's life. History compaction in `ProjectionMaintenance.ts` (11) and space reclaim in
+`DatabaseStorage.ts` (7) run their per-page statements untraced under one span per pass that
+carries the counts. `Sqlite.ts` (1) drops the constant `db.name` and `service.name` attributes
+from every statement, and `packages/shared/src/observability.ts` (3) collapses SQL whitespace
+before truncating. `ThreadSettlementService.ts` (11) reuses one settings read per sweep until
+settings change and asks for a storage sweep only once a settled thread is done with its
+worktree, which lets the lane watchdog cache ready lanes. `ServerBrowserContexts.ts` (1) caps
+the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPersistence.test.ts`
+(8), `ThreadSettlementService.test.ts` (6), `DatabaseStorage.test.ts` (4),
+`Scheduler.test.ts` (3) and `observability.test.ts` (2).
+
 ## Loom CLI and pairing copy
 
 User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`

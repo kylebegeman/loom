@@ -280,12 +280,22 @@ export const make = Effect.gen(function* () {
   // Settling a settled thread re-emits thread.settled with the same settledAt,
   // so this keeps the settle action to one run per settlement.
   const settleActionResults = new Map<ThreadId, { readonly at: number; readonly ready: boolean }>();
+  // fork: server-weight -- every settings read materializes secrets, so a sweep reuses its own
+  // read until a change arrives, and decisions made after a change still read it fresh.
+  let settingsGeneration = 0;
 
   const sweep = Effect.fn("ThreadSettlementServiceV2.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
     threadId?: ThreadId,
   ) {
+    const sweepGeneration = settingsGeneration; // fork: server-weight
     const settings = yield* settingsService.getSettings;
+    // fork: server-weight
+    const decisionSettings = Effect.suspend(() =>
+      settingsGeneration === sweepGeneration
+        ? Effect.succeed(settings)
+        : settingsService.getSettings,
+    );
     if (!autoSettlementConfigured(settings)) {
       return;
     }
@@ -303,7 +313,7 @@ export const make = Effect.gen(function* () {
     const settleThread = Effect.fn("ThreadSettlementServiceV2.settleThread")(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {
         const currentSettings = resolveProjectSettings(
-          yield* settingsService.getSettings,
+          yield* decisionSettings, // fork: server-weight
           thread.projectId,
         ).settings;
         const decisionNow = yield* DateTime.now;
@@ -400,7 +410,7 @@ export const make = Effect.gen(function* () {
       group: ReadonlyArray<(typeof lookupCandidates)[number]>,
       pullRequest: SettlementPullRequest,
     ) {
-      const currentSettings = yield* settingsService.getSettings;
+      const currentSettings = yield* decisionSettings; // fork: server-weight
       const decisionNow = yield* DateTime.now;
       return group.some((thread) => {
         const { settings } = resolveProjectSettings(currentSettings, thread.projectId);
@@ -521,6 +531,12 @@ export const make = Effect.gen(function* () {
     runSweep(null, threadId),
   );
 
+  // fork: server-weight -- storage cleanup sweeps by itself only for a settlement without a
+  // worktree path. A settled thread with one asks once it is done there: the worktree is gone,
+  // another thread keeps it, or its settle action just finished. Replaying a recorded settle
+  // result asks for nothing, since the lane watchdog repeats probes.
+  const doneWithWorktree = cleanup.requestSweep.pipe(Effect.as(true));
+
   // Then the project's settle script runs in the thread's own worktree; a
   // thread in the shared checkout skips it, because other threads may still be
   // working there.
@@ -530,7 +546,8 @@ export const make = Effect.gen(function* () {
       if (settled.settledOverride !== "settled") return true;
       yield* terminals.closeIdle({ threadId });
       const worktreePath = settled.worktreePath;
-      if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return true;
+      if (worktreePath === null) return true; // fork: server-weight
+      if (!(yield* fileSystem.exists(worktreePath))) return yield* doneWithWorktree; // fork: server-weight
       // Closing and the worktree check wait on I/O. A thread re-engaged
       // meanwhile is working again, so its worktree is no place for cleanup.
       const thread = yield* projections.getThread(threadId);
@@ -547,7 +564,7 @@ export const make = Effect.gen(function* () {
             holder.settledOverride !== "settled",
         )
       )
-        return true;
+        return yield* doneWithWorktree; // fork: server-weight
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null) return true;
       const previous = settleActionResults.get(threadId);
@@ -564,6 +581,7 @@ export const make = Effect.gen(function* () {
         run.status !== "started" ||
         (run.completion !== undefined && (yield* run.completion).exitCode === 0);
       settleActionResults.set(threadId, { at: settledAtMs, ready });
+      if (ready) yield* doneWithWorktree; // fork: server-weight
       return ready;
     },
     (effect, threadId) =>
@@ -573,7 +591,6 @@ export const make = Effect.gen(function* () {
         if (thread.worktreePath === null) return yield* effect;
         return yield* withWorkspaceLease(path.resolve(thread.worktreePath), effect);
       }).pipe(
-        Effect.tap((ready) => (ready ? cleanup.requestSweep : Effect.void)),
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.interrupt
@@ -634,6 +651,7 @@ export const make = Effect.gen(function* () {
     );
     yield* forkParked(
       Stream.runForEach(settingsChanges, (settings) => {
+        settingsGeneration++; // fork: server-weight
         const key = autoSettlementSettingsKey(settings);
         if (key === lastSettlementSettings) {
           return Effect.void;

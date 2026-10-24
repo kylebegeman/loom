@@ -94,7 +94,7 @@ const fixture = Effect.gen(function* () {
         return input.copy;
       }),
     recordActivity: () => Effect.die("unused"),
-    publishAttachments: () => Effect.void,
+    publishAttachments: () => Effect.succeed(new Set<string>()),
     ingest: () => Effect.die("unused"),
     project: () => Effect.die("unused"),
     proposeBrief: () => Effect.die("unused"),

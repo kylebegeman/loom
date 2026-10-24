@@ -80,9 +80,15 @@ export class LibraryPublisher extends Context.Service<
     readonly registerCopy: (
       input: LibraryRegisterCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /**
+     * Uploads the attachments a conversation references. Resolves with the ones a deleted
+     * conversation lost before the Library got them, which its history must leave out: the
+     * Library would otherwise count them missing in every backup. A conversation deleted after
+     * the snapshot counts as deleted. A live conversation fails `not-found`.
+     */
     readonly publishAttachments: (
       archive: LibraryThreadArchive,
-    ) => Effect.Effect<void, LibraryError>;
+    ) => Effect.Effect<ReadonlySet<string>, LibraryError>;
     readonly recordActivity: (
       input: LibraryRecordActivityRequest,
     ) => Effect.Effect<LibraryRecordActivityResult, LibraryError>;
@@ -181,6 +187,12 @@ const encodeDecisions = Schema.encodeEffect(Schema.fromJsonString(LibraryDecisio
 const decodeDecisions = Schema.decodeUnknownEffect(LibraryDecisionsSearchResult);
 const encodeDocuments = Schema.encodeEffect(Schema.fromJsonString(LibraryDocumentsPublishRequest));
 const decodeDocuments = Schema.decodeUnknownEffect(LibraryDocumentsPublishResult);
+const isLibraryError = Schema.is(LibraryError);
+const missingAttachment = (attachmentId: string) =>
+  new LibraryError({
+    reason: "not-found",
+    detail: `Attachment ${attachmentId} is missing from this computer.`,
+  });
 const make = Effect.gen(function* () {
   const registrations = yield* PubSub.unbounded<LibraryWorkingCopy>();
   const copyRegistrations = Stream.fromPubSub(registrations);
@@ -218,40 +230,72 @@ const make = Effect.gen(function* () {
   if (connection.kind === "unavailable") return unavailable(true);
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
+  // Deleting a conversation removes its attachment files, and that can happen before its last
+  // snapshot is uploaded. Null means the file is gone and nothing can bring it back.
+  const sourceFile = Effect.fnUntraced(function* (attachmentId: string) {
+    const path = resolveAttachmentPathById({ attachmentsDir: config.attachmentsDir, attachmentId });
+    if (path === null) return null;
+    return yield* fs.stat(path).pipe(
+      Effect.map((info) => ({ path, size: Number(info.size) })),
+      Effect.catchIf(
+        (cause) => cause.reason._tag === "NotFound",
+        () => Effect.succeed(null),
+      ),
+    );
+  });
+  // A snapshot queued before its conversation was deleted still says live, and the journal sends
+  // it before the deletion's own snapshot, after deletion removed the files.
+  const wasDeleted = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
+    if (archive.summary.deleted === true) return true;
+    const rows = yield* sql<{
+      deleted: number;
+    }>`SELECT 1 AS deleted FROM orchestration_v2_projection_threads WHERE thread_id=${archive.summary.threadId} AND deleted_at IS NOT NULL`;
+    return rows.length > 0;
+  });
   if (connection.kind === "authority") {
     const localLibrary = yield* LibraryService.LibraryService;
     const localAssets = yield* Assets.LibraryAssetService;
     const localPreviewAccess = yield* PreviewAccessService;
-    const publishLocalAttachments = Effect.fnUntraced(function* (archive: LibraryThreadArchive) {
-      for (const attachment of [
-        ...libraryAttachments(archive),
-        ...(yield* libraryPageUploads(fs, config.attachmentsDir, archive)),
-      ]) {
-        const sourcePath = resolveAttachmentPathById({
-          attachmentsDir: config.attachmentsDir,
-          attachmentId: attachment.id,
-        });
-        if (sourcePath === null) return yield* new LibraryError({ reason: "not-found" });
-        const stat = yield* fs
-          .stat(sourcePath)
-          .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
-        if (
-          Number(stat.size) !== attachment.sizeBytes ||
-          Number(stat.size) > LIBRARY_ASSET_MAX_BYTES
-        )
-          return yield* new LibraryError({ reason: "invalid" });
-        const bytes = yield* fs
-          .readFile(sourcePath)
-          .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
-        yield* localAssets.put({
-          sourceEnvironmentId: archive.summary.environmentId,
-          attachmentId: attachment.id,
-          filename: attachment.name,
-          contentType: attachment.mimeType,
-          bytes,
-        });
-      }
-    });
+    const publishLocalAttachments = Effect.fnUntraced(
+      function* (archive: LibraryThreadArchive) {
+        const gone = new Set<string>();
+        let deleted: boolean | undefined;
+        for (const attachment of [
+          ...libraryAttachments(archive),
+          ...(yield* libraryPageUploads(fs, config.attachmentsDir, archive)),
+        ]) {
+          const source = yield* sourceFile(attachment.id);
+          if (source === null) {
+            deleted ??= yield* wasDeleted(archive);
+            if (!deleted) return yield* missingAttachment(attachment.id);
+            // An earlier snapshot may have saved it before the file went.
+            const held = yield* localAssets.find(archive.summary.environmentId, attachment.id).pipe(
+              Effect.map((asset) => asset.bytes === attachment.sizeBytes),
+              Effect.catchIf(
+                (error) => error.reason === "not-found",
+                () => Effect.succeed(false),
+              ),
+            );
+            if (!held) gone.add(attachment.id);
+            continue;
+          }
+          if (source.size !== attachment.sizeBytes || source.size > LIBRARY_ASSET_MAX_BYTES)
+            return yield* new LibraryError({ reason: "invalid" });
+          const bytes = yield* fs.readFile(source.path);
+          yield* localAssets.put({
+            sourceEnvironmentId: archive.summary.environmentId,
+            attachmentId: attachment.id,
+            filename: attachment.name,
+            contentType: attachment.mimeType,
+            bytes,
+          });
+        }
+        return gone;
+      },
+      Effect.mapError((cause) =>
+        isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
+      ),
+    );
     return LibraryPublisher.of({
       enabled: true,
       copyRegistrations,
@@ -458,6 +502,40 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
   });
+  const assetEndpoint = (environmentId: EnvironmentId, attachmentId: string) =>
+    endpoint(
+      `/api/loom/library/assets/${encodeURIComponent(environmentId)}/${encodeURIComponent(attachmentId)}`,
+    );
+  const recordAsset = (attachmentId: string, digest: string, bytes: number) =>
+    sql`INSERT INTO fork_library_source_assets (attachment_id,payload_digest,bytes) VALUES (${attachmentId},${digest},${bytes}) ON CONFLICT(attachment_id) DO UPDATE SET payload_digest=excluded.payload_digest,bytes=excluded.bytes`;
+  // The ledger misses assets uploaded another way, such as by the migration script, and the
+  // Library keeps those after the local file is gone. History must keep referencing them.
+  const libraryHolds = Effect.fnUntraced(function* (
+    environmentId: EnvironmentId,
+    attachment: { readonly id: string; readonly sizeBytes: number },
+  ) {
+    const response = yield* execute(
+      HttpClientRequest.get(assetEndpoint(environmentId, attachment.id)),
+      false,
+      true,
+    ).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "not-found",
+        () => Effect.succeed(null),
+      ),
+    );
+    if (response === null) return false;
+    const bytes = new Uint8Array(
+      yield* response.arrayBuffer.pipe(Effect.mapError(() => new LibraryError({ reason: "io" }))),
+    );
+    if (bytes.length !== attachment.sizeBytes) return false;
+    yield* recordAsset(
+      attachment.id,
+      Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+      bytes.length,
+    );
+    return true;
+  });
   const uploadAsset = Effect.fnUntraced(function* (
     environmentId: EnvironmentId,
     attachmentId: string,
@@ -466,11 +544,7 @@ const make = Effect.gen(function* () {
     bytes: Uint8Array,
   ): Effect.fn.Return<LibraryAssetType, LibraryError> {
     const response = yield* execute(
-      HttpClientRequest.put(
-        endpoint(
-          `/api/loom/library/assets/${encodeURIComponent(environmentId)}/${encodeURIComponent(attachmentId)}`,
-        ),
-      ).pipe(
+      HttpClientRequest.put(assetEndpoint(environmentId, attachmentId)).pipe(
         HttpClientRequest.setHeader("x-loom-filename", encodeURIComponent(filename)),
         HttpClientRequest.bodyUint8Array(bytes, contentType),
       ),
@@ -482,6 +556,8 @@ const make = Effect.gen(function* () {
   });
   const publishAttachments = Effect.fnUntraced(
     function* (archive: LibraryThreadArchive) {
+      const gone = new Set<string>();
+      let deleted: boolean | undefined;
       for (const attachment of [
         ...libraryAttachments(archive),
         ...(yield* libraryPageUploads(fs, config.attachmentsDir, archive)),
@@ -490,18 +566,17 @@ const make = Effect.gen(function* () {
           bytes: number;
         }>`SELECT bytes FROM fork_library_source_assets WHERE attachment_id=${attachment.id}`;
         if (published[0]?.bytes === attachment.sizeBytes) continue;
-        const sourcePath = resolveAttachmentPathById({
-          attachmentsDir: config.attachmentsDir,
-          attachmentId: attachment.id,
-        });
-        if (sourcePath === null) return yield* new LibraryError({ reason: "not-found" });
-        const stat = yield* fs.stat(sourcePath);
-        if (
-          Number(stat.size) !== attachment.sizeBytes ||
-          Number(stat.size) > LIBRARY_ASSET_MAX_BYTES
-        )
+        const source = yield* sourceFile(attachment.id);
+        if (source === null) {
+          deleted ??= yield* wasDeleted(archive);
+          if (!deleted) return yield* missingAttachment(attachment.id);
+          if (!(yield* libraryHolds(archive.summary.environmentId, attachment)))
+            gone.add(attachment.id);
+          continue;
+        }
+        if (source.size !== attachment.sizeBytes || source.size > LIBRARY_ASSET_MAX_BYTES)
           return yield* new LibraryError({ reason: "invalid" });
-        const bytes = yield* fs.readFile(sourcePath);
+        const bytes = yield* fs.readFile(source.path);
         const digest = Hex.encode(yield* crypto.digest("SHA-256", bytes));
         const saved = yield* uploadAsset(
           archive.summary.environmentId,
@@ -517,10 +592,13 @@ const make = Effect.gen(function* () {
           saved.bytes !== bytes.length
         )
           return yield* new LibraryError({ reason: "io" });
-        yield* sql`INSERT INTO fork_library_source_assets (attachment_id,payload_digest,bytes) VALUES (${attachment.id},${digest},${bytes.length}) ON CONFLICT(attachment_id) DO UPDATE SET payload_digest=excluded.payload_digest,bytes=excluded.bytes`;
+        yield* recordAsset(attachment.id, digest, bytes.length);
       }
+      return gone;
     },
-    Effect.mapError(() => new LibraryError({ reason: "io" })),
+    Effect.mapError((cause) =>
+      isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
+    ),
   );
   const project = Effect.fnUntraced(function* (projectId: string) {
     const body = yield* encodeProjectRead({ projectId }).pipe(

@@ -1091,22 +1091,77 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     return true;
   });
 
+  /**
+   * An unsettled archived thread sharing a worktree makes its probes answer ready without the
+   * settle action, yet sits outside the loaded view. Archived threads cannot settle and
+   * unarchiving brings them into the view, so a deletion is the one change the key misses.
+   */
+  let deletions = 0;
+
+  /**
+   * The settlement state a free lane's probes answered for. Any related thread joining,
+   * leaving, settling or reopening changes it, and so does any deletion.
+   */
+  const settlementKey = (lane: LaneRow, view: Threads) =>
+    `${deletions}\n` +
+    view.threads
+      .filter((thread) => checkoutOf(thread, view.projects) === lane.checkoutPath)
+      .map(
+        (thread) =>
+          `${thread.id}:${thread.settledOverride}:${thread.settledAt === null ? "" : DateTime.toEpochMillis(thread.settledAt)}`,
+      )
+      .toSorted()
+      .join("\n");
+
+  /**
+   * Only a settled thread with its own worktree runs a settle action; the probe returns at once
+   * for every other thread.
+   */
+  const awaitsSettleAction = (thread: Thread) =>
+    thread.settledOverride === "settled" && thread.worktreePath !== null;
+
+  /**
+   * Free lanes whose probes all answered ready, by lane id. A lane that stays unchanged, for
+   * example one a registered checkout protects, skips its probes on later ticks. A not-ready
+   * answer is never kept: the settlement service already remembers a failed settle action, and
+   * any other failure deserves a retry.
+   */
+  const readyLanes = new Map<string, string>();
+
   /** Settle actions can still use lane files after their thread becomes settled. */
   const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* () {
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return;
+    for (const laneId of readyLanes.keys()) if (!lanes.has(laneId)) readyLanes.delete(laneId);
+    const free = [...lanes.values()].filter((lane) => holdersOf(lane, view).length === 0);
+    let threadsChecked = 0;
+    let notReady = 0;
     yield* Effect.forEach(
-      [...lanes.values()].filter((lane) => holdersOf(lane, view).length === 0),
+      free,
       (lane) =>
         Effect.gen(function* () {
-          const related = view.threads.filter(
-            (thread) => checkoutOf(thread, view.projects) === lane.checkoutPath,
-          );
-          for (const thread of related) {
-            if (!(yield* settlement.prepareForCleanup(thread.id))) {
-              liveOf(lane.id).message = "Waiting for the project's finish action to complete.";
-              return;
+          const key = settlementKey(lane, view);
+          if (readyLanes.get(lane.id) !== key) {
+            readyLanes.delete(lane.id);
+            const pending = view.threads.filter(
+              (thread) =>
+                awaitsSettleAction(thread) &&
+                checkoutOf(thread, view.projects) === lane.checkoutPath,
+            );
+            for (const thread of pending) {
+              threadsChecked++;
+              // The watchdog repeats this for every free lane each tick, so per-probe spans
+              // would flood the trace. Settle actions stay traced on the thread.settled path.
+              const ready = yield* settlement
+                .prepareForCleanup(thread.id)
+                .pipe(Effect.withTracerEnabled(false));
+              if (!ready) {
+                notReady++;
+                liveOf(lane.id).message = "Waiting for the project's finish action to complete.";
+                return;
+              }
             }
+            readyLanes.set(lane.id, key);
           }
           // Startup and settle hooks take the checkout lease before the lane mutation lock.
           yield* withWorkspaceLease(
@@ -1116,6 +1171,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
                 const latest = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
                 if (latest === null || !lanes.has(lane.id) || holdersOf(lane, latest).length > 0)
                   return;
+                // A thread that settled after the probes has a settle action they did not await.
+                if (settlementKey(lane, latest) !== key) return;
                 yield* removeLane(lane);
               }),
             ),
@@ -1123,6 +1180,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         }).pipe(Effect.ignore({ log: true })),
       { concurrency: 8, discard: true },
     );
+    yield* Effect.annotateCurrentSpan({ lanesChecked: free.length, threadsChecked, notReady });
   });
 
   const clear = Effect.fn("ProjectLifecycle.clear")(function* (
@@ -1554,6 +1612,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             );
           case "thread.archived":
           case "thread.deleted":
+            if (event.type === "thread.deleted") deletions++;
             return getSettings.pipe(
               Effect.flatMap((settings) =>
                 settings.enabled

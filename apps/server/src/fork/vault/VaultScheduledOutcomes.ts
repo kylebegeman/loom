@@ -1,5 +1,6 @@
 import { ScheduledTaskError, type ScheduledTask, type MessageId } from "@t3tools/contracts";
 import { readVaultPrompt } from "@t3tools/contracts/fork";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -87,26 +88,37 @@ export const make = Effect.gen(function* () {
       `.pipe(Effect.mapError(failure));
       },
     ),
+    // The scheduler polls this every few seconds and the table is almost always empty or
+    // current, so it reads on the reader and takes the writer only to remove an orphan.
     changed: Effect.gen(function* () {
-      yield* sql`DELETE FROM fork_vault_scheduled_runs WHERE NOT EXISTS (
-        SELECT 1 FROM scheduled_tasks task WHERE task.task_id = fork_vault_scheduled_runs.task_id
-          AND task.created_at = fork_vault_scheduled_runs.task_created_at
-          AND task.last_run_at = fork_vault_scheduled_runs.started_at
-      )`.pipe(Effect.mapError(failure));
       const rows = yield* sql<{
         task_id: string;
         status: string | null;
         updated_at: string | null;
         deleted_at: string | null;
+        orphaned: number;
       }>`
-        SELECT ownership.task_id, run.status, run.completed_at AS updated_at, thread.deleted_at
+        SELECT ownership.task_id, run.status, run.completed_at AS updated_at, thread.deleted_at,
+          NOT EXISTS (
+            SELECT 1 FROM scheduled_tasks task WHERE task.task_id = ownership.task_id
+              AND task.created_at = ownership.task_created_at
+              AND task.last_run_at = ownership.started_at
+          ) AS orphaned
         FROM fork_vault_scheduled_runs ownership
         LEFT JOIN orchestration_v2_projection_messages message ON message.message_id = ownership.message_id
         LEFT JOIN orchestration_v2_projection_runs run ON run.run_id = message.run_id
         LEFT JOIN orchestration_v2_projection_threads thread ON thread.thread_id = message.thread_id
         ORDER BY ownership.task_id
-      `.pipe(Effect.mapError(failure));
+      `.pipe(NodeSqliteClient.readOnly, Effect.mapError(failure));
+      // The DELETE re-checks each row, so a row that track() refreshed since the read stays.
+      if (rows.some((row) => row.orphaned))
+        yield* sql`DELETE FROM fork_vault_scheduled_runs WHERE NOT EXISTS (
+          SELECT 1 FROM scheduled_tasks task WHERE task.task_id = fork_vault_scheduled_runs.task_id
+            AND task.created_at = fork_vault_scheduled_runs.task_created_at
+            AND task.last_run_at = fork_vault_scheduled_runs.started_at
+        )`.pipe(Effect.mapError(failure));
       const signature = rows
+        .filter((row) => !row.orphaned)
         .map((r) => `${r.task_id}:${r.status}:${r.updated_at}:${r.deleted_at}`)
         .join("\n");
       return yield* Ref.getAndSet(previous, signature).pipe(Effect.map((old) => old !== signature));

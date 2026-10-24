@@ -9,6 +9,7 @@ import {
   type LibraryIngestHistoryRequest,
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeBuffer from "node:buffer";
 import * as NodeZlib from "node:zlib";
 import * as NodeUtil from "node:util";
@@ -108,6 +109,37 @@ const MILESTONE_EVENTS = `event_type IN ('thread.created','thread.metadata-updat
 // Navigation changes nothing a reader of the history sees.
 const NAVIGATION_EVENTS = `event_type IN ('thread.visited','thread.marked-unread','thread.pin-reordered','thread.active-reordered')`;
 
+type TurnItem = LibraryThreadArchive["projection"]["turnItems"][number];
+// Covers every place libraryAttachments reads, and keeps each collection's length so a delta's
+// prefixes still line up.
+const withoutAttachments = (
+  thread: LibraryThreadArchive,
+  ids: ReadonlySet<string>,
+): LibraryThreadArchive => {
+  const keep = <A extends { readonly id: string }>(attachments: ReadonlyArray<A>) =>
+    attachments.filter((attachment) => !ids.has(attachment.id));
+  const item = (turnItem: TurnItem): TurnItem =>
+    (turnItem.type === "user_message" || turnItem.type === "assistant_message") &&
+    turnItem.attachments !== undefined
+      ? { ...turnItem, attachments: keep(turnItem.attachments) }
+      : turnItem;
+  return {
+    ...thread,
+    projection: {
+      ...thread.projection,
+      messages: thread.projection.messages.map((message) => ({
+        ...message,
+        attachments: keep(message.attachments),
+      })),
+      turnItems: thread.projection.turnItems.map(item),
+      visibleTurnItems: thread.projection.visibleTurnItems.map((row) => ({
+        ...row,
+        item: item(row.item),
+      })),
+    },
+  };
+};
+
 const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
   if (!publisher.enabled)
@@ -151,20 +183,15 @@ const make = Effect.gen(function* () {
   // storage limit reported while they wait, and retry as soon as that size fits.
   const oversized = new Map<ThreadId, number>();
   let reconciled = false;
+  let prunedBaselines = false;
   let supportsDeltas = false;
-  // octet_length reads each payload's size from its record header, not its pages.
-  const outboxBytes = sql<{
-    bytes: number;
-  }>`SELECT COALESCE(SUM(octet_length(payload_json) + COALESCE(octet_length(wire_json),0)),0) AS bytes FROM fork_library_source_outbox`.pipe(
-    Effect.map((rows) => rows[0]?.bytes ?? 0),
-  );
   const readState = sql<{
-    journal_id: string;
-    environment_id: string;
-    authority_id: string;
-    authority_epoch: number;
-    scan_sequence: number;
-    acknowledged_sequence: number;
+    readonly journal_id: string;
+    readonly environment_id: string;
+    readonly authority_id: string;
+    readonly authority_epoch: number;
+    readonly scan_sequence: number;
+    readonly acknowledged_sequence: number;
   }>`SELECT journal_id,environment_id,authority_id,authority_epoch,scan_sequence,acknowledged_sequence FROM fork_library_source_state WHERE key='host'`;
   const state = mapIo(
     Effect.gen(function* () {
@@ -173,46 +200,57 @@ const make = Effect.gen(function* () {
       return current;
     }),
   );
-  const ensureAuthority = (authority: LibraryInfo) =>
-    mapIo(
-      sql.withTransaction(
-        Effect.gen(function* () {
-          const current = (yield* readState)[0];
-          supportsDeltas = authority.features?.includes(LIBRARY_HISTORY_DELTAS_FEATURE) ?? false;
-          if (current !== undefined) {
-            if (
-              current.environment_id !== environmentId ||
-              current.authority_id !== authority.authorityId ||
-              current.authority_epoch !== authority.authorityEpoch
-            )
-              return yield* new LibraryError({ reason: "blocked" });
-            return;
-          }
-          const journalId = yield* randomUuidV4;
-          const bindings = yield* workspaces.bindings;
-          const imported = bindings.map((entry) => entry.importedHistory);
-          const scanSequence =
-            imported.length > 0 &&
-            imported.every(
-              (entry) =>
-                entry &&
-                entry.authorityId === authority.authorityId &&
-                entry.authorityEpoch === authority.authorityEpoch,
-            )
-              ? Math.min(...imported.map((entry) => entry!.sourceEventSequence))
-              : 0;
-          yield* sql`INSERT INTO fork_library_source_state (key,journal_id,environment_id,authority_id,authority_epoch,scan_sequence) VALUES ('host',${journalId},${environmentId},${authority.authorityId},${authority.authorityEpoch},${scanSequence})`;
-        }),
-      ),
+  const ensureAuthority = (authority: LibraryInfo) => {
+    const check = (current: Effect.Success<typeof state>) =>
+      current.environment_id !== environmentId ||
+      current.authority_id !== authority.authorityId ||
+      current.authority_epoch !== authority.authorityEpoch
+        ? Effect.fail(new LibraryError({ reason: "blocked" }))
+        : Effect.void;
+    return mapIo(
+      Effect.gen(function* () {
+        supportsDeltas = authority.features?.includes(LIBRARY_HISTORY_DELTAS_FEATURE) ?? false;
+        // Every pass checks the authority but only the first ever writes this row, so the write
+        // transaction opens only while it is missing.
+        const existing = (yield* readState)[0];
+        if (existing !== undefined) return yield* check(existing);
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            const current = (yield* readState)[0];
+            if (current !== undefined) return yield* check(current);
+            const journalId = yield* randomUuidV4;
+            const bindings = yield* workspaces.bindings;
+            const imported = bindings.map((entry) => entry.importedHistory);
+            const scanSequence =
+              imported.length > 0 &&
+              imported.every(
+                (entry) =>
+                  entry &&
+                  entry.authorityId === authority.authorityId &&
+                  entry.authorityEpoch === authority.authorityEpoch,
+              )
+                ? Math.min(...imported.map((entry) => entry!.sourceEventSequence))
+                : 0;
+            yield* sql`INSERT INTO fork_library_source_state (key,journal_id,environment_id,authority_id,authority_epoch,scan_sequence) VALUES ('host',${journalId},${environmentId},${authority.authorityId},${authority.authorityEpoch},${scanSequence})`;
+          }),
+        );
+      }),
     );
-  const queueThread = Effect.fnUntraced(function* (threadId: ThreadId) {
-    const current = yield* sql<{
-      queued_sequence: number;
-    }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
-    const snapshot = yield* source.snapshotThread({ threadId });
-    if (current[0] !== undefined && current[0].queued_sequence >= snapshot.summary.sequence) {
+  };
+  // Only capture writes the outbox and these rows, always under the drain lock, so the caller
+  // passes the queued sequence and outbox size it read once for the whole pass.
+  const queueThread = Effect.fnUntraced(function* (
+    threadId: ThreadId,
+    queuedSequence: number | undefined,
+    pendingBytes: number,
+  ) {
+    // The reader takes the snapshot in one read transaction, so no write waits while a long
+    // history is read; anything committed after it is a later event the next scan finds. The
+    // reader is one shared connection, so other reads, Vault checks among them, still wait.
+    const snapshot = yield* source.snapshotThread({ threadId }).pipe(NodeSqliteClient.readOnly);
+    if (queuedSequence !== undefined && queuedSequence >= snapshot.summary.sequence) {
       oversized.delete(threadId);
-      return "current" as const;
+      return { result: "current" as const, bytes: 0 };
     }
     const json = yield* encodeArchiveJson(snapshot);
     // A history longer than V8 can hold in one string is larger than any outbox.
@@ -240,16 +278,17 @@ const make = Effect.gen(function* () {
         ) *
           1000,
     );
-    const pendingBytes = yield* outboxBytes;
     if (payload === null || pendingBytes + bytes > maxPendingBytes) {
       oversized.set(threadId, bytes);
-      return "waiting" as const;
+      return { result: "waiting" as const, bytes: 0 };
     }
     let wire: string | null = null;
     if (supportsDeltas) {
       const baseline = (yield* sql<{
         bytes: Uint8Array;
-      }>`SELECT bytes FROM fork_library_source_baselines WHERE thread_id=${threadId}`)[0];
+      }>`SELECT bytes FROM fork_library_source_baselines WHERE thread_id=${threadId}`.pipe(
+        NodeSqliteClient.readOnly,
+      ))[0];
       if (baseline !== undefined) {
         const previous = yield* Effect.tryPromise(() => decompress(baseline.bytes)).pipe(
           Effect.flatMap((bytes) => decodeArchive(bytes.toString("utf8"))),
@@ -263,25 +302,38 @@ const make = Effect.gen(function* () {
           wire = yield* encodeWire(createHistoryDelta(previous, snapshot));
       }
     }
+    let wireBytes = 0;
     if (wire !== null) {
-      const wireBytes = NodeBuffer.Buffer.byteLength(wire);
-      if (wireBytes >= bytes || pendingBytes + bytes + wireBytes > maxPendingBytes) wire = null;
+      wireBytes = NodeBuffer.Buffer.byteLength(wire);
+      if (wireBytes >= bytes || pendingBytes + bytes + wireBytes > maxPendingBytes) {
+        wire = null;
+        wireBytes = 0;
+      }
     }
     oversized.delete(threadId);
-    yield* sql`INSERT INTO fork_library_source_outbox (thread_id,source_sequence,payload_json,wire_json) VALUES (${threadId},${snapshot.summary.sequence},${payload},${wire})`;
-    yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence) VALUES (${threadId},${snapshot.summary.sequence}) ON CONFLICT(thread_id) DO UPDATE SET queued_sequence=excluded.queued_sequence`;
-    return "queued" as const;
+    yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`INSERT INTO fork_library_source_outbox (thread_id,source_sequence,payload_json,wire_json) VALUES (${threadId},${snapshot.summary.sequence},${payload},${wire})`;
+        yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence) VALUES (${threadId},${snapshot.summary.sequence}) ON CONFLICT(thread_id) DO UPDATE SET queued_sequence=excluded.queued_sequence`;
+      }),
+    );
+    return { result: "queued" as const, bytes: bytes + wireBytes };
   });
-  // Untraced like queueThread: the background drain captures every five seconds. A flush passes
-  // the threads it has already snapshotted.
+  // The pass's own statements trace under the drain's span. Work repeated for every thread runs
+  // with tracing off below: fnUntraced drops only its own span, not the statements inside. A
+  // flush passes the threads it has already snapshotted.
   const capture = Effect.fnUntraced(function* (flushed: Set<ThreadId> | undefined) {
     const current = yield* state;
     const bindings = yield* workspaces.bindings;
     const bound = new Set(bindings.map((entry) => entry.threadId));
-    const queued = new Set(
+    const queued = new Map(
       (yield* sql<{
         thread_id: string;
-      }>`SELECT thread_id FROM fork_library_source_threads`).map((entry) => entry.thread_id),
+        queued_sequence: number;
+      }>`SELECT thread_id,queued_sequence FROM fork_library_source_threads`).map((entry) => [
+        entry.thread_id,
+        entry.queued_sequence,
+      ]),
     );
     // A new binding needs an initial snapshot even when no later execution event arrives.
     for (const entry of bindings) {
@@ -295,6 +347,7 @@ const make = Effect.gen(function* () {
         // Activation verified these exact bytes against this authority before staging the
         // host binding. Seed acknowledgements without replaying the entire source history.
         yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
+        queued.set(entry.threadId, imported.sequence);
       } else deferred.add(entry.threadId);
     }
     if (!reconciled) {
@@ -336,107 +389,124 @@ const make = Effect.gen(function* () {
       if (event.milestone === 1 && bound.has(threadId)) dirty.set(threadId, event.sequence);
     }
     for (const [threadId, sequence] of dirty) {
-      const rows = yield* sql<{
-        queued_sequence: number;
-      }>`SELECT queued_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`;
-      if ((rows[0]?.queued_sequence ?? -1) < sequence) deferred.add(threadId);
+      if ((queued.get(threadId) ?? -1) < sequence) deferred.add(threadId);
     }
     const last = events.at(-1);
     if (last !== undefined)
       yield* sql`UPDATE fork_library_source_state SET scan_sequence=${last.sequence} WHERE key='host'`;
     const now = yield* Clock.currentTimeMillis;
     let added = false;
-    for (const threadId of deferred) {
-      if (!bound.has(threadId)) {
-        deferred.delete(threadId);
-        oversized.delete(threadId);
-        continue;
-      }
-      if (flushed?.has(threadId)) continue;
-      if ((spacedUntil.get(threadId) ?? 0) > now) {
-        const waiting = oversized.get(threadId);
-        // A flush ignores spacing. A snapshot that did not fit retries before its spacing ends
-        // only once the outbox has room for its last size.
-        if (
-          waiting === undefined
-            ? flushed === undefined
-            : waiting > maxPendingBytes - (yield* outboxBytes)
-        )
-          continue;
-      }
+    let snapshotsQueued = 0;
+    if (deferred.size > 0) {
+      // octet_length reads each payload's size from its record header, not its pages.
+      const outbox = yield* sql<{
+        thread_id: string;
+        bytes: number;
+      }>`SELECT thread_id,octet_length(payload_json)+COALESCE(octet_length(wire_json),0) AS bytes FROM fork_library_source_outbox`;
       // The Library accepts a journal only in order, so a queued snapshot is never replaced.
       // Later milestones wait for its acknowledgement and then share one fresh snapshot.
-      const outstanding =
-        (yield* sql<{
-          count: number;
-        }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
-          ?.count ?? 0;
-      if (outstanding > 0) continue;
-      // A snapshot that does not fit stays deferred without holding back smaller ones. Any
-      // other failure ends this pass and keeps the conversation deferred.
-      const result = yield* sql.withTransaction(queueThread(threadId));
-      if (result === "waiting") continue;
-      deferred.delete(threadId);
-      flushed?.add(threadId);
-      if (result === "queued") added = true;
+      const outstanding = new Set(outbox.map((row) => row.thread_id));
+      let pendingBytes = outbox.reduce((total, row) => total + row.bytes, 0);
+      for (const threadId of deferred) {
+        if (!bound.has(threadId)) {
+          deferred.delete(threadId);
+          oversized.delete(threadId);
+          continue;
+        }
+        if (flushed?.has(threadId)) continue;
+        const waiting = oversized.get(threadId);
+        const spaced = (spacedUntil.get(threadId) ?? 0) > now;
+        if (waiting !== undefined && waiting > maxPendingBytes - pendingBytes) {
+          // Only acknowledgements free room, so a snapshot that fits an empty outbox waits for
+          // them rather than being taken again every pass. One larger than the whole outbox can
+          // fit only if its history shrank, which a new snapshot after its spacing finds out.
+          if (waiting <= maxPendingBytes || spaced) continue;
+        } else if (waiting === undefined && spaced && flushed === undefined) continue;
+        if (outstanding.has(threadId)) continue;
+        // A snapshot that does not fit stays deferred without holding back smaller ones. Any
+        // other failure ends this pass and keeps the conversation deferred. A backlog can defer
+        // hundreds of conversations, so their snapshots run with tracing off.
+        const queuedThread = yield* queueThread(threadId, queued.get(threadId), pendingBytes).pipe(
+          Effect.withTracerEnabled(false),
+        );
+        if (queuedThread.result === "waiting") continue;
+        deferred.delete(threadId);
+        flushed?.add(threadId);
+        if (queuedThread.result === "queued") {
+          added = true;
+          snapshotsQueued += 1;
+          pendingBytes += queuedThread.bytes;
+        }
+      }
     }
-    return { queued: added, waiting: [...deferred].some((threadId) => oversized.has(threadId)) };
+    const waiting = [...deferred].filter((threadId) => oversized.has(threadId)).length;
+    yield* Effect.annotateCurrentSpan({
+      "library.deferred": deferred.size,
+      "library.queued": snapshotsQueued,
+      "library.waiting": waiting,
+    });
+    return { queued: added, waiting: waiting > 0, bound };
   }, mapIo);
   const publish = mapIo(
     Effect.gen(function* () {
       const current = yield* state;
+      // octet_length reads sizes from record headers, so only the payloads this batch sends are
+      // read, and the rest of a large backlog is not loaded again on every pass.
       const rows = yield* sql<{
         sequence: number;
         thread_id: string;
         source_sequence: number;
-        payload_json: string;
-        wire_json: string | null;
-      }>`SELECT sequence,thread_id,source_sequence,payload_json,wire_json FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} ORDER BY sequence LIMIT ${PUBLISH_BATCH_LIMIT}`;
+        payload_bytes: number;
+        wire_bytes: number | null;
+      }>`SELECT sequence,thread_id,source_sequence,octet_length(payload_json) AS payload_bytes,octet_length(wire_json) AS wire_bytes FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} ORDER BY sequence LIMIT ${PUBLISH_BATCH_LIMIT}`;
       // A previous attempt may already be committed. Preserve its exact fingerprint even if
       // the Library is temporarily downgraded; an older reader would treat tails as full history.
-      if (!supportsDeltas && rows.some((row) => row.wire_json !== null))
+      if (!supportsDeltas && rows.some((row) => row.wire_bytes !== null))
         return yield* new LibraryError({ reason: "publisher-unavailable" });
       const batch: (typeof rows)[number][] = [];
       let bytes = 0;
       for (const row of rows) {
-        const size = NodeBuffer.Buffer.byteLength(row.wire_json ?? row.payload_json);
+        const size = row.wire_bytes ?? row.payload_bytes;
         if (batch.length > 0 && bytes + size > PUBLISH_BATCH_BYTES) break;
         batch.push(row);
         bytes += size;
       }
       if (batch.length === 0) return false;
-      const fullEntries = yield* Effect.forEach(batch, (row) =>
-        decodeArchive(row.payload_json).pipe(
+      const through = batch.at(-1)!.sequence;
+      // The drain lock keeps these rows unchanged, and the reader sees every committed one.
+      const payloads = yield* sql<{
+        payload_json: string;
+        wire_json: string | null;
+      }>`SELECT payload_json,wire_json FROM fork_library_source_outbox WHERE sequence>${current.acknowledged_sequence} AND sequence<=${through} ORDER BY sequence`.pipe(
+        NodeSqliteClient.readOnly,
+      );
+      if (payloads.length !== batch.length) return yield* new LibraryError({ reason: "io" });
+      const fullEntries = yield* Effect.forEach(batch, (row, index) =>
+        decodeArchive(payloads[index]!.payload_json).pipe(
           Effect.map((thread) => ({ sequence: row.sequence, thread })),
         ),
       );
-      const entries = yield* Effect.forEach(batch, (row, index) =>
-        row.wire_json === null
+      const entries = yield* Effect.forEach(batch, (row, index) => {
+        const wire = payloads[index]!.wire_json;
+        return wire === null
           ? Effect.succeed(fullEntries[index]!)
-          : decodeWire(row.wire_json).pipe(
-              Effect.map((wire) => ({ sequence: row.sequence, ...wire })),
-            ),
-      );
+          : decodeWire(wire).pipe(Effect.map((sent) => ({ sequence: row.sequence, ...sent })));
+      });
       const copies = new Set<string>();
-      for (const entry of fullEntries) {
+      for (const [index, entry] of fullEntries.entries()) {
         const copyId = entry.thread.summary.workingCopyId;
         if (copyId !== null && !copies.has(copyId)) {
-          const { copy } = yield* workspaces.get(copyId);
-          const fingerprint = Hex.encode(
-            yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
-          );
-          yield* publisher.registerCopy({
-            requestId: `${current.journal_id}:copy:${fingerprint}`,
-            authorityId: current.authority_id,
-            authorityEpoch: current.authority_epoch,
-            copy,
-          });
+          yield* registerChangedCopy(current, (yield* workspaces.get(copyId)).copy);
           copies.add(copyId);
         }
         // History is acknowledged only after every referenced attachment has verified storage.
-        yield* publisher.publishAttachments(entry.thread);
+        // The same attachments are gone on every retry, so a resent batch keeps its fingerprint.
+        const gone = yield* publisher.publishAttachments(entry.thread);
+        if (gone.size > 0) {
+          const sent = entries[index]!;
+          entries[index] = { ...sent, thread: withoutAttachments(sent.thread, gone) };
+        }
       }
-      const through = batch.at(-1)!.sequence;
       const request: LibraryIngestHistoryRequest = {
         requestId: `${current.journal_id}:${current.acknowledged_sequence}:${through}`,
         sourceEnvironmentId: environmentId,
@@ -453,15 +523,23 @@ const make = Effect.gen(function* () {
         response.lastSequence < through
       )
         return yield* new LibraryError({ reason: "sequence-conflict" });
-      const baselines = yield* Effect.forEach(batch, (row) =>
-        Effect.tryPromise(() => compress(row.payload_json)),
+      // A baseline only lets the next snapshot go up as a delta. The Library already holds a
+      // deleted conversation's last history, so it keeps none; a later snapshot goes up whole.
+      const baselines = yield* Effect.forEach(payloads, (row, index) =>
+        fullEntries[index]!.thread.summary.deleted === true
+          ? Effect.succeed(null)
+          : Effect.tryPromise(() => compress(row.payload_json)),
       );
       // A cursor beyond this batch does not prove any later local entry was uploaded.
       yield* sql.withTransaction(
         Effect.gen(function* () {
           for (const [index, row] of batch.entries()) {
             yield* sql`UPDATE fork_library_source_threads SET acknowledged_sequence=MAX(acknowledged_sequence,${row.source_sequence}) WHERE thread_id=${row.thread_id}`;
-            yield* sql`INSERT INTO fork_library_source_baselines(thread_id,bytes) VALUES (${row.thread_id},${new Uint8Array(baselines[index]!)}) ON CONFLICT(thread_id) DO UPDATE SET bytes=excluded.bytes`;
+            const baseline = baselines[index];
+            if (baseline === null || baseline === undefined)
+              yield* sql`DELETE FROM fork_library_source_baselines WHERE thread_id=${row.thread_id}`;
+            else
+              yield* sql`INSERT INTO fork_library_source_baselines(thread_id,bytes) VALUES (${row.thread_id},${new Uint8Array(baseline)}) ON CONFLICT(thread_id) DO UPDATE SET bytes=excluded.bytes`;
           }
           yield* sql`UPDATE fork_library_source_state SET acknowledged_sequence=${through} WHERE key='host'`;
           yield* sql`DELETE FROM fork_library_source_outbox WHERE sequence<=${through}`;
@@ -470,7 +548,62 @@ const make = Effect.gen(function* () {
       return true;
     }),
   );
+  // Baselines can hold tens of megabytes each. An unbound conversation sends no more snapshots,
+  // and a deleted one whose final history the Library holds has nothing left to send as a delta.
+  const pruneBaselines = Effect.fn("LibraryReplication.pruneBaselines")(function* (
+    bound: ReadonlySet<ThreadId>,
+    includeDeleted: boolean,
+  ) {
+    const stale = new Set(
+      (yield* sql<{ thread_id: string }>`SELECT thread_id FROM fork_library_source_baselines`)
+        .map((row) => row.thread_id)
+        .filter((threadId) => !bound.has(ThreadId.make(threadId))),
+    );
+    if (includeDeleted)
+      for (const row of yield* sql<{ thread_id: string }>`
+        SELECT b.thread_id FROM fork_library_source_baselines b
+        JOIN fork_library_source_threads t ON t.thread_id=b.thread_id
+        JOIN orchestration_v2_projection_threads p ON p.thread_id=b.thread_id
+        WHERE p.deleted_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM fork_library_source_outbox o WHERE o.thread_id=b.thread_id)
+          AND NOT EXISTS (
+            SELECT 1 FROM orchestration_events
+            WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=b.thread_id
+              AND sequence>t.acknowledged_sequence AND NOT (${navigation}))`)
+        stale.add(row.thread_id);
+    yield* Effect.annotateCurrentSpan({ "library.baselines_removed": stale.size });
+    // One statement per row keeps each overflow-chain release a short write.
+    yield* Effect.forEach(
+      stale,
+      (threadId) => sql`DELETE FROM fork_library_source_baselines WHERE thread_id=${threadId}`,
+      { discard: true },
+    ).pipe(Effect.withTracerEnabled(false));
+  }, mapIo);
+  // Registering a copy also triggers a document report of its repositories, so it is sent again
+  // only once the copy or the authority holding it changed.
   const publishedCopies = new Map<string, string>();
+  const registerChangedCopy = Effect.fnUntraced(function* (
+    current: {
+      readonly journal_id: string;
+      readonly authority_id: string;
+      readonly authority_epoch: number;
+    },
+    copy: LibraryWorkingCopy,
+  ) {
+    const fingerprint = Hex.encode(
+      yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
+    );
+    const requestId = `${current.journal_id}:copy:${fingerprint}`;
+    const published = `${current.authority_id}:${current.authority_epoch}:${requestId}`;
+    if (publishedCopies.get(copy.id) === published) return;
+    yield* publisher.registerCopy({
+      requestId,
+      authorityId: current.authority_id,
+      authorityEpoch: current.authority_epoch,
+      copy,
+    });
+    publishedCopies.set(copy.id, published);
+  });
   const publishCopyChanges = Effect.fn("LibraryReplication.publishCopyChanges")(function* () {
     if (Option.isNone(workspace)) return;
     const current = yield* state;
@@ -481,50 +614,45 @@ const make = Effect.gen(function* () {
         copy.state === "failed"
       )
         continue;
-      const fingerprint = Hex.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
-      );
-      if (publishedCopies.get(copy.id) === fingerprint) continue;
-      yield* publisher.registerCopy({
-        requestId: `${current.journal_id}:copy:${fingerprint}`,
-        authorityId: current.authority_id,
-        authorityEpoch: current.authority_epoch,
-        copy,
-      });
-      publishedCopies.set(copy.id, fingerprint);
+      yield* registerChangedCopy(current, copy);
     }
   }, mapIo);
 
-  // Status checks every bound conversation, so keep its per-thread reads untraced.
-  const threadStatus = Effect.fnUntraced(function* (threadId: ThreadId) {
-    const row = (yield* sql<{
-      queued_sequence: number;
-      acknowledged_sequence: number;
-    }>`SELECT queued_sequence,acknowledged_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`)[0];
-    const eventTail =
-      (yield* sql<{
-        sequence: number;
-      }>`SELECT COALESCE(MAX(sequence),0) AS sequence FROM orchestration_events WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=${threadId} AND NOT (${navigation})`)[0]
-        ?.sequence ?? 0;
-    const latest = Math.max(eventTail, row?.queued_sequence ?? 0);
-    const pending =
-      (yield* sql<{
-        count: number;
-      }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
-        ?.count ?? 0;
-    return {
-      threadId,
-      queuedSequence: row?.queued_sequence ?? 0,
-      acknowledgedSequence: row?.acknowledged_sequence ?? 0,
-      currentSequence: latest,
-      // Compaction can replace a deferred milestone with navigation the tail ignores.
-      pending:
-        row === undefined ||
-        pending > 0 ||
-        latest > row.acknowledged_sequence ||
-        deferred.has(threadId),
-    };
-  }, mapIo);
+  // Status checks every bound conversation, so its reads run with tracing off; fnUntraced alone
+  // would still trace each statement.
+  const threadStatus = Effect.fnUntraced(
+    function* (threadId: ThreadId) {
+      const row = (yield* sql<{
+        queued_sequence: number;
+        acknowledged_sequence: number;
+      }>`SELECT queued_sequence,acknowledged_sequence FROM fork_library_source_threads WHERE thread_id=${threadId}`)[0];
+      const eventTail =
+        (yield* sql<{
+          sequence: number;
+        }>`SELECT COALESCE(MAX(sequence),0) AS sequence FROM orchestration_events WHERE application_event_version=2 AND aggregate_kind='thread' AND stream_id=${threadId} AND NOT (${navigation})`)[0]
+          ?.sequence ?? 0;
+      const latest = Math.max(eventTail, row?.queued_sequence ?? 0);
+      const pending =
+        (yield* sql<{
+          count: number;
+        }>`SELECT COUNT(*) AS count FROM fork_library_source_outbox WHERE thread_id=${threadId}`)[0]
+          ?.count ?? 0;
+      return {
+        threadId,
+        queuedSequence: row?.queued_sequence ?? 0,
+        acknowledgedSequence: row?.acknowledged_sequence ?? 0,
+        currentSequence: latest,
+        // Compaction can replace a deferred milestone with navigation the tail ignores.
+        pending:
+          row === undefined ||
+          pending > 0 ||
+          latest > row.acknowledged_sequence ||
+          deferred.has(threadId),
+      };
+    },
+    mapIo,
+    Effect.withTracerEnabled(false),
+  );
   const isHistoryAcknowledged = Effect.fn("LibraryReplication.isHistoryAcknowledged")(function* (
     threadId: ThreadId,
   ) {
@@ -537,9 +665,16 @@ const make = Effect.gen(function* () {
     const initialized = (yield* readState)[0] !== undefined;
     if (!initialized) yield* ensureAuthority(yield* publisher.info);
     const captured = yield* capture(flushed);
+    // The first pass also clears baselines left from before this process, even while the
+    // Library is out of reach.
+    if (!prunedBaselines) {
+      yield* pruneBaselines(captured.bound, true);
+      prunedBaselines = true;
+    }
     // Keep capturing committed milestones during an outage once this journal is established.
     if (initialized) yield* ensureAuthority(yield* publisher.info);
     const published = yield* publish;
+    if (published) yield* pruneBaselines(captured.bound, false);
     yield* publishCopyChanges();
     if (Option.isSome(workspace)) {
       yield* workspace.value.cleanupTemporaryCopies(isHistoryAcknowledged);
@@ -564,14 +699,17 @@ const make = Effect.gen(function* () {
         return yield* settle(result.waiting);
       }),
     )
-    .pipe(Effect.tapError((error) => Ref.set(failure, error.reason)));
+    .pipe(
+      Effect.tapError((error) => Ref.set(failure, error.reason)),
+      Effect.withSpan("LibraryReplication.flush"),
+    );
   const status = mapIo(
     Effect.gen(function* () {
       const current = (yield* readState)[0];
       const outbox = (yield* sql<{
         count: number;
         bytes: number;
-      }>`SELECT COUNT(*) AS count,COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))),0) AS bytes FROM fork_library_source_outbox`)[0];
+      }>`SELECT COUNT(*) AS count,COALESCE(SUM(octet_length(payload_json)),0) AS bytes FROM fork_library_source_outbox`)[0];
       const count = outbox?.count ?? 0;
       const bindings = yield* workspaces.bindings;
       const threads = yield* Effect.forEach(bindings, (entry) => threadStatus(entry.threadId));
@@ -587,8 +725,30 @@ const make = Effect.gen(function* () {
       };
     }),
   );
+  // A stuck journal fails the same way every five seconds, so only a new failure is logged.
+  let loggedFailure: string | null = null;
   yield* ServerActivation.forkParked(
-    drain.pipe(Effect.ignore, Effect.repeat(Schedule.spaced("5 seconds"))),
+    drain.pipe(
+      // Each pass is its own trace; the parked fiber has no parent span to group its statements.
+      Effect.withSpan("LibraryReplication.drain", { root: true }),
+      Effect.matchEffect({
+        onFailure: (error) => {
+          const key = `${error.reason}:${error.detail ?? ""}`;
+          if (key === loggedFailure) return Effect.void;
+          loggedFailure = key;
+          return Effect.logWarning("Library history replication failed", {
+            reason: error.reason,
+            detail: error.detail,
+            cause: error.cause,
+          });
+        },
+        onSuccess: () =>
+          Effect.sync(() => {
+            loggedFailure = null;
+          }),
+      }),
+      Effect.repeat(Schedule.spaced("5 seconds")),
+    ),
   );
   // Copy health rides the same journal fence as history, but never waits on the history outbox.
   const copyHealth = yield* CopyHealthPublication.makeCopyHealthPublication({

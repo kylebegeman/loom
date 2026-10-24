@@ -699,3 +699,16 @@ apps/server/src/usage/usageScanCache.ts	retention-defaults	1
 packages/contracts/src/settings.ts	retention-defaults	1
 packages/contracts/src/settings.test.ts	retention-defaults	3
 packages/shared/src/serverSettings.test.ts	retention-defaults	1
+apps/server/src/serverActivation.ts	server-weight	4
+apps/server/src/scheduling/Scheduler.ts	server-weight	2
+apps/server/src/scheduling/Scheduler.test.ts	server-weight	3
+apps/server/src/orchestration-v2/ProjectionMaintenance.ts	server-weight	11
+apps/server/src/orchestration-v2/FoundationPersistence.test.ts	server-weight	8
+apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	11
+apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	6
+apps/server/src/persistence/DatabaseStorage.ts	server-weight	7
+apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	4
+apps/server/src/persistence/Sqlite.ts	server-weight	1
+apps/server/src/preview/ServerBrowserContexts.ts	server-weight	1
+packages/shared/src/observability.ts	server-weight	3
+packages/shared/src/observability.test.ts	server-weight	2

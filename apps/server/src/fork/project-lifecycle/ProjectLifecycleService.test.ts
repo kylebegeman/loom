@@ -159,11 +159,14 @@ const setupWith = (
     const sent: Array<ThreadManagementSendInput> = [];
     const events = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
     const threadManagement = partial<ThreadManagementService["Service"]>({
-      getShellSnapshot: () =>
+      // Like the projection: the active location leaves archived threads out.
+      getShellSnapshot: (options) =>
         Effect.succeed({
           schemaVersion: 1,
           snapshotSequence: 0,
-          threads: [...threads],
+          threads: threads.filter(
+            (entry) => options?.location !== "active" || entry.archivedAt === null,
+          ),
           archivedThreads: [],
         }),
       sendToThread: (input) =>
@@ -308,6 +311,211 @@ describe("ProjectLifecycleService", () => {
       t.threads[0] = thread("settling", { worktreePath: t.worktree, settledOverride: "settled" });
       yield* t.service.tick();
       expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("keeps a lane while its settle action fails and checks it again each tick", () =>
+    Effect.gen(function* () {
+      const answers = [false, false, true];
+      const probed: Array<ThreadId> = [];
+      const t = yield* setupWith({
+        prepareForCleanup: (threadId) =>
+          Effect.sync(() => {
+            probed.push(threadId);
+            return answers.shift() ?? true;
+          }),
+      });
+      t.threads.push(thread("settling", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("settling"));
+      t.threads[0] = thread("settling", { worktreePath: t.worktree, settledOverride: "settled" });
+
+      yield* t.service.tick();
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+      expect(probed).toHaveLength(2);
+
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+      expect(probed).toHaveLength(3);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("removes free lanes without probing threads that have no settle action", () =>
+    Effect.gen(function* () {
+      const probed: Array<ThreadId> = [];
+      const t = yield* setupWith({
+        prepareForCleanup: (threadId) =>
+          Effect.sync(() => {
+            probed.push(threadId);
+            return true;
+          }),
+      });
+      t.threads.push(
+        thread("root", { activeRunId: RunId.make("root-run") }),
+        thread("feature", { worktreePath: t.worktree, activeRunId: RunId.make("feature-run") }),
+        thread("deleted-feature", { worktreePath: t.worktree }),
+      );
+      const root = yield* t.service.ensureForThread(ThreadId.make("root"));
+      const feature = yield* t.service.ensureForThread(ThreadId.make("feature"));
+
+      t.threads.splice(
+        0,
+        t.threads.length,
+        // Settled in the shared checkout: the settlement service never runs a settle action there.
+        thread("root", { settledOverride: "settled", settledAt: DateTime.nowUnsafe() }),
+        // A provider's idle subagent never settles.
+        thread("root-subagent", {
+          creationSource: "provider",
+          lineage: {
+            parentThreadId: ThreadId.make("root"),
+            relationshipToParent: "subagent",
+            rootThreadId: ThreadId.make("root"),
+          },
+        }),
+        thread("feature", {
+          worktreePath: t.worktree,
+          settledOverride: "settled",
+          archivedAt: DateTime.nowUnsafe(),
+        }),
+      );
+      const status = yield* t.service.tick();
+
+      expect(status.lanes).toEqual([]);
+      expect(NodeFS.existsSync(root.laneDir)).toBe(false);
+      expect(NodeFS.existsSync(feature.laneDir)).toBe(false);
+      expect(probed).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("does not probe a protected lane again until its threads' settlement changes", () =>
+    Effect.gen(function* () {
+      const probed: Array<ThreadId> = [];
+      const t = yield* setupWith({
+        prepareForCleanup: (threadId) =>
+          Effect.sync(() => {
+            probed.push(threadId);
+            return true;
+          }),
+      });
+      t.threads.push(thread("feature", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("feature"));
+      // A registered checkout inside the lane keeps it after its own thread settles.
+      const nested = `${lane.laneDir}/space/data/nested`;
+      NodeFS.mkdirSync(nested);
+      t.threads.push(thread("nested", { worktreePath: nested, archivedAt: DateTime.nowUnsafe() }));
+      const settledAt = DateTime.nowUnsafe();
+      t.threads[0] = thread("feature", {
+        worktreePath: t.worktree,
+        settledOverride: "settled",
+        settledAt,
+      });
+
+      yield* t.service.tick();
+      yield* t.service.tick();
+      expect(probed).toEqual([ThreadId.make("feature")]);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+
+      t.threads[0] = thread("feature", {
+        worktreePath: t.worktree,
+        settledOverride: "settled",
+        settledAt: DateTime.add(settledAt, { seconds: 1 }),
+      });
+      yield* t.service.tick();
+      expect(probed).toEqual([ThreadId.make("feature"), ThreadId.make("feature")]);
+
+      // The protection clearing needs no new probe.
+      NodeFS.rmSync(nested, { recursive: true });
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+      expect(probed).toHaveLength(2);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("probes a protected lane again once an archived thread sharing it is deleted", () =>
+    Effect.gen(function* () {
+      const settleRan = yield* Deferred.make<void>();
+      let sharerDeleted = false;
+      let settleSucceeds = false;
+      const t = yield* setupWith({
+        // As the settlement service does, an unsettled thread sharing the worktree answers ready
+        // without running the settle action.
+        prepareForCleanup: () =>
+          sharerDeleted
+            ? Deferred.succeed(settleRan, undefined).pipe(Effect.as(settleSucceeds))
+            : Effect.succeed(true),
+      });
+      yield* t.service.start();
+      t.threads.push(thread("feature", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("feature"));
+      const nested = `${lane.laneDir}/space/data/nested`;
+      NodeFS.mkdirSync(nested);
+      t.threads.push(
+        thread("nested", { worktreePath: nested, archivedAt: DateTime.nowUnsafe() }),
+        thread("sharer", { worktreePath: t.worktree, archivedAt: DateTime.nowUnsafe() }),
+      );
+      t.threads[0] = thread("feature", {
+        worktreePath: t.worktree,
+        settledOverride: "settled",
+        settledAt: DateTime.nowUnsafe(),
+      });
+      yield* t.service.tick();
+      yield* t.service.tick();
+      expect(yield* Deferred.isDone(settleRan)).toBe(false);
+
+      sharerDeleted = true;
+      t.threads.splice(
+        t.threads.findIndex((entry) => entry.id === "sharer"),
+        1,
+      );
+      yield* PubSub.publish(t.events, {
+        type: "thread.deleted",
+        payload: { id: ThreadId.make("sharer") },
+      } as OrchestrationV2DomainEvent);
+      yield* Deferred.await(settleRan);
+
+      // The failing settle action now keeps the lane after its protection clears.
+      NodeFS.rmSync(nested, { recursive: true });
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+      settleSucceeds = true;
+      yield* t.service.tick();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("probes a settled thread that joins a lane while its other threads are probed", () =>
+    Effect.gen(function* () {
+      const probed: Array<ThreadId> = [];
+      let unarchiveSecond = () => {};
+      const t = yield* setupWith({
+        prepareForCleanup: (threadId) =>
+          Effect.sync(() => {
+            probed.push(threadId);
+            unarchiveSecond();
+            unarchiveSecond = () => {};
+            return true;
+          }),
+      });
+      t.threads.push(thread("first", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("first"));
+      const settled = { worktreePath: t.worktree, settledOverride: "settled" } as const;
+      t.threads[0] = thread("first", settled);
+      t.threads.push(thread("second", { ...settled, archivedAt: DateTime.nowUnsafe() }));
+      unarchiveSecond = () => {
+        t.threads[1] = thread("second", settled);
+      };
+
+      yield* t.service.tick();
+      expect(probed).toEqual([ThreadId.make("first")]);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+
+      yield* t.service.tick();
+      expect(probed.toSorted()).toEqual([
+        ThreadId.make("first"),
+        ThreadId.make("first"),
+        ThreadId.make("second"),
+      ]);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
     }).pipe(Effect.scoped),
   );
 

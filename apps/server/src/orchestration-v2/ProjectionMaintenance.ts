@@ -229,6 +229,8 @@ export const layer: Layer.Layer<
     // Keep subagent.updated and turn-item.updated rows: slimmed payloads reference their prompts.
     // Small pages bound work on the reader worker and synchronous fallback.
     const COMPACTION_PAGE_SIZE = 50;
+    // fork: server-weight: a pass pages the whole history, tens of thousands of statements, so pages run untraced and the pass span carries the counts.
+    const untracedPage = Effect.withTracerEnabled(false);
 
     /**
      * Scan newest first to retain the newest state for each entity. Keyed
@@ -258,6 +260,8 @@ export const layer: Layer.Layer<
       const oldestCandidateByEntityKey = new Map<string, number | null>();
       let deletedEventCount = 0;
       let deletedReceiptCount = 0;
+      let scannedEventCount = 0; // fork: server-weight
+      let scannedReceiptCount = 0; // fork: server-weight
 
       while (throughSequence > 0) {
         const rows = yield* sql<{
@@ -299,7 +303,8 @@ export const layer: Layer.Layer<
           WHERE event.sequence <= ${throughSequence}
           ORDER BY event.sequence DESC
           LIMIT ${COMPACTION_PAGE_SIZE}
-        `.pipe(NodeSqliteClient.readOnly);
+        `.pipe(NodeSqliteClient.readOnly, untracedPage); // fork: server-weight
+        scannedEventCount += rows.length; // fork: server-weight
         const obsolete: number[] = [];
         for (const row of rows) {
           if (row.imported_legacy_thread === 1) {
@@ -345,7 +350,10 @@ export const layer: Layer.Layer<
         // Yield even without deletions for clients using the synchronous fallback.
         yield* Effect.yieldNow;
         if (obsolete.length > 0) {
-          yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;
+          // fork: server-weight
+          yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`.pipe(
+            untracedPage,
+          );
           deletedEventCount += obsolete.length;
           yield* Effect.yieldNow;
         }
@@ -375,13 +383,17 @@ export const layer: Layer.Layer<
           WHERE receipt.rowid <= ${throughReceiptRowId}
           ORDER BY receipt.rowid DESC
           LIMIT ${COMPACTION_PAGE_SIZE}
-        `.pipe(NodeSqliteClient.readOnly);
+        `.pipe(NodeSqliteClient.readOnly, untracedPage); // fork: server-weight
+        scannedReceiptCount += rows.length; // fork: server-weight
         const obsolete = rows
           .filter((row) => row.imported_legacy_thread === 1)
           .map((row) => row.command_id);
         yield* Effect.yieldNow;
         if (obsolete.length > 0) {
-          yield* sql`DELETE FROM orchestration_command_receipts WHERE command_id IN ${sql.in(obsolete)}`;
+          // fork: server-weight
+          yield* sql`DELETE FROM orchestration_command_receipts WHERE command_id IN ${sql.in(obsolete)}`.pipe(
+            untracedPage,
+          );
           deletedReceiptCount += obsolete.length;
           yield* Effect.yieldNow;
         }
@@ -394,8 +406,16 @@ export const layer: Layer.Layer<
       const reclaimableBytes =
         (freelistRows[0]?.freelist_count ?? 0) * (pageSizeRows[0]?.page_size ?? 0);
 
+      // fork: server-weight
+      yield* Effect.annotateCurrentSpan({
+        "orchestration_v2.compaction.scanned_event_count": scannedEventCount,
+        "orchestration_v2.compaction.deleted_event_count": deletedEventCount,
+        "orchestration_v2.compaction.scanned_receipt_count": scannedReceiptCount,
+        "orchestration_v2.compaction.deleted_receipt_count": deletedReceiptCount,
+        "orchestration_v2.compaction.reclaimable_bytes": reclaimableBytes,
+      });
       return { deletedEventCount, deletedReceiptCount, reclaimableBytes };
-    });
+    }).pipe(Effect.withSpan("ProjectionMaintenanceV2.compactEventStore")); // fork: server-weight
 
     return ProjectionMaintenanceV2.of({
       verify: mapError("verify")(verify),

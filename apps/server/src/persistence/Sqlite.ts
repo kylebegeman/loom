@@ -64,10 +64,7 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
       // Checkpoints sync the database, with F_FULLFSYNC on macOS. Run them off
       // the event loop so a slow flush cannot stall clients.
       checkpointWorker: true,
-      spanAttributes: {
-        "db.name": path.basename(dbPath),
-        "service.name": "t3code-server",
-      },
+      // fork: server-weight: no constant db.name or service.name span attributes; every statement repeated them, and the trace file and OTLP resource already name the service.
     }),
   );
 }, Layer.unwrap);

@@ -63,6 +63,13 @@ span spent waiting for that connection, behind other SQL. That wait does not blo
 so subtract it before you blame a slow span on the query. Statements inside a transaction use its
 connection and do not carry these attributes.
 
+<!-- fork: server-weight -->
+
+In the trace file, `db.query.text` holds the statement with each run of whitespace collapsed to
+one space, cut to 200 characters. Work started with `forkParked` gets its own trace instead of
+joining the startup trace, and so does each scheduler pass. Other background work, such as
+terminal output drains, still joins the trace of the span that set it up.
+
 DPoP proof failures include the safe `environment.dpop.failure_code` span
 attribute. A `time_window` failure means that a signed proof was too old or too
 far in the future for the environment server's allowed window. It can point to
@@ -658,8 +665,11 @@ Current high-value span and metric boundaries include:
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
+  <!-- fork: server-weight -->
 - sqlite query execution, except the statements inside `orchestrationV2.EventSink.write`, which
-  its `sql.transaction` span times as one
+  its `sql.transaction` span times as one, and the per-page statements of history compaction and
+  incremental space reclaim, which one `ProjectionMaintenanceV2.compactEventStore` or
+  `DatabaseStorage.reclaim` span per pass summarizes with counts
 - event loop stalls (`server.eventLoop.stall`)
 
 ### Current Constraints

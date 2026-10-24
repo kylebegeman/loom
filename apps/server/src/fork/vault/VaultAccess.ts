@@ -55,7 +55,7 @@ import * as VaultCore from "./VaultCore.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import { evaluateVaultPolicy, grantAttenuates, grantMatchesWorkload } from "./VaultPolicy.ts";
 
-import { isVaultRunRunning } from "./active-run.ts";
+import { isVaultRunRunning, readVaultThreadShell, type VaultLiveThread } from "./active-run.ts";
 import * as AccessPolicy from "./AccessPolicy.ts";
 import { decodePolicy, encodePolicy, type Policy } from "./AccessPolicy.ts";
 
@@ -287,6 +287,7 @@ export class VaultAccess extends Context.Service<
       itemId: string,
       action: VaultAccessAction,
       destination: string | null,
+      live?: VaultLiveThread,
     ) => Effect.Effect<void, VaultError>;
     readonly listForThread: (
       input: VaultItemList,
@@ -365,10 +366,13 @@ const make = Effect.gen(function* () {
     audit: policy.audit.toReversed().slice(0, 50),
     omittedAuditEvents: policy.omittedAuditEvents + Math.max(0, policy.audit.length - 50),
   });
-  const subject = Effect.fnUntraced(function* (threadId: ThreadId) {
-    const thread = yield* threads
-      .getThreadShell(threadId)
-      .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })));
+  const subject = Effect.fnUntraced(function* (threadId: ThreadId, live?: VaultLiveThread) {
+    const thread =
+      live?.shell.id === threadId
+        ? live.shell
+        : yield* readVaultThreadShell(threads, threadId).pipe(
+            Effect.mapError(() => new VaultError({ reason: "unavailable" })),
+          );
     if (thread === null || thread.deletedAt !== null || thread.archivedAt !== null)
       return yield* new VaultError({ reason: "denied" });
     return { threadId, projectId: thread.projectId, thread };
@@ -586,9 +590,33 @@ const make = Effect.gen(function* () {
     }
     return yield* new VaultError({ reason: "conflict" });
   });
-  const decision = Effect.fnUntraced(function* (policy: Policy, input: VaultDecisionInput) {
-    const workload = yield* subject(input.threadId);
+  // A call that evaluates several actions for one thread and item shares these reads, and
+  // reads the active run at most once.
+  const decisionReads = Effect.fnUntraced(function* (
+    input: VaultDecisionInput,
+    live?: VaultLiveThread,
+  ) {
+    const workload = yield* subject(input.threadId, live);
     const item = yield* core.inspect(input.itemId);
+    let running: boolean | undefined = live?.shell === workload.thread ? live.running : undefined;
+    const isRunning = Effect.suspend(() =>
+      running !== undefined
+        ? Effect.succeed(running)
+        : isVaultRunRunning(threads, workload.thread).pipe(
+            Effect.tap((value) =>
+              Effect.sync(() => {
+                running = value;
+              }),
+            ),
+          ),
+    );
+    return { workload, item, isRunning };
+  });
+  const evaluate = Effect.fnUntraced(function* (
+    policy: Policy,
+    input: VaultDecisionInput,
+    { workload, item, isRunning }: Effect.Success<ReturnType<typeof decisionReads>>,
+  ) {
     const staleApprovals = new Set(
       (policy.approvals ?? [])
         .filter(
@@ -629,7 +657,7 @@ const make = Effect.gen(function* () {
         workload.thread.interactionMode !== "default"
       )
         result = { ...result, allowed: false, reason: "caller-permission" };
-      else if (!(yield* isVaultRunRunning(threads, workload.thread)))
+      else if (!(yield* isRunning))
         result = { ...result, allowed: false, reason: "workload-inactive" };
     }
     const protection = AccessPolicy.credentialUseRefusal(policy, input.itemId);
@@ -653,20 +681,29 @@ const make = Effect.gen(function* () {
       result = { ...result, allowed: false, reason: "workload-inactive" };
     return { workload, item, result, ordinaryResult };
   });
+  const decision = Effect.fnUntraced(function* (
+    policy: Policy,
+    input: VaultDecisionInput,
+    live?: VaultLiveThread,
+  ) {
+    return yield* evaluate(policy, input, yield* decisionReads(input, live));
+  });
   const requireAccess = Effect.fn("VaultAccess.require")(function* (
     threadId: ThreadId,
     itemId: string,
     action: VaultAccessAction,
     destination: string | null,
+    live?: VaultLiveThread,
   ) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
-      const { result, workload, item } = yield* decision(policy, {
-        threadId,
-        itemId,
-        action,
-        destination,
-      });
+      // The caller's thread read is current only for the first attempt; a retry after a
+      // concurrent policy write reads the thread again, as every attempt did before.
+      const { result, workload, item } = yield* decision(
+        policy,
+        { threadId, itemId, action, destination },
+        attempt === 0 ? live : undefined,
+      );
       const next = withAudit(policy, {
         id: yield* eventId,
         at: yield* Clock.currentTimeMillis,
@@ -1620,7 +1657,9 @@ const make = Effect.gen(function* () {
       // Human disclosure requires a durable audit; broker reads use their own audited authority.
       for (let attempt = 0; attempt < 4; attempt++) {
         const { policy, version } = yield* load();
-        const value = yield* core.reveal(input);
+        // The audit write below is conditional on this read's version, so a policy change
+        // after it fails the write and this attempt's value is never returned.
+        const value = yield* core.reveal(input, version === 0 ? null : policy);
         const next = withAudit(policy, {
           id: yield* eventId,
           at: yield* Clock.currentTimeMillis,
@@ -1699,7 +1738,7 @@ const make = Effect.gen(function* () {
               threads: Effect.forEach(
                 [...new Set(requests.map((r) => r.threadId))],
                 (id) =>
-                  threads.getThreadShell(id).pipe(
+                  readVaultThreadShell(threads, id).pipe(
                     Effect.orElseSucceed(() => null),
                     Effect.map((value) => [id, value] as const),
                   ),
@@ -1924,16 +1963,19 @@ const make = Effect.gen(function* () {
     }),
     explain: Effect.fn("VaultAccess.explain")(function* (input, restrictMetadata) {
       const { policy } = yield* load();
-      const { workload, item, result } = yield* decision(policy, input);
+      const reads = yield* decisionReads(input);
+      const { workload, item, result } = yield* evaluate(policy, input, reads);
+      // The metadata check differs only in its action, so it shares this call's policy, thread,
+      // item and active-run reads instead of reading them all again.
+      const inspect =
+        restrictMetadata && input.action !== "inspect"
+          ? (yield* evaluate(policy, { ...input, action: "inspect" }, reads)).result
+          : result;
       return {
         environmentId,
         threadId: input.threadId,
         projectId: workload.projectId,
-        item:
-          restrictMetadata &&
-          !(yield* decision(policy, { ...input, action: "inspect" })).result.allowed
-            ? null
-            : item,
+        item: restrictMetadata && !inspect.allowed ? null : item,
         decision: result,
         recentDecisions: policy.audit
           .toReversed()
