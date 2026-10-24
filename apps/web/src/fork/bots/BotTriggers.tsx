@@ -1045,6 +1045,24 @@ function FiringRow({
           <Button shape="pill" size="xs" variant="ghost" onClick={() => nav.overlay({ runId })}>
             Open run
           </Button>
+        ) : firing.pipelineRunId ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="ghost"
+            render={<Link to="/loom/bots" search={{ pipelineRun: firing.pipelineRunId }} />}
+          >
+            Open pipeline run
+          </Button>
+        ) : firing.batchId ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="ghost"
+            render={<Link to="/loom/bots" search={{ batch: firing.batchId }} />}
+          >
+            Open batch
+          </Button>
         ) : ran && pipelineId !== null ? (
           <Button
             shape="pill"
@@ -1178,8 +1196,10 @@ function FiringsSection({
             size="fill"
             label={`The last ${shown.length} firings, oldest first. ${activity.ran} ran and ${activity.skipped} were skipped.`}
             onSelectTick={(index) => {
-              const runId = shown[index - padding]?.runId;
-              if (runId) nav.overlay({ runId });
+              const firing = shown[index - padding];
+              if (firing?.runId) nav.overlay({ runId: firing.runId });
+              else if (firing?.pipelineRunId) nav.open({ pipelineRun: firing.pipelineRunId });
+              else if (firing?.batchId) nav.open({ batch: firing.batchId });
             }}
           />
           <ol className="flex flex-col divide-y divide-border">

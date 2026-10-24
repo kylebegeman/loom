@@ -74,6 +74,26 @@ function FiringRows({
               navigation.navigate("BotsRunDetail", { environmentId, runId: firing.runId! })
             }
           />
+        ) : firing.pipelineRunId ? (
+          <Button
+            label="Open pipeline run"
+            onPress={() =>
+              navigation.navigate("BotsPipelines", {
+                environmentId,
+                runId: firing.pipelineRunId ?? undefined,
+              })
+            }
+          />
+        ) : firing.batchId ? (
+          <Button
+            label="Open batch"
+            onPress={() =>
+              navigation.navigate("BotsBatches", {
+                environmentId,
+                batchId: firing.batchId ?? undefined,
+              })
+            }
+          />
         ) : null}
       </View>
     ))
