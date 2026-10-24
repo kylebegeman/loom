@@ -15,6 +15,58 @@ export const FORK_LIVE_RESOURCE_TABLES: ReadonlyArray<string> = [
   "fork_code_graph_projects",
 ];
 
+/** Why a copied run, batch or pipeline run stopped, as its run history shows it. */
+export const DEV_DB_STOPPED_WORK = "Stopped when this development database was copied.";
+
+/**
+ * Bot work a dev server would take up by itself: triggers fire on their schedule, unfinished runs,
+ * batches, pipeline runs and replays resume after a start, and remote run requests are delivered.
+ * The copy keeps all of it as history but stops it, so a dev server never runs the developer's
+ * bots unasked. A trigger stays visible, paused.
+ */
+export const stopCopiedBotWork = Effect.fn("stopCopiedBotWork")(function* (stoppedAt: string) {
+  const sql = yield* SqlClient.SqlClient;
+  const present = new Set(
+    (yield* sql<{ name: string }>`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'fork_bots_%'`).map(
+      (row) => row.name,
+    ),
+  );
+  const stops = [
+    [
+      "fork_bots_triggers",
+      sql`UPDATE fork_bots_triggers SET enabled = 0, next_fire_at = NULL WHERE enabled <> 0`,
+    ],
+    [
+      "fork_bots_runs",
+      sql`UPDATE fork_bots_runs
+        SET status = 'cancelled', finished_at = ${stoppedAt},
+          error = COALESCE(error, ${DEV_DB_STOPPED_WORK})
+        WHERE status IN ('queued', 'running')`,
+    ],
+    [
+      "fork_bots_batches",
+      sql`UPDATE fork_bots_batches SET status = 'cancelled', finished_at = ${stoppedAt}
+        WHERE status = 'running'`,
+    ],
+    [
+      "fork_bots_pipeline_runs",
+      sql`UPDATE fork_bots_pipeline_runs
+        SET status = 'cancelled', finished_at = ${stoppedAt},
+          error = COALESCE(error, ${DEV_DB_STOPPED_WORK})
+        WHERE status IN ('running', 'waiting')`,
+    ],
+    [
+      "fork_bots_replays",
+      sql`UPDATE fork_bots_replays SET status = 'cancelled', finished_at = ${stoppedAt}
+        WHERE status = 'running'`,
+    ],
+    ["fork_bots_library_requests", sql`DELETE FROM fork_bots_library_requests`],
+    ["fork_bots_library_results", sql`DELETE FROM fork_bots_library_results`],
+  ] as const;
+  for (const [table, stop] of stops) if (present.has(table)) yield* stop;
+});
+
 /**
  * Creates the source's full-text tables in the copy before anything else. Each one makes the
  * internal tables that hold its index, which SQLite refuses to create or write by name, so
